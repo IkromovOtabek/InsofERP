@@ -91,6 +91,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "progress", label: "Bajarilgan hajmni qayd qilish",   roles: ["PRODUCTION", "SUPERVISOR"] },
     { key: "cancel",   label: "Topshiriqni bekor qilish",        roles: ["PRODUCTION", "SUPERVISOR"] },
     { key: "brigade",  label: "Brigada ochish / tahrirlash",     roles: ["PRODUCTION", "SUPERVISOR", "HR"] },
+    { key: "pay",      label: "Brigada oyligi: brak summasini tahrirlash", roles: ["SUPERVISOR"], hint: "Brak summasi brigadadagi sdelka xodimlarining oyligidan ushlanadi" },
   ],
   trips: [
     { key: "create",  label: "Reys ochish",                       roles: ["LOGISTICS", "PRODUCTION"] },

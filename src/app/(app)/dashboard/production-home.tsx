@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, CalendarCheck, ClipboardList, Factory, FileText, HardHat, Layers, ScanFace, ShieldCheck, Target, TriangleAlert, Truck, Users, UserCog } from "lucide-react";
+import { ArrowRight, Boxes, CalendarCheck, ClipboardList, Factory, FileText, HardHat, Layers, ScanFace, ShieldCheck, Target, TriangleAlert, Truck, Users, UserCog } from "lucide-react";
 import { canDo } from "@/lib/permissions";
 import { pendingApprovalWhere } from "@/lib/driver-trip-pay";
 import { productionDay, DEFECT_REASONS } from "@/lib/production-day";
@@ -11,6 +11,9 @@ import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { qty, pct, dateTime, fmtNum, orderLabel } from "@/lib/format";
 import { reportHistory, stockHighlights, stockStatus, STOCK_LEVEL_LABEL } from "@/lib/production-report";
 import { unitLabel, fmtUnitTotals } from "@/lib/unit";
+import { productionMatrix } from "@/lib/production-matrix";
+import { brigadeProducts } from "@/lib/brigade-pay";
+import { BrigadeProductsView } from "../brigades/brigade-products";
 import { Badge, Card, Empty, LinkButton, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { MobileFold } from "./mobile-fold";
 import { OrderStatusBadge } from "../orders/status";
@@ -25,20 +28,26 @@ const time = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
 /**
  * Ishlab chiqarish bo'limining bosh sahifasi: xodimlar, davomat, sklad, brigadalar ishi,
  * bugungi yuklash, plan, brak va direktorga kunlik hisobot — bir ekranda.
+ * Ish boshqaruvchida sex xodimlari va davomat o'rniga «Ishlab chiqarish kerak» (m³ / dona) turadi — davomatni sex boshlig'i yuritadi.
  */
 export async function ProductionHome({ s }: { s: Session }) {
   const iso = todayIso();
   // Ish boshqaruvchi: tasdiq kutayotgan reys haqi va mexanik / usta puli so'rovlari — vebda bildirishnoma markazi yo'q,
   // xabar faqat ilovaga boradi; bosh sahifada ko'rinib tursin
   const approver = canDo(s, "logistika", "pay_approve");
-  const [d, brigades, stock, reports, payWait, mechWait] = await Promise.all([
+  const isSupervisor = s.role === "SUPERVISOR";
+  const [d, brigades, stock, reports, payWait, mechWait, matrix, brigadeWork] = await Promise.all([
     productionDay(iso),
     db.brigade.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     stockStatus(),
     reportHistory(5),
     approver ? db.trip.aggregate({ where: pendingApprovalWhere(), _count: true, _sum: { payAmount: true } }) : null,
     approver ? db.mechanicRequest.aggregate({ where: { status: "NEW" }, _count: true, _sum: { amount: true } }) : null,
+    isSupervisor ? productionMatrix() : null,
+    brigadeProducts({ activeOnly: true }),
   ]);
+  const needBeton = matrix?.summary.need.filter((u) => u.unit === "m3") ?? [];
+  const needDona = matrix?.summary.need.filter((u) => u.unit !== "m3") ?? [];
   const { low: lowStock, ok: okStock, rest: restStock } = stockHighlights(stock, 8);
   const orderGap = stock.filter((m) => m.orderGap > 0);
   const stockNeed = stock.filter((m) => m.need > 0).sort((a, b) => b.orderGap - a.orderGap);
@@ -73,8 +82,17 @@ export async function ProductionHome({ s }: { s: Session }) {
         </div>
       ) : null}
       <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
-        <StatCard label="Sex xodimlari" value={String(d.staff.total)} hint={d.staff.unassigned ? `${d.staff.unassigned} kishi taqsimlanmagan` : `${d.staff.groups.filter((g) => g.id).length} brigadaga taqsimlangan`} icon={Users} tone={d.staff.unassigned ? "warning" : "default"} href={canStaff ? "/dashboard/xodimlar" : "#davomat"} />
-        <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />
+        {matrix ? (
+          <>
+            <StatCard label="Quyish kerak — beton" value={needBeton.length ? fmtUnitTotals(needBeton) : "—"} hint={`${matrix.needList.filter((x) => x.unit === "m3").length} xil marka`} icon={Factory} tone={needBeton.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
+            <StatCard label="Ishlab chiqarish kerak — dona" value={needDona.length ? fmtUnitTotals(needDona) : "—"} hint={`${matrix.needList.filter((x) => x.unit !== "m3").length} xil mahsulot · ${matrix.summary.orders} zayavka`} icon={Boxes} tone={needDona.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
+          </>
+        ) : (
+          <>
+            <StatCard label="Sex xodimlari" value={String(d.staff.total)} hint={d.staff.unassigned ? `${d.staff.unassigned} kishi taqsimlanmagan` : `${d.staff.groups.filter((g) => g.id).length} brigadaga taqsimlangan`} icon={Users} tone={d.staff.unassigned ? "warning" : "default"} href={canStaff ? "/dashboard/xodimlar" : "#davomat"} />
+            <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />
+          </>
+        )}
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
         <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint="bugun" icon={Factory} tone="brand" href="/production" />
         <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} href="#brak" />
@@ -202,7 +220,42 @@ export async function ProductionHome({ s }: { s: Session }) {
         </MobileFold>
       </Section>
 
-      {/* ── 1–2. Sex xodimlari va davomat ── */}
+      {/* ── Brigadalardagi mahsulot va uning puli ── */}
+      <Section title="Brigadalardagi mahsulotlar" action={more("/brigades?tab=mahsulotlar", "Brigadalar")}>
+        <MobileFold label="Brigada × mahsulot jadvali">
+          <BrigadeProductsView data={brigadeWork} compact />
+        </MobileFold>
+      </Section>
+
+      {/* ── Ish boshqaruvchi: ishlab chiqarilishi kerak (sex xodimlari o'rniga) ── */}
+      {matrix && (
+        <Section id="ishlab-chiqarish-kerak" title="Ishlab chiqarilishi kerak" action={more("/production", "Matritsa")}>
+          <MobileFold label="Ishlab chiqarish kerak jadvali">
+            <Card padded={false}>
+              <p className="px-5 pt-4 text-xs text-slate-500">Tasdiqlangan zayavkalardagi jo&apos;natilmagan qism − skladdagi qoldiq (beton — zamesda quyilgani ayiriladi).</p>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full min-w-[520px] text-sm">
+                  <thead><tr><Th>Mahsulot</Th><Th right>Zayavkalarda</Th><Th right>Skladda</Th><Th right>Ishlab chiqarish kerak</Th></tr></thead>
+                  <tbody>
+                    {matrix.needList.length === 0 && <Empty text="Hammasi skladdan yopiladi — ishlab chiqarish kerak emas" icon={Boxes} />}
+                    {matrix.needList.map((p) => (
+                      <Tr key={p.id}>
+                        <Td><span className="font-medium">{p.code}</span> <span className="text-slate-500">{p.name}</span></Td>
+                        <Td right className="tabular text-slate-500">{qty(p.band)} {unitLabel(p.unit)}</Td>
+                        <Td right className="tabular text-slate-500">{p.unit === "m3" ? "—" : `${qty(Math.max(0, p.stock))} ${unitLabel(p.unit)}`}</Td>
+                        <Td right className="font-semibold tabular text-amber-700">{qty(p.need)} {unitLabel(p.unit)}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </MobileFold>
+        </Section>
+      )}
+
+      {/* ── 1–2. Sex xodimlari va davomat (ish boshqaruvchida yo'q) ── */}
+      {!isSupervisor && <>
       <div id="davomat" className="scroll-mt-20" />
       <Section title="Sex xodimlari va davomat" action={<div className="flex flex-wrap gap-2">{canStaff && <LinkButton href="/dashboard/xodimlar" variant="secondary" size="sm"><UserCog size={14} /> Xodimlarni taqsimlash</LinkButton>}{!isDirector && <MarkAllButton left={d.attendance.notMarked.length} />}</div>}>
         <MobileFold label="Davomat jadvali">
@@ -265,9 +318,10 @@ export async function ProductionHome({ s }: { s: Session }) {
         </div>
         </MobileFold>
       </Section>
+      </>}
 
       {/* ── 7. Brak ── */}
-      <Section id="brak" title="Brak" action={<span className="text-xs text-slate-500">oyda {d.defects.month.length} ta yozuv</span>}>
+      <Section id="brak" title="Brak" action={<span className="flex flex-wrap items-center gap-3"><span className="text-xs text-slate-500">oyda {d.defects.month.length} ta yozuv · {fmtNum(d.defects.month.reduce((x, r) => x + r.amount, 0))} so&apos;m</span>{more("/brigades?tab=brak", "Kunlik, brigada bo'yicha")}</span>}>
         <MobileFold label="Brak yozuvlari">
         <Card padded={false}>
           <div className="px-5 py-4">
@@ -276,8 +330,8 @@ export async function ProductionHome({ s }: { s: Session }) {
           {d.defects.month.length > 0 && (
             <div className="grid grid-cols-1 border-t border-slate-100 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:divide-x xl:divide-slate-100 [&>*]:min-w-0">
               <div className="max-h-80 overflow-auto">
-                <table className="w-full min-w-[600px] text-sm">
-                  <thead><tr><Th>Vaqt</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Sabab</Th><Th>Brigada</Th><Th>Kim</Th><Th /></tr></thead>
+                <table className="w-full min-w-[680px] text-sm">
+                  <thead><tr><Th>Vaqt</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th right>Summa</Th><Th>Sabab</Th><Th>Brigada</Th><Th>Kim</Th><Th /></tr></thead>
                   <tbody>
                     {d.defects.month.map((r) => {
                       const canDelete = isDirector || (r.createdById === s.userId && r.date >= d.from);
@@ -286,6 +340,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                           <Td className="whitespace-nowrap tabular text-slate-500">{dateTime(r.date)}</Td>
                           <Td><span className="font-medium">{r.product.code}</span></Td>
                           <Td right className="font-medium text-red-600">{qty(r.qty)} {unitLabel(r.product.unit)}</Td>
+                          <Td right className="whitespace-nowrap tabular text-slate-600">{fmtNum(r.amount)}</Td>
                           <Td>{r.reason}{r.note && <div className="text-xs text-slate-400">{r.note}</div>}</Td>
                           <Td className="text-slate-500">{r.brigade ?? "—"}</Td>
                           <Td className="text-slate-500">{r.by}</Td>

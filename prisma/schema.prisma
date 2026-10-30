@@ -1641,6 +1641,8 @@ model ProductDefect {
   /// Qaysi topshiriqdan chiqqan brak (brigadir topshiriq kartasida yoki fakt bilan birga belgilaydi).
   taskId      String?
   qty         Decimal  @db.Decimal(18, 3)
+  /// Brak summasi, so'm — brigada oyligidan ushlanadi. Yozilganda miqdor × mahsulot sotuv narxi; ish boshqaruvchi tahrirlaydi
+  amount      Decimal  @default(0) @db.Decimal(18, 2)
   reason      String
   note        String?
   createdById String

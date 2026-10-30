@@ -23,7 +23,7 @@ export async function taskDefectTotals(taskIds: string[]): Promise<Map<string, n
 export async function addProductDefect(d: DefectInput, userId: string): Promise<{ error: string } | { ok: true; id: string; text: string }> {
   if (!(d.qty > 0)) return { error: "Miqdor 0 dan katta bo'lsin" };
   if (!d.reason.trim()) return { error: "Sababini tanlang" };
-  const product = await db.product.findUnique({ where: { id: d.productId }, select: { id: true, name: true, unit: true } });
+  const product = await db.product.findUnique({ where: { id: d.productId }, select: { id: true, name: true, unit: true, price: true } });
   if (!product) return { error: "Mahsulot topilmadi" };
 
   // Tekshiruv va yozuv bitta tranzaksiyada, sklad qulfi ostida: ikki brak bir vaqtda kelsa
@@ -52,7 +52,7 @@ export async function addProductDefect(d: DefectInput, userId: string): Promise<
     }
 
     const def = await tx.productDefect.create({
-      data: { productId: product.id, qty: d.qty, reason: d.reason, brigadeId, taskId: d.taskId || null, note: d.note || null, createdById: userId },
+      data: { productId: product.id, qty: d.qty, amount: Math.round(d.qty * Number(product.price) * 100) / 100, reason: d.reason, brigadeId, taskId: d.taskId || null, note: d.note || null, createdById: userId },
     });
     await tx.stockMove.create({
       data: {
@@ -98,6 +98,21 @@ export async function deleteProductDefect(id: string, who: { userId: string; rol
     }
     await tx.productDefect.delete({ where: { id } });
     await audit(tx, who.userId, "DELETE", "ProductDefect", id, def);
+  });
+  return { ok: true };
+}
+
+/**
+ * Brak summasini tahrirlash (brigada oyligidan ushlanadigan pul). Ruxsat (`tasks` → `pay`) — chaqiruvchida.
+ * Yozuv o'chirilmaydi, faqat summa o'zgaradi — eski va yangi qiymat auditda.
+ */
+export async function setDefectAmount(id: string, amount: number, userId: string): Promise<{ error: string } | { ok: true }> {
+  if (!(amount >= 0)) return { error: "Summa manfiy bo'lmaydi" };
+  const def = await db.productDefect.findUnique({ where: { id }, select: { id: true, amount: true } });
+  if (!def) return { error: "Yozuv topilmadi" };
+  await db.$transaction(async (tx) => {
+    await tx.productDefect.update({ where: { id }, data: { amount } });
+    await audit(tx, userId, "UPDATE", "ProductDefect", id, { amount: def.amount }, { amount });
   });
   return { ok: true };
 }

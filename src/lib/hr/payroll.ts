@@ -14,6 +14,7 @@ import { excusedDays } from "./excused";
 import { kpiMonth } from "./kpi";
 import { tripPayByDriver } from "@/lib/driver-trip-pay";
 import { PAYROLL_KIND_LABEL } from "./labels";
+import { brigadeDefectSums, brigadeOutput, dayEnd, dayStart, type PieceUnit } from "@/lib/brigade-pay";
 
 /**
  * Ish haqi — vedomost (`PayrollRun`) va qatorlar (`PayrollLine`).
@@ -28,7 +29,7 @@ import { PAYROLL_KIND_LABEL } from "./labels";
  *            sdelka: brigada mahsuloti × sdelka narxi, sdelkadagi a'zolarga ishlagan soati bo'yicha
  *   + ta'til puli (kunlik o'rtacha × haq to'lanadigan ta'til kuni) + kasallik (kunlik o'rtacha × foiz, staj bo'yicha)
  *   + bonus (qoidalar + qo'lda) = hisoblangan (gross)
- *   − JShDS (gross × %) − jarima (qoidalar + qo'lda) − shu oy to'langan avanslar = qo'lga
+ *   − JShDS (gross × %) − jarima (qoidalar + qo'lda + brigada braki ulushi) − shu oy to'langan avanslar = qo'lga
  *   INPS (gross × 0,1%) — JShDS ichidan o'tkaziladi, qo'lga summaga ta'sir qilmaydi; ijtimoiy soliq — ish beruvchi.
  */
 
@@ -57,7 +58,7 @@ export type LineBreakdown = {
   period: { from: string; to: string };
   normDays: number; presentDays: number; paidLeaveDays: number; unpaidLeaveDays: number; sickDays: number; absentDays: number; dayoffDays: number;
   minutes: number; dailyAvg: number; sickPct: number;
-  piece?: { brigade: string; pool: number; share: number; units: { product: string; qty: number; rate: number; sum: number }[] };
+  piece?: { brigade: string; pool: number; share: number; units: Pick<PieceUnit, "product" | "qty" | "rate" | "sum">[] };
   /** Haydovchi: dispetcher narxlagan reyslar (oy yakuni, `lib/driver-trip-pay.ts`); narxsizlari kirmaydi. */
   trips?: { count: number; km: number; sum: number; unpriced: number };
   rules: RuleHit[];
@@ -111,12 +112,14 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       where: { employeeId: { in: ids }, paid: { gt: 0 }, run: { month, kind: kind === "FINAL" ? { in: ["ADVANCE", "EXTRA"] } : "EXTRA", status: { in: ["APPROVED", "PAID"] } } },
       select: { employeeId: true, paid: true, run: { select: { docNo: true } } },
     }),
-    piecePools(emps.filter((e) => e.payType === "PIECE"), from, to),
+    // Sdelka fondi va brigada braki (`lib/brigade-pay.ts` — brigadalar sahifasidagi «Oylik» bilan bir xil hisob)
+    brigadeOutput(dayStart(from), dayEnd(to), pieceBrigades(emps)),
     // KPI mukofoti — oy yakunida bonus (`lib/hr/kpi.ts`)
     kind === "FINAL" ? kpiMonth(month, { employeeIds: ids }) : Promise.resolve([]),
     // Haydovchi reys haqi — oy yakunida asosiyga qo'shiladi (avansda emas)
     kind === "FINAL" ? tripPayByDriver(new Date(y!, m! - 1, 1), new Date(y!, m!, 1), ids) : Promise.resolve(new Map<string, { trips: number; km: number; sum: number; unpriced: number }>()),
   ]);
+  const brak = kind === "FINAL" ? await brigadeDefectSums(dayStart(from), dayEnd(to), pieceBrigades(emps)) : new Map<string, { qty: number; sum: number; count: number }>();
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
   const nowIso = today();
@@ -125,7 +128,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   const minutesOf = (id: string) => (attBy.get(id) ?? []).reduce((s, a) => s + (a.status === "PRESENT" ? minutesFor(a, plans.get(id)?.get(isoDay(a.date)), nowIso) : 0), 0);
   const presentOf = (id: string) => (attBy.get(id) ?? []).filter((a) => a.status === "PRESENT").length;
   const shareOf = new Map<string, number>();
-  for (const bid of piece.keys()) {
+  for (const bid of new Set([...piece.keys(), ...brak.keys()])) {
     const members = emps.filter((e) => e.payType === "PIECE" && e.brigadeId === bid);
     const w = members.map((m) => ({ id: m.id, w: minutesOf(m.id) || presentOf(m.id) * 480 }));
     const total = w.reduce((s, x) => s + x.w, 0);
@@ -229,6 +232,14 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
           if (r.kind === "BONUS") bonus += total; else penalty += total;
         }
       }
+      // Brigada braki — sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi (summa brigadalar sahifasida tahrirlanadi)
+      const bk = e.payType === "PIECE" && e.brigadeId ? brak.get(e.brigadeId) : undefined;
+      const bkShare = shareOf.get(e.id) ?? 0;
+      if (bk && bk.sum > 0 && bkShare > 0) {
+        const amt = bk.sum * bkShare;
+        hits.push({ rule: "Brigada braki", kind: "PENALTY", amount: r0(amt), days: bk.count, detail: `${money(bk.sum)} × ${Math.round(bkShare * 1000) / 10}% (${bk.count} ta yozuv)` });
+        penalty += amt;
+      }
       for (const k of kpi.filter((x) => x.employeeId === e.id && x.reward > 0)) {
         hits.push({ rule: `KPI: ${k.name}`, kind: "BONUS", amount: k.reward, days: 1, detail: `fakt ${k.fact ?? "—"} / reja ${k.target} ${k.unit} = ${k.pct ?? 0}%` });
         bonus += k.reward;
@@ -277,27 +288,7 @@ function minutesFor(a: { checkIn: string | null; checkOut: string | null; date: 
   return 0;
 }
 
-/** Sdelka fondi brigada bo'yicha: bajarilgan hajm (`TaskProgress`) × mahsulotning sdelka narxi. */
-async function piecePools(emps: Emp[], from: string, to: string) {
-  const brigadeIds = [...new Set(emps.map((e) => e.brigadeId).filter((x): x is string => !!x))];
-  const out = new Map<string, { brigade: string; sum: number; units: { product: string; qty: number; rate: number; sum: number }[] }>();
-  if (!brigadeIds.length) return out;
-  const rows = await db.taskProgress.findMany({
-    where: { date: { gte: dayUtc(from), lte: dayUtc(to) }, task: { brigadeId: { in: brigadeIds }, status: { not: "CANCELLED" } } },
-    select: { qty: true, task: { select: { brigadeId: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, pieceRate: true } } } } } } },
-  });
-  for (const r of rows) {
-    const b = out.get(r.task.brigadeId) ?? { brigade: r.task.brigade.name, sum: 0, units: [] };
-    const p = r.task.orderItem.product;
-    const rate = num(p.pieceRate);
-    const qty = num(r.qty);
-    const u = b.units.find((x) => x.product === p.name) ?? (b.units[b.units.push({ product: p.name, qty: 0, rate, sum: 0 }) - 1])!;
-    u.qty += qty; u.sum += qty * rate; b.sum += qty * rate;
-    out.set(r.task.brigadeId, b);
-  }
-  for (const b of out.values()) for (const u of b.units) { u.qty = Math.round(u.qty * 1000) / 1000; u.sum = r0(u.sum); }
-  return out;
-}
+const pieceBrigades = (emps: Emp[]) => [...new Set(emps.filter((e) => e.payType === "PIECE").map((e) => e.brigadeId).filter((x): x is string => !!x))];
 
 // ───────────────────────── Vedomost ─────────────────────────
 

@@ -45,7 +45,9 @@ export type MatrixSummary = {
   /** Muddati o'tgan, hali to'liq ishlab chiqarilmagan zayavkalar; shundan beton qatori borlari */
   late: number; lateBeton: number;
 };
-export type ProductionMatrix = { products: MatrixProduct[]; orders: MatrixOrder[]; summary: MatrixSummary };
+/** Mahsulot bo'yicha «ishlab chiqarish kerak» (dona: band − qoldiq; beton: jo'natilmagani − quyilgani) — bosh sahifa ro'yxati. */
+export type MatrixNeed = { id: string; code: string; name: string; unit: string; band: number; stock: number; need: number };
+export type ProductionMatrix = { products: MatrixProduct[]; orders: MatrixOrder[]; summary: MatrixSummary; needList: MatrixNeed[] };
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -68,7 +70,7 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
   const stock = new Map(sums.map((s) => [s.productId!, Number(s._sum.qty ?? 0)]));
 
   const rows: MatrixOrder[] = [];
-  const betonBand: { unit: string; qty: number }[] = [], betonNeed = new Map<string, number>();
+  const betonBand: { unit: string; qty: number }[] = [], betonNeed = new Map<string, number>(), betonBandBy = new Map<string, number>();
   const today = new Date(); today.setHours(0, 0, 0, 0);
   let late = 0, lateBeton = 0;
   for (const o of orders) {
@@ -81,7 +83,7 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
       const q = Number(i.qtyM3), sent = q * (1 - left);
       const poured = o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0);
       const need = Math.max(0, q - Math.max(sent, poured));
-      betonBand.push({ unit: "m3", qty: q * left }); betonNeed.set(i.productId, (betonNeed.get(i.productId) ?? 0) + need);
+      betonBand.push({ unit: "m3", qty: q * left }); betonBandBy.set(i.productId, (betonBandBy.get(i.productId) ?? 0) + q * left); betonNeed.set(i.productId, (betonNeed.get(i.productId) ?? 0) + need);
       betonShort += need;
     }
     const dona = o.items.filter((i) => i.product.unit !== "m3");
@@ -135,5 +137,10 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
     needKinds: needRows.filter((x) => x.qty > 0.0005).length + [...betonNeed.values()].filter((q) => q > 0.0005).length,
     late, lateBeton,
   };
-  return { products: list, orders: rows, summary };
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const needList: MatrixNeed[] = [
+    ...list.map((p) => ({ ...p, need: round3(Math.max(0, p.band - Math.max(0, p.stock))) })),
+    ...[...betonNeed].flatMap(([id, need]) => { const p = byId.get(id); return p ? [{ ...p, band: round3(betonBandBy.get(id) ?? 0), stock: 0, need: round3(need) }] : []; }),
+  ].filter((x) => x.need > 0.0005).sort((a, b) => (a.unit === "m3" ? 0 : 1) - (b.unit === "m3" ? 0 : 1) || b.need - a.need);
+  return { products: list, orders: rows, summary, needList };
 }

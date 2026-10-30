@@ -1,19 +1,56 @@
 import Link from "next/link";
-import { HardHat, ArrowRight, Boxes } from "lucide-react";
+import { HardHat, ArrowRight, Boxes, Package, TriangleAlert, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { qty, money } from "@/lib/format";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { unitLabel } from "@/lib/unit";
 import { canTask } from "@/lib/tasks";
+import { canDo } from "@/lib/permissions";
+import { brigadeDefectsMonth, brigadePayMonth, brigadeProducts } from "@/lib/brigade-pay";
+import { MonthBar, parseMonth } from "../bi-tahlil/month-bar";
+import { BrigadeProductsView } from "./brigade-products";
+import { BrigadePayView, BrigadeDefectsView } from "./pay-view";
 import { ROLE_LABELS } from "@/lib/nav";
-import { Badge, Button, Card, Empty, LinkButton, PageHeader, Progress, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Card, Empty, LinkButton, PageHeader, Progress, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
 
-export default async function BrigadesPage() {
+/**
+ * Brigadalar: ro'yxat (brigadir, topshiriq, xomashyo), «Mahsulotlar» — qaysi brigadada qanday mahsulot va necha pullik,
+ * «Oylik» — sdelka fondi − brak = brigada oyligi, «Brak» — kunlik brak va summasini tahrirlash (`lib/brigade-pay.ts`).
+ */
+export default async function BrigadesPage({ searchParams }: { searchParams: Promise<{ tab?: string; oy?: string; brigada?: string }> }) {
   const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "HR", "SALES"], { module: "tasks" });
+  const sp = await searchParams;
   const canEdit = canTask(s.role, "brigadeEdit"); // rol matritsasi — `lib/tasks.ts`
+  // Pul (oylik, brak summasi) — sotuv bo'limiga kerak emas; summani tahrirlash — `tasks` → `pay` (ish boshqaruvchi)
+  const showPay = s.role !== "SALES";
+  const canPay = canDo(s, "tasks", "pay");
+  const tab = ["mahsulotlar", ...(showPay ? ["oylik", "brak"] : [])].includes(sp.tab ?? "") ? sp.tab! : "royxat";
+  const month = parseMonth(sp.oy);
+  const tabs = (
+    <Tabs current={tab} items={[
+      { key: "royxat", label: "Brigadalar", href: "/brigades", icon: HardHat },
+      { key: "mahsulotlar", label: "Mahsulotlar", href: "/brigades?tab=mahsulotlar", icon: Package },
+      ...(showPay ? [
+        { key: "oylik", label: "Oylik", href: `/brigades?tab=oylik&oy=${month}`, icon: Wallet },
+        { key: "brak", label: "Brak (kunlik)", href: `/brigades?tab=brak&oy=${month}`, icon: TriangleAlert },
+      ] : []),
+    ]} />
+  );
+  if (tab !== "royxat") {
+    const title = <PageHeader title="Brigadalar" subtitle={tab === "mahsulotlar" ? "Ochiq topshiriqlar mahsulot bo'yicha: berilgan, bajarilgan, qoldiq va uning qiymati (ish haqi — sdelka narxida, sotuv — mahsulot narxida)" : tab === "oylik" ? "Brigada oyligi = bajarilgan hajm × sdelka narxi − brak summasi. Vedomostda brak sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi" : "Brak kun va brigada bo'yicha. Summa yozilganda miqdor × sotuv narxi — ish boshqaruvchi tahrirlaydi"} />;
+    if (tab === "mahsulotlar") return <div>{title}{tabs}<BrigadeProductsView data={await brigadeProducts()} /></div>;
+    const brigadaId = sp.brigada || null;
+    if (tab === "oylik") return <div>{title}{tabs}<MonthBar base="/brigades" month={month} keep={{ tab }} /><BrigadePayView data={await brigadePayMonth(month)} /></div>;
+    return (
+      <div>{title}{tabs}
+        <MonthBar base="/brigades" month={month} keep={{ tab, brigada: brigadaId ?? undefined }} />
+        <BrigadeDefectsView data={await brigadeDefectsMonth(month)} month={month} brigadeId={brigadaId} canEdit={canPay} />
+      </div>
+    );
+  }
   const [brigades, employees, stocks, undistributed] = await Promise.all([
     // Brigadirning login roli ham kerak: topshiriq ECO ilovasiga faqat BRIGADIER logini bor brigadirga tushadi
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: { include: { user: { select: { role: true, isActive: true } } } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } }),
@@ -30,6 +67,7 @@ export default async function BrigadesPage() {
         ? <>Brigadalar <span className="rounded-full bg-red-100 px-2 py-0.5 text-sm font-bold text-red-700">{undistributed.count}</span></>
         : "Brigadalar"} subtitle={`Zayavkadagi mahsulotlar brigadalarga topshiriq sifatida biriktiriladi. Brigadir — Xodimlar ro'yxatidan. Qo'lidagi xomashyo topshiriq bajarilganda retsept bo'yicha kamayadi.${undistributed.count > 0 ? ` Kelgan mahsulotlardan ${undistributed.count} tasi hali taqsimlanmagan: ${undistributed.names.slice(0, 5).join(", ")}.` : ""}`}
         action={<LinkButton href="/stock?tab=brigades" variant="secondary"><Boxes size={16} /> Xomashyo taqsimlash</LinkButton>} />
+      {tabs}
       {canEdit && (
         <Card className="mb-6">
           <h2 className="mb-3 font-semibold">Yangi brigada</h2>

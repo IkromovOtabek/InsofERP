@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { parseForm, zDec, zStr, zOpt, type ActionState } from "@/lib/action";
+import { setDefectAmount } from "@/lib/defects";
 import { saveBrigade as saveBrigadeData } from "@/lib/brigades";
 
 const schema = z.object({
@@ -34,4 +35,15 @@ export async function toggleBrigade(id: string) {
     await audit(tx, s.userId, "UPDATE", "Brigade", id, { isActive: b.isActive }, { isActive: !b.isActive });
   });
   revalidatePath("/brigades"); revalidatePath("/orders/new");
+}
+
+/** Brak summasini tahrirlash — brigada oyligidan ushlanadigan pul (`lib/defects.ts`). */
+export async function saveDefectAmount(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("tasks", "pay");
+  const r = parseForm(z.object({ amount: zDec() }), fd);
+  if ("error" in r) return { error: r.error };
+  const res = await setDefectAmount(id, r.data.amount, s.userId);
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/brigades"); revalidatePath("/dashboard");
+  return { ok: true };
 }
