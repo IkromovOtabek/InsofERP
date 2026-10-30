@@ -10,10 +10,11 @@ export type SP = Record<string, string | undefined>;
 export const BI_ROLES = ["DIRECTOR", "FINANCE", "ACCOUNTING"] as const;
 
 /** Barcha BI sahifalari uchun umumiy tayyorgarlik: sessiya + davr. */
-export async function biContext(searchParams: Promise<SP>): Promise<{ s: Session; sp: SP; range: Range }> {
+export async function biContext(searchParams: Promise<SP>, path = "/bi-tahlil"): Promise<{ s: Session; sp: SP; range: Range }> {
   const s = await requireSession();
-  // Rol emas, modul ruxsati (perms) hal qiladi: direktor «BI tahlil»ni ochib bergan xodim ham kiradi, «yo'q» qilingan rol kirmaydi
-  if (!pathAllowed("/bi-tahlil", s.role, s.perms)) throw new AccessDenied();
+  // Rol emas, modul ruxsati (perms) hal qiladi: direktor «BI tahlil»ni ochib bergan xodim ham kiradi, «yo'q» qilingan rol kirmaydi.
+  // `path` — sahifaning o'z yo'li: Tahlil'dan alohida sahifa berilgan rol (Ish boshqaruvchi «Moliya»si) faqat o'shani ochadi
+  if (!pathAllowed(path, s.role, s.perms)) throw new AccessDenied();
   const sp = await searchParams;
   return { s, sp, range: parseRange(sp) };
 }

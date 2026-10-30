@@ -3,7 +3,7 @@ import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDown
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { money, date, deliveryAt } from "@/lib/format";
+import { date, fmtNum } from "@/lib/format";
 import { fmtUnitTotals } from "@/lib/unit";
 import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { OrderLoadCalendar } from "./load-calendar";
@@ -104,8 +104,9 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           <Tabs current={st ?? ""} items={tabs} />
         </>
       )}
-      <Table className="[&_td]:py-2 [&_th]:py-2">
-        <thead><tr><Th>Kiritildi</Th><Th>Yetkazish</Th><Th>Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
+      {/* Ixcham: odatiy noutbukda (≈1000px) ham gorizontal scrollsiz sig'adi — sarlavhalar qatorlanadi, soat sana ostida */}
+      <Table className="[&_td]:px-2 [&_td]:py-2 [&_td]:text-[13px] [&_th]:px-2 [&_th]:py-2 [&_th]:whitespace-normal">
+        <thead><tr><Th>Kiritildi</Th><Th>Yetkazish</Th><Th className="min-w-52">Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa, so&apos;m</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {orders.length === 0 && <Empty text="Kutayotgan zayavkalar yo'q" />}
           {groups.flatMap((g) => g.map((o, idx) => {
@@ -117,8 +118,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             const first = idx === 0;
             return (
               <Tr key={o.id} className={first && g.length > 1 ? "[&>td]:border-t-2 [&>td]:border-t-slate-200" : ""}>
-                <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{date(o.date)}</Link></Td>
-                <Td>{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
+                <Td className="whitespace-nowrap"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{date(o.date)}</Link></Td>
+                <Td className="whitespace-nowrap">{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : <>{date(o.deliveryDate)}{o.deliveryTime && <div className="text-xs text-slate-500">{o.deliveryTime}</div>}</>}</Td>
                 <Td>
                   {o.kind === "STOCK" ? (
                     // Sklad zaxirasi: mijoz yo'q — mahsulot hovlida erkin qoldiq bo'lib qoladi
@@ -143,11 +144,12 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                     <div className="flex items-center gap-1.5 pl-3 text-slate-400"><CornerDownRight size={12} className="shrink-0" /><span className="text-xs font-normal">{o.customer.name}</span></div>
                   )}
                 </Td>
-                <Td>{o.items.map((i) => i.product.code).join(", ")}{o.needsPump && " · nasos"}{!o.needsDelivery && " · o'zi oladi"}{o.isUrgent && <span className="ml-1 rounded bg-red-50 px-1.5 py-px text-[11px] font-medium text-red-700">zarur</span>}{o.onCredit && <span className="ml-1 rounded bg-amber-50 px-1.5 py-px text-[11px] font-medium text-amber-700">qarzga</span>}</Td>
-                <Td right className="whitespace-nowrap">{vol}</Td>
-                <Td right>{o.kind === "STOCK" ? <span className="text-slate-300">—</span> : money(sum)}</Td>
+                <Td>{o.items.map((i) => i.product.code).join(", ")}{o.needsPump && " · nasos"}{!o.needsDelivery && " · o'zi oladi"}{o.isUrgent && <>{" "}<span className="rounded bg-red-50 px-1.5 py-px text-[11px] font-medium text-red-700">zarur</span></>}{o.onCredit && <>{" "}<span className="rounded bg-amber-50 px-1.5 py-px text-[11px] font-medium text-amber-700">qarzga</span></>}</Td>
+                {/* Har birlik jami bo'linmaydi, birliklar orasida qator ko'chishi mumkin: «6 m³ ·» / «40 dona» */}
+                <Td right className="whitespace-normal">{vol.split(" · ").map((v, i, a) => <span key={i}><span className="whitespace-nowrap">{v}{i < a.length - 1 && " ·"}</span>{i < a.length - 1 && " "}</span>)}</Td>
+                <Td right>{o.kind === "STOCK" ? <span className="text-slate-300">—</span> : fmtNum(sum)}</Td>
                 <Td className="text-slate-500">{o.createdBy.fullName}</Td>
-                <Td><OrderStatusBadge status={o.status} /></Td>
+                <Td className="whitespace-nowrap"><OrderStatusBadge status={o.status} /></Td>
               </Tr>
             );
           }))}

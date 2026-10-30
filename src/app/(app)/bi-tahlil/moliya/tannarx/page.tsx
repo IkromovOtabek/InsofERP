@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 /** Tannarx hisobi — sukut bo'yicha o'tgan (yopilgan) oy. */
 export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
   await requirePage("/bi-tahlil/moliya/tannarx");
-  const { s: session, sp, range } = await biContext(searchParams);
+  const { s: session, sp, range } = await biContext(searchParams, "/bi-tahlil/moliya/tannarx");
   const cur = monthKeyOf(new Date());
   const month = isMonthKey(sp.oy) && sp.oy <= cur ? sp.oy : addMonths(cur, -1);
   const s = await costSheet(month);

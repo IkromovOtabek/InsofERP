@@ -13,6 +13,21 @@ export type NavChild = { href: string; label: string };
 export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[]; hidden?: boolean; menuFor?: Role[]; menuHide?: Role[] };
 
 const BI_ROLES: Role[] = ["DIRECTOR", "FINANCE", "ACCOUNTING"];
+/**
+ * Ish boshqaruvchi kabinetidagi «Moliya» — Tahlil'ning shu sahifalari (faqat ko'rish): qarz varaqlari (qatordan akt sverka),
+ * to'lov kalendari, tannarx, xom-ashyo, DDS, PNL, BSH. Ruxsat har sahifaga alohida (eng uzun mos yo'l) — Tahlil'ning qolgani yopiq.
+ */
+const SUPERVISOR_FIN: NavChild[] = [
+  { href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" },
+  { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" },
+  { href: "/bi-tahlil/moliya/kalendar", label: "To'lov kalendari" },
+  { href: "/bi-tahlil/moliya/tannarx", label: "Tannarx hisobi" },
+  { href: "/bi-tahlil/ombor/xomashyo", label: "Xom-ashyo balansi" },
+  { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (Cash Flow)" },
+  { href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" },
+  { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" },
+];
+const SUPERVISOR_FIN_ROLES: Role[] = [...BI_ROLES, "SUPERVISOR"];
 /** Logistika rahbari va dispetcher — bizda bitta LOGISTICS roli (TZ 15: Logistics Director + Dispatcher). */
 const LOGI: Role[] = ["LOGISTICS"];
 
@@ -163,6 +178,10 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ml",               label: "ML tahlil",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ml/anomaliyalar", label: "Anomaliyalar" }, { href: "/bi-tahlil/ml/churn", label: "Churn tahlili" }, { href: "/bi-tahlil/ml/klasterlar", label: "Klasterlar" }] },
   { href: "/bi-tahlil/ai",               label: "Insof AI",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ai/chat", label: "AI Chat" }, { href: "/bi-tahlil/ai/telegram", label: "Telegram bot" }] },
+  // Ish boshqaruvchi: «Moliya» bandi (menyusi faqat unga) + har sahifaning yashirin ruxsati — `SUPERVISOR_FIN`.
+  // Tahlil blokidan keyin turadi: `perm-modules` modul guruhini birinchi mos banddan oladi
+  { href: "/bi-tahlil/moliya/pnl", label: "Moliya", roles: SUPERVISOR_FIN_ROLES, group: "Moliya", menuFor: ["SUPERVISOR"], children: SUPERVISOR_FIN },
+  ...SUPERVISOR_FIN.map((c): NavItem => ({ href: c.href, label: c.label, roles: SUPERVISOR_FIN_ROLES, group: "Tahlil", hidden: true })),
   // Insof ECO ilovasida ro'yxatdan o'tgan hamma (tadbirkor, quruvchi, haydovchi) — faqat direktor
   { href: "/ilova-foydalanuvchilari", label: "Ilova foydalanuvchilari", roles: ["DIRECTOR"], group: "Boshqaruv" },
   { href: "/settings",    label: "Sozlamalar",         roles: ["DIRECTOR"], group: "Boshqaruv" },

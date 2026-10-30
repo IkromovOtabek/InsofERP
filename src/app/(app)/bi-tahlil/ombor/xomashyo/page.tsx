@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePage("/bi-tahlil/ombor/xomashyo");
-  const { sp, range } = await biContext(searchParams);
+  const { sp, range } = await biContext(searchParams, "/bi-tahlil/ombor/xomashyo");
   const r = await rawBalance(parseMonth(sp.oy));
   return (
     <BiPage title="Ombor" subtitle="Xom-ashyo: haqiqiy sarf retsept normasi bilan solishtiriladi" tab="stock" range={range} period={false}>

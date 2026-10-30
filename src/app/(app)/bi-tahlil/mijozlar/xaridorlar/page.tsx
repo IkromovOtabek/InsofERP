@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePage("/bi-tahlil/mijozlar/xaridorlar");
-  const { sp, range } = await biContext(searchParams);
+  const { sp, range } = await biContext(searchParams, "/bi-tahlil/mijozlar/xaridorlar");
   const day = parseDebtDay(sp.sana);
   const [s, company] = await Promise.all([customerDebtSheet(day, sp.tur === "CASH" || sp.tur === "BANK" ? sp.tur : null, parseDebtStart(sp.dan, day)), getCompany()]);
   return (
