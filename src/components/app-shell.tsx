@@ -377,7 +377,8 @@ export function AppShell({ items, user, brand, ai = false, apk = null, ios = nul
         </header>
         {ai && <AiPanel />}
         <main className="app-main min-w-0 flex-1 px-3 py-5 sm:px-4 sm:py-6 lg:px-8 lg:py-7">
-          <div className="mx-auto max-w-[1400px]">{children}</div>
+          {/* Menyu yig'ilganda (`sb-collapsed`) eni cheklanmaydi — ro'yxat va jadvallar bo'shagan joyga yoyiladi */}
+          <div className="mx-auto max-w-[1400px] [.sb-collapsed_&]:lg:max-w-none">{children}</div>
         </main>
       </div>
 
