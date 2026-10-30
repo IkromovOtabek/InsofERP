@@ -14,7 +14,7 @@ import { BrigadePayView, BrigadeDefectsView } from "./pay-view";
 import { BrigadeStaffView } from "./staff-view";
 import { productionStaff } from "@/lib/production-staff";
 import { ROLE_LABELS } from "@/lib/nav";
-import { Badge, Button, Card, Empty, LinkButton, PageHeader, Progress, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Card, LinkButton, PageHeader, Progress, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
 
@@ -63,7 +63,7 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
   }
   const [brigades, employees, stocks, undistributed] = await Promise.all([
     // Brigadirning login roli ham kerak: topshiriq ECO ilovasiga faqat BRIGADIER logini bor brigadirga tushadi
-    db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: { include: { user: { select: { role: true, isActive: true } } } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } }),
+    db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: { include: { user: { select: { role: true, isActive: true } } } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } }, _count: { select: { members: { where: { isActive: true } } } } } }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } }),
     // Brigada qo'lidagi xomashyo va shu xomashyo bilan qancha chiqara olishi
     brigadeStocks({ includeInactive: true }),
@@ -89,48 +89,84 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
           ]} />
         </Card>
       )}
-      <Table>
-        <thead><tr><Th>Brigada</Th><Th>Brigadir</Th><Th>Telefon</Th><Th>Ochiq topshiriqlar</Th><Th>Bajarilishi</Th><Th>Qo&apos;lidagi xomashyo</Th><Th>Ishlab chiqara oladi</Th><Th>Holat</Th><Th></Th></tr></thead>
-        <tbody>
-          {brigades.length === 0 && <Empty text="Brigadalar yo'q" icon={HardHat} />}
+      {brigades.length === 0 ? <Card className="text-sm text-slate-500">Brigadalar yo&apos;q</Card> : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {brigades.map((b) => {
             const total = b.tasks.reduce((x, t) => x + Number(t.qty), 0);
             const done = b.tasks.reduce((x, t) => x + Number(t.doneQty), 0);
             const st = stockOf.get(b.id);
             const best = st?.makes.filter((m) => m.canMake > 0).sort((x, y) => y.canMake - x.canMake)[0] ?? null;
             return (
-              <Tr key={b.id}>
-                <Td className="font-medium">{b.name}{b.note && <div className="text-xs text-slate-500">{b.note}</div>}</Td>
-                <Td>
-                  {b.leader?.fullName ?? "—"}
-                  {b.leader && <div className="mt-0.5 text-xs">{
+              <Card key={b.id} className={b.isActive ? "flex flex-col" : "flex flex-col opacity-70"}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><HardHat size={16} /></div>
+                    <div className="min-w-0">
+                      <div className="font-semibold leading-snug">{b.name}</div>
+                      {b.note && <div className="text-xs text-slate-500">{b.note}</div>}
+                    </div>
+                  </div>
+                  {b.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}
+                </div>
+
+                <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500">Brigadir</span>
+                    <span className="truncate font-medium">{b.leader?.fullName ?? "—"}</span>
+                  </div>
+                  {b.leader && <div className="mt-0.5 text-right text-xs">{
                     !b.leader.user ? <span className="text-amber-700">Ilovaga kirmaydi — Xodimlar bo&apos;limidan login bering</span>
                     : b.leader.user.role === "BRIGADIER" ? <span className="text-emerald-700">Insof ECO ilovasiga kiradi</span>
                     : <span className="text-slate-500">Login bor · {ROLE_LABELS[b.leader.user.role]}</span>
                   }</div>}
-                </Td>
-                <Td>{b.phone ?? b.leader?.phone ?? "—"}</Td>
-                <Td><Link href={`/tasks?brigade=${b.id}`} className="inline-flex items-center gap-1 hover:underline">{b.tasks.length} ta <ArrowRight size={13} /></Link></Td>
-                <Td className="min-w-40"><div className="text-xs text-slate-500">{qty(done)} / {qty(total)} · qoldiq {qty(total - done)}</div><Progress value={done} max={total || 1} tone={done >= total && total > 0 ? "success" : "default"} /></Td>
-                <Td className="text-slate-600">
-                  {st && st.materials.length > 0 ? (
-                    <>
-                      <div className="text-sm font-medium text-slate-900">{st.materials.length} xil · {money(st.value)}</div>
-                      <div className="text-xs text-slate-500">{st.materials.slice(0, 3).map((m) => `${m.name} ${qty(m.qty)} ${unitLabel(m.unit)}`).join(", ")}{st.materials.length > 3 ? "…" : ""}</div>
-                    </>
-                  ) : <Link href="/stock?tab=brigades" className="text-xs text-slate-500 underline">xomashyo berilmagan</Link>}
-                </Td>
-                <Td>
-                  {best ? <span className="text-sm font-semibold text-emerald-700">{qty(best.canMake)} {unitLabel(best.unit)}</span> : <span className="text-xs text-slate-400">—</span>}
-                  {best && <div className="text-xs text-slate-500">{best.product}</div>}
-                </Td>
-                <Td>{b.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</Td>
-                <Td>{canEdit && <form action={toggleBrigade.bind(null, b.id)}><Button variant="secondary" className="px-2 py-1 text-xs">{b.isActive ? "O'chirish" : "Yoqish"}</Button></form>}</Td>
-              </Tr>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500">Telefon</span>
+                    <span className="tabular">{b.phone ?? b.leader?.phone ?? "—"}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500">Xodimlar</span>
+                    <Link href="/brigades?tab=xodimlar" className="hover:underline">{b._count.members} kishi</Link>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <Link href={`/tasks?brigade=${b.id}`} className="inline-flex items-center gap-1 font-medium hover:underline">{b.tasks.length} ochiq topshiriq <ArrowRight size={13} /></Link>
+                    <span className="text-xs text-slate-500 tabular">{qty(done)} / {qty(total)}</span>
+                  </div>
+                  <Progress value={done} max={total || 1} tone={done >= total && total > 0 ? "success" : "default"} />
+                  <div className="mt-0.5 text-xs text-slate-500">qoldiq {qty(total - done)}</div>
+                </div>
+
+                <div className="mt-3 space-y-2 text-sm">
+                  <div className="rounded-lg border border-slate-100 px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Qo&apos;lidagi xomashyo</div>
+                    {st && st.materials.length > 0 ? (
+                      <>
+                        <div className="font-medium">{st.materials.length} xil · {money(st.value)}</div>
+                        <div className="text-xs text-slate-500">{st.materials.slice(0, 3).map((m) => `${m.name} ${qty(m.qty)} ${unitLabel(m.unit)}`).join(", ")}{st.materials.length > 3 ? "…" : ""}</div>
+                      </>
+                    ) : <Link href="/stock?tab=brigades" className="text-xs text-slate-500 underline">xomashyo berilmagan</Link>}
+                  </div>
+                  <div className="rounded-lg border border-slate-100 px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Ishlab chiqara oladi</div>
+                    {best ? <div className="font-semibold text-emerald-700">{qty(best.canMake)} {unitLabel(best.unit)}</div> : <div className="text-xs text-slate-400">—</div>}
+                    {best && <div className="text-xs text-slate-500">{best.product}</div>}
+                  </div>
+                </div>
+
+                {canEdit && (
+                  <div className="mt-auto pt-3">
+                    <div className="flex justify-end border-t border-slate-100 pt-3">
+                      <form action={toggleBrigade.bind(null, b.id)}><Button variant="secondary" size="sm">{b.isActive ? "Nofaol qilish" : "Faollashtirish"}</Button></form>
+                    </div>
+                  </div>
+                )}
+              </Card>
             );
           })}
-        </tbody>
-      </Table>
+        </div>
+      )}
     </div>
   );
 }
