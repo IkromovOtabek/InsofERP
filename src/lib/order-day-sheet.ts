@@ -21,6 +21,21 @@ export const PAY_GROUPS: { key: PayGroupKey; label: string }[] = [
   { key: "DEBT", label: "Qarz (tekin)" },
 ];
 
+/** Zayavkaning to'lov bloki — kunlik varaq va Realizatsiya reestri (`lib/realization.ts`) uchun bitta qoida. */
+export function payGroupOf(o: { onCredit: boolean; payMethod: string | null; items: { nds: boolean }[] }): PayGroupKey {
+  return o.onCredit ? "DEBT" : o.payMethod ? (o.payMethod === "BANK" ? "BANK" : "CASH") : o.items.some((i) => i.nds) ? "BANK" : "CASH";
+}
+
+/** Mahsulot papkasining eng yuqori nomi (Beton, Pilta …) — har korxonada papkalar o'zicha. */
+export function rootGroupName(groups: { id: string; name: string; parentId: string | null }[]) {
+  const gBy = new Map(groups.map((g) => [g.id, g]));
+  return (id: string | null) => {
+    let g = id ? gBy.get(id) : undefined;
+    while (g?.parentId && gBy.get(g.parentId)) g = gBy.get(g.parentId);
+    return g?.name ?? "Boshqa";
+  };
+}
+
 export type DaySheetRow = {
   orderId: string; customer: string; product: string; unit: string;
   qty: number; price: number; delivery: number; net: number; vat: number; total: number;
@@ -66,19 +81,12 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
   ]);
 
   // Mahsulot bo'yicha jami — eng yuqori papka nomi bilan (har korxonada papkalar o'zicha)
-  const gBy = new Map(groups.map((g) => [g.id, g]));
-  const rootName = (id: string | null) => {
-    let g = id ? gBy.get(id) : undefined;
-    while (g?.parentId && gBy.get(g.parentId)) g = gBy.get(g.parentId);
-    return g?.name ?? "Boshqa";
-  };
+  const rootName = rootGroupName(groups);
   const products = new Map<string, { name: string; unit: string; qty: number }>();
 
   const rowsBy: Record<PayGroupKey, DaySheetRow[]> = { BANK: [], CASH: [], DEBT: [] };
   for (const o of orders) {
-    const key: PayGroupKey = o.onCredit ? "DEBT"
-      : o.payMethod ? (o.payMethod === "BANK" ? "BANK" : "CASH")
-      : o.items.some((i) => i.nds) ? "BANK" : "CASH";
+    const key = payGroupOf(o);
     const fee = Number(o.deliveryFee);
     o.items.forEach((i, n) => {
       const qty = Number(i.qtyM3), price = Number(i.price);

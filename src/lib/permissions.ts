@@ -81,6 +81,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   production: [
     { key: "batch",   label: "Zames (partiya) yozish",           roles: ["PRODUCTION"] },
     { key: "assign",  label: "Brigadalarga taqsimlash",          roles: ["PRODUCTION"] },
+    { key: "reschedule", label: "Zayavkani boshqa kunga ko'chirish (doska)", roles: ["PRODUCTION", "SUPERVISOR"], hint: "Qabul qilingan zayavka ham — yangi kunning kunlik limiti tekshiriladi" },
     { key: "recipe",  label: "Retsept versiyasi / import",       roles: ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"] },
     { key: "report",  label: "Brak, davomat, smena hisoboti",    roles: ["PRODUCTION", "SUPERVISOR"] },
     { key: "batch_storno", label: "Zamesni bekor qilish",       roles: [], hint: "Xomashyo skladga qaytadi, mahsulot chiqariladi — odatda faqat direktor" },

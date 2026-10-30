@@ -6,6 +6,7 @@ import { requireAction } from "@/lib/auth";
 import { parseForm, type ActionState } from "@/lib/action";
 import { batchSchema, createProductionBatch } from "@/lib/production-batch";
 import { cancelBatch } from "@/lib/storno";
+import { orderReschedule } from "@/lib/orders";
 
 /**
  * Zames qaydi: retsept bo'yicha xomashyo sarfi, tayyor mahsulot kirimi, zayavka → IN_PRODUCTION.
@@ -31,4 +32,14 @@ export async function stornoBatch(id: string, reason: string): Promise<ActionSta
   if ("error" in r) return { error: r.error };
   revalidatePath("/production"); revalidatePath(`/production/${id}`); revalidatePath("/orders"); revalidatePath("/stock"); revalidatePath("/trips"); revalidatePath("/");
   return { ok: true, note: r.note };
+}
+
+/** Doskadagi kartada sanani bosib zayavkani boshqa kunga ko'chirish. Qoida `lib/orders.ts` (`orderReschedule`) da. */
+export async function rescheduleOrder(id: string, day: string): Promise<ActionState> {
+  const s = await requireAction("production", "reschedule");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: "Sanani tanlang" };
+  const r = await orderReschedule(id, new Date(day), s.userId);
+  if (r.error) return { error: r.error };
+  revalidatePath("/production"); revalidatePath("/orders"); revalidatePath(`/orders/${id}`); revalidatePath("/tasks");
+  return { ok: true, note: "Sana o'zgardi" };
 }

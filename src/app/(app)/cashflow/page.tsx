@@ -41,7 +41,9 @@ async function statementBalance(cashAccountId: string, date: { lt: Date } | { lt
 
 /** Kirim-Chiqim: mijoz to'lovlari (Payment) + boshqa kirimlar va barcha chiqimlar (CashTransaction) bitta jurnalda. */
 export default async function CashflowPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; account?: string; category?: string; method?: string }> }) {
-  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "cashflow" });
+  // Ish boshqaruvchi — faqat ko'radi (Moliya → «Kassa»): yozish formasi va amallar modul ruxsati bilan
+  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], { module: "cashflow" });
+  const canCreate = canDo(s, "cashflow", "create");
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
   const sp = await searchParams;
   const tab = sp.tab ?? "all";
@@ -174,10 +176,12 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
-          <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
-          <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
-        </Card>
+        {canCreate && (
+          <Card className="lg:col-span-3">
+            <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
+            <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
+          </Card>
+        )}
         <Card className="lg:col-span-2">
           <h2 className="mb-3 font-semibold">Chiqimlar kategoriya bo&apos;yicha</h2>
           {byCat.size === 0 ? <p className="text-sm text-slate-500">Davrda chiqim yo&apos;q</p> : (

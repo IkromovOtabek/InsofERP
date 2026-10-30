@@ -17,8 +17,11 @@ import { cn } from "@/lib/utils";
 const WEEKDAYS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
 const GROUP_TONE: Record<string, SheetTone> = { BANK: "blue", CASH: "green", DEBT: "red" };
 
-/** Uch blokning ustunlari bir-birining tagida tursin (Excel'dagidek) — bir xil kenglik, matn bo'linmaydi. */
-const COL_W = [200, 190, 64, 80, 100, 100, 130, 110, 130, 130, 140, 220, 70];
+/**
+ * Uch blokning ustunlari bir-birining tagida tursin (Excel'dagidek) — bir xil kenglik (%, `table-fixed`).
+ * Jadval ekran eniga sig'adi (gorizontal aylantirishsiz): matn ustunlari qatorga bo'linadi, summalar bo'linmaydi.
+ */
+const COL_W = [11, 9, 4.5, 5, 7.5, 8, 9, 8, 9.5, 8, 8, 8.5, 4];
 
 const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
 const nq = (v: number) => fmtNum(v, 3);
@@ -88,8 +91,8 @@ export default async function OrderDayPage({ params }: { params: Promise<{ sana:
 function GroupSheet({ g }: { g: DaySheetGroup }) {
   const tone = GROUP_TONE[g.key];
   return (
-    <Sheet lang="uz" maxHeight="none" className="[&_td]:whitespace-nowrap">
-      <colgroup>{COL_W.map((w, i) => <col key={i} style={{ width: w, minWidth: w }} />)}</colgroup>
+    <Sheet lang="uz" maxHeight="none" className="[&_table]:min-w-[960px] [&_table]:table-fixed [&_table]:text-[12px] [&_td]:px-1.5 [&_td]:break-words [&_th]:px-1.5 [&_th]:text-[12px] [&_th]:whitespace-normal">
+      <colgroup>{COL_W.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
       <SheetHead>
         <tr>
           <SheetTh tone={tone} colSpan={13} className="text-left">
@@ -122,7 +125,7 @@ function GroupSheet({ g }: { g: DaySheetGroup }) {
               <SheetTd right muted={!r.vat}>{r.vat ? n0(r.vat) : "0"}</SheetTd>
               <SheetTd right strong>{n0(r.total)}</SheetTd>
               <SheetTd tone="yellow">{r.receiver ?? "—"}</SheetTd>
-              <SheetTd tone="yellow" className="whitespace-nowrap">{r.phone ?? "—"}</SheetTd>
+              <SheetTd tone="yellow">{r.phone ?? "—"}</SheetTd>
               <SheetTd tone="yellow">{r.site}</SheetTd>
               <SheetTd tone="yellow" center>{r.time ?? "—"}</SheetTd>
             </SheetTr>
@@ -132,7 +135,7 @@ function GroupSheet({ g }: { g: DaySheetGroup }) {
       <SheetFoot>
         <tr>
           <SheetTd colSpan={3}>Jami: {g.label}</SheetTd>
-          <SheetTd right>{g.qtyText || "0"}</SheetTd>
+          <SheetTd right className="whitespace-normal">{g.qtyText || "0"}</SheetTd>
           <SheetTd />
           <SheetTd right>{fmtNum(g.totals.delivery, 0)}</SheetTd>
           <SheetTd right>{fmtNum(g.totals.net, 0)}</SheetTd>

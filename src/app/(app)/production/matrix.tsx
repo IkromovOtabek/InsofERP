@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown } from "lucide-react";
+import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown, CalendarDays, Loader2 } from "lucide-react";
 import { Card, CardHeader, Checkbox, Input, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
-import { date, fmtNum } from "@/lib/format";
+import { date, fmtNum, isoDate } from "@/lib/format";
+import { rescheduleOrder } from "./actions";
 import { unitLabel } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 // Faqat tiplar: lib fayli Prisma (db) ni import qiladi — qiymat olinsa brauzer bundle'iga tushib qoladi
-import type { MatrixAssign, MatrixOrder, MatrixProduct, MatrixStatus, ProductionMatrix } from "@/lib/production-matrix";
+import type { MatrixAssign, MatrixOrder, MatrixProduct, ProductionMatrix } from "@/lib/production-matrix";
 import type { UnitTotal } from "@/lib/unit";
 
 /**
@@ -19,24 +21,24 @@ import type { UnitTotal } from "@/lib/unit";
  * Ma'lumot `lib/production-matrix.ts` dan; bu yerda faqat filtr va ko'rinish.
  */
 
-const MATRIX_STATUS_LABEL: Record<MatrixStatus, string> = { ready: "Tayyor", pour: "Quyilmoqda", queue: "Navbatda" };
-const DOT: Record<MatrixStatus, string> = { ready: "bg-amber-500", pour: "bg-red-500", queue: "bg-emerald-500" };
-const BORDER: Record<MatrixStatus, string> = { ready: "border-amber-400", pour: "border-red-400", queue: "border-emerald-400" };
+/** Doska ustunlari — zayavka qanchalik tayyor: hech narsa / bir qismi / hammasi (brigada bajargani, quyilgani, jo'natilgani, hovlidagi qoldiq). */
+type ReadyCol = "none" | "part" | "ready";
+const READY_LABEL: Record<ReadyCol, string> = { none: "Tayyor emas", part: "Qisman tayyor", ready: "Tayyor" };
+const DOT: Record<ReadyCol, string> = { none: "bg-red-500", part: "bg-amber-500", ready: "bg-emerald-500" };
+const BORDER: Record<ReadyCol, string> = { none: "border-red-400", part: "border-amber-400", ready: "border-emerald-400" };
 /** Matritsa: brigada tayinlash holati */
 const ASSIGNS: MatrixAssign[] = ["none", "part", "full"];
 const ASSIGN_LABEL: Record<MatrixAssign, string> = { none: "Brigada tayinlanmagan", part: "Qisman tayinlangan", full: "Brigada tayinlangan" };
 const ASSIGN_SHORT: Record<MatrixAssign, string> = { none: "Tayinlanmagan", part: "Qisman", full: "Tayinlangan" };
 const ASSIGN_TONE: Record<MatrixAssign, SheetTone> = { none: "red", part: "yellow", full: "green" };
 const ASSIGN_DOT: Record<MatrixAssign, string> = { none: "bg-red-500", part: "bg-amber-500", full: "bg-emerald-500" };
-/** Doska ishlab chiqarish oqimi tartibida: navbatda → quyilmoqda → tayyor */
-const FLOW: MatrixStatus[] = ["queue", "pour", "ready"];
+/** Doska tayyorlik tartibida: tayyor emas → qisman → tayyor */
+const FLOW: ReadyCol[] = ["none", "part", "ready"];
 
 const n0 = (v: number) => fmtNum(v, 3);
 const signed = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "") + fmtNum(Math.abs(v), 3);
 const short = (o: MatrixOrder) => (o.dateUnknown ? "sanasiz" : date(new Date(o.deliveryDate)).slice(0, 5));
 const isLate = (o: MatrixOrder, today: number) => !o.dateUnknown && o.status !== "ready" && new Date(o.deliveryDate).getTime() < today;
-const sumItems = (o: MatrixOrder) => Object.values(o.items).reduce((s, q) => s + q, 0);
-const coverage = (o: MatrixOrder) => { const t = sumItems(o); return t ? Object.keys(o.items).reduce((s, k) => s + (o.alloc[k] ?? 0), 0) / t : 1; };
 
 // Qotib turadigan ustunlar: chapda №, mahsulot, qoldiq; o'ngda natija. Kengliklar qat'iy — `left` shu yig'indidan.
 const W_NO = "left-0 w-10 min-w-10 max-w-10";
@@ -46,11 +48,11 @@ const W_TT = "right-0 w-[104px] min-w-[104px] xl:w-[124px] xl:min-w-[124px] shad
 const C_NO = cn("sticky z-20", W_NO), C_NAME = cn("sticky z-20", W_NAME), C_ST = cn("sticky z-20", W_ST), C_TT = cn("sticky z-20", W_TT);
 const B_NO = cn("sticky z-[1]", W_NO), B_NAME = cn("sticky z-[1]", W_NAME), B_ST = cn("sticky z-[1]", W_ST), B_TT = cn("sticky z-[1]", W_TT);
 
-function Dot({ s }: { s: MatrixStatus }) {
+function Dot({ s }: { s: ReadyCol }) {
   return <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0 rounded-full", DOT[s])} />;
 }
 
-export function ProductionMatrixView({ data, board, filters, tab, stockHref }: { data: ProductionMatrix; board: BoardOrder[]; filters: React.ReactNode; tab: string; stockHref?: string }) {
+export function ProductionMatrixView({ data, board, filters, tab, stockHref, canMove }: { data: ProductionMatrix; board: BoardOrder[]; filters: React.ReactNode; tab: string; stockHref?: string; canMove: boolean }) {
   const [sel, setSel] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [asf, setAsf] = useState<Record<MatrixAssign, boolean>>({ none: true, part: true, full: true });
@@ -205,7 +207,7 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref }: {
         </div>
       </Card>
 
-      <Board orders={board} filters={filters} tab={tab} data={data} sel={selP} net={selP ? net(selP) : 0} today={today} onClear={() => setSel(null)} onPick={pick} />
+      <Board orders={board} filters={filters} tab={tab} data={data} sel={selP} net={selP ? net(selP) : 0} today={today} canMove={canMove} onClear={() => setSel(null)} onPick={pick} />
     </div>
   );
 }
@@ -217,17 +219,69 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref }: {
 export type BoardOrder = {
   id: string; customer: string; deliveryDate: string; deliveryTime: string | null; dateUnknown: boolean; isUrgent: boolean;
   draft: boolean; pickup: boolean; blacklisted: boolean; soon: boolean; due: string | null;
-  col: MatrixStatus; assign: MatrixAssign; brigades: string[];
-  items: { itemId: string; productId: string; name: string; unit: string; qty: number; left: number }[];
+  /** Yetkazilgan/yopilgan yoki barcha topshiriqlari bajarilgan */
+  finished: boolean;
+  /** Sanasini doskadan o'zgartirsa bo'ladi (yetkazilmagan, bekor qilinmagan) */
+  movable: boolean;
+  assign: MatrixAssign; brigades: string[];
+  /** `done` — tayyor miqdor (brigada bajargani, quyilgani, jo'natilgani — kattasi), `shipped` — jo'natilgan ulushi */
+  items: { itemId: string; productId: string; name: string; unit: string; qty: number; left: number; done: number; shipped: number }[];
 };
 
-function Board({ orders, filters, tab, data, sel, net, today, onClear, onPick }: {
-  orders: BoardOrder[]; filters: React.ReactNode; tab: string; data: ProductionMatrix; sel?: MatrixProduct; net: number; today: number; onClear: () => void; onPick: (id: string) => void;
+/**
+ * Zayavka tayyorligi (0..1) va ustuni. Mahsulot bo'yicha: tayyor = max(done, jo'natilgan + hovlidan ajratilgan qoldiq),
+ * miqdordan oshmaydi; ulush — mahsulotlar ulushining o'rtachasi (m³ va dona qo'shilmaydi).
+ */
+function readiness(o: BoardOrder, alloc: Record<string, number> | undefined): { col: ReadyCol; pct: number } {
+  if (o.finished) return { col: "ready", pct: 1 };
+  const by = new Map<string, { qty: number; done: number; shipped: number }>();
+  for (const i of o.items) {
+    const x = by.get(i.productId) ?? { qty: 0, done: 0, shipped: 0 };
+    x.qty += i.qty; x.done += i.done; x.shipped += i.shipped; by.set(i.productId, x);
+  }
+  const parts = [...by].filter(([, x]) => x.qty > 0).map(([pid, x]) => Math.min(1, Math.max(x.done, x.shipped + (alloc?.[pid] ?? 0)) / x.qty));
+  if (!parts.length) return { col: "none", pct: 0 };
+  const pct = parts.reduce((s, v) => s + v, 0) / parts.length;
+  return { col: parts.every((v) => v >= 0.9995) ? "ready" : pct > 0.0005 ? "part" : "none", pct };
+}
+
+/** Kartadagi yetkazish sanasi — bosilsa kalendar ochiladi, tanlangan kunga zayavka ko'chiriladi (`rescheduleOrder`). */
+function DateMove({ o, label, className }: { o: BoardOrder; label: string; className?: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const today = isoDate(new Date());
+  const open = () => { const el = ref.current; if (!el) return; try { el.showPicker(); } catch { el.focus(); } };
+  const pickDay = (v: string) => {
+    if (!v || v === (o.dateUnknown ? "" : isoDate(new Date(o.deliveryDate)))) return;
+    setErr(null);
+    start(async () => {
+      const r = await rescheduleOrder(o.id, v);
+      if (r?.error) setErr(r.error); else router.refresh();
+    });
+  };
+  return (
+    <span className="relative inline-flex flex-col">
+      <button type="button" onClick={open} disabled={pending} title="Bosing — boshqa sanaga ko'chirish"
+        className={cn("inline-flex items-center gap-1 rounded px-1 -mx-1 whitespace-nowrap underline decoration-dotted underline-offset-2 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60", className)}>
+        {pending ? <Loader2 size={11} className="animate-spin" /> : <CalendarDays size={11} />} {label}
+      </button>
+      <input ref={ref} type="date" min={today} defaultValue={o.dateUnknown ? "" : isoDate(new Date(o.deliveryDate))} onChange={(e) => pickDay(e.target.value)}
+        tabIndex={-1} aria-label="Yangi yetkazish sanasi" className="pointer-events-none absolute bottom-0 left-0 h-0 w-0 opacity-0" />
+      {err && <span role="alert" className="mt-1 max-w-[230px] text-[11px] leading-snug font-medium whitespace-normal text-red-700">{err}</span>}
+    </span>
+  );
+}
+
+function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, onPick }: {
+  orders: BoardOrder[]; filters: React.ReactNode; tab: string; data: ProductionMatrix; sel?: MatrixProduct; net: number; today: number; canMove: boolean; onClear: () => void; onPick: (id: string) => void;
 }) {
   // Skladdan qoplanishi — faqat matritsadagi (dona) qatorlar uchun
   const mx = new Map(data.orders.map((o) => [o.id, o]));
-  const list = sel ? orders.filter((o) => o.items.some((i) => i.productId === sel.id)) : orders;
-  const sorted = (s: MatrixStatus) => list.filter((o) => o.col === s);
+  const list = (sel ? orders.filter((o) => o.items.some((i) => i.productId === sel.id)) : orders)
+    .map((o) => ({ o, r: readiness(o, mx.get(o.id)?.alloc) }));
+  const sorted = (s: ReadyCol) => list.filter((x) => x.r.col === s);
   const tabQ = tab !== "open" ? `&tab=${tab}` : "";
   return (
     <Card padded={false}>
@@ -251,12 +305,13 @@ function Board({ orders, filters, tab, data, sel, net, today, onClear, onPick }:
           return (
             <div key={s} className="flex min-w-0 flex-col gap-2 rounded-(--radius-card) border border-slate-200 bg-slate-50 p-2.5">
               <div className={cn("flex items-center gap-2 border-b-2 px-1 pb-2 text-sm font-semibold text-slate-900", BORDER[s])}>
-                <Dot s={s} /> {MATRIX_STATUS_LABEL[s]}
+                <Dot s={s} /> {READY_LABEL[s]}
                 <span className="ml-auto text-xs font-normal tabular text-slate-500">{l.length} ta</span>
               </div>
               {l.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 py-6 text-center text-sm text-slate-400">Bo&apos;sh</div>}
-              {l.map((o) => {
-                const m = mx.get(o.id), cov = m ? coverage(m) : null;
+              {l.map(({ o, r }) => {
+                const m = mx.get(o.id);
+                const when = `${o.dateUnknown ? "Sana aniq emas" : date(new Date(o.deliveryDate))}${o.deliveryTime ? ` · ${o.deliveryTime}` : ""}`;
                 const late = !o.dateUnknown && s !== "ready" && new Date(o.deliveryDate).getTime() < today;
                 return (
                   <div key={o.id} className={cn("flex flex-col gap-2 rounded-lg border bg-white p-2.5 shadow-xs", o.soon && s !== "ready" ? "border-red-200" : "border-slate-200")}>
@@ -264,7 +319,7 @@ function Board({ orders, filters, tab, data, sel, net, today, onClear, onPick }:
                       <div className="min-w-0">
                         <Link href={`/orders/${o.id}`} className="block truncate font-semibold text-slate-900 hover:underline" title={o.customer}>{o.customer}</Link>
                         <div className={cn("flex flex-wrap gap-x-1.5 text-xs", o.soon && s !== "ready" ? "font-medium text-red-700" : "text-slate-500")}>
-                          <span className="whitespace-nowrap">{o.dateUnknown ? "Sana aniq emas" : date(new Date(o.deliveryDate))}{o.deliveryTime && ` · ${o.deliveryTime}`}</span>
+                          {canMove && o.movable ? <DateMove o={o} label={when} /> : <span className="whitespace-nowrap">{when}</span>}
                           {o.due && s !== "ready" && <span className="whitespace-nowrap">· {o.due}</span>}
                           {o.pickup && <span className="whitespace-nowrap text-slate-500">· o&apos;zi oladi</span>}
                         </div>
@@ -290,10 +345,10 @@ function Board({ orders, filters, tab, data, sel, net, today, onClear, onPick }:
                         );
                       })}
                     </div>
-                    {cov !== null && s !== "ready" && (
+                    {s === "part" && (
                       <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-red-100"><div className="h-full bg-emerald-500" style={{ width: `${Math.round(cov * 100)}%` }} /></div>
-                        skladdan {Math.round(cov * 100)}%
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-red-100"><div className="h-full bg-emerald-500" style={{ width: `${Math.round(r.pct * 100)}%` }} /></div>
+                        tayyor {Math.round(r.pct * 100)}%
                       </div>
                     )}
                     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-xs">

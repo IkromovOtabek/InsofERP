@@ -30,7 +30,12 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
     db.order.findMany({
       where: { status: { not: "CANCELLED" } },
       orderBy: [{ deliveryDate: "asc" }],
-      include: { customer: true, items: { include: { product: true, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } } },
+      include: {
+        customer: true, items: { include: { product: true, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
+        // Doskadagi tayyorlik: jo'natilgani va zamesda quyilgani (beton)
+        trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
+        batches: { where: { cancelledAt: null }, select: { productId: true, qtyM3: true } },
+      },
       take: 400,
     }),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true } }),
@@ -48,17 +53,26 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const selected = selectedId ? allOrders.find((o) => o.id === selectedId) : undefined;
   // Matritsadan bosilgan katak — faqat shu mahsulot qatori ochiladi; «Barcha qatorlar» qolganlarini ham ko'rsatadi
   const onlyItem = selected && focusItem && selected.items.some((i) => i.id === focusItem) ? focusItem : null;
-  // «Zayavkalar doskasi» — tanlangan filtr bo'yicha (avvalgi jadval o'rniga): ustun topshiriqlardan, brigada holati — qatorlardan
+  const canMove = canDo(session, "production", "reschedule");
+  // «Zayavkalar doskasi» — tanlangan filtr bo'yicha: ustun tayyorlikdan (Tayyor emas / Qisman / Tayyor), brigada holati — qatorlardan.
+  // Qator bo'yicha tayyor = max(brigada bajargani, jo'natilgan ulushi, zamesda quyilgani); dona qatorlarga hovlidagi qoldiq doskada qo'shiladi
   const board: BoardOrder[] = orders.map((o) => {
     const st = o.items.map((i) => itemTasks(i.qtyM3, i.tasks));
+    const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
+    const share = total > 0 ? Math.min(1, o.trips.reduce((s, t) => s + Number(t.qtyM3), 0) / total) : 0;
     return {
       id: o.id, customer: o.customer.name, deliveryDate: o.deliveryDate.toISOString(), deliveryTime: o.deliveryTime, dateUnknown: o.dateUnknown, isUrgent: o.isUrgent,
       draft: o.status === "DRAFT", pickup: !o.needsDelivery, blacklisted: marks.black.has(o.customerId), soon: isSoon(o),
       due: isOpen(o) && !o.dateUnknown ? dueLabel(o.deliveryDate) : null,
-      col: isDone(o) ? "ready" : st.some((x) => x.any) ? "pour" : "queue",
+      finished: isDone(o), movable: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"].includes(o.status),
       assign: assigned(o) ? "full" : partlyAssigned(o) ? "part" : "none",
       brigades: [...new Set(o.items.flatMap((i) => i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => t.brigade.name)))],
-      items: o.items.map((i, n) => ({ itemId: i.id, productId: i.productId, name: i.product.name, unit: i.product.unit, qty: Number(i.qtyM3), left: st[n]!.left })),
+      items: o.items.map((i, n) => {
+        const q = Number(i.qtyM3);
+        const cancelledDone = i.tasks.filter((t) => t.status === "CANCELLED").reduce((s, t) => s + Number(t.doneQty), 0);
+        const poured = o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0);
+        return { itemId: i.id, productId: i.productId, name: i.product.name, unit: i.product.unit, qty: q, left: st[n]!.left, shipped: q * share, done: Math.min(q, Math.max(st[n]!.doneQty + cancelledDone, q * share, poured)) };
+      }),
     };
   });
   const bOpts = brigades.map((b) => ({ id: b.id, name: b.name, leader: b.leader?.fullName ?? null }));
@@ -103,7 +117,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
         </Card>
       )}
 
-      <ProductionMatrixView data={matrix} board={board} tab={filter.key}
+      <ProductionMatrixView data={matrix} board={board} tab={filter.key} canMove={canMove}
         stockHref={pathAllowed("/stock", session.role, session.perms) ? "/stock?tab=capacity" : undefined}
         filters={<Tabs current={filter.key} className="mb-3" scroll={false} items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />} />
 

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Wallet, CheckCircle2, Clock, FileText } from "lucide-react";
+import { Wallet, CheckCircle2, Clock, FileText, ScrollText } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
 import { money, deliveryAt, isoDate } from "@/lib/format";
 import { fmtUnitTotals } from "@/lib/unit";
-import { Button, Empty, Input, PageHeader, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { Button, Empty, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { ORDER_STATUS, OrderStatusBadge, SALES_STATUSES } from "../orders/status";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import type { Prisma, OrderStatus } from "@/generated/prisma";
@@ -75,7 +75,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader title="Sotuv" subtitle="Qabul qilingan zayavkalar. Yangi zayavka Zayavkalar bo'limida yaratiladi va qabul qilingach shu yerga o'tadi." />
+      <PageHeader title="Sotuv" subtitle="Qabul qilingan zayavkalar. Yangi zayavka Zayavkalar bo'limida yaratiladi va qabul qilingach shu yerga o'tadi."
+        action={<LinkButton href="/sales/realizatsiya" variant="secondary"><ScrollText size={16} /> Realizatsiya</LinkButton>} />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Sotuv summasi (davr)" value={money(total)} icon={Wallet} hint={`${count} ta zayavka`} href="#sotuv-royxati" />
         <StatCard label="To'langan" value={money(paid)} icon={CheckCircle2} tone="success" hint="schyot to'lovlari + avanslar" href="#sotuv-royxati" />

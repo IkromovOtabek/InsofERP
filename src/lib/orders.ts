@@ -201,6 +201,56 @@ export async function orderSetDate(id: string, deliveryDate: Date, userId: strin
   return { changed: true };
 }
 
+/** Ishlab chiqarish doskasidan ko'chirish mumkin bo'lgan holatlar — yetkazilgan/yopilgan/bekor qilingan ko'chirilmaydi. */
+const MOVABLE = ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"] as const;
+
+/**
+ * Ishlab chiqarish doskasida zayavkani boshqa yetkazish kuniga ko'chirish (qabul qilingan zayavka ham).
+ * Qabul qilingan SALE zayavka yangi kunning kunlik limitiga qayta tekshiriladi (`orderConfirm` dagi kun qulfi bilan);
+ * brigada topshiriqlari va bosh to'lov so'rovining muddati ham yangi sanaga o'tadi. Zayavka egasiga xabar boradi.
+ */
+export async function orderReschedule(id: string, deliveryDate: Date, userId: string): Promise<OrderResult> {
+  if (!(await canDoByUserId(userId, "production", "reschedule"))) {
+    return { changed: false, error: "Sanani o'zgartirishga ruxsatingiz yo'q — direktordan ruxsat so'rang" };
+  }
+  const dd = deliveryDate.getTime();
+  if (!Number.isFinite(dd)) return { changed: false, error: "Yetkazish sanasi noto'g'ri" };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (dd < today.getTime()) return { changed: false, error: "O'tgan sanaga ko'chirib bo'lmaydi — bugungi yoki keyingi sanani tanlang" };
+  if (dd > Date.now() + 366 * 86_400_000) return { changed: false, error: "Yetkazish sanasi bir yildan uzoq bo'lmasin" };
+  const o = await db.order.findUnique({
+    where: { id },
+    select: { status: true, kind: true, deliveryDate: true, dateUnknown: true, createdById: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } },
+  });
+  if (!o) return { changed: false, error: "Zayavka topilmadi" };
+  if (!(MOVABLE as readonly string[]).includes(o.status)) return { changed: false, error: "Yetkazilgan, yopilgan yoki bekor qilingan zayavka ko'chirilmaydi" };
+  if (!o.dateUnknown && o.deliveryDate.getTime() === dd) return { changed: false };
+
+  const res = await db.$transaction(async (tx) => {
+    if (o.kind === "SALE" && (o.status === "CONFIRMED" || o.status === "IN_PRODUCTION")) {
+      const day = new Date(deliveryDate); day.setHours(0, 0, 0, 0);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"orderday:" + day.toISOString()}))`;
+      const limitErr = await dailyOrderLimitError(tx, id, deliveryDate, o.items, "Boshqa kunni tanlang yoki direktor limitni Sozlamalar → Limitlar'da oshirsin");
+      if (limitErr) return { error: limitErr };
+    }
+    // Holat sharti bilan: shu orada yetkazilgan/bekor qilingan zayavka ko'chirilmaydi
+    const r = await tx.order.updateMany({ where: { id, status: { in: [...MOVABLE] } }, data: { deliveryDate, dateUnknown: false } });
+    if (r.count !== 1) return { error: "Zayavka shu payt yetkazildi yoki bekor qilindi" };
+    await tx.brigadeTask.updateMany({ where: { orderId: id, status: { notIn: ["DONE", "CANCELLED"] } }, data: { dueDate: deliveryDate } });
+    await tx.paymentRequest.updateMany({ where: { orderId: id, status: { in: ["PENDING", "PARTIAL"] } }, data: { dueDate: deliveryDate } });
+    await audit(tx, userId, "UPDATE", "Order", id, { deliveryDate: o.deliveryDate, dateUnknown: o.dateUnknown }, { deliveryDate, dateUnknown: false });
+    return null;
+  });
+  if (res) return { changed: false, error: res.error };
+  if (o.createdById !== userId) {
+    notifyAfter(() => notifyUsers([o.createdById], {
+      type: "ORDER_RESCHEDULED", title: `Sana o'zgardi — ${o.customer.name}`,
+      body: `Yetkazish sanasi ${o.dateUnknown ? "belgilandi" : `${date(o.deliveryDate)} dan ko'chirildi`}: ${date(deliveryDate)}`, link: { key: "orders", id },
+    }));
+  }
+  return { changed: true };
+}
+
 /**
  * BLOCKED → CONFIRMED. Faqat direktor (ruxsat chaqiruvchida tekshiriladi).
  * Direktor faqat KREDIT limitini chetlab o'tadi; kunlik zayavka limiti (hajm/son) qayta tekshiriladi: BLOCKED zayavka
