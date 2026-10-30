@@ -178,10 +178,9 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ml",               label: "ML tahlil",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ml/anomaliyalar", label: "Anomaliyalar" }, { href: "/bi-tahlil/ml/churn", label: "Churn tahlili" }, { href: "/bi-tahlil/ml/klasterlar", label: "Klasterlar" }] },
   { href: "/bi-tahlil/ai",               label: "Insof AI",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ai/chat", label: "AI Chat" }, { href: "/bi-tahlil/ai/telegram", label: "Telegram bot" }] },
-  // Ish boshqaruvchi: «Moliya» bandi (menyusi faqat unga) + har sahifaning yashirin ruxsati — `SUPERVISOR_FIN`.
-  // Tahlil blokidan keyin turadi: `perm-modules` modul guruhini birinchi mos banddan oladi
-  { href: "/bi-tahlil/moliya/pnl", label: "Moliya", roles: SUPERVISOR_FIN_ROLES, group: "Moliya", menuFor: ["SUPERVISOR"], children: SUPERVISOR_FIN },
-  ...SUPERVISOR_FIN.map((c): NavItem => ({ href: c.href, label: c.label, roles: SUPERVISOR_FIN_ROLES, group: "Tahlil", hidden: true })),
+  // Ish boshqaruvchi: «Moliya» guruhida to'g'ridan-to'g'ri shu sahifalar (menyusi faqat unga, ichida yana «Moliya» bandi yo'q) — `SUPERVISOR_FIN`.
+  // Har band o'z sahifasiga ruxsat ham beradi (eng uzun yo'l). Tahlil blokidan keyin turadi: `perm-modules` modul guruhini birinchi mos banddan oladi
+  ...SUPERVISOR_FIN.map((c): NavItem => ({ href: c.href, label: c.label, roles: SUPERVISOR_FIN_ROLES, group: "Moliya", menuFor: ["SUPERVISOR"] })),
   // Insof ECO ilovasida ro'yxatdan o'tgan hamma (tadbirkor, quruvchi, haydovchi) — faqat direktor
   { href: "/ilova-foydalanuvchilari", label: "Ilova foydalanuvchilari", roles: ["DIRECTOR"], group: "Boshqaruv" },
   { href: "/settings",    label: "Sozlamalar",         roles: ["DIRECTOR"], group: "Boshqaruv" },
