@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
  * Tahlil → Mijozlar: tahlil va «Insof 2026» jadvalidagi qarz varaqlari. Sidebar'da «Mijozlar» ostida ham shu havolalar (`lib/nav.ts`).
  * URL: `sana` (YYYY-MM-DD, sukut — bugun), `q` (nom bo'yicha qidiruv), `tur` (CASH / BANK), `holat` (0–3),
  * `qism` (debitor / kreditor — kim kimga qarz), `dan` (qarz varaqlarida davr boshi, sukut — oy boshi),
- * `smin` / `smax` (qarz varaqlari: davr oxiridagi summa oralig'i, so'm), `sort=summa` (katta summa tepada).
+ * `smin` / `smax` (qarz varaqlari: davr oxiridagi summa oralig'i, so'm), `sort` — katta summa tepada: `qarz` / `avans`
+ * (davr oxiri ustuni, sarlavhasini bosib), `summa` (eski havolalar: qarz yoki avansning kattasi).
  */
 
 const qs = (o: Record<string, string | undefined>) => { const s = new URLSearchParams(Object.entries(o).filter((kv): kv is [string, string] => !!kv[1])).toString(); return s ? `?${s}` : ""; };
@@ -69,10 +70,11 @@ const parseSum = (v?: string) => { const n = Number((v ?? "").replace(/[\s,'_]/g
 
 /**
  * «Summa» tugmasi — asboblar qatorida, Excel oldida; bosilsa panel ochiladi (JS'siz, `<details>`).
- * Maydonlar Toolbar formasining ichida: «Qo'llash» qidiruv, sana va boshqa filtrlarni ham saqlab yuboradi.
+ * Maydonlar Toolbar formasining ichida: «Qo'llash» qidiruv, sana va boshqa filtrlarni ham saqlab yuboradi
+ * (saralash `sort` — yashirin maydonda). «Katta summa tepada» — jadvaldagi davr oxiri ustunlari sarlavhasida.
  */
-function SumFilter({ on, label, side, smin, smax, bySum, presets, clearHref }: {
-  on: boolean; label: string; side: string; smin?: number; smax?: number; bySum: boolean;
+function SumFilter({ on, label, side, smin, smax, sort, presets, clearHref }: {
+  on: boolean; label: string; side: string; smin?: number; smax?: number; sort?: string;
   presets: { v: number; href: string; on: boolean }[]; clearHref: string;
 }) {
   return (
@@ -96,10 +98,7 @@ function SumFilter({ on, label, side, smin, smax, bySum, presets, clearHref }: {
           <span>–</span>
           <Input name="smax" defaultValue={smax != null ? fmtNum(smax) : ""} placeholder="gacha, so'm" inputMode="numeric" className="h-9" />
         </div>
-        <label className="mt-2.5 flex items-center gap-2 text-[13px] text-slate-700">
-          <input type="checkbox" name="sort" value="summa" defaultChecked={bySum} className="h-4 w-4 rounded border-slate-300" />
-          <ArrowDownWideNarrow size={14} className="text-slate-400" /> Katta summa tepada
-        </label>
+        {sort && <input type="hidden" name="sort" value={sort} />}
         <div className="mt-3 flex items-center justify-between gap-2">
           <Link href={clearHref} className="text-[13px] font-medium text-slate-500 hover:text-slate-900 hover:underline">Tozalash</Link>
           <button className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800">Qo&apos;llash</button>
@@ -135,13 +134,15 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
   // Summa filtri — davr oxiridagi summa: tanlangan qism (debitor / kreditor) ustuni, «Hammasi»da qarz yoki avansning kattasi
   const amt = (r: DebtSheet["rows"][number]) => (qism === "debitor" ? (sup ? r.now.advance : r.now.debt) : qism === "kreditor" ? (sup ? r.now.debt : r.now.advance) : Math.max(r.now.debt, r.now.advance));
   const smin = parseSum(sp.smin), smax = parseSum(sp.smax);
-  const bySum = sp.sort === "summa";
+  // Saralash — davr oxiri «Qarz» yoki «Avans» ustuni sarlavhasidan (katta summa tepada); `summa` — eski havolalar
+  const sort = sp.sort === "qarz" || sp.sort === "avans" || sp.sort === "summa" ? sp.sort : undefined;
+  const sortVal = (r: DebtSheet["rows"][number]) => (sort === "qarz" ? r.now.debt : sort === "avans" ? r.now.advance : amt(r));
   const sumOn = smin != null || smax != null;
-  const sumKeep = { smin: smin != null ? String(smin) : undefined, smax: smax != null ? String(smax) : undefined, sort: bySum ? "summa" : undefined };
+  const sumKeep = { smin: smin != null ? String(smin) : undefined, smax: smax != null ? String(smax) : undefined, sort };
   const rows = named
     .filter((r) => !qism || (qism === "debitor" ? isDebitor(r) : isKreditor(r)))
     .filter((r) => (smin == null || amt(r) >= smin) && (smax == null || amt(r) <= smax))
-    .sort((a, b) => (bySum ? amt(b) - amt(a) : 0));
+    .sort((a, b) => (sort ? sortVal(b) - sortVal(a) : 0));
   const d1 = dateShort(s.monthStart), d2 = dateShort(s.day);
   const dan = isoDate(s.monthStart), sana = isoDate(s.day);
   // Oy boshidan boshlangan davrda `dan` URL'da yurmaydi — sana o'zgarsa davr boshi ham o'sha oyga ko'chadi
@@ -154,6 +155,16 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
   const sumHref = (o: Partial<typeof sumKeep>) => `${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, tur: kind, qism, ...sumKeep, ...o })}`;
   const sumLabel = smin != null && smax != null ? `${moneyShort(smin)} – ${moneyShort(smax)}` : smin != null ? `${moneyShort(smin)} dan ko'p` : smax != null ? `${moneyShort(smax)} gacha` : "";
   const sumSide = qism === "debitor" ? "debitorka" : qism === "kreditor" ? "kreditorka" : "qarz yoki avans";
+  const sortLabel = sort === "qarz" ? `${d2} qarz bo'yicha` : sort === "avans" ? `${d2} avans bo'yicha` : "summa bo'yicha";
+  /** Davr oxiri ustuni sarlavhasi: bosilsa — shu ustun bo'yicha katta summa tepada, yana bosilsa — nomi bo'yicha */
+  const SortTh = ({ k, label, className }: { k: "qarz" | "avans"; label: string; className: string }) => (
+    <th className={className} aria-sort={sort === k ? "descending" : "none"}>
+      <Link href={sumHref({ sort: sort === k ? undefined : k })} title={sort === k ? "Nomi bo'yicha saralash (A → Z)" : "Katta summa tepada"}
+        className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 ring-1 ring-black/10 transition dark:ring-white/15", sort === k ? "bg-[#2c4a6e] font-semibold text-[#fff] ring-[#2c4a6e]" : "hover:bg-black/5 dark:hover:bg-white/10")}>
+        {label} <ArrowDownWideNarrow size={13} className={sort === k ? "" : "opacity-60"} />
+      </Link>
+    </th>
+  );
   const sheetTitle = sup ? "Ta'minotchilar oldidagi qarzdorlik" : "Xaridorlar qarzdorligi";
   const legend = sup ? "Qarz (kreditorka) — biz ularga qarzmiz; Avans (debitorka) — biz oldindan to'laganmiz" : "Qarz (debitorka) — mijoz bizga qarz; Avans (kreditorka) — mijoz oldindan to'lagan";
   const delta = (a: number, b: number) => (Math.abs(b - a) < 1 ? "davr boshidagidek" : `davr boshiga nisbatan ${b > a ? "+" : "−"}${moneyShort(Math.abs(b - a))}`);
@@ -170,9 +181,9 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
   return (
     <div className="space-y-5">
       <Toolbar base={base} day={s.day} start={s.monthStart} sp={sp} keep={{ tur: kind, qism }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
-        extra={<SumFilter on={sumOn || bySum} label={sumLabel || (bySum ? "katta tepada" : "")} side={sumSide} smin={smin} smax={smax} bySum={bySum}
+        extra={<SumFilter on={sumOn} label={sumLabel} side={sumSide} smin={smin} smax={smax} sort={sort}
           presets={SUM_PRESETS.map((v) => ({ v, href: sumHref({ smin: String(v), smax: undefined }), on: smin === v && smax == null }))}
-          clearHref={sumHref({ smin: undefined, smax: undefined, sort: undefined })} />}
+          clearHref={sumHref({ smin: undefined, smax: undefined })} />}
         excel={<ExcelButton file={`${sheetTitle} ${sana}`} sheets={[{ name: sup ? "Ta'minotchilar" : "Xaridorlar", rows: excelRows }]} />} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -187,10 +198,10 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
         <Chip href={qismHref()} on={!qism} count={named.length}>Hammasi</Chip>
         <Chip href={qismHref("debitor")} on={qism === "debitor"} count={named.filter(isDebitor).length}>Debitorka · {sup ? "bizga qarz (avans)" : "bizga qarz"} · {moneyShort(debitorSum)}</Chip>
         <Chip href={qismHref("kreditor")} on={qism === "kreditor"} count={named.filter(isKreditor).length}>Kreditorka · {sup ? "biz qarzmiz" : "biz qarzmiz (avans)"} · {moneyShort(kreditorSum)}</Chip>
-        {(sumOn || bySum) && (
-          <Link href={sumHref({ smin: undefined, smax: undefined, sort: undefined })} title="Summa filtrini olib tashlash"
+        {sumOn && (
+          <Link href={sumHref({ smin: undefined, smax: undefined })} title="Summa filtrini olib tashlash"
             className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[13px] font-medium text-amber-800 hover:bg-amber-100">
-            Summa: {[sumLabel, bySum ? "katta tepada" : ""].filter(Boolean).join(" · ")} <span className="tabular text-xs text-amber-600">{rows.length}</span><X size={13} />
+            Summa: {sumLabel} <span className="tabular text-xs text-amber-600">{rows.length}</span><X size={13} />
           </Link>
         )}
       </div>
@@ -212,7 +223,7 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
             <span className="tabular">Oy: <span className="ml-2">{String(s.day.getMonth() + 1).padStart(2, "0")}.{s.day.getFullYear()}</span></span>
           </div>
           <div className="mt-1 text-[22px] font-bold leading-tight text-slate-900">{sheetTitle} — {monthName(s.day)}</div>
-          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: {bySum ? "summa bo'yicha (katta → kichik)" : "nomi bo'yicha (A → Z)"}. Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</div>
+          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: {sort ? `${sortLabel} (katta → kichik)` : "nomi bo'yicha (A → Z)"} — {d2} ustunlari sarlavhasini bosib o&apos;zgartiring. Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</div>
         </div>
         <div className="overflow-auto" style={{ maxHeight: "70vh" }}>
           <table className="w-full min-w-[760px] border-collapse text-[14px] text-slate-900">
@@ -225,8 +236,8 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
               <tr>
                 <th className={cn(SH.line, SH.head, "w-[17%] px-3 py-1 text-center font-normal")}>Qarz</th>
                 <th className={cn(SH.line, SH.head, "w-[17%] px-3 py-1 text-center font-normal")}>Avans</th>
-                <th className={cn(SH.line, SH.headNow, SH.split, "w-[17%] px-3 py-1 text-center font-normal")}>Qarz</th>
-                <th className={cn(SH.line, SH.headNow, "w-[17%] px-3 py-1 text-center font-normal")}>Avans</th>
+                <SortTh k="qarz" label="Qarz" className={cn(SH.line, SH.headNow, SH.split, "w-[17%] px-2 py-1 text-center font-normal")} />
+                <SortTh k="avans" label="Avans" className={cn(SH.line, SH.headNow, "w-[17%] px-2 py-1 text-center font-normal")} />
               </tr>
             </thead>
             <tbody>
