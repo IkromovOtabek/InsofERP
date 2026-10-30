@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, Crown, Hourglass, HandCoins, Scale, Search, Truck, UserRound, Users, Wallet } from "lucide-react";
+import { Crown, Hourglass, HandCoins, Scale, Search, Truck, UserRound, Users, Wallet } from "lucide-react";
 import { type SP } from "../shell";
 import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_LABEL } from "@/lib/fin-report/debts";
 import { MONTHS_UZ } from "@/lib/bi/plans";
-import { date, fmtNum, isoDate, moneyShort } from "@/lib/format";
+import { date, dateRu, dateShort, fmtFixed, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, type BadgeColor, Card, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 /**
  * Tahlil → Mijozlar: tahlil va «Insof 2026» jadvalidagi qarz varaqlari. Sidebar'da «Mijozlar» ostida ham shu havolalar (`lib/nav.ts`).
  * URL: `sana` (YYYY-MM-DD, sukut — bugun), `q` (nom bo'yicha qidiruv), `tur` (CASH / BANK), `holat` (0–3),
- * `qism` (debitor / kreditor — kim kimga qarz).
+ * `qism` (debitor / kreditor — kim kimga qarz), `dan` (qarz varaqlarida davr boshi, sukut — oy boshi).
  */
 
 const qs = (o: Record<string, string | undefined>) => { const s = new URLSearchParams(Object.entries(o).filter((kv): kv is [string, string] => !!kv[1])).toString(); return s ? `?${s}` : ""; };
@@ -23,7 +23,7 @@ const isToday = (d: Date) => isoDate(d) === isoDate(new Date());
 const Num = ({ v, className }: { v: number; className?: string }) => (Math.abs(v) < 1 ? <span className="text-slate-300">—</span> : <span className={className}>{fmtNum(v)}</span>);
 
 /** Sana, qidiruv va Excel — har uch hisobot tepasida. */
-function Toolbar({ base, day, sp, keep, excel, placeholder }: { base: string; day: Date; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; placeholder: string }) {
+function Toolbar({ base, day, start, sp, keep, excel, placeholder }: { base: string; day: Date; start?: Date; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; placeholder: string }) {
   return (
     <form method="get" action={base} className="mb-4 flex flex-wrap items-center gap-2">
       {Object.entries(keep).map(([k, v]) => v && <input key={k} type="hidden" name={k} value={v} />)}
@@ -31,7 +31,12 @@ function Toolbar({ base, day, sp, keep, excel, placeholder }: { base: string; da
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
         <Input name="q" defaultValue={sp.q ?? ""} placeholder={placeholder} className="h-9 pl-9" />
       </label>
-      <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-500">Sana
+      {start && (
+        <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-500">Dan
+          <Input type="date" name="dan" defaultValue={isoDate(start)} max={isoDate(new Date())} className="h-9 w-40" />
+        </label>
+      )}
+      <label className={cn("flex items-center gap-1.5 text-xs text-slate-500", !start && "ml-auto")}>{start ? "Gacha" : "Sana"}
         <Input type="date" name="sana" defaultValue={isoDate(day)} max={isoDate(new Date())} className="h-9 w-40" />
       </label>
       <button className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
@@ -54,10 +59,21 @@ const filterName = <T extends { name: string }>(rows: T[], q?: string) => {
   return s ? rows.filter((r) => r.name.toLowerCase().includes(s)) : rows;
 };
 
-// ───────────────────── Qarz / Avans: oy boshi → tanlangan kun ─────────────────────
+// ───────────────────── Qarz / Avans: davr boshi → davr oxiri ─────────────────────
 
-/** «Ta'minotchilar oldidagi qarzdorlik» va «Xaridorlar qarzdorligi» — bir xil ko'rinish. */
-export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; linkable?: boolean }) {
+/** Jadval ranglari — «Insof 2026» dagi «Xaridorlar qarzi» varag'idek: kulrang nom/davr boshi, yashil davr oxiri. */
+const SH = {
+  head: "bg-[#c8cfb6] text-slate-900 dark:bg-[#383e30]",
+  headNow: "bg-[#e3ecc8] text-slate-900 dark:bg-[#33402a]",
+  cell: "bg-[#ececec] dark:bg-[#1f2328]",
+  cellNow: "bg-[#f4f7ea] dark:bg-[#20291c]",
+  hover: "group-hover:bg-[#dfe6f2] dark:group-hover:bg-[#28334a]",
+  line: "border border-[#d4d6cf] dark:border-slate-200",
+  split: "border-l-2 border-l-[#6b9a3f]",
+} as const;
+
+/** «Ta'minotchilar oldidagi qarzdorlik» va «Xaridorlar qarzdorligi» — bir xil ko'rinish. Qatorni bosish — akt sverka. */
+export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; company: string }) {
   const sup = who === "supplier";
   const kind = sp.tur === "CASH" || sp.tur === "BANK" ? sp.tur : undefined;
   // Debitorka — bizga qarzdorlar (mijoz qarzi, ta'minotchiga bergan avansimiz);
@@ -67,31 +83,32 @@ export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "sup
   const isKreditor = (r: DebtSheet["rows"][number]) => (sup ? r.now.debt : r.now.advance) >= 1;
   const named = filterName(s.rows, sp.q);
   const rows = named.filter((r) => !qism || (qism === "debitor" ? isDebitor(r) : isKreditor(r)));
-  const d1 = dm(s.monthStart), d2 = dm(s.day);
+  const d1 = dateShort(s.monthStart), d2 = dateShort(s.day);
+  const dan = isoDate(s.monthStart), sana = isoDate(s.day);
+  // Oy boshidan boshlangan davrda `dan` URL'da yurmaydi — sana o'zgarsa davr boshi ham o'sha oyga ko'chadi
+  const danKeep = s.monthStart.getDate() === 1 && s.monthStart.getMonth() === s.day.getMonth() && s.monthStart.getFullYear() === s.day.getFullYear() ? undefined : dan;
   const t = s.total;
   const sumRows = (f: (r: DebtSheet["rows"][number]) => number) => rows.reduce((a, r) => a + f(r), 0);
   const ft = { open: { debt: sumRows((r) => r.open.debt), advance: sumRows((r) => r.open.advance) }, now: { debt: sumRows((r) => r.now.debt), advance: sumRows((r) => r.now.advance) } };
   const debitorSum = sup ? t.now.advance : t.now.debt, kreditorSum = sup ? t.now.debt : t.now.advance;
-  const qismHref = (v?: string) => `${base}${qs({ sana: sp.sana, q: sp.q, tur: kind, qism: v })}`;
-  const title = sup ? "Ta'minotchilar: kreditorka va debitorka" : "Xaridorlar: debitorka va kreditorka";
-  const legend = sup ? "Kreditorka (qarz) — biz ularga qarzmiz; Debitorka (avans) — biz oldindan to'laganmiz" : "Debitorka (qarz) — mijoz bizga qarz; Kreditorka (avans) — mijoz oldindan to'lagan";
-  const delta = (a: number, b: number) => (Math.abs(b - a) < 1 ? "oy boshidagidek" : `oy boshiga nisbatan ${b > a ? "+" : "−"}${moneyShort(Math.abs(b - a))}`);
+  const qismHref = (v?: string) => `${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, tur: kind, qism: v })}`;
+  const sheetTitle = sup ? "Ta'minotchilar oldidagi qarzdorlik" : "Xaridorlar qarzdorligi";
+  const legend = sup ? "Qarz (kreditorka) — biz ularga qarzmiz; Avans (debitorka) — biz oldindan to'laganmiz" : "Qarz (debitorka) — mijoz bizga qarz; Avans (kreditorka) — mijoz oldindan to'lagan";
+  const delta = (a: number, b: number) => (Math.abs(b - a) < 1 ? "davr boshidagidek" : `davr boshiga nisbatan ${b > a ? "+" : "−"}${moneyShort(Math.abs(b - a))}`);
   const col = sup ? "Ta'minotchi" : "Xaridor";
+  const aktHref = (id: string) => `${base}/${id}${qs({ dan, gacha: sana })}`;
   const excelRows = rows.map((r) => ({
     [col]: r.name, ...(sup ? {} : { "Mijoz turi": r.kind ? CUSTOMER_KIND_LABEL[r.kind] : "" }),
-    [`${sup ? "Kreditorka" : "Debitorka"} ${d1}`]: r.open.debt || null, [`${sup ? "Debitorka" : "Kreditorka"} ${d1}`]: r.open.advance || null,
-    [`${sup ? "Kreditorka" : "Debitorka"} ${d2}`]: r.now.debt || null, [`${sup ? "Debitorka" : "Kreditorka"} ${d2}`]: r.now.advance || null, "O'zgarish": r.change || null,
+    [`Qarz ${d1}`]: r.open.debt || null, [`Avans ${d1}`]: r.open.advance || null,
+    [`Qarz ${d2}`]: r.now.debt || null, [`Avans ${d2}`]: r.now.advance || null, "O'zgarish": r.change || null,
   }));
-  const tint = "bg-emerald-50/60";
+  const Amt = ({ v }: { v: number }) => (Math.abs(v) < 0.005 ? null : <>{fmtFixed(v)}</>);
+  const num = "whitespace-nowrap px-3 py-1.5 text-right tabular";
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] font-bold text-slate-900">{title} — {monthName(s.day)}</h2>
-        <span className="text-[13px] text-slate-500">{legend}</span>
-      </div>
-      <Toolbar base={base} day={s.day} sp={sp} keep={{ tur: kind, qism }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
-        excel={<ExcelButton file={`${title} ${isoDate(s.day)}`} sheets={[{ name: sup ? "Ta'minotchilar" : "Xaridorlar", rows: excelRows }]} />} />
+      <Toolbar base={base} day={s.day} start={s.monthStart} sp={sp} keep={{ tur: kind, qism }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
+        excel={<ExcelButton file={`${sheetTitle} ${sana}`} sheets={[{ name: sup ? "Ta'minotchilar" : "Xaridorlar", rows: excelRows }]} />} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label={sup ? `Kreditorka (qarzimiz), ${d2}` : `Debitorka (mijozlar qarzi), ${d2}`} value={moneyShort(t.now.debt)} hint={delta(t.open.debt, t.now.debt)} icon={sup ? Truck : HandCoins} tone={t.now.debt > t.open.debt ? "danger" : "success"} href={qismHref(sup ? "kreditor" : "debitor")} />
@@ -110,60 +127,72 @@ export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "sup
       {!sup && s.kinds && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs font-medium text-slate-500">Mijoz turi:</span>
-          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, qism })}`} on={!kind} count={s.kinds.ALL}>Hammasi</Chip>
-          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, qism, tur: "CASH" })}`} on={kind === "CASH"} count={s.kinds.CASH}>Naqd</Chip>
-          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, qism, tur: "BANK" })}`} on={kind === "BANK"} count={s.kinds.BANK}>Perechisleniye</Chip>
+          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism })}`} on={!kind} count={s.kinds.ALL}>Hammasi</Chip>
+          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism, tur: "CASH" })}`} on={kind === "CASH"} count={s.kinds.CASH}>Naqd</Chip>
+          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism, tur: "BANK" })}`} on={kind === "BANK"} count={s.kinds.BANK}>Perechisleniye</Chip>
         </div>
       )}
 
-      <Table maxHeight="70vh">
-        <thead>
-          <tr>
-            <Th>{col}</Th>
-            <Th right>{sup ? "Kreditorka" : "Debitorka"} · {d1}</Th>
-            <Th right>{sup ? "Debitorka" : "Kreditorka"} · {d1}</Th>
-            <Th right className="text-emerald-700">{sup ? "Kreditorka" : "Debitorka"} · {d2}</Th>
-            <Th right className="text-emerald-700">{sup ? "Debitorka" : "Kreditorka"} · {d2}</Th>
-            <Th right>O&apos;zgarish</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">{sp.q || qism ? "Filtr bo'yicha hech narsa topilmadi" : "Bu davrda hisob-kitob yo'q"}</td></tr>}
-          {rows.map((r) => (
-            <Tr key={r.id}>
-              <Td className="min-w-52">
-                {linkable ? <Link href={sup ? `/suppliers/${r.id}` : `/customers/${r.id}`} className="hover:underline">{r.name}</Link> : r.name}
-                {!sup && !kind && r.kind === "CASH" && <span className="ml-2 align-middle"><Badge color="green" dot={false}>naqd</Badge></span>}
-              </Td>
-              <Td right><Num v={r.open.debt} /></Td>
-              <Td right><Num v={r.open.advance} className="text-slate-500" /></Td>
-              <Td right className={tint}><Num v={r.now.debt} className="font-semibold text-slate-900" /></Td>
-              <Td right className={tint}><Num v={r.now.advance} className="text-blue-700" /></Td>
-              <Td right>
-                {Math.abs(r.change) < 1 ? <span className="text-slate-300">—</span> : (
-                  <span className={cn("inline-flex items-center gap-0.5 font-medium", r.change > 0 ? "text-red-600" : "text-emerald-600")}>
-                    {r.change > 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}{moneyShort(Math.abs(r.change))}
-                  </span>
-                )}
-              </Td>
-            </Tr>
-          ))}
-        </tbody>
-        {rows.length > 0 && (
-          <tfoot>
-            <tr className="bg-slate-50 font-bold text-slate-900">
-              <td className="border-t-2 border-slate-200 px-4 py-3">Jami</td>
-              {[ft.open.debt, ft.open.advance].map((v, i) => <td key={i} className="whitespace-nowrap border-t-2 border-slate-200 px-4 py-3 text-right tabular">{fmtNum(v)}</td>)}
-              {[ft.now.debt, ft.now.advance].map((v, i) => <td key={i} className="whitespace-nowrap border-t-2 border-slate-200 bg-emerald-50 px-4 py-3 text-right tabular">{fmtNum(v)}</td>)}
-              <td className="whitespace-nowrap border-t-2 border-slate-200 px-4 py-3 text-right tabular">{fmtNum((ft.now.debt - ft.now.advance) - (ft.open.debt - ft.open.advance))}</td>
-            </tr>
-          </tfoot>
-        )}
-      </Table>
+      {/* Varaq: sarlavha bloki + jadval — jadvaldagi «Xaridorlar qarzi» varag'idek */}
+      <div className="overflow-hidden rounded-xl border border-[#d4d6cf] bg-white dark:border-slate-200">
+        <div className="border-b border-[#d4d6cf] px-3 py-2 dark:border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[15px] font-bold text-slate-900">
+            <span>{company}</span>
+            <span className="tabular">Oy: <span className="ml-2">{String(s.day.getMonth() + 1).padStart(2, "0")}.{s.day.getFullYear()}</span></span>
+          </div>
+          <div className="mt-1 text-[22px] font-bold leading-tight text-slate-900">{sheetTitle} — {monthName(s.day)}</div>
+          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: nomi bo&apos;yicha (A → Z). Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</div>
+        </div>
+        <div className="overflow-auto" style={{ maxHeight: "70vh" }}>
+          <table className="w-full min-w-[760px] border-collapse text-[14px] text-slate-900">
+            <thead className="sticky top-0 z-10">
+              <tr>
+                <th rowSpan={2} className={cn(SH.line, SH.head, "px-3 py-1.5 text-left align-top font-normal")}>{col}</th>
+                <th colSpan={2} className={cn(SH.line, SH.head, "px-3 py-1.5 text-center font-normal")}>Hisob-kitob {d1} holatiga</th>
+                <th colSpan={2} className={cn(SH.line, SH.headNow, SH.split, "px-3 py-1.5 text-center font-normal")}>Hisob-kitob {d2} holatiga</th>
+              </tr>
+              <tr>
+                <th className={cn(SH.line, SH.head, "w-[17%] px-3 py-1 text-center font-normal")}>Qarz</th>
+                <th className={cn(SH.line, SH.head, "w-[17%] px-3 py-1 text-center font-normal")}>Avans</th>
+                <th className={cn(SH.line, SH.headNow, SH.split, "w-[17%] px-3 py-1 text-center font-normal")}>Qarz</th>
+                <th className={cn(SH.line, SH.headNow, "w-[17%] px-3 py-1 text-center font-normal")}>Avans</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && <tr><td colSpan={5} className={cn(SH.line, "px-4 py-10 text-center text-sm text-slate-500")}>{sp.q || qism ? "Filtr bo'yicha hech narsa topilmadi" : "Bu davrda hisob-kitob yo'q"}</td></tr>}
+              {rows.map((r) => (
+                <tr key={r.id} className="group relative cursor-pointer">
+                  <td className={cn(SH.line, SH.cell, SH.hover, "min-w-56 px-3 py-1.5")}>
+                    {/* Butun qator — akt sverka havolasi (after: qatorni qoplaydi) */}
+                    <Link href={aktHref(r.id)} className="after:absolute after:inset-0 after:content-['']" title={`${r.name} — akt sverka`}>{r.name}</Link>
+                    {!sup && !kind && r.kind === "CASH" && <span className="ml-2 align-middle"><Badge color="green" dot={false}>naqd</Badge></span>}
+                  </td>
+                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><Amt v={r.open.debt} /></td>
+                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><Amt v={r.open.advance} /></td>
+                  <td className={cn(SH.line, SH.cellNow, SH.split, num, SH.hover)}><Amt v={r.now.debt} /></td>
+                  <td className={cn(SH.line, SH.cellNow, num, SH.hover)}><Amt v={r.now.advance} /></td>
+                </tr>
+              ))}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot className="sticky bottom-0">
+                <tr className="font-bold">
+                  <td className={cn(SH.line, SH.head, "px-3 py-2")}>Jami</td>
+                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(ft.open.debt)}</td>
+                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(ft.open.advance)}</td>
+                  <td className={cn(SH.line, SH.headNow, SH.split, num, "py-2")}>{fmtFixed(ft.now.debt)}</td>
+                  <td className={cn(SH.line, SH.headNow, num, "py-2")}>{fmtFixed(ft.now.advance)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
       <p className="text-[13px] text-slate-500">
+        {legend}.{" "}
         {sup
-          ? "Hisob: boshlang'ich qoldiq + kirim hujjatlari (QQS va dostavka bilan) − ta'minotchiga to'langan pul. O'zgarish ↑ — qarzimiz o'sdi."
-          : "Hisob: schyotlar − mijoz to'lovlari. Mijoz turi — oxirgi zayavkadagi to'lov usuli. O'zgarish ↑ — mijoz qarzi o'sdi."}
+          ? "Hisob: boshlang'ich qoldiq + kirim hujjatlari (QQS va dostavka bilan) − ta'minotchiga to'langan pul."
+          : "Hisob: hisob-fakturalar − mijoz to'lovlari. Mijoz turi — oxirgi zayavkadagi to'lov usuli."}
       </p>
     </div>
   );

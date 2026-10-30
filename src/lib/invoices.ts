@@ -75,7 +75,8 @@ export async function cancelInvoice(id: string, reason: string, userId: string):
 
 // ───────────────────────── Akt sverki (mijoz bilan solishtirma dalolatnoma) ─────────────────────────
 
-export type StatementLine = { date: Date; doc: string; kind: "INVOICE" | "PAYMENT"; debit: number; credit: number; note: string | null; href?: string };
+/** `no` — schyot raqami, `account` — to'lov tushgan kassa/bank (akt sverka hujjat nomi uchun). */
+export type StatementLine = { date: Date; doc: string; kind: "INVOICE" | "PAYMENT"; debit: number; credit: number; note: string | null; href?: string; no?: string; account?: string };
 export type Statement = { opening: number; lines: StatementLine[]; debit: number; credit: number; closing: number };
 
 /**
@@ -97,9 +98,9 @@ export async function customerStatement(customerId: string, from: Date, to: Date
   const lines: StatementLine[] = [
     ...invoices.map((i): StatementLine => i.isOpening
       // Boshlang'ich qoldiq: musbat — mijoz qarzi (debet), manfiy — mijoz avansi (kredit)
-      ? { date: i.date, doc: `Boshlang'ich qoldiq ${i.invoiceNo}`, kind: "INVOICE", debit: Math.max(0, Number(i.amount)), credit: Math.max(0, -Number(i.amount)), note: "tizimga o'tish sanasidagi qoldiq", href: undefined }
-      : { date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${date(i.order.deliveryDate)}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined }),
-    ...payments.map((p): StatementLine => ({ date: p.date, doc: `To'lov · ${p.cashAccount.name}`, kind: "PAYMENT", debit: 0, credit: Number(p.amount), note: p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.order ? `avans · zayavka ${date(p.order.deliveryDate)}` : p.note, href: undefined })),
+      ? { date: i.date, doc: `Boshlang'ich qoldiq ${i.invoiceNo}`, kind: "INVOICE", debit: Math.max(0, Number(i.amount)), credit: Math.max(0, -Number(i.amount)), note: "tizimga o'tish sanasidagi qoldiq", href: undefined, no: i.invoiceNo }
+      : { date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${date(i.order.deliveryDate)}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined, no: i.invoiceNo }),
+    ...payments.map((p): StatementLine => ({ date: p.date, doc: `To'lov · ${p.cashAccount.name}`, kind: "PAYMENT", debit: 0, credit: Number(p.amount), note: p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.order ? `avans · zayavka ${date(p.order.deliveryDate)}` : p.note, href: undefined, account: p.cashAccount.name })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || (a.kind === b.kind ? 0 : a.kind === "INVOICE" ? -1 : 1));
   const debit = r2(lines.reduce((s, l) => s + l.debit, 0));
   const credit = r2(lines.reduce((s, l) => s + l.credit, 0));

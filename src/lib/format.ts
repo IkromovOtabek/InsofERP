@@ -13,6 +13,14 @@ export function fmtNum(v: number | string | { toString(): string }, maxFrac = 0)
   return (neg ? "-" : "") + grouped + (fracTrim ? "," + fracTrim : "");
 }
 
+/** Buxgalteriya jadvali: kasr har doim `frac` xonali — «8 350 000,00» (akt sverka, qarz varaqlari). */
+export function fmtFixed(v: number | string | { toString(): string }, frac = 2): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  const [int, f] = Math.abs(n).toFixed(frac).split(".");
+  return (n < 0 && Number(Math.abs(n).toFixed(frac)) !== 0 ? "-" : "") + int.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + (f ? "," + f : "");
+}
+
 export const money = (v: number | string | { toString(): string }) => fmtNum(v, 0) + " so'm";
 export const qty = (v: number | string | { toString(): string }) => fmtNum(v, 3);
 
@@ -32,6 +40,8 @@ export const dateTime = (d: Date) => `${date(d)} ${pad(d.getHours())}:${pad(d.ge
 export const isoDate = (d: Date = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 /** Ruscha jadvallar (Sklad → Приход/Расход): «20.04.2026» — Excel'dagidek nuqta bilan. */
 export const dateRu = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+/** Qisqa: «05.10.26» — akt sverka va qarz varaqlari sarlavhalari. */
+export const dateShort = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)}`;
 
 /** Yetkazish sanasi + soati: "18/09/2026 · 14:00" (soat kiritilmagan bo'lsa faqat sana). */
 export const deliveryAt = (d: Date, t?: string | null) => (t ? `${date(d)} · ${t}` : date(d));

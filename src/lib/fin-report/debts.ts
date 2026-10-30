@@ -26,9 +26,18 @@ export function parseDebtDay(v?: string): Date {
   return Number.isNaN(d.getTime()) || d > today ? today : d;
 }
 
+/** Davr boshi (`dan`, YYYY-MM-DD): sukut — `day` oyining 1-kuni; `day` dan keyin bo'lsa ham shunday. */
+export function parseDebtStart(v: string | undefined, day: Date): Date {
+  const first = new Date(day.getFullYear(), day.getMonth(), 1);
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return first;
+  const d = new Date(`${v}T00:00:00`);
+  return Number.isNaN(d.getTime()) || d > day ? first : d;
+}
+
 export type DebtSide = { debt: number; advance: number };
 export type DebtRow = { id: string; name: string; kind?: CustomerKind | null; open: DebtSide; now: DebtSide; change: number };
 export type DebtSheet = {
+  /** `monthStart` — davr boshi (sukut oy boshi, `dan` bilan o'zgaradi) */
   day: Date; monthStart: Date; rows: DebtRow[];
   total: { open: DebtSide; now: DebtSide };
   /** Mijoz turi bo'yicha soni (faqat xaridorlar) */
@@ -54,8 +63,8 @@ function sheet(day: Date, monthStart: Date, open: Map<string, number>, now: Map<
 }
 
 /** Ta'minotchilar oldidagi qarzdorlik: Qarz — biz ularga qarzmiz, Avans — biz oldindan to'laganmiz. */
-export async function supplierDebtSheet(day: Date): Promise<DebtSheet> {
-  const monthStart = new Date(day.getFullYear(), day.getMonth(), 1);
+export async function supplierDebtSheet(day: Date, start?: Date): Promise<DebtSheet> {
+  const monthStart = start ?? new Date(day.getFullYear(), day.getMonth(), 1);
   const [open, now] = await Promise.all([supplierPositions(monthStart), supplierPositions(nextDay(day))]);
   const ids = [...new Set([...open.keys(), ...now.keys()])];
   const names = new Map((await db.supplier.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((s) => [s.id, s.name]));
@@ -74,8 +83,8 @@ async function customerKinds(ids: string[]): Promise<Map<string, CustomerKind>> 
 }
 
 /** Xaridorlar qarzdorligi: Qarz — mijoz bizga qarz, Avans — mijoz oldindan to'lagan. `kind` — Mijoz turi filtri. */
-export async function customerDebtSheet(day: Date, kind?: CustomerKind | null): Promise<DebtSheet> {
-  const monthStart = new Date(day.getFullYear(), day.getMonth(), 1);
+export async function customerDebtSheet(day: Date, kind?: CustomerKind | null, start?: Date): Promise<DebtSheet> {
+  const monthStart = start ?? new Date(day.getFullYear(), day.getMonth(), 1);
   const [openB, nowB] = await Promise.all([customerBalances({ asOf: monthStart }), customerBalances({ asOf: nextDay(day) })]);
   const open = new Map([...openB.values()].map((b) => [b.customerId, b.balance]));
   const now = new Map([...nowB.values()].map((b) => [b.customerId, b.balance]));
