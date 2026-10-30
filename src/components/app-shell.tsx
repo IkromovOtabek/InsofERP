@@ -296,6 +296,9 @@ function currentLabel(path: string, items: NavItem[]) {
   return null;
 }
 
+/** Ochilganda chap menyu yig'iladigan sahifalar — jadval ekranning butun eniga yoyilsin (saqlangan tanlov o'zgarmaydi). */
+const WIDE_PAGES = [/^\/orders\/kun\//];
+
 export function AppShell({ items, user, brand, ai = false, apk = null, ios = null, tour, children }:
   { items: NavItem[]; user: User; brand: string; ai?: boolean; apk?: string | null; ios?: string | null; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -312,8 +315,15 @@ export function AppShell({ items, user, brand, ai = false, apk = null, ios = nul
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
   }, [open]);
   const pageLabel = currentLabel(path, items);
-  // Holatni <html> dagi klassdan o'qiymiz — uni layout.tsx skripti sahifa chizilishidan oldin qo'ygan
-  useEffect(() => { setCollapsed(document.documentElement.classList.contains("sb-collapsed")); }, []);
+  // Holat — saqlangan tanlov (layout.tsx skripti uni sahifa chizilishidan oldin <html> ga qo'ygan); keng jadvalli
+  // sahifalarda (kunlik «Realizatsiya zayavkasi») menyu o'zi yig'iladi, chiqilganda saqlangan holatga qaytadi
+  useEffect(() => {
+    let saved = false;
+    try { saved = localStorage.getItem("insof-sidebar") === "1"; } catch { saved = document.documentElement.classList.contains("sb-collapsed"); }
+    const next = saved || WIDE_PAGES.some((r) => r.test(path));
+    setCollapsed(next);
+    document.documentElement.classList.toggle("sb-collapsed", next);
+  }, [path]);
 
   const toggleSidebar = () => {
     const next = !collapsed;

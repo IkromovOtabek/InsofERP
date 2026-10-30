@@ -21,7 +21,7 @@ const GROUP_TONE: Record<string, SheetTone> = { BANK: "blue", CASH: "green", DEB
  * Uch blokning ustunlari bir-birining tagida tursin (Excel'dagidek) — bir xil kenglik (%, `table-fixed`).
  * Jadval ekran eniga sig'adi (gorizontal aylantirishsiz): matn ustunlari qatorga bo'linadi, summalar bo'linmaydi.
  */
-const COL_W = [11, 9, 4.5, 5, 7.5, 8, 9, 8, 9.5, 8, 8, 8.5, 4];
+const COL_W = [11, 9, 4.5, 5, 7.5, 8, 9, 8, 9.5, 8, 8, 8, 4.5];
 
 const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
 const nq = (v: number) => fmtNum(v, 3);
@@ -127,7 +127,7 @@ function GroupSheet({ g }: { g: DaySheetGroup }) {
               <SheetTd tone="yellow">{r.receiver ?? "—"}</SheetTd>
               <SheetTd tone="yellow">{r.phone ?? "—"}</SheetTd>
               <SheetTd tone="yellow">{r.site}</SheetTd>
-              <SheetTd tone="yellow" center>{r.time ?? "—"}</SheetTd>
+              <SheetTd tone="yellow" center className="whitespace-nowrap">{r.time ?? "—"}</SheetTd>
             </SheetTr>
           );
         })}
