@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireSession, requireAction } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
 import { today, validDay, validMonth } from "@/lib/davomat";
@@ -13,7 +13,7 @@ import { addProductDefect, deleteProductDefect } from "@/lib/defects";
 
 const done = () => { revalidatePath("/dashboard"); return { ok: true } as const; };
 
-/* ───────────────────────── Plan (faqat direktor) ───────────────────────── */
+/* ───────────────────────── Plan (direktor yoki u «production → plan» bergan xodim) ───────────────────────── */
 
 const PlanSchema = z.object({
   month: zStr(),
@@ -25,7 +25,7 @@ const PlanSchema = z.object({
 
 /** Mahsulotning oylik (va ixtiyoriy kunlik) plani — shu oy uchun bor bo'lsa yangilanadi. */
 export async function savePlan(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([]); // requireSession direktorni doim o'tkazadi, bo'sh ro'yxat — boshqa hech kim
+  const s = await requireAction("production", "plan");
   const r = parseForm(PlanSchema, fd);
   if ("error" in r) return { error: r.error };
   const ym = validMonth(r.data.month);
@@ -45,7 +45,7 @@ export async function savePlan(_prev: ActionState, fd: FormData): Promise<Action
 }
 
 export async function deletePlan(id: string): Promise<ActionState> {
-  const s = await requireSession([]);
+  const s = await requireAction("production", "plan");
   const p = await db.productionPlan.findUnique({ where: { id } });
   if (!p) return { error: "Plan topilmadi" };
   await db.$transaction(async (tx) => {
@@ -117,10 +117,10 @@ export async function markAllStaff(): Promise<ActionState> {
   return { ok: true, note: r.count ? `${r.count} kishi "Keldi" deb belgilandi` : "Hamma belgilangan" };
 }
 
-/* ───────────────────────── Xodimlarni taqsimlash (faqat direktor) ───────────────────────── */
+/* ───────────────────────── Xodimlarni taqsimlash (direktor yoki «production → staff») ───────────────────────── */
 
 export async function assignStaff(employeeId: string, brigadeId: string): Promise<ActionState> {
-  const s = await requireSession([]);
+  const s = await requireAction("production", "staff");
   const r = await assignEmployeeBrigade(s.userId, employeeId, brigadeId || null);
   if ("error" in r) return { error: r.error };
   revalidatePath("/dashboard/xodimlar");

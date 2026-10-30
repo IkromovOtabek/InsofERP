@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireAction, requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { saveDailyOrderLimits } from "@/lib/company";
 import { createOrder as createOrderDomain, orderConfirm, orderSetDate, orderUnblock } from "@/lib/orders";
 import { cancelOrderWithReason, closeStockOrderLib, setGuarantee, setOrderContract } from "@/lib/order-docs";
@@ -318,11 +318,11 @@ const capacitySchema = z.object({
 });
 
 /**
- * Haftalik ish tartibidagi kunlik limit (quvvat) — m³ va dona. Faqat direktor; Sozlamalar → Limitlar'dagi
+ * Haftalik ish tartibidagi kunlik limit (quvvat) — m³ va dona. Direktor (yoki «orders → capacity» berilgan xodim); Sozlamalar → Limitlar'dagi
  * «Kunlik quvvat» bilan bir maydon. Yumshoq ko'rsatkich: zayavkani bloklamaydi, faqat taqvim rangi.
  */
 export async function saveDailyCapacity(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["DIRECTOR"]);
+  const s = await requireAction("orders", "capacity");
   const r = parseForm(capacitySchema, fd);
   if ("error" in r) return { error: r.error };
   const changed = await saveDailyOrderLimits(s.userId, r.data);

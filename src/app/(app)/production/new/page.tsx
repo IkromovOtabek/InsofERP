@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { customerMarks, markedName } from "@/lib/finance";
 import { redirect } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui";
 import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
@@ -11,8 +12,8 @@ import { orderLabel } from "@/lib/format";
 
 export default async function NewBatch() {
   const s = await requirePage("/production");
-  // Zames faqat ishlab chiqarish (va direktor) yozadi — boshqalarga xato sahifasi emas, ro'yxatga qaytish
-  if (s.role !== "PRODUCTION" && s.role !== "DIRECTOR") redirect("/production");
+  // Zames — ishlab chiqarish (yoki direktor «production → batch» bergan xodim); boshqalarga xato sahifasi emas, ro'yxatga qaytish
+  if (!canDo(s, "production", "batch")) redirect("/production");
   const [orders, catalog, warehouses, tasks] = await Promise.all([
     db.order.findMany({
       where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },

@@ -45,6 +45,9 @@ export async function ProductionHome({ s }: { s: Session }) {
   const todayReports = reports.filter((r) => r.iso === iso);
   const marks = await customerMarks(d.load.orders.map((o) => o.customerId));
   const isDirector = s.role === "DIRECTOR";
+  // Plan va xodimlarni taqsimlash — odatda direktor; Ruxsatlarda «Ishlab chiqarish → plan / staff» bilan boshqaga beriladi
+  const canPlan = canDo(s, "production", "plan");
+  const canStaff = canDo(s, "production", "staff");
 
   const producedToday = fmtUnitTotals(d.produced.filter((r) => r.day > 0).map((r) => ({ unit: r.product.unit, qty: r.day })));
   const defectToday = fmtUnitTotals(d.defects.today.map((r) => ({ unit: r.product.unit, qty: r.qty })));
@@ -70,7 +73,7 @@ export async function ProductionHome({ s }: { s: Session }) {
         </div>
       ) : null}
       <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
-        <StatCard label="Sex xodimlari" value={String(d.staff.total)} hint={d.staff.unassigned ? `${d.staff.unassigned} kishi taqsimlanmagan` : `${d.staff.groups.filter((g) => g.id).length} brigadaga taqsimlangan`} icon={Users} tone={d.staff.unassigned ? "warning" : "default"} href={isDirector ? "/dashboard/xodimlar" : "#davomat"} />
+        <StatCard label="Sex xodimlari" value={String(d.staff.total)} hint={d.staff.unassigned ? `${d.staff.unassigned} kishi taqsimlanmagan` : `${d.staff.groups.filter((g) => g.id).length} brigadaga taqsimlangan`} icon={Users} tone={d.staff.unassigned ? "warning" : "default"} href={canStaff ? "/dashboard/xodimlar" : "#davomat"} />
         <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
         <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint="bugun" icon={Factory} tone="brand" href="/production" />
@@ -122,11 +125,11 @@ export async function ProductionHome({ s }: { s: Session }) {
         <MobileFold label="Plan jadvali">
         <Card padded={false}>
           {d.plan.rows.length === 0 ? (
-            <div className="px-5 py-4 text-sm text-slate-500">{isDirector ? "Bu oyga plan belgilanmagan — pastdagi formadan mahsulot bo'yicha oylik plan qo'ying." : "Bu oyga plan belgilanmagan. Planni direktor belgilaydi."}</div>
+            <div className="px-5 py-4 text-sm text-slate-500">{canPlan ? "Bu oyga plan belgilanmagan — pastdagi formadan mahsulot bo'yicha oylik plan qo'ying." : "Bu oyga plan belgilanmagan. Planni direktor belgilaydi."}</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-sm">
-                <thead><tr><Th>Mahsulot</Th><Th className="w-56">Bugun (kunlik plan)</Th><Th className="w-56">Oy (oylik plan)</Th><Th right>Orqada</Th><Th right>Brak (oy)</Th>{isDirector && <Th />}</tr></thead>
+                <thead><tr><Th>Mahsulot</Th><Th className="w-56">Bugun (kunlik plan)</Th><Th className="w-56">Oy (oylik plan)</Th><Th right>Orqada</Th><Th right>Brak (oy)</Th>{canPlan && <Th />}</tr></thead>
                 <tbody>
                   {d.plan.rows.map((p) => {
                     const un = unitLabel(p.product.unit);
@@ -144,7 +147,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                         </Td>
                         <Td right className={p.behind > 0 ? "font-semibold text-red-600" : "text-emerald-700"}>{p.behind > 0 ? `${qty(p.behind)} ${un}` : "rejada"}</Td>
                         <Td right className={p.defectMonth > 0 ? "text-red-600" : "text-slate-400"}>{p.defectMonth > 0 ? `${qty(p.defectMonth)} ${un}` : "—"}</Td>
-                        {isDirector && <Td right><DeletePlanButton id={p.id} /></Td>}
+                        {canPlan && <Td right><DeletePlanButton id={p.id} /></Td>}
                       </Tr>
                     );
                   })}
@@ -152,7 +155,7 @@ export async function ProductionHome({ s }: { s: Session }) {
               </table>
             </div>
           )}
-          {isDirector && (
+          {canPlan && (
             <div className="border-t border-slate-100 px-5 py-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium"><Target size={15} className="text-brand-600" /> Plan belgilash — {monthTitle(d.ym)}</div>
               <PlanForm month={d.ym} products={d.products} plans={d.plan.rows.map((p) => ({ productId: p.product.id, monthQty: p.monthQty, dayQty: p.dayQtyManual ? p.dayQty : null, note: p.note }))} />
@@ -201,7 +204,7 @@ export async function ProductionHome({ s }: { s: Session }) {
 
       {/* ── 1–2. Sex xodimlari va davomat ── */}
       <div id="davomat" className="scroll-mt-20" />
-      <Section title="Sex xodimlari va davomat" action={isDirector ? <LinkButton href="/dashboard/xodimlar" variant="secondary" size="sm"><UserCog size={14} /> Xodimlarni taqsimlash</LinkButton> : <MarkAllButton left={d.attendance.notMarked.length} />}>
+      <Section title="Sex xodimlari va davomat" action={<div className="flex flex-wrap gap-2">{canStaff && <LinkButton href="/dashboard/xodimlar" variant="secondary" size="sm"><UserCog size={14} /> Xodimlarni taqsimlash</LinkButton>}{!isDirector && <MarkAllButton left={d.attendance.notMarked.length} />}</div>}>
         <MobileFold label="Davomat jadvali">
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
           <Card>
@@ -216,7 +219,7 @@ export async function ProductionHome({ s }: { s: Session }) {
             </ul>
             <div className="mt-3 flex justify-between border-t border-slate-100 pt-2 text-sm font-semibold"><span>Jami sexda</span><span className="tabular">{presentCount} / {d.staff.total}</span></div>
             {d.staff.unassigned > 0 && (
-              <p className="mt-2 text-xs text-amber-700">{d.staff.unassigned} kishi brigadaga taqsimlanmagan{isDirector ? " — «Xodimlarni taqsimlash» dan biriktiring." : " — direktor taqsimlaydi."}</p>
+              <p className="mt-2 text-xs text-amber-700">{d.staff.unassigned} kishi brigadaga taqsimlanmagan{canStaff ? " — «Xodimlarni taqsimlash» dan biriktiring." : " — direktor taqsimlaydi."}</p>
             )}
             <div className="mt-4 border-t border-slate-100 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Lavozim bo&apos;yicha</div>
             <ul className="mt-2 space-y-1 text-sm">
@@ -254,7 +257,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                       </Tr>
                     );
                   })}
-                  {d.staff.total === 0 && <Empty text={isDirector ? "Sexga xodim taqsimlanmagan — «Xodimlarni taqsimlash» ni oching" : "Sexga xodim taqsimlanmagan — direktorga ayting"} icon={Users} />}
+                  {d.staff.total === 0 && <Empty text={canStaff ? "Sexga xodim taqsimlanmagan — «Xodimlarni taqsimlash» ni oching" : "Sexga xodim taqsimlanmagan — direktorga ayting"} icon={Users} />}
                 </tbody>
               </table>
             </div>

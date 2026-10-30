@@ -14,7 +14,7 @@ import { dashRange, type DashRange } from "./dashboard";
 import { periodAttendance, periodPlan } from "@/lib/period-stats";
 import { ListError } from "./list";
 import type { MobileUser } from "./auth";
-import type { DetailAction, DetailField, MobileDetail } from "./detail";
+import { can, type DetailAction, type DetailField, type MobileDetail } from "./detail";
 import type { HomeRow, HomeSection, Tone } from "./home";
 
 /**
@@ -371,7 +371,7 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
       ],
     });
   }
-  if (user.role === "DIRECTOR") {
+  if (can(user, "sex.assign")) {
     actions.push({
       id: "sex.assign", label: "Brigadaga biriktirish", tone: "brand",
       form: [{ name: "brigadeId", label: "Brigada", type: "select", value: m?.brigadeId ?? "", options: [{ value: "", label: "— sexda emas / taqsimlanmagan —" }, ...s.brigades.map((b) => ({ value: b.id, label: b.name }))] }],

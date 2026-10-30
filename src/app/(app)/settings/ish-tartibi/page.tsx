@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function IshTartibiPage({ searchParams }: { searchParams: Promise<{ yil?: string }> }) {
   const s = await requirePage("/settings/ish-tartibi");
-  await requireRoles(["HR"]);
+  await requireRoles(["HR"], { module: "employees" });
   if (!pathAllowed("/otdel-kadr", s.role, s.perms)) redirect("/dashboard?denied=1");
   const canEdit = canDo(s, "employees", "calendar");
 

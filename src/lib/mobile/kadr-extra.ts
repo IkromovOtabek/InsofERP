@@ -1017,7 +1017,7 @@ export async function kadrCreate(user: MobileUser, key: string, payload: unknown
       return { key: "xabarlar", id: "", message: `${r.count} xodimga yuborildi` };
     }
     case "davomat-sozlama": {
-      if (user.role !== "DIRECTOR" && user.perms?.employees === "none") forbid();
+      if (!may(user, "late_fine")) forbid();
       const r = ok(await saveLateFineCore(user.id, formData({ ...p, amount: str(p, "amount").replace(/\s/g, ""), maxPerMonth: str(p, "maxPerMonth").replace(/\s/g, "") })));
       return { key, id: "", message: r.note ?? "Saqlandi" };
     }

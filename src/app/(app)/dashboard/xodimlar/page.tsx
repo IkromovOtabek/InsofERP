@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { HardHat, Users } from "lucide-react";
 import { getSession } from "@/lib/auth";
+import { canDo } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { productionStaff, UNASSIGNED } from "@/lib/production-staff";
 import { markOf } from "@/lib/davomat";
@@ -15,7 +16,7 @@ import { AssignSelect } from "../production-forms";
  */
 export default async function StaffAssignPage({ searchParams }: { searchParams: Promise<{ all?: string }> }) {
   const s = await getSession();
-  if (s?.role !== "DIRECTOR") redirect("/dashboard?denied=1");
+  if (!s || !canDo(s, "production", "staff")) redirect("/dashboard?denied=1");
   const showAll = (await searchParams).all === "1";
   const staff = await productionStaff();
   const inSex = new Set(staff.members.map((m) => m.id));

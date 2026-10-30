@@ -83,7 +83,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         </div>
       )}
       {/* 10 kunlik ish tartibi: qaysi kunga zayavka ko'p, qaysi kun bo'sh */}
-      <OrderLoadCalendar canEdit={s.role === "DIRECTOR"} />
+      <OrderLoadCalendar canEdit={canDo(s, "orders", "capacity")} />
       {canApproveSupply && <SupplyApprovals mode="sales" />}
       {day ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">

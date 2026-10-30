@@ -10,6 +10,7 @@ import { RowForm } from "@/components/row-form";
 import { savePlan, deletePlan } from "./actions";
 import { cn } from "@/lib/utils";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const now = new Date();
   const year = Number(sp.year) || now.getFullYear(), month = Math.min(12, Math.max(1, Number(sp.month) || now.getMonth() + 1));
   const d = await plansTab(year, month);
-  const canEdit = s.role === "DIRECTOR" || s.role === "FINANCE";
+  const canEdit = canDo(s, "bi-tahlil", "plan");
   const mHref = (y: number, m: number) => `/bi-tahlil/reja?year=${y}&month=${m}`;
   const prevM = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 }, nextM = month === 12 ? { y: year + 1, m: 1 } : { y: year, m: month + 1 };
   const groups: { title: string; sub: string; list: typeof d.sellers; tone: string; advice: string }[] = [

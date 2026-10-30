@@ -11,6 +11,7 @@ import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, itemTas
 import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
 import { pathAllowed } from "@/lib/nav";
 import { productionMatrix } from "@/lib/production-matrix";
 import { ProductionMatrixView, type BoardOrder } from "./matrix";
@@ -23,7 +24,7 @@ import { ProductionMatrixView, type BoardOrder } from "./matrix";
  */
 export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ order?: string; tab?: string; item?: string }> }) {
   const session = await requirePage("/production");
-  const canBatch = session.role === "PRODUCTION" || session.role === "DIRECTOR";
+  const canBatch = canDo(session, "production", "batch");
   const { order: selectedId, tab = "open", item: focusItem } = await searchParams;
   const [allOrders, brigades, batches, matrix] = await Promise.all([
     db.order.findMany({

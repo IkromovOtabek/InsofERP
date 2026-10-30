@@ -406,7 +406,7 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Yetkazuvchini yopish/ochish — veb `/suppliers`
   "supplier.toggle": ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],
   // Sex (mobil ishlab chiqarish bosh ekrani): davomatni sex boshlig'i belgilaydi (`lib/production-staff.ts`),
-  // kunlik hisobotni u qayd etadi; xodimni brigadaga direktor taqsimlaydi
+  // kunlik hisobotni u qayd etadi; xodimni brigadaga direktor taqsimlaydi (Ruxsatlarda «production → staff» bilan boshqaga ham)
   // Brigadir smena boshida faqat O'Z brigadasi a'zolarini belgilaydi (`assertOwnMember`).
   // Yuz tekshiruvi yoqiq bo'lsa brigadir "Keldi" ni faqat `att.face` bilan qo'yadi: att.present/att.all va
   // att.status orqali PRESENT rad etiladi, vaqtni esa faqat sex boshlig'i tuzatadi (`lib/mobile/actions.ts`)
@@ -515,6 +515,7 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   "arenda.remind": { module: "arenda", action: "create" },
   "arenda.pay.former": { module: "arenda", action: "create" },
   "order.assign": { module: "production", action: "assign" },
+  "sex.assign": { module: "production", action: "staff" },
   "batch.storno": { module: "production", action: "batch_storno" },
   "recipe.version": { module: "production", action: "recipe" },
   "brigade.edit": { module: "tasks", action: "brigade" },

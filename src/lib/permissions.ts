@@ -44,6 +44,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "import",   label: "Excel'dan zayavka import",           roles: ["SALES"] },
     { key: "stock",    label: "Sklad (zaxira) zayavkasi",           roles: STOCK_ORDER, hint: "Ochish, qabul qilish, yopish, bekor qilish" },
     { key: "unblock",  label: "Limitdan oshgan zayavka blokini ochish", roles: [], hint: "Odatda faqat direktor — ehtiyot bo'lib bering" },
+    { key: "capacity", label: "Kunlik limit (taqvimdagi m³ / dona quvvati)", roles: [], hint: "Zayavkani bloklamaydi, taqvim rangini belgilaydi — odatda direktor" },
   ],
   sales: [
     { key: "leads",     label: "Sayt arizalari bilan ishlash",  roles: ["SALES"], hint: "Holat, izoh, mijozga aylantirish" },
@@ -75,12 +76,16 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "app_link", label: "ECO ilova hisobini bog'lash",  roles: ["SALES"] },
     { key: "agent",    label: "Mijozni agentga biriktirish",  roles: ["HR", "SALES"] },
   ],
+  // Sotuv agentlari sahifasi (`/agent`): ko'rish darajasi; mijozni agentga biriktirish — «customers» → «agent»
+  agent: [],
   production: [
     { key: "batch",   label: "Zames (partiya) yozish",           roles: ["PRODUCTION"] },
     { key: "assign",  label: "Brigadalarga taqsimlash",          roles: ["PRODUCTION"] },
     { key: "recipe",  label: "Retsept versiyasi / import",       roles: ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"] },
     { key: "report",  label: "Brak, davomat, smena hisoboti",    roles: ["PRODUCTION", "SUPERVISOR"] },
     { key: "batch_storno", label: "Zamesni bekor qilish",       roles: [], hint: "Xomashyo skladga qaytadi, mahsulot chiqariladi — odatda faqat direktor" },
+    { key: "plan",    label: "Oylik va kunlik ishlab chiqarish plani", roles: [], hint: "Bosh sahifadagi mahsulot bo'yicha plan — odatda direktor" },
+    { key: "staff",   label: "Sex xodimlarini brigadalarga taqsimlash", roles: [], hint: "Bosh sahifa → «Xodimlarni taqsimlash» — odatda direktor" },
   ],
   tasks: [
     { key: "progress", label: "Bajarilgan hajmni qayd qilish",   roles: ["PRODUCTION", "SUPERVISOR"] },
@@ -162,6 +167,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "login",  label: "Login berish, parol, rol",          roles: ["HR"], hint: "Rol berish — muhim huquq" },
     { key: "requests", label: "Arizalarni tasdiqlash (ta'til, kasallik, avans)", roles: ["HR"], hint: "Tasdiqlangan ta'til/kasallik davomatga tushadi, avans — direktor tasdig'iga" },
     { key: "calendar", label: "Zavod ish tartibi va bayramlar", roles: ["HR"], hint: "Hisobot va prognozlardagi ish kunlari shundan; davomat va ish haqiga ta'sir qilmaydi" },
+    { key: "late_fine", label: "Kechikish jarimasi (Sozlamalar → Davomat)", roles: ["HR"] },
     { key: "schedule", label: "Smena grafigini tuzish",          roles: ["HR"] },
     { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
     { key: "checklists", label: "Kundalik cheklistlar (lavozim majburiyatlari)", roles: ["HR"] },

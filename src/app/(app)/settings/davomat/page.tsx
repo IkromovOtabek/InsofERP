@@ -17,7 +17,7 @@ import { LateFineForm } from "./late-fine-form";
  */
 export default async function DavomatSettingsPage({ searchParams }: { searchParams: Promise<{ oy?: string }> }) {
   const s = await requirePage("/settings/davomat");
-  await requireRoles(["HR"]);
+  await requireRoles(["HR"], { module: "employees", actions: ["late_fine"] });
   // Direktor otdel kadr xodimiga "Xodimlar / kadr" modulini yopgan bo'lsa — davomat sozlamasi ham yopiq
   if (!pathAllowed("/otdel-kadr", s.role, s.perms)) redirect("/dashboard?denied=1");
 
