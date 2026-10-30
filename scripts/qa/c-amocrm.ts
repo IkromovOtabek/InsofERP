@@ -197,7 +197,9 @@ async function main() {
   const amoLeads = [...st.leads.values()].filter((l) => l.name.includes(`${TAG} Ali`));
   check("amoCRM'da bitta sdelka (takror yo'q)", amoLeads.length === 1, amoLeads.length);
   check("sdelka «Yangi» bosqichida va voronkada", amoLeads[0]?.status_id === S_NEW && amoLeads[0]?.pipeline_id === P);
-  const note = st.notes.find((n) => n.leadId === deal1?.amoLeadId);
+  // Eslatma sdelkadan keyin alohida so'rov bilan yoziladi (fon vazifasi ham) — band mashinada 300 ms yetmaydi, 3 s gacha kutiladi
+  let note = st.notes.find((n) => n.leadId === deal1?.amoLeadId);
+  for (let i = 0; !note && i < 30; i++) { await new Promise((r) => setTimeout(r, 100)); note = st.notes.find((n) => n.leadId === deal1?.amoLeadId); }
   check("eslatmada telefon, manzil va reklama", !!note && note.text.includes(phone) && note.text.includes("Chilonzor") && note.text.includes("instagram"), note?.text);
 
   // Shu telefon bilan ikkinchi ariza (2 daqiqadan keyin bo'lsa) — mavjud kontaktga bog'lanadi
