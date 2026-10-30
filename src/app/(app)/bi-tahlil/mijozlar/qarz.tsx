@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Crown, Hourglass, HandCoins, Scale, Search, Truck, UserRound, Users, Wallet } from "lucide-react";
+import { ArrowDownWideNarrow, Crown, Hourglass, HandCoins, Scale, Search, SlidersHorizontal, Truck, UserRound, Users, Wallet, X } from "lucide-react";
 import { type SP } from "../shell";
 import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_LABEL } from "@/lib/fin-report/debts";
 import { MONTHS_UZ } from "@/lib/bi/plans";
@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
 /**
  * Tahlil → Mijozlar: tahlil va «Insof 2026» jadvalidagi qarz varaqlari. Sidebar'da «Mijozlar» ostida ham shu havolalar (`lib/nav.ts`).
  * URL: `sana` (YYYY-MM-DD, sukut — bugun), `q` (nom bo'yicha qidiruv), `tur` (CASH / BANK), `holat` (0–3),
- * `qism` (debitor / kreditor — kim kimga qarz), `dan` (qarz varaqlarida davr boshi, sukut — oy boshi).
+ * `qism` (debitor / kreditor — kim kimga qarz), `dan` (qarz varaqlarida davr boshi, sukut — oy boshi),
+ * `smin` / `smax` (qarz varaqlari: davr oxiridagi summa oralig'i, so'm), `sort=summa` (katta summa tepada).
  */
 
 const qs = (o: Record<string, string | undefined>) => { const s = new URLSearchParams(Object.entries(o).filter((kv): kv is [string, string] => !!kv[1])).toString(); return s ? `?${s}` : ""; };
@@ -23,11 +24,11 @@ const isToday = (d: Date) => isoDate(d) === isoDate(new Date());
 const Num = ({ v, className }: { v: number; className?: string }) => (Math.abs(v) < 1 ? <span className="text-slate-300">—</span> : <span className={className}>{fmtNum(v)}</span>);
 
 /** Sana, qidiruv va Excel — har uch hisobot tepasida. */
-function Toolbar({ base, day, start, sp, keep, excel, placeholder }: { base: string; day: Date; start?: Date; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; placeholder: string }) {
+function Toolbar({ base, day, start, sp, keep, excel, extra, placeholder }: { base: string; day: Date; start?: Date; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; extra?: React.ReactNode; placeholder: string }) {
   return (
     <form method="get" action={base} className="mb-4 flex flex-wrap items-center gap-2">
       {Object.entries(keep).map(([k, v]) => v && <input key={k} type="hidden" name={k} value={v} />)}
-      <label className="relative min-w-52 flex-1 sm:max-w-72">
+      <label className="relative min-w-44 flex-1 sm:max-w-72">
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
         <Input name="q" defaultValue={sp.q ?? ""} placeholder={placeholder} className="h-9 pl-9" />
       </label>
@@ -41,6 +42,7 @@ function Toolbar({ base, day, start, sp, keep, excel, placeholder }: { base: str
       </label>
       <button className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
       {!isToday(day) && <Link href={`${base}${qs({ ...keep, q: sp.q })}`} className="h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Bugun</Link>}
+      {extra}
       {excel}
     </form>
   );
@@ -58,6 +60,54 @@ const filterName = <T extends { name: string }>(rows: T[], q?: string) => {
   const s = q?.trim().toLowerCase();
   return s ? rows.filter((r) => r.name.toLowerCase().includes(s)) : rows;
 };
+
+// ───────────────────── Summa filtri (qarz varaqlari) ─────────────────────
+
+const SUM_PRESETS = [1_000_000, 10_000_000, 50_000_000, 100_000_000];
+/** «10 000 000», «10000000» → 10000000; bo'sh yoki noto'g'ri — filtr yo'q. */
+const parseSum = (v?: string) => { const n = Number((v ?? "").replace(/[\s,'_]/g, "")); return v && Number.isFinite(n) && n > 0 ? n : undefined; };
+
+/**
+ * «Summa» tugmasi — asboblar qatorida, Excel oldida; bosilsa panel ochiladi (JS'siz, `<details>`).
+ * Maydonlar Toolbar formasining ichida: «Qo'llash» qidiruv, sana va boshqa filtrlarni ham saqlab yuboradi.
+ */
+function SumFilter({ on, label, side, smin, smax, bySum, presets, clearHref }: {
+  on: boolean; label: string; side: string; smin?: number; smax?: number; bySum: boolean;
+  presets: { v: number; href: string; on: boolean }[]; clearHref: string;
+}) {
+  return (
+    <details className="relative">
+      <summary className={cn("flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition [&::-webkit-details-marker]:hidden",
+        on ? "border-amber-300 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}>
+        {/* Qiymat Ko'rinish qatoridagi chipda to'liq — tugmada faqat belgi (asboblar qatori bir qatorda sig'sin) */}
+        <SlidersHorizontal size={15} /> Summa{on && <span className="h-2 w-2 rounded-full bg-amber-500" title={label} />}
+      </summary>
+      <div className="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+        <div className="text-xs font-semibold text-slate-500">Davr oxiridagi summa · {side}</div>
+        <div className="mt-2 grid grid-cols-4 gap-1.5">
+          {presets.map((p) => (
+            <Link key={p.v} href={p.href} className={cn("rounded-lg border px-2 py-1.5 text-center text-[13px] font-medium transition", p.on ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50")}>
+              ≥ {moneyShort(p.v)}
+            </Link>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
+          <Input name="smin" defaultValue={smin != null ? fmtNum(smin) : ""} placeholder="dan, so'm" inputMode="numeric" className="h-9" />
+          <span>–</span>
+          <Input name="smax" defaultValue={smax != null ? fmtNum(smax) : ""} placeholder="gacha, so'm" inputMode="numeric" className="h-9" />
+        </div>
+        <label className="mt-2.5 flex items-center gap-2 text-[13px] text-slate-700">
+          <input type="checkbox" name="sort" value="summa" defaultChecked={bySum} className="h-4 w-4 rounded border-slate-300" />
+          <ArrowDownWideNarrow size={14} className="text-slate-400" /> Katta summa tepada
+        </label>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <Link href={clearHref} className="text-[13px] font-medium text-slate-500 hover:text-slate-900 hover:underline">Tozalash</Link>
+          <button className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800">Qo&apos;llash</button>
+        </div>
+      </div>
+    </details>
+  );
+}
 
 // ───────────────────── Qarz / Avans: davr boshi → davr oxiri ─────────────────────
 
@@ -82,7 +132,16 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
   const isDebitor = (r: DebtSheet["rows"][number]) => (sup ? r.now.advance : r.now.debt) >= 1;
   const isKreditor = (r: DebtSheet["rows"][number]) => (sup ? r.now.debt : r.now.advance) >= 1;
   const named = filterName(s.rows, sp.q);
-  const rows = named.filter((r) => !qism || (qism === "debitor" ? isDebitor(r) : isKreditor(r)));
+  // Summa filtri — davr oxiridagi summa: tanlangan qism (debitor / kreditor) ustuni, «Hammasi»da qarz yoki avansning kattasi
+  const amt = (r: DebtSheet["rows"][number]) => (qism === "debitor" ? (sup ? r.now.advance : r.now.debt) : qism === "kreditor" ? (sup ? r.now.debt : r.now.advance) : Math.max(r.now.debt, r.now.advance));
+  const smin = parseSum(sp.smin), smax = parseSum(sp.smax);
+  const bySum = sp.sort === "summa";
+  const sumOn = smin != null || smax != null;
+  const sumKeep = { smin: smin != null ? String(smin) : undefined, smax: smax != null ? String(smax) : undefined, sort: bySum ? "summa" : undefined };
+  const rows = named
+    .filter((r) => !qism || (qism === "debitor" ? isDebitor(r) : isKreditor(r)))
+    .filter((r) => (smin == null || amt(r) >= smin) && (smax == null || amt(r) <= smax))
+    .sort((a, b) => (bySum ? amt(b) - amt(a) : 0));
   const d1 = dateShort(s.monthStart), d2 = dateShort(s.day);
   const dan = isoDate(s.monthStart), sana = isoDate(s.day);
   // Oy boshidan boshlangan davrda `dan` URL'da yurmaydi — sana o'zgarsa davr boshi ham o'sha oyga ko'chadi
@@ -91,7 +150,10 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
   const sumRows = (f: (r: DebtSheet["rows"][number]) => number) => rows.reduce((a, r) => a + f(r), 0);
   const ft = { open: { debt: sumRows((r) => r.open.debt), advance: sumRows((r) => r.open.advance) }, now: { debt: sumRows((r) => r.now.debt), advance: sumRows((r) => r.now.advance) } };
   const debitorSum = sup ? t.now.advance : t.now.debt, kreditorSum = sup ? t.now.debt : t.now.advance;
-  const qismHref = (v?: string) => `${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, tur: kind, qism: v })}`;
+  const qismHref = (v?: string) => `${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, tur: kind, qism: v, ...sumKeep })}`;
+  const sumHref = (o: Partial<typeof sumKeep>) => `${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, tur: kind, qism, ...sumKeep, ...o })}`;
+  const sumLabel = smin != null && smax != null ? `${moneyShort(smin)} – ${moneyShort(smax)}` : smin != null ? `${moneyShort(smin)} dan ko'p` : smax != null ? `${moneyShort(smax)} gacha` : "";
+  const sumSide = qism === "debitor" ? "debitorka" : qism === "kreditor" ? "kreditorka" : "qarz yoki avans";
   const sheetTitle = sup ? "Ta'minotchilar oldidagi qarzdorlik" : "Xaridorlar qarzdorligi";
   const legend = sup ? "Qarz (kreditorka) — biz ularga qarzmiz; Avans (debitorka) — biz oldindan to'laganmiz" : "Qarz (debitorka) — mijoz bizga qarz; Avans (kreditorka) — mijoz oldindan to'lagan";
   const delta = (a: number, b: number) => (Math.abs(b - a) < 1 ? "davr boshidagidek" : `davr boshiga nisbatan ${b > a ? "+" : "−"}${moneyShort(Math.abs(b - a))}`);
@@ -108,6 +170,9 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
   return (
     <div className="space-y-5">
       <Toolbar base={base} day={s.day} start={s.monthStart} sp={sp} keep={{ tur: kind, qism }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
+        extra={<SumFilter on={sumOn || bySum} label={sumLabel || (bySum ? "katta tepada" : "")} side={sumSide} smin={smin} smax={smax} bySum={bySum}
+          presets={SUM_PRESETS.map((v) => ({ v, href: sumHref({ smin: String(v), smax: undefined }), on: smin === v && smax == null }))}
+          clearHref={sumHref({ smin: undefined, smax: undefined, sort: undefined })} />}
         excel={<ExcelButton file={`${sheetTitle} ${sana}`} sheets={[{ name: sup ? "Ta'minotchilar" : "Xaridorlar", rows: excelRows }]} />} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -122,14 +187,20 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
         <Chip href={qismHref()} on={!qism} count={named.length}>Hammasi</Chip>
         <Chip href={qismHref("debitor")} on={qism === "debitor"} count={named.filter(isDebitor).length}>Debitorka · {sup ? "bizga qarz (avans)" : "bizga qarz"} · {moneyShort(debitorSum)}</Chip>
         <Chip href={qismHref("kreditor")} on={qism === "kreditor"} count={named.filter(isKreditor).length}>Kreditorka · {sup ? "biz qarzmiz" : "biz qarzmiz (avans)"} · {moneyShort(kreditorSum)}</Chip>
+        {(sumOn || bySum) && (
+          <Link href={sumHref({ smin: undefined, smax: undefined, sort: undefined })} title="Summa filtrini olib tashlash"
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[13px] font-medium text-amber-800 hover:bg-amber-100">
+            Summa: {[sumLabel, bySum ? "katta tepada" : ""].filter(Boolean).join(" · ")} <span className="tabular text-xs text-amber-600">{rows.length}</span><X size={13} />
+          </Link>
+        )}
       </div>
 
       {!sup && s.kinds && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs font-medium text-slate-500">Mijoz turi:</span>
-          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism })}`} on={!kind} count={s.kinds.ALL}>Hammasi</Chip>
-          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism, tur: "CASH" })}`} on={kind === "CASH"} count={s.kinds.CASH}>Naqd</Chip>
-          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism, tur: "BANK" })}`} on={kind === "BANK"} count={s.kinds.BANK}>Perechisleniye</Chip>
+          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism, ...sumKeep })}`} on={!kind} count={s.kinds.ALL}>Hammasi</Chip>
+          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism, ...sumKeep, tur: "CASH" })}`} on={kind === "CASH"} count={s.kinds.CASH}>Naqd</Chip>
+          <Chip href={`${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, qism, ...sumKeep, tur: "BANK" })}`} on={kind === "BANK"} count={s.kinds.BANK}>Perechisleniye</Chip>
         </div>
       )}
 
@@ -141,7 +212,7 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
             <span className="tabular">Oy: <span className="ml-2">{String(s.day.getMonth() + 1).padStart(2, "0")}.{s.day.getFullYear()}</span></span>
           </div>
           <div className="mt-1 text-[22px] font-bold leading-tight text-slate-900">{sheetTitle} — {monthName(s.day)}</div>
-          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: nomi bo&apos;yicha (A → Z). Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</div>
+          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: {bySum ? "summa bo'yicha (katta → kichik)" : "nomi bo'yicha (A → Z)"}. Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</div>
         </div>
         <div className="overflow-auto" style={{ maxHeight: "70vh" }}>
           <table className="w-full min-w-[760px] border-collapse text-[14px] text-slate-900">
