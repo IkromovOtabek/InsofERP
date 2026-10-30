@@ -86,7 +86,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "report",  label: "Brak, davomat, smena hisoboti",    roles: ["PRODUCTION", "SUPERVISOR"] },
     { key: "batch_storno", label: "Zamesni bekor qilish",       roles: [], hint: "Xomashyo skladga qaytadi, mahsulot chiqariladi — odatda faqat direktor" },
     { key: "plan",    label: "Oylik va kunlik ishlab chiqarish plani", roles: [], hint: "Bosh sahifadagi mahsulot bo'yicha plan — odatda direktor" },
-    { key: "staff",   label: "Sex xodimlarini brigadalarga taqsimlash", roles: [], hint: "Bosh sahifa → «Xodimlarni taqsimlash» — odatda direktor" },
+    { key: "staff",   label: "Sex xodimlarini brigadalarga taqsimlash", roles: ["SUPERVISOR"], hint: "Brigadalar → «Xodimlar» tabi va bosh sahifadagi «Xodimlarni taqsimlash»" },
   ],
   tasks: [
     { key: "progress", label: "Bajarilgan hajmni qayd qilish",   roles: ["PRODUCTION", "SUPERVISOR"] },

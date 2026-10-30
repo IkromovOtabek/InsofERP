@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { HardHat, ArrowRight, Boxes, Package, TriangleAlert, Wallet } from "lucide-react";
+import { HardHat, ArrowRight, Boxes, Package, TriangleAlert, Users, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { qty, money } from "@/lib/format";
@@ -11,13 +11,15 @@ import { brigadeDefectsMonth, brigadePayMonth, brigadeProducts } from "@/lib/bri
 import { MonthBar, parseMonth } from "../bi-tahlil/month-bar";
 import { BrigadeProductsView } from "./brigade-products";
 import { BrigadePayView, BrigadeDefectsView } from "./pay-view";
+import { BrigadeStaffView } from "./staff-view";
+import { productionStaff } from "@/lib/production-staff";
 import { ROLE_LABELS } from "@/lib/nav";
 import { Badge, Button, Card, Empty, LinkButton, PageHeader, Progress, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
 
 /**
- * Brigadalar: ro'yxat (brigadir, topshiriq, xomashyo), «Mahsulotlar» — qaysi brigadada qanday mahsulot va necha pullik,
+ * Brigadalar: ro'yxat (brigadir, topshiriq, xomashyo), «Xodimlar» — brigadaga xodim tayinlash, «Mahsulotlar» — qaysi brigadada qanday mahsulot va necha pullik,
  * «Oylik» — sdelka fondi − brak = brigada oyligi, «Brak» — kunlik brak va summasini tahrirlash (`lib/brigade-pay.ts`).
  */
 export default async function BrigadesPage({ searchParams }: { searchParams: Promise<{ tab?: string; oy?: string; brigada?: string }> }) {
@@ -27,11 +29,12 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
   // Pul (oylik, brak summasi) — sotuv bo'limiga kerak emas; summani tahrirlash — `tasks` → `pay` (ish boshqaruvchi)
   const showPay = s.role !== "SALES";
   const canPay = canDo(s, "tasks", "pay");
-  const tab = ["mahsulotlar", ...(showPay ? ["oylik", "brak"] : [])].includes(sp.tab ?? "") ? sp.tab! : "royxat";
+  const tab = ["mahsulotlar", ...(showPay ? ["xodimlar", "oylik", "brak"] : [])].includes(sp.tab ?? "") ? sp.tab! : "royxat";
   const month = parseMonth(sp.oy);
   const tabs = (
     <Tabs current={tab} items={[
       { key: "royxat", label: "Brigadalar", href: "/brigades", icon: HardHat },
+      ...(showPay ? [{ key: "xodimlar", label: "Xodimlar", href: "/brigades?tab=xodimlar", icon: Users }] : []),
       { key: "mahsulotlar", label: "Mahsulotlar", href: "/brigades?tab=mahsulotlar", icon: Package },
       ...(showPay ? [
         { key: "oylik", label: "Oylik", href: `/brigades?tab=oylik&oy=${month}`, icon: Wallet },
@@ -40,7 +43,14 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
     ]} />
   );
   if (tab !== "royxat") {
-    const title = <PageHeader title="Brigadalar" subtitle={tab === "mahsulotlar" ? "Ochiq topshiriqlar mahsulot bo'yicha: berilgan, bajarilgan, qoldiq va uning qiymati (ish haqi — sdelka narxida, sotuv — mahsulot narxida)" : tab === "oylik" ? "Brigada oyligi = bajarilgan hajm × sdelka narxi − brak summasi. Vedomostda brak sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi" : "Brak kun va brigada bo'yicha. Summa yozilganda miqdor × sotuv narxi — ish boshqaruvchi tahrirlaydi"} />;
+    const title = <PageHeader title="Brigadalar" subtitle={tab === "xodimlar" ? "Xodimni brigadaga tayinlash yoki boshqasiga o'tkazish — tanlansa darhol saqlanadi. Sex davomati va sdelka fondi shu tarkib bo'yicha" : tab === "mahsulotlar" ? "Ochiq topshiriqlar mahsulot bo'yicha: berilgan, bajarilgan, qoldiq va uning qiymati (ish haqi — sdelka narxida, sotuv — mahsulot narxida)" : tab === "oylik" ? "Brigada oyligi = bajarilgan hajm × sdelka narxi − brak summasi. Vedomostda brak sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi" : "Brak kun va brigada bo'yicha. Summa yozilganda miqdor × sotuv narxi — ish boshqaruvchi tahrirlaydi"} />;
+    if (tab === "xodimlar") {
+      const [staff, emps] = await Promise.all([
+        productionStaff(),
+        db.employee.findMany({ where: { isActive: true, firedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, brigadeId: true } }),
+      ]);
+      return <div>{title}{tabs}<BrigadeStaffView staff={staff} employees={emps} canEdit={canDo(s, "production", "staff")} /></div>;
+    }
     if (tab === "mahsulotlar") return <div>{title}{tabs}<BrigadeProductsView data={await brigadeProducts()} /></div>;
     const brigadaId = sp.brigada || null;
     if (tab === "oylik") return <div>{title}{tabs}<MonthBar base="/brigades" month={month} keep={{ tab }} /><BrigadePayView data={await brigadePayMonth(month)} /></div>;

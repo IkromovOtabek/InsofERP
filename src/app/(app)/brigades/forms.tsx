@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Check } from "lucide-react";
-import { Button, FormError, Input } from "@/components/ui";
+import { Button, FormError, Input, Select } from "@/components/ui";
+import { assignStaff } from "../dashboard/production-actions";
 import { saveDefectAmount } from "./actions";
 
 /** Brak summasi — jadval katagida tahrirlanadi (brigada oyligidan shu summa ushlanadi). */
@@ -17,5 +18,21 @@ export function DefectAmountForm({ id, amount }: { id: string; amount: number })
       {state?.ok && !pending && <span className="text-[11px] text-emerald-700">saqlandi</span>}
       <FormError error={state?.error} />
     </form>
+  );
+}
+
+/** Brigadaga xodim qo'shish: tanlansa darhol biriktiriladi (boshqa brigadada bo'lsa — shu brigadaga o'tadi). */
+export function AddMemberSelect({ brigadeId, employees }: { brigadeId: string; employees: { id: string; label: string }[] }) {
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="space-y-1">
+      <Select value="" disabled={pending || !employees.length} aria-label="Xodim qo'shish" className={pending ? "opacity-60" : ""}
+        onChange={(e) => { const id = e.target.value; if (!id) return; setError(null); start(async () => { const r = await assignStaff(id, brigadeId); if (r?.error) setError(r.error); }); }}>
+        <option value="">{pending ? "Qo'shilmoqda…" : "+ Xodim qo'shish"}</option>
+        {employees.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
+      </Select>
+      <FormError error={error ?? undefined} />
+    </div>
   );
 }

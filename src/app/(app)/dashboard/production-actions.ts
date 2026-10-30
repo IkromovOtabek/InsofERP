@@ -123,7 +123,7 @@ export async function assignStaff(employeeId: string, brigadeId: string): Promis
   const s = await requireAction("production", "staff");
   const r = await assignEmployeeBrigade(s.userId, employeeId, brigadeId || null);
   if ("error" in r) return { error: r.error };
-  revalidatePath("/dashboard/xodimlar");
+  revalidatePath("/dashboard/xodimlar"); revalidatePath("/brigades");
   return done();
 }
 

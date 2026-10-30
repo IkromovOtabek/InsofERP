@@ -1,54 +1,75 @@
 import Link from "next/link";
-import { HardHat } from "lucide-react";
+import { ArrowRight, HardHat } from "lucide-react";
 import { money, qty } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import type { BrigadeProducts } from "@/lib/brigade-pay";
-import { Badge, Card, Empty, Th, Td, Tr } from "@/components/ui";
+import { Badge, Card, Progress } from "@/components/ui";
 
 /**
  * Qaysi brigadada qanday mahsulot va necha pullik: ochiq topshiriqlar mahsulot bo'yicha (`lib/brigade-pay.ts` → `brigadeProducts`).
- * Summa — qoldiq (hali bajarilmagan) qism: ish haqi = qoldiq × sdelka narxi, sotuv qiymati = qoldiq × mahsulot narxi.
- * Brigadalar sahifasi («Mahsulotlar») va ishlab chiqarish bosh sahifasida bir xil ko'rinadi.
+ * Har brigada — alohida karta. Summa — qoldiq (hali bajarilmagan) qism: ish haqi = qoldiq × sdelka narxi, sotuv qiymati = qoldiq × mahsulot narxi.
+ * Brigadalar sahifasi («Mahsulotlar») va ishlab chiqarish bosh sahifasida bir xil ko'rinadi (`compact` — faqat ishi borlar).
  */
 export function BrigadeProductsView({ data, compact }: { data: BrigadeProducts; compact?: boolean }) {
-  const list = compact ? data.filter((b) => b.rows.length) : data;
+  const list = (compact ? data.filter((b) => b.rows.length) : data).slice().sort((a, b) => (b.rows.length ? 1 : 0) - (a.rows.length ? 1 : 0));
   if (!list.length) return <Card className="text-sm text-slate-500">Brigadalarda ochiq topshiriq yo&apos;q.</Card>;
   const wage = list.reduce((s, b) => s + b.wage, 0), value = list.reduce((s, b) => s + b.value, 0);
   return (
-    <Card padded={false}>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead><tr><Th>Brigada / mahsulot</Th><Th right>Berilgan</Th><Th right>Bajarildi</Th><Th right>Qoldiq</Th><Th right>Ish haqi (qoldiq)</Th><Th right>Sotuv qiymati (qoldiq)</Th></tr></thead>
-          <tbody>
-            {list.map((b) => [
-              <tr key={b.id} className="bg-slate-50/70">
-                <td className="px-4 py-2 font-semibold" colSpan={4}>
-                  <span className="inline-flex items-center gap-2"><HardHat size={14} className="text-slate-400" /><Link href={`/tasks?brigade=${b.id}`} className="hover:underline">{b.name}</Link></span>
-                  <span className="ml-2 text-xs font-normal text-slate-500">{b.leader ?? "brigadir yo'q"} · {b.rows.length} xil mahsulot</span>
-                  {b.noRate > 0 && <span className="ml-2"><Badge color="amber">{b.noRate} tasida sdelka narxi yo&apos;q</Badge></span>}
-                </td>
-                <td className="px-4 py-2 text-right font-semibold tabular">{money(b.wage)}</td>
-                <td className="px-4 py-2 text-right font-semibold tabular">{money(b.value)}</td>
-              </tr>,
-              ...b.rows.map((r) => (
-                <Tr key={`${b.id}-${r.productId}`}>
-                  <Td className="pl-10"><span className="font-medium">{r.code}</span> <span className="text-slate-500">{r.name}</span></Td>
-                  <Td right className="tabular text-slate-500">{qty(r.given)} {unitLabel(r.unit)}</Td>
-                  <Td right className="tabular text-emerald-700">{qty(r.done)}</Td>
-                  <Td right className="font-medium tabular">{qty(r.left)} {unitLabel(r.unit)}</Td>
-                  <Td right className="tabular">{r.rate > 0 ? <>{money(r.wage)}<div className="text-[11px] text-slate-400">{money(r.rate)} / {unitLabel(r.unit)}</div></> : <span className="text-xs text-amber-700">narx yo&apos;q</span>}</Td>
-                  <Td right className="tabular">{money(r.value)}<div className="text-[11px] text-slate-400">{money(r.price)} / {unitLabel(r.unit)}</div></Td>
-                </Tr>
-              )),
-              ...(b.rows.length ? [] : [<Tr key={`${b.id}-none`}><Td colSpan={6} className="pl-10 text-xs text-slate-400">ochiq topshiriq yo&apos;q</Td></Tr>]),
-            ])}
-            {list.length === 0 && <Empty text="Brigada yo'q" icon={HardHat} />}
-          </tbody>
-          <tfoot>
-            <tr className="border-t border-slate-200 font-semibold"><td className="px-4 py-2.5" colSpan={4}>Jami brigadalarda</td><td className="px-4 py-2.5 text-right tabular">{money(wage)}</td><td className="px-4 py-2.5 text-right tabular">{money(value)}</td></tr>
-          </tfoot>
-        </table>
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {list.map((b) => (
+          <Card key={b.id} className={b.rows.length ? "" : "opacity-80"}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><HardHat size={16} /></div>
+                <div className="min-w-0">
+                  <Link href={`/tasks?brigade=${b.id}`} className="block font-semibold leading-snug hover:underline">{b.name}</Link>
+                  <div className="truncate text-xs text-slate-500">{b.leader ?? "brigadir yo'q"}</div>
+                </div>
+              </div>
+              {b.rows.length ? <Badge color="blue">{b.rows.length} xil</Badge> : <Badge color="slate">ish yo&apos;q</Badge>}
+            </div>
+
+            {b.rows.length > 0 && (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Ish haqi</div>
+                    <div className="font-semibold tabular">{money(b.wage)}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Sotuv</div>
+                    <div className="font-semibold tabular">{money(b.value)}</div>
+                  </div>
+                </div>
+                <ul className="mt-3 space-y-2.5 text-sm">
+                  {b.rows.map((r) => (
+                    <li key={r.productId}>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate"><span className="font-medium">{r.code}</span> <span className="text-slate-500">{r.name}</span></span>
+                        <span className="shrink-0 font-semibold tabular">{qty(r.left)} {unitLabel(r.unit)}</span>
+                      </div>
+                      <Progress value={r.done} max={r.given || 1} tone={r.done >= r.given && r.given > 0 ? "success" : "default"} />
+                      <div className="mt-0.5 flex flex-wrap justify-between gap-x-3 text-[11px] text-slate-500">
+                        <span className="whitespace-nowrap tabular">bajarildi {qty(r.done)} / {qty(r.given)}</span>
+                        <span className="whitespace-nowrap tabular">{r.rate > 0 ? money(r.wage) : <span className="text-amber-700">narx yo&apos;q</span>} · {money(r.value)}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-500">
+              <span>{b.noRate > 0 ? <span className="text-amber-700">{b.noRate} tasida sdelka narxi yo&apos;q</span> : b.rows.length ? "qoldiq: ish haqi · sotuv" : "ochiq topshiriq yo'q"}</span>
+              <Link href={`/tasks?brigade=${b.id}`} className="inline-flex items-center gap-1 hover:text-slate-900">Topshiriqlar <ArrowRight size={12} /></Link>
+            </div>
+          </Card>
+        ))}
       </div>
-    </Card>
+      <Card className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="font-semibold">Jami brigadalarda (qoldiq)</span>
+        <span className="tabular">Ish haqi <b>{money(wage)}</b> · Sotuv qiymati <b>{money(value)}</b></span>
+      </Card>
+    </div>
   );
 }
