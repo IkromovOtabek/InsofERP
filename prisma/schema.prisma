@@ -48,6 +48,8 @@ model User {
   /// Insof ECO ilovasi hisobi: direktor ruxsat bergan bo'lsa, ERP'ga ilovadagi telefon + parol bilan kiradi
   /// (parolni ECO tekshiradi). Bunday hisobning `passwordHash` i tasodifiy — login/parol bilan kirib bo'lmaydi.
   ecoUserId      String?  @unique
+  /// Kirishdagi instruksiya (tour) — «Qayta ko'rsatilmasin» bosilgan: avtomatik chiqmaydi (tepadagi tugmadan ko'rsa bo'ladi)
+  tourHidden     Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

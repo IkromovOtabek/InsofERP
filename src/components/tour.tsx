@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, GraduationCap, MousePointerClick } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TOUR_COOKIE, TOUR_DONE, type TourStep } from "@/lib/tour";
+import { hideTourForever } from "@/lib/tour-actions";
 
 /**
  * Bosqichma-bosqich instruksiya.
@@ -14,6 +15,8 @@ import { TOUR_COOKIE, TOUR_DONE, type TourStep } from "@/lib/tour";
  * oldinga o'ta olmaydi. "O'tkazib yuborish" bosilsa instruksiya shu sessiya davomida
  * boshqa chiqmaydi (holat `insof_tour` cookie'sida), tizimdan chiqib qayta kirilsa —
  * cookie o'chirilgani uchun instruksiya yana boshidan boshlanadi.
+ * "Qayta ko'rsatilmasin" — bir umrga (`User.tourHidden`, `lib/tour-actions.ts`): keyingi kirishlarda ham
+ * avtomatik chiqmaydi; tepadagi instruksiya tugmasi bilan baribir ko'rsa bo'ladi.
  */
 
 type Box = { top: number; left: number; width: number; height: number };
@@ -92,6 +95,7 @@ export function Tour({ steps: all, start }: { steps: TourStep[]; start: string |
   }, []);
 
   const next = useCallback(() => { go(steps[index + 1]?.id ?? null); }, [go, steps, index]);
+  const never = useCallback(() => { go(null); void hideTourForever().catch(() => {}); }, [go]);
   const back = useCallback(() => { if (index > 0) go(steps[index - 1].id); }, [go, steps, index]);
 
   // Ekran o'lchami o'zgarib, joriy bosqich ro'yxatdan chiqib qolsa — keyingisiga o'tamiz
@@ -297,9 +301,15 @@ export function Tour({ steps: all, start }: { steps: TourStep[]; start: string |
       )}
 
       <div className="mt-4 flex items-center justify-between gap-2">
-        <button type="button" onClick={() => go(null)} className="text-[12px] text-slate-400 underline-offset-2 transition hover:text-slate-700 hover:underline">
-          O&apos;tkazib yuborish
-        </button>
+        <div className="flex flex-col items-start gap-1">
+          <button type="button" onClick={() => go(null)} className="text-[12px] text-slate-400 underline-offset-2 transition hover:text-slate-700 hover:underline">
+            O&apos;tkazib yuborish
+          </button>
+          <button type="button" onClick={never} title="Keyingi kirishlarda ham chiqmaydi — tepadagi instruksiya tugmasidan ko'rsa bo'ladi"
+            className="text-[12px] font-medium text-slate-500 underline-offset-2 transition hover:text-slate-900 hover:underline">
+            Qayta ko&apos;rsatilmasin
+          </button>
+        </div>
         <div className="flex items-center gap-1.5">
           {index > 0 && (
             <button type="button" onClick={back} className="inline-flex h-8 pointer-coarse:h-11 items-center gap-1 rounded-lg px-2.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900">
@@ -327,7 +337,10 @@ export function Tour({ steps: all, start }: { steps: TourStep[]; start: string |
               Bu bosqich boshqa sahifada ko&apos;rsatiladi. Davom etish uchun <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px] text-slate-700">{step.path}</span> sahifasini oching.
             </p>
             <div className="mt-4 flex items-center justify-between gap-2">
-              <button type="button" onClick={() => go(null)} className="text-[12px] text-slate-400 transition hover:text-slate-700">O&apos;tkazib yuborish</button>
+              <div className="flex flex-col items-start gap-1">
+                <button type="button" onClick={() => go(null)} className="text-[12px] text-slate-400 transition hover:text-slate-700">O&apos;tkazib yuborish</button>
+                <button type="button" onClick={never} className="text-[12px] font-medium text-slate-500 transition hover:text-slate-900">Qayta ko&apos;rsatilmasin</button>
+              </div>
               <button type="button" onClick={() => router.push(step.path!)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-[13px] font-medium text-white transition hover:bg-slate-800">
                 Sahifani ochish <ArrowRight size={14} />
               </button>

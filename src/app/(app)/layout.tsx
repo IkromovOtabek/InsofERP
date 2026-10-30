@@ -1,13 +1,14 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { apkInfo, apkSize, iosAppUrl } from "@/lib/apk";
 import { navFor, ROLE_LABELS } from "@/lib/nav";
 import { AppShell } from "@/components/app-shell";
 import { LiveRefresh } from "@/components/live-refresh";
 import { InputMemory } from "@/components/input-memory";
-import { tourFor, TOUR_COOKIE } from "@/lib/tour";
+import { tourFor, TOUR_COOKIE, TOUR_DONE } from "@/lib/tour";
 import { isControlMode } from "@/lib/tenant";
 import { AvtoPartsBanner } from "@/components/avto-parts-banner";
 import { canDo } from "@/lib/permissions";
@@ -22,8 +23,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const company = await getCompany();
   const apk = await apkInfo();
   // Instruksiyaning joriy bosqichi (yoki "done") — cookie sessiya bilan birga o'chadi
+  // «Qayta ko'rsatilmasin» bosgan foydalanuvchiga avtomatik chiqmaydi (tepadagi tugmadan ko'rsa bo'ladi)
   const tourRaw = (await cookies()).get(TOUR_COOKIE)?.value;
-  const tourStart = tourRaw ? decodeURIComponent(tourRaw) : null;
+  const tourHidden = (await db.user.findUnique({ where: { id: s.userId }, select: { tourHidden: true } }))?.tourHidden;
+  const tourStart = tourHidden ? TOUR_DONE : tourRaw ? decodeURIComponent(tourRaw) : null;
   // Snabjeniye jo'natmasi — qabul qiladigan sklad xodimiga tepada banner (direktor qabul qilmaydi — unga ko'rsatilmaydi)
   const shipments = s.role !== "DIRECTOR" && canDo(s, "stock", "shipment_accept") ? await pendingShipments() : null;
   return (

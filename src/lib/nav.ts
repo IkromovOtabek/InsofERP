@@ -16,8 +16,8 @@ const BI_ROLES: Role[] = ["DIRECTOR", "FINANCE", "ACCOUNTING"];
 /**
  * Ish boshqaruvchi kabinetidagi «Moliya» — Tahlil'ning shu sahifalari (faqat ko'rish): qarz varaqlari (qatordan akt sverka),
  * to'lov kalendari, tannarx, xom-ashyo, DDS, PNL, BSH. Ruxsat har sahifaga alohida (eng uzun mos yo'l) — Tahlil'ning qolgani yopiq.
- * Kassa (Kirim-Chiqim) va buxgalter kassa jurnali (Kassa / bank) ham shu yerda: ularning asosiy bandlariga SUPERVISOR qo'shilgan
- * (ruxsat), menyuda esa unga shu nomlar bilan chiqadi. Amallar (yozish, o'chirish) modul ruxsatlari bilan — unga berilmagan.
+ * Buxgalter kassa jurnali (Kassa / bank) ham shu yerda: asosiy bandiga SUPERVISOR qo'shilgan (ruxsat), menyuda esa unga
+ * shu nom bilan chiqadi. Amallar (yozish, o'chirish) modul ruxsatlari bilan — unga berilmagan.
  */
 const SUPERVISOR_FIN: NavChild[] = [
   { href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" },
@@ -28,7 +28,6 @@ const SUPERVISOR_FIN: NavChild[] = [
   { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (Cash Flow)" },
   { href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" },
   { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" },
-  { href: "/cashflow", label: "Kassa" },
   { href: "/payments", label: "Kassa jurnali (buxgalter)" },
 ];
 const SUPERVISOR_FIN_ROLES: Role[] = [...BI_ROLES, "SUPERVISOR"];
@@ -123,7 +122,7 @@ export const NAV: NavItem[] = [
   { href: "/pul-qabul",   label: "Pul qabul qilish",   roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Ish boshqaruvchi ko'radi (`SUPERVISOR_FIN` — menyuda o'z nomi bilan), shu sabab bu bandlar uning menyusida yashirin
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Moliya", menuHide: ["SUPERVISOR"] },
-  { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Moliya", menuHide: ["SUPERVISOR"] },
+  { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Kirim QQS reyestri (oy va yetkazuvchi kesimida QQS'siz summa, QQS, jami) — buxgalteriya hisobotlari uchun
   // Arenda (do'konlar ijarasi): oylik hisob jadvali + arenda kassasi kirim-chiqimi. Sekretar uchun yagona sahifa (OWN_PAGE_ONLY)
   { href: "/arenda",      label: "Arenda",             roles: ["SECRETARY"], group: "Moliya" },

@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown, CalendarDays, Loader2 } from "lucide-react";
+import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown } from "lucide-react";
 import { Card, CardHeader, Checkbox, Input, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
-import { date, fmtNum, isoDate } from "@/lib/format";
-import { rescheduleOrder } from "./actions";
+import { date, fmtNum } from "@/lib/format";
+import { DateMove } from "./date-move";
 import { unitLabel } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 // Faqat tiplar: lib fayli Prisma (db) ni import qiladi — qiymat olinsa brauzer bundle'iga tushib qoladi
@@ -253,40 +252,6 @@ function readiness(o: BoardOrder, alloc: Record<string, number> | undefined): { 
   if (!parts.length) return { col: "none", pct: 0 };
   const pct = parts.reduce((s, v) => s + v, 0) / parts.length;
   return { col: parts.every((v) => v >= 0.9995) ? "ready" : pct > 0.0005 ? "part" : "none", pct };
-}
-
-/** Kartadagi yetkazish sanasi — bosilsa kalendar ochiladi, tanlangan kunga zayavka ko'chiriladi (`rescheduleOrder`). */
-function DateMove({ o, label, className }: { o: { id: string; deliveryDate: string; dateUnknown: boolean }; label: string; className?: string }) {
-  const ref = useRef<HTMLInputElement>(null);
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const [err, setErr] = useState<string | null>(null);
-  const today = isoDate(new Date());
-  const open = () => { const el = ref.current; if (!el) return; try { el.showPicker(); } catch { el.focus(); } };
-  const pickDay = (v: string) => {
-    if (!v || v === (o.dateUnknown ? "" : isoDate(new Date(o.deliveryDate)))) return;
-    setErr(null);
-    start(async () => {
-      const r = await rescheduleOrder(o.id, v);
-      if (r?.error) setErr(r.error); else router.refresh();
-    });
-  };
-  return (
-    <span className="relative inline-flex flex-col">
-      <button type="button" onClick={open} disabled={pending} title="Bosing — boshqa sanaga ko'chirish"
-        className={cn("inline-flex items-center gap-1 rounded px-1 -mx-1 whitespace-nowrap underline decoration-dotted underline-offset-2 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60", className)}>
-        {pending ? <Loader2 size={11} className="animate-spin" /> : <CalendarDays size={11} />} {label}
-      </button>
-      <input ref={ref} type="date" min={today} defaultValue={o.dateUnknown ? "" : isoDate(new Date(o.deliveryDate))} onChange={(e) => pickDay(e.target.value)}
-        tabIndex={-1} aria-label="Yangi yetkazish sanasi" className="pointer-events-none absolute bottom-0 left-0 h-0 w-0 opacity-0" />
-      {err && (
-        <span role="alert" className="absolute top-full left-0 z-40 mt-1 flex w-60 items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-left text-[11px] leading-snug font-medium whitespace-normal text-red-700 shadow-md">
-          <span className="min-w-0 flex-1">{err}</span>
-          <button type="button" onClick={() => setErr(null)} aria-label="Yopish" className="shrink-0 text-red-500 hover:text-red-800"><X size={12} /></button>
-        </span>
-      )}
-    </span>
-  );
 }
 
 function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, onPick }: {

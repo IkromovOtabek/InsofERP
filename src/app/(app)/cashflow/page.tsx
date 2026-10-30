@@ -41,8 +41,8 @@ async function statementBalance(cashAccountId: string, date: { lt: Date } | { lt
 
 /** Kirim-Chiqim: mijoz to'lovlari (Payment) + boshqa kirimlar va barcha chiqimlar (CashTransaction) bitta jurnalda. */
 export default async function CashflowPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; account?: string; category?: string; method?: string }> }) {
-  // Ish boshqaruvchi — faqat ko'radi (Moliya → «Kassa»): yozish formasi va amallar modul ruxsati bilan
-  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], { module: "cashflow" });
+  // Yozish formasi modul ruxsati bilan: direktor faqat ko'rishni bergan xodimga chiqmaydi
+  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "cashflow" });
   const canCreate = canDo(s, "cashflow", "create");
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
   const sp = await searchParams;
