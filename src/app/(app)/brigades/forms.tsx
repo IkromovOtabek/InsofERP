@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { Check } from "lucide-react";
+import { Check, UserMinus } from "lucide-react";
 import { Button, FormError, Input, Select } from "@/components/ui";
 import { assignStaff } from "../dashboard/production-actions";
 import { saveDefectAmount } from "./actions";
@@ -34,5 +34,20 @@ export function AddMemberSelect({ brigadeId, employees }: { brigadeId: string; e
       </Select>
       <FormError error={error ?? undefined} />
     </div>
+  );
+}
+
+/** Xodimni brigadadan chiqarish (brigadasiz qoladi; lavozimi sexga tegishli bo'lsa — «Taqsimlanmagan»da ko'rinadi). */
+export function RemoveMemberButton({ employeeId, name, brigade }: { employeeId: string; name: string; brigade: string }) {
+  const [pending, start] = useTransition();
+  return (
+    <Button type="button" size="sm" variant="secondary" disabled={pending} aria-label={`${name} — brigadadan chiqarish`} title="Brigadadan chiqarish"
+      className="shrink-0 text-red-600 hover:text-red-700"
+      onClick={() => {
+        if (!window.confirm(`${name} «${brigade}» brigadasidan chiqarilsinmi?`)) return;
+        start(async () => { const r = await assignStaff(employeeId, ""); if (r?.error) alert(r.error); });
+      }}>
+      <UserMinus size={14} /> {pending ? "…" : "Chiqarish"}
+    </Button>
   );
 }

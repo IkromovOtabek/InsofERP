@@ -4,7 +4,7 @@ import { markOf } from "@/lib/davomat";
 import type { ProductionStaff } from "@/lib/production-staff";
 import { Badge, Card, Callout } from "@/components/ui";
 import { AssignSelect } from "../dashboard/production-forms";
-import { AddMemberSelect } from "./forms";
+import { AddMemberSelect, RemoveMemberButton } from "./forms";
 
 type Emp = { id: string; fullName: string; position: string; brigadeId: string | null };
 
@@ -38,12 +38,16 @@ export function BrigadeStaffView({ staff, employees, canEdit }: { staff: Product
               {g.members.map((m) => {
                 const st = m.status ? markOf(m.status) : null;
                 return (
-                  <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{m.fullName}{m.leads && <span className="ml-2"><Badge color="blue">brigadir</Badge></span>}</div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500">{m.position}{st && <Badge color={st.color}>{st.label}</Badge>}</div>
+                  <li key={m.id} className="space-y-2 py-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{m.fullName}{m.leads && <span className="ml-2"><Badge color="blue">brigadir</Badge></span>}</div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">{m.position}{st && <Badge color={st.color}>{st.label}</Badge>}</div>
+                      </div>
+                      {/* Brigadir brigadaning o'zida (leaderId) — u «Brigadalar» tabida almashtiriladi */}
+                      {canEdit && g.id && !m.leads && <RemoveMemberButton employeeId={m.id} name={m.fullName} brigade={g.name} />}
                     </div>
-                    {canEdit && <div className="w-full sm:w-48"><AssignSelect employeeId={m.id} brigadeId={m.brigadeId} brigades={staff.brigades} /></div>}
+                    {canEdit && <AssignSelect employeeId={m.id} brigadeId={m.brigadeId} brigades={staff.brigades} />}
                   </li>
                 );
               })}
