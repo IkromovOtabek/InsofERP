@@ -28,6 +28,8 @@ import { CATEGORY_SLUG, MATERIAL_CATEGORY_LABEL, MATERIAL_CATEGORY_OPTIONS, cate
 import { avtoPartsFeed } from "@/lib/avto-parts";
 import { pendingShipments } from "@/lib/shipments";
 import { ForYouParts } from "./for-you-parts";
+import { RawStockStatus } from "@/components/raw-stock-status";
+import { StockSnapshotCard } from "@/components/stock-snapshot";
 
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
@@ -412,6 +414,13 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
 
       {forYou && <ForYouParts parts={forYou.parts} feed={forYou.feed} />}
       {holdings && <div className="mb-4"><HoldingsPanel holdings={holdings} collapsible /></div>}
+      {/* Xomashyo holati (yetadi / zayavkalarga kerak) va hovli — ishlab chiqarish bosh sahifasidan shu yerga ko'chgan; mexanikka kerak emas */}
+      {tab === "balance" && s?.role !== "MECHANIC" && (
+        <div className="mb-8 space-y-6">
+          <RawStockStatus />
+          <StockSnapshotCard layout="grid" title="Hovli va tayyor mahsulot" show={["pieces", "concrete"]} />
+        </div>
+      )}
       {tab === "balance" && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">

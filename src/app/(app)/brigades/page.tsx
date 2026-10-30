@@ -43,7 +43,7 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
     ]} />
   );
   if (tab !== "royxat") {
-    const title = <PageHeader title="Brigadalar" subtitle={tab === "xodimlar" ? "Xodimni brigadaga tayinlash yoki boshqasiga o'tkazish — tanlansa darhol saqlanadi. Sex davomati va sdelka fondi shu tarkib bo'yicha" : tab === "mahsulotlar" ? "Ochiq topshiriqlar mahsulot bo'yicha: berilgan, bajarilgan, qoldiq va uning qiymati (ish haqi — sdelka narxida, sotuv — mahsulot narxida)" : tab === "oylik" ? "Brigada oyligi = bajarilgan hajm × sdelka narxi − brak summasi. Vedomostda brak sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi" : "Brak kun va brigada bo'yicha. Summa yozilganda miqdor × sotuv narxi — ish boshqaruvchi tahrirlaydi"} />;
+    const title = <PageHeader title="Brigadalar" subtitle={tab === "xodimlar" ? "Xodimni brigadaga tayinlash yoki boshqasiga o'tkazish — tanlansa darhol saqlanadi. Sex davomati va sdelka fondi shu tarkib bo'yicha" : tab === "mahsulotlar" ? "Ochiq topshiriqlar mahsulot bo'yicha: berilgan, bajarilgan, qoldiq — nechta va necha pullik (mahsulot narxida)" : tab === "oylik" ? "Brigada oyligi = bajarilgan hajm × sdelka narxi − brak summasi. Vedomostda brak sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi" : "Brak kun va brigada bo'yicha. Summa yozilganda miqdor × sotuv narxi — ish boshqaruvchi tahrirlaydi"} />;
     if (tab === "xodimlar") {
       const [staff, emps] = await Promise.all([
         productionStaff(),

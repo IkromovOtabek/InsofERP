@@ -1,19 +1,21 @@
 import Link from "next/link";
 import { ArrowRight, HardHat } from "lucide-react";
 import { money, qty } from "@/lib/format";
-import { unitLabel } from "@/lib/unit";
+import { fmtUnitTotals, unitLabel } from "@/lib/unit";
 import type { BrigadeProducts } from "@/lib/brigade-pay";
 import { Badge, Card, Progress } from "@/components/ui";
 
 /**
  * Qaysi brigadada qanday mahsulot va necha pullik: ochiq topshiriqlar mahsulot bo'yicha (`lib/brigade-pay.ts` → `brigadeProducts`).
- * Har brigada — alohida karta. Summa — qoldiq (hali bajarilmagan) qism: ish haqi = qoldiq × sdelka narxi, sotuv qiymati = qoldiq × mahsulot narxi.
+ * Har brigada — alohida karta: qoldiq (hali bajarilmagan) mahsulot soni va qiymati = qoldiq × mahsulot narxi (mahsulot kartochkasidagi narx —
+ * skladda tayyor mahsulotning boshqa narxi yo'q). Ish haqi bu yerda emas — «Oylik» tabida.
  * Brigadalar sahifasi («Mahsulotlar») va ishlab chiqarish bosh sahifasida bir xil ko'rinadi (`compact` — faqat ishi borlar).
  */
 export function BrigadeProductsView({ data, compact }: { data: BrigadeProducts; compact?: boolean }) {
   const list = (compact ? data.filter((b) => b.rows.length) : data).slice().sort((a, b) => (b.rows.length ? 1 : 0) - (a.rows.length ? 1 : 0));
   if (!list.length) return <Card className="text-sm text-slate-500">Brigadalarda ochiq topshiriq yo&apos;q.</Card>;
-  const wage = list.reduce((s, b) => s + b.wage, 0), value = list.reduce((s, b) => s + b.value, 0);
+  const value = list.reduce((s, b) => s + b.value, 0);
+  const count = fmtUnitTotals(list.flatMap((b) => b.rows.map((r) => ({ unit: r.unit, qty: r.left }))));
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -34,11 +36,11 @@ export function BrigadeProductsView({ data, compact }: { data: BrigadeProducts; 
               <>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-slate-50 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Ish haqi</div>
-                    <div className="font-semibold tabular">{money(b.wage)}</div>
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Soni</div>
+                    <div className="font-semibold tabular">{fmtUnitTotals(b.rows.map((r) => ({ unit: r.unit, qty: r.left })))}</div>
                   </div>
                   <div className="rounded-lg bg-slate-50 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Sotuv</div>
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400">Qiymati</div>
                     <div className="font-semibold tabular">{money(b.value)}</div>
                   </div>
                 </div>
@@ -52,7 +54,7 @@ export function BrigadeProductsView({ data, compact }: { data: BrigadeProducts; 
                       <Progress value={r.done} max={r.given || 1} tone={r.done >= r.given && r.given > 0 ? "success" : "default"} />
                       <div className="mt-0.5 flex flex-wrap justify-between gap-x-3 text-[11px] text-slate-500">
                         <span className="whitespace-nowrap tabular">bajarildi {qty(r.done)} / {qty(r.given)}</span>
-                        <span className="whitespace-nowrap tabular">{r.rate > 0 ? money(r.wage) : <span className="text-amber-700">narx yo&apos;q</span>} · {money(r.value)}</span>
+                        <span className="whitespace-nowrap tabular">{r.price > 0 ? <>{money(r.price)} × {qty(r.left)} = <b className="text-slate-700">{money(r.value)}</b></> : <span className="text-amber-700">narx yo&apos;q</span>}</span>
                       </div>
                     </li>
                   ))}
@@ -60,7 +62,7 @@ export function BrigadeProductsView({ data, compact }: { data: BrigadeProducts; 
               </>
             )}
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-500">
-              <span>{b.noRate > 0 ? <span className="text-amber-700">{b.noRate} tasida sdelka narxi yo&apos;q</span> : b.rows.length ? "qoldiq: ish haqi · sotuv" : "ochiq topshiriq yo'q"}</span>
+              <span>{b.rows.length ? "hali ishlab chiqarilmagan qism" : "ochiq topshiriq yo'q"}</span>
               <Link href={`/tasks?brigade=${b.id}`} className="inline-flex items-center gap-1 hover:text-slate-900">Topshiriqlar <ArrowRight size={12} /></Link>
             </div>
           </Card>
@@ -68,7 +70,7 @@ export function BrigadeProductsView({ data, compact }: { data: BrigadeProducts; 
       </div>
       <Card className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-semibold">Jami brigadalarda (qoldiq)</span>
-        <span className="tabular">Ish haqi <b>{money(wage)}</b> · Sotuv qiymati <b>{money(value)}</b></span>
+        <span className="tabular">{count} · <b>{money(value)}</b></span>
       </Card>
     </div>
   );
