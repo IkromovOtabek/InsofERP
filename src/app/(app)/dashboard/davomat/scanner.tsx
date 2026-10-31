@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Camera, CheckCircle2, Info, Loader2, LogIn, LogOut, Maximize2, Minimize2, RefreshCw, ScanFace, Volume2, VolumeX, XCircle } from "lucide-react";
 import { scanFaceAction } from "./actions";
+import { PhotoThumb } from "./photo-viewer";
 import {
   BlinkDetector, beep, describeFace, detectFaces, drawBox, jumped, loadFaceApi, snapshot, useCamera, useWakeLock,
   type Box, type FaceApi, type FaceFrame,
@@ -280,10 +281,14 @@ export function FaceScanner({ initialLog, enrolled, total, canEnroll }: { initia
             {log.length === 0 && <li className="px-4 py-6 text-center text-sm text-slate-400">Bugun hali hech kim skanerdan o&apos;tmadi</li>}
             {log.map((l) => (
               <li key={l.key} className="flex items-center gap-3 px-4 py-2">
-                <span className="flex h-11 w-9 shrink-0 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50 text-slate-300">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {l.img ? <img src={l.img} alt="" className="h-full w-full object-cover" /> : <Camera size={14} />}
-                </span>
+                {l.img ? (
+                  <PhotoThumb src={l.img} title={l.name} sub={`${l.position} · ${l.text}`} className="flex h-11 w-9 shrink-0 overflow-hidden rounded border border-slate-200 bg-slate-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={l.img} alt="" className="h-full w-full object-cover" />
+                  </PhotoThumb>
+                ) : (
+                  <span className="flex h-11 w-9 shrink-0 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50 text-slate-300"><Camera size={14} /></span>
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{l.name}</span>
                   <span className={cn("block truncate text-xs", l.kind === "fail" ? "text-red-600" : "text-slate-500")}>{l.text}</span>

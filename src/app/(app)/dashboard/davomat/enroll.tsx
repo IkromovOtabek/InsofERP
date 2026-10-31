@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, Loader2, RefreshCw, ScanFace, Search, User, UserPlus, X, XCircle } from "lucide-react";
 import { deleteFaceAction, enrollFaceAction } from "./actions";
 import { describeFace, detectFaces, drawBox, loadFaceApi, snapshot, useCamera, type FaceApi } from "./face-engine";
+import { PhotoThumb } from "./photo-viewer";
 import type { RosterRow } from "@/lib/face-id";
 import { DeleteButton } from "@/components/delete-button";
 import { Badge, Button, Callout, Card, Checkbox, Empty, Input, Table, Td, Th, Tr } from "@/components/ui";
@@ -51,10 +52,14 @@ export function FaceRosterPanel({ rows }: { rows: RosterRow[] }) {
             {list.map((r) => (
               <Tr key={r.id}>
                 <Td>
-                  <span className="flex h-12 w-10 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50 text-slate-300">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {r.templatePhotoId ? <img src={`/dashboard/davomat/kadr?t=${r.templatePhotoId}`} alt="" className="h-full w-full object-cover" /> : <ScanFace size={16} />}
-                  </span>
+                  {r.templatePhotoId ? (
+                    <PhotoThumb src={`/dashboard/davomat/kadr?t=${r.templatePhotoId}`} title={r.fullName} sub={r.position} className="flex h-12 w-10 overflow-hidden rounded border border-slate-200 bg-slate-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/dashboard/davomat/kadr?t=${r.templatePhotoId}`} alt="" className="h-full w-full object-cover" />
+                    </PhotoThumb>
+                  ) : (
+                    <span className="flex h-12 w-10 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50 text-slate-300"><ScanFace size={16} /></span>
+                  )}
                 </Td>
                 <Td><div className="font-medium">{r.fullName}</div><div className="text-xs text-slate-500">{r.position}</div></Td>
                 <Td>{r.samples > 0 ? <Badge color="green">Ro&apos;yxatda · {r.samples} namuna · {date(new Date(r.enrolledAt!))}</Badge> : <Badge>Yo&apos;q</Badge>}</Td>
