@@ -22,6 +22,11 @@ import type { HrRequestStatus } from "@/generated/prisma";
 const WD = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 
 type Emp = { id: string; fullName: string; position: string; workSchedule: string | null };
+/**
+ * Mijoz komponentlariga faqat kerakli maydonlar: sahifa to'liq Prisma xodimini uzatadi, unda `tariffRate` (Decimal) bor —
+ * u client componentga o'tmaydi («Only plain objects…»), tarifi kiritilgan xodim bo'lsa sahifa yiqilardi.
+ */
+const plain = (list: Emp[]) => list.map(({ id, fullName, position, workSchedule }) => ({ id, fullName, position, workSchedule }));
 
 /** Dushanba — hafta boshi. */
 function weekStart(iso: string) {
@@ -62,7 +67,7 @@ export async function GrafikTab({ employees, hafta }: { employees: Emp[]; hafta?
       <ShiftGrid days={days} rows={rows} templates={templates} title={title}
         prevHref={`/otdel-kadr?tab=grafik&hafta=${shiftDay(start, -7)}`} nextHref={`/otdel-kadr?tab=grafik&hafta=${shiftDay(start, 7)}`} />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <PatternFill employees={employees} templates={templates} from={start} to={shiftDay(start, 27)} />
+        <PatternFill employees={plain(employees)} templates={templates} from={start} to={shiftDay(start, 27)} />
         <ShiftTemplates templates={templates} />
       </div>
     </div>
@@ -130,7 +135,7 @@ export async function ArizalarTab({ s, employees, holat }: { s: Session; employe
       {canDecide && (
         <Card>
           <CardHeader title="Xodim nomidan ariza kiritish" icon={Inbox} description="Qog'oz ariza yoki kasallik varaqasi keltirilganda. Xodimning o'zi ilovadan yoki «Mening hisobim» sahifasidan yuboradi" />
-          <RequestForm action={createRequestForEmployee} employees={employees} />
+          <RequestForm action={createRequestForEmployee} employees={plain(employees)} />
         </Card>
       )}
     </div>
@@ -235,7 +240,7 @@ export async function JarimaTab({ s, employees, positions, oy }: { s: Session; e
               ))}
             </tbody>
           </Table>
-          {editable && <div className="border-t border-slate-100 p-4"><AdjustmentForm employees={employees} month={month} /></div>}
+          {editable && <div className="border-t border-slate-100 p-4"><AdjustmentForm employees={plain(employees)} month={month} /></div>}
         </Card>
       </div>
       {!editable && <Callout tone="info">Jarima va bonuslarni otdel kadr yozadi</Callout>}
