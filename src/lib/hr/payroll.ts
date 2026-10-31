@@ -29,7 +29,9 @@ import { brigadeDefectSums, brigadeOutput, dayEnd, dayStart, type PieceUnit } fr
  *            sdelka: brigada mahsuloti × sdelka narxi, sdelkadagi a'zolarga ishlagan soati bo'yicha
  *   + ta'til puli (kunlik o'rtacha × haq to'lanadigan ta'til kuni) + kasallik (kunlik o'rtacha × foiz, staj bo'yicha)
  *   + bonus (qoidalar + qo'lda) = hisoblangan (gross)
- *   − JShDS (gross × %) − jarima (qoidalar + qo'lda + brigada braki ulushi) − shu oy to'langan avanslar = qo'lga
+ *   − JShDS (gross × %) − jarima (qoidalar + qo'lda + brigada braki ulushi + o'tgan oydan qarz) − shu oy to'langan avanslar = qo'lga
+ *   O'tgan oydan qarz: xodimning eng so'nggi tasdiqlangan (APPROVED / PAID) oy yakuni vedomostida qo'lga manfiy bo'lsa —
+ *   shu summa ushlanadi; yana yetmasa qolgani keyingi oyga o'tadi (zanjir, xodim bir oy ishlamasa ham yo'qolmaydi).
  *   INPS (gross × 0,1%) — JShDS ichidan o'tkaziladi, qo'lga summaga ta'sir qilmaydi; ijtimoiy soliq — ish beruvchi.
  */
 
@@ -120,6 +122,21 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     kind === "FINAL" ? tripPayByDriver(new Date(y!, m! - 1, 1), new Date(y!, m!, 1), ids) : Promise.resolve(new Map<string, { trips: number; km: number; sum: number; unpriced: number }>()),
   ]);
   const brak = kind === "FINAL" ? await brigadeDefectSums(dayStart(from), dayEnd(to), pieceBrigades(emps)) : new Map<string, { qty: number; sum: number; count: number }>();
+  // O'tgan oylardan ushlanmay qolgan qarz — har xodimning eng so'nggi tasdiqlangan oy yakuni qatori (qoralama / bekor qilingan hisobga olinmaydi)
+  const debtOf = new Map<string, { amount: number; docNo: string; month: string }>();
+  if (kind === "FINAL") {
+    const prev = await db.payrollLine.findMany({
+      where: { employeeId: { in: ids }, run: { kind: "FINAL", month: { lt: month }, status: { in: ["APPROVED", "PAID"] } } },
+      orderBy: { run: { month: "desc" } },
+      select: { employeeId: true, net: true, run: { select: { docNo: true, month: true } } },
+    });
+    const seen = new Set<string>();
+    for (const l of prev) {
+      if (seen.has(l.employeeId)) continue;
+      seen.add(l.employeeId);
+      if (num(l.net) < 0) debtOf.set(l.employeeId, { amount: -num(l.net), docNo: l.run.docNo, month: l.run.month });
+    }
+  }
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
   const nowIso = today();
@@ -240,6 +257,11 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         hits.push({ rule: "Brigada braki", kind: "PENALTY", amount: r0(amt), days: bk.count, detail: `${money(bk.sum)} × ${Math.round(bkShare * 1000) / 10}% (${bk.count} ta yozuv)` });
         penalty += amt;
       }
+      const debt = debtOf.get(e.id);
+      if (debt) {
+        hits.push({ rule: "O'tgan oydan qarz", kind: "PENALTY", amount: r0(debt.amount), days: 0, detail: `${debt.docNo} (${monthTitle(debt.month)}) — ushlanmay qolgan` });
+        penalty += debt.amount;
+      }
       for (const k of kpi.filter((x) => x.employeeId === e.id && x.reward > 0)) {
         hits.push({ rule: `KPI: ${k.name}`, kind: "BONUS", amount: k.reward, days: 1, detail: `fakt ${k.fact ?? "—"} / reja ${k.target} ${k.unit} = ${k.pct ?? 0}%` });
         bonus += k.reward;
@@ -262,7 +284,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     const inps = kind === "FINAL" ? r0((gross * Number(st.inpsPct)) / 100) : 0;
     const employerTax = kind === "FINAL" ? r0((gross * Number(st.socialTaxPct)) / 100) : 0;
     const net = kind === "FINAL" ? gross - incomeTax - r0(penalty) - r0(advanceSum) : Math.max(0, gross - r0(advanceSum));
-    if (kind === "FINAL" && net < 0) warnings.push(`Ushlanmalar hisoblangandan ko'p — xodim qarzi ${money(-net)}`);
+    if (kind === "FINAL" && net < 0) warnings.push(`Ushlanmalar hisoblangandan ko'p — xodim qarzi ${money(-net)}: vedomost tasdiqlangach keyingi oy yakunida ushlanadi`);
 
     out.push({
       employeeId: e.id, fullName: e.fullName, position: e.position, payType: e.payType, rate,

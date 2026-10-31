@@ -7,6 +7,11 @@
  *     brak: ustun 6 × 60 000, plita 2 × 120 000 → ish boshqaruvchi 150 000 ga tuzatgan; o'tgan oy braki va
  *     brigadasiz brak — ushlanmaydi.
  *  2. «Qarzdor brigada» — 1 sdelkachi, brak fonddan katta (oylik manfiy — brigada qarzi).
+ *  3. O'tgan oydan qarz (`lib/hr/payroll.ts`): demo oy yakuni vedomostlari (to'langan / bekor qilingan) —
+ *     Fayzullayev: avgust −999 999, sentabr −150 000 → faqat eng so'nggisi (150 000) ushlanadi;
+ *     G'ofurov: sentabr −600 000, oktyabr oyligi yetmaydi → yana manfiy (keyingi oyga o'tadi);
+ *     Hamidov: sentabr vedomosti bekor qilingan (−100 000) → ushlanmaydi.
+ *     Demo vedomostlar `DEMO-BRAK-` raqamli: shu oylar uchun haqiqiy vedomost hisoblashni to'sadi — sinovdan keyin --remove.
  *
  * Kutilgan natija `lib/brigade-pay.ts` (`brigadePayMonth`) va vedomost hisobi (`lib/hr/payroll.ts` → `calculate`) bilan
  * solishtiriladi: fond, brak, oylik, a'zolar ulushi, «Brigada braki» ushlanmasi, okladchiga tushmasligi.
@@ -28,6 +33,8 @@ const YM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 const day = (d: number, monthOffset = 0) => new Date(now.getFullYear(), now.getMonth() + monthOffset, d, 10, 0);
 /** Davomat sanasi — `@db.Date` (UTC yarim tun). */
 const attDay = (d: number) => new Date(Date.UTC(now.getFullYear(), now.getMonth(), d));
+/** Joriy oydan `off` oy oldingi «YYYY-MM». */
+const ymAgo = (off: number) => { const d = new Date(now.getFullYear(), now.getMonth() - off, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
 /** Oyning o'tgan ish kunlari (yakshanbasiz), 1-dan boshlab. */
 const workDays = (n: number) => {
   const out: number[] = [];
@@ -45,6 +52,7 @@ async function main() {
     const emps = (await db.employee.findMany({ where: { fullName: { startsWith: TAG } }, select: { id: true } })).map((e) => e.id);
     const orders = (await db.order.findMany({ where: { note: { startsWith: TAG } }, select: { id: true } })).map((o) => o.id);
     const tasks = (await db.brigadeTask.findMany({ where: { OR: [{ orderId: { in: orders } }, { brigadeId: { in: brigades } }] }, select: { id: true } })).map((t) => t.id);
+    await db.payrollRun.deleteMany({ where: { docNo: { startsWith: "DEMO-BRAK" } } }); // qatorlari bilan (cascade)
     const r = await db.$transaction([
       db.productDefect.deleteMany({ where: { OR: [{ note: { startsWith: TAG } }, { brigadeId: { in: brigades } }, { taskId: { in: tasks } }] } }),
       db.taskProgress.deleteMany({ where: { taskId: { in: tasks } } }),
@@ -71,6 +79,8 @@ async function main() {
 
     const brigade = await db.brigade.create({ data: { name: `${TAG} Sinov brigadasi` } });
     const debtor = await db.brigade.create({ data: { name: `${TAG} Qarzdor brigada` } });
+    const payBack = await db.brigade.create({ data: { name: `${TAG} Qarzni qaytaruvchi` } });
+    const payPart = await db.brigade.create({ data: { name: `${TAG} Qisman qaytaruvchi` } });
     const emp = (name: string, b: string, payType: "PIECE" | "SALARY", tariffRate?: number) =>
       db.employee.create({ data: { fullName: `${TAG} ${name}`, position: payType === "PIECE" ? "Formovshik" : "Brigadir", payType, tariffRate, brigadeId: b, hiredAt: day(1, -6) } });
     const [a, b, c, d, e] = [
@@ -80,11 +90,14 @@ async function main() {
       await emp("Davronov Dilshod (oklad)", brigade.id, "SALARY", 3000000),
       await emp("Ergashev Elyor", debtor.id, "PIECE"),
     ];
+    const f = await emp("Fayzullayev Farrux", payBack.id, "PIECE");
+    const g = await emp("G'ofurov G'ayrat", payPart.id, "PIECE");
+    const h = await db.employee.create({ data: { fullName: `${TAG} Hamidov Hasan (oklad)`, position: "Qorovul", payType: "SALARY", tariffRate: 2000000, hiredAt: day(1, -6) } });
     await db.brigade.update({ where: { id: brigade.id }, data: { leaderId: d.id } });
 
     // Davomat — ulush shundan (ishlagan daqiqasi): 20 / 15 / 10 kun × 9 soat; okladchi va qarzdor brigada a'zosi — 15 kun
     const att = (id: string, n: number) => workDays(n).map((x) => ({ employeeId: id, date: attDay(x), status: "PRESENT" as const, checkIn: "08:00", checkOut: "17:00", note: TAG }));
-    await db.attendance.createMany({ data: [...att(a.id, 20), ...att(b.id, 15), ...att(c.id, 10), ...att(d.id, 15), ...att(e.id, 15)] });
+    await db.attendance.createMany({ data: [...att(a.id, 20), ...att(b.id, 15), ...att(c.id, 10), ...att(d.id, 15), ...att(e.id, 15), ...att(f.id, 12), ...att(g.id, 12), ...att(h.id, 10)] });
 
     const order = await db.order.create({
       data: {
@@ -107,6 +120,15 @@ async function main() {
     const t2 = await task("P", iP.id, brigade.id, 150, "DONE", [[8, 60], [18, 90]]);
     await task("UX", iU.id, brigade.id, 100, "CANCELLED", [[3, 50]]);
     const t4 = await task("UQ", iU.id, debtor.id, 100, "IN_PROGRESS", [[10, 20]]);
+    await task("PF", iP.id, payBack.id, 50, "DONE", [[9, 50]]);   // 50 × 10 000 = 500 000
+    await task("UG", iU.id, payPart.id, 100, "IN_PROGRESS", [[9, 50]]); // 50 × 6 000 = 300 000
+
+    // O'tgan oylarning oy yakuni vedomostlari (to'langan — kassa navbatiga tushmaydi; bekor qilingan — hisobga olinmaydi)
+    const run = (ym: string, status: "PAID" | "CANCELLED", lines: { employeeId: string; payType: "PIECE" | "SALARY"; net: number }[]) =>
+      db.payrollRun.create({ data: { docNo: `DEMO-BRAK-${ym}-${status}`, month: ym, kind: "FINAL", status, note: TAG, createdById: by, lines: { create: lines } } });
+    await run(ymAgo(2), "PAID", [{ employeeId: f.id, payType: "PIECE", net: -999999 }]);
+    await run(ymAgo(1), "PAID", [{ employeeId: f.id, payType: "PIECE", net: -150000 }, { employeeId: g.id, payType: "PIECE", net: -600000 }]);
+    await run(ymAgo(1), "CANCELLED", [{ employeeId: h.id, payType: "SALARY", net: -100000 }]);
 
     await db.productDefect.createMany({
       data: [
@@ -118,7 +140,7 @@ async function main() {
         { date: day(11), productId: ustun.id, brigadeId: debtor.id, taskId: t4.id, qty: 5, amount: 300000, reason: "Qolip buzuq", note: TAG, createdById: by },
       ],
     });
-    console.log(`Yaratildi (${YM}): 2 brigada, 5 xodim, 4 topshiriq, 5 brak — «${brigade.name}», «${debtor.name}»`);
+    console.log(`Yaratildi (${YM}): 4 brigada, 8 xodim, 6 topshiriq, 5 brak, 3 demo vedomost (${ymAgo(2)}, ${ymAgo(1)})`);
   }
 
   async function check() {
@@ -166,6 +188,18 @@ async function main() {
     ok("Qarzdor brigada a'zosi: asosiy", Math.round(Number(er.base)), 120000);
     ok("Qarzdor brigada a'zosi: brak ushlanmasi (to'liq, yagona a'zo)", brakOf(er), 300000);
     console.log(`  · Ergashev qo'lga: ${Math.round(Number(er.net)).toLocaleString("ru-RU")} (brak fonddan katta — manfiy qoldiq)`);
+    ok("Ergashev: manfiy qoldiq keyingi oyga o'tishi haqida ogohlantirish", er.breakdown.warnings.some((w) => w.includes("keyingi oy")) ? 1 : 0, 1);
+
+    console.log(`\n── O'tgan oydan qarz (${ymAgo(2)} → ${ymAgo(1)} → ${YM})`);
+    const debtOf = (l: (typeof lines)[number]) => l.breakdown.rules.filter((x) => x.rule === "O'tgan oydan qarz").reduce((s, x) => s + x.amount, 0);
+    const fl = line("Fayzullayev"), gl = line("G'ofurov"), hl = line("Hamidov");
+    ok("Fayzullayev: asosiy (50 × 10 000)", Math.round(Number(fl.base)), 500000);
+    ok("Fayzullayev: faqat eng so'nggi oy qarzi ushlanadi (sentabr 150 000, avgust emas)", debtOf(fl), 150000);
+    ok("Fayzullayev: qo'lga = hisoblangan − JShDS − qarz", fl.net, fl.gross - fl.incomeTax - 150000);
+    ok("G'ofurov: qarz to'liq ushlanadi (600 000)", debtOf(gl), 600000);
+    ok("G'ofurov: oylik yetmaydi — qo'lga manfiy (qolgani keyingi oyga)", gl.net, gl.gross - gl.incomeTax - 600000);
+    ok("G'ofurov: manfiy ekani", gl.net < 0 ? 1 : 0, 1);
+    ok("Hamidov: bekor qilingan vedomostdagi manfiy summa ushlanmaydi", debtOf(hl), 0);
 
     console.log(`\n${fail ? `✗ ${fail} ta tekshiruv yiqildi` : "✓ Hammasi to'g'ri"}`);
     if (fail) process.exitCode = 1;
