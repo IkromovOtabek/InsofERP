@@ -46,10 +46,13 @@ const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string }> }) {
   const s = await requirePage("/stock");
   const sp = await searchParams;
   const { tab = "balance", added, updated, moved, guessed, ref, material } = sp;
+  // «Qoldiqlar» ichidagi alohida oynalar (tepadagi tugmalardan): faqat xomashyo jadvali yoki faqat hovli
+  const bolim = tab === "balance" && (sp.bolim === "xomashyo" || (sp.bolim === "hovli" && s?.role !== "MECHANIC")) ? sp.bolim : null;
+  const bolimQ: Record<string, string> = bolim ? { bolim } : {};
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
   // Belgilab o'chirish — xomashyo spravochnigi bilan bir xil huquq (`deleteMaterials` → requireModuleWrite)
   const canDelete = moduleWriteAllowed(s, "stock", MATERIAL_CATALOG_ROLES) === true;
@@ -110,7 +113,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     "Chiqim, miqdor": null, "Chiqim, summa": r2(tot.out), [`${closeH}, miqdor`]: null, [`${closeH}, jami summa`]: r2(tot.close),
     "Minimal qoldiq": null, "Baholash": tot.approx ? "≈" : "", "Holat": "",
   });
-  const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...extra }).toString();
+  const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...extra }).toString();
 
   // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi);
   // `material` — «Qoldiqlar» qatoridan: shu xomashyoning davrdagi harakatlari (sklad tanlangan bo'lsa — shu skladda)
@@ -180,7 +183,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader title="Sklad" subtitle="Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."
+      <PageHeader
+        title={bolim === "xomashyo" ? "Xomashyo qoldiqlari" : bolim === "hovli" ? "Hovli va tayyor mahsulot" : "Sklad"}
+        back={bolim ? { href: "/stock", label: "Sklad" } : undefined}
+        subtitle={bolim === "xomashyo" ? "Davr bo'yicha kirim, chiqim va qoldiq — har xomashyo, kategoriya va sklad kesimida."
+          : bolim === "hovli" ? "Hovlidagi dona mahsulot (erkin / zayavkaga band) va betondan xomashyo qoldig'i bilan qancha chiqadi."
+          : "Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."}
         action={
           <div className="flex flex-wrap gap-2">
             {/* «Kirim» / «Chiqim» jurnallari (Excel'dagidek) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
@@ -192,9 +200,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 {shipPending > 0 && <span className="ml-0.5 rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-900 tabular" title="Qabul kutayotgan jo'natmalar">{shipPending}</span>}
               </LinkButton>
             )}
-            {/* Sahifadagi bo'limlarga tez o'tish: xomashyo jadvali va hovli (mexanikka hovli ko'rsatilmaydi) */}
-            <LinkButton href={tab === "balance" ? "#xomashyo" : "/stock#xomashyo"} variant="secondary" size="lg"><Layers size={18} /> <span>Xomashyo qoldiqlari</span></LinkButton>
-            {s?.role !== "MECHANIC" && <LinkButton href={tab === "balance" ? "#hovli" : "/stock#hovli"} variant="secondary" size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>}
+            {/* Bo'limlar alohida oynada: faqat xomashyo jadvali yoki faqat hovli (mexanikka hovli ko'rsatilmaydi); ochiq oyna — to'q tugma */}
+            <LinkButton href="/stock?bolim=xomashyo" variant={bolim === "xomashyo" ? "primary" : "secondary"} size="lg"><Layers size={18} /> <span>Xomashyo qoldiqlari</span></LinkButton>
+            {s?.role !== "MECHANIC" && <LinkButton href="/stock?bolim=hovli" variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
             {canDo(s, "stock", "brigade") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
@@ -222,7 +230,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`}</Callout>
       )}
 
-      {arrivals.length > 0 && (tab === "balance" || tab === "brigades") && (
+      {arrivals.length > 0 && !bolim && (tab === "balance" || tab === "brigades") && (
         <Callout tone="success" title={`Yangi mahsulotlar keldi — ${arrivals.length} ta ta'minot qabul qilindi`}>
           <ul className="space-y-0.5">
             {arrivals.map((a) => (
@@ -415,16 +423,16 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {forYou && <ForYouParts parts={forYou.parts} feed={forYou.feed} />}
-      {holdings && <div className="mb-4"><HoldingsPanel holdings={holdings} collapsible /></div>}
+      {forYou && !bolim && <ForYouParts parts={forYou.parts} feed={forYou.feed} />}
+      {holdings && !bolim && <div className="mb-4"><HoldingsPanel holdings={holdings} collapsible /></div>}
       {/* Xomashyo holati (yetadi / zayavkalarga kerak) va hovli — ishlab chiqarish bosh sahifasidan shu yerga ko'chgan; mexanikka kerak emas */}
-      {tab === "balance" && s?.role !== "MECHANIC" && (
+      {tab === "balance" && s?.role !== "MECHANIC" && bolim !== "xomashyo" && (
         <div className="mb-8 space-y-6">
-          <RawStockStatus />
+          {!bolim && <RawStockStatus />}
           <YardStatus />
         </div>
       )}
-      {tab === "balance" && (
+      {tab === "balance" && bolim !== "hovli" && (
         <div id="xomashyo" className="scroll-mt-20 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -436,13 +444,13 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <ExcelButton file={`Qoldiqlar ${period.fromStr} — ${period.toStr}${kat ? ` ${MATERIAL_CATEGORY_LABEL[kat]}` : ""}${wh ? ` (${wh.name.replace(/[\\/:*?"<>|]/g, " ")})` : ""}`} sheets={[{ name: "Qoldiqlar", rows: excelRows }]} />
             </div>
           </div>
-          <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }} />
+          <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...bolimQ, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }} />
           {/* Kategoriya: Zavod zapchast / Avto zapchast / Xomashyo (mexanikka — ikkitasi) */}
           <div className="flex flex-wrap items-center gap-1">
             {[null, ...cats].map((c) => {
               const active = c === kat;
               const n = c ? turnoverSeen.filter((r) => r.category === c).length : turnoverSeen.length;
-              const qs = new URLSearchParams({ tab: "balance", from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(c ? { kat: CATEGORY_SLUG[c] } : {}) });
+              const qs = new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(c ? { kat: CATEGORY_SLUG[c] } : {}) });
               return (
                 <Link key={c ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
                   className={cn("inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
@@ -457,7 +465,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <Warehouse size={15} className="mr-1 text-slate-400" aria-hidden />
               {[null, ...shownWarehouses].map((w) => {
                 const active = (w?.id ?? null) === (wh?.id ?? null);
-                const qs = new URLSearchParams({ tab: "balance", from: period.fromStr, to: period.toStr, ...(w ? { wh: w.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) });
+                const qs = new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(w ? { wh: w.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) });
                 return (
                   <Link key={w?.id ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
                     className={cn("inline-flex h-8 items-center rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
