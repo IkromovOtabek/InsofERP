@@ -14,6 +14,7 @@ import { requireAdmin } from "@/lib/control/auth";
 import { DEFAULT_UI_PREFS } from "@/lib/control/ui-prefs";
 import { loadUiPrefs } from "@/lib/control/ui-prefs-db";
 import { FirstVisitHint, HelpButton, PageHelp, WithHelp } from "./_help/help";
+import { billingState, STAGE_LABEL, todayIso } from "@/lib/control/billing";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,11 @@ export default async function Overview() {
       : ecoDown.length ? `ECO javob bermayapti: ${ecoDown.map((x) => x.t.name).join(", ")}`
         : active.length === 1 ? `${active[0].t.name} ishlayapti` : active.length ? "Hammasi ishlayapti" : "Hali korxona yo'q",
   };
+  // Obuna: oylik kutilayotgan tushum (faol, narxi belgilangan) va e'tibor talab qiladiganlar
+  const today = todayIso();
+  const bills = new Map(tenants.map((t) => [t.id, billingState(t, today)]));
+  const mrr = tenants.filter((t) => t.status === "ACTIVE" && t.monthlyFee).reduce((a, t) => a + Number(t.monthlyFee), 0);
+  const billAttention = tenants.filter((t) => t.status !== "ARCHIVED" && ["soon", "grace", "overdue"].includes(bills.get(t.id)!.stage));
   const versions = new Map((monitor?.tenants ?? []).map((v) => [v.id, v.version]));
   // Telefon ko'rinishi — admin prefs'i (layout bilan bir xil manba; getAdmin so'rov ichida keshlangan)
   const prefs = await loadUiPrefs(me.id).catch(() => DEFAULT_UI_PREFS);
@@ -104,6 +110,15 @@ export default async function Overview() {
                     <span className="inline-flex items-center gap-0.5"><Tag tone={tagFromColor(TENANT_STATUS[t.status].color)}>{TENANT_STATUS[t.status].label}</Tag><HelpButton topic="tenant:status" /></span>
                     <span className="sa-sub" data-no-translit>{t.domain ?? `${t.slug} · domen yo'q`} · :{t.port}</span>
                   </div>
+                  {(() => {
+                    const b = bills.get(t.id)!;
+                    if (b.stage === "none" || b.stage === "ok") return null;
+                    return (
+                      <Link href={`/superadmin/korxonalar/${t.slug}#obuna`} className="inline-flex w-fit">
+                        <Tag tone={b.stage === "soon" ? "warn" : "crit"}>Obuna: {STAGE_LABEL[b.stage].label.toLowerCase()} · {b.paidUntil}{b.daysLeft !== null && b.daysLeft >= 0 ? ` (${b.daysLeft} kun)` : ""}</Tag>
+                      </Link>
+                    );
+                  })()}
                   <Link href={`/superadmin/korxonalar/${t.slug}`} className="nm" id={`t-${t.id}`}>{t.name}</Link>
                   <div className="sa-checks">
                     <Check up={s?.web.up} label={s?.web.ms != null ? `ERP ${s.web.ms} ms` : "ERP"} />
@@ -136,6 +151,7 @@ export default async function Overview() {
             <div><b>{fmtNum(sum((s) => s.users.mobileDevices))}</b><span>mobil qurilma · ECO {sum((s) => s.users.ecoLinked)}</span></div>
             <div><b>{fmtNum(sum((s) => s.usage.ai30d))}</b><span>AI so&apos;rov (30 kun)</span></div>
             <div><b>{fmtNum(sum((s) => s.usage.notifications30d))}</b><span>bildirishnoma (30 kun)</span></div>
+            <div><b>{moneyShort(mrr)}</b><span>obuna (oylik) · e&apos;tibor: {billAttention.length ? billAttention.map((t) => t.name).join(", ") : "yo'q"}</span></div>
           </div>
         )}
       </Section>

@@ -901,6 +901,18 @@ async function dbtBody(job: (c: DbtCtx) => Promise<CheckResult[]>, name: string,
 const dbStats = new Loop("dbstats", SLOW_MS, () => dbtBody(dbStatsChecks, "dbstats", 90_000), 2 * 60_000);
 const traffic = new Loop("traffic", TRAFFIC_MS, () => dbtBody(trafficChecks, "traffic", 60_000), 90_000);
 
+/* Korxona obunasi (lib/control/billing.ts): ogohlantirish → imtiyoz → avtomatik to'xtatish / to'lovdan keyin yoqish.
+ * Shu sikl kunlik statistika suratini ham oladi — panel ochilmagan kunlar ham korxona tarixida bo'lsin. */
+const BILLING_MS = ms("AGENT_BILLING_MS", 3600_000);
+async function billingBody(): Promise<string> {
+  const { billingTick } = await import("@/lib/control/billing");
+  const { collectAll } = await import("@/lib/control/stats");
+  const summary = await billingTick({ notify: (text) => telegram(text), log: warnLog });
+  const snap = await collectAll().then((m) => `statistika: ${m.size} korxona`).catch((e) => `statistika xato: ${errMsg(e)}`);
+  return `${summary}; ${snap}`;
+}
+const billing = new Loop("billing", BILLING_MS, billingBody, 5 * 60_000);
+
 /* ───────────────────────── Heartbeat va qulf ───────────────────────── */
 
 async function ensureLock(): Promise<boolean> {
@@ -1140,7 +1152,7 @@ async function shutdown(reason: string, code = 0) {
   if (shuttingDown) return;
   shuttingDown = true; stopping = true;
   log(`to'xtatilmoqda (${reason})`);
-  for (const l of [fast, slow, ai, retention, hb, actions, devops, dbStats, traffic, infraLoop]) l.stop();
+  for (const l of [fast, slow, ai, retention, hb, actions, devops, dbStats, traffic, infraLoop, billing]) l.stop();
   for (const c of running) c.kill("SIGTERM");
   await Promise.race([
     Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait(), dbStats.wait(), traffic.wait(), infraLoop.wait()]),
@@ -1200,6 +1212,7 @@ async function main() {
   traffic.start(10_000);
   dbStats.start(20_000);
   infraLoop.start(20_000);
+  billing.start(2 * 60_000);
   ai.start(10 * 60_000); // ishga tushgandan 10 daqiqa keyin (oxirgi rejali hisobot 6 soatdan eski bo'lsa)
 }
 

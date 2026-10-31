@@ -110,11 +110,51 @@ model Tenant {
   lastSeenAt    DateTime?
   lastStats     Json?
   lastError     String?
+  /// Obuna: shu kun oxirigacha to'langan (Toshkent sanasi). Bo'sh — muddatsiz, avtomat tegmaydi (lib/control/billing.ts)
+  paidUntil     DateTime?    @db.Date
+  /// Oylik to'lov, so'm. Bo'sh — tarif narxi (billing.ts → PLANS)
+  monthlyFee    Decimal?     @db.Decimal(18, 2)
+  /// Muddat o'tgach avtomatik to'xtatishdan oldingi imtiyozli kunlar
+  graceDays     Int          @default(7)
+  /// To'xtatish turi: "manual" (IT qo'lda) | "billing" (to'lov o'tmagan — to'lov kelganda avtomatik yoqiladi)
+  suspendKind   String?
+  /// Oxirgi yuborilgan obuna ogohlantirishi: "<bosqich>:<paidUntil>" — Telegram bir bosqichda bir marta
+  billingNotice String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  events ControlEvent[]
-  stats  TenantStat[]
+  events   ControlEvent[]
+  stats    TenantStat[]
+  payments TenantPayment[]
+}
+
+/// Korxona obunasi uchun to'lov (IT qo'lda kiritadi). O'chirilmaydi — faqat storno (cancelledAt), hammasi jurnalda.
+/// Faqat OXIRGI faol to'lovni storno qilish mumkin: paidUntil uning prevPaidUntil qiymatiga qaytadi.
+model TenantPayment {
+  id            String    @id @default(cuid())
+  tenantId      String
+  amount        Decimal   @db.Decimal(18, 2)
+  months        Int
+  /// To'lov sanasi (pul kelgan kun)
+  paidAt        DateTime  @db.Date
+  /// naqd | otkazma | karta
+  method        String
+  note          String?
+  /// Qoplangan davr: periodFrom..periodTo (ikkalasi ham kiradi)
+  periodFrom    DateTime  @db.Date
+  periodTo      DateTime  @db.Date
+  /// To'lovdan oldingi paidUntil — storno shu qiymatga qaytaradi
+  prevPaidUntil DateTime? @db.Date
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@index([paidAt])
 }
 
 /// Superadmin amallari jurnali: korxona yaratish, to'xtatish, direktor parolini tiklash, SSO kirish...

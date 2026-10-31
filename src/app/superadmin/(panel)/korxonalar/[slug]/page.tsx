@@ -8,14 +8,16 @@ import type { TenantStats } from "@/lib/control/stats";
 import { EVENT_LABEL } from "@/lib/control/events";
 import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
-import { dateTime, fmtNum, moneyShort } from "@/lib/format";
-import { Button, Callout, Card, DL, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { date, dateTime, fmtNum, money, moneyShort } from "@/lib/format";
+import { Badge, Button, Callout, Card, DL, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { PageHeader } from "../../../_ui";
 import { TenantStatusBadge, Health, ago } from "../../status";
 import { DirectorForm, EditTenantForm, SsoButton, SuspendForm } from "../../forms";
 import { refreshStatsAction, resumeTenantAction } from "../../actions";
 import { TenantUpPanel } from "../../_infra/tenant-up";
 import { HelpButton, PageHelp, WithHelp } from "../../_help/help";
+import { billingState, isoOf, PAYMENT_METHODS, paymentPeriod, PLAN_LABEL, STAGE_LABEL, todayIso } from "@/lib/control/billing";
+import { BillingSettingsForm, CancelPaymentButton, PaymentForm } from "./billing";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +29,18 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
   const { yangi } = await searchParams;
   const t = await control.tenant.findUnique({ where: { slug } });
   if (!t) notFound();
-  const [history, events] = await Promise.all([
+  const [history, events, payments] = await Promise.all([
     control.tenantStat.findMany({ where: { tenantId: t.id }, orderBy: { day: "desc" }, take: 30 }),
     control.controlEvent.findMany({ where: { tenantId: t.id }, orderBy: { createdAt: "desc" }, take: 30, include: { admin: { select: { fullName: true } } } }),
+    control.tenantPayment.findMany({ where: { tenantId: t.id }, orderBy: { createdAt: "desc" }, take: 24 }),
   ]);
+  // Obuna: holat, keyingi to'lov qaysi davrni qoplashi (forma izohi uchun), storno qilinadigan oxirgi to'lov
+  const today = todayIso();
+  const bill = billingState(t, today);
+  const fee = t.monthlyFee ? Number(t.monthlyFee) : null;
+  const preview = Object.fromEntries([1, 3, 6, 12].map((m) => { const p = paymentPeriod(t, m, today); return [m, `${p.from} — ${p.to}`]; }));
+  const lastActive = payments.find((p) => !p.cancelledAt);
+  const iso = (d: Date | null) => (d ? isoOf(d) : "—");
   const s = t.lastStats as TenantStats | null;
 
   return (
@@ -76,6 +86,48 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
         </>
       ) : <Card><Empty text="Statistika hali olinmagan — «Tekshirish»ni bosing" /></Card>}
 
+      <Card>
+        <div id="obuna" className="mb-3 flex scroll-mt-20 flex-wrap items-center gap-2 font-semibold">
+          Obuna <Badge color={STAGE_LABEL[bill.stage].color}>{STAGE_LABEL[bill.stage].label}</Badge>
+          {t.suspendKind === "billing" && <Badge color="red" dot={false}>to&apos;lov uchun to&apos;xtatilgan</Badge>}
+          <HelpButton topic="tenant:billing" />
+        </div>
+        <DL items={[
+          { k: "Tarif", v: PLAN_LABEL[t.plan] ?? t.plan },
+          { k: "Oylik to'lov", v: fee ? money(fee) : "belgilanmagan" },
+          { k: "To'langan muddat", v: bill.paidUntil
+            ? <>{bill.paidUntil}{bill.daysLeft !== null && <span className="text-slate-500"> · {bill.daysLeft >= 0 ? `${bill.daysLeft} kun qoldi` : `${-bill.daysLeft} kun o'tdi`}</span>}</>
+            : "muddatsiz (avtomat to'xtatmaydi)" },
+          { k: "Imtiyoz", v: `${t.graceDays} kun${bill.suspendOn ? ` · to'lanmasa ${bill.suspendOn} dan to'xtatiladi` : ""}` },
+        ]} />
+        {owner && (
+          <>
+            <div className="mb-2 mt-5 border-t border-slate-100 pt-4 text-sm font-medium text-slate-700">To&apos;lov qo&apos;shish</div>
+            <PaymentForm slug={t.slug} monthlyFee={fee} today={today} preview={preview} />
+            <details className="mt-4 border-t border-slate-100 pt-3">
+              <summary className="cursor-pointer text-sm font-medium text-slate-700">Narx, imtiyoz va muddatni sozlash</summary>
+              <div className="mt-3"><BillingSettingsForm slug={t.slug} monthlyFee={t.monthlyFee?.toString() ?? ""} graceDays={t.graceDays} paidUntil={bill.paidUntil ?? ""} /></div>
+            </details>
+          </>
+        )}
+        <div className="mb-2 mt-5 border-t border-slate-100 pt-4 text-sm font-medium text-slate-700">To&apos;lovlar tarixi</div>
+        {payments.length === 0 ? <Empty text="Hali to'lov yozilmagan" /> : (
+          <Table>
+            <thead><tr><Th>Sana</Th><Th right>Summa</Th><Th>Davr</Th><Th>Usul</Th><Th>Izoh</Th><Th /></tr></thead>
+            <tbody>{payments.map((p) => (
+              <Tr key={p.id}>
+                <Td>{iso(p.paidAt)}</Td>
+                <Td right>{p.cancelledAt ? <s className="text-slate-400">{money(Number(p.amount))}</s> : money(Number(p.amount))}</Td>
+                <Td>{iso(p.periodFrom)} — {iso(p.periodTo)} <span className="text-slate-500">({p.months} oy)</span></Td>
+                <Td>{PAYMENT_METHODS[p.method] ?? p.method}</Td>
+                <Td>{p.cancelledAt ? <span className="text-red-700">Storno {date(p.cancelledAt)}: {p.cancelReason}</span> : p.note ?? ""}</Td>
+                <Td>{p.id === lastActive?.id && <CancelPaymentButton slug={t.slug} id={p.id} />}</Td>
+              </Tr>
+            ))}</tbody>
+          </Table>
+        )}
+      </Card>
+
       {history.length > 1 && (
         <Card>
           <div id="tarix" className="mb-2 scroll-mt-20 text-sm font-semibold">Oxirgi {history.length} kun</div>
@@ -96,7 +148,8 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
         </Card>
         <Card>
           <div className="mb-3 flex items-center gap-1 font-semibold">Korxona ma&apos;lumotlari <HelpButton topic="tenant:edit" /></div>
-          <EditTenantForm t={t} />
+          {/* Faqat oddiy maydonlar — Decimal/Date klient komponentga o'tmaydi */}
+          <EditTenantForm t={{ slug: t.slug, name: t.name, domain: t.domain, plan: t.plan, contactName: t.contactName, contactPhone: t.contactPhone, note: t.note, ecoApiUrl: t.ecoApiUrl }} />
         </Card>
       </div>}
 

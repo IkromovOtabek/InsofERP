@@ -618,6 +618,19 @@ const BASE = {
     },
     keywords: "sso kirish it",
   },
+  "tenant:billing": {
+    title: "Obuna va to'lovlar", group: "korxona",
+    what: "Korxona platformadan qachongacha foydalanish uchun to'lagani. To'lovni IT qo'lda kiritadi (bank o'tkazmasi, naqd, karta), muddat avtomatik suriladi.",
+    normal: "«To'langan» — 3 kundan ko'p qolgan. «Muddatsiz» — muddat belgilanmagan, avtomat bu korxonaga tegmaydi.",
+    steps: [
+      "Birinchi marta: «Narx, imtiyoz va muddatni sozlash» → oylik to'lov va hozirgi to'langan muddatni kiriting.",
+      "Pul kelganda: «To'lov qo'shish» — necha oy, summa, sana. Muddat eski muddatdan uzluksiz davom etadi (imtiyoz ham o'tib ketgan bo'lsa — bugundan).",
+      "Muddat tugashiga 3 kun qolganda va tugaganda IT guruhiga Telegram xabari keladi, direktor ERP'da banner ko'radi.",
+      "Imtiyozli kunlar ham o'tsa korxona avtomatik to'xtatiladi; to'lov kiritilishi bilan o'zi yoqiladi. Qo'lda to'xtatilgan korxonaga avtomat tegmaydi.",
+      "Xato kiritilgan to'lov — «Storno» (faqat oxirgisi): muddat oldingi holatiga qaytadi, yozuv o'chmaydi.",
+    ],
+    keywords: "obuna to'lov billing muddat tarif storno",
+  },
   "tenant:suspend": {
     title: "Korxonani to'xtatish", group: "korxona",
     what: "Masalan, to'lov qilinmaganda korxonaning ishlashini vaqtincha to'xtatish.",

@@ -114,6 +114,9 @@ model CompanySettings {
   /// Platforma (superadmin) korxonani to'xtatgan bo'lsa — xodimlar veb va mobilda kira olmaydi, ma'lumot saqlanadi
   suspendedAt         DateTime?
   suspendReason       String?
+  /// Markaziy panel yozadi (lib/control/billing.ts → syncTenantPlatform): obuna holati va boshqa platforma xabarlari.
+  /// Korxona faqat o'qiydi (lib/tenant.ts → billingNotice): { billing: { paidUntil, suspendOn } | null }
+  platform            Json?
   name                String    @default("Insof beton zavodi")
   legalName           String? // yuridik nomi (MChJ)
   inn                 String?

@@ -57,6 +57,10 @@ async function main() {
       if (!s) { console.log(`${t.slug.padEnd(16)} ${t.status.toLowerCase()} (tekshirilmadi)`); continue; }
       console.log(`${t.slug.padEnd(16)} web:${s?.web.up ? "ok" : "DOWN"} db:${s?.db.ok ? "ok" : "DOWN"} eco:${s?.eco.configured ? (s.eco.up ? "ok" : "DOWN") : "-"} users:${s?.users.active ?? "-"} orders/oy:${s?.orders.month ?? "-"}`);
     }
+  } else if (cmd === "billing") {
+    // Obuna tekshiruvi qo'lda (agent soatiga bir marta o'zi qiladi): ogohlantirish, to'xtatish, yoqish
+    const { billingTick } = await import("@/lib/control/billing");
+    console.log(await billingTick({ notify: async (t) => console.log(`  → ${t}`), log: (m) => console.error(m) }));
   } else if (cmd === "sso-key") {
     const slug = process.argv[3] ?? "";
     if (!prov.SLUG_RE.test(slug)) throw new Error("Ishlatish: npm run -s tenant -- sso-key <slug>");
@@ -64,7 +68,7 @@ async function main() {
     if (!key) throw new Error("control.env da CONTROL_SECRET yo'q yoki 32 belgidan qisqa");
     console.log(`CONTROL_SSO_KEY=${key}`);
   } else {
-    console.log("Buyruqlar: list | register | env <slug> | migrate-all | stats | sso-key <slug>");
+    console.log("Buyruqlar: list | register | env <slug> | migrate-all | stats | billing | sso-key <slug>");
   }
   await control.$disconnect();
   process.exit();

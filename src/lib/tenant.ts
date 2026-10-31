@@ -33,3 +33,22 @@ export const companySuspension = cache(async (): Promise<Suspension> => {
 });
 
 export const SUSPENDED_MESSAGE = "Korxona hisobi vaqtincha to'xtatilgan — platforma administratoriga murojaat qiling";
+
+/**
+ * Markaziy panel yozgan obuna holati (CompanySettings.platform.billing; lib/control/billing.ts → syncTenantPlatform).
+ * Bosqich shu yerda bugungi sana bo'yicha hisoblanadi — panel kunlik yozuvi kechiksa ham banner to'g'ri.
+ * Faqat ogohlantirish kerak bo'lganda qiymat qaytadi: tugashiga ≤ 3 kun qolgan yoki muddat o'tgan (imtiyozda).
+ */
+export type BillingNotice = { paidUntil: string; suspendOn: string; daysLeft: number };
+
+export const billingNotice = cache(async (): Promise<BillingNotice | null> => {
+  const c = await db.companySettings.findUnique({ where: { id: "main" }, select: { platform: true } });
+  const b = (c?.platform as { billing?: { paidUntil?: unknown; suspendOn?: unknown } | null } | null)?.billing;
+  if (!b || typeof b.paidUntil !== "string" || typeof b.suspendOn !== "string") return null;
+  const day = (iso: string) => Date.parse(`${iso}T00:00:00.000Z`);
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  if (Number.isNaN(day(b.paidUntil)) || Number.isNaN(day(b.suspendOn))) return null;
+  const daysLeft = Math.round((day(b.paidUntil) - day(today)) / 86_400_000);
+  return daysLeft <= 3 ? { paidUntil: b.paidUntil, suspendOn: b.suspendOn, daysLeft } : null;
+});

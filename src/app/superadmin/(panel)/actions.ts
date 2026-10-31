@@ -11,6 +11,7 @@ import { collectAll, collectStats } from "@/lib/control/stats";
 import { passwordProblem } from "@/lib/password-policy";
 import { clientIp } from "@/lib/login-guard";
 import { verifyAdminReauth } from "@/lib/control/reauth";
+import { billingState, resumedMark } from "@/lib/control/billing";
 import { isAdminRole, ROLE_LABEL } from "@/lib/control/roles";
 import type { ActionState } from "@/lib/action";
 
@@ -94,7 +95,7 @@ export async function suspendTenantAction(slug: string, _prev: ActionState, fd: 
   const reason = str(fd, "reason");
   if (reason.length < 3) return { error: "Sababini yozing (korxona xodimlari shuni ko'rmaydi, jurnal uchun)" };
   try { await setSuspended(t.dbName, true, reason); } catch (e) { return { error: `Korxona bazasiga yozilmadi: ${(e as Error).message}` }; }
-  await control.tenant.update({ where: { id: t.id }, data: { status: "SUSPENDED", suspendedAt: new Date(), suspendReason: reason } });
+  await control.tenant.update({ where: { id: t.id }, data: { status: "SUSPENDED", suspendedAt: new Date(), suspendReason: reason, suspendKind: "manual" } });
   await logEvent(a.id, "TENANT_SUSPEND", t.id, { reason });
   revalidatePath(`/superadmin/korxonalar/${slug}`); revalidatePath("/superadmin");
   return { ok: true };
@@ -104,8 +105,11 @@ export async function resumeTenantAction(slug: string): Promise<void> {
   const a = await requireRole("OWNER");
   const t = await tenantBySlug(slug);
   await setSuspended(t.dbName, false);
-  await control.tenant.update({ where: { id: t.id }, data: { status: "ACTIVE", suspendedAt: null, suspendReason: null } });
-  await logEvent(a.id, "TENANT_RESUME", t.id);
+  // Obuna muddati o'tgan bo'lsa ham IT ongli ravishda yoqdi — avtomat shu muddat uchun qayta to'xtatmasin
+  const st = billingState(t);
+  const billingNotice = st.stage === "overdue" ? resumedMark(st.paidUntil!) : t.billingNotice;
+  await control.tenant.update({ where: { id: t.id }, data: { status: "ACTIVE", suspendedAt: null, suspendReason: null, suspendKind: null, billingNotice } });
+  await logEvent(a.id, "TENANT_RESUME", t.id, st.stage === "overdue" ? { overdue: true, paidUntil: st.paidUntil } : undefined);
   revalidatePath(`/superadmin/korxonalar/${slug}`); revalidatePath("/superadmin");
 }
 
