@@ -64,9 +64,10 @@ async function main() {
     const user = await db.user.findFirst({ where: { role: "SUPERVISOR", isActive: true }, orderBy: { createdAt: "asc" } })
       ?? await db.user.findFirstOrThrow({ where: { role: "DIRECTOR" } });
     const by = user.id;
-    const customer = await db.customer.create({ data: { name: `${TAG} Ichki sinov mijozi` } });
-    const ustun = await db.product.create({ data: { code: "DEMO-BRAK-U6", name: `${TAG} Ustun U-6`, unit: "dona", price: 60000, pieceRate: 6000 } });
-    const plita = await db.product.create({ data: { code: "DEMO-BRAK-P4", name: `${TAG} Plita P-4`, unit: "dona", price: 120000, pieceRate: 10000 } });
+    const customer = await db.customer.create({ data: { name: `${TAG} Ichki sinov mijozi`, isInternal: true } });
+    // Nofaol: ishlab chiqarish matritsasi, sklad va katalogda ko'rinmasin (oylik hisobi faolligiga qaramaydi)
+    const ustun = await db.product.create({ data: { code: "DEMO-BRAK-U6", name: `${TAG} Ustun U-6`, unit: "dona", price: 60000, pieceRate: 6000, isActive: false } });
+    const plita = await db.product.create({ data: { code: "DEMO-BRAK-P4", name: `${TAG} Plita P-4`, unit: "dona", price: 120000, pieceRate: 10000, isActive: false } });
 
     const brigade = await db.brigade.create({ data: { name: `${TAG} Sinov brigadasi` } });
     const debtor = await db.brigade.create({ data: { name: `${TAG} Qarzdor brigada` } });
@@ -87,7 +88,8 @@ async function main() {
 
     const order = await db.order.create({
       data: {
-        orderNo: `DEMO-BRAK-${Date.now()}`, customerId: customer.id, status: "IN_PRODUCTION", deliveryDate: day(28), deliveryAddress: "Zavod hovlisi",
+        // Yopilgan — ishlab chiqarish doskasi va matritsasiga tushmasin (topshiriqlar va bajarilgan ish o'zgarmaydi)
+        orderNo: `DEMO-BRAK-${Date.now()}`, customerId: customer.id, status: "CLOSED", deliveryDate: day(28), deliveryAddress: "Zavod hovlisi",
         note: `${TAG} sinov zayavkasi`, createdById: by,
         items: { create: [{ productId: ustun.id, qtyM3: 600, price: 60000 }, { productId: plita.id, qtyM3: 150, price: 120000 }] },
       },
