@@ -11,7 +11,7 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Truck, Warehouse } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Layers, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Truck, Warehouse } from "lucide-react";
 import { visionEnabled } from "@/lib/ai/vision";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
@@ -29,7 +29,7 @@ import { avtoPartsFeed } from "@/lib/avto-parts";
 import { pendingShipments } from "@/lib/shipments";
 import { ForYouParts } from "./for-you-parts";
 import { RawStockStatus } from "@/components/raw-stock-status";
-import { StockSnapshotCard } from "@/components/stock-snapshot";
+import { YardStatus } from "@/components/yard-status";
 
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
@@ -192,6 +192,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 {shipPending > 0 && <span className="ml-0.5 rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-900 tabular" title="Qabul kutayotgan jo'natmalar">{shipPending}</span>}
               </LinkButton>
             )}
+            {/* Sahifadagi bo'limlarga tez o'tish: xomashyo jadvali va hovli (mexanikka hovli ko'rsatilmaydi) */}
+            <LinkButton href={tab === "balance" ? "#xomashyo" : "/stock#xomashyo"} variant="secondary" size="lg"><Layers size={18} /> <span>Xomashyo qoldiqlari</span></LinkButton>
+            {s?.role !== "MECHANIC" && <LinkButton href={tab === "balance" ? "#hovli" : "/stock#hovli"} variant="secondary" size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
             {canDo(s, "stock", "brigade") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
@@ -418,11 +421,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {tab === "balance" && s?.role !== "MECHANIC" && (
         <div className="mb-8 space-y-6">
           <RawStockStatus />
-          <StockSnapshotCard layout="grid" title="Hovli va tayyor mahsulot" show={["pieces", "concrete"]} />
+          <YardStatus />
         </div>
       )}
       {tab === "balance" && (
-        <div className="space-y-3">
+        <div id="xomashyo" className="scroll-mt-20 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Xomashyo qoldiqlari</h2>
