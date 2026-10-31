@@ -119,7 +119,9 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                       className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[17px] pointer-coarse:py-3 pointer-coarse:text-[18px]",
                         isActive ? "bg-slate-100 font-medium text-slate-900" : childActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900")}>
                       {isActive && <span className="sb-active absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-brand-500" />}
-                      {Icon && <Icon size={19} className={cn("sb-icon shrink-0", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />}
+                      {/* Bo'lim ichidagi bandlarda ikonka o'rniga nuqta (faol — brend rangi, kattaroq); ikonka faqat yig'ilgan menyuda — u yerda nom ko'rinmaydi */}
+                      {hasHeader && <span aria-hidden className={cn("sb-dot shrink-0 rounded-full transition-all [.sb-collapsed_&]:hidden", isActive || childActive ? "h-2 w-2 bg-brand-500" : "h-1.5 w-1.5 bg-slate-300 group-hover:bg-brand-400")} />}
+                      {Icon && <Icon size={19} className={cn("sb-icon shrink-0", hasHeader && "hidden [.sb-collapsed_&]:block", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />}
                       <span className="sb-fade truncate">{i.label}</span>
                     </Link>
                     {i.children && (
@@ -136,12 +138,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                         return (
                           <Link key={c.href} href={c.href} onClick={onNavigate} style={{ "--i": ci, "--j": j + ci + 1 } as React.CSSProperties}
                             className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[16px] pointer-coarse:py-2.5 pointer-coarse:text-[17px]", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
-                            {(() => {
-                              const CIcon = ICONS[c.href];
-                              return CIcon
-                                ? <CIcon size={14} className={cn("shrink-0", ca ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />
-                                : <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />;
-                            })()}
+                            <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />
                             <span className="truncate">{c.label}</span>
                           </Link>
                         );
