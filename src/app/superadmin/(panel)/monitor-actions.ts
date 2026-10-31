@@ -2,12 +2,13 @@
 
 import { headers } from "next/headers";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/control/auth";
+import { requireAdmin, roleDenied } from "@/lib/control/auth";
 import { control } from "@/lib/control/db";
 import { logEvent } from "@/lib/control/events";
 import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "@/lib/control/monitor/contract";
 import { actionLabel, confirmPhrase, needsReauth } from "@/lib/control/monitor/shared";
-import { verifyReauth } from "@/lib/control/reauth";
+import { verifyAdminReauth } from "@/lib/control/reauth";
+import { actionMinRole } from "@/lib/control/roles";
 import { DETACHED_ACTIONS } from "@/lib/control/devops/contract";
 import { PG_DB_RE, PG_PID_RE, PG_TABLE_RE } from "@/lib/control/dbtraffic/contract";
 import { invalidateMonitorSnapshot } from "@/lib/control/monitor/snapshot";
@@ -46,12 +47,15 @@ const PARAMS: Record<ActionType, z.ZodType<Record<string, string>>> = {
 const ID = z.string().regex(/^[a-z0-9]{10,40}$/i);
 
 /**
- * `password` — faqat REAUTH_ACTIONS (DEPLOY, ROLLBACK, REBOOT, TENANT_UP, PG_TERMINATE) uchun: superadmin joriy paroli.
- * U alohida argument: `params` ga (AgentAction.params, jurnal) hech qachon tushmaydi.
+ * `password` (+ 2FA yoqilgan bo'lsa `code`) — faqat REAUTH_ACTIONS (DEPLOY, ROLLBACK, REBOOT, TENANT_UP, PG_TERMINATE) uchun.
+ * Ular alohida argument: `params` ga (AgentAction.params, jurnal) hech qachon tushmaydi.
+ * Rol: har amal turi uchun minimal rol (lib/control/roles.ts → actionMinRole).
  */
-export async function enqueueAction(type: string, params: unknown, incidentId?: string | null, confirm?: string | null, password?: string | null): Promise<MonitorResult> {
+export async function enqueueAction(type: string, params: unknown, incidentId?: string | null, confirm?: string | null, password?: string | null, code?: string | null): Promise<MonitorResult> {
   const a = await requireAdmin();
   if (typeof type !== "string" || !isActionType(type)) return { error: "Noma'lum amal turi" };
+  const deny = roleDenied(a, actionMinRole(type));
+  if (deny) return { error: deny };
   const parsed = PARAMS[type].safeParse(params ?? {});
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Parametr noto'g'ri" };
   const p = parsed.data;
@@ -68,8 +72,7 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
   if (needsReauth(type)) {
     let ip = "unknown";
     try { ip = ipFromHeaders(await headers()); } catch { /* so'rov yo'q */ }
-    const row = await control.superAdmin.findUnique({ where: { id: a.id }, select: { passwordHash: true, isActive: true } });
-    const bad = await verifyReauth({ adminId: a.id, hash: row?.isActive ? row.passwordHash : null, password, ip });
+    const bad = await verifyAdminReauth({ adminId: a.id, password, code, ip });
     if (bad) return { error: bad };
   }
   const pre = await infraPreflight(type, p);
@@ -115,6 +118,8 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
  */
 export async function cancelAction(id: string): Promise<MonitorResult> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OPERATOR");
+  if (deny) return { error: deny };
   if (typeof id !== "string" || !ID.safeParse(id).success) return { error: "Amal topilmadi" };
   const row = await control.agentAction.findUnique({
     where: { id }, select: { id: true, type: true, params: true, status: true, requestedById: true, incidentId: true },
@@ -136,6 +141,8 @@ export async function cancelAction(id: string): Promise<MonitorResult> {
 
 export async function ackIncident(id: string): Promise<MonitorResult> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OPERATOR");
+  if (deny) return { error: deny };
   if (!ID.safeParse(id).success) return { error: "Hodisa topilmadi" };
   const i = await control.incident.findUnique({ where: { id }, select: { id: true, status: true, title: true, tenantId: true } });
   if (!i) return { error: "Hodisa topilmadi" };
@@ -152,6 +159,8 @@ const NOTE = z.string().trim().min(3, "Izoh kamida 3 belgi").max(1000, "Izoh jud
 
 export async function resolveIncident(id: string, note: string): Promise<MonitorResult> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OPERATOR");
+  if (deny) return { error: deny };
   if (!ID.safeParse(id).success) return { error: "Hodisa topilmadi" };
   const nt = NOTE.safeParse(note);
   if (!nt.success) return { error: nt.error.issues[0].message };

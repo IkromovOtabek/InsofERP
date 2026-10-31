@@ -3,6 +3,9 @@
  *   CONTROL_ADMIN_PASSWORD='...' npm run control:admin -- otabek "Otabek Ikromov"
  * Parol argument sifatida berilmaydi (shell tarixiga tushmasin) — env yoki so'rov orqali.
  * Mavjud login berilsa — paroli almashtiriladi va eski sessiyalari kuyadi.
+ * Server konsoli — eng oxirgi tiklash yo'li: admin har doim «Egasi» (OWNER) bo'ladi va bloklangan bo'lsa yoqiladi.
+ * Telefon (2FA) yo'qolgan bo'lsa: `--reset-2fa` — ikki bosqichli kirish o'chiriladi, admin uni panelda qayta yoqadi.
+ *   npm run control:admin -- otabek --reset-2fa
  */
 import { loadEnv } from "./env";
 // Faqat panel sozlamasi. Ildizdagi `.env` (korxona kalitlari) bu yerda o'qilmaydi.
@@ -32,7 +35,9 @@ function askHidden(prompt: string): Promise<string> {
 }
 
 async function main() {
-  const [login, ...nameParts] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const reset2fa = args.includes("--reset-2fa");
+  const [login, ...nameParts] = args.filter((x) => x !== "--reset-2fa");
   if (!login || !/^[a-z0-9._-]{3,40}$/.test(login)) throw new Error('Ishlatish: npm run control:admin -- <login> "F.I.O."');
   let password = process.env.CONTROL_ADMIN_PASSWORD ?? "";
   if (!password) {
@@ -46,13 +51,15 @@ async function main() {
   const { control } = await import("@/lib/control/db");
   const passwordHash = await bcrypt.hash(password, 10);
   const fullName = nameParts.join(" ").trim() || login;
+  const off2fa = reset2fa ? { totpSecret: null, totpEnabledAt: null, totpLastStep: null, recoveryCodes: [] } : {};
   const a = await control.superAdmin.upsert({
     where: { login },
-    update: { passwordHash, isActive: true, sessionVersion: { increment: 1 }, ...(nameParts.length ? { fullName } : {}) },
-    create: { login, fullName, passwordHash },
+    update: { passwordHash, isActive: true, role: "OWNER", sessionVersion: { increment: 1 }, ...off2fa, ...(nameParts.length ? { fullName } : {}) },
+    create: { login, fullName, passwordHash, role: "OWNER" },
   });
-  await control.controlEvent.create({ data: { adminId: a.id, action: "ADMIN_CREATE", detail: { login, viaScript: true } } });
-  console.log(`✓ Superadmin: ${a.login} (${a.fullName}). Panel: /superadmin/login`);
+  await control.adminSession.updateMany({ where: { adminId: a.id, revokedAt: null }, data: { revokedAt: new Date() } });
+  await control.controlEvent.create({ data: { adminId: a.id, action: "ADMIN_CREATE", detail: { login, viaScript: true, reset2fa } } });
+  console.log(`✓ Superadmin: ${a.login} (${a.fullName}), rol: Egasi${reset2fa ? ", 2FA o'chirildi" : a.totpEnabledAt ? ", 2FA yoqilgan" : ""}. Panel: /superadmin/login`);
   await control.$disconnect();
 }
 

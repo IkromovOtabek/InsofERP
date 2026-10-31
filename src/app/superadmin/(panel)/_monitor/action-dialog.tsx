@@ -12,6 +12,8 @@ import { BottomSheet } from "../../_ui/sheet";
 import { ackIncident, cancelAction, enqueueAction, resolveIncident } from "../monitor-actions";
 import { actionHelpId } from "@/lib/control/help-content";
 import { HelpButton } from "../_help/help";
+import { actionMinRole, roleDeniedText, type AdminRoleT } from "@/lib/control/roles";
+import { useAdminCtx } from "./admin-ctx";
 
 /** Sahifa ichidagi dialog (window.confirm emas): kompyuterda oyna, telefonda pastdan varaq (_ui/sheet). */
 export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
@@ -19,16 +21,30 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
 }
 
 /**
- * Xavfli amal uchun joriy parolni qayta kiritish (REAUTH_ACTIONS). Qiymat faqat server action argumenti sifatida ketadi
- * va dialog yopilganda tozalanadi — hech qayerda saqlanmaydi.
+ * Xavfli amal uchun joriy parolni (2FA yoqilgan bo'lsa — ilovadagi kodni ham) qayta kiritish (REAUTH_ACTIONS).
+ * Qiymatlar faqat server action argumenti sifatida ketadi va dialog yopilganda tozalanadi — hech qayerda saqlanmaydi.
  */
-export function PasswordBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function PasswordBox({ value, onChange, code, onCode }: { value: string; onChange: (v: string) => void; code: string; onCode: (v: string) => void }) {
+  const { totp } = useAdminCtx();
   return (
-    <Field label="Joriy parolingiz" hint="Xavfli amal — shaxsingizni tasdiqlash uchun parolni qayta kiriting">
-      <Input type="password" value={value} onChange={(e) => onChange(e.target.value)} autoComplete="current-password" required maxLength={200} />
-    </Field>
+    <>
+      <Field label="Joriy parolingiz" hint="Xavfli amal — shaxsingizni tasdiqlash uchun parolni qayta kiriting">
+        <Input type="password" value={value} onChange={(e) => onChange(e.target.value)} autoComplete="current-password" required maxLength={200} />
+      </Field>
+      {totp && (
+        <Field label="2FA kodi" hint="Autentifikator ilovasidagi 6 raqam (yoki zaxira kod)">
+          <Input value={code} onChange={(e) => onCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" required maxLength={20} spellCheck={false} />
+        </Field>
+      )}
+    </>
   );
 }
+
+/** Qayta tasdiq maydonlari to'ldirilganmi (2FA bo'lsa kod ham). */
+export const reauthFilled = (totp: boolean, password: string, code: string) => password.length > 0 && (!totp || code.trim().length > 0);
+
+/** Rol yetmasa tugma yonidagi izoh uchun matn. */
+export const useRoleDenied = (min: AdminRoleT) => roleDeniedText(useAdminCtx().role, min);
 
 const DESCR: Record<string, string> = {
   RESTART_UNIT: "Xizmat 5–30 soniya javob bermaydi. Ochiq sahifalar qayta yuklanadi.",
@@ -64,23 +80,26 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
   const [input, setInput] = useState("");
   const [confirm, setConfirm] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [err, setErr] = useState<string>();
   const [done, setDone] = useState<string>();
   const [pending, start] = useTransition();
   const reauth = needsReauth(type);
+  const { totp } = useAdminCtx();
+  const denied = useRoleDenied(actionMinRole(type));
   // To'liq enli tugma (telefon varag'ida) — «?» yonida, tugma qolgan joyni egallaydi
   const fullW = !!className?.split(/\s+/).includes("w-full");
   const needs: "ip" | "unit" | null = type === "BLOCK_IP" || type === "UNBLOCK_IP" ? (typeof params.ip === "string" ? null : "ip") : type === "RESTART_UNIT" ? (typeof params.unit === "string" ? null : "unit") : null;
   const full = needs ? { ...params, [needs]: input.trim() } : params;
   const phrase = confirmPhrase(type, full);
   const inputOk = !needs || (needs === "ip" ? IPV4_RE : UNIT_RE).test(input.trim());
-  const canSend = inputOk && (phrase === null || (phrase !== "" && confirm.trim() === phrase)) && (!reauth || password.length > 0);
+  const canSend = inputOk && (phrase === null || (phrase !== "" && confirm.trim() === phrase)) && (!reauth || reauthFilled(totp, password, code));
 
-  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); setPassword(""); };
+  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); setPassword(""); setCode(""); };
   const send = () => start(async () => {
     setErr(undefined);
-    const r = await enqueueAction(type, full, incidentId ?? null, phrase === null ? null : confirm, reauth ? password : null);
-    setPassword("");
+    const r = await enqueueAction(type, full, incidentId ?? null, phrase === null ? null : confirm, reauth ? password : null, reauth && totp ? code : null);
+    setPassword(""); setCode("");
     if (r.error) { setErr(r.error); return; }
     setDone("Navbatga qo'yildi — agent bir necha soniyada bajaradi. Natija «Amallar» sahifasida.");
     router.refresh();
@@ -92,7 +111,7 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
     <>
       {/* Har amal tugmasi yonida «?» — nima qiladi, xavfi, qachon ishlatish kerak (lib/control/help-content.ts) */}
       <span className={fullW ? "flex w-full items-center gap-0.5" : "inline-flex items-center gap-0.5"}>
-        <Button type="button" variant={variant} size={size} disabled={disabled} className={fullW ? className!.replace("w-full", "min-w-0 flex-1") : className} onClick={() => setOpen(true)}>
+        <Button type="button" variant={variant} size={size} disabled={disabled || !!denied} title={denied ?? undefined} className={fullW ? className!.replace("w-full", "min-w-0 flex-1") : className} onClick={() => setOpen(true)}>
           {Icon && <Icon size={14} aria-hidden />} {label ?? actionLabel(type)}
         </Button>
         <HelpButton topic={actionHelpId(type) ?? undefined} />
@@ -115,7 +134,7 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
               <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="Tasdiqlash matni" autoComplete="off" spellCheck={false} disabled={!phrase} />
             </div>
           )}
-          {reauth && <PasswordBox value={password} onChange={setPassword} />}
+          {reauth && <PasswordBox value={password} onChange={setPassword} code={code} onCode={setCode} />}
           <FormError error={err} />
           {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> {done}</p>}
           <div className="sa-sheet-acts flex flex-wrap justify-end gap-2 pt-1">

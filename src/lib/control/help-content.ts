@@ -390,7 +390,12 @@ const BASE = {
     title: "Bu sahifa haqida: IT jamoasi", group: "umumiy",
     what: "IT panelga kira oladigan odamlar (superadminlar). Ular barcha korxonalarni ko'radi, yaratadi, direktorga login beradi va korxonaga IT sifatida kiradi.",
     normal: "Faqat ishonchli odamlar «Faol». Ketgan xodim — «Bloklangan».",
-    steps: ["Yangi odam — «Yangi superadmin» formasi.", "Ishdan ketgan — «Bloklash».", "Parolni unutgan bo'lsa — serverda `npm run control:admin` (pastdagi «?»)."],
+    steps: [
+      "Yangi odam — «Yangi superadmin» formasi, rolini tanlang: «Egasi» (hammasi), «Navbatchi» (hodisalar, xavfsiz server amallari, loglar, SSO) yoki «Kuzatuvchi» (faqat ko'radi).",
+      "Har kim «Mening hisobim» → «Ikki bosqichli kirish (2FA)» ni yoqsin: kirishda va xavfli amallarda telefondagi kod so'raladi.",
+      "Begona qurilma ko'rinsa — «Faol sessiyalar»da yoping; boshqa admin uchun «Egasi» — «Sessiyalarini yopish».",
+      "Ishdan ketgan — «Bloklash».", "Parolni yoki 2FA telefonini yo'qotgan bo'lsa — serverda `npm run control:admin` (pastdagi «?»).",
+    ],
   },
   "page:jurnal": {
     title: "Bu sahifa haqida: Jurnal", group: "umumiy",
@@ -968,7 +973,7 @@ const BASE = {
   /* ── IT jamoasi va jurnal ── */
   "adm:new": {
     title: "Yangi superadmin qo'shish", group: "jamoa",
-    what: "IT panelga yangi odam qo'shish. U barcha korxonalarga to'liq kirish huquqini oladi.",
+    what: "IT panelga yangi odam qo'shish. Vakolati tanlangan rolga bog'liq: «Egasi» — hammasi, «Navbatchi» — kundalik ish (deploy, reboot, korxona yaratish va direktor parolidan tashqari), «Kuzatuvchi» — faqat ko'radi.",
     action: {
       does: "Panel bazasida yangi superadmin ochiladi, jurnalga yoziladi. Xavfsizlik skaneri ham yangi superadmin haqida ogohlantiradi.",
       risk: "Bu odam hamma narsani (korxonalar, server tugmalari) boshqara oladi — faqat ishonchli odamga bering.",
@@ -1009,8 +1014,13 @@ const BASE = {
   "adm:reset": {
     title: "Parolni unutsangiz (server orqali)", group: "jamoa",
     what: "Panelga hech kim kira olmasa yoki superadmin parolini unutsa, parol serverda buyruq bilan o'rnatiladi.",
-    steps: ["SSH orqali serverga kiring: `cd /var/www/insof-erp/current`", "`CONTROL_ENV_FILE=/var/www/insof-erp/control.env npm run control:admin -- <login> \"F.I.O.\"`", "Parolni ekran so'raydi (yozilganda ko'rinmaydi). Login mavjud bo'lsa — paroli almashtiriladi va eski sessiyalari tugaydi."],
-    keywords: "control:admin parol tiklash",
+    steps: [
+      "SSH orqali serverga kiring: `cd /var/www/insof-erp/current`",
+      "`CONTROL_ENV_FILE=/var/www/insof-erp/control.env npm run control:admin -- <login> \"F.I.O.\"`",
+      "Parolni ekran so'raydi (yozilganda ko'rinmaydi). Login mavjud bo'lsa — paroli almashtiriladi, eski sessiyalari tugaydi va roli «Egasi» bo'ladi.",
+      "2FA telefoni yo'qolgan bo'lsa — oxiriga `--reset-2fa` qo'shing: ikki bosqichli kirish o'chadi, panelga kirib uni qayta yoqing.",
+    ],
+    keywords: "control:admin parol tiklash 2fa telefon",
   },
   "jur:columns": {
     title: "Jurnal ustunlari", group: "jamoa",

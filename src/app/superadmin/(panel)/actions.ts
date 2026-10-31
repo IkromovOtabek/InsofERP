@@ -3,14 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
-import { requireAdmin } from "@/lib/control/auth";
+import { issueAdminSession, requireAdmin, requireRole, revokeAdminSessions, roleDenied } from "@/lib/control/auth";
 import { control } from "@/lib/control/db";
 import { logEvent } from "@/lib/control/events";
 import { provisionTenant, setDirector, setSuspended } from "@/lib/control/provision";
 import { collectAll, collectStats } from "@/lib/control/stats";
 import { passwordProblem } from "@/lib/password-policy";
 import { clientIp } from "@/lib/login-guard";
-import { verifyReauth } from "@/lib/control/reauth";
+import { verifyAdminReauth } from "@/lib/control/reauth";
+import { isAdminRole, ROLE_LABEL } from "@/lib/control/roles";
 import type { ActionState } from "@/lib/action";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -25,6 +26,8 @@ async function tenantBySlug(slug: string) {
 /** 1-talab: yangi korxona + uning direktoriga login/parol. */
 export async function createTenantAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OWNER");
+  if (deny) return { error: deny };
   let slug = "";
   try {
     const r = await provisionTenant({
@@ -44,6 +47,8 @@ export async function createTenantAction(_prev: ActionState, fd: FormData): Prom
 
 export async function updateTenantAction(slug: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OWNER");
+  if (deny) return { error: deny };
   const t = await tenantBySlug(slug);
   const domain = opt(fd, "domain")?.toLowerCase() ?? null;
   if (domain && !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return { error: "Domen noto'g'ri" };
@@ -64,6 +69,8 @@ export async function updateTenantAction(slug: string, _prev: ActionState, fd: F
 /** Direktorga login/parol berish yoki tiklash (eski sessiyalari kuyadi). Parol jurnalga yozilmaydi. */
 export async function setDirectorAction(slug: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OWNER");
+  if (deny) return { error: deny };
   const t = await tenantBySlug(slug);
   const d = { fullName: str(fd, "fullName"), login: str(fd, "login"), password: String(fd.get("password") ?? "") };
   if (d.fullName.length < 3) return { error: "F.I.O. kerak" };
@@ -81,6 +88,8 @@ export async function setDirectorAction(slug: string, _prev: ActionState, fd: Fo
 
 export async function suspendTenantAction(slug: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OWNER");
+  if (deny) return { error: deny };
   const t = await tenantBySlug(slug);
   const reason = str(fd, "reason");
   if (reason.length < 3) return { error: "Sababini yozing (korxona xodimlari shuni ko'rmaydi, jurnal uchun)" };
@@ -92,7 +101,7 @@ export async function suspendTenantAction(slug: string, _prev: ActionState, fd: 
 }
 
 export async function resumeTenantAction(slug: string): Promise<void> {
-  const a = await requireAdmin();
+  const a = await requireRole("OWNER");
   const t = await tenantBySlug(slug);
   await setSuspended(t.dbName, false);
   await control.tenant.update({ where: { id: t.id }, data: { status: "ACTIVE", suspendedAt: null, suspendReason: null } });
@@ -101,7 +110,7 @@ export async function resumeTenantAction(slug: string): Promise<void> {
 }
 
 export async function refreshStatsAction(slug?: string): Promise<void> {
-  await requireAdmin();
+  await requireAdmin(); // faqat o'qish (korxona bazalaridan statistika) — har rol uchun
   if (slug) await collectStats(await tenantBySlug(slug));
   else await collectAll();
   revalidatePath("/superadmin");
@@ -112,6 +121,10 @@ export async function refreshStatsAction(slug?: string): Promise<void> {
 
 export async function createAdminAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OWNER");
+  if (deny) return { error: deny };
+  const role = str(fd, "role") || "OPERATOR";
+  if (!isAdminRole(role)) return { error: "Rol noto'g'ri" };
   const login = str(fd, "login").toLowerCase();
   const fullName = str(fd, "fullName");
   const password = String(fd.get("password") ?? "");
@@ -120,8 +133,8 @@ export async function createAdminAction(_prev: ActionState, fd: FormData): Promi
   const problem = passwordProblem(password);
   if (problem) return { error: problem };
   try {
-    const n = await control.superAdmin.create({ data: { login, fullName, passwordHash: await bcrypt.hash(password, 10) } });
-    await logEvent(a.id, "ADMIN_CREATE", null, { login, fullName, id: n.id });
+    const n = await control.superAdmin.create({ data: { login, fullName, role, passwordHash: await bcrypt.hash(password, 10) } });
+    await logEvent(a.id, "ADMIN_CREATE", null, { login, fullName, id: n.id, role });
   } catch (e) {
     return { error: String(e).includes("Unique") ? "Bu login band" : (e as Error).message };
   }
@@ -130,11 +143,13 @@ export async function createAdminAction(_prev: ActionState, fd: FormData): Promi
 }
 
 export async function toggleAdminAction(id: string): Promise<void> {
-  const a = await requireAdmin();
+  const a = await requireRole("OWNER");
   if (id === a.id) return; // o'zini bloklab, panelsiz qolmasin
   const t = await control.superAdmin.findUniqueOrThrow({ where: { id } });
   if (t.isActive && (await control.superAdmin.count({ where: { isActive: true } })) <= 1) return;
+  if (t.isActive && t.role === "OWNER" && (await control.superAdmin.count({ where: { isActive: true, role: "OWNER" } })) <= 1) return;
   await control.superAdmin.update({ where: { id }, data: { isActive: !t.isActive, sessionVersion: { increment: 1 } } });
+  await revokeAdminSessions(id);
   await logEvent(a.id, "ADMIN_TOGGLE", null, { login: t.login, isActive: !t.isActive });
   revalidatePath("/superadmin/adminlar");
 }
@@ -143,17 +158,16 @@ export async function changeOwnPasswordAction(_prev: ActionState, fd: FormData):
   const a = await requireAdmin();
   const current = String(fd.get("current") ?? "");
   const next = String(fd.get("password") ?? "");
-  const me = await control.superAdmin.findUniqueOrThrow({ where: { id: a.id } });
-  // Joriy parol — qayta parol qulfi bilan (reauth:<adminId>): ochiq qolgan sessiyadan parolni taxmin qilib bo'lmasin
+  // Joriy parol (+ 2FA kodi) — qayta parol qulfi bilan (reauth:<adminId>): ochiq qolgan sessiyadan parolni taxmin qilib bo'lmasin
   let ip = "unknown";
   try { ip = await clientIp(); } catch { /* so'rov yo'q */ }
-  const bad = await verifyReauth({ adminId: me.id, hash: me.isActive ? me.passwordHash : null, password: current, ip });
+  const bad = await verifyAdminReauth({ adminId: a.id, password: current, code: fd.get("code"), ip });
   if (bad) return { error: bad === "Parol noto'g'ri" ? "Joriy parol noto'g'ri" : bad };
   const problem = passwordProblem(next);
   if (problem) return { error: problem };
   const u = await control.superAdmin.update({ where: { id: a.id }, data: { passwordHash: await bcrypt.hash(next, 10), sessionVersion: { increment: 1 } } });
-  const { issueAdminSession } = await import("@/lib/control/auth");
-  await issueAdminSession(u);
+  await revokeAdminSessions(a.id);
+  await issueAdminSession(u, "password");
   await logEvent(a.id, "ADMIN_PASSWORD", null);
   return { ok: true };
 }
@@ -164,6 +178,8 @@ export async function changeOwnPasswordAction(_prev: ActionState, fd: FormData):
  */
 export async function ssoAction(slug: string): Promise<{ error?: string; url?: string; token?: string }> {
   const a = await requireAdmin();
+  const deny = roleDenied(a, "OPERATOR");
+  if (deny) return { error: deny };
   const t = await tenantBySlug(slug);
   if (!t.domain) return { error: "Korxonaga domen ulanmagan — avval domenni kiriting" };
   if (t.status === "ARCHIVED") return { error: "Arxivdagi korxonaga kirib bo'lmaydi" };
@@ -173,4 +189,59 @@ export async function ssoAction(slug: string): Promise<{ error?: string; url?: s
   await logEvent(a.id, "SSO", t.id, { domain: t.domain });
   const scheme = t.domain.endsWith(".localhost") || t.domain.startsWith("localhost") ? "http" : "https";
   return { url: `${scheme}://${t.domain}/api/control/sso`, token };
+}
+
+/* ───────── IT jamoasi: rol, 2FA tiklash, sessiyalarni yopish (faqat OWNER) ───────── */
+
+async function otherAdmin(id: string) {
+  const a = await requireAdmin();
+  const deny = roleDenied(a, "OWNER");
+  if (deny) return { error: deny } as const;
+  if (typeof id !== "string" || !/^[a-z0-9]{10,40}$/i.test(id)) return { error: "Admin topilmadi" } as const;
+  if (id === a.id) return { error: "O'z hisobingiz uchun «Mening hisobim» bo'limidan foydalaning" } as const;
+  const t = await control.superAdmin.findUnique({ where: { id } });
+  if (!t) return { error: "Admin topilmadi" } as const;
+  return { me: a, t } as const;
+}
+
+export async function setAdminRoleAction(id: string, role: string): Promise<{ error?: string }> {
+  const r = await otherAdmin(id);
+  if ("error" in r) return { error: r.error };
+  if (!isAdminRole(role)) return { error: "Rol noto'g'ri" };
+  if (r.t.role === role) return {};
+  if (r.t.role === "OWNER" && r.t.isActive && (await control.superAdmin.count({ where: { isActive: true, role: "OWNER" } })) <= 1) {
+    return { error: "Kamida bitta faol «Egasi» qolishi kerak" };
+  }
+  // Rol pasaysa ochiq sessiyalar yangi rol bilan davom etadi (rol har so'rovda bazadan o'qiladi)
+  await control.superAdmin.update({ where: { id: r.t.id }, data: { role } });
+  await logEvent(r.me.id, "ADMIN_ROLE", null, { login: r.t.login, from: r.t.role, to: role, label: ROLE_LABEL[role] });
+  revalidatePath("/superadmin/adminlar");
+  return {};
+}
+
+/** Telefoni yo'qolgan admin: 2FA o'chiriladi (keyingi kirishda o'zi qayta yoqadi), barcha sessiyalari yopiladi. */
+export async function resetAdminTotpAction(id: string, password: string, code: string): Promise<{ error?: string }> {
+  const r = await otherAdmin(id);
+  if ("error" in r) return { error: r.error };
+  if (!r.t.totpEnabledAt) return { error: "Bu adminda 2FA yoqilmagan" };
+  const bad = await verifyAdminReauth({ adminId: r.me.id, password, code, ip: await clientIp() });
+  if (bad) return { error: bad };
+  await control.superAdmin.update({
+    where: { id: r.t.id },
+    data: { totpSecret: null, totpEnabledAt: null, totpLastStep: null, recoveryCodes: [], sessionVersion: { increment: 1 } },
+  });
+  await revokeAdminSessions(r.t.id);
+  await logEvent(r.me.id, "ADMIN_2FA_RESET", null, { login: r.t.login });
+  revalidatePath("/superadmin/adminlar");
+  return {};
+}
+
+export async function revokeAdminAllSessionsAction(id: string): Promise<{ error?: string }> {
+  const r = await otherAdmin(id);
+  if ("error" in r) return { error: r.error };
+  await control.superAdmin.update({ where: { id: r.t.id }, data: { sessionVersion: { increment: 1 } } });
+  await revokeAdminSessions(r.t.id);
+  await logEvent(r.me.id, "ADMIN_SESSIONS_REVOKE", null, { login: r.t.login, all: true });
+  revalidatePath("/superadmin/adminlar");
+  return {};
 }

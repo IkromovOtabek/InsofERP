@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Power } from "lucide-react";
 import { Button, Field, FormError, Input } from "@/components/ui";
 import { CONFIRM_WORD, REBOOT_AT_RE, rebootWhen } from "@/lib/control/infra/contract";
-import { Modal, PasswordBox } from "../_monitor/action-dialog";
+import { Modal, PasswordBox, reauthFilled, useRoleDenied } from "../_monitor/action-dialog";
+import { useAdminCtx } from "../_monitor/admin-ctx";
 import { useRefreshOn } from "../_monitor/live";
 import { enqueueAction } from "../monitor-actions";
 import { HelpButton } from "../_help/help";
@@ -29,18 +30,21 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
   const [time, setTime] = useState("03:00");
   const [confirm, setConfirm] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [err, setErr] = useState<string>();
   const [done, setDone] = useState<string>();
   const [pending, start] = useTransition();
+  const { totp } = useAdminCtx();
+  const denied = useRoleDenied("OWNER");
   const at = mode === "now" ? "now" : time;
   const atOk = REBOOT_AT_RE.test(at);
   const when = atOk ? rebootWhen(at).label : "—";
-  const canSend = atOk && confirm.trim() === CONFIRM_WORD && password.length > 0;
-  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); setPassword(""); };
+  const canSend = atOk && confirm.trim() === CONFIRM_WORD && reauthFilled(totp, password, code);
+  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); setPassword(""); setCode(""); };
   const send = () => start(async () => {
     setErr(undefined);
-    const r = await enqueueAction("REBOOT", { at }, null, confirm, password);
-    setPassword("");
+    const r = await enqueueAction("REBOOT", { at }, null, confirm, password, totp ? code : null);
+    setPassword(""); setCode("");
     if (r.error) { setErr(r.error); return; }
     setDone(`Navbatga qo'yildi — server ${when} qayta yuklanadi. Telegram'ga xabar ketadi.`);
     router.refresh();
@@ -48,7 +52,7 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
   });
   return (
     <>
-      <span className="inline-flex items-center gap-0.5"><Button type="button" variant="danger" size="sm" disabled={disabled} onClick={() => setOpen(true)}><Power size={14} aria-hidden /> Qayta yuklash</Button><HelpButton topic="action:REBOOT" /></span>
+      <span className="inline-flex items-center gap-0.5"><Button type="button" variant="danger" size="sm" disabled={disabled || !!denied} title={denied ?? undefined} onClick={() => setOpen(true)}><Power size={14} aria-hidden /> Qayta yuklash</Button><HelpButton topic="action:REBOOT" /></span>
       <Modal open={open} onClose={close} title="Serverni qayta yuklash">
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (canSend && !pending) send(); }}>
           <p className="text-sm text-slate-600">
@@ -70,7 +74,7 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
               <span>Tasdiqlash uchun <code className="rounded bg-white px-1 font-semibold">{CONFIRM_WORD}</code> deb yozing.</span></p>
             <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="Tasdiqlash matni" autoComplete="off" spellCheck={false} />
           </div>
-          <PasswordBox value={password} onChange={setPassword} />
+          <PasswordBox value={password} onChange={setPassword} code={code} onCode={setCode} />
           <FormError error={err} />
           {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> {done}</p>}
           <div className="sa-sheet-acts flex flex-wrap justify-end gap-2 pt-1">

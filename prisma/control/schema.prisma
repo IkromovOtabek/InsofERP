@@ -24,6 +24,13 @@ enum TenantStatus {
   ARCHIVED // shartnoma tugagan — faqat zaxira nusxa uchun
 }
 
+/// IT jamoasidagi vakolat (har amal bitta minimal rolga beriladi — src/lib/control/roles.ts).
+enum AdminRole {
+  OWNER // hammasi: korxona yaratish/to'xtatish, direktor paroli, deploy/reboot, adminlarni boshqarish
+  OPERATOR // navbatchi: hodisalar, xavfsiz server amallari, loglar, korxonaga SSO
+  VIEWER // faqat ko'radi
+}
+
 /// IT xodimi (superadmin) — barcha korxonalarni kuzatadi, yaratadi, direktorga login beradi.
 model SuperAdmin {
   id             String    @id @default(cuid())
@@ -43,8 +50,37 @@ model SuperAdmin {
   /// Panel ko'rinishi (faqat admin o'zi o'zgartiradi): { mobileLayout: "widgets"|"pro", colorMode: "system"|"light"|"dark" }.
   /// Tuzilma src/lib/control/ui-prefs.ts dagi zod sxemasi bilan tekshiriladi; bo'sh — standart.
   uiPrefs        Json?
+  role           AdminRole @default(OPERATOR)
+  /// Ikki bosqichli kirish (TOTP, RFC 6238): sir AES-GCM bilan shifrlangan (lib/control/totp.ts). Bo'sh — o'chiq.
+  totpSecret     String?
+  /// Yoqilgan vaqt; null bo'lsa totpSecret — hali tasdiqlanmagan (sozlash jarayonida)
+  totpEnabledAt  DateTime?
+  /// Oxirgi qabul qilingan kod qadami (30 s) — bitta kodni ikki marta ishlatib bo'lmaydi
+  totpLastStep   Int?
+  /// Zaxira kodlarning sha256 xeshlari (bir martalik; ishlatilgani ro'yxatdan o'chiriladi)
+  recoveryCodes  String[]  @default([])
 
-  events ControlEvent[]
+  events   ControlEvent[]
+  sessions AdminSession[]
+}
+
+/// Panel sessiyasi (cookie tokendagi `jti`): faol qurilmalar ro'yxati va masofadan yopish uchun.
+model AdminSession {
+  id         String    @id @default(cuid())
+  adminId    String
+  /// password | eco
+  via        String
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  admin SuperAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, revokedAt])
+  @@index([adminId, ip])
 }
 
 /// Korxona — alohida baza + alohida jarayon (port) + o'z subdomeni.

@@ -4,6 +4,8 @@ import { requireAdmin } from "@/lib/control/auth";
 import { DEFAULT_UI_PREFS, type UiPrefs } from "@/lib/control/ui-prefs";
 import { loadUiPrefs } from "@/lib/control/ui-prefs-db";
 import { LiveMonitorProvider } from "./_monitor/live";
+import { AdminCtxProvider } from "./_monitor/admin-ctx";
+import { TwoFactorNudge } from "./_monitor/two-factor-nudge";
 import { PanelNav, PanelShell, PanelTabBar, PanelTop } from "./_monitor/nav";
 
 // Rejim (INSOF_MODE) va sessiya ishga tushganda aniqlanadi — build vaqtida statik qotib qolmasin
@@ -22,17 +24,19 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   let prefs: UiPrefs = DEFAULT_UI_PREFS;
   try { prefs = await loadUiPrefs(a.id); } catch { /* migratsiya qo'llanmagan — standart */ }
   return (
+    <AdminCtxProvider value={{ role: a.role, totp: a.totp }}>
     <LiveMonitorProvider>
       <PanelShell prefs={prefs}>
         <div className="sa-app">
           <PanelNav />
           <div className="sa-main">
             <PanelTop fullName={a.fullName} login={a.login} hostname={os.hostname()} />
-            <main id="sa-main" className="sa-content">{children}</main>
+            <main id="sa-main" className="sa-content">{!a.totp && <TwoFactorNudge />}{children}</main>
           </div>
         </div>
         <PanelTabBar />
       </PanelShell>
     </LiveMonitorProvider>
+    </AdminCtxProvider>
   );
 }

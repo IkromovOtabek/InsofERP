@@ -11,16 +11,16 @@ import { enqueueAction, type MonitorResult } from "../monitor-actions";
  * zod + contract tekshiruvi, «TASDIQLAYMAN» yozma tasdig'i, joriy parol qayta tekshiruvi, chastota, jurnal). «Bir vaqtda
  * bitta deploy/rollback» tekshiruvi ham enqueueAction ichida — AgentAction yaratish bilan bitta tranzaksiyada (advisory lock).
  */
-export async function requestDeploy(ref: string, confirm: string, password: string): Promise<MonitorResult> {
+export async function requestDeploy(ref: string, confirm: string, password: string, code?: string): Promise<MonitorResult> {
   await requireAdmin();
   const r = (ref ?? "").trim().toLowerCase() || "main";
   if (!DEPLOY_REF_RE.test(r)) return { error: "Ref: faqat «main» yoki 7–40 belgili commit sha (0-9, a-f)" };
-  return enqueueAction("DEPLOY", { ref: r }, null, confirm, password);
+  return enqueueAction("DEPLOY", { ref: r }, null, confirm, password, code);
 }
 
-export async function requestRollback(confirm: string, password: string): Promise<MonitorResult> {
+export async function requestRollback(confirm: string, password: string, code?: string): Promise<MonitorResult> {
   await requireAdmin();
-  return enqueueAction("ROLLBACK", {}, null, confirm, password);
+  return enqueueAction("ROLLBACK", {}, null, confirm, password, code);
 }
 
 /** Jonli kuzatuv (2–3 s da): ishlayotgan va oxirgi deploy amallari. */

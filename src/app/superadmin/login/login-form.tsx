@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { KeyRound, LogIn, ShieldCheck, Smartphone } from "lucide-react";
+import { ArrowLeft, KeyRound, LogIn, ShieldCheck, Smartphone } from "lucide-react";
 import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
-import { adminEcoLoginAction, adminLoginAction } from "./actions";
+import { adminEcoLoginAction, adminLoginAction, cancelTwoFactorAction, verifyTwoFactorAction } from "./actions";
 
 /** `eco` — control.env da ECO sozlangan: "ECO ilovasi (telefon)" tabi ko'rinadi. */
 export function AdminLoginForm({ eco }: { eco: boolean }) {
@@ -56,5 +56,34 @@ function EcoForm() {
       <Button size="lg" className="w-full" disabled={pending}><LogIn size={16} aria-hidden /> {pending ? "Tekshirilmoqda…" : "Kirish"}</Button>
       <p className="text-xs text-slate-500">ECO hisobi panelda oldindan ulangan bo&apos;lishi kerak (IT jamoasi → Mening hisobim).</p>
     </form>
+  );
+}
+
+/** 2-bosqich: parol to'g'ri, 2FA yoqilgan — autentifikator ilovasidagi kod yoki zaxira kod. */
+export function TwoFactorForm() {
+  const [state, action, pending] = useActionState(verifyTwoFactorAction, undefined);
+  const [recovery, setRecovery] = useState(false);
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="flex items-center gap-2 text-[26px] font-bold leading-tight tracking-tight text-slate-900"><ShieldCheck size={26} strokeWidth={2.2} aria-hidden /> Tasdiqlash kodi</h1>
+        <p className="mt-1 text-sm text-slate-500">{recovery ? "Zaxira kodlardan birini kiriting (har biri bir marta ishlaydi)." : "Autentifikator ilovasidagi (Google Authenticator va h.k.) 6 raqamli kodni kiriting."}</p>
+      </div>
+      <form action={action} className="space-y-4">
+        {recovery
+          ? <Field label="Zaxira kod"><Input key="rc" name="code" autoComplete="off" spellCheck={false} placeholder="abcd-efgh" required autoFocus maxLength={20} /></Field>
+          : <Field label="Kod"><Input key="totp" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" placeholder="123 456" required autoFocus maxLength={7} /></Field>}
+        <FormError error={state?.error} />
+        <Button size="lg" className="w-full" disabled={pending}><LogIn size={16} aria-hidden /> {pending ? "Tekshirilmoqda…" : "Tasdiqlash"}</Button>
+      </form>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <button type="button" className="font-medium text-slate-600 underline-offset-2 hover:underline" onClick={() => setRecovery((v) => !v)}>
+          {recovery ? "Ilovadagi kod bilan" : "Telefon yo'qmi? Zaxira kod bilan"}
+        </button>
+        <form action={cancelTwoFactorAction}>
+          <button className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800"><ArrowLeft size={14} aria-hidden /> Boshqa hisob</button>
+        </form>
+      </div>
+    </div>
   );
 }

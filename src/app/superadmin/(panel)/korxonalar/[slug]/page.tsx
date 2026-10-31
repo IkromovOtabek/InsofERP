@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/control/auth";
+import { roleAllows } from "@/lib/control/roles";
 import { notFound } from "next/navigation";
 import { RefreshCw, Play } from "lucide-react";
 import { control } from "@/lib/control/db";
@@ -19,7 +20,9 @@ import { HelpButton, PageHelp, WithHelp } from "../../_help/help";
 export const dynamic = "force-dynamic";
 
 export default async function TenantPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ yangi?: string }> }) {
-  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
+  const me = await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
+  // Direktor paroli, ma'lumotni tahrirlash, to'xtatish — faqat «Egasi» (server action ham tekshiradi)
+  const owner = roleAllows(me.role, "OWNER");
   const { slug } = await params;
   const { yangi } = await searchParams;
   const t = await control.tenant.findUnique({ where: { slug } });
@@ -85,7 +88,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {owner && <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <div className="mb-1 flex items-center gap-1 font-semibold">Direktor login/paroli <HelpButton topic="tenant:director" /></div>
           <p className="mb-3 text-sm text-slate-500">Yangi direktor ochiladi yoki mavjudining paroli almashtiriladi (eski sessiyalari tugaydi). Hozirgi: <b>{t.directorLogin ?? "—"}</b></p>
@@ -95,9 +98,9 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
           <div className="mb-3 flex items-center gap-1 font-semibold">Korxona ma&apos;lumotlari <HelpButton topic="tenant:edit" /></div>
           <EditTenantForm t={t} />
         </Card>
-      </div>
+      </div>}
 
-      <Card>
+      {owner && <Card>
         <div className="mb-1 flex items-center gap-1 font-semibold">To&apos;xtatish <HelpButton topic="tenant:suspend" /></div>
         {t.status === "SUSPENDED" ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -110,7 +113,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
             <SuspendForm slug={t.slug} />
           </>
         )}
-      </Card>
+      </Card>}
 
       <Card>
         <div className="mb-3 flex items-center gap-1 font-semibold">Texnik <HelpButton topic="tenant:tech" /></div>

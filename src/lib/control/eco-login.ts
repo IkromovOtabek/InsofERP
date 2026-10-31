@@ -48,7 +48,8 @@ const ecoErrLog = (e: unknown) =>
   e instanceof EcoError ? (e.code === "AUTH_TOKEN_INVALID" ? "ECO_API_KEY yaroqsiz (control.env)" : `${e.code} ${e.status}`) : e;
 
 export type EcoAdmin = { id: string; login: string; fullName: string; sessionVersion: number };
-export type EcoLoginResult = { ok: true; admin: EcoAdmin } | { ok: false; error: string };
+/** `twoFactor` — adminda 2FA yoqilgan: sessiya hali berilmaydi, chaqiruvchi kod bosqichiga o'tkazadi. */
+export type EcoLoginResult = { ok: true; admin: EcoAdmin; twoFactor: boolean } | { ok: false; error: string };
 
 /**
  * Telefon + ECO paroli → superadmin. Sessiyani (cookie) chaqiruvchi beradi (`issueAdminSession`).
@@ -95,9 +96,12 @@ export async function ecoAdminLogin(phoneRaw: string, password: string, ip: stri
   if (!a.isActive) return fail("bloklangan admin", { adminId: a.id, login: a.login });
 
   recordSuccess(key);
+  const admin = { id: a.id, login: a.login, fullName: a.fullName, sessionVersion: a.sessionVersion };
+  // 2FA: kirish kod tasdiqlangandan keyin jurnalga yoziladi (login/actions.ts → verifyTwoFactorAction)
+  if (a.totpEnabledAt) return { ok: true, admin, twoFactor: true };
   await control.superAdmin.update({ where: { id: a.id }, data: { lastLoginAt: new Date() } });
   await logEvent(a.id, "ADMIN_LOGIN", null, { via: "eco", phone: maskPhone(phone) });
-  return { ok: true, admin: { id: a.id, login: a.login, fullName: a.fullName, sessionVersion: a.sessionVersion } };
+  return { ok: true, admin, twoFactor: false };
 }
 
 type LinkInput = { phone: string; ecoPassword: string; currentPassword: unknown };

@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
 import { checkLogin, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
+import { control } from "./db";
+import { consumeSecondFactor } from "./totp";
 
 /**
  * Xavfli amal oldidan superadmin parolini qayta tekshirish (monitor-actions.ts → enqueueAction, REAUTH_ACTIONS).
@@ -26,3 +28,24 @@ export async function verifyReauth(o: { adminId: string; hash: string | null | u
 
 /** Qayta parol qulfi kaliti — login qulfidan (`admin:<login>`) alohida. */
 export const reauthKey = (adminId: string) => `reauth:${adminId}`;
+
+/**
+ * Xavfli amal / hisob sozlamasi oldidan to'liq qayta tasdiq: joriy parol va (2FA yoqilgan bo'lsa) ilovadagi kod yoki
+ * zaxira kod. Admin qatori shu yerda o'qiladi — chaqiruvchi faqat `requireAdmin()` dan olingan id beradi.
+ * Kod xatolari ham parol bilan bitta qulf hisobida (`reauth:<adminId>`).
+ */
+export async function verifyAdminReauth(o: { adminId: string; password: unknown; code?: unknown; ip: string }): Promise<string | null> {
+  const row = await control.superAdmin.findUnique({
+    where: { id: o.adminId }, select: { id: true, isActive: true, passwordHash: true, totpSecret: true, totpEnabledAt: true, totpLastStep: true },
+  });
+  const bad = await verifyReauth({ adminId: o.adminId, hash: row?.isActive ? row.passwordHash : null, password: o.password, ip: o.ip });
+  if (bad || !row?.totpEnabledAt) return bad;
+  const key = reauthKey(o.adminId);
+  if (typeof o.code !== "string" || !o.code.trim()) return "Ilovadagi 6 raqamli kodni kiriting";
+  if (!(await consumeSecondFactor(row, o.code))) {
+    recordFailure(key, o.ip);
+    await failDelay();
+    return "Kod noto'g'ri yoki eskirgan";
+  }
+  return null;
+}

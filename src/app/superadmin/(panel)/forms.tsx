@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Check, ExternalLink, KeyRound, Plus, Save, ShieldOff, UserPlus } from "lucide-react";
 import { Button, Field, FormError, Input, PasswordInput, Select, Textarea } from "@/components/ui";
 import { PASSWORD_HINT } from "@/lib/password-policy";
+import { ADMIN_ROLES, ROLE_LABEL } from "@/lib/control/roles";
 import type { HelpTopicId } from "@/lib/control/help-content";
 import { HelpButton } from "./_help/help";
 
@@ -122,24 +123,26 @@ export function SsoButton({ slug, disabled }: { slug: string; disabled?: boolean
 export function NewAdminForm() {
   const [state, action, pending] = useActionState(createAdminAction, undefined);
   return (
-    <form action={action} className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
+    <form action={action} className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_10rem_auto] sm:items-end">
       <Field label="F.I.O."><Input name="fullName" required /></Field>
       <Field label="Login"><Input name="login" required autoComplete="off" /></Field>
       <Field label="Parol" hint={PASSWORD_HINT}><PasswordInput name="password" required autoComplete="new-password" /></Field>
+      <Field label="Rol"><Select name="role" defaultValue="OPERATOR">{ADMIN_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</Select></Field>
       <span className="inline-flex items-center gap-0.5"><Button disabled={pending}><UserPlus size={16} /> Qo&apos;shish</Button><HelpButton topic="adm:new" /></span>
-      <div className="sm:col-span-4">{state?.ok && <p className="text-sm text-emerald-700">Qo&apos;shildi</p>}<FormError error={state?.error} /></div>
+      <div className="sm:col-span-5">{state?.ok && <p className="text-sm text-emerald-700">Qo&apos;shildi</p>}<FormError error={state?.error} /></div>
     </form>
   );
 }
 
-export function OwnPasswordForm() {
+export function OwnPasswordForm({ totp }: { totp: boolean }) {
   const [state, action, pending] = useActionState(changeOwnPasswordAction, undefined);
   return (
-    <form action={action} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+    <form action={action} className={`grid gap-3 sm:items-end ${totp ? "sm:grid-cols-[1fr_1fr_9rem_auto]" : "sm:grid-cols-[1fr_1fr_auto]"}`}>
       <Field label="Joriy parol"><PasswordInput name="current" required autoComplete="current-password" /></Field>
       <Field label="Yangi parol" hint={PASSWORD_HINT}><PasswordInput name="password" required autoComplete="new-password" /></Field>
+      {totp && <Field label="2FA kodi"><Input name="code" inputMode="numeric" autoComplete="one-time-code" required maxLength={20} /></Field>}
       <span className="inline-flex items-center gap-0.5"><Button variant="secondary" disabled={pending}><KeyRound size={16} /> Almashtirish</Button><HelpButton topic="adm:password" /></span>
-      <div className="sm:col-span-3">{state?.ok && <p className="text-sm text-emerald-700">Parol almashdi</p>}<FormError error={state?.error} /></div>
+      <div className={totp ? "sm:col-span-4" : "sm:col-span-3"}>{state?.ok && <p className="text-sm text-emerald-700">Parol almashdi</p>}<FormError error={state?.error} /></div>
     </form>
   );
 }
