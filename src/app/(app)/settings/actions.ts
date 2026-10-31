@@ -1,6 +1,8 @@
 "use server";
 
 import { z } from "zod";
+import { userLimitError } from "@/lib/tenant";
+import { AccessDenied } from "@/lib/access-denied";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
@@ -203,6 +205,8 @@ export async function createUser(_prev: ActionState, fd: FormData): Promise<Acti
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(userSchema, fd);
   if ("error" in r) return { error: r.error };
+  const limit = await userLimitError();
+  if (limit) return { error: limit };
   try {
     const u = await db.user.create({ data: { login: r.data.login, fullName: r.data.fullName, role: r.data.role, passwordHash: await hashPassword(r.data.password) } });
     await audit(db, s.userId, "CREATE", "User", u.id, undefined, { login: u.login, role: u.role });
@@ -254,6 +258,8 @@ export async function toggleUser(id: string) {
   if (u.role === "SUPERADMIN") return;
   // Oxirgi faol direktor bloklanmasin
   if (u.isActive && u.role === "DIRECTOR" && (await db.user.count({ where: { role: "DIRECTOR", isActive: true } })) <= 1) return;
+  // Platforma limiti: yopiq hisobni yoqishda ham sanaladi
+  if (!u.isActive) { const limit = await userLimitError(); if (limit) throw new AccessDenied(limit); }
   await db.user.update({ where: { id }, data: { isActive: !u.isActive } });
   // Hisob yopilganda uning ochiq veb/mobil sessiyalari ham shu zahoti tugaydi
   if (u.isActive) await revokeSessions(db, id);

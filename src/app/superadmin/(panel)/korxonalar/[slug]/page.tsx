@@ -17,7 +17,9 @@ import { refreshStatsAction, resumeTenantAction } from "../../actions";
 import { TenantUpPanel } from "../../_infra/tenant-up";
 import { HelpButton, PageHelp, WithHelp } from "../../_help/help";
 import { billingState, isoOf, PAYMENT_METHODS, paymentPeriod, PLAN_LABEL, STAGE_LABEL, todayIso } from "@/lib/control/billing";
-import { BillingSettingsForm, CancelPaymentButton, PaymentForm } from "./billing";
+import { BillingSettingsForm, CancelPaymentButton, PaymentForm, TariffForm } from "./billing";
+import { MODULES } from "@/lib/nav";
+import { PLATFORM_MODULES } from "@/lib/platform-modules";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +127,24 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
               </Tr>
             ))}</tbody>
           </Table>
+        )}
+      </Card>
+
+      <Card>
+        <div id="tarif" className="mb-3 flex scroll-mt-20 flex-wrap items-center gap-2 font-semibold">
+          Modullar va limit
+          {t.modulesOff.length > 0 && <Badge color="amber" dot={false}>{t.modulesOff.length} ta modul o&apos;chiq</Badge>}
+          {t.userLimit && <Badge color={s && s.users.active >= t.userLimit ? "red" : "slate"} dot={false}>foydalanuvchi: {s ? s.users.active : "—"} / {t.userLimit}</Badge>}
+          <HelpButton topic="tenant:tariff" />
+        </div>
+        {owner ? (
+          <TariffForm slug={t.slug} userLimit={t.userLimit} activeUsers={s ? s.users.active : null}
+            modules={PLATFORM_MODULES.map((k) => ({ key: k, label: MODULES.find((m) => m.key === k)?.label ?? k, on: !t.modulesOff.includes(k) }))} />
+        ) : (
+          <p className="text-sm text-slate-600">
+            {t.modulesOff.length ? <>O&apos;chiq: {t.modulesOff.map((k) => MODULES.find((m) => m.key === k)?.label ?? k).join(", ")}.</> : "Barcha qo'shimcha modullar yoqiq."}
+            {" "}Foydalanuvchi chegarasi: {t.userLimit ?? "cheklovsiz"}.
+          </p>
         )}
       </Card>
 

@@ -7,7 +7,8 @@ import { db } from "./db";
 import type { Prisma, Role } from "@/generated/prisma";
 import { TOUR_COOKIE } from "./tour";
 import { authSecret, JWT_ALGS } from "./secret";
-import { companySuspension, effectiveRole } from "./tenant";
+import { companySuspension, effectiveRole, loadPlatformGate } from "./tenant";
+import { isModuleOff } from "./platform-modules";
 import { AccessDenied, notSignedIn } from "./access-denied";
 
 const COOKIE = "insof_session";
@@ -166,6 +167,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
   const superadmin = user.role === "SUPERADMIN";
   // To'xtatilgan korxonada faqat IT superadmin ishlay oladi (ma'lumotni ko'rish, eksport, qayta yoqish)
   if (!superadmin && (await companySuspension())) return null;
+  await loadPlatformGate();
   return { userId: user.id, login: user.login, fullName: user.fullName, role: effectiveRole(user.role), perms: parsePerms(user.perms), superadmin: superadmin || undefined };
 });
 
@@ -213,6 +215,7 @@ export async function requireModuleWrite(module: string, allowed: readonly Role[
  * Qaytaradi: true — yoza oladi; "view" — direktor faqat ko'rishni bergan; false — rol mos emas.
  */
 export function moduleWriteAllowed(s: Pick<Session, "role" | "perms">, module: string, allowed: readonly Role[]): boolean | "view" {
+  if (isModuleOff(module)) return false;
   if (s.role === "DIRECTOR") return true;
   const lvl = s.perms?.[module];
   if (lvl === "none" || lvl === "view" || (Array.isArray(lvl) && lvl.length === 0)) return "view";

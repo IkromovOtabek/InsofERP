@@ -18,6 +18,7 @@ export const EVENT_LABEL: Record<string, string> = {
   TENANT_PAYMENT: "Obuna to'lovi yozildi",
   TENANT_PAYMENT_CANCEL: "Obuna to'lovi storno qilindi",
   TENANT_BILLING: "Obuna sozlamasi o'zgardi",
+  TENANT_TARIFF: "Tarif tarkibi (modullar, limit) o'zgardi",
   DIRECTOR_SET: "Direktor login/paroli berildi",
   SSO: "Korxonaga kirdi (SSO)",
   ADMIN_LOGIN: "Panelga kirdi",

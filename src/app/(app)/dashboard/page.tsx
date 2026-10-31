@@ -9,6 +9,7 @@ import { receivablesReport } from "@/lib/receivables";
 import { CustomerName } from "@/components/customer-name";
 import { materialOutlook, mixerStatus, todayTrips } from "@/lib/dashboard";
 import { money, qty, fmtNum, pct } from "@/lib/format";
+import { MODULE_OFF_MESSAGE } from "@/lib/platform-modules";
 import { unitLabel, fmtUnitTotals, soleUnit, donePercent } from "@/lib/unit";
 import { Badge, Callout, Card, Empty, LinkButton, Progress, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
@@ -79,7 +80,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <>
       {isDirector && <Tabs current={tabKey} items={[{ key: "today", label: "Bugun", href: "/dashboard" }, { key: "nazorat", label: "Nazorat", href: "/dashboard?view=nazorat" }, { key: "", label: "Tahlil", href: "/dashboard?view=tahlil" }, { key: "owner", label: "Egasi", href: "/dashboard?view=owner" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {biTabs && <Tabs current={tabKey} items={[{ key: "", label: "Tahlil", href: "/dashboard" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
-      {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
+      {denied && <Callout tone="warning">{denied === "modul" ? MODULE_OFF_MESSAGE : "Bu sahifa sizning bo'limingizga tegishli emas."}</Callout>}
     </>
   );
   const header = (

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isModuleOff } from "@/lib/platform-modules";
 import { HR_ACCESS, HR_ACTION_ROLES, SELF_CARDS } from "./hr-access";
 import { hrDetail } from "./hr";
 import { KADR_ACCESS, KADR_ACTION_ROLES, KADR_CARDS, KADR_PERM } from "./kadr-access";
@@ -455,6 +456,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
  * "Bog'landim", "Yetkazildi" kabi xodimning ishi turib qoladi va kim javobgar — chalkashadi.
  */
 export const can = (user: MobileUser, action: string) => {
+  const mod = permFor(action)?.module;
+  if (isModuleOff(mod)) return false; // platforma tarifida o'chirilgan modul — direktor ham bajarmaydi
   const roleOk = (Object.hasOwn(ACTION_ROLES, action) ? ACTION_ROLES[action] : []).includes(user.role);
   // Pul qabul qilish — veb bilan bir qoida: kamida bitta usul (`methodsFor`); qaysi so'rov ekani kartochkada va
   // `receivePaymentRequest` ichida usul bo'yicha yana tekshiriladi

@@ -1,4 +1,5 @@
 import { randomBytes } from "crypto";
+import { userLimitError } from "@/lib/tenant";
 import type { Role } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -98,6 +99,7 @@ export async function grantAppAccess(byUserId: string, ecoUserId: string, phone:
 
   if (own) {
     if (own.role === "DIRECTOR") return { error: "Direktor hisobini bu yerdan o'zgartirib bo'lmaydi" };
+    if (!own.isActive) { const limit = await userLimitError(); if (limit) return { error: limit }; }
     const data = { role, isActive: true };
     await db.$transaction(async (tx) => {
       await tx.user.update({ where: { id: own.id }, data });
@@ -108,6 +110,8 @@ export async function grantAppAccess(byUserId: string, ecoUserId: string, phone:
   }
 
   if (await db.user.findUnique({ where: { login: eu.phone }, select: { id: true } })) return { error: `"${eu.phone}" logini band — Otdel kadrda tekshiring` };
+  const limit = await userLimitError();
+  if (limit) return { error: limit };
   // Tasodifiy parol: bu hisobga login/parol bilan kirib bo'lmaydi, faqat telefon + ilova paroli bilan
   const passwordHash = await hashPassword(randomBytes(32).toString("hex"));
   await db.$transaction(async (tx) => {

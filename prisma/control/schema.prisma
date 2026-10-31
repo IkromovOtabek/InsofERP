@@ -120,6 +120,10 @@ model Tenant {
   suspendKind   String?
   /// Oxirgi yuborilgan obuna ogohlantirishi: "<bosqich>:<paidUntil>" — Telegram bir bosqichda bir marta
   billingNotice String?
+  /// Tarifda o'chirilgan qo'shimcha modullar (src/lib/platform-modules.ts → PLATFORM_MODULES). Korxona bazasiga sinxronlanadi
+  modulesOff    String[]     @default([])
+  /// Faol foydalanuvchilar chegarasi (IT/SUPERADMIN sanalmaydi). Bo'sh — cheklovsiz
+  userLimit     Int?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 

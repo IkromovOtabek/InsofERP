@@ -7,7 +7,7 @@ import { Button, Field, FormError, Input, Select, Textarea } from "@/components/
 import { fmtNum } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
 import { useRoleDenied, Modal } from "../../_monitor/action-dialog";
-import { addPaymentAction, cancelPaymentAction, saveBillingSettingsAction } from "./billing-actions";
+import { addPaymentAction, cancelPaymentAction, saveBillingSettingsAction, saveTariffAction } from "./billing-actions";
 
 const METHODS: [string, string][] = [["otkazma", "Bank o'tkazmasi"], ["naqd", "Naqd"], ["karta", "Karta"]];
 const MONTHS = [1, 3, 6, 12];
@@ -113,5 +113,36 @@ export function CancelPaymentButton({ slug, id }: { slug: string; id: string }) 
         </form>
       </Modal>
     </>
+  );
+}
+
+/** Tarif tarkibi: qo'shimcha modullar (belgilangani — yoqiq) va faol foydalanuvchilar chegarasi. */
+export function TariffForm({ slug, modules, userLimit, activeUsers }: {
+  slug: string; modules: { key: string; label: string; on: boolean }[]; userLimit: number | null; activeUsers: number | null;
+}) {
+  const [state, action, pending] = useActionState(saveTariffAction.bind(null, slug), undefined);
+  return (
+    <form action={action} className="space-y-4">
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium text-slate-700">Qo&apos;shimcha modullar <span className="font-normal text-slate-500">— belgilanmagani korxonada yopiq (menyu, sahifa, mobil ilova), ma&apos;lumot o&apos;chmaydi</span></legend>
+        <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {modules.map((m) => (
+            <label key={m.key} className="flex min-h-9 items-center gap-2 text-sm">
+              <input type="checkbox" name="on" value={m.key} defaultChecked={m.on} className="size-4" /> {m.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div className="grid gap-3 sm:grid-cols-[14rem_1fr] sm:items-end">
+        <Field label="Faol foydalanuvchilar chegarasi" hint={`Bo'sh — cheklovsiz${activeUsers !== null ? ` · hozir faol: ${activeUsers}` : ""}`}>
+          <Input name="userLimit" type="number" min={1} defaultValue={userLimit ?? ""} />
+        </Field>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" disabled={pending}><Save size={16} aria-hidden /> Saqlash</Button>
+          {state?.ok && <span role="status" className="text-sm text-emerald-700">{state.note}</span>}
+          <FormError error={state?.error} />
+        </div>
+      </div>
+    </form>
   );
 }

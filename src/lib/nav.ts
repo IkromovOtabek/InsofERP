@@ -1,5 +1,6 @@
 import type { Role } from "@/generated/prisma";
 import type { Perms, Session } from "./auth";
+import { isModuleOff, pathOff } from "./platform-modules";
 
 export type NavChild = { href: string; label: string };
 /**
@@ -243,9 +244,11 @@ export const ROLE_LABELS: Record<Role, string> = {
  * modul uchun qiymat bo'lsa, u KO'RISH huquqini rol o'rniga aniqlaydi ("none" — yopiq, aks holda ochiq).
  */
 export function pathAllowed(pathname: string, role: Role, perms?: Perms) {
+  const mod = moduleForPath(pathname);
+  // Platforma tarifida o'chirilgan modul (va unga bog'liq BI sahifalari) — hamma uchun yopiq, direktor ham
+  if (pathOff(pathname, mod)) return false;
   if (role === "DIRECTOR") return true;
   // Modul ruxsati rol ustiga ishlaydi: direktor berib qo'ygan bo'lsa shu hal qiladi (grant yoki restrict)
-  const mod = moduleForPath(pathname);
   const lvl = mod && perms?.[mod];
   if (lvl) return lvl !== "none";
   const item = NAV.filter((i) => pathname.startsWith(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
@@ -258,6 +261,7 @@ export function pathAllowed(pathname: string, role: Role, perms?: Perms) {
 export function navFor(role: Role, perms?: Perms) {
   const items = NAV.filter((i) => {
     if (i.hidden) return false;
+    if (pathOff(i.href, moduleForPath(i.href))) return false;
     if (i.menuFor && !i.menuFor.includes(role)) return false;
     if (i.roles === "all") return true;
     // Modul ruxsati rol o'rniga: granted modul rol ko'rmasa ham menyuda chiqadi, "none" esa yashiriladi
@@ -268,7 +272,10 @@ export function navFor(role: Role, perms?: Perms) {
     return role === "DIRECTOR" || i.roles.includes(role);
   });
   // Haydovchi, brigadir va sotuv agenti vebda faqat o'z sahifasini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
-  return OWN_PAGE_ONLY[role] ? items.filter((i) => i.roles !== "all") : items;
+  // Bo'lim ichidagi bandlar boshqa modulga tegishli bo'lishi mumkin (Tahlil → Kassa jurnali) — o'chirilganlari olib tashlanadi
+  const off = (href: string) => pathOff(href, moduleForPath(href));
+  const open = items.map((i) => (i.children?.some((c) => off(c.href)) ? { ...i, children: i.children.filter((c) => !off(c.href)) } : i));
+  return OWN_PAGE_ONLY[role] ? open.filter((i) => i.roles !== "all") : open;
 }
 
 /* ───────────────────────── Modul bo'yicha ruxsat (User.perms) ─────────────────────────
@@ -328,6 +335,7 @@ function roleHasModule(role: Role, module: string): boolean {
 
 /** Modulni KO'RISH huquqi: perms bergan bo'lsa shu, aks holda rol bo'yicha. */
 export function canView(session: Pick<Session, "role" | "perms">, module: string): boolean {
+  if (isModuleOff(module)) return false;
   if (session.role === "DIRECTOR") return true;
   const lvl = session.perms?.[module];
   if (lvl) return lvl !== "none";
@@ -340,6 +348,7 @@ export function canView(session: Pick<Session, "role" | "perms">, module: string
  * (ya'ni modulni ko'rsa yoza ham olardi — perms kiritilmaguncha xulq o'zgarmaydi).
  */
 export function canWrite(session: Pick<Session, "role" | "perms">, module: string): boolean {
+  if (isModuleOff(module)) return false;
   if (session.role === "DIRECTOR") return true;
   const lvl = session.perms?.[module];
   if (Array.isArray(lvl)) return lvl.length > 0; // tanlangan amallar — aniq amal `canDo` bilan tekshiriladi

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { userLimitError } from "./tenant";
 import { db } from "@/lib/db";
 import { hashPassword, revokeSessions, type Perms, type Session } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
@@ -199,6 +200,8 @@ async function createLoginFor(tx: Prisma.TransactionClient, callerRole: Role, fu
   if (!LOGIN_RE.test(login.toLowerCase())) throw new Error(`Login: ${LOGIN_HINT}`);
   const problem = passwordProblem(password);
   if (problem) throw new Error(problem);
+  const limit = await userLimitError(tx);
+  if (limit) throw new Error(limit);
   return tx.user.create({ data: { login: login.toLowerCase(), fullName, role, passwordHash: await hashPassword(password), ...(perms ? { perms } : {}) } });
 }
 
@@ -360,6 +363,7 @@ export async function toggleEmployeeCore(s: KadrActor, id: string): Promise<Kadr
     await db.$transaction(async (tx) => {
       const n = await tx.employee.updateMany({ where: { id, isActive: cur.isActive, firedAt: null }, data: { isActive: !cur.isActive } });
       if (n.count === 0) throw new Error("Xodim holati o'zgargan — sahifani yangilang");
+      if (cur.userId && !cur.isActive) { const limit = await userLimitError(tx); if (limit) throw new Error(limit); }
       if (cur.userId) await tx.user.update({ where: { id: cur.userId }, data: { isActive: !cur.isActive } });
       await audit(tx, s.userId, "UPDATE", "Employee", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
     });
@@ -452,6 +456,7 @@ export async function restoreEmployeeCore(s: KadrActor, id: string): Promise<Kad
   if (!before.firedAt) return { error: "Bu xodim ishdan bo'shatilmagan" };
   const denied = await directorGuard(before.userId, s.role);
   if (denied) return { error: denied };
+  if (before.userId) { const limit = await userLimitError(); if (limit) return { error: limit }; }
   await db.$transaction(async (tx) => {
     const e = await tx.employee.update({ where: { id }, data: { firedAt: null, firedReason: null, isActive: true } });
     if (before.userId) await tx.user.update({ where: { id: before.userId }, data: { isActive: true } });

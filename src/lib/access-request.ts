@@ -1,4 +1,5 @@
 import { randomInt } from "crypto";
+import { userLimitError } from "./tenant";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -173,6 +174,8 @@ export async function approveAccessRequest(requestId: string, role: Role, byUser
     if (await tx.user.findUnique({ where: { login: req.login }, select: { id: true } })) {
       return { ok: false as const, error: `«${req.login}» logini band bo'lib qolgan — arizani rad eting, xodim boshqa login bilan qayta yuborsin` };
     }
+    const limit = await userLimitError(tx);
+    if (limit) return { ok: false as const, error: limit };
     const user = await tx.user.create({ data: { login: req.login, fullName: req.fullName, role, passwordHash: req.passwordHash } });
 
     const staff = await tx.employee.findMany({ where: { isActive: true, userId: null, phone: { not: null } }, select: { id: true, phone: true } });

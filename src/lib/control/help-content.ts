@@ -631,6 +631,17 @@ const BASE = {
     ],
     keywords: "obuna to'lov billing muddat tarif storno",
   },
+  "tenant:tariff": {
+    title: "Modullar va foydalanuvchi chegarasi", group: "korxona",
+    what: "Korxona tarifiga qaysi qo'shimcha bo'limlar kirishi (Marketing, Arenda, Tijorat takliflari, BI tahlil, Ish haqi va h.k.) va nechta faol foydalanuvchi bo'lishi mumkinligi.",
+    normal: "Hammasi belgilangan va chegara bo'sh — korxona hamma narsadan cheklovsiz foydalanadi (mavjud korxonalar shunday qoladi).",
+    steps: [
+      "Belgini olib tashlang → «Saqlash»: bo'lim korxonada darhol yopiladi — menyudan yo'qoladi, sahifa va mobil ilovada ochilmaydi, direktor uchun ham. Ma'lumot o'chmaydi, qayta belgilansa hammasi qaytadi.",
+      "Asosiy ish (zayavka, mijoz, sklad, kassa, logistika, ishlab chiqarish, xodimlar) bu yerda yo'q — ular doim yoqiq.",
+      "Chegara: yangi foydalanuvchi qo'shish yoki yopiq hisobni yoqish chegara to'lganda rad etiladi (sozlamalar, kadr, kirish so'rovi, ECO ilova). Mavjud hisoblar yopilmaydi. IT (SSO) hisoblari sanalmaydi.",
+    ],
+    keywords: "tarif modul limit foydalanuvchi chegara",
+  },
   "tenant:suspend": {
     title: "Korxonani to'xtatish", group: "korxona",
     what: "Masalan, to'lov qilinmaganda korxonaning ishlashini vaqtincha to'xtatish.",

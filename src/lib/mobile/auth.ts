@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { SignJWT, jwtVerify } from "jose";
-import { companySuspension, SUSPENDED_MESSAGE } from "@/lib/tenant";
+import { companySuspension, loadPlatformGate, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/nav";
@@ -191,6 +191,7 @@ export async function requireMobileUser(req: Request): Promise<MobileUser> {
   if ((payload.sv ?? 0) !== user.sessionVersion) throw new MobileAuthError("TOKEN_INVALID", "Sessiya muddati tugagan");
   if (user.role === "SUPERADMIN") throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
   if (await companySuspension()) throw new MobileAuthError("USER_DISABLED", SUSPENDED_MESSAGE);
+  await loadPlatformGate(); // platforma o'chirgan modullar — canDo/canView ularni rad etadi
   // Ruxsatlar tokenga yozilmaydi — direktor o'zgartirsa keyingi so'rovdanoq amal qiladi (`can()` — detail.ts)
   return { ...toUser(user), perms: parsePerms(user.perms) };
 }

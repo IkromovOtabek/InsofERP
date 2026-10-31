@@ -70,17 +70,28 @@ export function paymentPeriod(t: Pick<Tenant, "paidUntil" | "graceDays">, months
   return { from, to: addDays(addMonths(from, months), -1) };
 }
 
-/* ───────── Korxona bazasiga yozish (banner uchun) ───────── */
+/* ───────── Korxona bazasiga yozish ───────── */
 
-/** Korxona ERP'si o'qiydigan obuna ma'lumoti. Muddatsiz — null (banner yo'q). */
-export async function syncTenantPlatform(t: Pick<Tenant, "dbName" | "paidUntil" | "graceDays">) {
+/**
+ * Korxona ERP'si o'qiydigan platforma ma'lumoti — CompanySettings.platform (lib/tenant.ts):
+ *   billing    — obuna muddati (direktor banneri); muddatsiz — null
+ *   modulesOff — tarifda o'chirilgan modullar (lib/platform-modules.ts)
+ *   userLimit  — faol foydalanuvchilar chegarasi; null — cheklovsiz
+ * Panel boshqa kalitlarga tegmaydi. O'zgarish bo'lmasa yozilmaydi.
+ */
+export async function syncTenantPlatform(t: Pick<Tenant, "dbName" | "paidUntil" | "graceDays" | "modulesOff" | "userLimit">) {
   const st = billingState(t);
-  const billing = st.paidUntil ? { paidUntil: st.paidUntil, suspendOn: st.suspendOn } : null;
+  const next = {
+    billing: st.paidUntil ? { paidUntil: st.paidUntil, suspendOn: st.suspendOn } : null,
+    modulesOff: [...t.modulesOff].sort(),
+    userLimit: t.userLimit ?? null,
+  };
   const db = tenantDb(t.dbName);
   const cur = await db.companySettings.findUnique({ where: { id: "main" }, select: { platform: true } });
   const base = cur?.platform && typeof cur.platform === "object" && !Array.isArray(cur.platform) ? (cur.platform as Record<string, unknown>) : {};
-  const platform = { ...base, billing } as Prisma.InputJsonValue;
-  if (JSON.stringify(base.billing ?? null) === JSON.stringify(billing)) return;
+  const same = (Object.keys(next) as (keyof typeof next)[]).every((k) => JSON.stringify(base[k] ?? null) === JSON.stringify(next[k]));
+  if (same) return;
+  const platform = { ...base, ...next } as Prisma.InputJsonValue;
   await db.companySettings.upsert({ where: { id: "main" }, update: { platform }, create: { id: "main", platform } });
 }
 

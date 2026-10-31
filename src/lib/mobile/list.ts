@@ -36,6 +36,7 @@ import { logiList, tripsList } from "./logistika-extra";
 import { tasksList } from "./sex-extra";
 import { cashflowList, kirimQqsList, openingsList, paymentsList, realizatsiyaList, unpaidReceiptsList } from "./moliya-extra";
 import { SOTUV_ACCESS, SOTUV_DETAIL_KEY, SOTUV_KEY_MODULE } from "./sotuv-access";
+import { isModuleOff } from "@/lib/platform-modules";
 import { sotuvList } from "./sotuv-extra";
 import { avtoList } from "./avto-zapchast";
 
@@ -183,9 +184,11 @@ const KEY_MODULE: Record<string, string> = {
 
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
 export function moduleClosed(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
+  const mod = Object.hasOwn(KEY_MODULE, key) ? KEY_MODULE[key] : undefined;
+  // Platforma tarifida o'chirilgan modul — hamma uchun yopiq, direktor ham (lib/platform-modules.ts)
+  if (isModuleOff(mod)) return true;
   if (user.role === "DIRECTOR") return false;
   if ((user.role === "DRIVER" && key === "trips") || (user.role === "BRIGADIER" && key === "tasks")) return false;
-  const mod = Object.hasOwn(KEY_MODULE, key) ? KEY_MODULE[key] : undefined;
   return !!mod && user.perms?.[mod] === "none";
 }
 

@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getSession, type Session } from "./auth";
 import type { Role } from "@/generated/prisma";
-import { OWN_PAGE_ONLY, alwaysOpen, pathAllowed, canWrite } from "./nav";
+import { OWN_PAGE_ONLY, alwaysOpen, moduleForPath, pathAllowed, canWrite } from "./nav";
+import { pathOff } from "./platform-modules";
 import { canDo } from "./permissions";
 import { AccessDenied, notSignedIn } from "./access-denied";
 
@@ -23,6 +24,7 @@ export async function requirePage(path: string): Promise<Session> {
   if (own && !path.startsWith(own) && !alwaysOpen(path)) redirect(own);
   // Modul ruxsati (perms) ham shu yerda hisobga olinadi: direktor "yo'q" qilib qo'ygan modul yopiq,
   // "ko'rish" bergan modul (rol ko'rmasa ham) ochiq.
+  if (pathOff(path, moduleForPath(path))) redirect("/dashboard?denied=modul");
   if (!pathAllowed(path, s.role, s.perms)) redirect("/dashboard?denied=1");
   return s;
 }
