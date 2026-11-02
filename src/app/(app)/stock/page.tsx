@@ -11,7 +11,7 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Layers, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Truck, Warehouse, Search } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Gauge, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse, Search } from "lucide-react";
 import { visionEnabled } from "@/lib/ai/vision";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
@@ -26,7 +26,6 @@ import { HoldingsPanel } from "@/components/holdings-panel";
 import { holdingsOverview } from "@/lib/holdings";
 import { CATEGORY_SLUG, MATERIAL_CATEGORY_LABEL, MATERIAL_CATEGORY_OPTIONS, categoriesFor, categoryFromSlug } from "@/lib/material-category";
 import { avtoPartsFeed } from "@/lib/avto-parts";
-import { pendingShipments } from "@/lib/shipments";
 import { ForYouParts } from "./for-you-parts";
 import { RawStockStatus } from "@/components/raw-stock-status";
 import { YardStatus } from "@/components/yard-status";
@@ -50,8 +49,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const s = await requirePage("/stock");
   const sp = await searchParams;
   const { tab = "balance", added, updated, moved, guessed, ref, material } = sp;
-  // «Qoldiqlar» ichidagi alohida oynalar (tepadagi tugmalardan): faqat xomashyo jadvali yoki faqat hovli
-  const bolim = tab === "balance" && (sp.bolim === "xomashyo" || (sp.bolim === "hovli" && s?.role !== "MECHANIC")) ? sp.bolim : null;
+  // «Qoldiqlar» ichidagi alohida oynalar (tepadagi tugmalar yangi brauzer oynasida ochadi): «Sklad holati — xomashyo» (holat)
+  // va «Hovli va tayyor mahsulot» (hovli) — mexanikka emas. «xomashyo» — eski havolalar uchun: faqat xomashyo jadvali
+  const bolim = tab === "balance" && (sp.bolim === "xomashyo" || ((sp.bolim === "hovli" || sp.bolim === "holat") && s?.role !== "MECHANIC")) ? sp.bolim : null;
   const bolimQ: Record<string, string> = bolim ? { bolim } : {};
   // «Xomashyo qoldiqlari» qidiruvi (?q=): nomi yoki kodi bo'yicha — kategoriya, sklad va davr havolalarida saqlanadi
   const q = (sp.q ?? "").trim().slice(0, 100);
@@ -66,9 +66,6 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
   // «Kimda nima bor» — brigadalar qo'lida va xodim/oluvchilar shu oy olgani (Qoldiqlar oynasida, yig'ilgan holda)
   const holdings = tab === "balance" ? await holdingsOverview() : null;
-  // Snabjeniye jo'natmalari — sklad xodimi shu oynadagi tugmadan ochib qabul qiladi (menyuda faqat snabjenetsda)
-  const shipAccept = canDo(s, "stock", "shipment_accept");
-  const shipPending = shipAccept ? (await pendingShipments(1)).count : 0;
   const [materials, mSums, whSums, allWarehouses] = await Promise.all([
     tab === "brigades" ? db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }) : [],
     tab === "balance" ? db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
@@ -88,7 +85,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const cats = categoriesFor(s?.role);
   const katWant = categoryFromSlug(sp.kat);
   const kat = katWant && cats.includes(katWant) ? katWant : null;
-  const [turnoverAll, last] = tab === "balance"
+  // Jadval «Sklad holati» va «Hovli» oynalarida yo'q — aylanma hisoblanmaydi
+  const [turnoverAll, last] = tab === "balance" && (!bolim || bolim === "xomashyo")
     ? await Promise.all([materialTurnover({ from: period.from, to: period.to, warehouseId: wh?.id }), lastInboundMoves()])
     : [[], null] as [Awaited<ReturnType<typeof materialTurnover>>, null];
   const qLow = q.toLowerCase();
@@ -188,25 +186,23 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   return (
     <div>
       <PageHeader
-        title={bolim === "xomashyo" ? "Xomashyo qoldiqlari" : bolim === "hovli" ? "Hovli va tayyor mahsulot" : "Sklad"}
+        title={bolim === "xomashyo" ? "Xomashyo qoldiqlari" : bolim === "hovli" ? "Hovli va tayyor mahsulot" : bolim === "holat" ? "Sklad holati — xomashyo" : "Sklad"}
         back={bolim ? { href: "/stock", label: "Sklad" } : undefined}
         subtitle={bolim === "xomashyo" ? "Davr bo'yicha kirim, chiqim va qoldiq — har xomashyo, kategoriya va sklad kesimida."
           : bolim === "hovli" ? "Hovlidagi dona mahsulot (erkin / zayavkaga band) va betondan xomashyo qoldig'i bilan qancha chiqadi."
+          : bolim === "holat" ? "Qoldiq, kunlik sarf, necha kunga yetadi va tasdiqlangan zayavkalarga yetmaydigan xomashyo."
           : "Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."}
         action={
           <div className="flex flex-wrap gap-2">
             {/* «Kirim» / «Chiqim» jurnallari (Excel'dagidek) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
             {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span>Kirim</span></LinkButton>}
             {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span>Chiqim</span></LinkButton>}
-            {shipAccept && (
-              <LinkButton href="/jonatma" variant={shipPending ? "primary" : "secondary"} size="lg">
-                <Truck size={18} /> <span>Jo&apos;natmalar</span>
-                {shipPending > 0 && <span className="ml-0.5 rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-900 tabular" title="Qabul kutayotgan jo'natmalar">{shipPending}</span>}
-              </LinkButton>
-            )}
-            {/* Bo'limlar alohida oynada: faqat xomashyo jadvali yoki faqat hovli (mexanikka hovli ko'rsatilmaydi); ochiq oyna — to'q tugma */}
-            <LinkButton href="/stock?bolim=xomashyo" variant={bolim === "xomashyo" ? "primary" : "secondary"} size="lg"><Layers size={18} /> <span>Xomashyo qoldiqlari</span></LinkButton>
-            {s?.role !== "MECHANIC" && <LinkButton href="/stock?bolim=hovli" variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>}
+            {/* Bo'limlar yangi brauzer oynasida: «Sklad holati — xomashyo» va «Hovli va tayyor mahsulot» (mexanikka emas); ochiq oyna — to'q tugma.
+                Jo'natmalar — chap menyuda */}
+            {s?.role !== "MECHANIC" && <>
+              <LinkButton href="/stock?bolim=holat" newTab variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>
+              <LinkButton href="/stock?bolim=hovli" newTab variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>
+            </>}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
             {canDo(s, "stock", "brigade") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
@@ -429,14 +425,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
 
       {forYou && !bolim && <ForYouParts parts={forYou.parts} feed={forYou.feed} />}
       {holdings && !bolim && <div className="mb-4"><HoldingsPanel holdings={holdings} collapsible /></div>}
-      {/* Xomashyo holati (yetadi / zayavkalarga kerak) va hovli — ishlab chiqarish bosh sahifasidan shu yerga ko'chgan; mexanikka kerak emas */}
-      {tab === "balance" && s?.role !== "MECHANIC" && bolim !== "xomashyo" && (
-        <div className="mb-8 space-y-6">
-          {!bolim && <RawStockStatus />}
-          <YardStatus />
-        </div>
-      )}
-      {tab === "balance" && bolim !== "hovli" && (
+      {/* Xomashyo holati (yetadi / zayavkalarga kerak) va hovli — har biri o'z oynasida (tepadagi tugmalar); asosiy oynada — xomashyo qoldiqlari */}
+      {tab === "balance" && bolim === "holat" && <RawStockStatus />}
+      {tab === "balance" && bolim === "hovli" && <YardStatus />}
+      {tab === "balance" && (!bolim || bolim === "xomashyo") && (
         <div id="xomashyo" className="scroll-mt-20 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
