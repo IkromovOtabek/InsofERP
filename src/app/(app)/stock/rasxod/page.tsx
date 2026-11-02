@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileUp, Plus } from "lucide-react";
+import { FileUp, Plus, Search } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -12,7 +12,7 @@ import { rasxodByTarget, rasxodJournal, rasxodTotals, STORNO_NOTE_RE, type Rasxo
 import { recipientList } from "@/lib/stock-recipients";
 import { cardHrefOf } from "@/lib/recipient-card";
 import { stockPeriod, StockPeriodBar } from "@/components/stock-period";
-import { Badge, Callout, Card, CardHeader, LinkButton, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
+import { Badge, Button, Callout, Card, CardHeader, Input, LinkButton, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
 import { RasxodFilters } from "./rasxod-filters";
@@ -39,7 +39,7 @@ const PAY: Record<"BANK" | "CASH", { label: string; color: "blue" | "amber"; tit
 /** Excel'da «To'lov turi» to'liq yoziladi — naqd yoki o'tkazma ekani qisqartmasiz ham tushunarli bo'lsin. */
 const PAY_EXCEL: Record<"BANK" | "CASH", string> = { BANK: "O'tkazma (bank)", CASH: "Naqd (kassa)" };
 
-export default async function RasxodPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; wh?: string; komu?: string; saved?: string }> }) {
+export default async function RasxodPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; wh?: string; komu?: string; q?: string; saved?: string }> }) {
   const s = await requirePage("/stock");
   // Narx va summalar — /stock ni ko'radigan hamma rolga emas (sotuv, logistika, mexanik — Sklad sahifasiga qaytadi)
   if (!canSeeRasxod(s)) redirect("/stock");
@@ -58,7 +58,11 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   ]);
   const wh = warehouses.some((w) => w.id === sp.wh) ? sp.wh! : null;
   const komu = sp.komu && /^(r:.+|b:.+|e:.+|b|e|prod|writeoff|inventory)$/.test(sp.komu) ? sp.komu : null;
-  const rows = await rasxodJournal({ from: period.from, to: period.to, warehouseId: wh, to_: komu });
+  // Qidiruv (?q=): tovar nomi, «Kimga», «Kimdan» yoki izoh bo'yicha — jami va Excel ham shu qatorlardan
+  const q = (sp.q ?? "").trim().slice(0, 100);
+  const qLow = q.toLowerCase();
+  const journal = await rasxodJournal({ from: period.from, to: period.to, warehouseId: wh, to_: komu });
+  const rows = qLow ? journal.filter((r) => [r.material, r.to, r.from, r.note ?? ""].some((x) => x.toLowerCase().includes(qLow))) : journal;
   const t = rasxodTotals(rows);
   const targets = rasxodByTarget(rows);
   const saved = Number(sp.saved);
@@ -72,6 +76,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   const hidden: Record<string, string> = {};
   if (wh) hidden.wh = wh;
   if (komu) hidden.komu = komu;
+  if (q) hidden.q = q;
 
   const excelRows: Record<string, string | number | null>[] = rows.map((r) => ({
     "Sana": dateRu(r.date),
@@ -116,9 +121,18 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
           brigades={brigades.map((b) => ({ id: b.id, name: `${b.leader ? `${b.name} — ${b.leader.fullName}` : b.name}${b.isActive ? "" : " (nofaol)"}` }))}
           employees={employees.map((e) => ({ id: e.id, name: e.isActive ? e.fullName : `${e.fullName} (ishdan bo'shagan)` }))}
           recipients={recipients.map((r) => ({ id: r.id, name: r.isActive ? r.name : `${r.name} (yashirilgan)` }))}
-          wh={wh} komu={komu} from={period.fromStr} to={period.toStr}
+          wh={wh} komu={komu} q={q} from={period.fromStr} to={period.toStr}
         />
       </div>
+      <form action="/stock/rasxod" className="mb-4 flex flex-wrap items-center gap-2">
+        {Object.entries({ from: period.fromStr, to: period.toStr, ...(wh ? { wh } : {}), ...(komu ? { komu } : {}) }).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
+        <div className="relative w-full sm:w-80">
+          <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" aria-hidden />
+          <Input type="search" name="q" defaultValue={q} placeholder="Tovar yoki kimga" aria-label="Qidiruv" className="pl-9" />
+        </div>
+        <Button type="submit" variant="secondary">Qidirish</Button>
+        {q && <Link href={`/stock/rasxod?${new URLSearchParams({ from: period.fromStr, to: period.toStr, ...(wh ? { wh } : {}), ...(komu ? { komu } : {}) }).toString()}`} className="text-sm text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline">Tozalash</Link>}
+      </form>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Qatorlar" value={fmtNum(t.count)} hint={period.label} href="#jurnal" />

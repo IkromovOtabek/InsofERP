@@ -9,9 +9,9 @@ import { unitLabel, unitShort } from "@/lib/unit";
 import { canSeePrixod, canSeeRasxod } from "@/lib/stock-journal-access";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
+import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Layers, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Truck, Warehouse } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Layers, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Truck, Warehouse, Search } from "lucide-react";
 import { visionEnabled } from "@/lib/ai/vision";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
@@ -46,13 +46,16 @@ const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string; q?: string }> }) {
   const s = await requirePage("/stock");
   const sp = await searchParams;
   const { tab = "balance", added, updated, moved, guessed, ref, material } = sp;
   // «Qoldiqlar» ichidagi alohida oynalar (tepadagi tugmalardan): faqat xomashyo jadvali yoki faqat hovli
   const bolim = tab === "balance" && (sp.bolim === "xomashyo" || (sp.bolim === "hovli" && s?.role !== "MECHANIC")) ? sp.bolim : null;
   const bolimQ: Record<string, string> = bolim ? { bolim } : {};
+  // «Xomashyo qoldiqlari» qidiruvi (?q=): nomi yoki kodi bo'yicha — kategoriya, sklad va davr havolalarida saqlanadi
+  const q = (sp.q ?? "").trim().slice(0, 100);
+  const qQ: Record<string, string> = q ? { q } : {};
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
   // Belgilab o'chirish — xomashyo spravochnigi bilan bir xil huquq (`deleteMaterials` → requireModuleWrite)
   const canDelete = moduleWriteAllowed(s, "stock", MATERIAL_CATALOG_ROLES) === true;
@@ -88,7 +91,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const [turnoverAll, last] = tab === "balance"
     ? await Promise.all([materialTurnover({ from: period.from, to: period.to, warehouseId: wh?.id }), lastInboundMoves()])
     : [[], null] as [Awaited<ReturnType<typeof materialTurnover>>, null];
-  const turnoverSeen = turnoverAll.filter((r) => cats.includes(r.category));
+  const qLow = q.toLowerCase();
+  const turnoverSeen = turnoverAll.filter((r) => cats.includes(r.category) && (!qLow || r.name.toLowerCase().includes(qLow) || r.code.toLowerCase().includes(qLow)));
   const turnover = kat ? turnoverSeen.filter((r) => r.category === kat) : turnoverSeen;
   // Mexanik «Siz uchun» — faqat Avto zapchastlar: joriy qoldiq va oxirgi kelganlari
   const forYou = tab === "balance" && s?.role === "MECHANIC" ? await avtoPartsFeed(30) : null;
@@ -97,7 +101,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const tot = turnover.reduce((a, r) => ({ open: a.open + r.open.s, in: a.in + r.in.s, out: a.out + r.out.s, close: a.close + r.close.s, approx: a.approx || r.approx }), { open: 0, in: 0, out: 0, close: 0, approx: false });
   // Excel — barcha ustunlar (ekrandagi kabi) + «Jami» qatori; raqamlar raqam bo'lib (Excel'da qo'shib bo'lsin).
   // Sarlavha va matnlar o'zbekcha — ExcelButton ularni ekrandagi tilga o'giradi
-  const openH = `${dateRu(period.from)} holatiga qoldiq`, closeH = `${dateRu(toIncl)} oxiridagi qoldiq`;
+  const openH = period.all ? "Boshlang'ich qoldiq" : `${dateRu(period.from)} holatiga qoldiq`, closeH = `${dateRu(toIncl)} oxiridagi qoldiq`;
   const excelRows: Record<string, string | number | null>[] = turnover.map((r, i) => ({
     "№": i + 1, "Nomi": r.name, "Kod": r.code, "Kategoriya": MATERIAL_CATEGORY_LABEL[r.category], "Birlik": unitShort(r.unit),
     "Dona narxi": r.unitPrice, "O'rtacha tannarx": r.avgCost == null ? null : r2(r.avgCost),
@@ -113,7 +117,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     "Chiqim, miqdor": null, "Chiqim, summa": r2(tot.out), [`${closeH}, miqdor`]: null, [`${closeH}, jami summa`]: r2(tot.close),
     "Minimal qoldiq": null, "Baholash": tot.approx ? "≈" : "", "Holat": "",
   });
-  const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...extra }).toString();
+  const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ, ...extra }).toString();
 
   // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi);
   // `material` — «Qoldiqlar» qatoridan: shu xomashyoning davrdagi harakatlari (sklad tanlangan bo'lsa — shu skladda)
@@ -444,13 +448,23 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <ExcelButton file={`Qoldiqlar ${period.fromStr} — ${period.toStr}${kat ? ` ${MATERIAL_CATEGORY_LABEL[kat]}` : ""}${wh ? ` (${wh.name.replace(/[\\/:*?"<>|]/g, " ")})` : ""}`} sheets={[{ name: "Qoldiqlar", rows: excelRows }]} />
             </div>
           </div>
-          <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...bolimQ, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }} />
+          <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...bolimQ, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ }} />
+          {/* Qidiruv: nomi yoki kodi bo'yicha (davr, sklad va kategoriya saqlanadi) */}
+          <form action="/stock" className="flex flex-wrap items-center gap-2">
+            {Object.entries({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
+            <div className="relative w-full sm:w-80">
+              <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" aria-hidden />
+              <Input type="search" name="q" defaultValue={q} placeholder="Xomashyo nomi yoki kodi" aria-label="Qidiruv" className="pl-9" />
+            </div>
+            <Button type="submit" variant="secondary">Qidirish</Button>
+            {q && <Link href={`/stock?${new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }).toString()}`} prefetch={false} className="text-sm text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline">Tozalash</Link>}
+          </form>
           {/* Kategoriya: Zavod zapchast / Avto zapchast / Xomashyo (mexanikka — ikkitasi) */}
           <div className="flex flex-wrap items-center gap-1">
             {[null, ...cats].map((c) => {
               const active = c === kat;
               const n = c ? turnoverSeen.filter((r) => r.category === c).length : turnoverSeen.length;
-              const qs = new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(c ? { kat: CATEGORY_SLUG[c] } : {}) });
+              const qs = new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(c ? { kat: CATEGORY_SLUG[c] } : {}), ...qQ });
               return (
                 <Link key={c ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
                   className={cn("inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
@@ -465,7 +479,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <Warehouse size={15} className="mr-1 text-slate-400" aria-hidden />
               {[null, ...shownWarehouses].map((w) => {
                 const active = (w?.id ?? null) === (wh?.id ?? null);
-                const qs = new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(w ? { wh: w.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) });
+                const qs = new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(w ? { wh: w.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ });
                 return (
                   <Link key={w?.id ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
                     className={cn("inline-flex h-8 items-center rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
@@ -484,7 +498,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <SheetTh rowSpan={2} tone="yellow" className="min-w-56">Nomi</SheetTh>
                 <SheetTh rowSpan={2} tone="blue">Birlik</SheetTh>
                 <SheetTh rowSpan={2} tone="blue" className="min-w-28" title="Birlik narxi — Ta'minot belgilaydi; chiqim shu narx bo'yicha baholanadi">Dona narxi</SheetTh>
-                <SheetTh colSpan={2} tone="gray">Qoldiq<span className="block text-[11px] font-normal text-slate-600">{`${dateRu(period.from)} holatiga`}</span></SheetTh>
+                <SheetTh colSpan={2} tone="gray">Qoldiq<span className="block text-[11px] font-normal text-slate-600">{period.all ? "boshida" : `${dateRu(period.from)} holatiga`}</span></SheetTh>
                 <SheetTh colSpan={2} tone="green">Kirim</SheetTh>
                 <SheetTh colSpan={2} tone="red">Chiqim</SheetTh>
                 <SheetTh colSpan={2} tone="gray">Qoldiq<span className="block text-[11px] font-normal text-slate-600">{`${dateRu(toIncl)} oxiriga`}</span></SheetTh>
@@ -498,7 +512,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             </SheetHead>
             <tbody>
               {turnover.length === 0 && (
-                <tr><SheetTd colSpan={canDelete ? 13 : 12} center muted className="py-10">Xomashyo qo&apos;shilmagan — «Xomashyo qo&apos;shish» tugmasini bosing</SheetTd></tr>
+                <tr><SheetTd colSpan={canDelete ? 13 : 12} center muted className="py-10">{q ? `«${q}» bo'yicha xomashyo topilmadi` : "Xomashyo qo'shilmagan — «Xomashyo qo'shish» tugmasini bosing"}</SheetTd></tr>
               )}
               {turnover.map((r, i) => {
                 const b = mb.get(r.id) ?? 0, l = last?.materials.get(r.id);

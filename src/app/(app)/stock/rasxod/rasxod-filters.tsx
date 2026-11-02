@@ -5,14 +5,14 @@ import { Select } from "@/components/ui";
 
 type Opt = { id: string; name: string };
 
-/** Chiqim jurnali filtrlari: Sklad va «Kimga» (tanlanishi bilan sahifa yangilanadi, davr saqlanadi). Tartib formadagidek. */
-export function RasxodFilters({ warehouses, brigades, employees, recipients, wh, komu, from, to }: {
+/** Chiqim jurnali filtrlari: Sklad va «Kimga» (tanlanishi bilan sahifa yangilanadi, davr va qidiruv saqlanadi). Tartib formadagidek. */
+export function RasxodFilters({ warehouses, brigades, employees, recipients, wh, komu, q, from, to }: {
   warehouses: Opt[]; brigades: Opt[]; employees: Opt[]; recipients: Opt[];
-  wh: string | null; komu: string | null; from: string; to: string;
+  wh: string | null; komu: string | null; q: string; from: string; to: string;
 }) {
   const router = useRouter();
   const go = (patch: { wh?: string; komu?: string }) => {
-    const p = new URLSearchParams({ from, to });
+    const p = new URLSearchParams({ from, to, ...(q ? { q } : {}) });
     const nextWh = patch.wh !== undefined ? patch.wh : wh ?? "";
     const nextKomu = patch.komu !== undefined ? patch.komu : komu ?? "";
     if (nextWh) p.set("wh", nextWh);
