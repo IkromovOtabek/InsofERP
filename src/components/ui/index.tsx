@@ -124,9 +124,8 @@ export function Button({ variant = "primary", size = "md", className, ...p }: Re
   return <button className={cn(btnBase, btnSize[size], btnVariant[variant], className)} {...p} />;
 }
 
-/** `newTab` — yangi brauzer oynasida (tab) ochiladi. */
-export function LinkButton({ href, variant = "primary", size = "md", className, newTab, children }: { href: string; variant?: Variant; size?: Size; className?: string; newTab?: boolean; children: React.ReactNode }) {
-  return <Link href={href} className={cn(btnBase, btnSize[size], btnVariant[variant], className)} {...(newTab ? { target: "_blank", rel: "noopener" } : {})}>{children}</Link>;
+export function LinkButton({ href, variant = "primary", size = "md", className, children }: { href: string; variant?: Variant; size?: Size; className?: string; children: React.ReactNode }) {
+  return <Link href={href} className={cn(btnBase, btnSize[size], btnVariant[variant], className)}>{children}</Link>;
 }
 
 export function IconButton({ icon: Icon, label, className, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string }) {

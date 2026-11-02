@@ -49,7 +49,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const s = await requirePage("/stock");
   const sp = await searchParams;
   const { tab = "balance", added, updated, moved, guessed, ref, material } = sp;
-  // «Qoldiqlar» ichidagi alohida oynalar (tepadagi tugmalar yangi brauzer oynasida ochadi): «Sklad holati — xomashyo» (holat)
+  // «Qoldiqlar» ichidagi alohida oynalar (tepadagi tugmalardan, shu tabning o'zida): «Sklad holati — xomashyo» (holat)
   // va «Hovli va tayyor mahsulot» (hovli) — mexanikka emas. «xomashyo» — eski havolalar uchun: faqat xomashyo jadvali
   const bolim = tab === "balance" && (sp.bolim === "xomashyo" || ((sp.bolim === "hovli" || sp.bolim === "holat") && s?.role !== "MECHANIC")) ? sp.bolim : null;
   const bolimQ: Record<string, string> = bolim ? { bolim } : {};
@@ -197,11 +197,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* «Kirim» / «Chiqim» jurnallari (Excel'dagidek) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
             {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span>Kirim</span></LinkButton>}
             {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span>Chiqim</span></LinkButton>}
-            {/* Bo'limlar yangi brauzer oynasida: «Sklad holati — xomashyo» va «Hovli va tayyor mahsulot» (mexanikka emas); ochiq oyna — to'q tugma.
+            {/* Bo'limlar alohida oynada (shu tabda): «Sklad holati — xomashyo» va «Hovli va tayyor mahsulot» (mexanikka emas); ochiq oyna — to'q tugma.
                 Jo'natmalar — chap menyuda */}
             {s?.role !== "MECHANIC" && <>
-              <LinkButton href="/stock?bolim=holat" newTab variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>
-              <LinkButton href="/stock?bolim=hovli" newTab variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>
+              <LinkButton href="/stock?bolim=holat" variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>
+              <LinkButton href="/stock?bolim=hovli" variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>
             </>}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
             {canDo(s, "stock", "brigade") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
