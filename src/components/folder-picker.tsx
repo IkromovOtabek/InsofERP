@@ -120,6 +120,9 @@ export function FolderPicker({
       <div
         className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-(--radius-card) border border-slate-200 bg-white shadow-(--shadow-pop)"
         onMouseDown={(e) => e.stopPropagation()}
+        // «Yangi / Papka» formalari portalda, lekin React hodisasi chaqiruvchining formasiga ko'tariladi —
+        // u preventDefault qilib o'zini yuborardi (Kirim: «Kamida bitta qatorda xomashyoni tanlang»). Shu yerda to'xtatiladi
+        onSubmit={(e) => e.stopPropagation()}
         role="dialog"
         aria-label={ariaLabel}
       >
@@ -143,7 +146,7 @@ export function FolderPicker({
 
         {panel && (() => {
           const body = panel(ctx);
-          return body ? <div className="max-h-[60vh] overflow-auto border-b border-slate-200 bg-blue-50/60 px-4 py-3">{body}</div> : null;
+          return body ? <div className="max-h-[60vh] shrink-0 overflow-auto border-b empty:hidden border-slate-200 bg-blue-50/60 px-4 py-3">{body}</div> : null;
         })()}
 
         {/* Papka zanjiri */}

@@ -185,6 +185,8 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
 
   return (
     <form ref={formRef} onSubmit={(e) => {
+      // Ichki oynadagi forma (xomashyo spravochnigi «Yangi xomashyo») — portal orqali shu yerga ko'tariladi: unga tegilmaydi
+      if (e.target !== e.currentTarget) return;
       e.preventDefault();
       if (pending || orphans.length) return;
       const fd = new FormData(e.currentTarget);

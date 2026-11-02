@@ -96,6 +96,8 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
   const inLines = new Set(lines.map((l) => l.materialId));
   const remove = (key: string) => setLines((ls) => (ls.length > 1 ? ls.filter((l) => l.key !== key) : [{ key: `l${seq.current++}`, materialId: "", qty: "" }]));
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    // Ichki oynadagi forma (xomashyo spravochnigi) — portal orqali shu yerga ko'tariladi: unga tegilmaydi
+    if (e.target !== e.currentTarget) return;
     e.preventDefault();
     if (blocked) return;
     const fd = new FormData(e.currentTarget);
