@@ -161,7 +161,8 @@ section("Panel himoyasi: sahifalar sessiyasi, qayta autentifikatsiya, bitta depl
   check("PG_TERMINATE — qayta parol, PG_CANCEL/VACUUM — yo'q", needsReauth("PG_TERMINATE") && !needsReauth("PG_CANCEL") && !needsReauth("VACUUM_ANALYZE"));
   const ma = readFileSync(path.join(panel, "monitor-actions.ts"), "utf8");
   const tx = ma.slice(ma.indexOf("control.$transaction"), ma.indexOf("tx.agentAction.create"));
-  check("enqueueAction: parol tekshiruvi (verifyReauth) bor", /needsReauth\(type\)/.test(ma) && /verifyReauth\(/.test(ma));
+  // verifyAdminReauth — parol + (2FA yoqilgan bo'lsa) ilova kodi (lib/control/reauth.ts)
+  check("enqueueAction: qayta tasdiq (verifyAdminReauth) bor", /needsReauth\(type\)/.test(ma) && /verifyAdminReauth\(/.test(ma));
   check("enqueueAction: DEPLOY/ROLLBACK band tekshiruvi advisory lock tranzaksiyasida, create'dan oldin", tx.includes("pg_advisory_xact_lock") && tx.includes("DETACHED_ACTIONS"), tx.slice(0, 300));
   const rel = readFileSync(path.join(panel, "relizlar/actions.ts"), "utf8");
   check("relizlar/actions.ts: tranzaksiyasiz alohida busy() yo'q", !/async function busy\(/.test(rel));
