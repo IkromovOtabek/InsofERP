@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { ROLE_LABELS, MODULES } from "@/lib/nav";
-import { actionDef } from "@/lib/permissions";
+import { describeModuleValue } from "@/lib/perm-buttons";
 import { BULK_FORM_ID, permModules } from "@/lib/perm-modules";
 import { describePerms, positionTemplates, templateRoleLabel } from "@/lib/perm-template";
 import type { Role } from "@/generated/prisma";
@@ -297,17 +297,16 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
   return (
     <div className="space-y-4">
       <Card>
-        <h2 className="mb-1 font-semibold">Bo&apos;lim va amal bo&apos;yicha ruxsat</h2>
+        <h2 className="mb-1 font-semibold">Bo&apos;lim → tugma → amal bo&apos;yicha ruxsat</h2>
         <p className="text-sm text-slate-500">
-          Har xodimga istalgan bo&apos;limni — o&apos;z rolidan tashqari ham — kerakli huquq bilan bering. Masalan, Ishlab chiqarish xodimiga
-          Sotuv → <b>Zayavkalar</b>dan faqat <b>«Mijoz zayavkasini ochish»</b>ni belgilasangiz, u zayavka ochadi, lekin qabul ham, bekor ham qila olmaydi.
+          Har xodimga istalgan bo&apos;limni — o&apos;z rolidan tashqari ham — tugma (oyna) va amal aniqligida bering. Masalan, Ishlab chiqarish
+          xodimiga Sklad → <b>Kirim</b> oynasini va undagi <b>«Kirim qabul qilish»</b>ni belgilasangiz, u kirim qiladi, lekin Chiqim, Jo&apos;natmalar
+          va boshqa oynalarni ko&apos;rmaydi. Oyna yopilsa, menyudagi band, sahifadagi tugma va havolalar ham yo&apos;qoladi.
         </p>
-        <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-5">
-          <div><Badge color="slate">Rol bo&apos;yicha</Badge> odatdagi holat</div>
-          <div><Badge color="red">Yopiq</Badge> bo&apos;lim yashiriladi</div>
-          <div><Badge color="blue">Ko&apos;rish</Badge> faqat o&apos;qiydi</div>
-          <div><Badge color="amber">Tanlangan amallar</Badge> ko&apos;radi + belgilangani</div>
-          <div><Badge color="green">To&apos;liq</Badge> barcha amallar</div>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-slate-600">
+          <div><Badge color="slate">Rol bo&apos;yicha</Badge> tegilmagan — rol odatiy huquqlari</div>
+          <div><Badge color="amber">O&apos;zgartirilgan</Badge> belgilangan oyna va amallar</div>
+          <div><Badge color="red">Yopiq</Badge> bo&apos;lim butunlay yashiriladi</div>
         </div>
         <p className="mt-3 text-xs text-slate-500">
           Faqat direktor beradi va o&apos;zgartiradi. Har o&apos;zgarish audit jurnaliga yoziladi, xodimga bildirishnoma boradi va qayta kirmasdan kuchga kiradi.
@@ -343,11 +342,10 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
 
       {users.length === 0 ? <Card><Empty text="Mos foydalanuvchi topilmadi" /></Card> : users.map((u) => {
         const perms = parsePerms(u.perms) ?? {};
-        const chips = Object.entries(perms).map(([m, v]) => {
-          const label = MODULES.find((x) => x.key === m)?.label ?? m;
-          if (Array.isArray(v)) return { key: m, color: "amber" as const, text: `${label}: ${v.length ? v.map((a) => actionDef(m, a)?.label ?? a).join(", ") : "ko'rish"}`.slice(0, 90) };
-          return { key: m, color: v === "none" ? ("red" as const) : v === "view" ? ("blue" as const) : ("green" as const), text: `${label}: ${v === "none" ? "yopiq" : v === "view" ? "ko'rish" : "to'liq"}` };
-        });
+        const chips = Object.entries(perms).map(([m, v]) => ({
+          key: m, color: v === "none" ? ("red" as const) : v === "view" ? ("blue" as const) : v === "write" ? ("green" as const) : ("amber" as const),
+          text: `${MODULES.find((x) => x.key === m)?.label ?? m}: ${describeModuleValue(m, v)}`.slice(0, 90),
+        }));
         return (
           <Card key={u.id}>
             <div className="flex items-start gap-3">

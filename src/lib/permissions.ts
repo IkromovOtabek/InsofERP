@@ -130,10 +130,19 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "import",    label: "Xomashyo import",                roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"] },
     { key: "suppliers", label: "Yetkazuvchilar",                 roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
   ],
-  taminot: [],
-  // Mexanik so'rovlari — ta'minot kabi: amal rol bo'yicha (mexanik so'raydi, ish boshqaruvchi tasdiqlaydi, kassa beradi),
-  // direktor modulni "yo'q" / "ko'rish" / "yozish" qilib cheklaydi yoki beradi (`requireModuleWrite`)
-  mexanik: [],
+  // Ta'minot zanjiri va mexanik so'rovlari: qadamlar rol bo'yicha (`requireModuleWrite`). «write» — direktor bergan
+  // yozish huquqi: belgilansa rol ro'yxatida bo'lmasa ham yozadi, faqat oyna berilsa — ko'radi (`moduleWriteAllowed`)
+  taminot: [
+    { key: "write", label: "Zayavka bilan ishlash (ochish, tasdiqlash, narx, qabul)", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"], hint: "Har qadam baribir o'z bosqichidagi bo'limga" },
+  ],
+  // Mexanik so'raydi, ish boshqaruvchi tasdiqlaydi, kassa beradi
+  mexanik: [
+    { key: "write", label: "So'rov bilan ishlash (so'rash, tasdiqlash, pul berish)", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"] },
+  ],
+  // Tizimga o'tish sanasidagi qoldiqlar — pulga ta'sir qiladi
+  opening: [
+    { key: "write", label: "Qoldiqlarni kiritish va tahrirlash", roles: ["ACCOUNTING"] },
+  ],
   "kirim-qqs": [], // faqat ko'rish (hisobot)
   // Moliyaviy hisobotlar o'zi faqat ko'rish; ma'lumotnomalarni buxgalteriya yuritadi (`lib/fin-report`)
   moliya: [

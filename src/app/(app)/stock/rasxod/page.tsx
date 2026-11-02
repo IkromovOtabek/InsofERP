@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { FileUp, Plus, Search } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
+import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { canSeeRasxod } from "@/lib/stock-journal-access";
 import { companyVatPayer } from "@/lib/receipt-vat";
@@ -100,7 +101,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   return (
     <div>
       <PageHeader
-        back={{ href: "/stock", label: "Sklad" }}
+        back={pathAllowed("/stock", s.role, s.perms) ? { href: "/stock", label: "Sklad" } : undefined}
         title="Chiqim"
         subtitle="Skladdan xomashyo berish: kimga, qancha va qaysi narxda (Dona narxi). Zameslar — kuniga bitta qator."
         action={

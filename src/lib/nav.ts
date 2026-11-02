@@ -1,6 +1,7 @@
 import type { Role } from "@/generated/prisma";
 import type { Perms, Session } from "./auth";
 import { isModuleOff, pathOff } from "./platform-modules";
+import { buttonMode, buttonsOf, btnKey, windowOpen, type PermButton } from "./perm-buttons";
 
 export type NavChild = { href: string; label: string };
 /**
@@ -202,6 +203,9 @@ export const NAV: NavItem[] = [
  * Har qanday rolga (shu jumladan "faqat o'z sahifasi" rollariga) ochiq yo'llar:
  * qo'llanma va "Mening hisobim" (login/parolni o'zi o'zgartirish).
  */
+/** Middleware so'rov yo'lini sahifaga shu sarlavha bilan uzatadi (`requirePage` oyna ruxsati uchun). */
+export const PATH_HEADER = "x-insof-path";
+
 export const ALWAYS_OPEN = ["/qollanma", "/hisobim"] as const;
 export const alwaysOpen = (pathname: string) => ALWAYS_OPEN.some((p) => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(`${p}?`));
 
@@ -248,9 +252,15 @@ export function pathAllowed(pathname: string, role: Role, perms?: Perms) {
   // Platforma tarifida o'chirilgan modul (va unga bog'liq BI sahifalari) — hamma uchun yopiq, direktor ham
   if (pathOff(pathname, mod)) return false;
   if (role === "DIRECTOR") return true;
-  // Modul ruxsati rol ustiga ishlaydi: direktor berib qo'ygan bo'lsa shu hal qiladi (grant yoki restrict)
+  // Modul ruxsati rol ustiga ishlaydi: direktor berib qo'ygan bo'lsa shu hal qiladi (grant yoki restrict).
+  // Tugma rejimida (`@kirim`...) faqat berilgan oynalar ochiq (`lib/perm-buttons.ts`)
   const lvl = mod && perms?.[mod];
-  if (lvl) return lvl !== "none";
+  if (lvl) return lvl !== "none" && windowOpen(mod, pathname, lvl);
+  return roleOpens(pathname, role);
+}
+
+/** Yo'l faqat rol bo'yicha (perms'siz) ochiqmi — NAV'dagi eng uzun mos band. */
+function roleOpens(pathname: string, role: Role) {
   const item = NAV.filter((i) => pathname.startsWith(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
   // Default-deny: NAV'da ro'yxatga olinmagan yo'l faqat direktorga ochiq (fail-open emas).
   // Istisno — ALWAYS_OPEN (qo'llanma, o'z hisobi). Yangi sahifa qo'shilganda uni NAV'ga kiritish shart.
@@ -267,13 +277,18 @@ export function navFor(role: Role, perms?: Perms) {
     // Modul ruxsati rol o'rniga: granted modul rol ko'rmasa ham menyuda chiqadi, "none" esa yashiriladi
     const mod = moduleForPath(i.href);
     const lvl = mod && perms?.[mod];
-    if (lvl) return lvl !== "none";
+    if (lvl) return lvl !== "none" && windowOpen(mod, i.href, lvl);
     if (i.menuHide?.includes(role)) return false;
     return role === "DIRECTOR" || i.roles.includes(role);
   });
   // Haydovchi, brigadir va sotuv agenti vebda faqat o'z sahifasini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
   // Bo'lim ichidagi bandlar boshqa modulga tegishli bo'lishi mumkin (Tahlil → Kassa jurnali) — o'chirilganlari olib tashlanadi
-  const off = (href: string) => pathOff(href, moduleForPath(href));
+  // Tugma rejimida berilmagan oyna ichki bandlardan ham olib tashlanadi (Tahlil → Moliya → PNL...)
+  const off = (href: string) => {
+    const m = moduleForPath(href);
+    const l = m && perms?.[m];
+    return pathOff(href, m) || (!!l && (l === "none" || !windowOpen(m, href, l)));
+  };
   const open = items.map((i) => (i.children?.some((c) => off(c.href)) ? { ...i, children: i.children.filter((c) => !off(c.href)) } : i));
   return OWN_PAGE_ONLY[role] ? open.filter((i) => i.roles !== "all") : open;
 }
@@ -351,7 +366,32 @@ export function canWrite(session: Pick<Session, "role" | "perms">, module: strin
   if (isModuleOff(module)) return false;
   if (session.role === "DIRECTOR") return true;
   const lvl = session.perms?.[module];
-  if (Array.isArray(lvl)) return lvl.length > 0; // tanlangan amallar — aniq amal `canDo` bilan tekshiriladi
+  // Tanlangan amallar — aniq amal `canDo` bilan tekshiriladi; faqat oynalar (`@tugma`) berilgan bo'lsa — ko'rish
+  if (Array.isArray(lvl)) return lvl.some((a) => !a.startsWith("@"));
   if (lvl) return lvl === "write";
   return roleHasModule(session.role, module);
+}
+
+/** Rol bo'yicha (perms'siz) oynani ko'radimi: oyna yo'li NAV bo'yicha ochiq yoki ostidagi biror band rolga berilgan. */
+export function roleSeesButton(role: Role, module: string, b: PermButton): boolean {
+  if (role === "DIRECTOR") return true;
+  if (b.notRoles?.includes(role)) return false;
+  if (!b.paths?.length) return roleHasModule(role, module);
+  return b.paths.some((p) => roleOpens(p, role) || NAV.some((i) => (i.href === p || i.href.startsWith(p + "/") || i.href.startsWith(p + "?"))
+    && i.roles !== "all" && (i.roles as Role[]).includes(role)));
+}
+
+/**
+ * Modul ichidagi oynani (tugmani) KO'RISH huquqi — sahifa ichidagi oynalar (`inPage`) uchun sahifaning o'zi chaqiradi.
+ * Tugma rejimida — `@tugma` berilganmi; boshqa daraja — modul ochiq bo'lsa; perms yo'q — rol bo'yicha.
+ */
+export function canSee(session: Pick<Session, "role" | "perms">, module: string, button: string): boolean {
+  if (isModuleOff(module)) return false;
+  if (session.role === "DIRECTOR") return true;
+  const lvl = session.perms?.[module];
+  if (lvl === "none") return false;
+  if (buttonMode(lvl)) return lvl.includes(btnKey(button));
+  if (lvl) return true;
+  const b = buttonsOf(module).find((x) => x.key === button);
+  return b ? roleSeesButton(session.role, module, b) : roleHasModule(session.role, module);
 }

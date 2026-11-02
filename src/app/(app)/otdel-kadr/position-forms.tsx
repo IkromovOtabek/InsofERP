@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { Check, KeyRound, Plus, Trash2, Wand2 } from "lucide-react";
 import { deleteWorkPosition, savePositionTemplate, saveWorkPosition, syncEmployeePositions, toggleWorkPosition } from "./actions";
-import { PermsMatrix } from "../settings/user-forms";
+import { PermsTree } from "../settings/perms-tree";
 import { permModules } from "@/lib/perm-modules";
 import type { Role } from "@/generated/prisma";
 import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
@@ -153,7 +153,7 @@ function PositionTemplateForm({ p, roles, logins }: { p: Pos; roles: RoleOpt[]; 
         )}
       </div>
       {enabled ? (
-        <PermsMatrix modules={modules} current={p.perms} />
+        <PermsTree modules={modules} current={p.perms} />
       ) : (
         <p className="text-xs text-slate-500">Belgilanmasa — lavozim o&apos;zi tizimga kirmaydi (login kerak bo&apos;lsa kadr bo&apos;limni qo&apos;lda tanlaydi).</p>
       )}

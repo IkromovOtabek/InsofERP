@@ -8,6 +8,7 @@ import { ostatkaSummary } from "@/lib/ostatka";
 import { unitLabel, unitShort } from "@/lib/unit";
 import { canSeePrixod, canSeeRasxod } from "@/lib/stock-journal-access";
 import { requirePage } from "@/lib/page-guard";
+import { canSee, pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -48,10 +49,13 @@ const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBat
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string; q?: string }> }) {
   const s = await requirePage("/stock");
   const sp = await searchParams;
-  const { tab = "balance", added, updated, moved, guessed, ref, material } = sp;
+  const { added, updated, moved, guessed, ref, material } = sp;
+  // «Brigadalarga berish» — Sklad ichidagi oyna: direktor tugma bo'yicha yopgan bo'lsa, qoldiqlar ko'rinadi
+  const tab = sp.tab === "brigades" && !canSee(s, "stock", "brigada") ? "balance" : sp.tab ?? "balance";
   // «Qoldiqlar» ichidagi alohida oynalar (tepadagi tugmalardan, shu tabning o'zida): «Sklad holati — xomashyo» (holat)
   // va «Hovli va tayyor mahsulot» (hovli) — mexanikka emas. «xomashyo» — eski havolalar uchun: faqat xomashyo jadvali
-  const bolim = tab === "balance" && (sp.bolim === "xomashyo" || ((sp.bolim === "hovli" || sp.bolim === "holat") && s?.role !== "MECHANIC")) ? sp.bolim : null;
+  const seeHolat = canSee(s, "stock", "holat"), seeHovli = canSee(s, "stock", "hovli"); // mexanikka rol bo'yicha yopiq (`perm-buttons`)
+  const bolim = tab === "balance" && (sp.bolim === "xomashyo" || (sp.bolim === "hovli" && seeHovli) || (sp.bolim === "holat" && seeHolat)) ? sp.bolim : null;
   const bolimQ: Record<string, string> = bolim ? { bolim } : {};
   // «Xomashyo qoldiqlari» qidiruvi (?q=): nomi yoki kodi bo'yicha — kategoriya, sklad va davr havolalarida saqlanadi
   const q = (sp.q ?? "").trim().slice(0, 100);
@@ -199,12 +203,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span>Chiqim</span></LinkButton>}
             {/* Bo'limlar alohida oynada (shu tabda): «Sklad holati — xomashyo» va «Hovli va tayyor mahsulot» (mexanikka emas); ochiq oyna — to'q tugma.
                 Jo'natmalar — chap menyuda */}
-            {s?.role !== "MECHANIC" && <>
-              <LinkButton href="/stock?bolim=holat" variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>
-              <LinkButton href="/stock?bolim=hovli" variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>
-            </>}
+            {seeHolat && <LinkButton href="/stock?bolim=holat" variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>}
+            {seeHovli && <LinkButton href="/stock?bolim=hovli" variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
-            {canDo(s, "stock", "brigade") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
+            {canDo(s, "stock", "brigade") && canSee(s, "stock", "brigada") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
             {canSeePrixod(s) && canDo(s, "stock", "receipt") && visionEnabled() && <LinkButton href="/stock/prixod/new?scan=1" variant="secondary" size="lg"><ScanText size={18} /> <span>Nakladnoyni skanerlash</span></LinkButton>}
             {canAdd && <>
@@ -212,8 +214,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Factory size={16} /> Zaxiraga zayavka</LinkButton>
             <LinkButton href="/stock/materials/new" variant="secondary"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
             {/* Qoldiqni faqat hujjat bilan o'zgartirish: sanab chiqish farqi va hisobdan chiqarish (sabab majburiy) */}
-            <LinkButton href="/stock/inventarizatsiya" variant="secondary"><ScanLine size={16} /> Inventarizatsiya</LinkButton>
-            <LinkButton href="/stock/spisanie" variant="secondary"><PackageMinus size={16} /> Hisobdan chiqarish</LinkButton>
+            {pathAllowed("/stock/inventarizatsiya", s.role, s.perms) && <>
+              <LinkButton href="/stock/inventarizatsiya" variant="secondary"><ScanLine size={16} /> Inventarizatsiya</LinkButton>
+              <LinkButton href="/stock/spisanie" variant="secondary"><PackageMinus size={16} /> Hisobdan chiqarish</LinkButton>
+            </>}
             {/* Kerakli mahsulotlar jadvali — snabjeniye zanjirining boshi */}
             <LinkButton href="/stock/supply/new"><ClipboardList size={16} /> Kerakli mahsulotlar</LinkButton>
             </>}

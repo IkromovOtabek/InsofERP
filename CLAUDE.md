@@ -37,6 +37,8 @@ Katta o'zgarishdan keyin, deploydan oldin esa albatta `run-all.sh` ishga tushir.
   Xato matnlari o'zbekcha.
 - **Rollar:** har amal bitta mas'ul rolga beriladi. Vebda DIRECTOR ham qo'shiladi; mobil `can()` va bildirishnomalar qat'iy.
   SUPERADMIN korxona ichida DIRECTOR kabi ishlaydi, faqat SSO orqali kiradi. Yo'l ruxsatlari: `lib/nav.ts`, `lib/permissions.ts`.
+- **Ruxsatlar daraxti** (bo'lim → tugma → amal): `lib/perm-buttons.ts`. Yangi amal (`MODULE_ACTIONS`) yoki modul ichidagi
+  yangi oyna qo'shilsa — shu katalogdagi tugmaga kirit (QA `login-templates` 6.1 tekshiradi). Oyna huquqi perms'da `@tugma`.
 - **Pul** `Decimal(18,2)`, **miqdor** `Decimal(18,3)`; `float` ishlatma.
 - **Sklad:** `StockMove` — yagona o'zgarmas jurnal, qoldiq = `SUM(qty)`. Sarf `lockStock(tx)` ostida.
 - **Hujjatlar o'chirilmaydi:** faqat holat (`CANCELLED`/storno) o'zgaradi, hammasi `AuditLog`ga yoziladi.

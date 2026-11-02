@@ -1,6 +1,7 @@
 import type { Role } from "@/generated/prisma";
 import type { Perms } from "./auth";
 import { canDo } from "./permissions";
+import { btnKey, buttonMode } from "./perm-buttons";
 
 /**
  * Sklad → «Приход» / «Расход» jurnallarini kim ko'radi (veb sahifa, Sklad sarlavhasidagi tugmalar).
@@ -15,8 +16,14 @@ export const RASXOD_VIEW_ROLES: readonly Role[] = ["WAREHOUSE", "PROCUREMENT", "
 
 type Who = { role: Role; perms?: Perms };
 
-const open = (s: Who, roles: readonly Role[], action: string) =>
-  s.role === "DIRECTOR" || (s.perms?.stock !== "none" && (roles.includes(s.role) || canDo(s, "stock", action)));
+const open = (s: Who, roles: readonly Role[], action: string, button: string) => {
+  if (s.role === "DIRECTOR") return true;
+  const lvl = s.perms?.stock;
+  if (lvl === "none") return false;
+  // Tugma rejimida direktor oynani aniq bergan yoki yopgan (`@kirim`, `@chiqim` — `lib/perm-buttons.ts`)
+  if (buttonMode(lvl)) return lvl.includes(btnKey(button));
+  return roles.includes(s.role) || canDo(s, "stock", action);
+};
 
-export const canSeePrixod = (s: Who) => open(s, PRIXOD_VIEW_ROLES, "receipt");
-export const canSeeRasxod = (s: Who) => open(s, RASXOD_VIEW_ROLES, "issue");
+export const canSeePrixod = (s: Who) => open(s, PRIXOD_VIEW_ROLES, "receipt", "kirim");
+export const canSeeRasxod = (s: Who) => open(s, RASXOD_VIEW_ROLES, "issue", "chiqim");

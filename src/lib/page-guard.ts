@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { getSession, type Session } from "./auth";
 import type { Role } from "@/generated/prisma";
-import { OWN_PAGE_ONLY, alwaysOpen, moduleForPath, pathAllowed, canWrite } from "./nav";
+import { headers } from "next/headers";
+import { OWN_PAGE_ONLY, PATH_HEADER, alwaysOpen, moduleForPath, pathAllowed, canWrite } from "./nav";
 import { pathOff } from "./platform-modules";
+import { buttonMode } from "./perm-buttons";
 import { canDo } from "./permissions";
 import { AccessDenied, notSignedIn } from "./access-denied";
 
@@ -22,10 +24,15 @@ export async function requirePage(path: string): Promise<Session> {
   if (!s) redirect("/api/logout");
   const own = OWN_PAGE_ONLY[s.role];
   if (own && !path.startsWith(own) && !alwaysOpen(path)) redirect(own);
+  // Tugma rejimidagi modulda (`@kirim`...) oyna ruxsati so'rovning aniq yo'li bo'yicha (middleware uzatadi):
+  // /stock/prixod — «Kirim» oynasi, garchi sahifa "/stock" prefiksini bersa ham. Boshqa holatlar avvalgidek prefiks bo'yicha
+  const actual = (await headers()).get(PATH_HEADER);
+  const deeper = actual && actual.startsWith(path.endsWith("/") ? path : path + "/") ? actual : null;
+  const target = deeper && buttonMode(s.perms?.[moduleForPath(deeper) ?? ""]) ? deeper : path;
   // Modul ruxsati (perms) ham shu yerda hisobga olinadi: direktor "yo'q" qilib qo'ygan modul yopiq,
   // "ko'rish" bergan modul (rol ko'rmasa ham) ochiq.
-  if (pathOff(path, moduleForPath(path))) redirect("/dashboard?denied=modul");
-  if (!pathAllowed(path, s.role, s.perms)) redirect("/dashboard?denied=1");
+  if (pathOff(target, moduleForPath(target))) redirect("/dashboard?denied=modul");
+  if (!pathAllowed(target, s.role, s.perms)) redirect("/dashboard?denied=1");
   return s;
 }
 
@@ -51,6 +58,10 @@ export async function requireRoles(allowed: readonly Role[], grant?: Grant): Pro
   const s = await getSession();
   if (!s) redirect("/api/logout");
   if (s.role !== "DIRECTOR" && !allowed.includes(s.role) && !(grant && granted(s, grant))) redirect(OWN_PAGE_ONLY[s.role] ?? "/dashboard?denied=1");
+  // Direktor modulni yopgan ("none") yoki tugmalar bo'yicha bergan bo'lsa (`@jonatma`...) — yopiq oyna rol mos kelsa ham ochilmaydi
+  const actual = (await headers()).get(PATH_HEADER);
+  const mod = actual ? moduleForPath(actual) : null;
+  if (actual && mod && s.perms?.[mod] && !pathAllowed(actual, s.role, s.perms)) redirect("/dashboard?denied=1");
   return s;
 }
 

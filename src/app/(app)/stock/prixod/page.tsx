@@ -94,7 +94,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
   return (
     <div>
       <PageHeader
-        back={{ href: "/stock", label: "Sklad" }}
+        back={pathAllowed("/stock", s.role, s.perms) ? { href: "/stock", label: "Sklad" } : undefined}
         title="Kirim"
         subtitle={`${period.label} · skladga kirimlar`}
         action={<>

@@ -2,7 +2,8 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { parsePerms, revokeSessions, type Perms } from "./auth";
 import { MODULES } from "./nav";
-import { actionDef, delegableActions } from "./permissions";
+import { delegableActions } from "./permissions";
+import { btnKey, buttonsOf, describeModuleValue, hasWindow } from "./perm-buttons";
 import { notifyAfter, notifyUsers } from "./notify";
 import { LOGIN_ROLE_OPTIONS, POSITIONS, roleForPosition } from "./positions";
 import { Prisma, type Role } from "@/generated/prisma";
@@ -24,21 +25,14 @@ export const templateRoleLabel = (r: Role) => TEMPLATE_ROLE_OPTIONS.find((o) => 
 
 const MODULE_KEYS = new Set(MODULES.map((m) => m.key));
 
-/** Ruxsatlarni o'qiladigan matnga — audit va bildirishnoma uchun ("Zayavkalar: ochish, qabul qilish"). */
+/** Ruxsatlarni o'qiladigan matnga — audit va bildirishnoma uchun ("Sklad: Kirim (Kirim qabul qilish); Chiqim"). */
 export function describePerms(p: Perms): string[] {
-  return Object.entries(p).map(([m, v]) => {
-    const label = MODULES.find((x) => x.key === m)?.label ?? m;
-    if (Array.isArray(v)) {
-      const names = v.map((a) => actionDef(m, a)?.label ?? a);
-      return `${label}: ko'rish${names.length ? " + " + names.join(", ") : ""}`;
-    }
-    return `${label}: ${v === "none" ? "yopiq" : v === "view" ? "faqat ko'rish" : "to'liq"}`;
-  });
+  return Object.entries(p).map(([m, v]) => `${MODULES.find((x) => x.key === m)?.label ?? m}: ${describeModuleValue(m, v)}`);
 }
 
 /**
- * Ruxsatlar matritsasi formasi (`PermsMatrix`): har modul uchun `perm.<modul>` = "" (rol bo'yicha) | none | view | custom | write;
- * "custom" bo'lsa `act.<modul>` — belgilangan amallar (faqat katalogdagi, topshiriladiganlari qabul qilinadi).
+ * Ruxsatlar daraxti formasi (`PermsMatrix`): har modul uchun `perm.<modul>` = "" (rol bo'yicha) | none | view | custom | write;
+ * "custom" bo'lsa `act.<modul>` — belgilangan amallar va oynalar (`@tugma`); faqat katalogdagilari qabul qilinadi.
  */
 export function permsFromForm(fd: FormData): Perms {
   const perms: Perms = {};
@@ -47,9 +41,9 @@ export function permsFromForm(fd: FormData): Perms {
     const v = String(fd.get(`perm.${m.key}`) ?? "").trim();
     if (v === "none" || v === "view" || v === "write") perms[m.key] = v;
     else if (v === "custom") {
-      const allowed = new Set(delegableActions(m.key).map((a) => a.key));
+      const allowed = new Set([...delegableActions(m.key).map((a) => a.key), ...buttonsOf(m.key).filter(hasWindow).map((b) => btnKey(b.key))]);
       const acts = [...new Set(fd.getAll(`act.${m.key}`).map(String).filter((a) => allowed.has(a)))];
-      // Birorta amal belgilanmagan "tanlangan amallar" — amalda "faqat ko'rish"
+      // Birorta amal belgilanmagan "tanlangan amallar" — amalda "faqat ko'rish" (daraxt bo'sh tanlovni "none" qilib yuboradi)
       perms[m.key] = acts.length ? acts : "view";
     }
   }

@@ -46,7 +46,8 @@ export function parsePerms(raw: unknown): Perms | undefined {
   const out: Perms = {};
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v === "string" && (VALID_LEVELS as string[]).includes(v)) out[k] = v as PermLevel;
-    else if (Array.isArray(v)) out[k] = [...new Set(v.filter((a): a is string => typeof a === "string" && /^[a-z_]{1,32}$/.test(a)))];
+    // Amal kalitlari va `@tugma` — oynani ko'rish huquqi (`lib/perm-buttons.ts`)
+    else if (Array.isArray(v)) out[k] = [...new Set(v.filter((a): a is string => typeof a === "string" && /^@?[a-z_]{1,32}$/.test(a)))];
   }
   return Object.keys(out).length ? out : undefined;
 }
@@ -218,8 +219,10 @@ export function moduleWriteAllowed(s: Pick<Session, "role" | "perms">, module: s
   if (isModuleOff(module)) return false;
   if (s.role === "DIRECTOR") return true;
   const lvl = s.perms?.[module];
-  if (lvl === "none" || lvl === "view" || (Array.isArray(lvl) && lvl.length === 0)) return "view";
-  if (lvl === "write") return true;
+  // Ro'yxatda faqat oynalar (`@tugma`) bo'lsa — ko'radi; «write» amali belgilangan bo'lsa — rolidan qat'i nazar yozadi
+  const acts = Array.isArray(lvl) ? lvl.filter((a) => !a.startsWith("@")) : null;
+  if (lvl === "none" || lvl === "view" || (acts && acts.length === 0)) return "view";
+  if (lvl === "write" || acts?.includes("write")) return true;
   return allowed.includes(s.role);
 }
 

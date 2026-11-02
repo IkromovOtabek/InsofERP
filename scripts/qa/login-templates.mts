@@ -3,12 +3,15 @@
 //  · savePositionTemplate: faqat direktor, DIRECTOR rolini bermaydi, shu lavozimdagi loginlarga qo'llanadi;
 //  · shu lavozimga ochilgan login (createEmployee / grantLogin) shablondagi rol va ruxsat bilan ochiladi;
 //  · mobil ilova (/api/mobile/auth/login) — rol va ruxsat ishlaydi; ruxsat o'zgarishi qayta kirishsiz, rol o'zgarishi — sessiya tugaydi;
-//  · Ruxsatlar → bir nechta xodimga birdan: shablon / matritsa, direktor o'tkazib yuboriladi, har xodimga audit.
+//  · Ruxsatlar → bir nechta xodimga birdan: shablon / matritsa, direktor o'tkazib yuboriladi, har xodimga audit;
+//  · tugma (oyna) ruxsati: `@kirim` — faqat shu oyna ochiq, qolganlari sahifa, menyu va rol sahifasida yopiq.
 // Ishga tushirish: npx tsx scripts/qa/login-templates.mts  (QA_BASE, QA_DATABASE_URL — README.md)
 // @ts-expect-error — .mjs yordamchilari (tipsiz)
 import { Client, fd, check, summary, BASE } from "./client.mjs";
 // @ts-expect-error — .mjs yordamchilari (tipsiz)
 import { q1, lit } from "./db.mjs";
+import { catalogProblems } from "../../src/lib/perm-buttons";
+import { navFor } from "../../src/lib/nav";
 
 const T = Date.now().toString(36).slice(-5);
 const PASS = "QaParol2026";
@@ -154,5 +157,22 @@ check("5.8 xodim belgilanmasa — tushunarli xato", /Kamida bitta xodimni belgil
 const roleBefore = userOf(l1).role;
 r = await saveTpl(dir, wp.id, {});
 check("5.9 shablon o'chirildi, loginlar joyida", r.result?.ok === true && q1(`select "loginRole" from "WorkPosition" where id=${lit(wp.id)}`).loginRole == null && userOf(l1).role === roleBefore, r.result);
+
+// ───────── 6. Bo'lim → tugma → amal: oyna ruxsati (`@tugma`, `lib/perm-buttons.ts`) ─────────
+console.log("\n6. Tugma (oyna) ruxsati");
+const problems = catalogProblems();
+check("6.1 katalog: har topshiriladigan amal aynan bitta tugmada", problems.length === 0, problems);
+r = await dir.action("settings/actions#saveUserPerms", [u1.id, undefined, fd({ "perm.stock": "custom", "act.stock": ["@kirim", "receipt", "@yoq", "nope"], "perm.taminot": "none" })], "/settings?tab=permissions");
+const p6 = userOf(l1).perms;
+check("6.2 saqlandi: faqat katalogdagi oyna va amal", r.result?.ok === true && JSON.stringify(p6?.stock) === JSON.stringify(["@kirim", "receipt"]) && p6?.taminot === "none", [r.result, p6]);
+const lt = new Client("lt1");
+await lt.login(l1, PASS);
+const denied = (x: { status: number; location: string | null }) => x.status >= 300 && x.status < 400 && /denied/.test(x.location ?? "");
+const g = { kirim: await lt.get("/stock/prixod"), receipts: await lt.get("/receipts"), sklad: await lt.get("/stock"), chiqim: await lt.get("/stock/rasxod"), jonatma: await lt.get("/jonatma"), taminot: await lt.get("/taminot") };
+check("6.3 berilgan oyna ochiladi (Kirim: /stock/prixod, /receipts)", g.kirim.status === 200 && g.receipts.status === 200, [g.kirim.status, g.kirim.location, g.receipts.status]);
+check("6.4 berilmagan oynalar yopiq (Sklad, Chiqim, Jo'natmalar)", denied(g.sklad) && denied(g.chiqim) && denied(g.jonatma), [g.sklad.location, g.chiqim.location, g.jonatma.location]);
+check("6.5 yopiq modul rol sahifasida ham yopiq (Ta'minot)", denied(g.taminot), [g.taminot.status, g.taminot.location]);
+const menu = navFor("PRODUCTION", p6).map((i) => i.href);
+check("6.6 menyuda faqat berilgan oyna (Kirim bor; Sklad, Ta'minot yo'q)", menu.includes("/receipts") && !menu.includes("/stock") && !menu.includes("/taminot"), menu);
 
 summary("login-templates:");

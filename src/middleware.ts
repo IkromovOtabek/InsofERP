@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { OWN_PAGE_ONLY, alwaysOpen, moduleForPath, pathAllowed } from "@/lib/nav";
+import { OWN_PAGE_ONLY, PATH_HEADER, alwaysOpen, moduleForPath, pathAllowed } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { redirectUrl } from "@/lib/redirect-url";
@@ -70,7 +70,11 @@ export async function middleware(req: NextRequest) {
   // `requirePage`/`requireRoles` bilan perms'ni bazadan tekshiradi (aks holda Ish boshqaruvchiga berilgan
   // "Sotuv: ko'rish" shu yerda rad etilardi). Modulga kirmagan yo'llar — avvalgidek faqat rol bo'yicha.
   if (!pathAllowed(pathname, role) && !moduleForPath(pathname)) return NextResponse.redirect(redirectUrl(req, "/dashboard?denied=1"));
-  return NextResponse.next();
+  // Sahifa himoyasi (`requirePage`) oyna ruxsatini aniq yo'l bo'yicha tekshirsin: sahifa statik prefiks beradi
+  // (/stock/prixod → "/stock"), oyna esa ichkaridagi yo'lga bog'liq. Mijoz yuborgan qiymat har doim ustidan yoziladi
+  const headers = new Headers(req.headers);
+  headers.set(PATH_HEADER, pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

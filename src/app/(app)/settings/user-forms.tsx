@@ -6,6 +6,7 @@ import { createUser, resetPassword, saveSupplyDirectorLimit, savePayablesSince, 
 import { MoneyInput } from "@/components/money-input";
 import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select } from "@/components/ui";
 import { BULK_FORM_ID, type PermModule } from "@/lib/perm-modules";
+import { PermsTree } from "./perms-tree";
 
 export function UserForm({ roles }: { roles: [string, string][] }) {
   const [state, action, pending] = useActionState(createUser, undefined);
@@ -131,120 +132,9 @@ export function ProductionChannelForm({ value }: { value: string | null }) {
 
 export type { PermModule };
 
-type Level = "" | "none" | "view" | "custom" | "write";
-
-const LEVELS: { v: Level; label: string; tone: string }[] = [
-  { v: "", label: "Rol bo'yicha", tone: "border-slate-200 bg-white text-slate-600" },
-  { v: "none", label: "Yopiq", tone: "border-red-300 bg-red-50 text-red-700" },
-  { v: "view", label: "Ko'rish", tone: "border-sky-300 bg-sky-50 text-sky-700" },
-  { v: "custom", label: "Tanlangan amallar", tone: "border-amber-300 bg-amber-50 text-amber-800" },
-  { v: "write", label: "To'liq", tone: "border-emerald-300 bg-emerald-50 text-emerald-700" },
-];
-
-function initialLevel(v: string | string[] | undefined): Level {
-  if (Array.isArray(v)) return "custom";
-  return v === "none" || v === "view" || v === "write" ? v : "";
-}
-
 /**
- * Modul va amal bo'yicha ruxsat matritsasi (faqat maydonlar — formani chaqiruvchi beradi).
- * Har bo'lim uchun daraja: Rol bo'yicha / Yopiq / Ko'rish / Tanlangan amallar / To'liq; "Tanlangan amallar"da
- * aniq amallar belgilanadi. Formaga `perm.<modul>` va `act.<modul>` bo'lib ketadi (`permsFromForm` o'qiydi).
- * Bitta xodim, lavozim login shabloni va bir nechta xodimga birdan tahrirlash shu bittasidan foydalanadi.
- */
-export function PermsMatrix({ modules, current, onChange, footer }: {
-  modules: PermModule[];
-  current: Record<string, string | string[]>;
-  onChange?: () => void;
-  /** Pastki panel: `reset` — hammasini "rol bo'yicha" ga qaytaradi. */
-  footer?: (reset: () => void) => React.ReactNode;
-}) {
-  const [levels, setLevels] = useState<Record<string, Level>>(() => Object.fromEntries(modules.map((m) => [m.key, initialLevel(current[m.key])])));
-  // "Tanlangan amallar"ga o'tganda boshlang'ich belgilar: saqlangan ro'yxat, bo'lmasa rolning odatiy amallari
-  const [acts, setActs] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(modules.map((m) => [m.key, Array.isArray(current[m.key]) ? (current[m.key] as string[]) : m.role?.actions ?? []])));
-
-  const setLevel = (k: string, v: Level) => { setLevels((p) => ({ ...p, [k]: v })); onChange?.(); };
-  const toggleAct = (k: string, a: string) => {
-    setActs((p) => ({ ...p, [k]: p[k].includes(a) ? p[k].filter((x) => x !== a) : [...p[k], a] }));
-    onChange?.();
-  };
-  const reset = () => { setLevels(Object.fromEntries(modules.map((m) => [m.key, "" as Level]))); onChange?.(); };
-  const groups = [...new Set(modules.map((m) => m.group))];
-
-  return (
-    <div className="space-y-4">
-      {groups.map((g) => (
-        <div key={g}>
-          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{g}</div>
-          <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {modules.filter((m) => m.group === g).map((m) => {
-              const lvl = levels[m.key];
-              return (
-                <div key={m.key} className="px-3 py-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium">{m.label}</div>
-                      {m.role && (
-                        <div className="text-xs text-slate-500">
-                          Rol bo&apos;yicha: {!m.role.view ? "kirmaydi" : m.role.actions.length === 0 ? "faqat ko'radi" : m.role.actions.length === m.actions.length && m.actions.length > 0 ? "barcha amallar" : `${m.role.actions.length} ta amal`}
-                        </div>
-                      )}
-                    </div>
-                    <input type="hidden" name={`perm.${m.key}`} value={lvl} />
-                    <div role="radiogroup" aria-label={m.label} className="flex flex-wrap gap-1">
-                      {LEVELS.filter((l) => l.v !== "custom" || m.actions.length > 0).map((l) => (
-                        <button
-                          key={l.v}
-                          type="button"
-                          role="radio"
-                          aria-checked={lvl === l.v}
-                          onClick={() => setLevel(m.key, l.v)}
-                          className={`rounded-md border px-2 py-1 text-xs transition ${lvl === l.v ? l.tone + " font-semibold" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"}`}
-                        >
-                          {l.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {lvl === "custom" && (
-                    <div className="mt-2 grid gap-1.5 rounded-md bg-amber-50/60 p-2 sm:grid-cols-2">
-                      <div className="text-xs text-slate-500 sm:col-span-2">Bo&apos;limni ko&apos;radi va faqat belgilangan amallarni bajaradi:</div>
-                      {m.actions.map((a) => (
-                        <label key={a.key} className="flex cursor-pointer items-start gap-2 text-sm">
-                          <input type="checkbox" name={`act.${m.key}`} value={a.key} checked={acts[m.key].includes(a.key)} onChange={() => toggleAct(m.key, a.key)} className="mt-0.5 h-4 w-4 shrink-0 accent-slate-900" />
-                          <span>
-                            {a.label}
-                            {m.role?.actions.includes(a.key) && <span className="ml-1 text-xs text-slate-400">(rolda bor)</span>}
-                            {a.hint && <span className="block text-xs text-slate-500">{a.hint}</span>}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                  {lvl === "write" && m.actions.length > 0 && (
-                    <div className="mt-1.5 text-xs text-emerald-700">
-                      Barcha amallar: {m.actions.filter((a) => !a.explicit).map((a) => a.label).join(", ")}
-                      {m.actions.some((a) => a.explicit) && (
-                        <span className="block text-slate-500">Kirmaydi (faqat «Tanlangan amallar» orqali beriladi): {m.actions.filter((a) => a.explicit).map((a) => a.label).join(", ")}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-      {footer?.(reset)}
-    </div>
-  );
-}
-
-/**
- * Modul va amal bo'yicha ruxsat — faqat direktor. Har bir bo'lim uchun daraja:
- * Rol bo'yicha / Yopiq / Ko'rish / Tanlangan amallar / To'liq. "Tanlangan amallar"da
- * aniq amallar belgilanadi (masalan Ishlab chiqarish xodimiga Zayavkalardan faqat "ochish").
+ * Bo'lim → tugma → amal bo'yicha ruxsat — faqat direktor (`PermsTree`): masalan Ishlab chiqarish xodimiga
+ * Sklad → «Kirim» oynasini va undagi «Kirim qabul qilish»ni berish, «Chiqim» oynasini esa yopiq qoldirish.
  */
 export function UserPermsForm({
   userId, modules, current,
@@ -255,7 +145,7 @@ export function UserPermsForm({
 
   return (
     <form action={action}>
-      <PermsMatrix
+      <PermsTree
         modules={modules}
         current={current}
         onChange={() => setDirty(true)}
@@ -364,8 +254,8 @@ export function BulkPermsBar({ templates, modules, total }: { templates: PermTem
 
       {mode === "perms" && (
         <div className="space-y-2">
-          <p className="text-xs text-slate-500">Belgilangan har bir xodimning hozirgi qo&apos;shimcha ruxsatlari shu matritsa bilan almashtiriladi. «Rol bo&apos;yicha» — har kim o&apos;z roli bo&apos;yicha.</p>
-          <PermsMatrix modules={modules} current={{}} onChange={() => setConfirming(false)}
+          <p className="text-xs text-slate-500">Belgilangan har bir xodimning hozirgi qo&apos;shimcha ruxsatlari shu tanlov bilan almashtiriladi. «Rol bo&apos;yicha» — har kim o&apos;z roli bo&apos;yicha.</p>
+          <PermsTree modules={modules} current={{}} onChange={() => setConfirming(false)}
             footer={(reset) => <Button type="button" variant="secondary" size="sm" onClick={reset}><RotateCcw size={14} /> Hammasini rol bo&apos;yicha</Button>} />
         </div>
       )}
