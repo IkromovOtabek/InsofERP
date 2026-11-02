@@ -8,8 +8,11 @@ import { parseForm, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { resolveMaterials } from "@/lib/import-materials";
+import { recategorize, resolveMaterials } from "@/lib/import-materials";
+import { canEditMaterials } from "@/lib/catalog";
+import { isMaterialCategory } from "@/lib/material-category";
 import { canDo } from "@/lib/permissions";
+import type { MaterialCategory } from "@/generated/prisma";
 import { createGoodsReceipt, receiptTokenOf, resolveRecipient, resolveSupplier } from "@/lib/receipts";
 import { cancelReceipt } from "@/lib/storno";
 import type { VatRate } from "@/lib/receipt-vat";
@@ -46,6 +49,8 @@ const schema = z.object({
   // Nakladnoy skaneridan: spravochnikda yo'q xomashyo — `materialId` bo'sh, nomi va birligi shu yerda (qatorlar bilan parallel)
   newMaterial: z.array(z.string()).optional(),
   newUnit: z.array(z.string()).optional(),
+  // Qator kategoriyasi: yangi xomashyo shu bilan yaratiladi, mavjudida farq qilsa spravochnikda o'zgaradi (ruxsat bo'lsa)
+  category: z.array(z.string()).optional(),
   qty: z.array(z.preprocess(numStr, z.coerce.number({ message: "Miqdor son bo'lishi kerak" }).positive("Miqdor 0 dan katta bo'lishi kerak").max(MAX_AMOUNT, "Qiymat juda katta"))).optional(),
   price: z.array(z.preprocess(numStr, z.coerce.number({ message: "Narx son bo'lishi kerak" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Qiymat juda katta"))).optional(),
   deliveryCost: z.array(z.string()).optional(),
@@ -63,6 +68,9 @@ const LIMITS: [keyof z.infer<typeof schema>, number, string][] = [
  * Muvaffaqiyatda jurnalga (kirim sanasi oyi → bugun) «Kirim saqlandi» xabari bilan qaytadi.
  * Nakladnoy skaneridan kelgan yangi xomashyolar (`newMaterial[]`) kirimdan oldin yaratiladi — Excel importidagi
  * `resolveMaterials` bilan: shu nomli xomashyo bo'lsa (ikki marta bosish ham) o'shanisi olinadi, takror yaratilmaydi.
+ * Kategoriya: yangi xomashyo qatordagi kategoriya bilan yaratiladi; mavjud xomashyoniki farq qilsa — faqat spravochnikni
+ * yurituvchi (`canEditMaterials`) uchun o'zgaradi, boshqalarda e'tiborsiz. Avto zapchast bo'lganlari mexanikka kirimning o'z
+ * xabari bilan boradi (`queueAvtoReceipt` — kategoriya yuborish paytida o'qiladi), alohida «yangi karta» xabari yo'q.
  */
 export async function createPrixod(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "receipt");
@@ -75,8 +83,8 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { error: "Sana noto'g'ri" };
   const mats = d.materialId ?? [], qtys = d.qty ?? [], prices = d.price ?? [], deliveries = d.deliveryCost ?? [], rates = d.vatRate ?? [];
-  const newNames = d.newMaterial ?? [], newUnits = d.newUnit ?? [];
-  const items: { materialId: string; newName?: string; qty: number; price: number; deliveryCost: number; vatRate: VatRate | null }[] = [];
+  const newNames = d.newMaterial ?? [], newUnits = d.newUnit ?? [], cats = d.category ?? [];
+  const items: { materialId: string; newName?: string; category: MaterialCategory | null; qty: number; price: number; deliveryCost: number; vatRate: VatRate | null }[] = [];
   for (const [i, id] of mats.entries()) {
     const newName = id ? "" : (newNames[i] ?? "").trim().replace(/\s+/g, " ");
     if (!id && !newName) continue;
@@ -86,7 +94,8 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
     const delivery = raw === "" ? 0 : Number(raw);
     if (!Number.isFinite(delivery) || delivery < 0) return { error: `${i + 1}-qator: yetkazib berish summasi noto'g'ri` };
     const rate = rates[i];
-    items.push({ materialId: id, ...(newName ? { newName } : {}), qty: qtys[i], price: prices[i], deliveryCost: delivery, vatRate: rate != null && rate !== "" ? (Number(rate) as VatRate) : null });
+    const cat = cats[i];
+    items.push({ materialId: id, ...(newName ? { newName } : {}), category: isMaterialCategory(cat) ? cat : null, qty: qtys[i], price: prices[i], deliveryCost: delivery, vatRate: rate != null && rate !== "" ? (Number(rate) as VatRate) : null });
   }
   if (!items.length) return { error: "Kamida bitta qatorda xomashyoni tanlang" };
 
@@ -103,7 +112,7 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
     try {
       const unitOf = new Map(mats.flatMap((id, i) => (id ? [] : [[(newNames[i] ?? "").trim().replace(/\s+/g, " ").toLowerCase(), newUnits[i] ?? ""] as const])));
       const res = await db.$transaction(async (tx) => {
-        const r = await resolveMaterials(tx, fresh.map((x) => ({ name: x.newName!, unit: unitOf.get(x.newName!.toLowerCase()) })), true);
+        const r = await resolveMaterials(tx, fresh.map((x) => ({ name: x.newName!, unit: unitOf.get(x.newName!.toLowerCase()), category: x.category })), true);
         for (const m of r.created) await audit(tx, s.userId, "CREATE", "Material", m.id, undefined, { ...m, via: "nakladnoy-scan" });
         return r.result;
       });
@@ -111,8 +120,18 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
     } catch (e) {
       return { error: e instanceof Error ? `Yangi xomashyo qo'shilmadi: ${e.message}` : "Yangi xomashyo qo'shilmadi" };
     }
-    revalidatePath("/stock/materials"); revalidatePath("/settings");
   }
+  // Mavjud xomashyolar kategoriyasi (shu qatorda yaratilganlari allaqachon to'g'ri — o'zgarmaydi)
+  const wanted = new Map<string, MaterialCategory>();
+  if (canEditMaterials(s.role)) for (const x of items) if (x.category && !wanted.has(x.materialId)) wanted.set(x.materialId, x.category);
+  if (wanted.size) {
+    try {
+      await db.$transaction((tx) => recategorize(tx, wanted, s.userId, "kirim"));
+    } catch (e) {
+      return { error: e instanceof Error ? `Kategoriya saqlanmadi: ${e.message}` : "Kategoriya saqlanmadi" };
+    }
+  }
+  if (fresh.length || wanted.size) { revalidatePath("/stock/materials"); revalidatePath("/settings"); revalidatePath("/stock/avto-zapchast"); }
 
   let res: Awaited<ReturnType<typeof createGoodsReceipt>>;
   try {

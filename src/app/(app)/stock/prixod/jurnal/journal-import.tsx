@@ -2,8 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { CalendarRange, FileSpreadsheet, FileUp, HardHat, Package, Truck, Wallet } from "lucide-react";
-import { Button, Callout, Checkbox, Field, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Checkbox, Field, Input, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { JournalTemplateButton } from "@/components/journal-template";
+import { CategoryBulkBar, CategorySelect, RowCheck } from "@/components/category-bulk";
+import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
+import { unitShort } from "@/lib/unit";
+import type { MaterialCategory } from "@/generated/prisma";
 import { dateRu, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { groupJournal, journalMaterials, parseJournal, type JournalDoc, type JournalIssue } from "@/lib/prixod-journal";
 import type { JournalChunkResult } from "@/lib/prixod-journal-import";
@@ -17,7 +21,14 @@ const SHOWN = 150;
 const day = (iso: string) => dateRu(new Date(`${iso}T00:00:00`));
 const payLabel = (p: JournalDoc["payment"]) => (p === "BANK" ? "P-r" : p === "CASH" ? "n-q" : "—");
 
-type Parsed = { file: string; docs: JournalDoc[]; errors: JournalIssue[]; warnings: JournalIssue[]; newSuppliers: string[]; newMaterials: string[]; supplierVat: Record<string, boolean> };
+/** Fayldagi tovar (xomashyo): `key` — kichik harfli nom (serverdagi `journalMaterials` bilan bir xil), `was` — spravochnikdagi kategoriyasi. */
+type Mat = { key: string; name: string; unit: string; isNew: boolean; was: MaterialCategory | null; rows: number };
+type Parsed = {
+  file: string; docs: JournalDoc[]; errors: JournalIssue[]; warnings: JournalIssue[]; newSuppliers: string[]; newMaterials: string[]; supplierVat: Record<string, boolean>;
+  mats: Mat[];
+  /** Fayl qatori → tovar kaliti (bo'lak bilan shu bo'lakdagi tovarlar kategoriyasi yuboriladi) */
+  lineMat: Record<number, string>;
+};
 
 function Issues({ title, tone, items }: { title: string; tone: "danger" | "warning"; items: JournalIssue[] }) {
   const [all, setAll] = useState(false);
@@ -31,10 +42,18 @@ function Issues({ title, tone, items }: { title: string; tone: "danger" | "warni
   );
 }
 
-export function JournalImport({ warehouses, materials, suppliers, canAddSuppliers, canDistribute }: {
+/**
+ * Excel jurnal importi. Saqlashdan oldin fayldagi har tovarga kategoriya beriladi (Xomashyo / Zavod zapchast / Avto zapchast):
+ * qatorda yoki belgilab birdan. Boshlang'ich qiymat — spravochnikdagisi, yangisida fayldagi «Kategoriya» ustuni yoki Xomashyo.
+ * Mavjud xomashyo kategoriyasini faqat spravochnikni yurituvchi (`canEditCategory`) o'zgartiradi.
+ */
+export function JournalImport({ warehouses, materials, categories, canEditCategory, suppliers, canAddSuppliers, canDistribute }: {
   warehouses: { id: string; name: string }[];
   /** [kichik harfli nom, birlik] — bazadagi xomashyolar */
   materials: [string, string][];
+  /** kichik harfli nom → kategoriya (bazadagi xomashyolar) */
+  categories: Record<string, MaterialCategory>;
+  canEditCategory: boolean;
   /** kichik harfli yetkazuvchi nomlari */
   suppliers: string[];
   canAddSuppliers: boolean;
@@ -48,10 +67,15 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [result, setResult] = useState<(JournalChunkResult & { stopped?: string }) | null>(null);
+  // Tovarlar kategoriyasi: tanlov, belgilanganlar, qidiruv
+  const [cats, setCats] = useState<Record<string, MaterialCategory>>({});
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState("");
+  const [onlyNew, setOnlyNew] = useState(false);
 
   async function onFile(f: File | undefined) {
     if (!f) return;
-    setReadError(""); setData(null); setResult(null); setDone(0);
+    setReadError(""); setData(null); setResult(null); setDone(0); setSel(new Set()); setQ(""); setOnlyNew(false);
     try {
       const XLSX = await import("xlsx");
       const wb = XLSX.read(await f.arrayBuffer(), { type: "array", raw: true });
@@ -68,10 +92,24 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
       // Birligi mos kelmagani uchun alohida xomashyoga ajratilgan qatorlar ham tekshirilsin (ko'pincha birlik xato yozilgan)
       const split = p.rows.filter((r) => assigned.get(r.line)!.name !== r.material.trim().replace(/\s+/g, " "))
         .map((r) => ({ line: r.line, text: `${r.material}: birlik «${r.unit}» boshqa qatorlardagidan farq qiladi — «${assigned.get(r.line)!.name}» alohida xomashyo bo'ladi` }));
+      // Tovarlar ro'yxati: fayldagi tartibda, har biriga boshlang'ich kategoriya
+      const mats = new Map<string, Mat>(), fileCat = new Map<string, MaterialCategory>(), lineMat: Record<number, string> = {};
+      for (const r of p.rows) {
+        const a = assigned.get(r.line)!;
+        const key = a.name.toLowerCase();
+        lineMat[r.line] = key;
+        const m = mats.get(key);
+        if (m) m.rows++;
+        else mats.set(key, { key, name: a.name, unit: a.unit, isNew: !existing.has(key), was: categories[key] ?? null, rows: 1 });
+        if (r.category && !fileCat.has(key)) fileCat.set(key, r.category);
+      }
+      setCats(Object.fromEntries([...mats.values()].map((m) => [m.key,
+        m.isNew ? fileCat.get(m.key) ?? "XOMASHYO" : canEditCategory ? fileCat.get(m.key) ?? m.was ?? "XOMASHYO" : m.was ?? "XOMASHYO"])));
       setData({
         file: f.name, docs: groupJournal(p.rows), errors: p.errors, warnings: [...p.warnings, ...split].sort((a, b) => a.line - b.line), supplierVat,
         newSuppliers: [...new Set(p.rows.map((r) => r.supplier.trim()))].filter((n) => !known.has(n.toLowerCase())),
         newMaterials: [...new Set([...assigned.values()].map((m) => m.name))].filter((n) => !existing.has(n.toLowerCase())),
+        mats: [...mats.values()], lineMat,
       });
     } catch (e) {
       setReadError(e instanceof Error ? `Fayl o'qilmadi: ${e.message}` : "Fayl o'qilmadi");
@@ -85,6 +123,20 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
     return { rows: rows.length, total: rows.reduce((s, r) => s + r.total, 0), from: dates[0]!, to: dates[dates.length - 1]! };
   }, [data]);
 
+  // Ro'yxatda ko'rinadigan tovarlar (qidiruv, «faqat yangilari») va ulardan kategoriyasi o'zgartiriladiganlari
+  const editable = (m: Mat) => m.isNew || canEditCategory;
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return (data?.mats ?? []).filter((m) => (!onlyNew || m.isNew) && (!t || m.key.includes(t)));
+  }, [data, q, onlyNew]);
+  const shownEditable = shown.filter(editable);
+  const shownSel = shownEditable.filter((m) => sel.has(m.key));
+  const matBy = useMemo(() => new Map((data?.mats ?? []).map((m) => [m.key, m])), [data]);
+  const changed = (data?.mats ?? []).filter((m) => !m.isNew && m.was && cats[m.key] !== m.was).length;
+  const byCat = (data?.mats ?? []).reduce<Record<string, number>>((a, m) => { const c = cats[m.key] ?? "XOMASHYO"; a[c] = (a[c] ?? 0) + 1; return a; }, {});
+  const toggle = (keys: string[], on: boolean) => setSel((s0) => { const s1 = new Set(s0); for (const k of keys) { if (on) s1.add(k); else s1.delete(k); } return s1; });
+  const setCat = (keys: string[], c: MaterialCategory) => setCats((m) => ({ ...m, ...Object.fromEntries(keys.map((k) => [k, c])) }));
+
   async function save() {
     if (!data || busy) return;
     setBusy(true); setDone(0);
@@ -92,7 +144,10 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
     for (let i = 0; i < data.docs.length; i += CHUNK) {
       const part = data.docs.slice(i, i + CHUNK);
       try {
-        const r = await importJournalChunk({ warehouseId, docs: part, supplierVat: data.supplierVat, paid });
+        // Shu bo'lakdagi tovarlar kategoriyasi: yangilari va o'zgartirilganlari (o'zgarmagan mavjud kategoriya qaytarib yozilmasin)
+        const categories = Object.fromEntries(part.flatMap((d) => d.rows).map((r) => data.lineMat[r.line]!)
+          .filter((k) => { const m = matBy.get(k); return !m || m.isNew || cats[k] !== m.was; }).map((k) => [k, cats[k] ?? "XOMASHYO"]));
+        const r = await importJournalChunk({ warehouseId, docs: part, supplierVat: data.supplierVat, paid, categories });
         if (r.error) { acc.stopped = r.error; break; }
         acc.created += r.created; acc.existed += r.existed; acc.failed.push(...r.failed);
       } catch {
@@ -112,11 +167,12 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
           <FileUp size={16} /> Excel faylni tanlash
           <input type="file" accept=".xlsx,.xls" className="hidden" disabled={busy} onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
-        <JournalTemplateButton file="kirim-namuna" example={{
+        <JournalTemplateButton file="kirim-namuna" extra={["Kategoriya"]} example={{
           "Sana": isoDate().split("-").reverse().join("."), "Tovar": "Sement M400", "TTN №": "123", "O'lchov": "t", "Miqdor": 20, "Ta'minotchi": "Qizilqum sement",
           "Kimga": "Insof", "To'lov": "P-r", "Dostavka": 0, "Narx (QQSsiz)": 950000, "Summa (QQSsiz)": 19000000, "QQS 12%": 2280000, "Jami (QQS bilan)": 21280000,
+          "Kategoriya": "Xomashyo",
         }} />
-        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar: Sana, Tovar, TTN №, O'lchov, Miqdor, Ta'minotchi, Kimga, To'lov (P-r — perechisleniye, n-q — naqd), Dostavka, Narx (QQSsiz), Summa, QQS 12%, Jami, Manzil, Snabjenets, Izoh, Mashina, Qayerdan yuklandi. Excel'dan faqat kirim bo'ladi — chiqim yozilmaydi."}</span>
+        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar: Sana, Tovar, TTN №, O'lchov, Miqdor, Ta'minotchi, Kimga, To'lov (P-r — perechisleniye, n-q — naqd), Dostavka, Narx (QQSsiz), Summa, QQS 12%, Jami, Manzil, Snabjenets, Izoh, Mashina, Qayerdan yuklandi, Kategoriya (ixtiyoriy). Excel'dan faqat kirim bo'ladi — chiqim yozilmaydi."}</span>
       </div>
       {readError && <Callout tone="danger">{readError}</Callout>}
 
@@ -131,11 +187,54 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
 
           {data.newMaterials.length > 0 && (
             <Callout tone="info" title={`Yangi xomashyolar: ${fmtNum(data.newMaterials.length)}`}>
-              Spravochnikda yo&apos;q tovarlar avtomatik yaratiladi. Bir tovar turli birlikda yozilgan bo&apos;lsa, alohida xomashyo bo&apos;ladi, masalan «Qizil kiraska (l)».
+              Spravochnikda yo&apos;q tovarlar avtomatik yaratiladi (quyidagi ro&apos;yxatda «Yangi» belgisi bilan). Bir tovar turli birlikda yozilgan bo&apos;lsa, alohida xomashyo bo&apos;ladi, masalan «Qizil kiraska (l)».
               Keyin Sklad → Xomashyo bo&apos;limida nomini to&apos;g&apos;rilash mumkin.
-              <div className="mt-1 text-slate-600">{data.newMaterials.slice(0, 40).join(", ")}{data.newMaterials.length > 40 ? ` va yana ${data.newMaterials.length - 40} ta` : ""}</div>
             </Callout>
           )}
+
+          {/* Tovarlar va kategoriya: qatorda yoki belgilab birdan */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="text-sm font-semibold text-slate-900">{`Tovarlar va kategoriya: ${fmtNum(data.mats.length)}`}</div>
+              <div className="text-xs text-slate-500">
+                {Object.entries(byCat).map(([c, n]) => `${MATERIAL_CATEGORY_LABEL[c as MaterialCategory]} ${fmtNum(n)}`).join(" · ")}
+                {changed > 0 && ` · ${fmtNum(changed)} tasining spravochnikdagi kategoriyasi o'zgaradi`}
+              </div>
+            </div>
+            <CategoryBulkBar total={shownEditable.length} selected={shownSel.length}
+              onToggleAll={(on) => toggle(shownEditable.map((m) => m.key), on)}
+              onApply={(c) => { setCat(shownSel.map((m) => m.key), c); toggle(shownSel.map((m) => m.key), false); }}>
+              <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tovar nomi bo'yicha qidirish" aria-label="Tovar qidirish" className="h-8 w-56 text-sm pointer-coarse:h-9" />
+              <Checkbox checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} label="Faqat yangilari" />
+            </CategoryBulkBar>
+            {!canEditCategory && data.mats.some((m) => !m.isNew) && (
+              <p className="text-xs text-slate-500">Spravochnikda bor tovarlar kategoriyasini ombor, ta&apos;minot yoki direktor o&apos;zgartiradi — sizda faqat yangilariga beriladi.</p>
+            )}
+            <Table maxHeight={420}>
+              <thead><Tr><Th className="w-10" /><Th>Tovar</Th><Th>Birlik</Th><Th>Holati</Th><Th right>Qatorlar</Th><Th>Kategoriya</Th></Tr></thead>
+              <tbody>
+                {shown.map((m) => {
+                  const c = cats[m.key] ?? "XOMASHYO";
+                  return (
+                    <Tr key={m.key}>
+                      <Td className="text-center">{editable(m) && <RowCheck checked={sel.has(m.key)} onChange={(on) => toggle([m.key], on)} label={`${m.name} — belgilash`} />}</Td>
+                      <Td>{m.name}</Td>
+                      <Td className="text-slate-600">{unitShort(m.unit)}</Td>
+                      <Td>{m.isNew ? <Badge color="blue" dot={false}>Yangi</Badge> : <span className="text-xs text-slate-500">Spravochnikda</span>}</Td>
+                      <Td right className="tabular">{fmtNum(m.rows)}</Td>
+                      <Td>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <CategorySelect value={c} onChange={(v) => setCat([m.key], v)} disabled={!editable(m)} />
+                          {!m.isNew && m.was && c !== m.was && <span className="text-xs font-medium text-amber-700" title="Saqlanganda spravochnikda o'zgaradi">{`${MATERIAL_CATEGORY_LABEL[m.was]} → ${MATERIAL_CATEGORY_LABEL[c]}`}</span>}
+                        </div>
+                      </Td>
+                    </Tr>
+                  );
+                })}
+                {!shown.length && <Tr><Td colSpan={6} className="text-center text-sm text-slate-500">Hech narsa topilmadi</Td></Tr>}
+              </tbody>
+            </Table>
+          </div>
           {data.newSuppliers.length > 0 && !canAddSuppliers && (
             <Callout tone="danger" title="Yangi yetkazuvchi qo'shishga ruxsatingiz yo'q">
               Avval Yetkazuvchilar bo&apos;limida qo&apos;shing: {data.newSuppliers.slice(0, 10).join(", ")}{data.newSuppliers.length > 10 ? "…" : ""}

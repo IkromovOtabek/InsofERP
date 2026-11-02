@@ -1,10 +1,13 @@
 import { headerRowIndex, num, numMoney, str } from "./excel";
 import { normalizeUnit, toMaterialUnit, UNIT_FALLBACK } from "./unit";
+import { categoryFromText } from "./material-category";
+import type { MaterialCategory } from "@/generated/prisma";
 
 /**
  * Sklad → Kirim → «Excel jurnal»: ko'p sanali, ko'p yetkazuvchili kirim jurnali (bir necha oylik daftar).
  * Ustunlar Sklad → Kirim jurnali bilan bir xil: Sana, Tovar, TTN, O'lchov, Miqdor, Ta'minotchi (Kimdan), Kimga,
  * To'lov (P-r / n-q), Dostavka, Narx, Summa (QQSsiz), QQS, Jami, Manzil, Izoh, Mashina (kim olib keldi), Qayerdan yuklandi.
+ * Ixtiyoriy «Kategoriya» ustuni (Xomashyo / Zavod zapchast / Avto zapchast) — sahifada tovarlar ro'yxatidagi boshlang'ich tanlov.
  * «Snabjenets» ustuni o'qilmaydi (kiritgan xodim yoziladi). Eski fayllardagi «Darhol kimga berildi» ustuni kirimda e'tiborsiz
  * qoladi: Excel'dan faqat kirim bo'ladi, chiqim yozilmaydi.
  *
@@ -35,11 +38,13 @@ export const journalUnit = (v: unknown) => {
   return normalizeUnit(EXTRA_UNITS[k] ?? k);
 };
 
-type Col = "date" | "material" | "waybill" | "unit" | "qty" | "supplier" | "recipient" | "payment" | "delivery" | "price" | "sum" | "vat" | "total" | "address"
+type Col = "category" | "date" | "material" | "waybill" | "unit" | "qty" | "supplier" | "recipient" | "payment" | "delivery" | "price" | "sum" | "vat" | "total" | "address"
   | "note" | "carrier" | "loadedFrom" | "autoIssue";
 
 /** Sarlavha → ustun. Tartib muhim: «Jami summa» «Summa» dan oldin tekshiriladi. */
 const HEADERS: [Col, RegExp][] = [
+  // «Tovar kategoriyasi» tovar nomi ustuniga tushmasin — birinchi tekshiriladi
+  ["category", /kategor|категор|toifa/],
   ["date", /^(sana|дата|date)/],
   ["material", /tovar|nomi|наимен|товар|material|xomashyo/],
   ["waybill", /ttn|ттн|nakladnoy|накладн/],
@@ -121,6 +126,8 @@ export type JournalRow = {
   carrier: string;
   /** «Qayerdan yuklandi» */
   loadedFrom: string;
+  /** «Kategoriya» ustuni (bo'sh yoki tanilmasa — null) */
+  category: MaterialCategory | null;
   /** Eski fayllardagi «Darhol kimga berildi» — faqat hujjat kaliti uchun (avval yuklangan fayl qayta yuklansa takror ochilmasin), boshqa joyda ishlatilmaydi */
   legacyAuto: string;
   /** To'lanadigan summa: Miqdor × Narx + QQS + Dostavka (fayldagi «Jami» emas — u ham xato bo'lishi mumkin) */
@@ -187,6 +194,8 @@ export function parseJournal(aoa: unknown[][]): { rows: JournalRow[]; errors: Jo
     let supplier = str(at(r, "supplier"));
     if (!supplier) { supplier = UNKNOWN_SUPPLIER; warnings.push({ line, text: `${material}: yetkazuvchi bo'sh — «${UNKNOWN_SUPPLIER}»` }); }
     if (unitRaw && !journalUnit(unitRaw)) warnings.push({ line, text: `${material}: birlik «${unitRaw}» tanilmadi — «${UNIT_FALLBACK}»` });
+    const catRaw = str(at(r, "category"));
+    if (catRaw && !categoryFromText(catRaw)) warnings.push({ line, text: `${material}: kategoriya «${catRaw}» tanilmadi — ro'yxatda tanlang` });
     const delivery = money(at(r, "delivery"));
     const waybill = str(at(r, "waybill"));
     const base = Math.round(qty * price * 100) / 100;
@@ -198,6 +207,7 @@ export function parseJournal(aoa: unknown[][]): { rows: JournalRow[]; errors: Jo
       supplier, waybillNo: waybill === "0" ? "" : waybill, payment: journalPayment(at(r, "payment")),
       recipient: str(at(r, "recipient")), address: str(at(r, "address")),
       note: str(at(r, "note")), carrier: str(at(r, "carrier")), loadedFrom: str(at(r, "loadedFrom")), legacyAuto: str(at(r, "autoIssue")),
+      category: categoryFromText(catRaw),
       total: base + dlv + (vatRate ? Math.round(base * 12) / 100 : 0),
     });
   }

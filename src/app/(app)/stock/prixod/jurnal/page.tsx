@@ -2,12 +2,14 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
+import { canEditMaterials } from "@/lib/catalog";
 import { Card, PageHeader } from "@/components/ui";
 import { JournalImport } from "./journal-import";
 
 /**
  * Sklad → Kirim → «Excel'dan yuklash»: kirim daftari (har qatorda o'z sanasi, yetkazuvchisi, TTN, to'lov turi)
  * bitta yuklashda kirim hujjatlariga bo'linib saqlanadi. Ustunlar — `JOURNAL_HEADERS`. Nakladnoy skaneri — `../new?scan=1`.
+ * Saqlashdan oldin fayldagi tovarlarga kategoriya beriladi (qatorda yoki belgilab birdan).
  * Brigadalarga chiqim keyin Sklad → «Brigadalar» oynasida taqsimlanadi.
  */
 export default async function PrixodJournalPage() {
@@ -15,7 +17,7 @@ export default async function PrixodJournalPage() {
   if (!canDo(s, "stock", "receipt")) redirect("/stock/prixod");
   const [warehouses, materials, suppliers] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
-    db.material.findMany({ select: { name: true, unit: true } }),
+    db.material.findMany({ select: { name: true, unit: true, category: true } }),
     db.supplier.findMany({ select: { name: true } }),
   ]);
   return (
@@ -26,6 +28,8 @@ export default async function PrixodJournalPage() {
         <JournalImport
           warehouses={warehouses}
           materials={materials.map((m) => [m.name.trim().toLowerCase(), m.unit])}
+          categories={Object.fromEntries(materials.map((m) => [m.name.trim().toLowerCase(), m.category]))}
+          canEditCategory={canEditMaterials(s.role)}
           suppliers={suppliers.map((x) => x.name.trim().toLowerCase())}
           canAddSuppliers={canDo(s, "stock", "suppliers")}
           canDistribute={canDo(s, "stock", "brigade")}

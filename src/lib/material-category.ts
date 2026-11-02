@@ -18,6 +18,17 @@ export const MATERIAL_CATEGORY_OPTIONS: [MaterialCategory, string][] = MATERIAL_
 export const isMaterialCategory = (v: unknown): v is MaterialCategory =>
   typeof v === "string" && (MATERIAL_CATEGORIES as readonly string[]).includes(v);
 
+/** Excel'dagi «Kategoriya» yozuvi («Avto zapchast», «завод», «XOMASHYO») → kategoriya; tanilmasa null. */
+export function categoryFromText(v: unknown): MaterialCategory | null {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (isMaterialCategory(t.toUpperCase())) return t.toUpperCase() as MaterialCategory;
+  if (/avto|авто|mashina|машин/.test(t)) return "AVTO_ZAPCHAST";
+  if (/zavod|завод|uskuna|оборуд/.test(t)) return "ZAVOD_ZAPCHAST";
+  if (/xom|хом|сыр/.test(t)) return "XOMASHYO";
+  return null;
+}
+
 /** URL'dagi qisqa nom (`?kat=avto`) ↔ kategoriya. */
 export const CATEGORY_SLUG: Record<MaterialCategory, string> = { ZAVOD_ZAPCHAST: "zavod", AVTO_ZAPCHAST: "avto", XOMASHYO: "xomashyo" };
 export const categoryFromSlug = (v?: string | null): MaterialCategory | null =>

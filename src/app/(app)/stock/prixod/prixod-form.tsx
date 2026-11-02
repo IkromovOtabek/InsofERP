@@ -13,6 +13,9 @@ import { MoneyInput } from "@/components/money-input";
 import { SupplierAdd, WithAdd } from "@/components/quick-add";
 import { NameCombo, type NameComboValue } from "@/components/name-combo";
 import { TargetHoldings } from "@/components/holdings-panel";
+import { CategoryBulkBar, CategorySelect, RowCheck } from "@/components/category-bulk";
+import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
+import type { MaterialCategory } from "@/generated/prisma";
 import type { TargetGroups } from "@/lib/issue-target";
 import type { Holding } from "@/lib/holdings";
 import { TargetSelect } from "../rasxod/target-select";
@@ -27,25 +30,32 @@ type Vat = "12" | "6" | "0";
 /**
  * `newName` — spravochnikda yo'q xomashyo (nakladnoydan): saqlashda shu nom va `newUnit` bilan yaratiladi.
  * `scan` — qator nakladnoydan o'qilgan: undagi yozuv, spravochnik bilan mosligi va ogohlantirish.
+ * `category` — xomashyo kategoriyasi: yangisi shu bilan yaratiladi, mavjudida farq qilsa spravochnikda o'zgaradi. `sel` — qator belgilangan.
  */
-type Row = { key: number; materialId: string; qty: string; price: string; delivery: string; vat: Vat; newName?: string; newUnit?: string; scan?: { name: string; match: ScanMatch; warn: string } };
+type Row = {
+  key: number; materialId: string; qty: string; price: string; delivery: string; vat: Vat; category: MaterialCategory; sel?: boolean;
+  newName?: string; newUnit?: string; scan?: { name: string; match: ScanMatch; warn: string };
+};
 const VATS: Vat[] = ["12", "6", "0"];
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: string) => { const n = Number(v.replace(/\s+/g, "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 const money = (v: number) => fmtNum(v, 2);
-const newRow = (key: number): Row => ({ key, materialId: "", qty: "", price: "", delivery: "", vat: "12" });
+const newRow = (key: number): Row => ({ key, materialId: "", qty: "", price: "", delivery: "", vat: "12", category: "XOMASHYO" });
 const NONE: NameComboValue = { id: "", text: "" };
 /** Yozilgan nom ro'yxatda yo'q — saqlashda yangi yozuv bo'ladi. */
 const isNew = (v: NameComboValue) => !!v.text.trim() && !v.id;
 /** Qator yuboriladi: xomashyo tanlangan yoki yangi xomashyo nomi bor. */
 const filled = (r: Row) => !!r.materialId || !!r.newName?.trim();
+/** Bir xil xomashyo (yoki bir xil yangi nom) qatorlari — kategoriya hammasida bir xil bo'ladi. */
+const ident = (r: Row) => r.materialId || `new:${(r.newName ?? "").trim().toLowerCase()}`;
 
 /**
  * Jadval-forma ustunlari (keng ekranda): № | Nomi | Birlik | Miqdor | Narx | Yetkazib berish | QQS | Jami summa | ×.
- * Eng kami 796 + 8 × 8 (gap) = 860px: 1280px ekranda karta ichi ≈ 900px (yon menyu 256, main px-8, Card p-5) — sig'adi.
+ * «№» ustunida qator belgisi ham bor. Eng kami 812 + 8 × 8 (gap) = 876px: 1280px ekranda karta ichi ≈ 900px
+ * (yon menyu 256, main px-8, Card p-5) — sig'adi.
  */
-const GRID = "xl:grid-cols-[28px_minmax(160px,1fr)_48px_96px_112px_104px_80px_136px_32px]";
+const GRID = "xl:grid-cols-[44px_minmax(160px,1fr)_48px_96px_112px_104px_80px_136px_32px]";
 const HEAD = "px-2 py-2 text-[12.5px] font-semibold leading-tight text-slate-900";
 
 /** Telefonda maydon nomi (keng ekranda ustun sarlavhasi bor). */
@@ -67,6 +77,10 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * Nakladnoy skaneri (`scan`): rasmdan o'qilgan ma'lumot maydonlarga tushadi (`lib/scan-receipt.ts`) va forma ko'rish
  * rejimida qulflanadi — «Tahrirlash» ochadi, «Kirimni saqlash» shu holicha saqlaydi. Spravochnikda yo'q xomashyo
  * saqlashda yaratiladi; yetkazuvchi topilmasa — qo'lda tanlanadi (nakladnoydagi nomi ko'rsatiladi).
+ *
+ * Kategoriya (Zavod zapchast / Avto zapchast / Xomashyo): har qatorda, belgilanganlarga birdan ham beriladi. Nakladnoyda
+ * yo'q — shuning uchun ko'rish rejimida ham ochiq. Mavjud xomashyo kategoriyasini spravochnikni yuritadiganlar
+ * (`canCreate`) o'zgartiradi; boshqalarda u faqat ko'rinadi, yangi xomashyoga esa hamma tanlaydi.
  */
 export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, targets, holdings, defaultBuyerId, accounts, clientToken, companyVatPayer = true, scan }: {
   today: string;
@@ -109,6 +123,13 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   const noVat = !supVat || payment === "CASH";
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [newRow(Date.now())]));
+  /** Spravochnikdagi kategoriyasi (mavjud xomashyo); yangisida — undefined. */
+  const catOf = (materialId: string) => (materialId ? materials.find((m) => m.id === materialId)?.category ?? "XOMASHYO" : undefined);
+  /** Kategoriyani shu qatorlarga va ulardagi xomashyoning boshqa qatorlariga beradi. Ruxsatsiz — mavjud xomashyoga tegilmaydi. */
+  const setCategory = (keys: number[], category: MaterialCategory, unselect = false) => setRows((rs) => {
+    const ids = new Set(rs.filter((r) => keys.includes(r.key) && filled(r) && (canCreate || !r.materialId)).map(ident));
+    return rs.map((r) => (ids.has(ident(r)) && filled(r) ? { ...r, category, ...(unselect ? { sel: false } : {}) } : r));
+  });
   const choosePayment = (p: Payment) => {
     setPayment(p);
     if (accountId && accounts.find((a) => a.id === accountId)?.type !== p) setAccountId("");
@@ -123,7 +144,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
     choosePayment(d.payment);
     const k = Date.now();
     setRows(d.rows.map((r, i) => ({
-      key: k + i, materialId: r.materialId, qty: r.qty, price: r.price, delivery: "", vat: r.vat,
+      key: k + i, materialId: r.materialId, qty: r.qty, price: r.price, delivery: "", vat: r.vat, category: catOf(r.materialId) ?? "XOMASHYO",
       ...(r.materialId ? {} : { newName: r.newName, newUnit: r.newUnit }),
       scan: { name: r.scanName, match: r.match, warn: r.warn },
     })));
@@ -155,7 +176,10 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   // Raqam kiritilgan-u, xomashyo tanlanmagan qator yuborilmaydi — jimgina tushib qolmasin: saqlash yopiladi
   const orphans = rows.flatMap((r, idx) => (!filled(r) && (r.qty.trim() || r.price.trim() || r.delivery.trim()) ? [idx + 1] : []));
   const payAccounts = accounts.filter((a) => a.type === payment);
+  const filledRows = rows.filter(filled);
+  const selected = filledRows.filter((r) => r.sel);
   const scanRows = rows.filter((r) => r.scan);
+  const lockCls = locked && "[&_input]:bg-slate-50 [&_select]:bg-slate-50";
   const newCount = scanRows.filter((r) => !r.materialId && r.newName).length;
   const checkCount = scanRows.filter((r) => (r.materialId && r.scan?.match === "similar") || r.scan?.warn).length;
 
@@ -197,8 +221,8 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
           </Callout>
         )}
 
-        {/* Ko'rish rejimida maydonlar qulflanadi (inert), lekin forma bilan birga yuboriladi */}
-        <div inert={locked} className={cn("space-y-5", locked && "[&_input]:bg-slate-50 [&_select]:bg-slate-50")}>
+        {/* Ko'rish rejimida maydonlar qulflanadi (inert), lekin forma bilan birga yuboriladi. Qatorlarda kategoriya va belgilar ochiq */}
+        <div inert={locked} className={cn("space-y-5", lockCls)}>
         {/* Hujjat rekvizitlari — Excel jurnali ustunlari */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Sana *"><Input name="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} max={today} required /></Field>
@@ -247,6 +271,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
         ) : (
           <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">To'lovni moliya qiladi — saqlangandan keyin kirim Kirim-Chiqimdagi to'lanmagan kirimlar ro'yxatiga tushadi.</p>
         )}
+        </div>
 
         {/* Qatorlar — keng ekranda Excel'ga o'xshash jadval, telefonda har qator alohida blok */}
         <div>
@@ -254,6 +279,13 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
             <div className="text-sm font-semibold text-slate-900">Xomashyo *</div>
             <div className="text-xs text-slate-500">Narx QQS'siz · QQS faqat tovarga hisoblanadi, yetkazib berishga emas</div>
           </div>
+          {filledRows.length > 1 && (
+            <CategoryBulkBar className="mb-2" total={filledRows.length} selected={selected.length}
+              onToggleAll={(on) => setRows((rs) => rs.map((r) => (filled(r) ? { ...r, sel: on } : r)))}
+              onApply={(c) => setCategory(selected.map((r) => r.key), c, true)}>
+              {!canCreate && <span className="text-xs text-slate-500">Mavjud xomashyo kategoriyasi o&apos;zgarmaydi — faqat yangilariga beriladi</span>}
+            </CategoryBulkBar>
+          )}
           <div className={cn("hidden overflow-hidden rounded-t-lg border border-b-0 border-slate-300/80 bg-emerald-50 xl:grid xl:items-center xl:gap-2", GRID)}>
             <div className={cn(HEAD, "text-center")}>№</div>
             <div className={HEAD}>Nomi</div>
@@ -273,6 +305,8 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
               const c = calc(r);
               const on = filled(r);
               const orphan = orphans.includes(idx + 1);
+              const was = catOf(r.materialId);
+              const check = on && <RowCheck checked={!!r.sel} onChange={(sel) => update(r.key, { sel })} label={`${idx + 1}-qatorni belgilash`} />;
               return (
                 <div key={r.key} className={cn("grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-4", "xl:items-center xl:rounded-none xl:border-0 xl:border-b xl:border-slate-200 xl:px-0 xl:py-1.5 xl:last:border-b-0", GRID)}>
                   {on && <>
@@ -283,15 +317,18 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
                     <input type="hidden" name="price[]" value={r.price} />
                     <input type="hidden" name="deliveryCost[]" value={r.delivery} />
                     <input type="hidden" name="vatRate[]" value={String(c.rate)} />
+                    {/* Mavjud xomashyoda faqat o'zgartirilgani yuboriladi — eski sahifa boshqa xodim qo'ygan kategoriyani qaytarib qo'ymasin */}
+                    <input type="hidden" name="category[]" value={was === r.category ? "" : r.category} />
                   </>}
-                  {/* Telefonda: qator raqami va o'chirish */}
+                  {/* Telefonda: belgi, qator raqami va o'chirish */}
                   <div className="col-span-2 flex items-center justify-between sm:col-span-4 xl:hidden">
-                    <span className="text-xs font-semibold text-slate-500">{`Qator ${idx + 1}`}</span>
+                    <span className="inline-flex items-center gap-2.5 text-xs font-semibold text-slate-500">{check}{`Qator ${idx + 1}`}</span>
                     {!locked && <button type="button" aria-label="Qatorni o'chirish" onClick={() => remove(r.key)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>}
                   </div>
-                  <div className="hidden text-center text-xs text-slate-400 tabular xl:block">{idx + 1}</div>
+                  <div className="hidden items-center justify-center gap-1.5 text-xs text-slate-400 tabular xl:flex">{check}{idx + 1}</div>
                   <div className="col-span-2 min-w-0 sm:col-span-4 xl:col-span-1">
                     <Lbl>Nomi</Lbl>
+                    <div inert={locked} className={cn(lockCls)}>
                     {isNew ? (
                       // Spravochnikda yo'q (nakladnoydan): nomi va birligi shu yerda tuzatiladi, saqlashda yaratiladi
                       <div className="flex items-center gap-1">
@@ -304,7 +341,15 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
                       </div>
                     ) : (
                       <MaterialField materials={materials} groups={groups} canCreate={canCreate} value={r.materialId} placeholder="Nomi yoki kodi"
-                        onPick={(m) => update(r.key, { materialId: m.id, newName: undefined, price: r.price || (m.price ? String(r2(m.price)) : "") })} />
+                        onPick={(m) => update(r.key, { materialId: m.id, newName: undefined, category: m.category ?? "XOMASHYO", price: r.price || (m.price ? String(r2(m.price)) : "") })} />
+                    )}
+                    </div>
+                    {on && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                        <CategorySelect value={r.category} onChange={(c) => setCategory([r.key], c)} disabled={!!r.materialId && !canCreate}
+                          title={r.materialId && !canCreate ? "Mavjud xomashyo kategoriyasini ombor, ta'minot yoki direktor o'zgartiradi" : undefined} />
+                        {was && was !== r.category && <span className="font-medium text-amber-700" title="Saqlanganda spravochnikda o'zgaradi">{`${MATERIAL_CATEGORY_LABEL[was]} → ${MATERIAL_CATEGORY_LABEL[r.category]}`}</span>}
+                      </div>
                     )}
                     {r.scan && (
                       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
@@ -319,19 +364,19 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
                     {orphan && <p className="mt-1 text-xs font-medium text-red-600">Xomashyoni tanlang</p>}
                   </div>
                   <div className="hidden text-center text-sm text-slate-600 xl:block">{u || "—"}</div>
-                  <div>
+                  <div inert={locked} className={cn(lockCls)}>
                     <Lbl>{u ? `Miqdor (${u})` : "Miqdor"}</Lbl>
                     <Input type="number" inputMode="decimal" step="0.001" min="0" aria-label="Miqdor" placeholder="0" value={r.qty} onChange={(e) => update(r.key, { qty: e.target.value })} required={on} className="text-right tabular" />
                   </div>
-                  <div>
+                  <div inert={locked} className={cn(lockCls)}>
                     <Lbl>{u ? `Narx / ${u}` : "Narx"}</Lbl>
                     <MoneyInput value={r.price} onChange={(v) => update(r.key, { price: v })} decimals={2} suffix={null} ariaLabel="Narx" placeholder="0" required={on} className="text-right" />
                   </div>
-                  <div>
+                  <div inert={locked} className={cn(lockCls)}>
                     <Lbl>Yetkazib berish</Lbl>
                     <MoneyInput value={r.delivery} onChange={(v) => update(r.key, { delivery: v })} decimals={2} suffix={null} ariaLabel="Yetkazib berish" placeholder="0" className="text-right" />
                   </div>
-                  <div>
+                  <div inert={locked} className={cn(lockCls)}>
                     <Lbl>QQS</Lbl>
                     <Select aria-label="QQS stavkasi" value={noVat ? "0" : r.vat} disabled={noVat} onChange={(e) => update(r.key, { vat: VATS.find((v) => v === e.target.value) ?? "12" })}>
                       {VATS.map((v) => <option key={v} value={v}>{v}%</option>)}
@@ -364,7 +409,6 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
             <div className="flex justify-between gap-4 border-t border-slate-200 pt-1.5 text-base font-semibold text-slate-900"><span>Jami summa</span><span>{money(totals.total)}</span></div>
             <div className="pt-1 text-xs text-slate-500">{companyVatPayer ? "Skladdagi tannarx: QQS'siz + yetkazib berish" : "Skladdagi tannarx: QQS bilan + yetkazib berish"}</div>
           </div>
-        </div>
         </div>
 
         {orphans.length > 0 && (

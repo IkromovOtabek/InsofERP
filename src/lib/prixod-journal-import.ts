@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { db } from "./db";
 import { audit } from "./audit";
 import { validDate } from "./action";
-import { resolveMaterials } from "./import-materials";
+import { recategorize, resolveMaterials } from "./import-materials";
+import { canEditMaterials } from "./catalog";
+import { isMaterialCategory } from "./material-category";
 import { toMaterialUnit } from "./unit";
 import { createGoodsReceipt, resolveRecipient } from "./receipts";
 import { PAID_IMPORT_TOKEN } from "./receipt-payables";
 import { journalMaterials, journalUnit, type JournalDoc } from "./prixod-journal";
-import type { Role } from "@/generated/prisma";
+import type { MaterialCategory, Role } from "@/generated/prisma";
 
 export type JournalChunkResult = {
   error?: string;
@@ -32,9 +34,12 @@ const MAX_DOCS = 40;
  * `paid` — eski daftar, puli allaqachon to'langan: kirimlar «To'lanmagan kirimlar» ga va yetkazuvchi qarziga tushmaydi
  * (kalit `PAID_IMPORT_TOKEN` bilan), kassaga chiqim yozilmaydi.
  * `supplierVat` — kichik harfli yetkazuvchi nomi → fayldagi qatorlarida QQS bormi (yangi yetkazuvchining «QQS to'lovchisi» belgisi).
+ * `categories` — kichik harfli xomashyo nomi (`journalMaterials` dagi) → sahifada tanlangan kategoriya: yangi xomashyo shu bilan
+ * yaratiladi, mavjudiniki farq qilsa faqat spravochnikni yurituvchi (`canEditMaterials`) uchun o'zgaradi. Mexanikka xabar —
+ * kirimning o'zidan (`queueAvtoReceipt`, 30 soniyada bitta), alohida «yangi karta» xabari yuborilmaydi.
  */
 export async function importJournalDocs(
-  input: { warehouseId: string; docs: JournalDoc[]; supplierVat: Record<string, boolean>; paid?: boolean },
+  input: { warehouseId: string; docs: JournalDoc[]; supplierVat: Record<string, boolean>; paid?: boolean; categories?: Record<string, string> },
   s: { userId: string; role: Role; canAddSuppliers: boolean },
 ): Promise<JournalChunkResult> {
   const res: JournalChunkResult = { created: 0, existed: 0, failed: [] };
@@ -74,9 +79,15 @@ export async function importJournalDocs(
   const allRows = docs.flatMap((d) => d.rows);
   const existing = await db.material.findMany({ select: { name: true, unit: true } });
   const assigned = journalMaterials(allRows, new Map(existing.map((m) => [m.name.trim().toLowerCase(), m.unit])));
-  const { result: mats } = await db.$transaction((tx) =>
-    resolveMaterials(tx, [...assigned.values()].map((m) => ({ name: m.name, unit: m.unit })), true),
-  );
+  const catOf = (name: string): MaterialCategory | null => { const c = input.categories?.[name.trim().toLowerCase()]; return isMaterialCategory(c) ? c : null; };
+  const mats = await db.$transaction(async (tx) => {
+    const r = await resolveMaterials(tx, [...assigned.values()].map((m) => ({ name: m.name, unit: m.unit, category: catOf(m.name) })), true);
+    const fresh = new Set(r.created.map((m) => m.id));
+    const wanted = new Map<string, MaterialCategory>();
+    if (canEditMaterials(s.role)) for (const [k, m] of r.result) { const c = catOf(k); if (c && !fresh.has(m.id)) wanted.set(m.id, c); }
+    await recategorize(tx, wanted, s.userId, "excel-jurnal");
+    return r.result;
+  });
 
   for (const d of docs) {
     try {

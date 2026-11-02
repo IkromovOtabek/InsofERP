@@ -1,4 +1,5 @@
-import type { Prisma } from "@/generated/prisma";
+import type { MaterialCategory, Prisma } from "@/generated/prisma";
+import { audit } from "./audit";
 import { codeFromName } from "./excel";
 import { normalizeUnit, UNIT_FALLBACK } from "./unit";
 
@@ -10,14 +11,14 @@ type Mat = { id: string; code: string; name: string; unit: string };
  * Topilmasa va `createMissing` bo'lsa — yangi xomashyo yaratadi (kod nomdan, birlik Excel'dan yoki "dona").
  * Bir importda bir xil nom ikki marta kelsa bitta yozuv yaratiladi.
  */
-export async function resolveMaterials(tx: Tx, names: { name: string; unit?: string; code?: string }[], createMissing: boolean) {
+export async function resolveMaterials(tx: Tx, names: { name: string; unit?: string; code?: string; category?: MaterialCategory | null }[], createMissing: boolean) {
   const all: Mat[] = await tx.material.findMany({ select: { id: true, code: true, name: true, unit: true } });
   const byKey = new Map<string, Mat>();
   for (const m of all) { byKey.set(m.code.toLowerCase(), m); byKey.set(m.name.toLowerCase().trim(), m); }
   const result = new Map<string, Mat>();
   const missing: string[] = [];
   const created: Mat[] = [];
-  for (const { name, unit, code: fileCode } of names) {
+  for (const { name, unit, code: fileCode, category } of names) {
     const key = name.toLowerCase().trim();
     if (!key || result.has(key)) continue;
     // avval fayldagi kod bo'yicha, keyin nom bo'yicha
@@ -28,8 +29,27 @@ export async function resolveMaterials(tx: Tx, names: { name: string; unit?: str
     let code = wanted;
     for (let n = 2; all.some((m) => m.code === code); n++) code = `${wanted.slice(0, 13)}-${n}`;
     // Birlik kanonik ko'rinishda saqlanadi ("тн" → "t"), aks holda keyingi o'girishlar ishlamaydi
-    const m = await tx.material.create({ data: { code, name: name.trim(), unit: normalizeUnit(unit) ?? UNIT_FALLBACK, isActive: true }, select: { id: true, code: true, name: true, unit: true } });
+    const m = await tx.material.create({ data: { code, name: name.trim(), unit: normalizeUnit(unit) ?? UNIT_FALLBACK, isActive: true, ...(category ? { category } : {}) }, select: { id: true, code: true, name: true, unit: true } });
     all.push(m); byKey.set(code.toLowerCase(), m); byKey.set(key, m); result.set(key, m); created.push(m);
   }
   return { result, missing: [...new Set(missing)], created };
+}
+
+/**
+ * Kirimda (forma, nakladnoy skaneri, Excel jurnal) tanlangan kategoriya — mavjud xomashyolarga yoziladi:
+ * faqat farq qilganlari, har biri AuditLog'da. Avto zapchastga o'tganlar id'lari qaytadi (mexanikka xabar chaqiruvchida).
+ * Ruxsat (`canEditMaterials`) chaqiruvchida tekshiriladi.
+ */
+export async function recategorize(tx: Tx, wanted: Map<string, MaterialCategory>, userId: string, via: string): Promise<string[]> {
+  if (!wanted.size) return [];
+  const before = await tx.material.findMany({ where: { id: { in: [...wanted.keys()] } }, select: { id: true, category: true } });
+  const avto: string[] = [];
+  for (const m of before) {
+    const category = wanted.get(m.id)!;
+    if (category === m.category) continue;
+    await tx.material.update({ where: { id: m.id }, data: { category } });
+    await audit(tx, userId, "UPDATE", "Material", m.id, { category: m.category }, { category, via });
+    if (category === "AVTO_ZAPCHAST") avto.push(m.id);
+  }
+  return avto;
 }

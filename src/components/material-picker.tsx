@@ -11,11 +11,14 @@ import { fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Button, inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import type { MaterialCategory } from "@/generated/prisma";
 
 export type MaterialRow = {
   id: string; name: string; code: string; unit: string; price?: number; balance?: number; groupId?: string | null;
   /** Chiqim formasi: shu skladga jami kirim va jami chiqim — ro'yxatda «Kirim · Chiqim · Qoldi» bo'lib ko'rinadi */
   received?: number; issued?: number;
+  /** Kirim formasi: qatorda kategoriya ko'rsatiladi va o'zgartiriladi */
+  category?: MaterialCategory;
 };
 export type MaterialGroup = PickerGroup;
 

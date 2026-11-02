@@ -21,7 +21,7 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
   const [suppliers, warehouses, materials, groups, accounts, balances, targets, holdings, vatPayer] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, vatPayer: true } }),
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
-    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true } }),
+    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true, category: true } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
     s.role === "DIRECTOR" ? db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }) : Promise.resolve([]),
     // Qoldiq — spravochnikda ko'rinadi
@@ -40,7 +40,7 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
         today={isoDate()}
         suppliers={suppliers}
         warehouses={warehouses}
-        materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, price: prices.get(m.id) ?? 0, balance: bal.get(m.id) ?? 0 }))}
+        materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, category: m.category, price: prices.get(m.id) ?? 0, balance: bal.get(m.id) ?? 0 }))}
         groups={groups}
         canCreate={canEditMaterials(s.role)}
         canAddSupplier={canDo(s, "stock", "suppliers")}
