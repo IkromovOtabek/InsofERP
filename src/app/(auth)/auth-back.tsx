@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { useArendaBrand } from "./brand-panel";
 
 /**
  * Kirish sahifalarida «Ortga»: login → sayt bosh sahifasi, tiklash/ro'yxat → kirish.
@@ -14,6 +15,9 @@ import { ArrowLeft } from "lucide-react";
 export function AuthBack() {
   const path = usePathname();
   const toLogin = path.startsWith("/login/");
+  // Arenda domenida sayt yo'q — kirish sahifasining o'zida «Ortga» ko'rsatilmaydi
+  const arenda = useArendaBrand();
+  if (arenda && !toLogin) return null;
   const label = toLogin ? "Kirish" : "Bosh sahifa";
   return (
     <Link href={toLogin ? "/login" : "/"} title={`Ortga: ${label}`}

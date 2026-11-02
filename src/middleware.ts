@@ -4,6 +4,7 @@ import { OWN_PAGE_ONLY, PATH_HEADER, alwaysOpen, moduleForPath, pathAllowed } fr
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { redirectUrl } from "@/lib/redirect-url";
+import { arendaRedirect } from "@/lib/arenda-host";
 
 /**
  * Login talab qilmaydigan yo'llar: ommaviy taqdimot, saytning mahsulot va maqola sahifalari (uz va /ru/), maxfiylik siyosati (do'konlar uchun), ilova o'rnatish qo'llanmasi, login, QR tekshiruv, Telegram, Insof ECO va amoCRM webhook'lari
@@ -50,6 +51,9 @@ export async function middleware(req: NextRequest) {
     } catch { role = null; }
   }
   const { pathname } = req.nextUrl;
+  // Arenda domeni (lib/arenda-host.ts): u yerda faqat Arenda bo'limi; asosiy domendagi /arenda — o'sha domenga
+  const arenda = arendaRedirect(req, role);
+  if (arenda) return arenda;
 
   // "/" — ommaviy sayt (landing). Xodim tizimga kirgan bo'lsa ham shu yerda qoladi:
   // kabinetga o'tish uchun sahifada alohida havola bor.

@@ -180,8 +180,8 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
   );
 }
 
-function SidebarInner({ items, user, brand, apk, ios, onNavigate, collapsed, onToggle }:
-  { items: NavItem[]; user: User; brand: string; apk?: string | null; ios?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
+function SidebarInner({ items, user, brand, product, apk, ios, onNavigate, collapsed, onToggle }:
+  { items: NavItem[]; user: User; brand: string; product: string; apk?: string | null; ios?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
     <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-(--sidebar) text-slate-700">
       {/* Yig'ish/yoyish strelkasi — chekkaga osilgan dumaloq tugma. Strelka yo'nalishini CSS buradi. */}
@@ -195,7 +195,7 @@ function SidebarInner({ items, user, brand, apk, ios, onNavigate, collapsed, onT
       <div className="sb-row flex items-center gap-2.5 px-5 pb-4 pt-5">
         <LogoMark className="h-9 w-9 shrink-0" />
         <div className="sb-fade min-w-0">
-          <div className="truncate text-[15px] font-semibold text-slate-900">Insof ERP</div>
+          <div className="truncate text-[15px] font-semibold text-slate-900">{product}</div>
           {/* Korxona nomi — ro'yxatdan o'tgan yuridik nom, kirillga o'girilmaydi */}
           <div data-no-translit className="truncate text-[11px] text-slate-500">{brand}</div>
         </div>
@@ -296,8 +296,8 @@ function currentLabel(path: string, items: NavItem[]) {
 /** Ochilganda chap menyu yig'iladigan sahifalar — jadval ekranning butun eniga yoyilsin (saqlangan tanlov o'zgarmaydi). */
 const WIDE_PAGES = [/^\/orders\/kun\//];
 
-export function AppShell({ items, user, brand, ai = false, apk = null, ios = null, tour, children }:
-  { items: NavItem[]; user: User; brand: string; ai?: boolean; apk?: string | null; ios?: string | null; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
+export function AppShell({ items, user, brand, product = "Insof ERP", ai = false, apk = null, ios = null, tour, children }:
+  { items: NavItem[]; user: User; brand: string; product?: string; ai?: boolean; apk?: string | null; ios?: string | null; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
@@ -334,7 +334,7 @@ export function AppShell({ items, user, brand, ai = false, apk = null, ios = nul
       <NavHistoryTracker />
       {/* Desktop sidebar */}
       <aside data-tour="sidebar" className="fixed inset-y-0 left-0 z-30 hidden w-[var(--sb-w)] transition-[width] duration-200 lg:block">
-        <SidebarInner items={items} user={user} brand={brand} apk={apk} ios={ios} collapsed={collapsed} onToggle={toggleSidebar} />
+        <SidebarInner items={items} user={user} brand={brand} product={product} apk={apk} ios={ios} collapsed={collapsed} onToggle={toggleSidebar} />
       </aside>
 
       {/* Mobile drawer */}
@@ -342,7 +342,7 @@ export function AppShell({ items, user, brand, ai = false, apk = null, ios = nul
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menyu">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
           <aside className="absolute inset-y-0 left-0 w-[min(20rem,86vw)] shadow-(--shadow-pop) animate-fade-up">
-            <SidebarInner items={items} user={user} brand={brand} apk={apk} ios={ios} onNavigate={() => setOpen(false)} />
+            <SidebarInner items={items} user={user} brand={brand} product={product} apk={apk} ios={ios} onNavigate={() => setOpen(false)} />
             <button onClick={() => setOpen(false)} aria-label="Menyuni yopish" className="absolute right-2 top-3 flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={20} /></button>
           </aside>
         </div>

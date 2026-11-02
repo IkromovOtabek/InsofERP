@@ -229,6 +229,24 @@ Tekshirish: `✓ Deploy tugadi`; «Go-live ro'yxati» 9-band (demo/test ma'lumot
      `TELEGRAM_WEBHOOK_SECRET` almashtirilsa — webhook'ni qayta o'rnating.
    - **ECO** — ECO'da `integration:create` bergan `ECO_API_KEY` va `ECO_WEBHOOK_SECRET` (yaratilgan tasodifiy qiymat o'rniga).
 
+## Arenda alohida domenda (`arenda.insof-erp.uz`)
+
+Shu korxona jarayoni va bazasi, faqat boshqa domen: u yerda faqat Arenda bo'limi ochiladi (menyu, kirish sahifasi,
+sarlavha «Insof Arenda»), asosiy domendagi `/arenda` shu domenga o'tkaziladi, kvitansiya QR'i ham shu domen bilan.
+Kod: `src/lib/arenda-host.ts`. Sessiya domenga bog'liq — arenda domeniga alohida kiriladi; ruxsati yo'q hisob kiritilmaydi.
+`arenda` — band nom (`provision.ts`), shu nomli korxona ochilmaydi.
+
+1. DNS: `arenda.insof-erp.uz` A yozuvi → server IP (wildcard yo'q).
+2. nginx sayti (insof porti 3000) va sertifikat:
+   ```bash
+   sudo sh -c 'sed -e "s/__DOMAIN__/arenda.insof-erp.uz/g" -e "s/__PORT__/3000/g" /usr/local/share/insof/nginx-tenant.conf > /etc/nginx/sites-available/insof-arenda'
+   sudo ln -sf /etc/nginx/sites-available/insof-arenda /etc/nginx/sites-enabled/insof-arenda
+   sudo nginx -t && sudo systemctl reload nginx
+   sudo certbot --nginx -d arenda.insof-erp.uz
+   ```
+3. `tenants/insof.env` ga `ARENDA_HOST=arenda.insof-erp.uz`, keyin `insof-erp@insof` ni qayta ishga tushirish
+   (kod shu o'zgarish bilan deploy qilingan bo'lishi kerak). Eski QR'lar (`insof-erp.uz/k/…`) ishlashda davom etadi.
+
 ## SSO kaliti (IT «Kirish») va orqaga moslik
 
 Panel tokenni korxona uchun hosila kalit bilan imzolaydi: `CONTROL_SSO_KEY = HMAC-SHA256(CONTROL_SECRET, "insof-sso:<slug>")`.

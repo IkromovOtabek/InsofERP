@@ -23,7 +23,7 @@ const run = promisify(execFile);
  */
 
 export const SLUG_RE = /^[a-z][a-z0-9-]{1,29}$/;
-const RESERVED = new Set(["admin", "superadmin", "www", "api", "app", "eco", "mail", "control", "static", "test"]);
+const RESERVED = new Set(["admin", "superadmin", "www", "api", "app", "eco", "mail", "control", "static", "test", "arenda"]);
 // Birinchi korxona porti. Lokal sinovda boshqa jarayonlar bilan to'qnashmasin deb TENANT_FIRST_PORT bilan o'zgartiriladi.
 const firstPort = () => {
   const n = Number(process.env.TENANT_FIRST_PORT);

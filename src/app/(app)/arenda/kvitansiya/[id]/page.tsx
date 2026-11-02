@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { requirePage } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { publicOrigin } from "@/lib/public-url";
+import { arendaOrigin } from "@/lib/arenda-host";
 import { date, dateTime, fmtNum } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { numWords } from "@/lib/num-words";
@@ -20,7 +21,9 @@ export default async function RentReceiptPage({ params, searchParams }: { params
   await requirePage("/arenda");
   const { id } = await params;
   const sp = await searchParams;
-  const [r, company, { origin, fromEnv }] = await Promise.all([rentReceipt(id), getCompany(), publicOrigin()]);
+  // QR arenda domeniga (ARENDA_HOST) ishora qiladi, u berilmagan bo'lsa — APP_URL / so'rov hostiga
+  const arenda = arendaOrigin();
+  const [r, company, { origin, fromEnv }] = await Promise.all([rentReceipt(id), getCompany(), arenda ? { origin: arenda, fromEnv: true } : publicOrigin()]);
   if (!r) notFound();
   const url = `${origin}${rentReceiptPath(id)}`;
   const qr = await QRCode.toString(url, { type: "svg", margin: 1, width: 96, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#ffffff" } });

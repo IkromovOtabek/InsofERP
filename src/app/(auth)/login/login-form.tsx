@@ -4,9 +4,9 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import { KeyRound, LogIn, Send, Sparkles, UserPlus, UserRound } from "lucide-react";
 import { confirmLoginCodeAction, loginAction, quickLoginAction, requestLoginCodeAction } from "./actions";
-import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
+import { Button, Callout, Field, FormError, Input, PasswordInput } from "@/components/ui";
 import { Logo } from "@/components/logo";
-import { BrandPanel } from "../brand-panel";
+import { BrandPanel, useArendaBrand } from "../brand-panel";
 import { cn } from "@/lib/utils";
 import { CODE_DELIVERY_HINT } from "@/lib/telegram/otp-text";
 
@@ -14,8 +14,10 @@ export type TestUser = { login: string; fullName: string; roleLabel: string };
 
 type Mode = "password" | "code";
 
-export function LoginForm({ testMode, testUsers }: { testMode: boolean; testUsers: TestUser[] }) {
+export function LoginForm({ testMode, testUsers, notice }: { testMode: boolean; testUsers: TestUser[]; notice?: string }) {
   const [mode, setMode] = useState<Mode>("password");
+  // Arenda domeni: o'z kabineti, ro'yxatdan o'tish yo'q (lib/arenda-host.ts)
+  const arenda = useArendaBrand();
 
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
@@ -26,10 +28,11 @@ export function LoginForm({ testMode, testUsers }: { testMode: boolean; testUser
           <div className="mb-6 lg:hidden">
             <Logo className="h-12" />
           </div>
-          <h2 className="text-2xl font-semibold tracking-tight">Tizimga kirish</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">{arenda ? "Arenda kabinetiga kirish" : "Tizimga kirish"}</h2>
           <p className="mt-1 text-sm text-slate-500">
             Login va parol bilan, yoki Telegram orqali keladigan bir martalik kod bilan kiring.
           </p>
+          {notice && <div className="mt-4"><Callout tone="warning" title="Ruxsat yo'q">{notice}</Callout></div>}
 
           {/* Yo'l tanlovi: parol / Telegram kod */}
           <div className="mt-6 grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1" role="tablist">
@@ -41,12 +44,14 @@ export function LoginForm({ testMode, testUsers }: { testMode: boolean; testUser
             {mode === "password" ? <PasswordLogin /> : <CodeLogin />}
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-1.5 border-t border-slate-200 pt-5 text-sm text-slate-500">
-            Hisobingiz yo&apos;qmi?
-            <Link href="/login/register" className="inline-flex min-h-11 items-center gap-1 font-semibold text-slate-900 underline-offset-4 hover:underline">
-              <UserPlus size={15} /> Ro&apos;yxatdan o&apos;tish
-            </Link>
-          </div>
+          {!arenda && (
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-1.5 border-t border-slate-200 pt-5 text-sm text-slate-500">
+              Hisobingiz yo&apos;qmi?
+              <Link href="/login/register" className="inline-flex min-h-11 items-center gap-1 font-semibold text-slate-900 underline-offset-4 hover:underline">
+                <UserPlus size={15} /> Ro&apos;yxatdan o&apos;tish
+              </Link>
+            </div>
+          )}
 
           {testMode && <TestUsers users={testUsers} />}
         </div>

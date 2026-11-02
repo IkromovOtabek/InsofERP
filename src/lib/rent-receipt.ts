@@ -4,6 +4,7 @@ import { qrKey, qrKeyValid } from "./qr-key";
 import { RENT_ELEC_CATEGORY, RENT_METHOD_LABEL, monthLabel, rentFor } from "./rent";
 import { shopLedger } from "./rent-tenant";
 import { botEnabled, sendMessage } from "./telegram/api";
+import { arendaOrigin } from "./arenda-host";
 
 /**
  * Arenda kvitansiyasi — ijarachidan qabul qilingan pul (RentTx INCOME) uchun hujjat.
@@ -17,8 +18,10 @@ import { botEnabled, sendMessage } from "./telegram/api";
 export const rentReceiptPath = (id: string) => `/k/${id}?k=${qrKey("rent-kv", id)}`;
 export const rentReceiptValid = (id: string, k: string | undefined | null) => qrKeyValid("rent-kv", id, k);
 
-/** Tashqi manzil (QR va Telegram havolasi uchun) — faqat `APP_URL` dan; lokal manzil bo'lsa null. */
+/** Tashqi manzil (QR va Telegram havolasi uchun): arenda domeni (`ARENDA_HOST`), bo'lmasa `APP_URL`; lokal manzil bo'lsa null. */
 export function appUrl(): string | null {
+  const arenda = arendaOrigin();
+  if (arenda) return arenda;
   const env = process.env.APP_URL?.trim().replace(/\/+$/, "");
   return env && !/localhost|127\.0\.0\.1/.test(env) ? env : null;
 }

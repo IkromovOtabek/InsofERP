@@ -1,7 +1,11 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { login } from "@/lib/auth";
+import { getSession, login, logout } from "@/lib/auth";
+import { ARENDA_DENIED, ARENDA_PATH, isArendaHost } from "@/lib/arenda-host";
+import { OWN_PAGE_ONLY, moduleForPath, pathAllowed } from "@/lib/nav";
+import { pathOff } from "@/lib/platform-modules";
 import { looksLikePhone, loginWithAppPhone } from "@/lib/eco/app-login";
 import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
 import { confirmLoginCode, requestLoginCode } from "@/lib/code-login";
@@ -12,6 +16,21 @@ import { isTestMode } from "@/lib/test-mode";
 const CODE_REQ_PER_IP_HOUR = 10;
 const CODE_REQ_LIMITED = "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling.";
 import { companySuspension, SUSPENDED_MESSAGE } from "@/lib/tenant";
+
+/**
+ * Kirgandan keyingi sahifa. Arenda domenida (lib/arenda-host.ts) — /arenda; u yerga ruxsati yo'q hisob kiritilmaydi:
+ * yangi sessiya darhol yopiladi va forma sababini ko'rsatadi (aks holda arenda domenida ERP sahifasi ochilardi).
+ */
+async function homeAfterLogin(): Promise<{ to: string } | { error: string }> {
+  if (!isArendaHost(await headers())) return { to: "/dashboard" };
+  const s = await getSession();
+  const own = s ? OWN_PAGE_ONLY[s.role] : undefined;
+  if (s && (!own || own === ARENDA_PATH) && !pathOff(ARENDA_PATH, moduleForPath(ARENDA_PATH)) && pathAllowed(ARENDA_PATH, s.role, s.perms)) {
+    return { to: ARENDA_PATH };
+  }
+  await logout();
+  return { error: ARENDA_DENIED };
+}
 
 export async function loginAction(_prev: { error?: string } | undefined, formData: FormData) {
   const loginName = String(formData.get("login") ?? "").trim();
@@ -36,7 +55,9 @@ export async function loginAction(_prev: { error?: string } | undefined, formDat
       return { error: r.message };
     }
     recordSuccess(key);
-    redirect("/dashboard");
+    const home = await homeAfterLogin();
+    if ("error" in home) return home;
+    redirect(home.to);
   }
 
   const s = await login(loginName, password);
@@ -46,7 +67,9 @@ export async function loginAction(_prev: { error?: string } | undefined, formDat
     return { error: "Login yoki parol noto'g'ri" };
   }
   recordSuccess(loginName);
-  redirect("/dashboard");
+  const home = await homeAfterLogin();
+  if ("error" in home) return home;
+  redirect(home.to);
 }
 
 /* ─────────────── Telegram (bir martalik kod) bilan kirish ─────────────── */
@@ -86,7 +109,9 @@ export async function confirmLoginCodeAction(_prev: { error?: string } | undefin
     return { error: r.error };
   }
   recordSuccess(key);
-  redirect("/dashboard");
+  const home = await homeAfterLogin();
+  if ("error" in home) return home;
+  redirect(home.to);
 }
 
 /* ─────────────── Test rejimida tez kirish (FAQAT test/dev) ─────────────── */
@@ -98,5 +123,6 @@ export async function quickLoginAction(loginName: string) {
   const password = process.env.TEST_USER_PASSWORD || "Test2026";
   const s = await login(loginName, password);
   if (!s) return;
-  redirect("/dashboard");
+  const home = await homeAfterLogin();
+  if ("to" in home) redirect(home.to);
 }
