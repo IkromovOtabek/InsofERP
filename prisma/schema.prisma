@@ -804,6 +804,9 @@ model FaceTemplate {
   photo       String?
   /// Yuz aniqlash ishonchi (0..1) — sifat nazorati uchun
   score       Float?
+  /// Moslashuvchan namuna: ro'yxatga olishda emas, ishonchli tanishdan keyin avtomatik qo'shilgan (`learnFaceSample`,
+  /// `lib/face-id.ts`). Soni cheklangan, eng eskisi almashtiriladi; qo'lda olinganlar (false) avtomatik o'chirilmaydi.
+  auto        Boolean  @default(false)
   createdById String?
   createdAt   DateTime @default(now())
 

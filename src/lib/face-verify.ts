@@ -2,7 +2,7 @@ import { readFile } from "fs/promises";
 import { db } from "@/lib/db";
 import { FaceImageError, compareFaces, faceAiFallbackEnabled, faceImage } from "@/lib/ai/face";
 import { FaceBusyError, faceAnalyses, faceDescriptor, faceVariants } from "@/lib/face-descriptor";
-import { MATCH_MAX_DISTANCE, MATCH_MIN_MARGIN, type Probe, distance, faceTemplates, rank, similarity } from "@/lib/face-id";
+import { MATCH_MAX_DISTANCE, MATCH_MIN_MARGIN, type Probe, distance, faceTemplates, learnFaceSample, rank, similarity } from "@/lib/face-id";
 import { MAX_FACE_PHOTO_CHARS } from "@/lib/face-id-const";
 import { claimPhotoHash, consumeFaceNonce, photoHash } from "@/lib/face-replay";
 import { LIVENESS_FRAMES, type LivenessTask, MAX_FACE_FRAMES_TOTAL_CHARS, POSE_SLACK, SEQ_MAX_DISTANCE, checkLiveness, frontalFrames, livenessRequired } from "@/lib/face-liveness";
@@ -164,7 +164,9 @@ export async function verifyFaceRequest(employeeId: string, who: string, input: 
  *     tekshiriladi: aks holda kamera namunaga nisbatan ko'zgu-aks, topshiriq kadrining aksi esa hisoblanmagan
  *     (navbat vaqti tejaladi) — ~0,26 lik aks farqi qo'shilib o'sha odam rad bo'lardi; u holda kadrning shu odamniki
  *     ekani `SEQ_MAX_DISTANCE` bilan (kiosk bilan bir xil) tekshiriladi;
- *   · topshiriq bajarilgan va kadrlar qotgan emas (`checkLiveness`).
+ *   · topshiriq bajarilgan va kadrlar qotgan emas (`checkLiveness`);
+ *   · hammasi o'tsa — to'g'ri qaragan kadr vektori moslashuvchan namuna bo'lishi mumkin (`learnFaceSample`, o'z shartlari
+ *     bilan). Bitta kadrli eski yo'l (`verifyEmployeeFace`, jonliliksiz) va AI zaxirasi namuna qo'shmaydi.
  */
 export async function verifyEmployeeFaceFrames(employeeId: string, who: string, files: File[], task: LivenessTask, ctx: { userId: string }): Promise<FaceVerify> {
   const bufs = await Promise.all(files.map(async (f) => Buffer.from(await f.arrayBuffer())));
@@ -191,10 +193,11 @@ export async function verifyEmployeeFaceFrames(employeeId: string, who: string, 
 
   // Tanish — to'g'ri qaragan kadrlar (va aksi) bo'yicha; namuna yo'q bo'lsa (AI zaxirasi yoqiq) — asosiy kadr profil surati bilan
   const frontal = frontalFrames(all);
+  const probes = frontal.map((i) => faceVariants(all[i]!));
   let primary: FaceVerify;
   let mirrored = false;
   if (own.length) {
-    const m = await matchTemplates(employeeId, who, own, frontal.map((i) => faceVariants(all[i]!)));
+    const m = await matchTemplates(employeeId, who, own, probes);
     primary = m.v;
     mirrored = m.mirror;
   } else primary = await verifyByProfilePhoto(employeeId, who, bufs[0]!);
@@ -213,7 +216,9 @@ export async function verifyEmployeeFaceFrames(employeeId: string, who: string, 
 
   const lv = checkLiveness(task, all);
   if (!lv.ok) return live(`${lv.reason}; ${lv.detail}`);
-  return { ...primary, reason: `${primary.reason}; jonlilik ${task} (${lv.detail})` };
+  // Moslashuvchan namuna — tanish ("begona odam" qoidasi bilan) va jonlilik o'tgandan keyingina (qattiq shartlar — `learnFaceSample`)
+  const learned = own.length > 0 && (await learnFaceSample(employeeId, probes, ctx));
+  return { ...primary, reason: `${primary.reason}; jonlilik ${task} (${lv.detail})${learned ? "; namuna yangilandi" : ""}` };
 }
 
 export async function verifyEmployeeFace(employeeId: string, who: string, photo: File, ctx: { userId: string }): Promise<FaceVerify> {

@@ -17,6 +17,7 @@ import {
   type FaceMode, type FaceScanFail, type FaceScanResult,
 } from "@/lib/face-id-const";
 import type { Session } from "@/lib/auth";
+import type { Prisma } from "@/generated/prisma";
 
 /**
  * Davomat — ERP'ning o'z Face ID skaneri (Bosh sahifa → «Davomat»). Telefonning Face ID'si emas:
@@ -37,7 +38,9 @@ import type { Session } from "@/lib/auth";
  *   · ro'yxatga olishda yuz boshqa xodim kartasidagi yuzga mos kelsa rad etiladi (bir odam — ikki karta);
  *   · mijoz yuborgan vektorga ko'r-ko'rona ishonilmaydi: server dalil-kadrdan vektorni o'zi qayta hisoblaydi
  *     (`lib/face-descriptor.ts`) va u yuborilgan vektorlardan biriga yaqin bo'lishi shart (`PHOTO_PROBE_MAX`) —
- *     aks holda (yoki kadrda yuz topilmasa) hech narsa yozilmaydi.
+ *     aks holda (yoki kadrda yuz topilmasa) hech narsa yozilmaydi;
+ *   · moslashuvchan namunalar (`learnFaceSample`) faqat mobil jonlilik ketma-ketligidan, qattiq chegaralar bilan va
+ *     qo'lda olingan namunalarga langar qilib qo'shiladi — veb skaner vektorlaridan o'rganilmaydi.
  *
  * Yozuv — HR tabeli va sex davomatidagi aynan o'sha `Attendance` (employeeId + date), manba `FACE_ID`.
  */
@@ -61,6 +64,17 @@ const ENROLL_SELF_MAX = 0.62;
  * birinchi vektor olingan aynan o'sha video kadrdan kesiladi — bir kadr qayta kodlanganda masofa odatda < 0,15.
  */
 export const PHOTO_PROBE_MAX = 0.35;
+/**
+ * Moslashuvchan namuna (`learnFaceSample`): tasdiqlangan tanishda o'z namunasigacha masofa shundan kichik bo'lsa — kadr
+ * vektori xodimning namunalariga qo'shiladi (yorug'lik, soqol, yosh o'zgarishiga moslashish). Chegaradan ancha qattiq.
+ */
+export const ADAPT_MAX_DISTANCE = 0.35;
+/** Mavjud namunaga shundan yaqin kadr yangi narsa bermaydi — o'rin band qilmasin. */
+const ADAPT_MIN_DISTANCE = 0.12;
+/** Bir xodimdagi avtomatik namunalar soni — oshsa eng eskisi almashtiriladi. */
+export const ADAPT_MAX_AUTO = 3;
+/** Avtomatik namunalar orasidagi eng kichik vaqt — bir kunning kadrlari barcha o'rinni egallamasin (kelish va ketish o'tadi). */
+const ADAPT_MIN_INTERVAL_MS = 6 * 3_600_000;
 
 // ───────────────────────── Ruxsat ─────────────────────────
 
@@ -100,7 +114,7 @@ export type Candidate = { employeeId: string; descriptors: number[][] };
 
 // ───────────────────────── Namunalar keshi ─────────────────────────
 
-export type TemplateRow = { employeeId: string; descriptor: number[]; active: boolean };
+export type TemplateRow = { employeeId: string; descriptor: number[]; active: boolean; /** moslashuvchan (avtomatik) namuna */ auto: boolean };
 type TemplateCache = { sig: string; at: number; rows: TemplateRow[] };
 /** Kesh muddati — imzo o'zgarmasa ham shundan keyin qayta o'qiladi (ehtiyot uchun). */
 const TEMPLATE_TTL_MS = 60_000;
@@ -120,9 +134,9 @@ export async function faceTemplates(): Promise<TemplateRow[]> {
   const sig = `${s?.n ?? 0}:${s?.at ? new Date(s.at).getTime() : 0}:${s?.act ?? 0}`;
   const c = TC.__insofFaceTemplates;
   if (c && c.sig === sig && Date.now() - c.at < TEMPLATE_TTL_MS) return c.rows;
-  const rows = (await db.faceTemplate.findMany({ select: { employeeId: true, descriptor: true, employee: { select: { isActive: true, firedAt: true } } } }))
+  const rows = (await db.faceTemplate.findMany({ select: { employeeId: true, descriptor: true, auto: true, employee: { select: { isActive: true, firedAt: true } } } }))
     .filter((r) => r.descriptor.length === FACE_DIM)
-    .map((r) => ({ employeeId: r.employeeId, descriptor: r.descriptor, active: r.employee.isActive && !r.employee.firedAt }));
+    .map((r) => ({ employeeId: r.employeeId, descriptor: r.descriptor, active: r.employee.isActive && !r.employee.firedAt, auto: r.auto }));
   TC.__insofFaceTemplates = { sig, at: Date.now(), rows };
   return rows;
 }
@@ -158,24 +172,31 @@ export type Probe = number[][];
 export type Aggregate = "mean" | "min";
 export type Ranked = { employeeId: string; d: number; /** eng yaqin masofa ko'zgu-aks variantida chiqdi */ mirror: boolean };
 
-/** Bitta probe → namunalar: eng kichik masofa va u ko'zgu-aks variantidami. */
-function probeBest(probe: Probe, templates: number[][]) {
-  let d = Infinity, mirror = false;
+type Best = { d: number; mirror: boolean; /** eng yaqin chiqqan variant vektori */ v: number[] | null };
+
+/** Bitta probe → namunalar: eng kichik masofa, u ko'zgu-aks variantidami va o'sha variant. */
+function probeBest(probe: Probe, templates: number[][]): Best {
+  const r: Best = { d: Infinity, mirror: false, v: null };
   probe.forEach((v, i) => {
-    for (const t of templates) { const x = distance(v, t); if (x < d) { d = x; mirror = i > 0; } }
+    for (const t of templates) { const x = distance(v, t); if (x < r.d) { r.d = x; r.mirror = i > 0; r.v = v; } }
   });
-  return { d, mirror };
+  return r;
+}
+
+/** Barcha probe va variantlar bo'yicha eng yaqini ("min" yig'ish). */
+function nearest(probes: Probe[], templates: number[][]): Best {
+  return probes.map((p) => probeBest(p, templates)).reduce((m, x) => (x.d < m.d ? x : m), { d: Infinity, mirror: false, v: null });
 }
 
 /** Har xodim uchun probe'lar bo'yicha masofa (`Aggregate`). O'sish tartibida. */
 export function rank(probes: Probe[], list: Candidate[], agg: Aggregate = "mean"): Ranked[] {
   return list
     .map((c) => {
-      const per = probes.map((p) => probeBest(p, c.descriptors));
       if (agg === "min") {
-        const best = per.reduce((m, x) => (x.d < m.d ? x : m), { d: Infinity, mirror: false });
+        const best = nearest(probes, c.descriptors);
         return { employeeId: c.employeeId, d: best.d, mirror: best.mirror };
       }
+      const per = probes.map((p) => probeBest(p, c.descriptors));
       return { employeeId: c.employeeId, d: per.reduce((sum, x) => sum + x.d, 0) / per.length, mirror: per.some((x) => x.mirror) };
     })
     .sort((a, b) => a.d - b.d);
@@ -448,6 +469,7 @@ export async function saveEnrollment(s: FaceActor, employeeId: string, samples: 
 
   const stored = await savePhoto(e.id);
   const old = await db.$transaction(async (tx) => {
+    await lockFace(tx, e.id);
     const old = await tx.faceTemplate.findMany({ where: { employeeId: e.id }, select: { photo: true } });
     await tx.faceTemplate.deleteMany({ where: { employeeId: e.id } });
     await tx.faceTemplate.createMany({
@@ -467,6 +489,7 @@ export async function deleteFace(s: FaceActor, employeeId: string): Promise<{ ok
   const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true } });
   if (!e) return { ok: false, error: "Xodim topilmadi" };
   const old = await db.$transaction(async (tx) => {
+    await lockFace(tx, e.id);
     const old = await tx.faceTemplate.findMany({ where: { employeeId: e.id }, select: { photo: true } });
     if (!old.length) return old;
     await tx.faceTemplate.deleteMany({ where: { employeeId: e.id } });
@@ -479,6 +502,73 @@ export async function deleteFace(s: FaceActor, employeeId: string): Promise<{ ok
   return { ok: true, note: old.length ? `${e.fullName}: yuz ma'lumoti o'chirildi` : "O'chiriladigan yuz ma'lumoti yo'q" };
 }
 
+/** Bir xodim namunalarini o'zgartiruvchi tranzaksiyalar navbat bilan (ro'yxatga olish / o'chirish / moslashuvchan namuna). */
+const lockFace = (tx: Prisma.TransactionClient, employeeId: string) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"face:" + employeeId}))`;
+
+// ───────────────────────── Moslashuvchan namuna ─────────────────────────
+
+/**
+ * Ishonchli tanishdan keyin kadr vektorini xodimning namunalariga qo'shadi (`auto`) — vaqt o'tib yuz o'zgarsa (yorug'lik,
+ * soqol, yosh) ham tanilsin. Chaqiruvchi kafolatlaydi: tanish o'tgan ("begona odam" qoidasi bilan) va jonlilik
+ * topshirig'i bajarilgan, vektorlar serverda kadrdan hisoblangan (veb skaner vektori brauzerdan keladi — o'rganilmaydi).
+ * Bu yerda qo'shimcha, qattiqroq shartlar — birortasi bajarilmasa hech narsa yozilmaydi:
+ *   · eng yaqin o'z namunasigacha `ADAPT_MIN_DISTANCE` ≤ d < `ADAPT_MAX_DISTANCE`;
+ *   · saqlanadigan vektor QO'LDA olingan namunalarga ham `MATCH_MAX_DISTANCE` ichida — avtomatik namunalar bir-biriga
+ *     tayanib asl yuzdan zanjir bo'lib uzoqlashmaydi;
+ *   · boshqa xodimlarning (faol-nofaol hammasi) eng yaqini o'zinikidan kamida `MATCH_MIN_MARGIN` uzoq (kiosk 1:N
+ *     "aniq emas" qoidasi) va saqlanadigan vektor ularga `DUPLICATE_DISTANCE` dan yaqin emas (ro'yxatga olish qoidasi);
+ *   · oxirgi avtomatik namunadan `ADAPT_MIN_INTERVAL_MS` o'tgan.
+ * Avtomatik namunalar ≤ `ADAPT_MAX_AUTO`, jami ≤ `ENROLL_MAX_SAMPLES`: joy bo'lmasa eng eski AVTOMATIK namuna
+ * almashtiriladi, qo'lda olinganlar hech qachon o'chirilmaydi (o'rin qolmasa — qo'shilmaydi). Saqlanadigan vektor — eng
+ * yaqin chiqqan variant (ko'zgu-aks bo'lsa aksi: namunalar bilan bir yo'nalishda). Qoidalar faqat `distance` va
+ * yuqoridagi chegaralarga tayanadi — model almashsa chegaralar bilan birga moslanadi. Xato tanishni buzmaydi (faqat log).
+ */
+export async function learnFaceSample(employeeId: string, probes: Probe[], ctx: { userId: string }): Promise<boolean> {
+  try {
+    return await learn(employeeId, probes, ctx.userId);
+  } catch (e) {
+    console.error("[face-id] moslashuvchan namuna saqlanmadi:", (e as Error).message);
+    return false;
+  }
+}
+
+const anchored = (v: number[], manual: number[][]) => manual.some((t) => distance(v, t) <= MATCH_MAX_DISTANCE);
+
+async function learn(employeeId: string, probes: Probe[], userId: string): Promise<boolean> {
+  const rows = await faceTemplates();
+  const own = rows.filter((r) => r.employeeId === employeeId);
+  const manual = own.filter((r) => !r.auto).map((r) => r.descriptor);
+  if (!manual.length || !probes.length) return false;
+  const best = nearest(probes, own.map((r) => r.descriptor));
+  const v = best.v;
+  if (!v || !(best.d >= ADAPT_MIN_DISTANCE && best.d < ADAPT_MAX_DISTANCE) || !anchored(v, manual)) return false;
+  const others = rows.filter((r) => r.employeeId !== employeeId).map((r) => r.descriptor);
+  if (others.length) {
+    if (nearest(probes, others).d < best.d + MATCH_MIN_MARGIN) return false;
+    if (others.some((t) => distance(v, t) < DUPLICATE_DISTANCE)) return false;
+  }
+
+  const added = await db.$transaction(async (tx) => {
+    await lockFace(tx, employeeId);
+    const cur = await tx.faceTemplate.findMany({ where: { employeeId }, select: { id: true, auto: true, descriptor: true, createdAt: true }, orderBy: { createdAt: "asc" } });
+    const autos = cur.filter((t) => t.auto);
+    const man = cur.filter((t) => !t.auto).map((t) => t.descriptor);
+    // Kesh o'qilgandan beri qayta ro'yxatga olingan / o'chirilgan bo'lishi mumkin — langar bazadagi namunalar bo'yicha
+    if (!man.length || !anchored(v, man)) return false;
+    const last = autos.at(-1);
+    if (last && Date.now() - last.createdAt.getTime() < ADAPT_MIN_INTERVAL_MS) return false;
+    const cap = Math.min(ADAPT_MAX_AUTO, ENROLL_MAX_SAMPLES - man.length);
+    if (cap <= 0) return false;
+    const drop = autos.slice(0, Math.max(0, autos.length - cap + 1)).map((t) => t.id);
+    if (drop.length) await tx.faceTemplate.deleteMany({ where: { id: { in: drop }, auto: true } });
+    await tx.faceTemplate.create({ data: { employeeId, descriptor: v, auto: true, createdById: userId } });
+    await audit(tx, userId, "CREATE", "FaceTemplate", employeeId, drop.length ? { avtoNamuna: autos.length } : undefined, { avtoNamuna: autos.length - drop.length + 1, masofa: Math.round(best.d * 1000) / 1000 });
+    return true;
+  });
+  if (added) invalidateFaceTemplates();
+  return added;
+}
+
 // ───────────────────────── Sahifa ma'lumotlari ─────────────────────────
 
 export type RosterRow = {
@@ -486,11 +576,11 @@ export type RosterRow = {
   samples: number; enrolledAt: string | null; templatePhotoId: string | null;
 };
 
-/** Faol xodimlar va ularning yuz namunalari soni (ro'yxatga olish jadvali). */
+/** Faol xodimlar va ularning yuz namunalari soni (ro'yxatga olish jadvali) — faqat qo'lda olinganlar (moslashuvchanlar sanalmaydi). */
 export async function faceRoster(): Promise<RosterRow[]> {
   const [emps, tpl] = await Promise.all([
     db.employee.findMany({ where: { isActive: true, firedAt: null }, orderBy: [{ fullName: "asc" }], select: { id: true, fullName: true, position: true } }),
-    db.faceTemplate.findMany({ select: { id: true, employeeId: true, photo: true, createdAt: true }, orderBy: { createdAt: "asc" } }),
+    db.faceTemplate.findMany({ where: { auto: false }, select: { id: true, employeeId: true, photo: true, createdAt: true }, orderBy: { createdAt: "asc" } }),
   ]);
   const by = new Map<string, { n: number; at: Date; photoId: string | null }>();
   for (const t of tpl) {

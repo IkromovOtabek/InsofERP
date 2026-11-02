@@ -4,7 +4,7 @@ import { FaceImageError } from "@/lib/ai/face";
 import { FaceBusyError, faceAnalyses, faceVariants, type FaceAnalysis } from "@/lib/face-descriptor";
 import {
   type FaceActor, type Match, type Probe, canEnrollFaces, checkEnrollment, deleteFace, distance, faceRoster, facePhotoFor,
-  faceScope, matchFace, rank, recordScan, saveEnrollment, scanGate, similarity, todayFaceLog, enrollGate,
+  faceScope, learnFaceSample, matchFace, rank, recordScan, saveEnrollment, scanGate, similarity, todayFaceLog, enrollGate,
 } from "@/lib/face-id";
 import { ENROLL_MAX_SAMPLES, ENROLL_MIN_SAMPLES, type FaceMode, type FaceScanFail, type FaceScanResult } from "@/lib/face-id-const";
 import { checkLiveness, frontalFrames, livenessRequired, LIVENESS_FRAMES, SEQ_MAX_DISTANCE, type LivenessTask } from "@/lib/face-liveness";
@@ -140,7 +140,11 @@ export async function faceKioskScan(u: MobileUser, raw: unknown): Promise<FaceSc
   if (m.kind === "match" && !(await claimAll(fr.bufs, m.employeeId, u.id))) {
     return failScan("PHOTO_MISMATCH", "Bu kadr avval yuborilgan — qayta skaner qiling");
   }
-  return recordScan(a, g.scope, m, mode, keepPhoto(fr.files[0]!));
+  const r = await recordScan(a, g.scope, m, mode, keepPhoto(fr.files[0]!));
+  // Moslashuvchan namuna — aniq tanilgan (1:N "aniq emas" qoidasi o'tgan), jonlilik topshirig'i bajarilgan (bitta kadrli
+  // eski ilova — yo'q) va skaner natijasi qabul qilingan bo'lsa; qolgan shartlar `learnFaceSample` da
+  if (r.ok && m.kind === "match" && fr.task) await learnFaceSample(m.employeeId, fr.probes, { userId: u.id });
+  return r;
 }
 
 // ───────────────────────── Ro'yxatga olish ─────────────────────────
