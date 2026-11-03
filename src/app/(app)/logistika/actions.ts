@@ -13,6 +13,7 @@ import {
 } from "@/lib/logistics-admin";
 import { approveTripPays, PAY_TYPES, priceTrip, priceTripsBySuggestion, rejectTripPay } from "@/lib/driver-trip-pay";
 import { createMechanicRequest, MASTER_PROBLEMS } from "@/lib/mechanic-requests";
+import { driverTempLoginCore } from "@/lib/kadr-employee";
 
 /**
  * Logistika kabineti amallari: transport, obyekt, haydovchi kartasi, yoqilg'i, xarajat, sozlamalar.
@@ -59,6 +60,18 @@ export async function saveDriverCard(employeeId: string, _prev: ActionState, fd:
   if ("error" in res) return { error: res.error };
   refresh();
   return { ok: true };
+}
+
+/** `password` faqat shu javobda — bazada xeshi, sahifa yangilansa qayta ko'rinmaydi. */
+export type DriverLoginState = { error?: string; login?: string; password?: string; until?: string; created?: boolean } | undefined;
+
+/** Dispetcher haydovchiga login yoki yangi vaqtinchalik parol beradi. Qoidalar — `driverTempLoginCore`. */
+export async function giveDriverLogin(employeeId: string, _prev: DriverLoginState, fd: FormData): Promise<DriverLoginState> {
+  const s = await requireAction("logistika", "driver_login");
+  const r = await driverTempLoginCore(s, employeeId, fd);
+  if ("error" in r) return { error: r.error };
+  revalidatePath(`/logistika/haydovchilar/${employeeId}`); revalidatePath("/employees");
+  return { login: r.login, password: r.password, until: r.until.toISOString(), created: r.created };
 }
 
 // ───────────────────────── Yoqilg'i va xarajat ─────────────────────────

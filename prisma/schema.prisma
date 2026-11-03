@@ -50,6 +50,9 @@ model User {
   ecoUserId      String?  @unique
   /// Kirishdagi instruksiya (tour) — «Qayta ko'rsatilmasin» bosilgan: avtomatik chiqmaydi (tepadagi tugmadan ko'rsa bo'ladi)
   tourHidden     Boolean  @default(false)
+  /// Parol vaqtinchalik (dispetcher haydovchiga bergan): shu vaqtgacha amal qiladi, kirishda xodim o'z parolini
+  /// o'rnatmaguncha sessiya berilmaydi (`lib/temp-password.ts`). null — oddiy parol.
+  tempPasswordUntil DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

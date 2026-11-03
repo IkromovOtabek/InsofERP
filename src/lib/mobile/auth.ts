@@ -8,6 +8,7 @@ import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { verifyLoginCode } from "@/lib/code-login";
 import { DUMMY_PASSWORD_HASH, parsePerms, type Perms } from "@/lib/auth";
+import { completeTempPassword, signTempChange, TEMP_EXPIRED } from "@/lib/temp-password";
 
 /**
  * Mobil ilova (Insof ECO) uchun autentifikatsiya — ERP login/paroli bo'yicha.
@@ -31,7 +32,8 @@ export type MobileUser = { id: string; login: string; fullName: string; role: Ro
 export type MobileTokens = { accessToken: string; refreshToken: string };
 
 export class MobileAuthError extends Error {
-  constructor(readonly code: string, message: string, readonly status = 401) { super(message); }
+  /** `extra` — javobga qo'shiladigan maydonlar (masalan vaqtinchalik parolda `changeToken`). */
+  constructor(readonly code: string, message: string, readonly status = 401, readonly extra?: Record<string, unknown>) { super(message); }
 }
 
 const toUser = (u: { id: string; login: string; fullName: string; role: Role }): MobileUser => ({
@@ -67,7 +69,24 @@ export async function mobileLogin(loginName: string, password: string) {
   if (!user || !user.isActive || !ok) {
     throw new MobileAuthError("BAD_CREDENTIALS", "Login yoki parol noto'g'ri");
   }
+  // Vaqtinchalik parol (dispetcher bergan, `lib/temp-password.ts`): token yo'q — ilova yangi parol ekranini ochadi.
+  // Eski ilova `changeToken` ni bilmaydi va faqat xabarni ko'rsatadi — shuning uchun xabarda veb yo'li ham bor.
+  if (user.tempPasswordUntil) {
+    if (user.tempPasswordUntil <= new Date()) throw new MobileAuthError(TEMP_PASSWORD_EXPIRED, TEMP_EXPIRED, 403);
+    throw new MobileAuthError(PASSWORD_CHANGE_REQUIRED, "Vaqtinchalik parol bilan kirdingiz. Ilovani yangilang yoki insof-erp.uz saytida kirib o'z parolingizni o'rnating", 403, { changeToken: await signTempChange(user) });
+  }
   return issue(user);
+}
+
+/** Parol to'g'ri, lekin vaqtinchalik — qo'pol kuch urinishi emas (login route qulfga sanamaydi). */
+export const PASSWORD_CHANGE_REQUIRED = "PASSWORD_CHANGE_REQUIRED";
+export const TEMP_PASSWORD_EXPIRED = "TEMP_PASSWORD_EXPIRED";
+
+/** Vaqtinchalik paroldan keyingi 2-qadam: `changeToken` + o'z paroli → odatdagi juftlik. */
+export async function mobileSetTempPassword(changeToken: string, password: string) {
+  const r = await completeTempPassword(changeToken, password);
+  if (!r.ok) throw r.restart ? new MobileAuthError("TOKEN_INVALID", r.error, 401) : new MobileAuthError("BAD_REQUEST", r.error, 400);
+  return issue(r.user);
 }
 
 /**

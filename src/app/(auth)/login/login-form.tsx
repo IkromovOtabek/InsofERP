@@ -3,12 +3,13 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { KeyRound, LogIn, Send, Sparkles, UserPlus, UserRound } from "lucide-react";
-import { confirmLoginCodeAction, loginAction, quickLoginAction, requestLoginCodeAction } from "./actions";
+import { confirmLoginCodeAction, loginAction, quickLoginAction, requestLoginCodeAction, setTempPasswordAction } from "./actions";
 import { Button, Callout, Field, FormError, Input, PasswordInput } from "@/components/ui";
 import { Logo } from "@/components/logo";
 import { BrandPanel, useArendaBrand } from "../brand-panel";
 import { cn } from "@/lib/utils";
 import { CODE_DELIVERY_HINT } from "@/lib/telegram/otp-text";
+import { PASSWORD_HINT } from "@/lib/password-policy";
 
 export type TestUser = { login: string; fullName: string; roleLabel: string };
 
@@ -81,6 +82,7 @@ function ModeTab({ active, onClick, icon: Icon, children }: { active: boolean; o
 
 function PasswordLogin() {
   const [state, action, pending] = useActionState(loginAction, undefined);
+  if (state?.tempToken) return <TempPasswordStep token={state.tempToken} />;
   return (
     <>
       <form action={action} className="space-y-4">
@@ -95,6 +97,38 @@ function PasswordLogin() {
       <Link href="/login/reset" className="mt-4 inline-flex min-h-11 items-center text-sm font-medium text-slate-600 underline-offset-4 transition hover:text-slate-900 hover:underline">
         Parolni unutdingizmi?
       </Link>
+    </>
+  );
+}
+
+/**
+ * Vaqtinchalik parol (dispetcher bergan) bilan kirildi — o'z parolini o'rnatmaguncha sessiya yo'q.
+ * Token eskirsa yoki muddat o'tsa, server tokensiz javob qaytaradi va forma 1-qadamga qaytadi.
+ */
+function TempPasswordStep({ token }: { token: string }) {
+  const [state, action, pending] = useActionState(setTempPasswordAction, { tempToken: token });
+  if (!state?.tempToken) return <RestartLogin error={state?.error} />;
+  return (
+    <form action={action} className="space-y-4">
+      <Callout tone="info" title="O'z parolingizni o'rnating">
+        Siz vaqtinchalik parol bilan kirdingiz. Davom etish uchun faqat o&apos;zingiz biladigan yangi parol o&apos;ylab toping.
+      </Callout>
+      <FormError error={state.error} />
+      <input type="hidden" name="token" value={state.tempToken} />
+      <Field label="Yangi parol" hint={PASSWORD_HINT}><PasswordInput name="password" autoComplete="new-password" autoFocus enterKeyHint="next" /></Field>
+      <Field label="Yangi parolni takrorlang"><PasswordInput name="confirm" autoComplete="new-password" enterKeyHint="go" /></Field>
+      <Button size="lg" className="w-full" disabled={pending}><KeyRound size={17} /> {pending ? "Saqlanmoqda…" : "Saqlash va kirish"}</Button>
+    </form>
+  );
+}
+
+/** 2-qadam bekor bo'ldi — xato bilan qaytadan login formasi (yangi `useActionState`, eski token yo'q). */
+function RestartLogin({ error }: { error?: string }) {
+  const [shown, setShown] = useState(true);
+  return (
+    <>
+      {shown && error && <div className="mb-4"><FormError error={error} /></div>}
+      <div onInput={() => setShown(false)}><PasswordLogin /></div>
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { mobileLogin, MobileAuthError } from "@/lib/mobile/auth";
+import { mobileLogin, MobileAuthError, PASSWORD_CHANGE_REQUIRED, TEMP_PASSWORD_EXPIRED } from "@/lib/mobile/auth";
 import { handle, jsonErr, preflight } from "@/lib/mobile/http";
 import { checkLogin, failDelay, ipFromHeaders, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
 
@@ -27,7 +27,9 @@ export async function POST(req: Request) {
       return r;
     } catch (e) {
       // Qo'pol kuch himoyasi: urinish hisoblanadi (5 tadan keyin qulf) va javob kechiktiriladi
-      if (e instanceof MobileAuthError) { recordFailure(login, ip); await failDelay(); }
+      // Vaqtinchalik parol to'g'ri kiritilgan — urinish emas, qulfga sanalmaydi
+      if (e instanceof MobileAuthError && e.code !== PASSWORD_CHANGE_REQUIRED && e.code !== TEMP_PASSWORD_EXPIRED) { recordFailure(login, ip); await failDelay(); }
+      else if (e instanceof MobileAuthError) recordSuccess(login);
       throw e;
     }
   });

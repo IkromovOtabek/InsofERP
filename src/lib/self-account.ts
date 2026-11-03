@@ -139,7 +139,7 @@ export async function confirmSelfChange(userId: string, input: SelfChange, opts:
         if (claim.count === 0) return false;
         await tx.passwordResetCode.updateMany({ where: { userId, usedAt: null }, data: { usedAt: new Date() } });
       }
-      await tx.user.update({ where: { id: userId }, data: { ...(newLogin ? { login: newLogin } : {}), ...(hash ? { passwordHash: hash } : {}) } });
+      await tx.user.update({ where: { id: userId }, data: { ...(newLogin ? { login: newLogin } : {}), ...(hash ? { passwordHash: hash, tempPasswordUntil: null } : {}) } });
       await audit(tx, userId, "UPDATE", "User", userId, newLogin ? { login: user.login } : undefined, {
         ...(newLogin ? { login: newLogin } : {}),
         ...(hash ? { passwordChanged: true } : {}),

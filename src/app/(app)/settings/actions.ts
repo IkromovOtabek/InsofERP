@@ -273,7 +273,7 @@ export async function resetPassword(id: string, _prev: ActionState, fd: FormData
   const pw = String(fd.get("password") ?? "");
   const problem = passwordProblem(pw);
   if (problem) return { error: problem };
-  await db.user.update({ where: { id }, data: { passwordHash: await hashPassword(pw) } });
+  await db.user.update({ where: { id }, data: { passwordHash: await hashPassword(pw), tempPasswordUntil: null } });
   // Eski sessiyalar kuyadi; direktor o'z parolini almashtirgan bo'lsa unga yangi cookie beriladi
   await revokeSessions(db, id, { keepCurrent: s.userId === id });
   await audit(db, s.userId, "UPDATE", "User", id, undefined, { passwordReset: true });

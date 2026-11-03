@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, IdCard, Package, Route, Timer } from "lucide-react";
+import { AlertTriangle, IdCard, KeyRound, Package, Route, Timer } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
+import { canDo } from "@/lib/permissions";
+import { isDriverPosition } from "@/lib/positions";
+import { LOGIN_HINT } from "@/lib/self-account";
 import { delayLevel, ISSUE_KIND, logisticsSettings, minutesLabel, tripDelayMin, tripPhase } from "@/lib/logistics";
 import { date, dateTime, isoDate, qty } from "@/lib/format";
 import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { DriverCardForm } from "../driver-card-form";
+import { DriverLoginForm } from "../driver-login-form";
 import { DelayText, PhaseBadge, TripLink } from "../../ui";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +25,7 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
     where: { id },
     include: {
       vehicle: { select: { id: true, plate: true } },
+      user: { select: { id: true, login: true, role: true, isActive: true, ecoUserId: true, tempPasswordUntil: true } },
       trips: {
         orderBy: { createdAt: "desc" }, take: 60,
         include: { order: { select: { orderNo: true, deliveryDate: true, deliveryTime: true, deliveryAddress: true, customer: { select: { name: true } } } }, vehicle: { select: { plate: true } }, issues: true },
@@ -28,6 +33,8 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
     },
   });
   if (!d) notFound();
+  const canLogin = canDo(s, "logistika", "driver_login");
+  const loginBlock = canLogin ? await driverLoginBlock(d, s.userId) : null;
   const vehicles = await db.vehicle.findMany({ where: { isActive: true }, orderBy: { plate: "asc" }, select: { id: true, plate: true } });
   const done = d.trips.filter((t) => t.status === "DELIVERED");
   const total = d.trips.filter((t) => t.status !== "CANCELLED");
@@ -50,6 +57,14 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
         <Card className="xl:col-span-2">
           <CardHeader title="Haydovchi kartasi" description="F.I.O., telefon, passport — Otdel kadrda" icon={IdCard} />
           <DriverCardForm id={d.id} vehicles={vehicles} v={{ workSchedule: d.workSchedule, licenseNo: d.licenseNo, licenseCategory: d.licenseCategory, licenseExpiry: d.licenseExpiry ? isoDate(d.licenseExpiry) : "", vehicleId: d.vehicleId }} />
+          {canLogin && (
+            <div className="mt-6 border-t border-slate-100 pt-5">
+              <CardHeader title="Tizimga kirish" description={loginStatus(d.user)} icon={KeyRound} />
+              {loginBlock
+                ? <p className="text-sm text-slate-500">{loginBlock}</p>
+                : <DriverLoginForm id={d.id} login={d.user?.login ?? null} suggested={suggestLogin(d.fullName)} loginHint={LOGIN_HINT} />}
+            </div>
+          )}
         </Card>
         <Card padded={false} className="xl:col-span-3">
           <div id="muammolar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Kechikish va muammolar tarixi" icon={AlertTriangle} /></div>
@@ -89,4 +104,34 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
       </Card>
     </div>
   );
+}
+
+type LoginUser = { id: string; login: string; role: string; isActive: boolean; ecoUserId: string | null; tempPasswordUntil: Date | null } | null;
+
+function loginStatus(u: LoginUser): string {
+  if (!u) return "Login berilmagan — haydovchi Telegram kod bilan ham kira oladi";
+  if (u.ecoUserId) return `«${u.login}» — ilovadagi telefon va parol bilan kiradi`;
+  if (!u.isActive) return `«${u.login}» — kirish bloklangan`;
+  if (!u.tempPasswordUntil) return `«${u.login}» — haydovchi o'z paroli bilan kiradi`;
+  return u.tempPasswordUntil > new Date()
+    ? `«${u.login}» — vaqtinchalik parol, ${dateTime(u.tempPasswordUntil)} gacha; haydovchi hali o'z parolini qo'ymagan`
+    : `«${u.login}» — vaqtinchalik parol muddati tugagan`;
+}
+
+/** Dispetcher bu loginga tegolmaydigan holatlar — sabab tugma o'rnida (server ham xuddi shuni tekshiradi). */
+async function driverLoginBlock(d: { isActive: boolean; firedAt: Date | null; position: string; user: LoginUser }, me: string): Promise<string | null> {
+  if (!d.isActive || d.firedAt) return "Xodim nofaol — kirishni Otdel kadr qaytaradi.";
+  if (!(await isDriverPosition(d.position))) return "Kirish faqat haydovchi lavozimidagi xodimga beriladi.";
+  if (!d.user) return null;
+  if (d.user.role !== "DRIVER") return "Bu login boshqa bo'limda — uni Otdel kadr boshqaradi.";
+  if (!d.user.isActive) return "Kirish bloklangan — uni Otdel kadr ochadi.";
+  if (d.user.ecoUserId) return "Parol ilovada tiklanadi.";
+  if (d.user.id === me) return "O'z loginingiz — «Mening hisobim» bo'limida.";
+  return null;
+}
+
+/** "Aliyev Vali G'aniyevich" → "aliyev.vali" (o', g' va boshqa belgilarsiz). Band bo'lsa dispetcher o'zgartiradi. */
+function suggestLogin(fullName: string): string {
+  const parts = fullName.toLowerCase().replace(/[ʻʼ'`‘’]/g, "").split(/\s+/).map((w) => w.replace(/[^a-z0-9]/g, "")).filter(Boolean);
+  return parts.slice(0, 2).join(".").slice(0, 32);
 }

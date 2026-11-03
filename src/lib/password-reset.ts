@@ -140,7 +140,7 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
     // Kod faqat bir marta ishlatiladi — parallel ikkinchi so'rov shu yerda to'xtaydi
     const claim = await tx.passwordResetCode.updateMany({ where: { id: rec.id, usedAt: null }, data: { usedAt: new Date() } });
     if (claim.count === 0) return false;
-    await tx.user.update({ where: { id: found.user.id }, data: { passwordHash: hash } });
+    await tx.user.update({ where: { id: found.user.id }, data: { passwordHash: hash, tempPasswordUntil: null } });
     await revokeSessions(tx, found.user.id); // parol almashdi — eski sessiyalar (telefonini yo'qotgan bo'lsa ham) kuyadi
     // Qolgan ochiq kodlar ham kuyadi — bittasi ishlatildi, boshqasi kerak emas
     await tx.passwordResetCode.updateMany({ where: { userId: found.user.id, usedAt: null }, data: { usedAt: new Date() } });

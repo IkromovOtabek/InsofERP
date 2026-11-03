@@ -21,6 +21,7 @@ import { allocateOrderNo, orderNoProblem } from "@/lib/hr/order-no";
 import { DISMISSAL_REASONS } from "@/lib/davomat";
 import { saveEmployeeFile, removeEmployeeFile, photoEntry } from "@/lib/uploads";
 import { LOGIN_HINT, LOGIN_RE } from "@/lib/self-account";
+import { generateTempPassword, tempPasswordUntil } from "@/lib/temp-password";
 
 /**
  * Xodim kartasi va login boshqaruvi — veb (`/employees`, `/otdel-kadr` server action'lari) va mobil ilova
@@ -350,6 +351,65 @@ export async function grantLoginCore(s: KadrActor, employeeId: string, fd: FormD
   return { ok: true, note: credentialsNote("login_granted", e.phone, login.toLowerCase()) };
 }
 
+export type DriverLoginResult = { error: string } | { ok: true; login: string; password: string; until: Date; created: boolean };
+
+/**
+ * Dispetcher haydovchiga kirish beradi: login yo'q bo'lsa — yangi DRIVER login, bor bo'lsa — parol yangilanadi.
+ * Parolni tizim yaratadi va u vaqtinchalik (`lib/temp-password.ts`): haydovchi kirishda o'z parolini qo'yadi,
+ * shundan keyin dispetcher bilgan parol ishlamaydi. Cheklov: faqat faol, haydovchi lavozimidagi xodim va faqat
+ * DRIVER roli — boshqa rolli, bloklangan yoki ECO ilovasi orqali kiradigan loginga dispetcher tegmaydi (bu kadr ishi).
+ * Har berishda Otdel kadr va direktor xabar oladi.
+ */
+export async function driverTempLoginCore(s: KadrActor, employeeId: string, fd: FormData): Promise<DriverLoginResult> {
+  const e = await db.employee.findUnique({ where: { id: employeeId }, include: { user: true } });
+  if (!e) return { error: "Xodim topilmadi" };
+  if (!e.isActive || e.firedAt) return { error: `${e.fullName} nofaol — kirishni faqat Otdel kadr qaytaradi` };
+  if (!(await isDriverPosition(e.position))) return { error: "Kirishni faqat haydovchi lavozimidagi xodimga berish mumkin" };
+  const u = e.user;
+  if (u && u.role !== "DRIVER") return { error: `Bu xodimning logini «${roleLabel(u.role)}» bo'limida — uni faqat Otdel kadr boshqaradi` };
+  if (u && !u.isActive) return { error: "Tizimga kirish bloklangan — uni faqat Otdel kadr ochadi" };
+  if (u?.ecoUserId) return { error: "Haydovchi ERP'ga ilovadagi telefon va paroli bilan kiradi — parol ilovada tiklanadi" };
+  if (u && u.id === s.userId) return { error: "O'z loginingizni bu yerdan o'zgartirib bo'lmaydi" };
+
+  const password = generateTempPassword();
+  const until = tempPasswordUntil();
+  let login = u?.login ?? "";
+  try {
+    await db.$transaction(async (tx) => {
+      if (u) {
+        await tx.user.update({ where: { id: u.id }, data: { passwordHash: await hashPassword(password), tempPasswordUntil: until } });
+        await revokeSessions(tx, u.id); // haydovchining eski sessiyalari tugaydi — yangi parol bilan qayta kiradi
+      } else {
+        login = String(fd.get("login") ?? "").trim().toLowerCase();
+        const created = await createLoginFor(tx, s.role, e.fullName, "DRIVER", login, password);
+        await tx.user.update({ where: { id: created.id }, data: { tempPasswordUntil: until } });
+        // Shartli: ikki dispetcher bir vaqtda bersa — ikkinchisi to'xtaydi, ortiqcha hisob ochilmaydi
+        const n = await tx.employee.updateMany({ where: { id: employeeId, userId: null }, data: { userId: created.id } });
+        if (n.count === 0) throw new Error("Xodimga login allaqachon berilgan — sahifani yangilang");
+      }
+      await audit(tx, s.userId, "UPDATE", "Employee", employeeId, undefined, {
+        login, role: "DRIVER", tempPassword: true, tempPasswordUntil: until, ...(u ? { passwordReset: true } : { loginCreated: true }), by: s.role,
+      });
+    });
+  } catch (err) {
+    const m = String(err);
+    if (m.includes("Unique constraint")) return { error: "Bu login band" };
+    if (err instanceof Error && !m.includes("prisma")) return { error: err.message };
+    throw err;
+  }
+
+  notifyAfter(async () => {
+    const who = await db.user.findUnique({ where: { id: s.userId }, select: { fullName: true } });
+    await notifyRoles(["HR", "DIRECTOR"], {
+      type: "DRIVER_LOGIN",
+      title: u ? "Haydovchiga vaqtinchalik parol berildi" : "Haydovchiga login berildi",
+      body: `${e.fullName} · login «${login}» · bajardi: ${who?.fullName ?? "?"}`,
+      link: { key: "employees", id: employeeId },
+    }, { except: s.userId });
+  });
+  return { ok: true, login, password, until, created: !u };
+}
+
 /** Xodimni o'chirish/yoqish — bog'langan login ham birga bloklanadi/ochiladi. */
 export async function toggleEmployeeCore(s: KadrActor, id: string): Promise<KadrResult> {
   const cur = await db.employee.findUniqueOrThrow({ where: { id } });
@@ -617,7 +677,7 @@ export async function resetEmployeePasswordCore(s: KadrActor, employeeId: string
   const problem = passwordProblem(password);
   if (problem) return { error: problem };
   await db.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: t.user.id }, data: { passwordHash: await hashPassword(password) } });
+    await tx.user.update({ where: { id: t.user.id }, data: { passwordHash: await hashPassword(password), tempPasswordUntil: null } });
     await revokeSessions(tx, t.user.id); // xodimning eski veb/mobil sessiyalari tugaydi
     await audit(tx, s.userId, "UPDATE", "User", t.user.id, undefined, {
       passwordReset: true, xodim: t.employee.fullName, login: t.user.login, role: t.user.role,

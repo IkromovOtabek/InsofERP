@@ -87,12 +87,19 @@ export async function hashPassword(p: string) {
  */
 export const DUMMY_PASSWORD_HASH = "$2b$10$58EUmLeW3hkndKKu/Wu5KOCcIE0g0E/5Sf.VBPVHcZ8N1llorimpO";
 
-export async function login(loginName: string, password: string): Promise<Session | null> {
+/**
+ * Parol to'g'ri, lekin u vaqtinchalik (`lib/temp-password.ts`): sessiya berilmaydi — avval xodim o'z parolini o'rnatadi.
+ * `expired` — muddati o'tgan, kirib bo'lmaydi.
+ */
+export type TempPasswordHold = { temp: { id: string; sessionVersion: number; expired: boolean } };
+
+export async function login(loginName: string, password: string): Promise<Session | TempPasswordHold | null> {
   const user = await db.user.findUnique({ where: { login: loginName } });
   // Superadmin login/parol bilan kirmaydi — faqat markaziy paneldan SSO (`/api/control/sso`)
   if (!user || !user.isActive || user.role === "SUPERADMIN") { await bcrypt.compare(password, DUMMY_PASSWORD_HASH); return null; }
   if (await companySuspension()) return null; // sabab login sahifasida alohida ko'rsatiladi
   if (!(await bcrypt.compare(password, user.passwordHash))) return null;
+  if (user.tempPasswordUntil) return { temp: { id: user.id, sessionVersion: user.sessionVersion, expired: user.tempPasswordUntil <= new Date() } };
 
   const session = await issueSession(user);
   // Instruksiya har kirishda boshidan ko'rsatiladi: oldingi sessiyada "o'tkazib yuborildi"

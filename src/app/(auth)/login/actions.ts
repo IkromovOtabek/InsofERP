@@ -1,8 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { getSession, login, logout } from "@/lib/auth";
+import { getSession, issueSession, login, logout } from "@/lib/auth";
+import { completeTempPassword, signTempChange, TEMP_EXPIRED } from "@/lib/temp-password";
+import { TOUR_COOKIE } from "@/lib/tour";
 import { ARENDA_DENIED, ARENDA_PATH, isArendaHost } from "@/lib/arenda-host";
 import { OWN_PAGE_ONLY, moduleForPath, pathAllowed } from "@/lib/nav";
 import { pathOff } from "@/lib/platform-modules";
@@ -32,7 +34,10 @@ async function homeAfterLogin(): Promise<{ to: string } | { error: string }> {
   return { error: ARENDA_DENIED };
 }
 
-export async function loginAction(_prev: { error?: string } | undefined, formData: FormData) {
+/** `tempToken` — parol to'g'ri, lekin vaqtinchalik: forma 2-qadamni (yangi parol) ko'rsatadi. */
+export type LoginState = { error?: string; tempToken?: string } | undefined;
+
+export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const loginName = String(formData.get("login") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   if (!loginName || !password) return { error: "Login va parolni kiriting" };
@@ -67,6 +72,23 @@ export async function loginAction(_prev: { error?: string } | undefined, formDat
     return { error: "Login yoki parol noto'g'ri" };
   }
   recordSuccess(loginName);
+  // Vaqtinchalik parol (dispetcher bergan): sessiya yo'q — avval xodim o'z parolini o'rnatadi
+  if ("temp" in s) return s.temp.expired ? { error: TEMP_EXPIRED } : { tempToken: await signTempChange(s.temp) };
+  const home = await homeAfterLogin();
+  if ("error" in home) return home;
+  redirect(home.to);
+}
+
+/** Vaqtinchalik parol bilan kirishning 2-qadami: o'z paroli → sessiya. Token 1-qadamda berilgan (`lib/temp-password.ts`). */
+export async function setTempPasswordAction(_prev: LoginState, fd: FormData): Promise<LoginState> {
+  const token = String(fd.get("token") ?? "");
+  const password = String(fd.get("password") ?? "");
+  if (password !== String(fd.get("confirm") ?? "")) return { error: "Parollar mos emas", tempToken: token };
+  if (await companySuspension()) return { error: SUSPENDED_MESSAGE };
+  const r = await completeTempPassword(token, password);
+  if (!r.ok) return r.restart ? { error: r.error } : { error: r.error, tempToken: token };
+  await issueSession(r.user);
+  (await cookies()).delete(TOUR_COOKIE);
   const home = await homeAfterLogin();
   if ("error" in home) return home;
   redirect(home.to);
@@ -122,7 +144,7 @@ export async function quickLoginAction(loginName: string) {
   if (!loginName.startsWith("test.")) return;
   const password = process.env.TEST_USER_PASSWORD || "Test2026";
   const s = await login(loginName, password);
-  if (!s) return;
+  if (!s || "temp" in s) return;
   const home = await homeAfterLogin();
   if ("to" in home) redirect(home.to);
 }

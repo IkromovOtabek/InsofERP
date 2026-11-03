@@ -28,7 +28,7 @@ export async function handle<T>(fn: () => Promise<T>) {
   try {
     return jsonOk(await fn());
   } catch (e) {
-    if (e instanceof MobileAuthError) return jsonErr(e.code, e.message, e.status);
+    if (e instanceof MobileAuthError) return jsonErr(e.code, e.message, e.status, e.extra);
     if (e instanceof ListError) return jsonErr(e.code, e.message, e.status, e.extra);
     // Prisma "yozuv topilmadi" (findUniqueOrThrow / update mavjud bo'lmagan id bilan) — mijoz yuborgan
     // noto'g'ri id, server xatosi emas: 404. Aks holda har bir begona/eskirgan id 500 bo'lib jurnalni to'ldirardi.
