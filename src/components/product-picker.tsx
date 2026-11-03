@@ -6,6 +6,7 @@ import { deleteCatalogProduct, deleteProductGroup } from "@/lib/catalog-actions"
 import { FolderPicker } from "@/components/folder-picker";
 import { DeleteButton } from "@/components/delete-button";
 import { ProductPanelBody, ProductTools, duplicateNames, type ProductPanel } from "@/components/catalog-tools";
+import type { ProductCreate } from "@/lib/catalog";
 
 export { duplicateNames };
 
@@ -28,10 +29,12 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
   groups: CatalogGroup[];
   onPick: (productId: string) => void;
   onClose: () => void;
-  canCreate: boolean;
+  /** "add" — faqat «Yangi mahsulot» va «Papka» (o'chirish, Excel, matritsa, dublikat yo'q) */
+  canCreate: ProductCreate;
   hint?: (p: CatalogProduct) => string | null;
 }) {
   const router = useRouter();
+  const full = canCreate === true;
   const [panel, setPanel] = useState<ProductPanel>(null);
   useEffect(() => { if (!open) setPanel(null); }, [open]);
 
@@ -62,7 +65,7 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
       onPick={onPick}
       onClose={onClose}
       /* O'chirish: hujjatlarda ishlatilmagan mahsulot butunlay o'chadi, ishlatilgani arxivga olinadi */
-      rowAction={canCreate ? (row) => (
+      rowAction={full ? (row) => (
         <DeleteButton
           action={row.kind === "group" ? deleteProductGroup : deleteCatalogProduct}
           id={row.id}
@@ -70,7 +73,7 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
           title={row.kind === "group" ? "Papkani o'chirish" : "Mahsulotni o'chirish"}
         />
       ) : undefined}
-      tools={() => (canCreate ? <ProductTools toggle={toggle} dupes={dupes} /> : null)}
+      tools={() => (canCreate ? <ProductTools toggle={toggle} dupes={dupes} addOnly={!full} /> : null)}
       panel={(ctx) => (canCreate ? <ProductPanelBody panel={panel} ctx={ctx} dupes={dupes} onDone={afterCreate} onCancel={() => setPanel(null)} /> : null)}
     />
   );

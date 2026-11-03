@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ProductField } from "@/components/product-field";
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
+import type { ProductCreate } from "@/lib/catalog";
 
 /**
  * Mahsulot tanlash maydoni — zayavkadagi bilan bir xil 1C uslubidagi spravochnik,
@@ -18,7 +19,7 @@ export function ProductSelect({ name, products, groups, canCreate = false, value
   name?: string;
   products: CatalogProduct[];
   groups: CatalogGroup[];
-  canCreate?: boolean;
+  canCreate?: ProductCreate;
   value?: string;
   onChange?: (productId: string) => void;
   hint?: (p: CatalogProduct) => string | null;

@@ -25,8 +25,8 @@ import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "
 export type ProductPanel = "product" | "group" | "excel" | "matrix" | "dupes" | null;
 export type MaterialPanel = "material" | "group" | null;
 
-/** Mahsulot asboblari: Yangi · Papka · Excel · Matritsa · (dublikat bo'lsa) Dublikat. */
-export function ProductTools({ toggle, dupes, mixed }: { toggle: (p: ProductPanel) => void; dupes: CatalogProduct[][]; mixed?: boolean }) {
+/** Mahsulot asboblari: Yangi · Papka · Excel · Matritsa · (dublikat bo'lsa) Dublikat. `addOnly` — faqat Yangi · Papka. */
+export function ProductTools({ toggle, dupes, mixed, addOnly }: { toggle: (p: ProductPanel) => void; dupes: CatalogProduct[][]; mixed?: boolean; /** Faqat «Yangi mahsulot» va «Papka» */ addOnly?: boolean }) {
   return (
     <>
       <Button type="button" size="sm" variant="secondary" onClick={() => toggle("product")}>
@@ -35,6 +35,7 @@ export function ProductTools({ toggle, dupes, mixed }: { toggle: (p: ProductPane
       <Button type="button" size="sm" variant="ghost" onClick={() => toggle("group")} title="Yangi mahsulot papkasi">
         <FolderPlus size={15} /> {mixed ? "Mahsulot papkasi" : "Papka"}
       </Button>
+      {!addOnly && (<>
       {/* Ko'p mahsulotni bittalab emas, tayyor Excel ro'yxatdan qo'shish */}
       <Button type="button" size="sm" variant="ghost" onClick={() => toggle("excel")} title="Ochiq papkaga Excel fayldan ko'p mahsulotni birdan qo'shish">
         <FileSpreadsheet size={15} /> Excel orqali qo&apos;shish
@@ -48,6 +49,7 @@ export function ProductTools({ toggle, dupes, mixed }: { toggle: (p: ProductPane
           Dublikat: {dupes.length} nom
         </Button>
       )}
+      </>)}
     </>
   );
 }

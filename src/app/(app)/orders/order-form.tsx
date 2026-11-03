@@ -9,6 +9,7 @@ import { TripPlanPanel } from "./trip-plan-panel";
 import { lookupAppByPhone } from "../customers/app-actions";
 import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, FormActions } from "@/components/ui";
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
+import type { ProductCreate } from "@/lib/catalog";
 import { ProductField } from "@/components/product-field";
 import { MoneyInput } from "@/components/money-input";
 import { ndsOf } from "@/lib/nds";
@@ -175,7 +176,7 @@ function StockNote({ st, need, unit }: { st?: ProductStock[string]; need: number
  * (rekvizitlar, mijoz bloki, QQS ustunli jadval, dastavka qatori, to'lov va bosh to'lov). Dizayn manbasi:
  * `docs/design/zayavka-shablonlar.html`; oldingi forma — `git tag zayavka-forma-eski`.
  */
-export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, preselectSite, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; /** Mijoz kartasidagi obyektdan ochilgan zayavka (`?site=`) */ preselectSite?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string }) {
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, preselectSite, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; /** Mijoz kartasidagi obyektdan ochilgan zayavka (`?site=`) */ preselectSite?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   // "Yangi mijoz" telefoni ilovada ro'yxatdan o'tganmi — saqlanganda hisob o'zi ulanadi, sotuvchi buni oldindan ko'radi

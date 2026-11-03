@@ -6,6 +6,7 @@ import { fmtNum, isoDate } from "@/lib/format";
 import { createStockOrder } from "./actions";
 import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, FormActions, Checkbox } from "@/components/ui";
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
+import type { ProductCreate } from "@/lib/catalog";
 import { ProductField } from "@/components/product-field";
 import type { ProductStock } from "./order-form";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ type Row = { key: number; productId: string; qty: string };
 export function StockOrderForm({ products, groups, canCreateProduct, stock }: {
   products: CatalogProduct[];
   groups: CatalogGroup[];
-  canCreateProduct: boolean;
+  canCreateProduct: ProductCreate;
   stock: ProductStock;
 }) {
   const [state, action, pending] = useActionState(createStockOrder, undefined);

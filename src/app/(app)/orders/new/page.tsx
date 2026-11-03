@@ -12,7 +12,7 @@ import { canDo } from "@/lib/permissions";
 import { geoSearchEnabled } from "@/lib/geo";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 import { productCatalog } from "@/lib/product-catalog";
-import { canEditProducts } from "@/lib/catalog";
+import { productCreateLevel } from "@/lib/catalog";
 import { getCompany } from "@/lib/company";
 import { OFFER_DEFAULT_INTRO } from "@/lib/offers";
 import { PrintHeaderArt, brandTitle } from "@/components/print-header-art";
@@ -134,9 +134,9 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
           <NewOrderMode
             initial={tur === "sklad" || !canSale ? "stock" : "sale"}
             sale={canSale ? (
-              <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
+              <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
             ) : null}
-            stock={canStockOrder ? <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} /> : null}
+            stock={canStockOrder ? <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} /> : null}
           />
         </div>
         <div>

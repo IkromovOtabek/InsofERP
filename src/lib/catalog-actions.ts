@@ -8,7 +8,7 @@ import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { flatName, num, str } from "@/lib/excel";
 import { normalizeUnit, PRODUCT_UNITS } from "@/lib/unit";
-import { PRODUCT_KINDS, PRODUCT_CATALOG_ROLES } from "@/lib/catalog";
+import { PRODUCT_KINDS, PRODUCT_CATALOG_ROLES, PRODUCT_ADD_ROLES } from "@/lib/catalog";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -40,7 +40,7 @@ const groupSchema = z.object({
 
 /** Yangi papka (guruh). `parentId` — ochiq turgan papka. */
 export async function createProductGroup(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("production", CATALOG_ROLES);
+  const s = await requireModuleWrite("production", PRODUCT_ADD_ROLES);
   const r = parseForm(groupSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -74,7 +74,7 @@ const productSchema = z.object({
  * Shu nomli (yoki kodli) mahsulot allaqachon bo'lsa dublikat ochilmaydi — mavjudi yangilanadi.
  */
 export async function createCatalogProduct(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("production", CATALOG_ROLES);
+  const s = await requireModuleWrite("production", PRODUCT_ADD_ROLES);
   const r = parseForm(productSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
