@@ -91,8 +91,8 @@ export const SKLAD_ACTIONS: ReadonlySet<string> = new Set(Object.keys(SKLAD_ACTI
 
 /** Yangi hujjat formalari (`create.ts` CREATE_ROLES) — veb sahifa rollari. */
 export const SKLAD_CREATE_ROLES: Record<string, { roles: Role[]; title: string; label: string }> = {
-  // Veb `/stock/products/new` — `requireRoles(["WAREHOUSE", "PRODUCTION"], stock → products)`
-  products: { roles: ["WAREHOUSE", "PRODUCTION"], title: "Tayyor mahsulot qo'shish", label: "Tayyor mahsulot qo'shish" },
+  // Veb `/stock/products/new` — `requireRoles(["WAREHOUSE", "PRODUCTION"], stock → products)`; ish boshqaruvchi — `products` rol standarti orqali
+  products: { roles: ["WAREHOUSE", "PRODUCTION", "SUPERVISOR"], title: "Tayyor mahsulot qo'shish", label: "Tayyor mahsulot qo'shish" },
   // Veb `/stock/inventarizatsiya`, `/stock/spisanie` — `requireRoles(["WAREHOUSE"], stock → adjust)`
   inventory: { roles: ["WAREHOUSE"], title: "Inventarizatsiya", label: "Inventarizatsiya" },
   writeoff: { roles: ["WAREHOUSE"], title: "Hisobdan chiqarish", label: "Hisobdan chiqarish" },

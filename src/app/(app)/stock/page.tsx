@@ -205,6 +205,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 Jo'natmalar — chap menyuda */}
             {seeHolat && <LinkButton href="/stock?bolim=holat" variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>}
             {seeHovli && <LinkButton href="/stock?bolim=hovli" variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>}
+            {/* Hovliga dona mahsulotni qo'lda kirim (boshlang'ich qoldiq) — hovli oynasida va «Ishlab chiqarish imkoni» da */}
+            {(bolim === "hovli" || tab === "capacity") && canDo(s, "stock", "products") && <LinkButton href="/stock/products/new" variant="success" size="lg"><PackagePlus size={18} /> <span>Tayyor mahsulot qo&apos;shish</span></LinkButton>}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
             {canDo(s, "stock", "brigade") && canSee(s, "stock", "brigada") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
