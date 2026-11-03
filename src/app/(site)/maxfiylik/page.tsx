@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCompany } from "@/lib/company";
+import { faceAiFallbackEnabled } from "@/lib/ai/face";
 
 /**
  * Maxfiylik siyosati — App Store va Google Play uchun majburiy ommaviy sahifa.
@@ -8,12 +9,13 @@ import { getCompany } from "@/lib/company";
  *
  * Matn Insof ECO mobil ilovasi haqiqatda yig'adigan ma'lumotlarga mos yozilgan:
  * telefon + ism (kirish), joylashuv (faol reys davomida fonda ham), push manzili,
- * qurilma ma'lumoti. Reklama, tahlil SDK'lari va sotish yo'q. Ilova yangi
+ * qurilma ma'lumoti, foydalanuvchi tanlagan/olgan rasmlar va xodim davomati (yuz kadri,
+ * 128 sonli yuz vektori — `FaceTemplate`, GPS nuqta). Reklama, tahlil SDK'lari va sotish yo'q. Ilova yangi
  * ma'lumot yig'a boshlasa, shu ro'yxat ham yangilanishi shart — do'kon
  * anketasi ("Data safety" / "App Privacy") shu sahifaga tayanadi.
  */
 
-const YANGILANGAN = "2026-09-28";
+const YANGILANGAN = "2026-11-03";
 
 export const metadata: Metadata = {
   title: { absolute: "Maxfiylik siyosati — Insof ECO" },
@@ -68,16 +70,32 @@ export default async function MaxfiylikPage() {
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <strong>Hisob ma'lumotlari:</strong> telefon raqami, ism-familiya, lavozim yoki rol, tashkilot nomi. Kirish
-                uchun bir martalik kod telefon raqamining Telegram hisobiga yuboriladi.
+                uchun bir martalik kod telefon raqamining Telegram hisobiga yuboriladi. Android ilovada Telegram boti
+                orqali ham kirish mumkin — bunda bot siz ulashgan telefon raqami va Telegram identifikatoringizni oladi.
               </li>
               <li>
                 <strong>Joylashuv:</strong> haydovchi uchun — faqat faol reys davomida mashinaning joylashuvi, shu jumladan
                 ilova fonda bo'lganida ham. Reys yakunlangach fon kuzatuv to'xtaydi. Boshqa rollarda joylashuv faqat ilova
-                ochiq bo'lganda, obyekt manzilini aniqlash uchun ishlatiladi.
+                ochiq bo'lganda, obyekt manzilini aniqlash uchun ishlatiladi. Xodim &quot;Keldim&quot; / &quot;Ketdim&quot;
+                belgilaganda o'sha paytdagi joylashuv ish hududida ekanini tekshirish uchun yoziladi.
               </li>
               <li>
-                <strong>Ish ma'lumotlari:</strong> zayavkalar, reyslar, nakladnoylar, topshiriqlar va ularga tegishli
-                izohlar — ya'ni xodim o'z ishini bajarish jarayonida kiritgan ma'lumotlar.
+                <strong>Yuz tasviri (davomat):</strong> faqat zavod xodimlari uchun — ishga kelish va ketishni ilova ichidagi
+                yuz skaneri orqali tasdiqlash. Ro'yxatga olishda xodim yuzining bir necha kadri va ulardan hisoblangan
+                raqamli namuna (128 sonli vektor — biometrik ma'lumot) saqlanadi. &quot;Keldim / Ketdim&quot; belgilanganda
+                kamera kadridan serverda shunday vektor hisoblanib, namuna bilan solishtiriladi; davomat belgisida kadr,
+                moslik foizi, qurilma identifikatori va kadrning nazorat yig'indisi (qayta yuborishga qarshi) yoziladi.
+                Yuz faqat xodimning roziligi bilan, otdel kadr tomonidan ro'yxatga olinadi. Mijozlardan yuz ma'lumoti
+                olinmaydi. Bu telefondagi Face ID yoki barmoq izi qulfi emas — ilova ularga kirmaydi.
+              </li>
+              <li>
+                <strong>Ish ma'lumotlari:</strong> zayavkalar, reyslar, nakladnoylar, topshiriqlar, davomat va ularga
+                tegishli izohlar — ya'ni xodim o'z ishini bajarish jarayonida kiritgan ma'lumotlar.
+              </li>
+              <li>
+                <strong>Rasmlar:</strong> profil rasmi, nakladnoy, yetkazish yoki muammo fotosi — faqat siz kamera bilan
+                olgan yoki galereyadan o'zingiz tanlagan rasm serverga yuklanadi. Galereyaning qolgan qismiga ilova
+                murojaat qilmaydi.
               </li>
               <li>
                 <strong>Qurilma ma'lumotlari:</strong> qurilma modeli, operatsion tizim versiyasi, ilova versiyasi va push
@@ -85,8 +103,8 @@ export default async function MaxfiylikPage() {
               </li>
             </ul>
             <p>
-              Ilova kontaktlar, galereya, mikrofon yoki reklama identifikatorlarini yig'maydi. Reklama va tahliliy
-              kuzatuv (analytics) SDK'lari ishlatilmaydi.
+              Ilova kontaktlar, mikrofon yoki reklama identifikatorlarini yig'maydi. Reklama va tahliliy kuzatuv
+              (analytics) SDK'lari ishlatilmaydi.
             </p>
           </Bolim>
 
@@ -95,6 +113,10 @@ export default async function MaxfiylikPage() {
               <li>Xodimni tizimga kiritish va uning roliga mos bo'limlarni ko'rsatish.</li>
               <li>Reys davomida mashina qayerdaligini dispetcher va buyurtmachiga ko'rsatish, yetkazish vaqtini taxminlash.</li>
               <li>Yetkazish faktini tasdiqlash (mashina obyektga yetib kelganini aniqlash).</li>
+              <li>
+                Xodim davomatini (keldi / ketdi) yuz orqali tasdiqlash va ish haqi tabelini yuritish — bir xodim o'rniga
+                boshqasi belgilashining oldini olish.
+              </li>
               <li>Yangi topshiriq, reys yoki tasdiq haqida push bildirishnoma yuborish.</li>
               <li>Ilova ishidagi xatolarni aniqlash va xavfsizlikni ta'minlash.</li>
             </ul>
@@ -103,7 +125,9 @@ export default async function MaxfiylikPage() {
           <Bolim sarlavha="4. Kimga beriladi">
             <p>
               Ma'lumotlar sotilmaydi va reklama maqsadida hech kimga berilmaydi. Reys davomidagi joylashuv faqat shu
-              reysga aloqador shaxslarga — zavod dispetcheri va buyurtmachiga — ko'rinadi.
+              reysga aloqador shaxslarga — zavod dispetcheri va buyurtmachiga — ko'rinadi. Davomat kadri va yuz
+              namunasi faqat zavodning kadrlar bo'limi va xodimning rahbariga ko'rinadi, tashqariga berilmaydi va
+              reklama yoki boshqa maqsadda ishlatilmaydi.
             </p>
             <p>Ilova ishlashi uchun quyidagi texnik xizmatlar ishlatiladi:</p>
             <ul className="list-disc space-y-2 pl-5">
@@ -112,12 +136,20 @@ export default async function MaxfiylikPage() {
                 bildirishnoma yetkazish uchun; ularga faqat qurilma manzili beriladi.
               </li>
               <li>
-                <strong>Google Maps (Android) va Apple Maps (iOS)</strong> — xaritani chizish uchun; xarita provayderi
-                ko'rsatilayotgan hududni oladi.
+                <strong>Yandex MapKit</strong> — xaritani chizish va manzil qidiruvi uchun; xarita provayderi
+                ko'rsatilayotgan hududni va qidiruv so'rovini oladi.
               </li>
               <li>
-                <strong>Telegram</strong> (Telegram Gateway va Insof ERP boti) — bir martalik kirish kodini yetkazish uchun;
-                unga faqat telefon raqami va kod beriladi.
+                <strong>Telegram</strong> (Telegram Gateway va Insof ERP boti) — bir martalik kirish kodini yetkazish va
+                bot orqali kirish uchun; unga faqat telefon raqami va kod beriladi.
+              </li>
+              <li>
+                <strong>Sun'iy intellekt xizmati</strong> (Anthropic, OpenAI yoki Groq) — nakladnoy suratidagi matnni
+                avtomatik o'qish uchun; unga faqat hujjat surati beriladi
+                {/* FACE_AI_FALLBACK=true bo'lsa yuz namunasi yo'q xodimning kadri ham modelga ketadi (`lib/face-verify.ts`) — matn shunga ergashadi */}
+                {faceAiFallbackEnabled()
+                  ? ". Yuz namunasi ro'yxatga olinmagan xodimning davomat kadri ham profil surati bilan solishtirish uchun shu xizmatga yuboriladi (ikkala rasm kichraytirilgan holda)."
+                  : ", yuz rasmlari yuborilmaydi."}
               </li>
               <li>Marshrut hisoblash uchun o'z serverimizdagi xizmat — koordinatalar tashqi kompaniyaga yuborilmaydi.</li>
             </ul>
@@ -129,6 +161,11 @@ export default async function MaxfiylikPage() {
               Hisob va ish ma'lumotlari xodim yoki mijoz zavod bilan hamkorlik qilgan davr mobaynida, shuningdek
               buxgalteriya va shartnoma hujjatlari uchun qonunda belgilangan muddat saqlanadi. Reys marshruti reys
               tarixining bir qismi sifatida saqlanadi. Push manzili ilovadan chiqilganda o'chiriladi.
+            </p>
+            <p>
+              Yuz namunasi xodim zavodda ishlagan davr mobaynida saqlanadi va xodim so'rovi bilan istalgan vaqtda
+              o'chiriladi; xodim kartasi o'chirilganda u ham o'chadi. Davomat kadrlari tabel tarixining bir qismi sifatida
+              saqlanadi.
             </p>
           </Bolim>
 
@@ -144,6 +181,10 @@ export default async function MaxfiylikPage() {
             <p>
               Joylashuvga ruxsatni istalgan vaqt telefon sozlamalaridan bekor qilishingiz mumkin; bu holda reys kuzatuvi
               ishlamaydi.
+            </p>
+            <p>
+              Yuz ma'lumotini saqlashga roziligingizni qaytarib olishingiz mumkin — otdel kadrga murojaat qiling: yuz
+              namunasi o'chiriladi va davomatingiz qo'lda belgilanadi.
             </p>
           </Bolim>
 
