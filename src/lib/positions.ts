@@ -63,7 +63,7 @@ export async function positionCatalog(): Promise<{
 }> {
   const [work, used] = await Promise.all([
     db.workPosition.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { name: true, isDriver: true } }),
-    db.employee.groupBy({ by: ["position"] }),
+    db.employee.groupBy({ by: ["position"], where: { external: false } }),
   ]);
   const known = new Set<string>([
     ...POSITIONS.map((p) => p.label.trim().toLowerCase()),

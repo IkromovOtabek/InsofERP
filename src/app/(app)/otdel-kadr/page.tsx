@@ -70,7 +70,7 @@ export default async function OtdelKadrPage({ searchParams }: {
   const davomat = tab === "davomat";
 
   const [employees, positions, catalog, orderStages, tripStages] = await Promise.all([
-    db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: { select: { role: true, isActive: true } }, _count: { select: { documents: true } } } }),
+    db.employee.findMany({ where: { external: false }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: { select: { role: true, isActive: true } }, _count: { select: { documents: true } } } }),
     workPositions({ all: true }),
     positionCatalog(), // ro'yxatda yo'q (Excel'dan qolgan) lavozimlarni ko'rsatish uchun
     tab === "bolimlar" ? db.order.groupBy({ by: ["status"], _count: true }) : [],

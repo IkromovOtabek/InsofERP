@@ -776,10 +776,10 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     case "HR": {
       const [active, inactive, drivers, brigades, recent] = await Promise.all([
         db.employee.count({ where: { isActive: true } }),
-        db.employee.count({ where: { isActive: false } }),
+        db.employee.count({ where: { isActive: false, external: false } }),
         db.employee.count({ where: { isActive: true, position: { in: await driverPositionNames() } } }),
         db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, select: { id: true } } } }),
-        db.employee.findMany({ orderBy: { createdAt: "desc" }, take: 12, include: { brigades: { where: { isActive: true }, select: { name: true } } } }),
+        db.employee.findMany({ where: { external: false }, orderBy: { createdAt: "desc" }, take: 12, include: { brigades: { where: { isActive: true }, select: { name: true } } } }),
       ]);
       // Brigadirsiz brigada — topshiriqni kim boshqarishi noma'lum, shuning uchun ogohlantiriladi
       const headless = brigades.filter((b) => !b.leaderId).length;

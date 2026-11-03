@@ -68,6 +68,45 @@ check(!!r.error, "tayyor hajm tugadi — uchinchi reys rad etildi", r.error);
 await logist.action(`${TA}#cancelTrip`, [t2], `/trips/${t2}`);
 check(q1(`select status from "Trip" where id='${t2}'`) === "CANCELLED", "ikkinchi reys bekor qilindi");
 
+// Ko'chadan chaqirilgan mashina (o'z parki band): mashina va haydovchi `external` + nofaol — park, kadr va ECO
+// ro'yxatlariga kirmaydi, raqam/telefon bo'yicha qayta ishlatiladi; BRU faqat betonda saqlanadi va nakladnoyda chiqadi
+r = await logist.action("(app)/logistika/actions#saveBruNames", [undefined, fd({ bruNames: "BRU-1\n BRU-2 \nBRU-1" })], "/logistika/sozlamalar");
+check(r.ok && q1(`select array_to_string("bruNames", '|') from "CompanySettings" where id='main'`) === "BRU-1|BRU-2", "BRU ro'yxati saqlandi (takror va bo'shliqsiz)", r.error);
+const extNo = Date.now() % 100000;
+const extF = (o: Record<string, string | number> = {}) => fd({ orderId: oid, external: "1", extType: "MIXER", extPlate: `01 q ${extNo} xt`, extCapacity: "8", extDriverName: "QA Ko'cha Haydovchi", extDriverPhone: "90 777 66 55", qtyM3: 1, bru: "BRU-2", ...o });
+r = await logist.action(`${TA}#createTrip`, [undefined, extF({ extDriverPhone: "12345" })], "/trips/new");
+check(/telefon/.test(r.error ?? ""), "ko'chadan mashina: noto'g'ri telefon rad etildi", r.error);
+r = await logist.action(`${TA}#createTrip`, [undefined, extF({ extPlate: q1(`select lower(plate) from "Vehicle" where id='${mixer}'`)! })], "/trips/new");
+check(/o'z transportimiz/.test(r.error ?? ""), "o'z mashinamiz raqami ko'chadan sifatida rad etildi", r.error);
+r = await logist.action(`${TA}#createTrip`, [undefined, extF({ extType: "TRUCK" })], "/trips/new");
+check(/mikser/.test(r.error ?? ""), "ko'chadan yuk mashinada beton rad etildi", r.error);
+r = await logist.action(`${TA}#createTrip`, [undefined, extF()], "/trips/new");
+const tx1 = idFrom(r.redirect)!;
+check(!!tx1, "ko'chadan mashina bilan beton reysi ochildi", r.error ?? r.text.slice(0, 200));
+const extOf = (t: string) => q(`select v.id, v.plate, v.external, v."isActive", e.id, e.external, e."isActive", e.phone, coalesce(t.bru,'-') from "Trip" t
+  join "Vehicle" v on v.id=t."vehicleId" join "Employee" e on e.id=t."driverId" where t.id='${t}'`)[0] ?? [];
+const [xv, xplate, vExt, vAct, xe, eExt, eAct, ePhone, xbru] = extOf(tx1);
+check(vExt === "t" && vAct === "f" && eExt === "t" && eAct === "f", "ko'chadan mashina va haydovchi external, nofaol", extOf(tx1));
+check(xplate === `01Q${extNo}XT` && ePhone === "+998907776655" && xbru === "BRU-2", "raqam, telefon normallashdi; BRU yozildi", extOf(tx1));
+// Ikkinchi chaqiruv — boshqacha yozilgan raqam va telefon bilan: o'sha mashina va haydovchi qayta ishlatiladi
+r = await logist.action(`${TA}#createTrip`, [undefined, extF({ extPlate: `01Q${extNo}XT`, extDriverPhone: "+998 90 777 66 55", qtyM3: 0.5, bru: "" })], "/trips/new");
+const tx2 = idFrom(r.redirect)!;
+const again2 = extOf(tx2);
+check(!!tx2 && again2[0] === xv && again2[4] === xe && again2[8] === "-", "ko'chadan mashina/haydovchi qayta ishlatildi (dublikat yo'q)", r.error ?? again2);
+check(n1(`select count(*) from "Vehicle" where external and plate='01Q${extNo}XT'`) === 1, "ko'chadan mashina bitta yozuv");
+let xp = await logist.get(`/trips/${tx1}/print`);
+check(xp.status === 200 && xp.text.includes("BRU-2") && xp.text.includes("ko&#x27;chadan chaqirilgan") && xp.text.includes("+998907776655"), "nakladnoyda BRU, «ko'chadan chaqirilgan» va haydovchi telefoni", xp.status);
+xp = await logist.get(`/trips/${tx1}`);
+check(xp.status === 200 && xp.text.includes("Ko&#x27;chadan chaqirilgan mashina"), "reys kartasida ko'chadan mashina ogohlantirishi", xp.status);
+xp = await logist.get("/logistika/transport");
+check(xp.status === 200 && !xp.text.includes(`01Q${extNo}XT`), "Transport parkida ko'chadan mashina yo'q", xp.status);
+xp = await dir.get("/employees");
+check(xp.status === 200 && !xp.text.includes("QA Ko&#x27;cha Haydovchi"), "Xodimlar ro'yxatida ko'chadan haydovchi yo'q", xp.status);
+xp = await logist.get("/trips/new");
+check(xp.status === 200 && xp.text.includes(`01Q${extNo}XT`) && xp.text.includes("BRU-2"), "Yangi reys: avvalgi ko'chadan mashina va BRU ro'yxati", xp.status);
+for (const t of [tx1, tx2]) await logist.action(`${TA}#cancelTrip`, [t], `/trips/${t}`);
+check(n1(`select count(*) from "Trip" where id in ('${tx1}','${tx2}') and status='CANCELLED'`) === 2, "ko'chadan mashina reyslari bekor qilindi");
+
 // Haydovchi sahifasi — o'z reysi ko'rinadi
 let page = await hay.get("/mening-reyslarim");
 const note1 = q1(`select "deliveryNoteNo" from "Trip" where id='${t1}'`)!;

@@ -36,7 +36,8 @@ const siteNote = (x: { contactName: string | null; contactPhone: string | null; 
 export async function pushTripToEco(tripId: string): Promise<SyncResult> {
   if (!ecoEnabled()) return { ok: false, skipped: true };
   const t = await db.trip.findUnique({ where: { id: tripId }, include: { order: { include: { customer: true, site: true, items: { include: { product: true } } } }, vehicle: true, driver: true } });
-  if (!t || t.status === "CANCELLED") return { ok: false, skipped: true };
+  // Ko'chadan chaqirilgan mashina haydovchisida ECO ilovasi yo'q — reys vebdan yuritiladi
+  if (!t || t.status === "CANCELLED" || t.vehicle.external) return { ok: false, skipped: true };
   const item = t.order.items[0];
   const driverPhone = normalizePhone(t.driver.phone);
   const warn = driverPhone ? null : `Haydovchi "${t.driver.fullName}" telefoni yo'q yoki noto'g'ri — reys ECO'da haydovchisiz turibdi (Xodimlar sahifasida +998… formatida kiriting)`;

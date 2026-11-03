@@ -76,7 +76,8 @@ export async function gpsWatchTick(opts: { now?: Date; force?: boolean; cleanup?
 async function watchTrips(now: Date, cfg: { silentMin: number; stopMin: number; offRouteM: number; plant: (LatLng & { radiusM: number }) | null }): Promise<WatchReport> {
   const report: WatchReport = { checked: 0, opened: [], closed: [], cleanup: null };
   const trips = await db.trip.findMany({
-    where: { OR: [{ status: "ON_ROAD", arrivedAt: null }, { status: "LOADED" }] },
+    // Ko'chadan chaqirilgan mashinada telefon GPS'i yo'q — "GPS jim" / "turibdi" baholanmaydi
+    where: { OR: [{ status: "ON_ROAD", arrivedAt: null }, { status: "LOADED" }], vehicle: { external: false } },
     select: {
       id: true, deliveryNoteNo: true, status: true, pickupLat: true, pickupLng: true, departedAt: true, loadedAt: true, lastSeenAt: true, lastAt: true, lastLat: true, lastLng: true, lastSpeedKmh: true,
       gpsPlatform: true, plannedRoute: true, ecoDeliveryId: true,

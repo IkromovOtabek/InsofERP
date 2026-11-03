@@ -38,7 +38,8 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
     return str ? `${path}?${str}` : path;
   };
   const [vehicles, stats] = await Promise.all([db.vehicle.findMany({
-    where: type && type in VEHICLE_TYPE ? { type: type as "MIXER" } : {},
+    // Ko'chadan chaqirilgan mashinalar (`external`) — park emas, ro'yxatga kirmaydi
+    where: { external: false, ...(type && type in VEHICLE_TYPE ? { type: type as "MIXER" } : {}) },
     orderBy: [{ isActive: "desc" }, { type: "asc" }, { plate: "asc" }],
     include: {
       drivers: { where: { isActive: true }, select: { id: true, fullName: true } },

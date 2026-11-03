@@ -235,7 +235,7 @@ async function vehiclesList(title: string, q?: string, filter?: string): Promise
   const monthFrom = new Date(); monthFrom.setDate(1); monthFrom.setHours(0, 0, 0, 0);
   const [vehicles, due] = await Promise.all([
     db.vehicle.findMany({
-      where: q ? { OR: [{ plate: { contains: q, mode: "insensitive" } }, { brand: { contains: q, mode: "insensitive" } }, { drivers: { some: { fullName: { contains: q, mode: "insensitive" } } } }] } : {},
+      where: { external: false, ...(q ? { OR: [{ plate: { contains: q, mode: "insensitive" } }, { brand: { contains: q, mode: "insensitive" } }, { drivers: { some: { fullName: { contains: q, mode: "insensitive" } } } }] } : {}) },
       orderBy: [{ isActive: "desc" }, { type: "asc" }, { plate: "asc" }],
       include: {
         drivers: { where: { isActive: true }, select: { fullName: true } },
@@ -521,7 +521,7 @@ async function driverHistoryRows(q?: string): Promise<HomeRow[]> {
   }
   for (const r of lastTrip) get(r.driverId).last = r._max.createdAt;
   const people = await db.employee.findMany({
-    where: { OR: [{ position: { in: positions } }, { id: { in: [...tot.keys()] } }], ...(q ? { fullName: { contains: q, mode: "insensitive" } } : {}) },
+    where: { external: false, OR: [{ position: { in: positions } }, { id: { in: [...tot.keys()] } }], ...(q ? { fullName: { contains: q, mode: "insensitive" } } : {}) },
     select: { id: true, fullName: true, phone: true, isActive: true },
   });
   return people

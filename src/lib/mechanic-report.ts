@@ -30,6 +30,7 @@ export async function mechanicReport(from: Date, to: Date) {
     db.tripIssue.findMany({ where: { kind: { in: VEHICLE_ISSUE_KINDS }, createdAt: range }, select: { resolvedAt: true, trip: { select: { vehicleId: true } } } }),
     db.vehicleService.groupBy({ by: ["vehicleId"], where: { cancelledAt: null, date: range }, _count: { _all: true } }),
     db.vehicle.findMany({
+      where: { external: false },
       orderBy: { plate: "asc" },
       select: { id: true, plate: true, type: true, isActive: true, status: true, statusNote: true, statusSince: true, inspectionUntil: true, insuranceUntil: true },
     }),

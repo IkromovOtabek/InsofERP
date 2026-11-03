@@ -37,7 +37,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
       },
     }),
     positionCatalog(),
-    db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
+    db.vehicle.findMany({ where: { external: false }, orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
     // Buyruq raqami korxona bo'yicha ketma-ket yuradi — shu yildagilardan keyingisi taklif qilinadi
     db.hrDocument.findMany({
       where: { kind: { in: ORDER_KINDS }, docDate: { gte: new Date(Date.UTC(new Date().getFullYear(), 0, 1)) } }, // @db.Date — UTC yarim tun

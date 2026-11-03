@@ -739,7 +739,7 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
     }
     case "employees": {
       const list = await db.employee.findMany({
-        where: q ? { OR: [{ fullName: { contains: q, mode: "insensitive" } }, { position: { contains: q, mode: "insensitive" } }, { brigades: { some: { name: { contains: q, mode: "insensitive" } } } }] } : undefined,
+        where: { external: false, ...(q ? { OR: [{ fullName: { contains: q, mode: "insensitive" } }, { position: { contains: q, mode: "insensitive" } }, { brigades: { some: { name: { contains: q, mode: "insensitive" } } } }] } : {}) },
         orderBy: [{ isActive: "desc" }, { fullName: "asc" }], take: TAKE,
         include: { brigades: { where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true } } },
       });

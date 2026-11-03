@@ -25,7 +25,7 @@ export async function HrHome() {
   const day = dayUtc(todayIso()); // Attendance.date — @db.Date (UTC yarim tuni)
   const [active, inactive, marks, birthdays, licenses, contracts] = await Promise.all([
     db.employee.count({ where: { isActive: true } }),
-    db.employee.count({ where: { isActive: false } }),
+    db.employee.count({ where: { isActive: false, external: false } }),
     db.attendance.groupBy({ by: ["status"], where: { date: day, employee: { isActive: true } }, _count: { _all: true } }),
     db.employee.findMany({ where: { isActive: true, birthDate: { not: null } }, select: { id: true, fullName: true, position: true, birthDate: true, phone: true } }),
     db.employee.findMany({ where: { isActive: true, licenseExpiry: { lt: in30 } }, orderBy: { licenseExpiry: "asc" }, select: { id: true, fullName: true, position: true, licenseNo: true, licenseExpiry: true } }),

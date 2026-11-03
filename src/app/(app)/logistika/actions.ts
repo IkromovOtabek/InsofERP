@@ -162,6 +162,20 @@ export async function saveLogisticsSettings(_prev: ActionState, fd: FormData): P
   return { ok: true };
 }
 
+/** BRU (beton qorishma uzeli) ro'yxati — har qatorda bitta nom; «Yangi reys»da tanlanadi, nakladnoyda ko'rinadi. */
+export async function saveBruNames(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "settings");
+  const names = [...new Set(String(fd.get("bruNames") ?? "").split(/\r?\n/).map((x) => x.trim().replace(/\s+/g, " ")).filter(Boolean))];
+  if (names.some((n) => n.length > 80)) return { error: "BRU nomi 80 belgidan oshmasin" };
+  if (names.length > 30) return { error: "Ko'pi bilan 30 ta BRU" };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { bruNames: true } });
+  await db.companySettings.upsert({ where: { id: "main" }, create: { id: "main", bruNames: names }, update: { bruNames: names } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ? { bruNames: before.bruNames } : undefined, { bruNames: names });
+  refresh();
+  revalidatePath("/trips/new");
+  return { ok: true };
+}
+
 // ───────────────────────── Haydovchi tabeli: reys narxi va tarif (dispetcher) ─────────────────────────
 
 const priceSchema = z.object({

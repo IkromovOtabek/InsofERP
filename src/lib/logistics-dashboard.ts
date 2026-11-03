@@ -20,6 +20,8 @@ export type DashTrip = {
   id: string; noteNo: string; status: string; phase: TripPhase;
   orderId: string; orderNo: string; customerId: string; customer: string; address: string;
   plate: string; vehicleId: string; driver: string; driverId: string; driverPhone: string | null;
+  /** Ko'chadan chaqirilgan mashina — ilova va GPS yo'q, "GPS jim" ogohlantirishi berilmaydi */
+  external: boolean;
   qty: number; unit: string;
   plannedAt: Date | null; loadedAt: Date | null; departedAt: Date | null; arrivedAt: Date | null; deliveredAt: Date | null;
   delayMin: number | null; level: Level; fix: LiveFix | null; openIssues: number;
@@ -93,7 +95,7 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
 
   const tripInclude = {
     order: { include: { customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } },
-    vehicle: { select: { plate: true, type: true } }, driver: { select: { fullName: true, phone: true } },
+    vehicle: { select: { plate: true, type: true, external: true } }, driver: { select: { fullName: true, phone: true } },
     issues: { select: { id: true, kind: true, note: true, createdAt: true, resolvedAt: true } },
   } as const;
 
@@ -128,6 +130,7 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
       orderBy: { createdAt: "asc" },
     }),
     db.vehicle.findMany({
+      where: { external: false },
       orderBy: [{ isActive: "desc" }, { type: "asc" }, { plate: "asc" }],
       include: { drivers: { where: { isActive: true }, select: { fullName: true } } },
     }),
@@ -148,7 +151,7 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
     return {
       id: t.id, noteNo: t.deliveryNoteNo, status: t.status, phase: tripPhase(t),
       orderId: t.orderId, orderNo: t.order.orderNo, customerId: t.order.customerId, customer: t.order.customer.name, address: t.order.deliveryAddress,
-      plate: t.vehicle.plate, vehicleId: t.vehicleId, driver: t.driver.fullName, driverId: t.driverId, driverPhone: t.driver.phone,
+      plate: t.vehicle.plate, vehicleId: t.vehicleId, driver: t.driver.fullName, driverId: t.driverId, driverPhone: t.driver.phone, external: t.vehicle.external,
       qty: Number(t.qtyM3), unit: unitOf(t.order.items),
       plannedAt: tripPlannedAt(t, t.order), loadedAt: t.loadedAt, departedAt: t.departedAt, arrivedAt: t.arrivedAt, deliveredAt: t.deliveredAt,
       delayMin: delay, level: delayLevel(delay, settings), fix, openIssues: t.issues.filter((i) => !i.resolvedAt).length,
@@ -230,7 +233,7 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
       if (t.status === "ON_ROAD" && t.level !== "ok") {
         alerts.push({ level: t.level, title: `${t.noteNo} kechikmoqda`, text: `${t.plate} · ${t.driver} · +${minutesLabel(t.delayMin)}`, href: `/trips/${t.id}` });
       }
-      if (t.status === "ON_ROAD" && !t.arrivedAt) {
+      if (t.status === "ON_ROAD" && !t.arrivedAt && !t.external) {
         // Oxirgi aloqa: nuqta yoki nuqtasiz "tirikman" (turgan mashina ham 60 s da yuboradi)
         const age = t.lastSeenAt ? mins(t.lastSeenAt, now) : t.departedAt ? mins(t.departedAt, now) : null;
         if (age != null && age >= settings.gpsSilentMin) {

@@ -1242,7 +1242,7 @@ async function logiToday(kind: "today" | "onroad" | "waiting"): Promise<Part> {
 }
 
 async function inactiveStaff(): Promise<Part> {
-  const rows = await db.employee.findMany({ where: { isActive: false }, orderBy: [{ firedAt: "desc" }], select: { id: true, fullName: true, position: true, firedAt: true, firedReason: true, hiredAt: true } });
+  const rows = await db.employee.findMany({ where: { isActive: false, external: false }, orderBy: [{ firedAt: "desc" }], select: { id: true, fullName: true, position: true, firedAt: true, firedReason: true, hiredAt: true } });
   return {
     title: "Nofaol xodimlar", subtitle: "Ishdan bo'shagan yoki faolsizlantirilgan",
     fields: [f("Jami", cnt(rows.length, "kishi")), f("Shu yil bo'shaganlar", String(rows.filter((e) => e.firedAt && e.firedAt.getFullYear() === new Date().getFullYear()).length))],

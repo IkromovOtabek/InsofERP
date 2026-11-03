@@ -63,7 +63,7 @@ function prettyPosition(name: string) {
 export async function syncEmployeePositions(): Promise<ActionState> {
   const s = await hr();
   const [used, work] = await Promise.all([
-    db.employee.groupBy({ by: ["position"], _count: { _all: true } }),
+    db.employee.groupBy({ by: ["position"], where: { external: false }, _count: { _all: true } }),
     db.workPosition.findMany({ select: { id: true, name: true, isActive: true } }),
   ]);
 

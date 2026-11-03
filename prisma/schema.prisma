@@ -124,6 +124,8 @@ model CompanySettings {
   legalName           String? // yuridik nomi (MChJ)
   inn                 String?
   address             String?
+  /// Zavoddagi BRU (beton qorishma uzeli) nomlari — «Yangi reys»da tanlanadi (Logistika → Sozlamalar)
+  bruNames            String[]  @default([])
   // Zavod joyi — barcha masofa shu nuqtadan hisoblanadi (Sozlamalar sahifasida xaritadan belgilanadi)
   lat                 Float?
   lng                 Float?
@@ -545,6 +547,9 @@ model Vehicle {
   insurancePolicy  String? // polis raqami
   insuranceUntil   DateTime? // sug'urta muddati
   note             String?
+  /// Ko'chadan chaqirilgan (yollangan) mashina — o'z parkimiz band bo'lganda «Yangi reys»da yoziladi, raqam bo'yicha
+  /// qayta ishlatiladi. Doim `isActive: false`: park ro'yxatlari, dashbord va ECO sinxronga kirmaydi.
+  external         Boolean   @default(false)
 
   trips        Trip[]
   drivers      Employee[]         @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar (smena bo'yicha bir nechta)
@@ -626,6 +631,9 @@ model Employee {
   licenseExpiry      DateTime? // guvohnoma amal qilish muddati
   vehicleId          String? // biriktirilgan texnika (mikser/nasos)
   workSchedule       String? // ish grafigi: "08:00–20:00, 2/2", "Tungi smena" — dispetcher uchun
+  /// Ko'chadan chaqirilgan mashina haydovchisi — shtatda emas. Doim `isActive: false`: kadr, davomat, oylik va
+  /// ECO ro'yxatlariga kirmaydi; reysda ismi va telefoni ko'rinsin deb saqlanadi (telefon bo'yicha qayta ishlatiladi)
+  external           Boolean   @default(false)
   /// Ishlab chiqarishdagi brigadasi — direktor taqsimlaydi (Bosh sahifa → Ishlab chiqarish → Xodimlarni taqsimlash).
   /// Brigadaga biriktirilgan xodim sex tarkibida sanaladi (lavozimi boshqa bo'lim bo'lsa ham).
   brigadeId          String?
@@ -1710,6 +1718,7 @@ model Trip {
   receiverName   String? // obyektda kim qabul qildi
   note           String?
   createdAt      DateTime   @default(now())
+  bru            String? // beton qaysi BRU (beton qorishma uzeli) dan olinadi — ro'yxat `CompanySettings.bruNames`, nakladnoyda ko'rinadi
 
   // ── Yukni olgan joyi (zavod/sklad) — logistika "Yuklandi" bosqichida belgilaydi ──
   pickupAddress String? // yuk olingan joy manzili

@@ -22,6 +22,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const { q = "", pos = "", holat = "", login = "" } = await searchParams;
 
   const where: Prisma.EmployeeWhereInput = {
+    // Ko'chadan chaqirilgan mashina haydovchilari shtatda emas — faqat reyslarda ko'rinadi
+    external: false,
     ...(q ? { OR: [{ fullName: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }] } : {}),
     // Lavozim katta-kichik harf va ortiqcha bo'shliqqa qaramay topilsin (Excel'dan kelgan yozuvlar uchun)
     ...(pos ? { position: { equals: pos, mode: "insensitive" } } : {}),
@@ -38,9 +40,9 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     db.workPosition.findMany({ select: { name: true, department: true, loginRole: true, isActive: true } }),
     // Formadagi F.I.O. maydoni uchun: ro'yxatdagi xodimlar (Otdel kadr yoki Excel orqali kelganlar ham).
     // Nofaoli ham chiqadi — tanlansa qayta faollashtiriladi, aks holda odam topilmay qoladi.
-    db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, phone: true, userId: true, isActive: true, vehicle: true, licenseNo: true, licenseCategory: true, licenseExpiry: true } }),
+    db.employee.findMany({ where: { external: false }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, phone: true, userId: true, isActive: true, vehicle: true, licenseNo: true, licenseCategory: true, licenseExpiry: true } }),
     // Texnikaga hozir kim biriktirilgani — formada "band" degan ogohlantirish uchun
-    db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true, drivers: { where: { isActive: true }, select: { fullName: true }, take: 1 } } }),
+    db.vehicle.findMany({ where: { external: false }, orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true, drivers: { where: { isActive: true }, select: { fullName: true }, take: 1 } } }),
     // Kirish sahifasidan kelgan "Ro'yxatdan o'tish" arizalari — tasdiqlashni kadr/direktor qiladi
     isHR ? pendingAccessRequests() : Promise.resolve([]),
   ]);

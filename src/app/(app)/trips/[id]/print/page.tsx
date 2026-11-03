@@ -48,6 +48,8 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
           <div className="text-lg font-semibold">№ {t.deliveryNoteNo}</div>
           <div className="mt-1">Sana: {date(t.loadedAt ?? t.createdAt)}</div>
           <div>Yuklash vaqti: <b>{t.loadedAt ? dateTime(t.loadedAt) : "—"}</b>{item?.product.unit === "m3" && <> · Zames №: <b>{batch?.batchNo ?? "—"}</b></>}</div>
+          {/* Beton qaysi BRU (beton qorishma uzeli) dan olingani — reys ochilganda tanlanadi */}
+          {(item?.product.unit === "m3" || t.bru) && <div>BRU: <b>{t.bru ?? "—"}</b></div>}
         </div>
         <div className="flex flex-col items-center">
           <div className="bg-white" dangerouslySetInnerHTML={{ __html: qr }} />
@@ -61,8 +63,8 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
         <div><span className="text-slate-600">Yuk oluvchi:</span> <b>{t.order.customer.name}</b>{t.order.customer.inn && ` (INN ${t.order.customer.inn})`}</div>
         <div><span className="text-slate-600">Yukni olgani joyi:</span> {t.pickupAddress ?? company.address ?? "—"}</div>
         <div><span className="text-slate-600">Yetkazish manzili:</span> {t.order.deliveryAddress}</div>
-        <div><span className="text-slate-600">Transport:</span> {t.vehicle.plate}</div>
-        <div><span className="text-slate-600">Haydovchi:</span> {t.driver.fullName}</div>
+        <div><span className="text-slate-600">Transport:</span> {t.vehicle.plate}{t.vehicle.external && " (ko'chadan chaqirilgan)"}</div>
+        <div><span className="text-slate-600">Haydovchi:</span> {t.driver.fullName}{t.vehicle.external && t.driver.phone && ` · ${t.driver.phone}`}</div>
         <div><span className="text-slate-600">Mijoz tel:</span> {t.order.customer.phone ?? "—"}</div>
       </div>
 

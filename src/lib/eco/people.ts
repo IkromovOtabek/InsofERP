@@ -76,7 +76,8 @@ export async function pushEmployeeToEco(employeeId: string): Promise<SyncResult>
 export async function pushVehicleToEco(vehicleId: string): Promise<SyncResult> {
   if (!ecoEnabled()) return { ok: false, skipped: true };
   const v = await db.vehicle.findUnique({ where: { id: vehicleId } });
-  if (!v) return { ok: false, skipped: true };
+  // Ko'chadan chaqirilgan mashina ECO parkiga qo'shilmaydi (haydovchisida ilova yo'q)
+  if (!v || v.external) return { ok: false, skipped: true };
   try {
     const r = await eco.upsertVehicle(v.plate, Number(v.capacityM3 ?? 8), v.type, v.isActive);
     await db.vehicle.update({ where: { id: v.id }, data: { ecoVehicleId: r.id, ecoSyncedAt: new Date(), ecoError: null } });
@@ -107,7 +108,7 @@ async function rememberEmployee(id: string, data: { ecoUserId?: string; ecoActiv
 async function findByPhone(phone: string) {
   // Ishdan bo'shaganlar hisobga olinmaydi: SIM-karta boshqa odamga o'tgan bo'lsa, yangi odam
   // eski xodimning kartasi (va reyslar tarixi) bilan bog'lanib qolardi
-  const list = await db.employee.findMany({ where: { ecoUserId: null, phone: { not: null }, firedAt: null }, orderBy: [{ isActive: "desc" }, { createdAt: "asc" }] });
+  const list = await db.employee.findMany({ where: { ecoUserId: null, phone: { not: null }, firedAt: null, external: false }, orderBy: [{ isActive: "desc" }, { createdAt: "asc" }] });
   return list.find((x) => normalizePhone(x.phone) === phone) ?? null;
 }
 

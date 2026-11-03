@@ -14,6 +14,7 @@ import { prepayShortError } from "@/lib/payments";
 import { decodePolyline, summarizeTrack } from "@/lib/trip-track";
 import { saveEcoTrackSummarySafe, saveTripSummarySafe, tripStats } from "@/lib/trip-summary";
 import { snapshotTripPay } from "@/lib/driver-trip-pay";
+import { normalizePhone } from "@/lib/eco/client";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -657,21 +658,53 @@ type ReadinessOrder = {
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
+/** Qatorning tayyor miqdori (qator miqdoridan oshmaydi). */
+function itemReady(i: ReadinessOrder["items"][number], batches: ReadinessOrder["batches"]): number {
+  let r = 0;
+  // Qator bir nechta brigadaga bo'lingan bo'lishi mumkin; bekor qilingan topshiriq tayyor hisoblanmaydi (avvalgidek)
+  if (i.tasks.length) r = i.tasks.reduce((s, t) => s + (t.status === "CANCELLED" ? 0 : Number(t.doneQty)), 0);
+  // Beton uchun zames ham ishlab chiqarish tasdig'i — brigada qayd qilmagan bo'lsa ham quyilgani jo'natiladi
+  if (i.product.unit === "m3") r = Math.max(r, batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0));
+  return Math.min(Number(i.qtyM3), r);
+}
+
 export function orderReadiness(o: ReadinessOrder): OrderReadiness {
-  let total = 0, ready = 0, hasTasks = false;
+  let total = 0, ready = 0;
   for (const i of o.items) {
-    const q = Number(i.qtyM3);
-    total += q;
-    let r = 0;
-    // Qator bir nechta brigadaga bo'lingan bo'lishi mumkin; bekor qilingan topshiriq tayyor hisoblanmaydi (avvalgidek)
-    if (i.tasks.length) { hasTasks = true; r = i.tasks.reduce((s, t) => s + (t.status === "CANCELLED" ? 0 : Number(t.doneQty)), 0); }
-    // Beton uchun zames ham ishlab chiqarish tasdig'i — brigada qayd qilmagan bo'lsa ham quyilgani jo'natiladi
-    if (i.product.unit === "m3") r = Math.max(r, o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0));
-    ready += Math.min(q, r);
+    total += Number(i.qtyM3);
+    ready += itemReady(i, o.batches);
   }
+  const hasTasks = o.items.some((i) => i.tasks.length > 0);
   const shipped = o.trips.reduce((s, t) => s + tripCoveredQty(t), 0);
   const unit = soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 as number })));
   return { total: r3(total), ready: r3(ready), shipped: r3(shipped), available: r3(Math.max(0, ready - shipped)), inProduction: r3(Math.max(0, total - ready)), hasTasks, unit };
+}
+
+/** Zayavka qatori "Yangi reys" jamlanmasi uchun: mahsulot bo'yicha jami / tayyor / jo'natilgan / reysga mumkin. */
+export type OrderLine = { productId: string; name: string; unit: string; qty: number; ready: number; shipped: number; available: number; inProduction: number; mixer: boolean };
+
+/**
+ * Zayavka qatorlari bo'yicha holat. Reys mahsulotga emas, zayavkaga yoziladi: jo'natilgani qator turiga
+ * texnika turidan bo'linadi (aralash zayavka: mikser — beton, yuk mashina — dona), bir turdagi bir nechta
+ * qatorda esa navbat bilan taqsimlanadi (bunday zayavkaga reys baribir ochilmaydi — `tripLine`).
+ */
+export function orderLines(o: Omit<ReadinessOrder, "items" | "trips"> & {
+  items: (ReadinessOrder["items"][number] & { product: { unit: string; name: string } })[];
+  trips: (ReadinessOrder["trips"][number] & { vehicle: { type: string } })[];
+}): OrderLine[] {
+  const classMixed = new Set(o.items.map((i) => i.product.unit === "m3")).size > 1;
+  const left = new Map<boolean, number>();
+  for (const mixer of [true, false]) {
+    left.set(mixer, o.trips.filter((t) => !classMixed || (t.vehicle.type === "MIXER") === mixer).reduce((s, t) => s + tripCoveredQty(t), 0));
+  }
+  return o.items.map((i) => {
+    const mixer = i.product.unit === "m3";
+    const q = Number(i.qtyM3);
+    const ready = itemReady(i, o.batches);
+    const shipped = Math.min(q, left.get(mixer) ?? 0);
+    left.set(mixer, (left.get(mixer) ?? 0) - shipped);
+    return { productId: i.productId, name: i.product.name, unit: i.product.unit, qty: r3(q), ready: r3(ready), shipped: r3(shipped), available: r3(Math.max(0, ready - shipped)), inProduction: r3(Math.max(0, q - ready)), mixer };
+  });
 }
 
 /**
@@ -698,7 +731,45 @@ export function readinessError(rd: OrderReadiness, qty: number): string | null {
 
 // ───────────────────────── Yangi reys ─────────────────────────
 
-export type NewTripInput = { orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null; plannedAt?: Date | null };
+/**
+ * Ko'chadan chaqirilgan mashina: o'z parkimiz hammasi band bo'lganda ish to'xtab qolmasligi uchun.
+ * capacity — mikserda m³, yuk mashinada tonna.
+ */
+export type ExternalCar = { type: "MIXER" | "TRUCK"; plate: string; capacity: number | null; driverName: string; driverPhone: string };
+
+export type NewTripInput = {
+  orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null; plannedAt?: Date | null;
+  /** Beton qaysi BRU dan olinadi — faqat beton reysida saqlanadi. */
+  bru?: string | null;
+  /** Berilsa — vehicleId/driverId e'tiborga olinmaydi, mashina va haydovchi shu ma'lumotdan yoziladi. */
+  external?: ExternalCar | null;
+};
+
+/** Ko'chadan chaqirilgan haydovchining lavozimi — haydovchi lavozimlari ro'yxatiga kirmaydi (ECO, tabel, oylik). */
+export const EXTERNAL_DRIVER_POSITION = "Ko'chadan haydovchi";
+const normPlate = (v: string) => v.toUpperCase().replace(/\s+/g, "");
+
+/**
+ * Ko'chadan chaqirilgan mashina va haydovchini yozadi (raqam / telefon bo'yicha avvalgisi qayta ishlatiladi).
+ * Ikkalasi ham `external` va `isActive: false` — park, kadr, oylik va ECO ro'yxatlariga kirmaydi.
+ */
+async function upsertExternalCar(ext: ExternalCar, phone: string, userId: string): Promise<{ vehicleId: string; driverId: string }> {
+  const plate = normPlate(ext.plate);
+  const capacityUnit = ext.type === "MIXER" ? "M3" : "TON";
+  const car = { type: ext.type, capacityM3: ext.capacity, capacityUnit } as const;
+  const known = (await db.vehicle.findMany({ where: { external: true }, select: { id: true, plate: true } })).find((x) => normPlate(x.plate) === plate);
+  const vehicle = known
+    ? await db.vehicle.update({ where: { id: known.id }, data: car })
+    : await db.vehicle.upsert({ where: { plate }, create: { plate, ...car, external: true, isActive: false, note: "Ko'chadan chaqirilgan" }, update: car });
+  if (!known) await audit(db, userId, "CREATE", "Vehicle", vehicle.id, undefined, vehicle);
+  const fullName = ext.driverName.trim();
+  const prev = (await db.employee.findMany({ where: { external: true }, select: { id: true, phone: true } })).find((e) => normalizePhone(e.phone) === phone);
+  const driver = prev
+    ? await db.employee.update({ where: { id: prev.id }, data: { fullName, vehicleId: vehicle.id } })
+    : await db.employee.create({ data: { fullName, phone, position: EXTERNAL_DRIVER_POSITION, external: true, isActive: false, vehicleId: vehicle.id, note: "Ko'chadan chaqirilgan mashina haydovchisi" } });
+  if (!prev) await audit(db, userId, "CREATE", "Employee", driver.id, undefined, driver);
+  return { vehicleId: vehicle.id, driverId: driver.id };
+}
 
 /**
  * Reys (nakladnoy) ochish — veb "Yangi reys" formasi ham, mobil ilova ham shu yerdan.
@@ -720,9 +791,25 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   const unpaid = await prepayShortError(db, input.orderId);
   if (unpaid) throw new Error(unpaid);
 
-  const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
-  if (!v || !v.isActive) throw new Error("Texnika topilmadi yoki nofaol");
-  if (v.status === "REPAIR") throw new Error(`${v.plate} ta'mirda — boshqa transport tanlang`);
+  const ext = input.external ?? null;
+  let extPhone = "";
+  let v: { plate: string; type: string; capacityM3: number | null; inspectionUntil?: Date | null; insuranceUntil?: Date | null };
+  if (ext) {
+    // Ko'chadan mashina: hujjat muddati va lavozim tekshirilmaydi (ma'lumoti bizda yo'q), faqat to'liq yozilgani
+    if (!normPlate(ext.plate)) throw new Error("Ko'chadan mashina: davlat raqamini kiriting");
+    if (ext.driverName.trim().length < 3) throw new Error("Ko'chadan mashina: haydovchining ism-familiyasini kiriting");
+    extPhone = normalizePhone(ext.driverPhone) ?? "";
+    if (!extPhone) throw new Error("Ko'chadan mashina: haydovchi telefoni +998 XX XXX XX XX ko'rinishida bo'lsin");
+    if (ext.capacity != null && !(ext.capacity > 0)) throw new Error("Ko'chadan mashina: sig'imi 0 dan katta bo'lsin");
+    const own = (await db.vehicle.findMany({ where: { external: false }, select: { plate: true } })).find((x) => normPlate(x.plate) === normPlate(ext.plate));
+    if (own) throw new Error(`${own.plate} — o'z transportimiz. «Ko'chadan mashina» belgisini olib, ro'yxatdan tanlang`);
+    v = { plate: normPlate(ext.plate), type: ext.type, capacityM3: ext.type === "MIXER" ? ext.capacity : null };
+  } else {
+    const own = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
+    if (!own || !own.isActive) throw new Error("Texnika topilmadi yoki nofaol");
+    if (own.status === "REPAIR") throw new Error(`${own.plate} ta'mirda — boshqa transport tanlang`);
+    v = { ...own, capacityM3: own.capacityM3 != null ? Number(own.capacityM3) : null };
+  }
   if (v.type === "PUMP") throw new Error("Nasos yuk tashimaydi — mikser yoki yuk mashina tanlang");
   // Beton faqat mikserda ketadi; dona mahsulot (plita, blok) — mikser bo'lmagan texnikada. Sig'im (m³) faqat mikserga tegishli.
   const items = o.items;
@@ -743,13 +830,20 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   if (expired(v.inspectionUntil)) throw new Error(`${v.plate}: texnik ko'rik muddati o'tgan (${dmy(v.inspectionUntil!)}) — Transport kartasida yangilang`);
   if (expired(v.insuranceUntil)) throw new Error(`${v.plate}: sug'urta muddati o'tgan (${dmy(v.insuranceUntil!)}) — Transport kartasida yangilang`);
 
-  const d = await db.employee.findUnique({ where: { id: input.driverId } });
-  if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
-  const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
-  if (!driverNames.includes(d.position.trim().toLowerCase())) throw new Error(`${d.fullName} haydovchi lavozimida emas (${d.position}) — Otdel kadrda lavozimini tekshiring`);
-  if (expired(d.licenseExpiry)) throw new Error(`${d.fullName}: haydovchilik guvohnomasi muddati o'tgan (${dmy(d.licenseExpiry!)}) — haydovchi kartasida yangilang`);
+  if (!ext) {
+    const d = await db.employee.findUnique({ where: { id: input.driverId } });
+    if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
+    const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
+    if (!driverNames.includes(d.position.trim().toLowerCase())) throw new Error(`${d.fullName} haydovchi lavozimida emas (${d.position}) — Otdel kadrda lavozimini tekshiring`);
+    if (expired(d.licenseExpiry)) throw new Error(`${d.fullName}: haydovchilik guvohnomasi muddati o'tgan (${dmy(d.licenseExpiry!)}) — haydovchi kartasida yangilang`);
+  }
 
   const mixed = new Set(items.map((i) => i.productId)).size > 1;
+  // BRU faqat betonga tegishli (dona mahsulot sex/hovlidan chiqadi)
+  const bru = line.unit === "m3" ? input.bru?.trim().slice(0, 80) || null : null;
+  // Ko'chadan mashina hamma tekshiruvdan o'tgandan keyin yoziladi; reys tranzaksiyasi yiqilsa ham qoladi —
+  // keyingi safar raqami/telefoni bo'yicha qayta ishlatiladi
+  const ids = ext ? await upsertExternalCar(ext, extPhone, userId) : { vehicleId: input.vehicleId, driverId: input.driverId };
 
   const created = await db.$transaction(async (tx) => {
     // Qoldiq qulf ostida qayta tekshiriladi: ikki dispetcher bir vaqtda oxirgi 8 m³ ga reys ochsa, ikkinchisi to'xtaydi
@@ -769,7 +863,7 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     }
     const t = await tx.trip.create({
       data: {
-        deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined,
+        deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru,
         // QR havolasidagi kalit: raqam ketma-ket, kalitsiz ochiq sahifadan mijozlar ro'yxatini yig'ib bo'lmasin
         verifyToken: randomBytes(18).toString("base64url"),
       },
@@ -779,8 +873,8 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   });
 
   // Haydovchi reys biriktirilganini BILISHI kerak — u ro'yxatni kutib o'tirmaydi,
-  // mashinada yoki hovlida bo'ladi. Shu sababli bu eng muhim bildirishnoma.
-  notifyAfter(() => notifyEmployees([input.driverId], {
+  // mashinada yoki hovlida bo'ladi. Shu sababli bu eng muhim bildirishnoma. Ko'chadan haydovchida ilova yo'q
+  if (!ext) notifyAfter(() => notifyEmployees([input.driverId], {
     type: "TRIP_ASSIGNED",
     title: `Yangi reys — ${created.deliveryNoteNo}`,
     body: `${input.qtyM3} ${unitLabel(line.unit)}${mixed && line.name ? ` ${line.name}` : ""} · ${v.plate} · ${o.deliveryAddress}`,

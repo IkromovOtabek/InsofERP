@@ -54,7 +54,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
     recipientList(),
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], select: { id: true, name: true, isActive: true, leader: { select: { fullName: true } } } }),
     // Filtrda ishdan bo'shaganlar ham: eski chiqimlari nomi bilan topilsin
-    db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, isActive: true } }),
+    db.employee.findMany({ where: { external: false }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, isActive: true } }),
     companyVatPayer(),
   ]);
   const wh = warehouses.some((w) => w.id === sp.wh) ? sp.wh! : null;

@@ -97,12 +97,17 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             <LinkButton href={`/trips/${id}/print`} variant="secondary"><Printer size={16} /> Chop etish</LinkButton>
             {t.status === "PLANNED" && canLoad && <LoadButton tripId={id} />}
             {t.status === "LOADED" && canLog && <OnRoadButton tripId={id} />}
-            {driverPhase && canPlan && <span className="self-center text-xs text-slate-500">Yo&apos;l bosqichlarini haydovchi o&apos;z ilovasidan belgilaydi</span>}
+            {driverPhase && canPlan && !t.vehicle.external && <span className="self-center text-xs text-slate-500">Yo&apos;l bosqichlarini haydovchi o&apos;z ilovasidan belgilaydi</span>}
             {t.status === "PLANNED" && canLog && <form action={cancelTrip.bind(null, id)}><Button variant="ghost" className="text-red-600 hover:bg-red-50"><XCircle size={16} /> Bekor</Button></form>}
           </>
         }
       />
 
+      {t.vehicle.external && t.status !== "CANCELLED" && !t.closedAt && (
+        <Callout tone="info" title="Ko'chadan chaqirilgan mashina">
+          Haydovchida ilova va GPS yo&apos;q — yo&apos;l bosqichlarini (yo&apos;lga chiqdi, yetkazildi) dispetcher shu sahifadan belgilaydi. Haydovchi: {t.driver.fullName}{t.driver.phone ? `, ${t.driver.phone}` : ""}.
+        </Callout>
+      )}
       {blacklisted && t.status !== "CANCELLED" && t.status !== "DELIVERED" && (
         <Callout tone="danger" title="Mijoz qora ro'yxatda">Kredit limiti to'liq ishlatilgan. Jo'natishdan oldin sotuv bo'limi yoki direktor bilan kelishing. <Link href={`/customers/${t.order.customerId}`} className="underline">Mijoz kartasi</Link></Callout>
       )}
@@ -120,7 +125,9 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Hajm" value={tripUnit ? `${qty(t.qtyM3)} ${unitLabel(tripUnit)}` : qty(t.qtyM3)} hint={tripProduct} icon={Package} tone="brand" href={pathAllowed("/orders", s.role, s.perms) ? `/orders/${t.orderId}` : undefined} />
-        <StatCard label={VEHICLE_TYPE[t.vehicle.type] ?? "Transport"} value={<span className="tabular">{t.vehicle.plate}</span>} hint={t.driver.fullName} icon={Truck} href={pathAllowed("/logistika/transport", s.role, s.perms) ? `/logistika/transport/${t.vehicle.id}` : undefined} />
+        {t.vehicle.external
+          ? <StatCard label={`${VEHICLE_TYPE[t.vehicle.type] ?? "Transport"} · ko'chadan`} value={<span className="tabular">{t.vehicle.plate}</span>} hint={[t.driver.fullName, t.driver.phone].filter(Boolean).join(" · ")} icon={Truck} />
+          : <StatCard label={VEHICLE_TYPE[t.vehicle.type] ?? "Transport"} value={<span className="tabular">{t.vehicle.plate}</span>} hint={t.driver.fullName} icon={Truck} href={pathAllowed("/logistika/transport", s.role, s.perms) ? `/logistika/transport/${t.vehicle.id}` : undefined} />}
         <StatCard label="Yuklandi" value={<span className="text-base">{dt(t.loadedAt)}</span>} icon={Clock} href="#reys-vaqtlari" />
         <StatCard label="Yetkazildi" value={<span className="text-base">{dt(t.deliveredAt)}</span>} hint={t.receiverName ? `qabul qildi: ${t.receiverName}` : undefined} icon={Clock} tone={t.deliveredAt ? "success" : "default"} href="#reys-vaqtlari" />
       </div>
@@ -258,7 +265,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         </Card>
       )}
 
-      {ecoEnabled() && t.status !== "CANCELLED" && (() => {
+      {ecoEnabled() && t.status !== "CANCELLED" && !t.vehicle.external && (() => {
         const st = ecoLabel(t.ecoStatus);
         return (
           <Card className={`mt-5 ${t.ecoError ? "border-red-200" : ""}`}>
@@ -278,6 +285,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       <Card className="mt-5">
         <CardHeader title="Yetkazish" icon={MapPin} action={<Link href={`/orders/${t.orderId}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavkaga o'tish →</Link>} />
         <DL items={[
+          ...(t.bru ? [{ k: "BRU", v: t.bru }] : []),
           ...(t.pickupAddress ? [{ k: "Yukni olgani joyi", v: t.pickupAddress }] : []),
           { k: "Manzil", v: t.order.deliveryAddress },
           { k: "Sana", v: date(t.order.deliveryDate) },

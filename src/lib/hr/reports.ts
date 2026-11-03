@@ -16,7 +16,7 @@ export async function hrReport(month = monthOf(today())) {
   const months = Array.from({ length: 12 }, (_, i) => shiftMonth(month, i - 11));
   const from = dayUtc(`${months[0]}-01`);
   const [emps, runs, vacancies, candidates, enroll, requests, feedback, att] = await Promise.all([
-    db.employee.findMany({ select: { id: true, position: true, hiredAt: true, firedAt: true, isActive: true, createdAt: true, firedReason: true } }),
+    db.employee.findMany({ where: { external: false }, select: { id: true, position: true, hiredAt: true, firedAt: true, isActive: true, createdAt: true, firedReason: true } }),
     db.payrollRun.findMany({ where: { kind: "FINAL", status: { not: "CANCELLED" }, month: { in: months } }, select: { month: true, gross: true, employerTax: true } }),
     db.vacancy.findMany({ where: { status: "OPEN" }, select: { headcount: true, _count: { select: { candidates: { where: { stage: "HIRED" } } } } } }),
     db.candidate.findMany({ where: { createdAt: { gte: from } }, select: { stage: true, createdAt: true, stageAt: true } }),

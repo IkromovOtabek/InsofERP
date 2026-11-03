@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
-import { SettingsForm } from "./settings-form";
+import { BruForm, SettingsForm } from "./settings-form";
 import { DRUM_MAX_MIN } from "@/lib/logistics";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,10 @@ export default async function LogisticsSettingsPage() {
           GPS ogohlantirishlari (yo&apos;ldagi mashina, har daqiqada tekshiriladi): &quot;GPS jim&quot;, &quot;uzoq turibdi&quot; va &quot;yo&apos;ldan chiqdi&quot; holatlari logistikaga bir marta xabar bo&apos;lib keladi va holat o&apos;tgach o&apos;zi yopiladi. Yo&apos;ldan chiqish haydovchi ilovasida qurilgan marshrut bo&apos;yicha tekshiriladi.
           {" "}&quot;O&apos;rtacha tezlik&quot; GPS soxtaligini tekshirishda ham ishlatiladi: obyektgacha to&apos;g&apos;ri chiziq masofasini shu tezlikdan tez bosib o&apos;tgan reysga &quot;shubhali tez yetkazish&quot; muammosi yoziladi.
         </p>
+      </Card>
+      <Card className="mt-5">
+        <CardHeader title="BRU ro'yxati" description="Beton qorishma uzellari — «Yangi reys»da beton qaysi BRU dan olinishi tanlanadi va nakladnoyda ko'rinadi" />
+        <BruForm names={s?.bruNames ?? []} />
       </Card>
     </div>
   );

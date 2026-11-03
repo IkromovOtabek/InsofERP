@@ -32,13 +32,14 @@ export async function dispatchOnRoad(id: string, userId: string, note = DISPATCH
 export async function dispatchDelivered(id: string, userId: string, receiverName: string, q: DeliveryQty, note = DISPATCH_NOTE): Promise<DispatchResult> {
   const name = receiverName.trim();
   if (!name) return { error: "Obyektda kim qabul qilganini yozing" };
-  const cur = await db.trip.findUnique({ where: { id }, select: { status: true } });
+  const cur = await db.trip.findUnique({ where: { id }, select: { status: true, vehicle: { select: { external: true } } } });
   if (!cur) return { error: "Reys topilmadi" };
   if (!["LOADED", "ON_ROAD"].includes(cur.status)) return { error: "Faqat yuklangan yoki yo'ldagi reys yetkazildi deb belgilanadi" };
   const r = await tripDelivered(id, userId, name, note, q);
   if (r.error) return { error: r.error };
   if (!r.changed) return { error: "Holat o'zgargan — sahifani yangilang" };
-  await reportTripIssue(id, userId, { kind: "OTHER", source: "LOGISTICS", note: `Yetkazildi dispetcher tomonidan belgilandi (haydovchi ilovasisiz, GPS tasdig'isiz) — qabul qildi: ${name}` }).catch(() => undefined);
+  // Ko'chadan mashinada ilova ham, GPS ham bo'lmaydi — bu kutilgan holat, muammo yozilmaydi
+  if (!cur.vehicle.external) await reportTripIssue(id, userId, { kind: "OTHER", source: "LOGISTICS", note: `Yetkazildi dispetcher tomonidan belgilandi (haydovchi ilovasisiz, GPS tasdig'isiz) — qabul qildi: ${name}` }).catch(() => undefined);
   return { ok: true, orderId: r.orderId, changed: true };
 }
 

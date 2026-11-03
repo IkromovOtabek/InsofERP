@@ -42,7 +42,7 @@ export async function DriverList() {
   const positions = await driverPositionNames();
   const [drivers, totals] = await Promise.all([
     db.employee.findMany({
-      where: { OR: [{ position: { in: positions } }, { trips: { some: {} } }] },
+      where: { external: false, OR: [{ position: { in: positions } }, { trips: { some: {} } }] },
       orderBy: [{ isActive: "desc" }, { fullName: "asc" }],
       include: { vehicle: true },
     }),

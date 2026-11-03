@@ -274,8 +274,8 @@ export function Th({ children, right, className }: { children?: React.ReactNode;
 export function Td({ children, right, className, colSpan }: { children?: React.ReactNode; right?: boolean; className?: string; colSpan?: number }) {
   return <td colSpan={colSpan} className={cn("border-t border-slate-100 px-4 py-3 text-slate-700 first:font-medium first:text-slate-900", right && "whitespace-nowrap text-right tabular", className)}>{children}</td>;
 }
-export function Tr({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <tr className={cn("transition-colors hover:bg-slate-50/70", className)}>{children}</tr>;
+export function Tr({ children, className, ...p }: React.HTMLAttributes<HTMLTableRowElement>) {
+  return <tr className={cn("transition-colors hover:bg-slate-50/70", className)} {...p}>{children}</tr>;
 }
 /**
  * Bo'sh holat. Jadval ichida (`<tbody>`) — `<tr><td colSpan>` qatori, oddiy blok ichida

@@ -28,6 +28,7 @@ export async function DispatcherHome() {
     db.trip.findMany({ where: { driverId: { in: ids }, status: { in: ACTIVE_TRIP } }, select: { driverId: true } }),
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: today, status: { not: "PRESENT" } }, select: { employeeId: true } }),
     db.vehicle.findMany({
+      where: { external: false },
       orderBy: { plate: "asc" },
       select: {
         id: true, plate: true, isActive: true, status: true, inspectionUntil: true, insuranceUntil: true,

@@ -15,11 +15,19 @@ import { ecoEnabled } from "@/lib/eco/client";
 
 const schema = z.object({
   orderId: zStr("Zayavka tanlanmagan"),
-  vehicleId: zStr("Mikser tanlanmagan"),
-  driverId: zStr("Haydovchi tanlanmagan"),
+  // Ko'chadan mashinada (external=1) o'z texnikamiz va haydovchimiz tanlanmaydi
+  vehicleId: zOpt,
+  driverId: zOpt,
   qtyM3: z.coerce.number().positive("miqdor 0 dan katta bo'lsin"),
   note: zOpt,
   plannedAt: zOpt,
+  bru: zOpt,
+  external: zOpt,
+  extType: z.enum(["MIXER", "TRUCK"]).optional().catch(undefined),
+  extPlate: zOpt,
+  extCapacity: zOpt,
+  extDriverName: zOpt,
+  extDriverPhone: zOpt,
 });
 
 function refresh(id: string, orderId: string) {
@@ -45,17 +53,27 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
+  const ext = d.external === "1";
+  if (ext && !d.extType) return { error: "Ko'chadan mashina: kategoriyasini tanlang" };
+  if (!ext && !d.vehicleId) return { error: "Texnika tanlanmagan" };
+  if (!ext && !d.driverId) return { error: "Haydovchi tanlanmagan" };
+  const extCapacity = numOrNull(d.extCapacity);
+  if (ext && d.extCapacity && extCapacity == null) return { error: "Ko'chadan mashina: sig'imi raqam bo'lsin" };
 
   let created;
   try {
     // Qoida `lib/trips.ts` da — mobil ilovadagi "Yangi reys" ham shuni chaqiradi
-    created = await createTripDomain({ orderId: d.orderId, vehicleId: d.vehicleId, driverId: d.driverId, qtyM3: d.qtyM3, note: d.note, plannedAt: d.plannedAt ? new Date(d.plannedAt) : null }, s.userId);
+    created = await createTripDomain({
+      orderId: d.orderId, vehicleId: d.vehicleId ?? "", driverId: d.driverId ?? "", qtyM3: d.qtyM3, note: d.note, plannedAt: d.plannedAt ? new Date(d.plannedAt) : null, bru: d.bru,
+      external: ext ? { type: d.extType!, plate: d.extPlate ?? "", capacity: extCapacity, driverName: d.extDriverName ?? "", driverPhone: d.extDriverPhone ?? "" } : null,
+    }, s.userId);
   } catch (e) {
     return { error: (e as Error).message };
   }
 
   // Haydovchi ilovasiga yuborish — reys sahifasi ochilganda ECO holati darhol ko'rinishi uchun kutamiz
-  // (klientda 10 s timeout; xato bo'lsa reys baribir yaratiladi, xabar reys sahifasida chiqadi)
+  // (klientda 10 s timeout; xato bo'lsa reys baribir yaratiladi, xabar reys sahifasida chiqadi).
+  // Ko'chadan mashina haydovchisida ilova yo'q — `pushTripToEco` uni o'zi o'tkazib yuboradi
   if (ecoEnabled()) await pushTripToEco(created.id);
   revalidatePath("/trips"); revalidatePath(`/orders/${d.orderId}`);
   redirect(`/trips/${created.id}`);
