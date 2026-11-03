@@ -10,7 +10,7 @@ import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/no
 import { syncCustomerLater } from "@/lib/eco/customers";
 import { expectedAdvance } from "@/lib/payments";
 import type { PayMethod, Prisma } from "@/generated/prisma";
-import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest } from "@/lib/payment-requests";
+import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest, syncPaymentRequest } from "@/lib/payment-requests";
 import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
 import { linkOrderTx, syncDealLater } from "@/lib/amocrm/sync";
@@ -523,4 +523,259 @@ export async function createOrder(
   if (input.newCustomer) syncCustomerLater(res.customerId);
   if (input.amoDealId) syncDealLater();
   return res;
+}
+
+// ───────────────────────── Tahrirlash ─────────────────────────
+
+/** Tahrirlanadigan holatlar — ishlab chiqarish boshlanguncha (zames ham, reys ham yo'q). */
+export const EDITABLE_STATUSES = ["DRAFT", "BLOCKED", "CONFIRMED"] as const;
+export const isEditable = (o: { status: string; batches: unknown[]; trips: unknown[] }) =>
+  (EDITABLE_STATUSES as readonly string[]).includes(o.status) && o.batches.length === 0 && o.trips.length === 0;
+
+/** `id` — mavjud qator (bo'lmasa yangi qator). `price` — NDS bilan saqlanadigan narx (chaqiruvchi qo'shadi). */
+/** Tranzaksiya ichidagi xato: `throw` qilinadi — yozilgan hamma narsa orqaga qaytadi (oddiy `return` commit qilib yuborardi). */
+class EditError extends Error {}
+
+export type EditOrderItem = { id?: string | null; productId: string; qtyM3: number; price: number; nds: boolean };
+export type EditOrderInput = {
+  items: EditOrderItem[];
+  deliveryDate: Date;
+  /** Faqat qoralamada: sana hali aniq emas */
+  dateUnknown?: boolean;
+  isUrgent: boolean;
+  note: string | null;
+  /** Quyidagilar faqat mijoz (SALE) zayavkasida — sklad zayavkasida e'tiborga olinmaydi */
+  deliveryAddress?: string;
+  lat?: number | null;
+  lng?: number | null;
+  needsPump?: boolean;
+  needsDelivery?: boolean;
+  deliveryFee?: number;
+  onCredit?: boolean;
+  /** Kutilayotgan bosh to'lov; 0 — yo'q */
+  prepayAmount?: number;
+  payMethod?: PayMethod | null;
+};
+
+/**
+ * Ochilgan zayavkani tahrirlash (veb `/orders/[id]/edit`). Qoralama, bloklangan va tasdiqlangan zayavka — zames, reys bo'lmasa.
+ *  · Brigadaga berilgan qator o'chirilmaydi va mahsuloti almashmaydi (topshiriqlar qatorga bog'liq — o'chsa ular ham o'chardi);
+ *    soni brigadaga berilgan / bajarilgan miqdordan kam bo'lmaydi.
+ *  · Schyot yozilgan zayavkaning summasi o'zgarmaydi — avval schyot bekor qilinadi.
+ *  · Tasdiqlangan zayavkada summa (limitga tushadigan qismi) oshsa kredit limiti qayta tekshiriladi: yetmasa — BLOCKED,
+ *    direktor ochadi. Sana yoki beton hajmi o'zgarsa — kunlik limit. Kamaygan yoki o'zgarmagan bo'lsa — tekshirilmaydi
+ *    (direktor blokdan chiqargan zayavka izoh tuzatilgani uchun qayta bloklanmasin).
+ *  · Bosh to'lov so'rovi (PS-…) yangi summa/usulga keltiriladi; tushgan puldan kam qilib bo'lmaydi.
+ * Hammasi bitta tranzaksiyada, holat sharti bilan; o'zgarish `AuditLog`ga «oldin/keyin» bo'lib yoziladi.
+ */
+export async function orderEdit(id: string, input: EditOrderInput, userId: string): Promise<OrderResult> {
+  const o = await db.order.findUnique({
+    where: { id },
+    include: {
+      customer: { select: { name: true } },
+      items: { include: { product: { select: { name: true, unit: true } }, tasks: { select: { qty: true, doneQty: true, status: true } } } },
+      batches: { where: { cancelledAt: null }, select: { id: true } },
+      trips: { select: { id: true } },
+      invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } },
+    },
+  });
+  if (!o) return { changed: false, error: "Zayavka topilmadi" };
+  const isStock = o.kind === "STOCK";
+  if (!(await canDoByUserId(userId, "orders", isStock ? "stock" : "edit"))) {
+    return { changed: false, error: "Zayavkani tahrirlashga ruxsatingiz yo'q — direktordan ruxsat so'rang" };
+  }
+  if (!isEditable(o)) return { changed: false, error: "Ishlab chiqarish boshlangan, yetkazilgan yoki bekor qilingan zayavka tahrirlanmaydi" };
+
+  // ── Qatorlar ──
+  const items = input.items.filter((i) => i.productId && i.qtyM3 > 0).map((i) => ({ ...i, ...(isStock ? { price: 0, nds: false } : {}) }));
+  if (items.length === 0) return { changed: false, error: "Kamida bitta mahsulot qatori kerak" };
+  if (items.some((i) => !Number.isFinite(i.qtyM3) || i.qtyM3 > 100_000)) return { changed: false, error: "Miqdor juda katta (100 000 dan oshmasin)" };
+  if (items.some((i) => !Number.isFinite(i.price) || i.price < 0)) return { changed: false, error: "Narx manfiy bo'lmasin" };
+  if (items.some((i) => i.price > MAX_AMOUNT)) return { changed: false, error: "Narx juda katta" };
+  const old = new Map(o.items.map((i) => [i.id, i]));
+  if (items.some((i) => i.id && !old.has(i.id))) return { changed: false, error: "Zayavka qatori topilmadi — sahifani yangilab qayta urining" };
+  // Tegilmagan qator narxi tiyinigacha saqlanadi: forma NDS'siz narxni ko'rsatadi, soliq qayta qo'shilganda 1 tiyin siljishi mumkin
+  for (const i of items) {
+    const prev = i.id ? old.get(i.id) : undefined;
+    if (prev && prev.nds === i.nds && Math.abs(Number(prev.price) - i.price) <= 0.011) i.price = Number(prev.price);
+  }
+  const products = await db.product.findMany({ where: { id: { in: [...new Set(items.map((i) => i.productId))] } }, select: { id: true, unit: true, isActive: true } });
+  const unitOf = new Map(products.map((p) => [p.id, p.unit]));
+  if (items.some((i) => !unitOf.has(i.productId))) return { changed: false, error: "Mahsulot topilmadi — ro'yxatdan qayta tanlang" };
+  // Sklad zaxirasi — faqat dona mahsulot: beton zakaz olingandan keyin tayyorlanadi
+  if (isStock && items.some((i) => unitOf.get(i.productId) === "m3")) return { changed: false, error: "Sklad zayavkasiga beton qo'shilmaydi — faqat dona mahsulot" };
+  // Brigadaga berilgan qator: o'chmaydi, mahsuloti almashmaydi, soni berilgan/bajarilganidan kam bo'lmaydi
+  for (const prev of o.items) {
+    if (!prev.tasks.length) continue;
+    const next = items.find((i) => i.id === prev.id);
+    const name = prev.product.name;
+    if (!next) return { changed: false, error: `«${name}» qatori brigadaga berilgan — o'chirib bo'lmaydi` };
+    if (next.productId !== prev.productId) return { changed: false, error: `«${name}» qatori brigadaga berilgan — mahsulotini almashtirib bo'lmaydi` };
+    const given = prev.tasks.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qty), 0);
+    const done = prev.tasks.reduce((s, t) => s + Number(t.doneQty), 0);
+    const min = Math.max(given, done);
+    if (next.qtyM3 < min - 0.0005) return { changed: false, error: `«${name}»: brigadaga ${fmtNum(min, 3)} berilgan — sonini bundan kam qilib bo'lmaydi` };
+  }
+
+  // ── Sana ──
+  const dateUnknown = !!input.dateUnknown;
+  if (dateUnknown && o.status !== "DRAFT") return { changed: false, error: "Qabul qilingan zayavkada yetkazish sanasi aniq bo'lishi kerak" };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const deliveryDate = dateUnknown ? today : input.deliveryDate;
+  const dd = deliveryDate.getTime();
+  if (!Number.isFinite(dd)) return { changed: false, error: "Yetkazish sanasi noto'g'ri" };
+  const dateChanged = dateUnknown !== o.dateUnknown || dd !== o.deliveryDate.getTime();
+  // O'zgarmagan sana o'tib ketgan bo'lsa ham qoladi (kechikkan zayavkaning izohini tuzatish mumkin bo'lsin)
+  if (dateChanged && !dateUnknown && dd < today.getTime()) return { changed: false, error: "Yetkazish sanasi o'tib ketgan — bugungi yoki keyingi sanani tanlang" };
+  if (dd > Date.now() + 366 * 86_400_000) return { changed: false, error: "Yetkazish sanasi bir yildan uzoq bo'lmasin" };
+
+  // ── Mijoz zayavkasi: manzil, dastavka, to'lov ──
+  const deliveryAddress = isStock ? o.deliveryAddress : (input.deliveryAddress ?? "").trim();
+  if (!deliveryAddress) return { changed: false, error: "Obyekt manzili kerak" };
+  const needsDelivery = isStock ? false : !!input.needsDelivery;
+  const deliveryFee = needsDelivery ? Math.round((Number(input.deliveryFee) || 0) * 100) / 100 : 0;
+  if (!Number.isFinite(deliveryFee) || deliveryFee < 0) return { changed: false, error: "Dastavka summasi manfiy bo'lmasin" };
+  if (deliveryFee > MAX_AMOUNT) return { changed: false, error: "Dastavka summasi juda katta" };
+  const oldTotal = orderTotal(o);
+  const total = orderTotal({ items, deliveryFee });
+  if (total > MAX_AMOUNT) return { changed: false, error: "Zayavka summasi juda katta — miqdor va narxni tekshiring" };
+  const totalChanged = Math.abs(total - oldTotal) > 0.005;
+  if (totalChanged && o.invoices.length) {
+    return { changed: false, error: `Schyot bor (${o.invoices.map((i) => i.invoiceNo).join(", ")}) — summani o'zgartirish uchun avval schyotni bekor qiling` };
+  }
+  const onCredit = isStock ? false : !!input.onCredit;
+  const prepayAmount = isStock ? null : (input.prepayAmount ?? 0) > 0 ? Math.round(input.prepayAmount! * 100) / 100 : null;
+  if (prepayAmount != null && (!Number.isFinite(prepayAmount) || prepayAmount > total + 0.005)) {
+    return { changed: false, error: `Bosh to'lov ${money(prepayAmount)} zayavka summasidan ${money(total)} katta` };
+  }
+  const payMethod: PayMethod | null = isStock ? null
+    : input.payMethod === "BANK" || input.payMethod === "CASH" ? input.payMethod : prepayAmount || !onCredit ? "CASH" : null;
+  const credit = isStock ? null : await customerCredit(o.customerId);
+  // Qora ro'yxat — faqat to'liq oldindan to'lov (ochishdagi qoida bilan bir xil)
+  if (credit?.blacklisted && (onCredit || (prepayAmount ?? 0) < total - 0.005) && (totalChanged || onCredit !== o.onCredit || (prepayAmount ?? 0) !== Number(o.prepayAmount ?? 0))) {
+    return { changed: false, error: `Kredit limiti yo'q — faqat oldindan to'lov bilan: bosh to'lov zayavka summasiga teng bo'lsin (${money(total)}). Limit ${money(credit.limit)}, qarz ${money(credit.debt)}, ochiq zayavkalar ${money(credit.open)}.` };
+  }
+  // Obyekt nuqtasi o'zgarsa masofa qayta hisoblanadi (serverda — brauzer raqamiga ishonmaymiz)
+  const lat = isStock ? o.lat : input.lat ?? null;
+  const lng = isStock ? o.lng : input.lng ?? null;
+  const pointChanged = lat !== o.lat || lng !== o.lng;
+  let dist: Distance | null = null;
+  if (!isStock && pointChanged && lat != null && lng != null) {
+    const plant = await db.companySettings.findUnique({ where: { id: "main" }, select: { lat: true, lng: true } });
+    if (plant?.lat != null && plant?.lng != null) dist = await routeDistance({ lat: plant.lat, lng: plant.lng }, { lat, lng });
+  }
+  const note = input.note?.trim() || null;
+  const concreteOf = (list: { productId: string; qtyM3: number }[]) => list.reduce((s, i) => s + (unitOf.get(i.productId) === "m3" ? i.qtyM3 : 0), 0);
+  const oldM3 = concreteM3(o.items);
+  const newM3 = concreteOf(items);
+
+  let res: { status: typeof o.status; notifyReq: string | null };
+  try {
+    res = await db.$transaction(async (tx) => {
+      let status = o.status;
+      if (!isStock && o.status === "CONFIRMED") {
+        const advance = Number((await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } }))._sum.amount ?? 0);
+        const pendingOf = (cr: boolean, pre: number) => Math.max(0, (cr ? 0 : pre) - advance);
+        const oldExposure = oldTotal - pendingOf(o.onCredit, expectedAdvance(o));
+        const exposure = total - pendingOf(onCredit, prepayAmount ?? 0);
+        const needDay = dateChanged || newM3 > oldM3 + 0.0005;
+        const needCredit = exposure > oldExposure + 0.005;
+        if (needDay || needCredit) await lockCreditAndDay(tx, o.customerId, deliveryDate);
+        if (needDay) {
+          const limitErr = await dailyOrderLimitError(tx, id, deliveryDate, items.map((i) => ({ qtyM3: i.qtyM3, product: { unit: unitOf.get(i.productId)! } })), "Boshqa kunni tanlang yoki direktor limitni Sozlamalar → Limitlar'da oshirsin");
+          if (limitErr) throw new EditError(limitErr);
+        }
+        if (needCredit) {
+          // Tasdiqlangan (schyotsiz) zayavka `net` ichida eski summasi bilan turibdi — o'rniga yangisi qo'yiladi
+          const base = credit!.net - (o.invoices.length ? 0 : oldTotal);
+          if (exposure > 0.005 && Math.max(0, base) + exposure > credit!.limit && base + exposure > credit!.limit) status = "BLOCKED";
+        }
+      }
+      // Holat sharti bilan: shu orada qabul qilingan / bekor qilingan / zames-reys ochilgan zayavka yozilmaydi
+      const r = await tx.order.updateMany({
+        where: { id, status: o.status, batches: { none: { cancelledAt: null } }, trips: { none: {} } },
+        data: {
+          status, deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note,
+          ...(isStock ? {} : {
+            deliveryAddress, lat, lng, needsPump: !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod,
+            ...(deliveryAddress !== o.deliveryAddress || pointChanged ? { siteId: await ensureSite(tx, o.customerId, deliveryAddress, { lat, lng }) } : {}),
+            ...(pointChanged ? { distanceKm: dist?.km ?? null, distanceSource: dist?.source ?? null } : {}),
+          }),
+        },
+      });
+      if (r.count !== 1) throw new EditError("Zayavka shu payt o'zgardi (qabul qilindi, bekor qilindi yoki ishlab chiqarish boshlandi) — sahifani yangilang");
+
+      // Qatorlar: o'chirilgani — faqat topshiriqsizi (shart bilan: shu orada brigada tayinlangan bo'lsa o'chmaydi)
+      const keep = new Set(items.map((i) => i.id).filter(Boolean));
+      const drop = o.items.filter((i) => !keep.has(i.id)).map((i) => i.id);
+      if (drop.length) {
+        const d = await tx.orderItem.deleteMany({ where: { id: { in: drop }, orderId: id, tasks: { none: {} } } });
+        if (d.count !== drop.length) throw new EditError("Qatorga shu payt brigada tayinlandi — sahifani yangilab qayta urining");
+      }
+      for (const i of items) {
+        const data = { productId: i.productId, qtyM3: i.qtyM3, price: i.price, nds: i.nds };
+        if (!i.id) { await tx.orderItem.create({ data: { ...data, orderId: id } }); continue; }
+        const prev = old.get(i.id)!;
+        const u = await tx.orderItem.updateMany({ where: { id: i.id, orderId: id, ...(prev.productId !== i.productId ? { tasks: { none: {} } } : {}) }, data });
+        if (u.count !== 1) throw new EditError("Qatorga shu payt brigada tayinlandi — sahifani yangilab qayta urining");
+      }
+      if (dateChanged) await tx.brigadeTask.updateMany({ where: { orderId: id, status: { notIn: ["DONE", "CANCELLED"] } }, data: { dueDate: deliveryDate } });
+
+      // Bosh to'lov so'rovi — yangi summa va usul
+      let notifyReq: string | null = null;
+      if (!isStock) {
+        const req = await tx.paymentRequest.findUnique({ where: { orderId: id } });
+        const advance = Number((await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } }))._sum.amount ?? 0);
+        if (prepayAmount != null) {
+          if (prepayAmount < advance - 0.005) throw new EditError(`Bosh to'lovdan ${money(advance)} tushgan — undan kam qilib bo'lmaydi`);
+          if (!req) {
+            notifyReq = (await createPaymentRequestTx(tx, { id, customerId: o.customerId, deliveryDate }, payMethod ?? "CASH", prepayAmount, userId)).id;
+          } else {
+            if (req.method !== payMethod && advance > 0.005) throw new EditError("Bosh to'lovning bir qismi tushgan — to'lov usulini o'zgartirib bo'lmaydi");
+            const reopen = req.status === "CANCELLED";
+            const moved = req.method !== payMethod || Math.abs(Number(req.amount) - prepayAmount) > 0.005;
+            if (reopen || moved || dateChanged) {
+              await tx.paymentRequest.update({
+                where: { id: req.id },
+                data: { amount: prepayAmount, method: payMethod ?? "CASH", dueDate: deliveryDate, ...(reopen ? { status: "PENDING", received: 0, closedAt: null } : {}) },
+              });
+              await audit(tx, userId, "UPDATE", "PaymentRequest", req.id, { amount: Number(req.amount), method: req.method, status: req.status }, { amount: prepayAmount, method: payMethod, via: "order-edit" });
+              await syncPaymentRequest(tx, id, userId);
+              if (reopen || req.method !== payMethod) notifyReq = req.id;
+            }
+          }
+        } else if (req && req.status !== "CANCELLED") {
+          if (advance > 0.005) throw new EditError(`Bosh to'lovdan ${money(advance)} tushgan — bosh to'lovni olib tashlab bo'lmaydi`);
+          await cancelPaymentRequestTx(tx, id, userId);
+        }
+      }
+
+      const pick = (x: { deliveryDate: Date; dateUnknown: boolean; isUrgent: boolean; note: string | null; deliveryAddress: string; needsPump: boolean; needsDelivery: boolean; deliveryFee: unknown; onCredit: boolean; prepayAmount: unknown; payMethod: unknown }) => ({
+        deliveryDate: x.deliveryDate, dateUnknown: x.dateUnknown, isUrgent: x.isUrgent, note: x.note, deliveryAddress: x.deliveryAddress, needsPump: x.needsPump,
+        needsDelivery: x.needsDelivery, deliveryFee: Number(x.deliveryFee ?? 0), onCredit: x.onCredit, prepayAmount: x.prepayAmount == null ? null : Number(x.prepayAmount), payMethod: x.payMethod,
+      });
+      await audit(tx, userId, "UPDATE", "Order", id,
+        { status: o.status, total: oldTotal, ...pick(o), items: o.items.map((i) => ({ id: i.id, productId: i.productId, qtyM3: Number(i.qtyM3), price: Number(i.price), nds: i.nds })) },
+        { status, total, ...pick({ deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note, deliveryAddress, needsPump: isStock ? o.needsPump : !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod }), items, via: "order-edit" });
+      return { status, notifyReq };
+    });
+  } catch (e) {
+    if (e instanceof EditError) return { changed: false, error: e.message };
+    throw e;
+  }
+
+  if (res.notifyReq) notifyNewPaymentRequest(res.notifyReq, userId);
+  const link = { key: "orders", id };
+  const name = isStock ? "Sklad zayavkasi" : o.customer.name;
+  notifyAfter(async () => {
+    if (res.status === "BLOCKED" && o.status !== "BLOCKED") {
+      await notifyRoles(["DIRECTOR"], { type: "ORDER_BLOCKED", title: "Limit oshdi", body: `${name} · zayavka o'zgartirildi, ${money(total)}. Blokni oching yoki to'lov kutiladi`, link });
+    }
+    // Qabul qilingan zayavkani sex va logistika rejalashtirgan — o'zgargani darhol bilinsin
+    if (o.status === "CONFIRMED") {
+      await notifyRoles(["PRODUCTION", "LOGISTICS"], { type: "ORDER_CHANGED", title: `Zayavka o'zgartirildi — ${name}`, body: res.status === "BLOCKED" ? "Limit oshdi — direktor qarorini kuting" : "Mahsulot, soni yoki sanani tekshiring", link }, { except: userId });
+    }
+    if (o.createdById !== userId) await notifyUsers([o.createdById], { type: "ORDER_CHANGED", title: `Zayavka o'zgartirildi — ${name}`, body: res.status === "BLOCKED" ? "Limit oshdi — zayavka bloklandi" : "Zayavka ma'lumotlari yangilandi", link });
+  });
+  return { changed: true, status: res.status };
 }

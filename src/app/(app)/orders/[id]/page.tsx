@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays, FileBadge2, Printer } from "lucide-react";
+import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays, FileBadge2, Printer, Pencil } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
@@ -29,6 +29,7 @@ import { PAY_METHOD_LABEL, PAYREQ_STATUS_COLOR, PAYREQ_STATUS_LABEL } from "@/li
 import { ConfirmButton } from "../../payments/confirm-button";
 import { ActionButton } from "@/components/action-button";
 import { orderTotal } from "@/lib/order-total";
+import { isEditable } from "@/lib/orders";
 
 const STEPS = [
   { key: "DRAFT", label: "Qoralama" }, { key: "CONFIRMED", label: "Tasdiqlangan" }, { key: "IN_PRODUCTION", label: "Ishlab chiqarish" },
@@ -40,9 +41,9 @@ const STOCK_STEPS = [
   { key: "CLOSED", label: "Zaxira tayyor" },
 ];
 
-export default async function OrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ guarantee?: string; contract?: string }> }) {
+export default async function OrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ guarantee?: string; contract?: string; edited?: string }> }) {
   const { id } = await params;
-  const { guarantee, contract: justContracted } = await searchParams;
+  const { guarantee, contract: justContracted, edited } = await searchParams;
   const s = await requirePage("/orders");
   const o = await db.order.findUnique({
     where: { id },
@@ -113,6 +114,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const needsAssign = unassigned && o.status !== "DRAFT";
   // Yetkazish sanasi qoralamada tahrirlanadi; "Sana aniq emas" bo'lsa belgilanmaguncha qabul qilinmaydi
   const canEditDate = o.status === "DRAFT" && (isStock ? canStock : can("create"));
+  // To'liq tahrirlash — ishlab chiqarish boshlanguncha (zames, reys yo'q); mijoz zayavkasi «edit», sklad zayavkasi «stock»
+  const canEdit = isEditable(o) && (isStock ? canStock : can("edit"));
   const noDate = o.dateUnknown;
   const dateText = noDate ? "Aniq emas" : date(o.deliveryDate);
 
@@ -126,6 +129,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <>
             {o.status === "DRAFT" && canConfirm && !noDate && <ActionButton action={confirmOrder.bind(null, id)} variant="success"><CheckCircle2 size={16} /> Qabul qilish</ActionButton>}
             {canClose && <ActionButton action={closeStockOrder.bind(null, id)} variant="success"><Boxes size={16} /> Zaxira tayyor — yopish</ActionButton>}
+            {canEdit && <LinkButton href={`/orders/${id}/edit`} variant="secondary"><Pencil size={16} /> Tahrirlash</LinkButton>}
             {o.status === "BLOCKED" && canUnblock && <ActionButton action={unblockOrder.bind(null, id)} variant="success"><Unlock size={16} /> Blokdan chiqarish</ActionButton>}
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
             {/* Tijorat taklifi (KP) — zayavka mahsulot va narxlari bilan oldindan to'ldiriladi; ruxsat «offers» moduli bo'yicha */}
@@ -139,6 +143,11 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         }
       />
 
+      {edited && (
+        <Callout tone={edited === "blocked" ? "warning" : "success"} title={edited === "blocked" ? "Zayavka saqlandi, lekin bloklandi" : "Zayavka saqlandi"}>
+          {edited === "blocked" ? "Summa oshgani uchun kredit limiti yetmadi — direktor blokdan chiqaradi yoki to'lov kutiladi." : "O'zgarishlar audit jurnaliga yozildi."}
+        </Callout>
+      )}
       {o.status === "DRAFT" && noDate && (
         <Callout tone="warning" title="Yetkazish sanasi aniq emas — sana belgilanmaguncha zayavka qabul qilinmaydi">
           {canEditDate

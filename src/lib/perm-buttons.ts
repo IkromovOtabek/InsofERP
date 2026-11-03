@@ -27,7 +27,7 @@ export type PermButton = {
 
 export const PERM_BUTTONS: Record<string, PermButton[]> = {
   orders: [
-    { key: "zayavkalar", label: "Zayavkalar", paths: ["/orders"], actions: ["create", "confirm", "cancel", "contract", "stock", "unblock", "capacity"] },
+    { key: "zayavkalar", label: "Zayavkalar", paths: ["/orders"], actions: ["create", "edit", "confirm", "cancel", "contract", "stock", "unblock", "capacity"] },
     { key: "import", label: "Excel'dan import", paths: ["/orders/import"], actions: ["import"] },
     { key: "tarix", label: "Zayavkalar tarixi", paths: ["/orders/tarix"], actions: [] },
   ],

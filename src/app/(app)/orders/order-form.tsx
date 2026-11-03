@@ -3,7 +3,7 @@
 import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Star, Wallet, FileText, Upload, Check, Smartphone } from "lucide-react";
 import { AddressPicker, type SavedPlace } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
-import { useActionState, useMemo, useState, type ReactNode } from "react";
+import { startTransition, useActionState, useMemo, useState, type ReactNode } from "react";
 import { createOrder } from "./actions";
 import { TripPlanPanel } from "./trip-plan-panel";
 import { lookupAppByPhone } from "../customers/app-actions";
@@ -57,6 +57,18 @@ const money = (n: number) => `${fmtNum(n)} so'm`;
  */
 export const blockEnterSubmit = (e: React.KeyboardEvent<HTMLFormElement>) => {
   if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
+};
+
+/**
+ * Yuborish `onSubmit` + `startTransition` orqali (`stock/rasxod` dagi kabi): `<form action>` bo'lsa React 19 xato bilan
+ * qaytgan action'dan keyin ham formani reset qiladi — narxlar, izoh, sana o'chib, xodim hammasini qaytadan terardi.
+ * Spravochnik oynasidagi ichki forma (portal orqali shu yerga ko'tariladi) — unga tegilmaydi.
+ */
+export const submitKeepingState = (action: (fd: FormData) => void) => (e: React.FormEvent<HTMLFormElement>) => {
+  if (e.target !== e.currentTarget) return;
+  e.preventDefault();
+  const fd = new FormData(e.currentTarget);
+  startTransition(() => action(fd));
 };
 
 /** Ishonch reytingi: 5 yulduz, to'ldirilgani — reyting. 0 yulduz — hali xarid qilmagan yangi mijoz. */
@@ -290,7 +302,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
   return (
     // Katakda Enter formani yubormasin: soni yozib Enter bosilsa zayavka chala holda saqlanib, sahifa yopilardi
-    <form action={action} onKeyDown={blockEnterSubmit} className="space-y-4">
+    <form onSubmit={submitKeepingState(action)} onKeyDown={blockEnterSubmit} className="space-y-4">
       <FormError error={state?.error} />
       <input type="hidden" name="customerMode" value={mode} />
       <input type="hidden" name="payment" value={payment} />

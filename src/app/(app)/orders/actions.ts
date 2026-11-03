@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { saveDailyOrderLimits } from "@/lib/company";
-import { createOrder as createOrderDomain, orderConfirm, orderSetDate, orderUnblock } from "@/lib/orders";
+import { createOrder as createOrderDomain, orderConfirm, orderEdit, orderSetDate, orderUnblock } from "@/lib/orders";
 import { cancelOrderWithReason, closeStockOrderLib, setGuarantee, setOrderContract } from "@/lib/order-docs";
 import { createStockOrder as createStockOrderDomain } from "@/lib/stock-orders";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
@@ -190,6 +190,70 @@ export async function setOrderDate(id: string, _prev: ActionState, fd: FormData)
   if (r.error) return { error: r.error };
   revalidatePath(`/orders/${id}`); revalidatePath("/orders");
   return { ok: true, note: "Sana saqlandi" };
+}
+
+const editSchema = z.object({
+  // Mavjud qator id'si; yangi qatorda bo'sh
+  itemId: z.array(z.string()).optional(),
+  productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
+  qtyM3: z.array(z.coerce.number({ message: "Miqdor raqam bo'lsin" }).positive("Miqdor 0 dan katta bo'lsin").max(100_000, "Miqdor juda katta (100 000 dan oshmasin)")),
+  // Sklad zayavkasida narx yo'q
+  price: z.array(z.coerce.number({ message: "Narx raqam bo'lsin" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Narx juda katta")).optional(),
+  nds: z.array(z.string()).optional(),
+  deliveryDate: zOpt.refine((v) => !v || Number.isFinite(new Date(v).getTime()), "Yetkazish sanasi noto'g'ri"),
+  dateUnknown: z.string().optional().transform((v) => v === "1"),
+  isUrgent: z.string().optional().transform((v) => v === "on"),
+  note: zOpt,
+  deliveryAddress: zOpt,
+  lat: z.coerce.number().optional().catch(undefined),
+  lng: z.coerce.number().optional().catch(undefined),
+  needsPump: z.string().optional().transform((v) => v === "on"),
+  needsDelivery: z.string().optional().transform((v) => v === "on"),
+  deliveryFee: z.coerce.number({ message: "Dastavka summasi raqam bo'lsin" }).min(0, "Dastavka summasi manfiy bo'lmasin").max(MAX_AMOUNT, "Dastavka summasi juda katta").default(0),
+  payment: z.enum(["prepay", "credit"]).default("prepay"),
+  payMethod: z.enum(["CASH", "BANK"], { message: "To'lov usuli noto'g'ri" }).optional(),
+  prepayAmount: z.coerce.number({ message: "Bosh to'lov raqam bo'lsin" }).min(0, "Bosh to'lov manfiy bo'lmasin").max(MAX_AMOUNT, "Bosh to'lov juda katta").default(0),
+});
+
+/** Ochilgan zayavkani tahrirlash (`/orders/[id]/edit`). Qoida va cheklovlar — `lib/orders.ts` → `orderEdit`. */
+export async function editOrder(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const ord = await db.order.findUnique({ where: { id }, select: { kind: true } });
+  if (!ord) return { error: "Zayavka topilmadi" };
+  const s = await requireAction("orders", ord.kind === "STOCK" ? "stock" : "edit");
+  const r = parseForm(editSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  if (!d.dateUnknown && !d.deliveryDate) return { error: "Yetkazish sanasini kiriting" };
+  let res;
+  try {
+    res = await orderEdit(id, {
+      // Narx NDS'siz keladi; «QQS 12%» belgilangan qatorda soliq qo'shib saqlanadi (ochishdagi kabi)
+      items: d.productId.map((productId, i) => {
+        const nds = d.nds?.[i] === "1";
+        const price = d.price?.[i] ?? 0;
+        return { id: d.itemId?.[i] || null, productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds };
+      }),
+      deliveryDate: d.deliveryDate ? new Date(d.deliveryDate) : new Date(),
+      dateUnknown: d.dateUnknown,
+      isUrgent: d.isUrgent,
+      note: d.note,
+      deliveryAddress: d.deliveryAddress ?? "",
+      lat: Number.isFinite(d.lat) ? d.lat : null,
+      lng: Number.isFinite(d.lng) ? d.lng : null,
+      needsPump: d.needsPump,
+      needsDelivery: d.needsDelivery,
+      deliveryFee: d.needsDelivery ? d.deliveryFee : 0,
+      onCredit: d.payment === "credit",
+      prepayAmount: d.prepayAmount,
+      payMethod: d.payMethod ?? null,
+    }, s.userId);
+  } catch (e) {
+    return { error: userError(e) };
+  }
+  if (res.error) return { error: res.error };
+  revalidatePath(`/orders/${id}`); revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/production");
+  revalidatePath("/customers"); revalidatePath("/payments"); revalidatePath("/pul-qabul"); revalidatePath("/tasks");
+  redirect(`/orders/${id}${res.status === "BLOCKED" ? "?edited=blocked" : "?edited=1"}`);
 }
 
 /** BLOCKED → CONFIRMED. Direktor (yoki direktor "unblock" ruxsatini bergan xodim). */
