@@ -202,6 +202,9 @@ export function Tour({ steps: all, start }: { steps: TourStep[]; start: string |
     if (!step) return;
     const on = (e: KeyboardEvent) => {
       if (step.action === "click") return;
+      // Xodim katakka yozayotgan bo'lsa (zayavkada soni, qidiruv) — tugmalar o'ziniki, instruksiya varaqlanmaydi
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
       if (e.key === "Enter" || e.key === "ArrowRight") { e.preventDefault(); next(); }
       if (e.key === "ArrowLeft") { e.preventDefault(); back(); }
     };

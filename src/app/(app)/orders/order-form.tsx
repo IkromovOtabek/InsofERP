@@ -50,6 +50,15 @@ export type CashAccountOpt = { id: string; name: string; type: "CASH" | "BANK" }
 
 const money = (n: number) => `${fmtNum(n)} so'm`;
 
+/**
+ * Uzun zayavka formasida Enter yashirin «Saqlash» bo'lib ishlamasin (brauzer odati): xodim Excel'dagidek soni yozib
+ * Enter bosadi — zayavka qoralama bo'lib saqlanib, forma yopilib ketardi. Saqlash faqat tugma bilan.
+ * Katakning o'z Enter'i (mahsulot ro'yxatidan tanlash) ishlayveradi — bu faqat yuborishni to'xtatadi.
+ */
+export const blockEnterSubmit = (e: React.KeyboardEvent<HTMLFormElement>) => {
+  if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
+};
+
 /** Ishonch reytingi: 5 yulduz, to'ldirilgani — reyting. 0 yulduz — hali xarid qilmagan yangi mijoz. */
 export function Stars({ n, size = 13 }: { n: number; size?: number }) {
   return (
@@ -280,7 +289,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const lbl = "text-right font-serif text-[13px] font-bold italic text-slate-900";
 
   return (
-    <form action={action} className="space-y-4">
+    // Katakda Enter formani yubormasin: soni yozib Enter bosilsa zayavka chala holda saqlanib, sahifa yopilardi
+    <form action={action} onKeyDown={blockEnterSubmit} className="space-y-4">
       <FormError error={state?.error} />
       <input type="hidden" name="customerMode" value={mode} />
       <input type="hidden" name="payment" value={payment} />

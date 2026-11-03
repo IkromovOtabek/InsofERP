@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown } from "lucide-react";
-import { Card, CardHeader, Checkbox, Input, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
+import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown, ArrowDownWideNarrow } from "lucide-react";
+import { Card, CardHeader, Checkbox, Input, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
 import { date, fmtNum } from "@/lib/format";
 import { DateMove } from "./date-move";
 import { unitLabel } from "@/lib/unit";
@@ -46,6 +46,36 @@ const W_TT = "right-0 w-[104px] min-w-[104px] xl:w-[124px] xl:min-w-[124px] shad
 const C_NO = cn("sticky z-20", W_NO), C_NAME = cn("sticky z-20", W_NAME), C_ST = cn("sticky z-20", W_ST), C_TT = cn("sticky z-20", W_TT);
 const B_NO = cn("sticky z-[1]", W_NO), B_NAME = cn("sticky z-[1]", W_NAME), B_ST = cn("sticky z-[1]", W_ST), B_TT = cn("sticky z-[1]", W_TT);
 
+/**
+ * Matritsa qatorlari tartibi. Sukut — nomi bo'yicha (server tartibi). «O'lchami» — nomdagi raqamlar bo'yicha:
+ * «PK 48-12-8» → turi «pk», o'lchami [48, 12, 8]; bir turdagi mahsulotlar ichida kattasi (uzunligi, keyin eni) tepada.
+ * Turi — raqamgacha bo'lgan marka (PK, FBS, BR…): «Kovak plita PK 60.12» ham PK qatoriga tushadi; markasiz nomda — raqamgacha qismi.
+ * Tanlov shu brauzerda eslab qolinadi.
+ */
+type RowSort = "name" | "size" | "band" | "need";
+const ROW_SORTS: { key: RowSort; label: string }[] = [
+  { key: "name", label: "Nomi bo'yicha" },
+  { key: "size", label: "O'lchami: kattasi tepada" },
+  { key: "band", label: "Band: ko'pi tepada" },
+  { key: "need", label: "Kamomad: ko'pi tepada" },
+];
+const SORT_STORE = "production:matrix-sort";
+const sizeOf = (name: string) => {
+  const i = name.search(/\d/);
+  const head = i < 0 ? name : name.slice(0, i);
+  const mark = head.split(/[^A-Za-zА-Яа-яЁё]+/).filter((w) => w.length >= 2 && w === w.toUpperCase()).pop();
+  return { kind: (mark ?? head.trim()).toLowerCase(), dims: (name.match(/\d+/g) ?? []).map(Number) };
+};
+const bySize = (a: string, b: string) => {
+  const x = sizeOf(a), y = sizeOf(b);
+  if (x.kind !== y.kind) return x.kind.localeCompare(y.kind, "uz");
+  for (let k = 0; k < Math.max(x.dims.length, y.dims.length); k++) {
+    const d = (y.dims[k] ?? -1) - (x.dims[k] ?? -1);
+    if (d) return d;
+  }
+  return 0;
+};
+
 function Dot({ s }: { s: ReadyCol }) {
   return <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0 rounded-full", DOT[s])} />;
 }
@@ -59,6 +89,14 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
   const [hideEmpty, setHideEmpty] = useState(false);
   // Ixcham — qat'iy balandlik (~10 qator), jadval ichida tepa-pastga aylanadi; «To'liq ochish» — hamma qator birdaniga
   const [full, setFull] = useState(false);
+  const [sort, setSort] = useState<RowSort>("name");
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(SORT_STORE);
+      if (ROW_SORTS.some((x) => x.key === v)) setSort(v as RowSort);
+    } catch { /* localStorage yopiq bo'lsa — sukut tartib */ }
+  }, []);
+  const pickSort = (v: RowSort) => { setSort(v); try { localStorage.setItem(SORT_STORE, v); } catch { /* ignore */ } };
   // Bugungi kun boshi — kechikkanlarni belgilash uchun (render paytida bir marta)
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t.getTime(); });
 
@@ -75,6 +113,10 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
     .sort((a, b) => FLOW.indexOf(readyOf(a)) - FLOW.indexOf(readyOf(b)) || a.deliveryDate.localeCompare(b.deliveryDate));
   const isEmpty = (p: MatrixProduct) => p.stock <= 0 && p.band <= 0;
   const rows = data.products.filter((p) => prodMatch(p) && !(hideEmpty && isEmpty(p)) && !(onlyDef && net(p) >= 0));
+  // Teng bo'lsa — server tartibi (nomi bo'yicha) saqlanadi: sort barqaror
+  if (sort === "size") rows.sort((a, b) => bySize(a.name, b.name));
+  else if (sort === "band") rows.sort((a, b) => b.band - a.band);
+  else if (sort === "need") rows.sort((a, b) => net(a) - net(b));
   const hiddenEmpty = hideEmpty ? data.products.filter((p) => prodMatch(p) && isEmpty(p) && !(onlyDef && net(p) >= 0)).length : 0;
   const groups = FLOW.map((s) => ({ s, n: cols.filter((o) => readyOf(o) === s).length })).filter((g) => g.n);
   const maxDef = Math.max(1, ...data.products.map((p) => -net(p)));
@@ -119,6 +161,12 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
           </div>
           <Checkbox label="Faqat kamomad" checked={onlyDef} onChange={(e) => setOnlyDef(e.target.checked)} className="ml-1" />
           <Checkbox label="Bo'sh qatorlarni yashirish" checked={hideEmpty} onChange={(e) => setHideEmpty(e.target.checked)} />
+          <label className="inline-flex items-center gap-1.5 text-[13px] text-slate-600 sm:ml-auto">
+            <ArrowDownWideNarrow size={15} className="text-slate-400" /> Saralash
+            <Select value={sort} onChange={(e) => pickSort(e.target.value as RowSort)} aria-label="Saralash" className="h-9 w-auto pointer-coarse:h-11">
+              {ROW_SORTS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </Select>
+          </label>
         </div>
 
         <div id="matritsa" className="scroll-mt-20 p-5 pt-3">

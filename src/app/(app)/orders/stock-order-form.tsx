@@ -8,7 +8,7 @@ import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, 
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
 import type { ProductCreate } from "@/lib/catalog";
 import { ProductField } from "@/components/product-field";
-import type { ProductStock } from "./order-form";
+import { blockEnterSubmit, type ProductStock } from "./order-form";
 import { cn } from "@/lib/utils";
 
 type Row = { key: number; productId: string; qty: string };
@@ -79,7 +79,7 @@ export function StockOrderForm({ products, groups, canCreateProduct, stock }: {
   const tomorrow = isoDate(new Date(Date.now() + 86400000));
 
   return (
-    <form action={action} className="space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
+    <form action={action} onKeyDown={blockEnterSubmit} className="space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
 
       <Callout tone="info" title="Sklad zayavkasi — zaxiraga">

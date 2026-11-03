@@ -13,8 +13,12 @@ export const ORDER_STATUS: Record<OrderStatus, { label: string; color: "slate" |
 
 /** Qabul qilingan zayavkalar — Sotuv bo'limida ko'rinadi: tasdiqlangan → ishlab chiqarish → yetkazildi → yopildi. */
 export const SALES_STATUSES: OrderStatus[] = ["CONFIRMED", "IN_PRODUCTION", "DELIVERED", "CLOSED"];
-/** Qabul qilinmagan zayavkalar — Zayavkalar bo'limida. */
-export const PENDING_STATUSES: OrderStatus[] = ["DRAFT", "BLOCKED", "CANCELLED"];
+/**
+ * Zayavkalar ro'yxatining sukut tabi «Ochiq» — hali yetkazilmagan: qoralama, bloklangan, tasdiqlangan, ishlab chiqarishda
+ * (Ishlab chiqarishdagi «Ochiq» bilan bir xil). Qabul qilingan zayavka ham shu yerda qoladi: Sotuv bo'limiga kira olmaydigan
+ * xodim (ish boshqaruvchi) uni yo'qotib qo'ymasin. Qolgan holatlar — o'z tabida.
+ */
+export const OPEN_STATUSES: OrderStatus[] = ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"];
 
 // Ixcham status belgisi — umumiy Badge'dan bir pog'ona kichikroq (kichikroq nuqta,
 // to'ldirish va shrift) toki zayavkalar ro'yxati tig'izroq va professional ko'rinsin.

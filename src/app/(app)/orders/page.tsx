@@ -11,7 +11,7 @@ import { SupplyApprovals } from "@/components/supply-approvals";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
-import { ORDER_STATUS, OrderStatusBadge, PENDING_STATUSES as PENDING } from "./status";
+import { ORDER_STATUS, OrderStatusBadge, OPEN_STATUSES } from "./status";
 import type { OrderStatus } from "@/generated/prisma";
 import { orderTotal } from "@/lib/order-total";
 
@@ -22,9 +22,9 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const can = (a: string) => canDo(s, "orders", a);
   // Ta'minot zayavkasini tasdiqlash shu oynada: narx qo'yilgach ma'sul (sotuv) xodim ko'radi
   const canApproveSupply = ["SALES", "DIRECTOR"].includes(s.role); // ta'minot tasdig'i — sotuv xodimi yoki direktor
-  const st = status && PENDING.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
-  // Bekor qilinganlar ro'yxatda faqat «Bekor» tabida ko'rinadi (hujjat o'chirilmaydi, faqat yashiriladi)
-  const openStatuses = PENDING.filter((k) => k !== "CANCELLED");
+  // Har holat o'z tabida; sukut — «Ochiq» (yetkazilmaganlar, qabul qilinganlari ham). Bekor qilinganlar faqat «Bekor» tabida
+  const ALL = Object.keys(ORDER_STATUS) as OrderStatus[];
+  const st = status && ALL.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
   // Taqvimdan kun tanlansa — o'sha kunga yetkazilishi kerak bo'lgan barcha zayavkalar (bekor qilinganlardan tashqari)
   const day = kun && /^\d{4}-\d{2}-\d{2}$/.test(kun) ? new Date(`${kun}T00:00:00`) : null;
   const dayEnd = day ? new Date(day.getTime() + 864e5) : null;
@@ -35,7 +35,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       ...(kind ? { kind } : {}),
       ...(day
         ? { deliveryDate: { gte: day, lt: dayEnd! }, dateUnknown: false, status: { not: "CANCELLED" as const }, ...(customer ? { customerId: customer } : {}) }
-        : { status: st ?? { in: openStatuses }, ...(customer ? { customerId: customer } : {}) }),
+        : { status: st ?? { in: OPEN_STATUSES }, ...(customer ? { customerId: customer } : {}) }),
     },
     orderBy: [{ createdAt: "desc" }],
     include: { customer: true, createdBy: true, items: { include: { product: true } } },
@@ -61,7 +61,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     for (const [k, v] of [...sp]) if (!v) sp.delete(k);
     return sp.toString() ? `/orders?${sp}` : "/orders";
   };
-  const tabs = [{ key: "", label: "Hammasi", href: q({ status: "" }) }, ...PENDING.map((k) => ({ key: k, label: ORDER_STATUS[k].label, href: q({ status: k }) }))];
+  const tabs = [{ key: "", label: "Ochiq", href: q({ status: "" }) }, ...ALL.map((k) => ({ key: k, label: ORDER_STATUS[k].label, href: q({ status: k }) }))];
   // Turi bo'yicha filtr: mijoz zayavkasi / sklad zaxirasi
   const kindTabs = [
     { key: "", label: "Hammasi" },
@@ -73,7 +73,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     <div>
       <PageHeader
         title="Zayavkalar"
-        subtitle="Yangi kiritilgan va qabul qilinmagan zayavkalar. Qabul qilingach zayavka Sotuv bo'limiga o'tadi."
+        subtitle="Zayavka ochilgandan yopilguncha shu yerda. «Ochiq» — hali yetkazilmaganlar: qoralama, tasdiqlangan, ishlab chiqarishdagi. Yetkazilgan, yopilgan va bekor qilinganlar — o'z tabida."
         action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton>{pathAllowed("/sales/realizatsiya", s.role, s.perms) && <LinkButton href="/sales/realizatsiya" variant="secondary"><ScrollText size={16} /> Realizatsiya</LinkButton>}{pathAllowed("/sales", s.role, s.perms) && <LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton>}{can("import") && <LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>}{can("stock") && <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Boxes size={16} /> Sklad zayavkasi</LinkButton>}{can("create") && <LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton>}</div>}
       />
       {/* Excel importidan keyin: nechta zayavka ochilgani — hammasi qoralama, quyidagi ro'yxatda turadi */}
@@ -108,7 +108,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <Table className="[&_td]:px-2 [&_td]:py-2 [&_td]:text-[13px] [&_th]:px-2 [&_th]:py-2 [&_th]:whitespace-normal">
         <thead><tr><Th>Kiritildi</Th><Th>Yetkazish</Th><Th className="min-w-52">Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa, so&apos;m</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
         <tbody>
-          {orders.length === 0 && <Empty text="Kutayotgan zayavkalar yo'q" />}
+          {orders.length === 0 && <Empty text="Bu tabda zayavka yo'q" />}
           {groups.flatMap((g) => g.map((o, idx) => {
             // Hajm mahsulot birligida: beton m³, ustun/blok dona — aralashtirib qo'shilmaydi
             const vol = fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
