@@ -36,6 +36,12 @@ async function main() {
   await db.notification.deleteMany({ where: { type: "REMIND_LEAD", createdAt: { gt: new Date(Date.now() - 600_000) } } });
   await runReminders(noon);
   check("ishga olingan ariza eslatilmaydi", (await db.notification.count({ where: { type: "REMIND_LEAD", body: { contains: TAG } } })) === 0);
+  // Bitta bazada ikki jarayon (deploy paytida eski va yangi reliz) bir vaqtda tekshirsa — har mas'ulga bitta eslatma
+  await db.lead.create({ data: { name: `${TAG} parallel`, phone: "+998900000002", status: "NEW", createdAt: new Date(noon.getTime() - 5 * 3600_000) } });
+  await Promise.all([runReminders(noon), runReminders(noon), runReminders(noon)]);
+  const salesCount = await db.user.count({ where: { role: "SALES", isActive: true } });
+  const par = await db.notification.count({ where: { type: "REMIND_LEAD", body: { contains: `${TAG} parallel` } } });
+  check("parallel tekshiruvlar eslatmani takrorlamaydi", par === salesCount, { par, salesCount });
 
   section("Marketing tasdig'i");
   const post = await db.marketingContent.create({ data: { title: `${TAG} post`, type: "POST", channels: ["TELEGRAM"], caption: "QA matn", createdBy: TAG } });

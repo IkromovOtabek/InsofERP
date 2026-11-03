@@ -6,6 +6,8 @@
  * Takrorlanmasligi: bir hujjat bo'yicha bir xil eslatma `REPEAT_H` soatda bir martadan ko'p ketmaydi
  * (Notification jadvalidagi oxirgi yozuv tekshiriladi). Tunda (21:00–08:00) yuborilmaydi.
  * Rejalashtiruvchi har 30 daqiqada (`startReminders`), korxona jarayonida; test rejimida o'chiq.
+ * Bitta bazaga ikki jarayon ulangan bo'lsa (deploy paytida eski va yangi reliz, ikkinchi dev-server) ikkalasi
+ * bir vaqtda «yuborilmagan» deb ko'rib, har mas'ulga ikkitadan xabar yozardi — shuning uchun advisory lock.
  */
 import type { Role } from "@/generated/prisma";
 import { db } from "@/lib/db";
@@ -17,6 +19,7 @@ import { releaseDueRequests } from "@/lib/mechanic-requests";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
+const LOCK_KEY = 7_402_032;
 
 type Due = { id: string; link: NotifyLink; title: string; body: string; roles?: Role[]; users?: string[] };
 type Rule = { type: string; find: (now: Date) => Promise<Due[]> };
@@ -178,9 +181,20 @@ const RULES: Rule[] = [
 ];
 
 /** Bitta aylanish: qoidalar bo'yicha topilganlarga (oxirgi `REPEAT_H` soatda eslatilmaganlarga) xabar */
+/**
+ * Bitta tekshiruv. Boshqa jarayon (yoki shu jarayondagi parallel chaqiruv) hozir ishlayotgan bo'lsa — 0:
+ * u tugagach keyingi tekshiruv yozilgan eslatmalarni ko'rib, takrorlamaydi.
+ */
 export async function runReminders(now = new Date()): Promise<number> {
   const h = now.getHours();
   if (h < 8 || h >= 21) return 0;
+  return db.$transaction(async (tx) => {
+    const [{ ok }] = await tx.$queryRaw<{ ok: boolean }[]>`SELECT pg_try_advisory_xact_lock(${LOCK_KEY}) AS ok`;
+    return ok ? sendDue(now) : 0;
+  }, { timeout: 10 * 60_000, maxWait: 10_000 });
+}
+
+async function sendDue(now: Date): Promise<number> {
   let sent = 0;
   for (const rule of RULES) {
     let due: Due[];
