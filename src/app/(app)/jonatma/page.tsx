@@ -4,7 +4,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, money } from "@/lib/format";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
-import { listShipments, shipmentCounts, SHIPMENT_STATUS_COLOR, SHIPMENT_STATUS_LABEL, SHIPMENT_TABS, type ShipmentTab } from "@/lib/shipments";
+import { listShipments, ownShipmentsOnly, shipmentCounts, SHIPMENT_SENDERS, SHIPMENT_STATUS_COLOR, SHIPMENT_STATUS_LABEL, SHIPMENT_TABS, type ShipmentTab } from "@/lib/shipments";
 import { Badge, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 
 /**
@@ -12,7 +12,7 @@ import { Badge, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr
  * Snabjenets faqat o'zinikini, sklad — hammasini (qoralamalarsiz) ko'radi.
  */
 export default async function ShipmentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
-  const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock" });
+  const s = await requireRoles([...SHIPMENT_SENDERS, "WAREHOUSE"], { module: "stock" });
   const sp = await searchParams;
   const canSend = canDo(s, "stock", "shipment");
   const canAccept = canDo(s, "stock", "shipment_accept");
@@ -20,7 +20,7 @@ export default async function ShipmentsPage({ searchParams }: { searchParams: Pr
   const q = (sp.q ?? "").trim().slice(0, 80) || undefined;
   const viewer = { userId: s.userId, role: s.role };
   const [rows, counts] = await Promise.all([listShipments(tab, viewer, { q }), shipmentCounts(viewer)]);
-  const procurement = s.role === "PROCUREMENT";
+  const procurement = ownShipmentsOnly(s.role);
 
   return (
     <div>

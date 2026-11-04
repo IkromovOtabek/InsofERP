@@ -2,7 +2,7 @@ import { canDo } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { fmtNum, date, dateTime } from "@/lib/format";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
-import { acceptShipment, getShipment, listShipments, pendingShipments, rejectShipmentItems, shipmentRights, SHIPMENT_STATUS_LABEL } from "@/lib/shipments";
+import { acceptShipment, getShipment, listShipments, ownShipmentsOnly, pendingShipments, rejectShipmentItems, shipmentRights, SHIPMENT_STATUS_LABEL } from "@/lib/shipments";
 import type { MobileUser } from "./auth";
 import { ListError } from "./list";
 
@@ -23,7 +23,7 @@ export async function mobileShipments(u: MobileUser) {
   const accept = canAccept(u) && u.role !== "DIRECTOR";
   const [pend, rows] = await Promise.all([
     accept ? pendingShipments(10) : Promise.resolve({ count: 0, rows: [] }),
-    listShipments(u.role === "PROCUREMENT" ? "all" : "open", who(u), { take: 50 }),
+    listShipments(ownShipmentsOnly(u.role) ? "all" : "open", who(u), { take: 50 }),
   ]);
   return {
     canAccept: accept,
@@ -39,7 +39,7 @@ export async function mobileShipment(u: MobileUser, id: string) {
   if (!canSee(u)) throw new ListError("FORBIDDEN", "Bu bo'lim sizga yopiq", 403);
   const sh = await getShipment(id);
   const own = sh?.createdById === u.id;
-  if (!sh || (u.role === "PROCUREMENT" && !own) || (sh.status === "DRAFT" && !own && u.role !== "DIRECTOR")) throw new ListError("NOT_FOUND", "Jo'natma topilmadi", 404);
+  if (!sh || (ownShipmentsOnly(u.role) && !own) || (sh.status === "DRAFT" && !own && u.role !== "DIRECTOR")) throw new ListError("NOT_FOUND", "Jo'natma topilmadi", 404);
   const can = shipmentRights(sh, who(u), { send: false, accept: canAccept(u) });
   return {
     id: sh.id, docNo: sh.docNo, status: sh.status, statusLabel: SHIPMENT_STATUS_LABEL[sh.status], canAccept: can.accept,

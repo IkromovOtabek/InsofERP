@@ -120,7 +120,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   ],
   stock: [
     { key: "receipt",   label: "Kirim (xomashyo qabul qilish)",  roles: ["PROCUREMENT", "WAREHOUSE"] },
-    { key: "shipment",  label: "Jo'natma — olib kelingan molni skladga jo'natish", roles: ["PROCUREMENT"], hint: "Nakladnoy kiritadi, sklad qabul qilgach kirim bo'ladi" },
+    { key: "shipment",  label: "Jo'natma — olib kelingan molni skladga jo'natish", roles: ["PROCUREMENT", "MECHANIC"], hint: "Nakladnoy kiritadi, sklad qabul qilgach kirim bo'ladi (mexanik — avto zapchast)" },
     { key: "shipment_accept", label: "Jo'natmani qabul qilish / rad etish", roles: ["WAREHOUSE"], hint: "Qabul qilingan qatorlar skladga kirim bo'lib tushadi" },
     { key: "receipt_storno", label: "Kirimni bekor qilish",    roles: [], hint: "Sklad harakatlari teskari yoziladi — odatda faqat direktor" },
     { key: "issue",     label: "Chiqim — skladdan berish (Kimga)", roles: ["WAREHOUSE", "PROCUREMENT"], hint: "Shafyorlar, svarchiklar, brigadalarga xomashyo berish va «Kimga» ro'yxati" },

@@ -344,13 +344,17 @@ export const SHIPMENT_TABS: { key: ShipmentTab; label: string; status?: Shipment
   { key: "all", label: "Hammasi" },
 ];
 
+/** Jo'natuvchilar: snabjenets va mexanik (avto zapchastni o'zi olib keladi) — faqat o'z jo'natmalarini ko'radi. */
+export const SHIPMENT_SENDERS: readonly Role[] = ["PROCUREMENT", "MECHANIC"];
+export const ownShipmentsOnly = (role: Role) => SHIPMENT_SENDERS.includes(role);
+
 /**
- * Ro'yxat. Snabjenets faqat o'z jo'natmalarini ko'radi; sklad (va direktor) — hammasini, qoralamalarsiz
- * (qoralama — snabjenetsning shaxsiy ishi, skladga hali yuborilmagan).
+ * Ro'yxat. Jo'natuvchi (`SHIPMENT_SENDERS`) faqat o'z jo'natmalarini ko'radi; sklad (va direktor) — hammasini, qoralamalarsiz
+ * (qoralama — jo'natuvchining shaxsiy ishi, skladga hali yuborilmagan).
  */
 export async function listShipments(tab: ShipmentTab, viewer: Actor, opts: { q?: string; take?: number } = {}) {
   const t = SHIPMENT_TABS.find((x) => x.key === tab) ?? SHIPMENT_TABS[0]!;
-  const mine = viewer.role === "PROCUREMENT";
+  const mine = ownShipmentsOnly(viewer.role);
   const where: Prisma.SupplyShipmentWhereInput = {
     ...(t.status ? { status: { in: t.status } } : {}),
     ...(mine ? { createdById: viewer.userId } : { OR: [{ status: { not: "DRAFT" } }, { createdById: viewer.userId }] }),
@@ -377,7 +381,7 @@ export async function listShipments(tab: ShipmentTab, viewer: Actor, opts: { q?:
 }
 
 export async function shipmentCounts(viewer: Actor) {
-  const mine = viewer.role === "PROCUREMENT";
+  const mine = ownShipmentsOnly(viewer.role);
   const scope: Prisma.SupplyShipmentWhereInput = mine ? { createdById: viewer.userId } : { OR: [{ status: { not: "DRAFT" } }, { createdById: viewer.userId }] };
   const g = await db.supplyShipment.groupBy({ by: ["status"], where: scope, _count: { _all: true } });
   const c = (st: ShipmentStatus[]) => g.filter((x) => st.includes(x.status)).reduce((a, x) => a + x._count._all, 0);

@@ -4,7 +4,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, dateTime, money } from "@/lib/format";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
-import { getShipment, shipmentRights, SHIPMENT_STATUS_COLOR, SHIPMENT_STATUS_LABEL } from "@/lib/shipments";
+import { getShipment, ownShipmentsOnly, shipmentRights, SHIPMENT_SENDERS, SHIPMENT_STATUS_COLOR, SHIPMENT_STATUS_LABEL } from "@/lib/shipments";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatusSteps } from "@/components/ui";
 import { ItemsPanel } from "./items-panel";
 import { ShipmentButtons } from "./shipment-buttons";
@@ -17,13 +17,13 @@ const STEPS = [
 ];
 
 export default async function ShipmentPage({ params }: { params: Promise<{ id: string }> }) {
-  const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock" });
+  const s = await requireRoles([...SHIPMENT_SENDERS, "WAREHOUSE"], { module: "stock" });
   const { id } = await params;
   const sh = await getShipment(id);
   if (!sh) notFound();
-  // Snabjenets — faqat o'zinikini; qoralamani sklad ko'rmaydi
+  // Jo'natuvchi (snabjenets, mexanik) — faqat o'zinikini; qoralamani sklad ko'rmaydi
   const own = sh.createdById === s.userId;
-  if ((s.role === "PROCUREMENT" && !own) || (sh.status === "DRAFT" && !own && s.role !== "DIRECTOR")) notFound();
+  if ((ownShipmentsOnly(s.role) && !own) || (sh.status === "DRAFT" && !own && s.role !== "DIRECTOR")) notFound();
 
   const can = shipmentRights(sh, { userId: s.userId, role: s.role }, { send: canDo(s, "stock", "shipment"), accept: canDo(s, "stock", "shipment_accept") });
   const accepted = sh.items.filter((i) => i.status === "ACCEPTED").length;

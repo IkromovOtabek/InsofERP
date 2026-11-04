@@ -1,11 +1,12 @@
 import { requireRoles } from "@/lib/page-guard";
 import { isoDate } from "@/lib/format";
+import { SHIPMENT_SENDERS } from "@/lib/shipments";
 import { PageHeader } from "@/components/ui";
 import { ShipmentForm } from "../shipment-form";
 import { shipmentFormData } from "../form-data";
 
 export default async function NewShipmentPage() {
-  await requireRoles(["PROCUREMENT"], { module: "stock", actions: ["shipment"] });
+  await requireRoles(SHIPMENT_SENDERS, { module: "stock", actions: ["shipment"] });
   const d = await shipmentFormData();
   return (
     <div>

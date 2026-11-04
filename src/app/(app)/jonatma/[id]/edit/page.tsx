@@ -1,12 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { requireRoles } from "@/lib/page-guard";
-import { getShipment } from "@/lib/shipments";
+import { getShipment, SHIPMENT_SENDERS } from "@/lib/shipments";
 import { PageHeader } from "@/components/ui";
 import { ShipmentForm } from "../../shipment-form";
 import { shipmentFormData } from "../../form-data";
 
 export default async function EditShipmentPage({ params }: { params: Promise<{ id: string }> }) {
-  const s = await requireRoles(["PROCUREMENT"], { module: "stock", actions: ["shipment"] });
+  const s = await requireRoles(SHIPMENT_SENDERS, { module: "stock", actions: ["shipment"] });
   const { id } = await params;
   const [sh, d] = await Promise.all([getShipment(id), shipmentFormData()]);
   if (!sh) notFound();
