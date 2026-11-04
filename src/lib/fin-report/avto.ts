@@ -11,6 +11,7 @@ import { tripPayKm } from "@/lib/trip-summary";
  *  - yoqilg'i normasi — transport kartasidagi norma × km + soat (dizel litr, metan m³); berilgan — `FuelLog`;
  *  - ish haqi — reys haqi (`Trip.payAmount`) + «Haydovchi haqi» transport xarajati; remont / zapchast / boshqa — `TransportExpense`;
  *  - daromad — zayavka dastavka haqi reyslarga hajm ulushida bo'linadi;
+ *  - dispetcherning qo'lda yozuvi (`LogisticsEntry`, reys tizimga tushmagan ish) — haydovchi haqi ish haqiga, kirim daromadga;
  *  - nazorat: kassadan chiqqan (izohda shu mashina raqami yozilgan chiqim) va mexanik so'rovlari (to'langan) farqi.
  */
 
@@ -41,7 +42,7 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
   const inMonth = { gte: from, lt: to };
   const vid = opts.vehicleId;
 
-  const [vehicles, trips, fuel, expenses, mech, cashTx, receipts] = await Promise.all([
+  const [vehicles, trips, fuel, expenses, mech, cashTx, receipts, manual] = await Promise.all([
     db.vehicle.findMany({ where: vid ? { id: vid } : {}, select: { id: true, plate: true, type: true, brand: true, model: true, isActive: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } }),
     db.trip.findMany({
       where: { status: { not: "CANCELLED" }, ...(vid ? { vehicleId: vid } : {}), OR: [{ deliveredAt: inMonth }, { deliveredAt: null, createdAt: inMonth }] },
@@ -52,6 +53,7 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
     db.mechanicRequest.findMany({ where: { status: "PAID", paidAt: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, paidAt: true, amount: true } }),
     db.cashTransaction.findMany({ where: { cancelledAt: null, type: "EXPENSE", date: inMonth }, select: { date: true, amount: true, note: true, counterparty: true, subCategory: true } }),
     db.goodsReceipt.findMany({ where: { cancelledAt: null, date: inMonth, carrier: { not: null } }, select: { carrier: true } }),
+    db.logisticsEntry.findMany({ where: { cancelledAt: null, date: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, date: true, payAmount: true, revenue: true } }),
   ]);
 
   // Dastavka haqi zayavkaning barcha reyslariga hajm ulushida
@@ -122,6 +124,11 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
     if (e.kind === "DRIVER_PAY") { r.pay += a; d.pay += a; }
     else if (REPAIR_KINDS.has(e.kind)) { r.repair += a; d.repair += a; }
     else r.other += a;
+  }
+  for (const e of manual) {
+    if (!vById.has(e.vehicleId!)) continue;
+    const r = row(e.vehicleId!), d = day(e.date), pay = Number(e.payAmount ?? 0), rev = Number(e.revenue ?? 0);
+    r.pay += pay; r.revenue += rev; d.pay += pay; d.revenue += rev;
   }
   for (const m of mech) { const r = row(m.vehicleId!), a = Number(m.amount); r.mechanic += a; day(m.paidAt!).mechanic += a; }
 

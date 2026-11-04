@@ -104,6 +104,7 @@ model User {
   brigadeIssuesDone      BrigadeIssue[]           @relation("BrigadeIssueResolvedBy")
   payments               Payment[]                @relation("PaymentCreatedBy")
   vehicleServices        VehicleService[]         @relation("VehicleServiceBy")
+  logisticsEntries       LogisticsEntry[]         @relation("LogisticsEntryBy")
   agentCustomers         Customer[]               @relation("CustomerAgent")
   aiChats                AiChat[]                 @relation("AiChatUser")
   rentTx                 RentTx[]                 @relation("RentTxCreatedBy")
@@ -562,6 +563,7 @@ model Vehicle {
   mainDriver   Employee?          @relation("VehicleMainDriver", fields: [mainDriverId], references: [id], onDelete: SetNull)
   fuelLogs     FuelLog[]
   expenses     TransportExpense[]
+  entries      LogisticsEntry[]
   services     VehicleService[]
   requests     MechanicRequest[]
 }
@@ -671,6 +673,7 @@ model Employee {
   deletionRequests AccountDeletionRequest[]
   fuelLogs         FuelLog[]
   transportCosts   TransportExpense[]
+  logisticsEntries LogisticsEntry[]
   autoReceipts     GoodsReceipt[]           @relation("ReceiptAutoIssueEmployee")
   shiftDays        ShiftAssignment[]
   hrRequests       HrRequest[]
@@ -1946,6 +1949,42 @@ model TransportExpense {
 
   @@index([date])
   @@index([tripId])
+}
+
+/// Dispetcherning qo'lda yozuvi (Logistika → Haydovchilar tabeli → «Qo'lda yozuvlar»): reys tizimga tushmagan ish
+/// (ECO'ga ulanmagan haydovchi, zavoddan tashqari ish), haydovchining qo'lda hisoblangan haqi va transportning qo'shimcha kirimi.
+/// Haydovchi haqi reys haqi kabi ish boshqaruvchi tasdig'idan o'tadi: oylik — oy yakuni vedomostiga, naqd — kassaga
+/// (mexanik so'rovi). Kirim — logistika daromadi (pul harakati emas, kassa kirimi alohida). Chiqim bu yerda emas —
+/// `TransportExpense`. O'chirilmaydi — bekor qilinadi (sababi bilan), hammasi AuditLog'da (`lib/logistics-entry.ts`).
+model LogisticsEntry {
+  id                String         @id @default(cuid())
+  docNo             String         @unique // QY-YYYY-00001
+  date              DateTime // ish sanasi — oy shu bo'yicha
+  driverId          String?
+  vehicleId         String?
+  trips             Int            @default(0) // necha reys (ma'lumot uchun)
+  km                Decimal?       @db.Decimal(10, 1)
+  payAmount         Decimal?       @db.Decimal(18, 2) // haydovchi haqi
+  payType           DriverPayType?
+  payApprovedAt     DateTime?
+  payApprovedById   String?
+  revenue           Decimal?       @db.Decimal(18, 2) // kirim (daromad)
+  note              String
+  mechanicRequestId String?        @unique // naqd haq kassaga o'tgan so'rov
+  clientToken       String?        @unique // ikki marta yuborilsa dublikat bo'lmasin
+  createdById       String
+  createdAt         DateTime       @default(now())
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?
+
+  driver    Employee? @relation(fields: [driverId], references: [id])
+  vehicle   Vehicle?  @relation(fields: [vehicleId], references: [id])
+  createdBy User      @relation("LogisticsEntryBy", fields: [createdById], references: [id])
+
+  @@index([date])
+  @@index([driverId, date])
+  @@index([vehicleId, date])
 }
 
 enum TransportExpenseKind {

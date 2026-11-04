@@ -13,6 +13,7 @@ import {
 } from "@/lib/logistics-admin";
 import { approveTripPays, PAY_TYPES, priceTrip, priceTripsBySuggestion, rejectTripPay } from "@/lib/driver-trip-pay";
 import { createMechanicRequest, MASTER_PROBLEMS } from "@/lib/mechanic-requests";
+import { approveLogisticsEntries, cancelLogisticsEntry, createLogisticsEntry, entrySchema, rejectLogisticsEntry } from "@/lib/logistics-entry";
 import { driverTempLoginCore } from "@/lib/kadr-employee";
 
 /**
@@ -250,6 +251,44 @@ export async function createMasterPayAction(_prev: ActionState, fd: FormData): P
   if (res.error) return { error: res.error };
   refresh();
   return { ok: true, note: res.note };
+}
+
+// ───────────────────────── Qo'lda yozuv (reys tizimga tushmagan ish, haq, kirim) ─────────────────────────
+
+/** Dispetcher: qo'lda yozuv — `lib/logistics-entry.ts` (haq ish boshqaruvchi tasdig'iga boradi). */
+export async function createEntryAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay");
+  const r = parseForm(entrySchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await createLogisticsEntry(r.data, s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true, note: `${res.docNo} yozildi${r.data.payAmount ? " — haq ish boshqaruvchi tasdig'ini kutmoqda" : ""}` };
+}
+
+export async function cancelEntryAction(id: string, reason: string): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay");
+  const res = await cancelLogisticsEntry(id, String(reason ?? ""), s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true, note: "Bekor qilindi" };
+}
+
+/** Ish boshqaruvchi: qo'lda yozilgan haqni tasdiqlash (naqd — kassaga, oylik — vedomostga). */
+export async function approveEntriesAction(ids: string[]): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay_approve");
+  if (!ids.length) return { error: "Yozuv tanlanmagan" };
+  const r = await approveLogisticsEntries(ids, s.userId);
+  refresh();
+  return r.failed ? { error: `${r.done} ta tasdiqlandi, ${r.failed} tasi o'tmadi (boshqa joyda o'zgargan yoki oy vedomosti yopilgan) — sahifani yangilang` } : { ok: true };
+}
+
+export async function rejectEntryAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay_approve");
+  const res = await rejectLogisticsEntry(id, String(fd.get("reason") ?? ""), s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true };
 }
 
 const money0 = z.coerce.number({ message: "Raqam kiriting" }).min(0, "Manfiy bo'lmaydi").max(100_000_000, "Juda katta");

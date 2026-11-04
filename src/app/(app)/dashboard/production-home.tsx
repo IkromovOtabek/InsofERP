@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Boxes, CalendarCheck, ClipboardList, Factory, FileText, HardHat, ShieldCheck, Target, TriangleAlert, Truck } from "lucide-react";
 import { canDo } from "@/lib/permissions";
 import { pendingApprovalWhere } from "@/lib/driver-trip-pay";
+import { pendingEntryWhere } from "@/lib/logistics-entry";
 import { productionDay } from "@/lib/production-day";
 import { monthTitle, dayTitle, today as todayIso } from "@/lib/davomat";
 import { customerMarks } from "@/lib/finance";
@@ -38,7 +39,11 @@ export async function ProductionHome({ s }: { s: Session }) {
   const [d, reports, payWait, mechWait, matrix, brigadeWork] = await Promise.all([
     productionDay(iso),
     reportHistory(5),
-    approver ? db.trip.aggregate({ where: pendingApprovalWhere(), _count: true, _sum: { payAmount: true } }) : null,
+    // Reys haqi va dispetcherning qo'lda yozgan haqi — bitta «tasdiq kutmoqda» banneri
+    approver ? Promise.all([
+      db.trip.aggregate({ where: pendingApprovalWhere(), _count: true, _sum: { payAmount: true } }),
+      db.logisticsEntry.aggregate({ where: pendingEntryWhere(), _count: true, _sum: { payAmount: true } }),
+    ]).then(([t, e]) => ({ _count: t._count + e._count, _sum: { payAmount: Number(t._sum.payAmount ?? 0) + Number(e._sum.payAmount ?? 0) } })) : null,
     approver ? db.mechanicRequest.aggregate({ where: { status: "NEW" }, _count: true, _sum: { amount: true } }) : null,
     productionMatrix(),
     brigadeProducts({ activeOnly: true }),

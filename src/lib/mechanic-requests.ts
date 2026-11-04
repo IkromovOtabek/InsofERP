@@ -325,7 +325,7 @@ export async function payMechanicRequest(id: string, input: { cashAccountId: str
     if (cashErr) throw new MechError(cashErr);
     const ct = await tx.cashTransaction.create({
       data: {
-        type: "EXPENSE", date: now, cashAccountId: acc.id, amount, category: r.tripId ? "Ish haqi" : MECH_CATEGORY[r.target],
+        type: "EXPENSE", date: now, cashAccountId: acc.id, amount, category: r.tripId || r.problem === TRIP_PAY ? "Ish haqi" : MECH_CATEGORY[r.target],
         counterparty: r.payee ?? r.createdBy.fullName, refType: MECH_REF, refId: id, createdById: userId,
         note: [`Mexanik so'rovi ${r.docNo}`, `${subject} · ${r.problem}`, extra].filter(Boolean).join(" · "),
       },

@@ -193,8 +193,8 @@ export async function payTrips(where: object, take = 500): Promise<PayTripRow[]>
   });
 }
 
-/** Shu oy yakuniy vedomosti tasdiqlangan/to'langanmi — unda reys narxi o'zgarmaydi. */
-async function monthLocked(d: Date): Promise<boolean> {
+/** Shu oy yakuniy vedomosti tasdiqlangan/to'langanmi — unda reys narxi (va qo'lda yozilgan oylik haq) o'zgarmaydi. */
+export async function monthLocked(d: Date): Promise<boolean> {
   const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   return (await db.payrollRun.count({ where: { month, kind: "FINAL", status: { in: ["APPROVED", "PAID"] } } })) > 0;
 }
@@ -302,18 +302,34 @@ export async function rejectTripPay(tripId: string, reason: string, userId: stri
   return { ok: true };
 }
 
-/** Oylik uchun: haydovchi bo'yicha oylikka tasdiqlangan reyslar (oy yakuni vedomosti, `lib/hr/payroll.ts`). Naqd berilganlari kirmaydi. */
+/**
+ * Oylik uchun: haydovchi bo'yicha oylikka tasdiqlangan reyslar va dispetcherning qo'lda yozgan haqi (`lib/logistics-entry.ts`)
+ * — oy yakuni vedomosti, `lib/hr/payroll.ts`. Naqd berilganlari kirmaydi.
+ */
 export async function tripPayByDriver(from: Date, to: Date, employeeIds: string[]): Promise<Map<string, { trips: number; km: number; sum: number; unpriced: number }>> {
-  const [priced, unpriced] = await Promise.all([
+  const entryBase = { driverId: { in: employeeIds }, cancelledAt: null, date: { gte: from, lt: to }, payType: "PAYROLL" as const, payAmount: { gt: 0 } };
+  const [priced, unpriced, manual, manualWait] = await Promise.all([
     db.trip.groupBy({ by: ["driverId"], where: { driverId: { in: employeeIds }, status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...payrollTripWhere }, _count: true, _sum: { payAmount: true, payKm: true } }),
     // Narxsiz va oylikka tasdiq kutayotganlar — vedomostda «hali tushmagan» bo'lib ogohlantiriladi
     db.trip.groupBy({ by: ["driverId"], where: { driverId: { in: employeeIds }, deliveredAt: { gte: from > PAY_SINCE ? from : PAY_SINCE, lt: to }, OR: [unpricedWhere(), { ...pendingApprovalWhere(), payType: "PAYROLL" as const }] }, _count: true }),
+    db.logisticsEntry.groupBy({ by: ["driverId"], where: { ...entryBase, payApprovedAt: { not: null } }, _sum: { payAmount: true, trips: true, km: true } }),
+    db.logisticsEntry.groupBy({ by: ["driverId"], where: { ...entryBase, payApprovedAt: null }, _count: true }),
   ]);
   const out = new Map<string, { trips: number; km: number; sum: number; unpriced: number }>();
   for (const p of priced) out.set(p.driverId, { trips: p._count, km: Math.round(Number(p._sum.payKm ?? 0)), sum: Number(p._sum.payAmount ?? 0), unpriced: 0 });
   for (const u of unpriced) {
     const cur = out.get(u.driverId) ?? { trips: 0, km: 0, sum: 0, unpriced: 0 };
     out.set(u.driverId, { ...cur, unpriced: u._count });
+  }
+  for (const e of manual) {
+    if (!e.driverId) continue;
+    const cur = out.get(e.driverId) ?? { trips: 0, km: 0, sum: 0, unpriced: 0 };
+    out.set(e.driverId, { ...cur, trips: cur.trips + (e._sum.trips ?? 0), km: cur.km + Math.round(Number(e._sum.km ?? 0)), sum: cur.sum + Number(e._sum.payAmount ?? 0) });
+  }
+  for (const e of manualWait) {
+    if (!e.driverId) continue;
+    const cur = out.get(e.driverId) ?? { trips: 0, km: 0, sum: 0, unpriced: 0 };
+    out.set(e.driverId, { ...cur, unpriced: cur.unpriced + e._count });
   }
   return out;
 }

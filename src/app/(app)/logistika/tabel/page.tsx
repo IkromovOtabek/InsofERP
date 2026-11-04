@@ -1,5 +1,6 @@
+import { Fragment } from "react";
 import Link from "next/link";
-import { BellRing, Calculator, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Route, Settings2, ShieldCheck, Timer, Users, Wrench } from "lucide-react";
+import { BellRing, Calculator, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, PencilLine, Route, Settings2, ShieldCheck, Timer, TrendingUp, Truck, Undo2, Users, Wrench } from "lucide-react";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
@@ -9,10 +10,17 @@ import { monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { driverTariff, fuelNormText, PAY_TYPE_LABEL, payTrips, pendingApprovalWhere, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
 import { MASTER_PROBLEMS, MECH_STATUS_COLOR, MECH_STATUS_LABEL } from "@/lib/mechanic-requests";
 import { driverLedger, fuelBalances } from "@/lib/driver-ledger";
+import { driverEmployees } from "@/lib/logistics";
+import { avtoReport } from "@/lib/fin-report/avto";
+import { entryRows, pendingEntryWhere, type EntryRow } from "@/lib/logistics-entry";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, Empty, PageHeader, Section, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { AllCheck, ApproveButton, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
+import { AllCheck, ApproveButton, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
+import { ConfirmButton } from "../../payments/confirm-button";
+import { ExpenseForm } from "../cost-forms";
+import { costOptions } from "../cost-data";
+import { cancelEntryAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +38,42 @@ function PayStatus({ r }: { r: PayTripRow }) {
     : r.payType === "PAYROLL" ? ["green", "Oylikka tasdiqlangan"] as const
     : r.cashStatus === "PAID" ? ["green", "Kassa berdi"] as const : ["blue", "Kassa kutilmoqda"] as const;
   return <div className="mt-0.5 flex flex-wrap justify-end gap-1"><Badge color="slate" dot={false}>{PAY_TYPE_LABEL[r.payType]}</Badge><Badge color={color}>{text}</Badge></div>;
+}
+
+/** Qo'lda yozuv holati: bekor qilingan (sababi bilan), tasdiq / oylik / kassa bosqichi; haqsiz yozuv — faqat kirim. */
+function EntryStatus({ e }: { e: EntryRow }) {
+  if (e.cancelledAt) return <><Badge color="slate">Bekor qilingan</Badge>{e.cancelReason && <div className="mt-0.5 max-w-48 text-[11px] text-slate-500">{e.cancelReason}</div>}</>;
+  if (e.pay <= 0) return <Badge color="slate" dot={false}>Faqat kirim</Badge>;
+  const [color, text] = !e.approvedAt ? ["amber", "Tasdiq kutilmoqda"] as const
+    : e.payType === "PAYROLL" ? ["green", "Oylikka tasdiqlangan"] as const
+    : e.cashStatus === "PAID" ? ["green", "Kassa berdi"] as const : ["blue", "Kassa kutilmoqda"] as const;
+  return <Badge color={color}>{text}</Badge>;
+}
+
+/** Qo'lda yozuvlar jadvali — «Qo'lda yozuvlar» bo'limi va haydovchi oyligi uchun. Naqdi kassaga o'tgani bekor qilinmaydi. */
+function EntryTable({ rows, canCancel }: { rows: EntryRow[]; canCancel: boolean }) {
+  return (
+    <Table>
+      <thead><tr><Th>Sana · №</Th><Th>Haydovchi</Th><Th>Transport</Th><Th>Ish</Th><Th right>Haydovchi haqi</Th><Th right>Kirim</Th><Th>Holat</Th>{canCancel && <Th className="w-10" />}</tr></thead>
+      <tbody>
+        {rows.map((e) => (
+          <Tr key={e.id} className={e.cancelledAt ? "opacity-60" : undefined}>
+            <Td className="text-sm"><span className="tabular">{date(e.date)}</span><div className="text-xs text-slate-500 tabular">{e.docNo}</div></Td>
+            <Td className="text-sm">{e.driver ?? <span className="text-slate-300">—</span>}</Td>
+            <Td className="text-sm tabular">{e.plate ?? <span className="text-slate-300">—</span>}</Td>
+            <Td className="max-w-72 text-sm">{e.note}<div className="text-xs text-slate-500">{[e.trips ? `${e.trips} reys` : null, e.km != null ? `${fmtNum(e.km, 0)} km` : null, `yozdi: ${e.createdBy}`].filter(Boolean).join(" · ")}</div></Td>
+            <Td right className="tabular">{e.pay ? <><span className="font-semibold">{money(e.pay)}</span>{e.payType && <div className="text-[11px] text-slate-500">{PAY_TYPE_LABEL[e.payType]}</div>}</> : <span className="text-slate-300">—</span>}</Td>
+            <Td right className="tabular">{e.revenue ? money(e.revenue) : <span className="text-slate-300">—</span>}</Td>
+            <Td><EntryStatus e={e} /></Td>
+            {canCancel && <Td>{!e.cancelledAt && !(e.payType === "CASH" && e.approvedAt) && (
+              <ConfirmButton action={cancelEntryAction.bind(null, e.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />}
+                question={`${e.docNo} (${date(e.date)}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />
+            )}</Td>}
+          </Tr>
+        ))}
+      </tbody>
+    </Table>
+  );
 }
 
 /** Reys qatori — narxsizlar ro'yxati va haydovchi oyi uchun bir xil. */
@@ -78,12 +122,14 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
  * ishlagan soat, yoqilg'i normasi va tarif bo'yicha taklif. Dispetcher narx qo'yadi; narxsizlari tepada alohida
  * (har 12 soatda eslatma). Narxlangan reyslar oy yakunida Ish haqi vedomostiga «Reyslar» bo'lib tushadi.
  * «Hisob varag'i» (`?view=hisob`) — dispetcher Excel'i: gaz qoldig'i/zapravka/sarf, xarajatlar, dastavka daromadi, foyda.
+ * «Oylik hisoblash» — BARCHA faol haydovchi va transport (reysi yo'q, ECO'ga ulanmagani ham); «Qo'lda yozuvlar» — reys tizimga
+ * tushmagan ish, haq, kirim (`lib/logistics-entry.ts`) va transport chiqimi.
  */
 /** Sahifa bo'limlari — sarlavha ostidagi bar. Eski havolalar (`?view=hisob`) ham ishlaydi. */
-const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "tarif"] as const;
+const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "qolda", "tarif"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
-export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string }> }) {
+export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const month = normMonth(sp.oy);
@@ -118,6 +164,19 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     db.mechanicRequest.findMany({ where: { payee: { not: null }, tripId: null }, distinct: ["payee"], select: { payee: true }, orderBy: { payee: "asc" }, take: 200 }),
   ]);
 
+  // Qo'lda yozuvlar: tasdiq kutayotganlari — tab soni uchun; oy ro'yxati (bekor qilinganlari ham) — oylik va «Qo'lda yozuvlar» da
+  const kesim = sp.kesim === "transport" ? "transport" : "haydovchi";
+  const canExpense = canDo(s, "logistika", "expense");
+  const [pendingEntries, monthEntries, staff, avto, extVehicles, opts] = await Promise.all([
+    entryRows(pendingEntryWhere()),
+    bolim === "oylik" || bolim === "qolda" ? entryRows({ date: { gte: from, lt: to }, ...(bolim === "oylik" && sp.driver ? { driverId: sp.driver } : {}) }, 2000) : Promise.resolve([] as EntryRow[]),
+    bolim === "oylik" && kesim === "haydovchi" ? driverEmployees({ activeOnly: true }) : Promise.resolve([]),
+    bolim === "oylik" && kesim === "transport" ? avtoReport(from, to) : Promise.resolve(null),
+    bolim === "oylik" && kesim === "transport" ? db.vehicle.findMany({ where: { external: true }, select: { id: true } }) : Promise.resolve([]),
+    bolim === "qolda" && (canPrice || canExpense) ? costOptions() : Promise.resolve(null),
+  ]);
+  const liveEntries = monthEntries.filter((e) => !e.cancelledAt);
+
   const ledger = view === "hisob" ? filteredLedger ?? full : null;
   const balOf: BalMap = new Map(full.rows.map((r) => [r.id, { after: r.balAfter, unit: r.unit }]));
   const balances = fuelBalances(full.rows);
@@ -145,19 +204,37 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const total = { trips: monthTrips.length, km: drivers.reduce((a, d) => a + d.km, 0), sum: drivers.reduce((a, d) => a + d.sum, 0), unpriced: drivers.reduce((a, d) => a + d.unpriced, 0) };
   const picked = sp.driver ? drivers.find((d) => d.id === sp.driver) ?? null : null;
   const cur = today().slice(0, 7);
-  const qs = (o: { oy?: string; driver?: string | null; bolim?: SectionKey; transport?: string | null }) => {
+  const qs = (o: { oy?: string; driver?: string | null; bolim?: SectionKey; transport?: string | null; kesim?: "transport" | null }) => {
     const b = o.bolim ?? bolim;
     const p = new URLSearchParams({ bolim: b, oy: o.oy ?? month });
     const driver = o.driver === undefined ? sp.driver : o.driver, tr = o.transport === undefined ? sp.transport : o.transport;
+    const k = o.kesim === undefined ? (kesim === "transport" ? "transport" : null) : o.kesim;
     if (driver) p.set("driver", driver);
     if (b === "hisob" && tr) p.set("transport", tr);
+    if (b === "oylik" && k) p.set("kesim", k);
     return `/logistika/tabel?${p}`;
   };
-  // Oylik hisoblash: haydovchi bo'yicha reys haqi — oylikka (vedomost), naqd (kassa) va hali hal bo'lmagani
-  type PayRow = { id: string; name: string; trips: number; payroll: number; payrollWait: number; cashPaid: number; cashDesk: number; cashWait: number; unpriced: number; unpricedSum: number };
+  // Oylik hisoblash: BARCHA faol haydovchi (reysi yo'q, ECO'ga ulanmagani ham) — reys haqi va qo'lda yozilgan haq:
+  // oylikka (vedomost), naqd (kassa) va hali hal bo'lmagani. Ro'yxatda yo'q (ko'chadan, ishdan ketgan) — shu oyda haqi bo'lsa, pastda
+  type PayRow = { id: string; name: string; eco: boolean | null; plate: string | null; outside: boolean; trips: number; manual: number; payroll: number; payrollWait: number; cashPaid: number; cashDesk: number; cashWait: number; unpriced: number; unpricedSum: number };
+  const blank = (id: string, name: string): PayRow => ({ id, name, eco: null, plate: null, outside: true, trips: 0, manual: 0, payroll: 0, payrollWait: 0, cashPaid: 0, cashDesk: 0, cashWait: 0, unpriced: 0, unpricedSum: 0 });
+  const plateOf = new Map(vehicles.map((v) => [v.id, v.plate]));
   const payMap = new Map<string, PayRow>();
+  for (const d of staff) {
+    if (sp.driver && d.id !== sp.driver) continue;
+    payMap.set(d.id, { ...blank(d.id, d.fullName), eco: !!d.ecoUserId, plate: d.vehicleId ? plateOf.get(d.vehicleId) ?? null : null, outside: false });
+  }
+  for (const e of liveEntries) {
+    if (!e.driverId || e.pay <= 0) continue;
+    const d = payMap.get(e.driverId) ?? blank(e.driverId, e.driver ?? "—");
+    d.manual++;
+    if (!e.approvedAt) { if (e.payType === "CASH") d.cashWait += e.pay; else d.payrollWait += e.pay; }
+    else if (e.payType === "CASH") { if (e.cashStatus === "PAID") d.cashPaid += e.pay; else d.cashDesk += e.pay; }
+    else d.payroll += e.pay;
+    payMap.set(e.driverId, d);
+  }
   for (const r of monthTrips) {
-    const d = payMap.get(r.driverId) ?? { id: r.driverId, name: r.driver, trips: 0, payroll: 0, payrollWait: 0, cashPaid: 0, cashDesk: 0, cashWait: 0, unpriced: 0, unpricedSum: 0 };
+    const d = payMap.get(r.driverId) ?? blank(r.driverId, r.driver);
     d.trips++;
     const a = r.amount ?? 0;
     // Narxsiz — `pricedAt` bo'yicha (narxsizlar ro'yxati bilan bir xil qoida)
@@ -168,14 +245,19 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     else d.payroll += a;
     payMap.set(r.driverId, d);
   }
-  const payRows = [...payMap.values()].sort((a, b) => b.payroll + b.cashPaid - (a.payroll + a.cashPaid) || a.name.localeCompare(b.name));
-  const payTotal = payRows.reduce((t, r) => ({ ...t, trips: t.trips + r.trips, payroll: t.payroll + r.payroll, payrollWait: t.payrollWait + r.payrollWait, cashPaid: t.cashPaid + r.cashPaid, cashDesk: t.cashDesk + r.cashDesk, cashWait: t.cashWait + r.cashWait, unpriced: t.unpriced + r.unpriced, unpricedSum: t.unpricedSum + r.unpricedSum }),
-    { id: "", name: "Jami", trips: 0, payroll: 0, payrollWait: 0, cashPaid: 0, cashDesk: 0, cashWait: 0, unpriced: 0, unpricedSum: 0 } as PayRow);
+  // Ro'yxatdan tashqaridagilar: ko'chadan chaqirilgan yoki faol emas — belgisi bilan
+  const outsideIds = [...payMap.values()].filter((r) => r.outside).map((r) => r.id);
+  const outsideInfo = new Map(outsideIds.length ? (await db.employee.findMany({ where: { id: { in: outsideIds } }, select: { id: true, external: true } })).map((e) => [e.id, e.external ? "ko'chadan" : "faol emas"]) : []);
+  const earned = (r: PayRow) => r.payroll + r.payrollWait + r.cashPaid + r.cashDesk + r.cashWait;
+  const payRows = [...payMap.values()].sort((a, b) => Number(a.outside) - Number(b.outside) || earned(b) - earned(a) || b.trips - a.trips || a.name.localeCompare(b.name));
+  const payTotal = payRows.reduce((t, r) => ({ ...t, trips: t.trips + r.trips, manual: t.manual + r.manual, payroll: t.payroll + r.payroll, payrollWait: t.payrollWait + r.payrollWait, cashPaid: t.cashPaid + r.cashPaid, cashDesk: t.cashDesk + r.cashDesk, cashWait: t.cashWait + r.cashWait, unpriced: t.unpriced + r.unpriced, unpricedSum: t.unpricedSum + r.unpricedSum }),
+    { ...blank("", "Jami"), outside: false });
+  const pickedName = picked?.name ?? (sp.driver ? payMap.get(sp.driver)?.name ?? null : null);
   const openMasters = masters.filter((m) => m.status === "DEFERRED" || m.status === "NEW" || m.status === "APPROVED").length;
   // Oy tanlash — oyga bog'liq bo'limlarda (oy jami, reyslar, hisob varag'i)
   const monthNav = (
     <div className="flex items-center gap-1 text-sm">
-      {picked && <Link href={qs({ driver: null })} className="mr-2 text-blue-700 hover:underline">Hamma haydovchilar</Link>}
+      {sp.driver && <Link href={qs({ driver: null })} className="mr-2 text-blue-700 hover:underline">Hamma haydovchilar</Link>}
       <Link href={qs({ oy: shiftMonth(month, -1) })} scroll={false} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Oldingi oy"><ChevronLeft size={16} /></Link>
       <span className="font-medium">{monthTitle(month)}</span>
       {month < cur && <Link href={qs({ oy: shiftMonth(month, 1) })} scroll={false} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Keyingi oy"><ChevronRight size={16} /></Link>}
@@ -189,12 +271,13 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 
       <Tabs scroll={false} current={bolim} items={[
         { key: "narxsiz", label: "Narx belgilanmagan", href: qs({ bolim: "narxsiz" }), icon: BellRing, count: unpriced.length },
-        { key: "tasdiq", label: "Reys haqi tasdig'i", href: qs({ bolim: "tasdiq" }), icon: ShieldCheck, count: pending.length },
+        { key: "tasdiq", label: "Reys haqi tasdig'i", href: qs({ bolim: "tasdiq" }), icon: ShieldCheck, count: pending.length + pendingEntries.length },
         { key: "usta", label: "Remont usta puli", href: qs({ bolim: "usta" }), icon: Wrench, ...(openMasters ? { count: openMasters } : {}) },
         { key: "oy", label: `Oy bo'yicha: ${monthTitle(month)}`, href: qs({ bolim: "oy" }), icon: Coins },
         { key: "reyslar", label: "Reyslar va narx", href: qs({ bolim: "reyslar" }), icon: Route },
         { key: "hisob", label: "Hisob varag'i", href: qs({ bolim: "hisob" }), icon: FileSpreadsheet },
         { key: "oylik", label: "Oylik hisoblash", href: qs({ bolim: "oylik" }), icon: Calculator },
+        { key: "qolda", label: "Qo'lda yozuvlar", href: qs({ bolim: "qolda" }), icon: PencilLine },
         { key: "tarif", label: "Tarif", href: qs({ bolim: "tarif" }), icon: Settings2 },
       ]} />
 
@@ -245,6 +328,31 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             </div>
           </Selectable>
         )}
+      </Card>}
+
+      {/* ── Qo'lda yozilgan haq tasdig'i: dispetcher yozgan ish / oylik haq (reys tizimga tushmagan) ── */}
+      {bolim === "tasdiq" && pendingEntries.length > 0 && <Card padded={false} className={`mt-4 ${canApprove ? "border-blue-300 ring-2 ring-blue-100" : ""}`}>
+        <div className="px-5 pt-5">
+          <CardHeader title={`Qo'lda yozilgan haq (${pendingEntries.length})`} icon={PencilLine}
+            description="Dispetcher yozgan: reys tizimga tushmagan ish yoki oylik haq. Tasdiqlansa — naqd kassaga, oylik vedomostga; rad etilsa yozuv sababi bilan bekor bo'ladi"
+            action={canApprove && pendingEntries.length > 1 ? <ApproveButton ids={pendingEntries.map((e) => e.id)} label="Hammasini tasdiqlash" entry /> : undefined} />
+        </div>
+        <Table>
+          <thead><tr><Th>Sana · №</Th><Th>Haydovchi</Th><Th>Transport</Th><Th>Ish</Th><Th right>Haq</Th><Th>To&apos;lov turi</Th>{canApprove && <Th right>Qaror</Th>}</tr></thead>
+          <tbody>
+            {pendingEntries.map((e) => (
+              <Tr key={e.id}>
+                <Td className="text-sm"><span className="tabular">{date(e.date)}</span><div className="text-xs text-slate-500 tabular">{e.docNo}</div></Td>
+                <Td className="text-sm">{e.driver}</Td>
+                <Td className="text-sm tabular">{e.plate ?? <span className="text-slate-300">—</span>}</Td>
+                <Td className="max-w-72 text-sm">{e.note}<div className="text-xs text-slate-500">{[e.trips ? `${e.trips} reys` : null, e.km != null ? `${fmtNum(e.km, 0)} km` : null, `yozdi: ${e.createdBy}`].filter(Boolean).join(" · ")}</div></Td>
+                <Td right className="font-semibold tabular">{money(e.pay)}</Td>
+                <Td><Badge color={e.payType === "CASH" ? "amber" : "blue"}>{e.payType ? PAY_TYPE_LABEL[e.payType] : "—"}</Badge></Td>
+                {canApprove && <Td right><div className="flex flex-wrap items-center justify-end gap-1"><ApproveButton ids={[e.id]} label="Tasdiqlash" entry /><RejectPayForm entryId={e.id} /></div></Td>}
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
       </Card>}
 
       {/* ── Remont usta puli: joyida (tasdiq → kassa) yoki N kunda (muddat kuni eslatma va tasdiq) ── */}
@@ -399,57 +507,78 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         <p className="mt-2 text-xs text-slate-500">Yoqilg&apos;i normasi: km × 100 km normasi + ishlagan soat × turib ishlash normasi (metan — m³, dizel — l). Oylik {date(new Date(y!, m!, 0))} gacha yetkazilgan reyslardan.</p>
       </Section>}
 
-      {/* ── Oylik hisoblash: reys haqi haydovchi bo'yicha — oylikka (Ish haqi vedomosti) va naqd (kassa) ── */}
-      {bolim === "oylik" && <Section title={`Oylik hisoblash: ${picked ? `${picked.name} — ` : ""}${monthTitle(month)}`} className="mt-0" action={monthNav}>
+      {/* ── Oylik hisoblash: BARCHA haydovchi (reys haqi + qo'lda haq: oylikka / naqd) va BARCHA transport (kirim, chiqim, foyda) ── */}
+      {bolim === "oylik" && <Section title={`Oylik hisoblash: ${pickedName && kesim === "haydovchi" ? `${pickedName} — ` : ""}${monthTitle(month)}`} className="mt-0" action={monthNav}>
+        <Tabs scroll={false} current={kesim} className="w-fit" items={[
+          { key: "haydovchi", label: "Haydovchilar", href: qs({ kesim: null }), icon: Users },
+          { key: "transport", label: "Transport", href: qs({ kesim: "transport", driver: null }), icon: Truck },
+        ]} />
+        {kesim === "haydovchi" && <>
         <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
           <StatCard label="Oylikka (tasdiqlangan)" value={money(payTotal.payroll)} hint="oy yakuni vedomostiga tushadi" icon={Calculator} tone="success" />
           <StatCard label="Naqd berildi" value={money(payTotal.cashPaid)} hint={payTotal.cashDesk ? `kassada kutmoqda ${money(payTotal.cashDesk)}` : "kassadan"} icon={Coins} tone="info" />
           <StatCard label="Tasdiq kutmoqda" value={money(payTotal.payrollWait + payTotal.cashWait)} hint={`oylik ${money(payTotal.payrollWait)} · naqd ${money(payTotal.cashWait)}`} icon={ShieldCheck} tone={payTotal.payrollWait + payTotal.cashWait ? "warning" : "default"} href={qs({ bolim: "tasdiq" })} />
           <StatCard label="Narxsiz" value={payTotal.unpriced} hint={payTotal.unpriced ? `taklif bo'yicha ${money(payTotal.unpricedSum)}` : "hammasi narxlangan"} icon={Timer} tone={payTotal.unpriced ? "warning" : "default"} href={qs({ bolim: "narxsiz" })} />
         </div>
-        {payRows.length === 0 ? <Card><Empty text="Bu oyda yetkazilgan reys yo'q" icon={Users} /></Card> : (
+        {payRows.length === 0 ? <Card><Empty text="Faol haydovchi yo'q (Otdel kadr → haydovchi lavozimi)" icon={Users} /></Card> : (
           <>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-slate-500">Faqat reys haqi. Oklad, avans va ushlanmalar bilan to&apos;liq oylik — Ish haqi bo&apos;limida (oy yakuni vedomosti).</p>
+              <p className="text-xs text-slate-500">Hamma faol haydovchi — reysi yo&apos;q yoki ECO&apos;ga ulanmagani ham. Reys tizimga tushmagan ishni <Link href={qs({ bolim: "qolda" })} className="text-blue-700 hover:underline">«Qo&apos;lda yozuvlar»</Link> da yozing. Oklad, avans va ushlanmalar bilan to&apos;liq oylik — Ish haqi bo&apos;limida.</p>
               <ExcelButton file={`Haydovchilar oyligi ${month}`} sheets={[{ name: "Oylik hisoblash", rows: [...payRows, payTotal].map((r) => ({
-                Haydovchi: r.name, Reys: r.trips, "Oylikka (tasdiqlangan)": r.payroll, "Oylik — tasdiq kutmoqda": r.payrollWait,
+                Haydovchi: r.name, ECO: r === payTotal ? "" : r.eco == null ? outsideInfo.get(r.id) ?? "" : r.eco ? "ulangan" : "ulanmagan", Transport: r.plate ?? "",
+                Reys: r.trips, "Qo'lda yozuv": r.manual, "Oylikka (tasdiqlangan)": r.payroll, "Oylik — tasdiq kutmoqda": r.payrollWait,
                 "Naqd berildi": r.cashPaid, "Naqd — kassada": r.cashDesk, "Naqd — tasdiq kutmoqda": r.cashWait, "Narxsiz reys": r.unpriced, "Narxsiz, taklif": r.unpricedSum,
-                "Jami hisoblangan": r.payroll + r.payrollWait + r.cashPaid + r.cashDesk + r.cashWait,
+                "Jami hisoblangan": earned(r),
               })) }]} />
             </div>
             <Card padded={false}>
               <Table>
-                <thead><tr><Th>Haydovchi</Th><Th right>Reys</Th><Th right>Oylikka</Th><Th right>Oylik — tasdiqda</Th><Th right>Naqd berildi</Th><Th right>Naqd — kassada</Th><Th right>Naqd — tasdiqda</Th><Th right>Narxsiz</Th><Th right>Jami hisoblangan</Th></tr></thead>
+                <thead><tr><Th>Haydovchi</Th><Th right>Reys</Th><Th right>Qo&apos;lda</Th><Th right>Oylikka</Th><Th right>Oylik — tasdiqda</Th><Th right>Naqd berildi</Th><Th right>Naqd — kassada</Th><Th right>Naqd — tasdiqda</Th><Th right>Narxsiz</Th><Th right>Jami hisoblangan</Th></tr></thead>
                 <tbody>
-                  {[...payRows, payTotal].map((r) => {
-                    const sum = r.payroll + r.payrollWait + r.cashPaid + r.cashDesk + r.cashWait;
+                  {[...payRows, payTotal].map((r, i, all) => {
                     const isTotal = r === payTotal;
                     const cell = (v: number, cls = "") => <Td right className={`tabular ${cls}`}>{v ? money(v) : <span className="text-slate-300">—</span>}</Td>;
                     return (
-                      <Tr key={r.id || "jami"} className={isTotal ? "bg-slate-50 font-semibold" : undefined}>
-                        <Td>{isTotal ? "Jami" : <Link href={qs({ bolim: "oylik", driver: r.id })} scroll={false} className="font-medium hover:underline">{r.name}</Link>}</Td>
-                        <Td right className="tabular">{r.trips}</Td>
-                        {cell(r.payroll, "font-semibold text-emerald-700")}
-                        {cell(r.payrollWait, "text-amber-700")}
-                        {cell(r.cashPaid)}
-                        {cell(r.cashDesk, "text-blue-700")}
-                        {cell(r.cashWait, "text-amber-700")}
-                        <Td right className="tabular">{r.unpriced ? <span className="text-amber-700">{r.unpriced} ta · {money(r.unpricedSum)}</span> : <span className="text-slate-300">—</span>}</Td>
-                        <Td right className="font-semibold tabular">{money(sum)}</Td>
-                      </Tr>
+                      <Fragment key={r.id || "jami"}>
+                        {r.outside && !isTotal && !all[i - 1]?.outside && (
+                          <tr><td colSpan={10} className="bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Ro&apos;yxatdan tashqari — shu oyda reysi yoki haqi bor (ko&apos;chadan chaqirilgan, faol emas)</td></tr>
+                        )}
+                        <Tr className={isTotal ? "bg-slate-50 font-semibold" : undefined}>
+                          <Td>
+                            {isTotal ? "Jami" : <>
+                              <Link href={qs({ bolim: "oylik", driver: r.id })} scroll={false} className="font-medium hover:underline">{r.name}</Link>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+                                {r.eco == null ? <Badge color="slate" dot={false}>{outsideInfo.get(r.id) ?? "ro'yxatda yo'q"}</Badge>
+                                  : r.eco ? <Badge color="green" dot={false}>ECO</Badge> : <Badge color="amber" dot={false}>ECO&apos;siz</Badge>}
+                                {r.plate && <span className="tabular">{r.plate}</span>}
+                              </div>
+                            </>}
+                          </Td>
+                          <Td right className="tabular">{r.trips || <span className="text-slate-300">0</span>}</Td>
+                          <Td right className="tabular">{r.manual || <span className="text-slate-300">0</span>}</Td>
+                          {cell(r.payroll, "font-semibold text-emerald-700")}
+                          {cell(r.payrollWait, "text-amber-700")}
+                          {cell(r.cashPaid)}
+                          {cell(r.cashDesk, "text-blue-700")}
+                          {cell(r.cashWait, "text-amber-700")}
+                          <Td right className="tabular">{r.unpriced ? <span className="text-amber-700">{r.unpriced} ta · {money(r.unpricedSum)}</span> : <span className="text-slate-300">—</span>}</Td>
+                          <Td right className="font-semibold tabular">{money(earned(r))}</Td>
+                        </Tr>
+                      </Fragment>
                     );
                   })}
                 </tbody>
               </Table>
             </Card>
-            {/* Haydovchi tanlangan: har reys — summa, to'lov turi (oylik / naqd) va holati */}
-            {picked && (
+            {/* Haydovchi tanlangan: har reys — summa, to'lov turi (oylik / naqd) va holati; qo'lda yozuvlari alohida */}
+            {sp.driver && pickedName && (
               <Card padded={false} className="mt-4">
                 <div className="px-5 pt-5">
-                  <CardHeader title={`${picked.name} — reyslar va to'lov turi`} icon={Route}
+                  <CardHeader title={`${pickedName} — reyslar va to'lov turi`} icon={Route}
                     description="Oylik — tasdiqlangach oy yakuni vedomostiga tushadi; naqd — tasdiqlangach kassa beradi"
                     action={<Link href={qs({ driver: null })} scroll={false} className="text-sm text-blue-700 hover:underline">Hamma haydovchilar</Link>} />
                 </div>
+                {monthTrips.length === 0 ? <div className="px-5 pb-5 text-sm text-slate-500">Bu oyda tizimda yetkazilgan reysi yo&apos;q</div> : (
                 <Table>
                   <thead><tr><Th>Sana · nakladnoy</Th><Th>Obyekt</Th><Th right>Km</Th><Th right>Reys haqi</Th><Th>To&apos;lov turi</Th><Th>Holat</Th></tr></thead>
                   <tbody>
@@ -472,10 +601,104 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                     })}
                   </tbody>
                 </Table>
+                )}
+                {liveEntries.some((e) => e.pay > 0) && <>
+                  <div className="border-t border-slate-100 px-5 pt-4 text-sm font-semibold text-slate-700">Qo&apos;lda yozilgan haq</div>
+                  <EntryTable rows={liveEntries.filter((e) => e.pay > 0)} canCancel={false} />
+                </>}
               </Card>
             )}
           </>
         )}
+        </>}
+
+        {kesim === "transport" && avto && (() => {
+          // Transport: kirim (dastavka haqi + qo'lda kirim), chiqim (yoqilg'i, haydovchi haqi, ta'mir/zapchast, boshqa), foyda —
+          // Tahlil → Avtotransport bilan bitta manba (`avtoReport`). Ko'chadan mashina — faqat shu oyda harakati bo'lsa, pastda
+          const ext = new Set(extVehicles.map((v) => v.id));
+          const manualBy = new Map<string, { pay: number; rev: number }>();
+          for (const e of liveEntries) {
+            if (!e.vehicleId) continue;
+            const x = manualBy.get(e.vehicleId) ?? { pay: 0, rev: 0 };
+            x.pay += e.pay; x.rev += e.revenue; manualBy.set(e.vehicleId, x);
+          }
+          const noVehicle = liveEntries.filter((e) => !e.vehicleId && e.pay > 0).reduce((a, e) => a + e.pay, 0);
+          const moved = (r: typeof avto.total) => r.trips || r.fuelSum || r.pay || r.repair || r.other || r.revenue;
+          const rows = [...avto.rows.filter((r) => !ext.has(r.id)), ...avto.rows.filter((r) => ext.has(r.id) && moved(r))];
+          const t = avto.total;
+          const cell = (v: number, cls = "") => <Td right className={`tabular ${cls}`}>{v ? money(v) : <span className="text-slate-300">—</span>}</Td>;
+          return (
+            <>
+              <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
+                <StatCard label="Kirim" value={money(t.revenue)} hint="dastavka haqi + qo'lda kirim" icon={TrendingUp} tone="success" />
+                <StatCard label="Chiqim" value={money(t.total)} hint="yoqilg'i, haydovchi haqi, ta'mir, boshqa" icon={Coins} tone="warning" />
+                <StatCard label="Foyda" value={money(t.profit)} icon={Calculator} tone={t.profit < 0 ? "danger" : "info"} />
+                <StatCard label="Transport" value={rows.filter((r) => !ext.has(r.id)).length} hint={`${t.trips} reys · ${fmtNum(t.km, 0)} km`} icon={Truck} href="/logistika/transport" />
+              </div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-slate-500">Hamma faol transport — reysi yo&apos;q oyda ham. Yoqilg&apos;i — zapravka summasi; haydovchi haqi — reys haqi + qo&apos;lda haq.{noVehicle ? ` Transportsiz qo'lda haq ${money(noVehicle)} — transport foydasiga kirmaydi.` : ""}</p>
+                <ExcelButton file={`Transport oylik hisobi ${month}`} sheets={[{ name: "Transport", rows: [...rows, t].map((r) => ({
+                  Transport: r.plate, Turi: r.type, Reys: r.trips, Km: r.km, Kirim: r.revenue, "Shundan qo'lda kirim": manualBy.get(r.id)?.rev ?? 0,
+                  "Yoqilg'i": r.fuelSum, "Haydovchi haqi": r.pay, "Shundan qo'lda haq": manualBy.get(r.id)?.pay ?? 0, "Ta'mir / zapchast": r.repair, Boshqa: r.other,
+                  "Jami chiqim": r.total, Foyda: r.profit, "Ko'chadan": ext.has(r.id) ? "ha" : "",
+                })) }]} />
+              </div>
+              <Card padded={false}>
+                <Table>
+                  <thead><tr><Th>Transport</Th><Th right>Reys</Th><Th right>Km</Th><Th right>Kirim</Th><Th right>Yoqilg&apos;i</Th><Th right>Haydovchi haqi</Th><Th right>Ta&apos;mir / zapchast</Th><Th right>Boshqa</Th><Th right>Jami chiqim</Th><Th right>Foyda</Th></tr></thead>
+                  <tbody>
+                    {[...rows, t].map((r, i, all) => {
+                      const isTotal = r === t, m = manualBy.get(r.id), outside = ext.has(r.id);
+                      return (
+                        <Fragment key={r.id}>
+                          {outside && !ext.has(all[i - 1]?.id ?? "") && (
+                            <tr><td colSpan={10} className="bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500">Ko&apos;chadan chaqirilgan mashinalar — shu oyda reysi bor</td></tr>
+                          )}
+                          <Tr className={isTotal ? "bg-slate-50 font-semibold" : undefined}>
+                            <Td>{isTotal ? "Jami" : <><Link href={`/logistika/transport/${r.id}`} className="font-medium tabular hover:underline">{r.plate}</Link><div className="text-xs text-slate-500">{[r.type, r.model].filter(Boolean).join(" · ")}</div></>}</Td>
+                            <Td right className="tabular">{r.trips || <span className="text-slate-300">0</span>}</Td>
+                            <Td right className="tabular">{r.km ? fmtNum(r.km, 0) : <span className="text-slate-300">—</span>}</Td>
+                            <Td right className="tabular">{r.revenue ? money(r.revenue) : <span className="text-slate-300">—</span>}{m?.rev ? <div className="text-[11px] font-normal text-slate-500">qo&apos;lda {money(m.rev)}</div> : null}</Td>
+                            {cell(r.fuelSum)}
+                            <Td right className="tabular">{r.pay ? money(r.pay) : <span className="text-slate-300">—</span>}{m?.pay ? <div className="text-[11px] font-normal text-slate-500">qo&apos;lda {money(m.pay)}</div> : null}</Td>
+                            {cell(r.repair)}
+                            {cell(r.other)}
+                            {cell(r.total, "font-semibold")}
+                            <Td right className={`font-semibold tabular ${r.profit < 0 ? "text-red-600" : r.profit > 0 ? "text-emerald-700" : "text-slate-400"}`}>{money(r.profit)}</Td>
+                          </Tr>
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </Card>
+            </>
+          );
+        })()}
+      </Section>}
+
+      {/* ── Qo'lda yozuvlar: reys tizimga tushmagan ish, haq va kirim (`lib/logistics-entry.ts`) + transport chiqimi ── */}
+      {bolim === "qolda" && <Section title={`Qo'lda yozuvlar: ${monthTitle(month)}`} className="mt-0" action={monthNav}>
+        {canPrice && opts && (
+          <Card className="mb-4">
+            <CardHeader title="Qo'lda yozuv: ish, haq, kirim" icon={PencilLine}
+              description="Reys tizimga tushmagan ish (ECO'ga ulanmagan haydovchi, zavoddan tashqari ish), oyiga qat'iy haq yoki transport kirimi. Haq ish boshqaruvchi tasdig'idan keyin: oylik — vedomostga, naqd — kassaga" />
+            <EntryForm drivers={opts.drivers.map((d) => ({ ...d, vehicleId: opts.vehicles.find((v) => v.driverId === d.id)?.id ?? null }))} vehicles={opts.vehicles} clientToken={crypto.randomUUID()} />
+          </Card>
+        )}
+        {canExpense && opts && (
+          <Card className="mb-4">
+            <CardHeader title="Transport chiqimi" icon={Wrench} description="Ta'mir, zapchast, yo'l, jarima va boshqalar — Transport xarajatlariga yoziladi (Avtotransport tahlili va transport kartasi bilan bitta manba)" />
+            <ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} />
+          </Card>
+        )}
+        <Card padded={false}>
+          <div className="px-5 pt-5">
+            <CardHeader title={`${monthTitle(month)} — qo'lda yozuvlar`} icon={FileSpreadsheet}
+              description={`Haq: ${money(liveEntries.reduce((a, e) => a + e.pay, 0))} · kirim: ${money(liveEntries.reduce((a, e) => a + e.revenue, 0))}. Yozuv o'chirilmaydi — bekor qilinadi (sababi bilan)`} />
+          </div>
+          {monthEntries.length === 0 ? <Empty text="Bu oyda qo'lda yozuv yo'q" icon={PencilLine} /> : <EntryTable rows={monthEntries} canCancel={canPrice} />}
+        </Card>
       </Section>}
 
       {bolim === "tarif" && <Section title="Tarif" className="mt-0">

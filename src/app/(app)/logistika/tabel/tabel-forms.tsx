@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useActionState, useContext, useEffect, useState, useTransition } from "react";
+import { createContext, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, ChevronUp, Clock, HandCoins, Pencil, X } from "lucide-react";
-import { approveTripPaysAction, createMasterPayAction, priceSuggestedAction, priceTripAction, rejectTripPayAction, saveDriverTariff } from "../actions";
+import { Check, ChevronDown, ChevronUp, Clock, HandCoins, Pencil, Plus, X } from "lucide-react";
+import { approveEntriesAction, approveTripPaysAction, createEntryAction, createMasterPayAction, priceSuggestedAction, priceTripAction, rejectEntryAction, rejectTripPayAction, saveDriverTariff } from "../actions";
+import { today } from "@/lib/davomat";
 import { Button, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 
@@ -83,24 +84,28 @@ export function TariffForm({ v }: { v: TariffValue }) {
   );
 }
 
-/** Ish boshqaruvchi: bitta yoki hamma reys haqini tasdiqlash. */
-export function ApproveButton({ ids, label }: { ids: string[]; label: string }) {
+/** Ish boshqaruvchi: bitta yoki hamma reys haqini (`entry` — qo'lda yozilgan haqni) tasdiqlash. */
+export function ApproveButton({ ids, label, entry }: { ids: string[]; label: string; entry?: boolean }) {
   const [pending, start] = useTransition();
   const [res, setRes] = useState<ActionState>(undefined);
+  const what = entry ? "qo'lda yozilgan haq" : "reys haqi";
   return (
     <span className="inline-flex items-center gap-2">
       {res?.error && <span className="text-xs text-red-700">{res.error}</span>}
       <Button size="sm" variant="success" disabled={pending || !ids.length}
-        onClick={() => { if (ids.length === 1 || confirm(`${ids.length} ta reys haqi tasdiqlansinmi? Naqdlari kassaga, oyliklari vedomostga o'tadi.`)) start(async () => setRes(await approveTripPaysAction(ids))); }}>
+        onClick={() => { if (ids.length === 1 || confirm(`${ids.length} ta ${what} tasdiqlansinmi? Naqdlari kassaga, oyliklari vedomostga o'tadi.`)) start(async () => setRes(await (entry ? approveEntriesAction(ids) : approveTripPaysAction(ids)))); }}>
         <Check size={14} /> {label}
       </Button>
     </span>
   );
 }
 
-/** Ish boshqaruvchi: rad etish (sabab bilan) — narx olib tashlanadi, dispetcher qayta qo'yadi. */
-export function RejectPayForm({ tripId }: { tripId: string }) {
-  const [state, action, pending] = useActionState(rejectTripPayAction.bind(null, tripId), undefined);
+/**
+ * Ish boshqaruvchi: rad etish (sabab bilan). Reysda — narx olib tashlanadi, dispetcher qayta qo'yadi;
+ * qo'lda yozuvda (`entryId`) — yozuv sababi bilan bekor bo'ladi.
+ */
+export function RejectPayForm({ tripId, entryId }: { tripId?: string; entryId?: string }) {
+  const [state, action, pending] = useActionState(entryId ? rejectEntryAction.bind(null, entryId) : rejectTripPayAction.bind(null, tripId!), undefined);
   const [open, setOpen] = useState(false);
   if (!open) return <Button size="sm" variant="ghost" onClick={() => setOpen(true)}><X size={14} /> Rad</Button>;
   return (
@@ -135,6 +140,47 @@ export function MasterPayForm({ vehicles, payees, problems }: { vehicles: { id: 
         <Button name="mode" value="later" variant="secondary" disabled={pending}><Clock size={15} /> N kunda berish</Button>
         <div className="basis-full"><FormError error={state?.error} />{state?.ok && <FormSuccess text={state.note ?? "Yuborildi — ish boshqaruvchi tasdig'ini kutmoqda"} />}</div>
       </div>
+    </form>
+  );
+}
+
+type Opt = { id: string; label: string };
+
+/**
+ * Dispetcher: qo'lda yozuv — reys tizimga tushmagan ish (ECO'ga ulanmagan haydovchi, zavoddan tashqari ish), oyiga
+ * qat'iy haq yoki transportning qo'shimcha kirimi. Haq bo'lsa — to'lov turi bilan ish boshqaruvchi tasdig'iga boradi.
+ * Haydovchi tanlansa, transporti o'zi qo'yiladi (o'zgartirish mumkin).
+ */
+export function EntryForm({ drivers, vehicles, clientToken }: { drivers: (Opt & { vehicleId: string | null })[]; vehicles: Opt[]; clientToken: string }) {
+  const [state, action, pending] = useActionState(createEntryAction, undefined);
+  const ref = useRef<HTMLFormElement>(null);
+  const [vid, setVid] = useState("");
+  // Bir martalik kalit (serverdan) — ikki marta bosilsa bitta yozuv bo'ladi; saqlangach yangilanadi
+  const [token, setToken] = useState(clientToken);
+  useEffect(() => { if (state?.ok) { ref.current?.reset(); setVid(""); setToken(crypto.randomUUID()); } }, [state]);
+  return (
+    <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6 [&>*]:min-w-0">
+      <input type="hidden" name="clientToken" value={token} />
+      <div className="sm:col-span-2 lg:col-span-6"><FormError error={state?.error} />{state?.ok && <FormSuccess text={state.note ?? "Yozildi"} />}</div>
+      <Field label="Sana *"><Input name="date" type="date" defaultValue={today()} max={today()} required /></Field>
+      <Field label="Haydovchi">
+        <Select name="driverId" defaultValue="" onChange={(e) => { const d = drivers.find((x) => x.id === e.target.value); if (d?.vehicleId) setVid(d.vehicleId); }}>
+          <option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+        </Select>
+      </Field>
+      <Field label="Transport">
+        <Select name="vehicleId" value={vid} onChange={(e) => setVid(e.target.value)}><option value="">—</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</Select>
+      </Field>
+      <Field label="Reys soni" hint="Ixtiyoriy"><Input name="trips" type="number" min="0" max="1000" step="1" className="text-right tabular" /></Field>
+      <Field label="Km" hint="Ixtiyoriy"><Input name="km" type="number" min="0" step="1" className="text-right tabular" /></Field>
+      <div className="hidden lg:block" />
+      <Field label="Haydovchi haqi, so'm" hint="Oylikka yoki naqd — tasdiqdan keyin"><Input name="payAmount" type="number" min="0" step="1000" className="text-right tabular" /></Field>
+      <Field label="To'lov turi">
+        <Select name="payType" defaultValue=""><option value="">—</option><option value="PAYROLL">Oylik</option><option value="CASH">Naqd</option></Select>
+      </Field>
+      <Field label="Kirim, so'm" hint="Transport daromadi (dastavka, ijara)"><Input name="revenue" type="number" min="0" step="1000" className="text-right tabular" /></Field>
+      <Field label="Izoh *" className="sm:col-span-2 lg:col-span-3"><Input name="note" placeholder="Qanday ish: qayerdan → qayerga, nima tashildi" required minLength={3} maxLength={300} /></Field>
+      <div className="sm:col-span-2 lg:col-span-6"><Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Yozish"}</Button></div>
     </form>
   );
 }
