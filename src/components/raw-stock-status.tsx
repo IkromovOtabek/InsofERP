@@ -4,6 +4,7 @@ import { date, fmtNum, qty } from "@/lib/format";
 import { stockHighlights, stockStatus, STOCK_LEVEL_LABEL } from "@/lib/production-report";
 import { Badge, Card, Empty, Progress, Section, Td, Th, Tr } from "@/components/ui";
 import { MobileFold } from "@/app/(app)/dashboard/mobile-fold";
+import { unitShort } from "@/lib/unit";
 import { getSession } from "@/lib/auth";
 import { pathAllowed } from "@/lib/nav";
 
@@ -14,6 +15,8 @@ import { pathAllowed } from "@/lib/nav";
  */
 /** Kartada shuncha zayavka ko'rinadi, qolgani «yana N ta» ichida (JS'siz, `<details>`) */
 const SHOW_ORDERS = 4;
+/** Birlik yorlig'i: «l» katta raqamdan keyin kesilgan raqamga o'xshab qoladi — «litr» deb yoziladi */
+const unitName = (u: string) => (u === "l" ? "litr" : unitShort(u));
 
 type Gap = Awaited<ReturnType<typeof stockStatus>>[number];
 
@@ -50,7 +53,7 @@ function GapCard({ m, today, link }: { m: Gap; today: number; link: boolean }) {
         </div>
         <div className="shrink-0 text-right">
           <div className="text-[11px] font-medium uppercase tracking-wide text-red-500">kam</div>
-          <div className="text-lg leading-tight font-bold text-red-600 tabular">−{qty(m.orderGap)} <span className="text-xs font-medium">{m.unit}</span></div>
+          <div className="text-lg leading-tight font-bold text-red-600 tabular">−{qty(m.orderGap)} <span className="text-xs font-medium">{unitName(m.unit)}</span></div>
         </div>
       </div>
       <div className="space-y-1.5">
@@ -60,17 +63,17 @@ function GapCard({ m, today, link }: { m: Gap; today: number; link: boolean }) {
         </div>
         <div className="flex justify-between text-[11.5px] tabular">
           <span className="text-emerald-700">skladda {qty(m.balance)} · {Math.round(cover * 100)}%</span>
-          <span className="text-slate-500">kerak {qty(m.planned)} {m.unit}</span>
+          <span className="text-slate-500">kerak {qty(m.planned)} {unitName(m.unit)}</span>
         </div>
       </div>
       <div className="grid min-w-0 gap-1.5">
-        {shown.map((o) => <OrderChip key={o.id} o={o} unit={m.unit} today={today} link={link} />)}
+        {shown.map((o) => <OrderChip key={o.id} o={o} unit={unitName(m.unit)} today={today} link={link} />)}
         {more.length > 0 && (
           <details className="group/more min-w-0">
             <summary className="cursor-pointer list-none rounded-lg px-2.5 py-1 text-[12.5px] font-medium text-slate-500 hover:text-slate-900 [&::-webkit-details-marker]:hidden">
               <span className="group-open/more:hidden">Yana {more.length} ta zayavka</span><span className="hidden group-open/more:inline">Yig&apos;ish</span>
             </summary>
-            <div className="mt-1.5 grid min-w-0 gap-1.5">{more.map((o) => <OrderChip key={o.id} o={o} unit={m.unit} today={today} link={link} />)}</div>
+            <div className="mt-1.5 grid min-w-0 gap-1.5">{more.map((o) => <OrderChip key={o.id} o={o} unit={unitName(m.unit)} today={today} link={link} />)}</div>
           </details>
         )}
       </div>
@@ -109,7 +112,7 @@ export async function RawStockStatus({ stock: given }: { stock?: Gap[] } = {}) {
         {minGap.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-5 py-3 text-sm">
             <span className="mr-1 inline-flex items-center gap-1.5 font-semibold text-amber-700"><AlertTriangle size={15} /> Minimal qoldiqqa yetmaydi:</span>
-            {minGap.map((m) => <Badge key={m.id} color="amber">{m.name} · {qty(m.need)} {m.unit}</Badge>)}
+            {minGap.map((m) => <Badge key={m.id} color="amber">{m.name} · {qty(m.need)} {unitName(m.unit)}</Badge>)}
           </div>
         )}
         <div className="border-b border-slate-100 px-5 py-3 text-xs text-slate-500">Kunlik sarf — so&apos;nggi 30 kun o&apos;rtachasi. «Olib kelish kerak» — tasdiqlangan zayavkalarga va minimal qoldiqqa yetishi uchun yetishmayotgan miqdor.</div>
@@ -123,8 +126,8 @@ export async function RawStockStatus({ stock: given }: { stock?: Gap[] } = {}) {
                 return (
                   <Tr key={m.id}>
                     <Td><span className="inline-flex items-center gap-2"><Layers size={14} className="text-slate-400" />{m.name}</span></Td>
-                    <Td right>{qty(m.balance)} <span className="text-slate-400">{m.unit}</span></Td>
-                    <Td right className="text-slate-500">{m.perDay > 0 ? `${fmtNum(m.perDay, 1)} ${m.unit}` : "—"}</Td>
+                    <Td right>{qty(m.balance)} <span className="text-slate-400">{unitName(m.unit)}</span></Td>
+                    <Td right className="text-slate-500">{m.perDay > 0 ? `${fmtNum(m.perDay, 1)} ${unitName(m.unit)}` : "—"}</Td>
                     <Td>
                       {m.days === null ? <span className="text-slate-400">—</span> : (
                         <div className="space-y-1">
@@ -133,8 +136,8 @@ export async function RawStockStatus({ stock: given }: { stock?: Gap[] } = {}) {
                         </div>
                       )}
                     </Td>
-                    <Td right className="text-slate-500">{m.planned > 0 ? <>{qty(m.planned)} {m.unit}<div className="text-[11px] text-slate-400">{m.orders.length} zayavka</div></> : "—"}</Td>
-                    <Td right className={m.need > 0 ? "font-semibold text-red-600" : "text-slate-400"}>{m.need > 0 ? `${qty(m.need)} ${m.unit}` : "—"}</Td>
+                    <Td right className="text-slate-500">{m.planned > 0 ? <>{qty(m.planned)} {unitName(m.unit)}<div className="text-[11px] text-slate-400">{m.orders.length} zayavka</div></> : "—"}</Td>
+                    <Td right className={m.need > 0 ? "font-semibold text-red-600" : "text-slate-400"}>{m.need > 0 ? `${qty(m.need)} ${unitName(m.unit)}` : "—"}</Td>
                     <Td><Badge color={tone === "danger" ? "red" : tone === "warning" ? "amber" : "green"}>{STOCK_LEVEL_LABEL[m.level]}</Badge></Td>
                   </Tr>
                 );
