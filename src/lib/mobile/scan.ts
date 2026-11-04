@@ -13,11 +13,11 @@ import { scanInvoice, visionEnabled, type ScanImage } from "@/lib/ai/vision";
 import { ListError } from "./list";
 import type { MobileUser } from "./auth";
 
-const ROLES = new Set(["PROCUREMENT", "WAREHOUSE", "DIRECTOR"]);
 const MAX_IMAGES = 4;
 const MAX_BYTES = 6_000_000;
 
-export const scanAllowed = (u: MobileUser) => ROLES.has(u.role) && canDo(u, "stock", "receipt");
+/** Kirim formasi (`canCreate("prixod")`) bilan bir xil: rol standarti (sklad, snabjeniye) + direktor bergan «Kirim» (masalan mexanikka). */
+export const scanAllowed = (u: MobileUser) => canDo(u, "stock", "receipt");
 export const scanEnabled = visionEnabled;
 
 function parseDataUrl(s: unknown): ScanImage | null {
@@ -108,7 +108,7 @@ export type ScanPrefill = {
 };
 
 export async function mobileScanReceipt(user: MobileUser, body: unknown): Promise<ScanPrefill> {
-  if (!scanAllowed(user)) throw new ListError("FORBIDDEN", "Nakladnoyni skanerlash faqat sklad va snabjeniye uchun", 403);
+  if (!scanAllowed(user)) throw new ListError("FORBIDDEN", "Nakladnoyni skanerlash uchun Sklad → Kirim ruxsati kerak", 403);
   if (!visionEnabled()) throw new ListError("UNAVAILABLE", "Rasmdan o'qish sozlanmagan — qatorlarni qo'lda kiriting", 503);
   const list = ((body as { images?: unknown[] } | null)?.images ?? []).slice(0, MAX_IMAGES);
   if (!list.length) throw new ListError("BAD_REQUEST", "Rasm yuborilmadi", 400);
