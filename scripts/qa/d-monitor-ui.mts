@@ -325,7 +325,11 @@ async function main() {
     create: { login: "qa.other.prefs", fullName: "QA Boshqa admin", passwordHash: "-", isActive: true, uiPrefs: otherPrefs },
   });
   // JSONB kalit tartibini o'zgartiradi — qiymatlar bo'yicha solishtiramiz
-  const samePrefs = (v: unknown, m: string, c: string) => { const o = (v ?? {}) as Record<string, unknown>; return Object.keys(o).length === 2 && o.mobileLayout === m && o.colorMode === c; };
+  // `sideOpen` (yon menyu, 05b3da8) saqlashda doim qo'shiladi; qo'lda yozilgan eski prefs'da bo'lmasligi mumkin
+  const samePrefs = (v: unknown, m: string, c: string, side = false) => {
+    const o = (v ?? {}) as Record<string, unknown>;
+    return Object.keys(o).every((k) => ["mobileLayout", "colorMode", "sideOpen"].includes(k)) && o.mobileLayout === m && o.colorMode === c && (o.sideOpen ?? false) === side;
+  };
   const pe0 = await db.controlEvent.count({ where: { action: "ADMIN_PREFS" } });
   const anonPrefs = await call("saveUiPrefs", [{ mobileLayout: "pro" }], null, "/superadmin/sozlamalar");
   check(anonPrefs.ok !== true && (await db.superAdmin.findUniqueOrThrow({ where: { id: meRow.id } })).uiPrefs === null, "login'siz saveUiPrefs → yozilmaydi", `${anonPrefs.http}`);
@@ -358,6 +362,13 @@ async function main() {
   const merge = await call("saveUiPrefs", [{ mobileLayout: "widgets" }], jar, "/superadmin/sozlamalar");
   const meM = await db.superAdmin.findUniqueOrThrow({ where: { id: meRow.id } });
   check(!merge.error && samePrefs(meM.uiPrefs, "widgets", "dark"), "qisman yangilash: rang rejimi saqlanib qoldi");
+  const side = await call("saveUiPrefs", [{ sideOpen: true }], jar, "/superadmin/sozlamalar");
+  const meS = await db.superAdmin.findUniqueOrThrow({ where: { id: meRow.id } });
+  check(!side.error && samePrefs(meS.uiPrefs, "widgets", "dark", true), "yon menyu yoyildi — qolgan prefs o'zgarmadi", side.error ?? meS.uiPrefs);
+  check((await db.controlEvent.count({ where: { action: "ADMIN_PREFS" } })) === pe0 + 2, "yon menyu holati jurnalga yozilmaydi (faqat ko'rinish/rang)");
+  const homeS = await req("/superadmin", jar);
+  check(homeS.status === 200 && homeS.text.includes('data-side="open"'), "layout: .sa[data-side=open] serverda (miltillamaydi)");
+  check(!!(await call("saveUiPrefs", [{ sideOpen: "ha" }], jar, "/superadmin/sozlamalar")).error, "uiPrefs rad: sideOpen satr");
   const st = await req("/superadmin/sozlamalar", jar);
   check(st.status === 200 && ["Mavzu", "Vidjetlar", "Zich Pro", "Rang rejimi", "Qorong"].every((n) => st.text.includes(n)), "sahifa /superadmin/sozlamalar");
   await db.superAdmin.update({ where: { id: meRow.id }, data: { uiPrefs: Prisma.DbNull } });
