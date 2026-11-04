@@ -26,7 +26,7 @@ const LISTS: Record<string, string[]> = {
   suppliers: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],
   cashflow: ["CASHIER", "ACCOUNTING", "FINANCE"],
   payments: ["CASHIER", "ACCOUNTING", "FINANCE"],
-  employees: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"],
+  employees: ["HR", "PRODUCTION", "SUPERVISOR"],
   approvals: [],
   activity: [],
 };

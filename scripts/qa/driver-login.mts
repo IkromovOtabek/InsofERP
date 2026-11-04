@@ -1,5 +1,5 @@
-// Dispetcher haydovchiga kirish beradi (`logistika` → `driver_login`, `lib/temp-password.ts`):
-//  · faqat dispetcher (vebda direktor ham), faqat faol haydovchi lavozimidagi xodim, faqat DRIVER roli;
+// Logistika va dispetcher haydovchiga kirish beradi (`logistika` → `driver_login`, `lib/temp-password.ts`):
+//  · logistika va dispetcher (vebda direktor ham; boshqalar — yo'q), faqat faol haydovchi lavozimidagi xodim, faqat DRIVER roli;
 //  · parolni tizim yaratadi, u 72 soat amal qiladi; vaqtinchalik parol bilan kirilganda sessiya yo'q —
 //    avval o'z paroli (veb: loginAction → setTempPasswordAction, mobil: PASSWORD_CHANGE_REQUIRED → /auth/temp-password);
 //  · token bir martalik, muddati o'tgan parol kirmaydi, kadr/direktor parolni tiklasa belgi tozalanadi;
@@ -47,14 +47,22 @@ const sales = q1(`select e.id from "Employee" e join "User" u on u.id=e."userId"
 // ───────── 1. Kim bera oladi ─────────
 console.log("\n1. Ruxsat va cheklovlar");
 const login = `qadl${T}`.toLowerCase();
-r = await give(logi, emp.id, { login });
-check("1.1 logistika bera olmaydi (driver_login yo'q)", r.result?.password === undefined && !userOf(login), r.result ?? r.status);
+const sotuv = new Client("sotuv");
+await sotuv.login("test.sotuv");
+r = await give(sotuv, emp.id, { login });
+check("1.1 sotuv bera olmaydi (driver_login yo'q)", r.result?.password === undefined && !userOf(login), r.result ?? r.status);
 r = await give(disp, sales.id, { login: `qax${T}` });
 check("1.2 haydovchi bo'lmagan xodimga — xato", /haydovchi lavozimidagi/.test(r.result?.error ?? ""), r.result ?? r.status);
 r = await give(disp, emp.id, { login: "A" });
 check("1.3 noto'g'ri login — xato, hisob ochilmaydi", /Login:/.test(r.result?.error ?? "") && !empOf(emp.id).userId, r.result);
 let page = await logi.get(`/logistika/haydovchilar/${emp.id}`);
-check("1.4 logistika kartasida «Tizimga kirish» bloki yo'q", page.status === 200 && !page.text.includes("Login va parol berish"), page.status);
+check("1.4 logistika kartasida «Tizimga kirish» bloki bor", page.status === 200 && page.text.includes("Login va parol berish"), page.status);
+page = await logi.get("/logistika/haydovchilar");
+check("1.5 logistika ro'yxatida «Kirish» ustuni va «Login berish» havolasi", page.status === 200 && page.text.includes(`/logistika/haydovchilar/${emp.id}#kirish`), page.status);
+page = await logi.get("/employees");
+check("1.6 logistikaga «Xodimlar» (Boshqaruv) yopiq", page.status !== 200, [page.status, page.location]);
+r = await logi.action("employees/actions#createEmployee", [undefined, fd({ fullName: `QA Logi ${T}`, position: "Haydovchi" })], "/employees");
+check("1.7 logistika xodim qo'sha olmaydi", r.result?.ok !== true && !q1(`select id from "Employee" where "fullName"=${lit(`QA Logi ${T}`)}`), r.result ?? r.status);
 
 // ───────── 2. Login berish ─────────
 console.log("\n2. Dispetcher login beradi");

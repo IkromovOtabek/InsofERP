@@ -113,7 +113,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "expense",  label: "Transport xarajati kiritish",     roles: ["LOGISTICS", "ACCOUNTING", "MECHANIC"] },
     { key: "sites",    label: "Obyektlar",                       roles: ["LOGISTICS", "SALES"] },
     { key: "drivers",  label: "Haydovchi kartochkasi",           roles: ["LOGISTICS", "DISPATCHER"] },
-    { key: "driver_login", label: "Haydovchiga kirish berish (vaqtinchalik parol)", roles: ["DISPATCHER"], hint: "Faqat haydovchi roli; parol 72 soat amal qiladi, haydovchi kirishda o'z parolini qo'yadi" },
+    { key: "driver_login", label: "Haydovchiga kirish berish (vaqtinchalik parol)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Faqat haydovchi roli; parol 72 soat amal qiladi, haydovchi kirishda o'z parolini qo'yadi" },
     { key: "pay",      label: "Reys narxi, to'lov turi, haydovchi tarifi va usta puli (tabel)", roles: ["DISPATCHER"], hint: "Narx va usta puli ish boshqaruvchi tasdig'iga boradi" },
     { key: "pay_approve", label: "Reys haqini tasdiqlash (naqd → kassa, oylik → vedomost)", roles: ["SUPERVISOR"] },
     { key: "settings", label: "Logistika sozlamalari",           roles: ["LOGISTICS"] },
@@ -176,7 +176,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "close",  label: "Kassani yopish (kun oxiri sanog'i)", roles: ["CASHIER"], hint: "Nazorat: sanalgan naqd tizimdagi qoldiq bilan solishtiriladi" },
   ],
   employees: [
-    { key: "create", label: "Xodim qo'shish",                    roles: ["HR", "LOGISTICS"] },
+    { key: "create", label: "Xodim qo'shish",                    roles: ["HR"] },
     { key: "edit",   label: "Xodimni tahrirlash / bo'shatish",   roles: ["HR"] },
     { key: "login",  label: "Login berish, parol, rol",          roles: ["HR"], hint: "Rol berish — muhim huquq" },
     { key: "requests", label: "Arizalarni tasdiqlash (ta'til, kasallik, avans)", roles: ["HR"], hint: "Tasdiqlangan ta'til/kasallik davomatga tushadi, avans — direktor tasdig'iga" },

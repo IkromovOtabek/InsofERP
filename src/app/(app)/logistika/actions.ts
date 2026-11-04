@@ -65,7 +65,7 @@ export async function saveDriverCard(employeeId: string, _prev: ActionState, fd:
 /** `password` faqat shu javobda — bazada xeshi, sahifa yangilansa qayta ko'rinmaydi. */
 export type DriverLoginState = { error?: string; login?: string; password?: string; until?: string; created?: boolean } | undefined;
 
-/** Dispetcher haydovchiga login yoki yangi vaqtinchalik parol beradi. Qoidalar — `driverTempLoginCore`. */
+/** Logistika yoki dispetcher haydovchiga login yoki yangi vaqtinchalik parol beradi. Qoidalar — `driverTempLoginCore`. */
 export async function giveDriverLogin(employeeId: string, _prev: DriverLoginState, fd: FormData): Promise<DriverLoginState> {
   const s = await requireAction("logistika", "driver_login");
   const r = await driverTempLoginCore(s, employeeId, fd);

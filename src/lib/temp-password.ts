@@ -9,7 +9,7 @@ import { authSecret, JWT_ALGS } from "@/lib/secret";
 import type { Role } from "@/generated/prisma";
 
 /**
- * Vaqtinchalik parol — dispetcher haydovchiga beradi (`driverTempLoginCore`, `lib/kadr-employee.ts`).
+ * Vaqtinchalik parol — logistika yoki dispetcher haydovchiga beradi (`driverTempLoginCore`, `lib/kadr-employee.ts`).
  *
  * Maqsad: parolni bilgan dispetcher haydovchi nomidan ishlay olmasin. Shuning uchun:
  *  · parolni tizim yaratadi va u `TEMP_PASSWORD_HOURS` amal qiladi (`User.tempPasswordUntil`), keyin

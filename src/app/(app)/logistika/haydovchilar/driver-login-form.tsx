@@ -7,7 +7,7 @@ import { Button, Callout, Field, FormActions, FormError, Input } from "@/compone
 import { dateTime } from "@/lib/format";
 
 /**
- * Dispetcher haydovchiga kirish beradi (`logistika` → `driver_login`). Parolni tizim yaratadi va u faqat shu javobda
+ * Logistika yoki dispetcher haydovchiga kirish beradi (`logistika` → `driver_login`). Parolni tizim yaratadi va u faqat shu javobda
  * ko'rinadi; haydovchi birinchi kirishda o'z parolini qo'yadi (`lib/temp-password.ts`).
  * `loginHint` sahifadan keladi: `lib/self-account` server moduli, mijozga import qilinmaydi.
  */

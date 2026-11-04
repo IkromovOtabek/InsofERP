@@ -122,8 +122,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   "arenda-debtors": { title: "Qarzdorlar", roles: ["SECRETARY"] },
   "arenda-svet": { title: "Svet hisobi", roles: ["SECRETARY"] },
   // ── Boshqaruv ──
-  // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek)
-  employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
+  // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek). Logistikaga kerak emas (vebda ham yo'q)
+  employees: { title: "Xodimlar", roles: ["HR", "PRODUCTION", "SUPERVISOR"] },
   // ── Faqat direktor (roles bo'sh — DIRECTOR har doim o'tadi) ──
   // Tasdiqlar: bloklangan zayavka, ta'minot tasdig'i/to'lovi — ilovadagi ikkinchi tab
   approvals: { title: "Tasdiqlar", roles: [] },

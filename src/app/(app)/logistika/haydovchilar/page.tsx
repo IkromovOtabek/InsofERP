@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { KeyRound, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
+import { canDo } from "@/lib/permissions";
 import { ACTIVE_TRIP, dayRange, delayLevel, driverEmployees, expiryLevel, logisticsSettings, tripDelayMin } from "@/lib/logistics";
 import { date, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
@@ -17,12 +18,14 @@ const ATT: Record<string, string> = { ABSENT: "Kelmadi", LEAVE: "Ta'tilda", SICK
 export default async function DriversPage() {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER"], { module: "logistika" });
   const tripsClosed = !pathAllowed("/trips", s.role, s.perms);
+  const canLogin = canDo(s, "logistika", "driver_login");
   const settings = await logisticsSettings();
   const drivers = await driverEmployees();
   const ids = drivers.map((d) => d.id);
   const { from: today, to: tomorrow } = dayRange();
   const monthFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-  const [trips, att, vehicles, issues] = await Promise.all([
+  const userIds = drivers.map((d) => d.userId).filter((x): x is string => !!x);
+  const [trips, att, vehicles, issues, users] = await Promise.all([
     db.trip.findMany({
       where: { driverId: { in: ids }, status: { not: "CANCELLED" }, OR: [{ createdAt: { gte: monthFrom } }, { status: { in: ACTIVE_TRIP } }] },
       select: { id: true, deliveryNoteNo: true, driverId: true, status: true, qtyM3: true, createdAt: true, loadedAt: true, deliveredAt: true, plannedAt: true, order: { select: { deliveryDate: true, deliveryTime: true } } },
@@ -30,7 +33,9 @@ export default async function DriversPage() {
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: today }, select: { employeeId: true, status: true } }),
     db.vehicle.findMany({ select: { id: true, plate: true } }),
     db.tripIssue.groupBy({ by: ["tripId"], where: { trip: { driverId: { in: ids } }, createdAt: { gte: monthFrom } }, _count: true }),
+    canLogin ? db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, login: true, role: true, isActive: true, ecoUserId: true, tempPasswordUntil: true } }) : [],
   ]);
+  const userBy = new Map(users.map((u) => [u.id, u]));
   const plate = new Map(vehicles.map((v) => [v.id, v.plate]));
   const attBy = new Map(att.map((a) => [a.employeeId, a.status]));
   const issueTrips = new Set(issues.map((i) => i.tripId));
@@ -55,7 +60,7 @@ export default async function DriversPage() {
       <PageHeader title="Haydovchilar" subtitle="Shaxsiy ma'lumot Otdel kadrda; guvohnoma, grafik va transport — shu yerda. Mavjudlik: reys + bugungi davomat" />
       <Card padded={false}>
         <Table>
-          <thead><tr><Th>Haydovchi</Th><Th>Mavjudlik</Th><Th>Guvohnoma</Th><Th>Transport</Th><Th>Ish grafigi</Th><Th right>Bugun</Th><Th right>Oy: reys</Th><Th right>Oy: hajm</Th><Th right>Kechikish</Th><Th right>Muammo</Th></tr></thead>
+          <thead><tr><Th>Haydovchi</Th><Th>Mavjudlik</Th>{canLogin && <Th>Kirish</Th>}<Th>Guvohnoma</Th><Th>Transport</Th><Th>Ish grafigi</Th><Th right>Bugun</Th><Th right>Oy: reys</Th><Th right>Oy: hajm</Th><Th right>Kechikish</Th><Th right>Muammo</Th></tr></thead>
           <tbody>
             {rows.length === 0 && <Empty text="Haydovchi lavozimidagi xodim yo'q (Otdel kadr → Ishchi lavozimlar)" icon={Users} />}
             {rows.map(({ d, active, month, todayN, late, avail, issues }) => {
@@ -64,6 +69,7 @@ export default async function DriversPage() {
                 <Tr key={d.id} className={d.isActive ? "" : "opacity-60"}>
                   <Td><Link href={`/logistika/haydovchilar/${d.id}`} className="font-medium hover:underline">{d.fullName}</Link><div className="text-xs text-slate-500 tabular">{d.phone ?? <span className="text-amber-700">telefon yo'q</span>}</div></Td>
                   <Td><Badge color={avail.color}>{avail.label}</Badge>{active && <div className="text-xs"><TripLink id={active.id} noteNo={active.deliveryNoteNo} plain={tripsClosed} /></div>}</Td>
+                  {canLogin && <Td className="text-sm"><LoginCell id={d.id} active={d.isActive} u={d.userId ? userBy.get(d.userId) : undefined} /></Td>}
                   <Td className="text-sm">{d.licenseNo ? <>{d.licenseCategory ?? ""} <span className="text-xs text-slate-500">{d.licenseNo}</span></> : <span className="text-xs text-amber-700">kiritilmagan</span>}
                     {d.licenseExpiry && <div className={`text-xs ${lic === "crit" ? "font-medium text-red-700" : lic === "warn" ? "font-medium text-amber-700" : "text-slate-500"}`}>{date(d.licenseExpiry)} gacha</div>}</Td>
                   <Td className="text-sm tabular">{d.vehicleId ? <Link href={`/logistika/transport/${d.vehicleId}`} className="hover:underline">{plate.get(d.vehicleId)}</Link> : <span className="text-slate-400">—</span>}</Td>
@@ -81,5 +87,23 @@ export default async function DriversPage() {
       </Card>
       <p className="mt-3 text-xs text-slate-500">Haydovchi ilovasi (ECO) bilan ulanish — <Link href="/drivers" className="underline">Haydovchi ilovasi</Link> sahifasida.</p>
     </div>
+  );
+}
+
+type LoginUser = { login: string; role: string; isActive: boolean; ecoUserId: string | null; tempPasswordUntil: Date | null };
+
+/** Kirish holati qisqa; login va parol haydovchi kartasidagi «Tizimga kirish» blokida beriladi. */
+function LoginCell({ id, active, u }: { id: string; active: boolean; u?: LoginUser }) {
+  const href = `/logistika/haydovchilar/${id}#kirish`;
+  if (!u) return active
+    ? <Link href={href} className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline"><KeyRound size={14} /> Login berish</Link>
+    : <span className="text-slate-400">—</span>;
+  const note = u.role !== "DRIVER" ? "boshqa bo'lim logini" : !u.isActive ? "bloklangan" : u.ecoUserId ? "ilova orqali"
+    : u.tempPasswordUntil ? (u.tempPasswordUntil > new Date() ? "vaqtinchalik parol" : "parol muddati tugagan") : null;
+  return (
+    <Link href={href} className="hover:underline">
+      <span className="font-mono text-xs">{u.login}</span>
+      {note && <div className={`text-xs ${u.tempPasswordUntil && u.tempPasswordUntil <= new Date() ? "text-red-700" : "text-slate-500"}`}>{note}</div>}
+    </Link>
   );
 }

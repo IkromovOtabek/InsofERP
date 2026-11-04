@@ -37,8 +37,8 @@ export const KADR_ICON: Record<string, string> = {
 
 /** Yangi hujjat formalari (`create.ts`). Direktor hujjat ochmaydi (create.ts qoidasi) — u kartalardagi amallarni bajaradi. */
 export const KADR_CREATE: Record<string, { roles: Role[]; title: string; label: string }> = {
-  // Xodimlar → «Xodim qo'shish» (veb tezkor forma): logistika — faqat haydovchi (qoida `lib/kadr-employee.ts`)
-  employees: { roles: ["HR", "LOGISTICS"], title: "Yangi xodim", label: "Xodim qo'shish" },
+  // Xodimlar → «Xodim qo'shish» (veb tezkor forma). Logistika xodim qo'shmaydi — haydovchiga faqat kirish beradi (Haydovchilar kartasi)
+  employees: { roles: HR, title: "Yangi xodim", label: "Xodim qo'shish" },
   "jarima-bonus": { roles: HR, title: "Jarima / bonus", label: "Jarima / bonus yozish" },
   vakansiyalar: { roles: HR, title: "Yangi vakansiya", label: "Vakansiya ochish" },
   nomzodlar: { roles: HR, title: "Yangi nomzod", label: "Nomzod qo'shish" },

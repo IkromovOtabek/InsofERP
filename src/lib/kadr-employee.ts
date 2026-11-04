@@ -354,7 +354,7 @@ export async function grantLoginCore(s: KadrActor, employeeId: string, fd: FormD
 export type DriverLoginResult = { error: string } | { ok: true; login: string; password: string; until: Date; created: boolean };
 
 /**
- * Dispetcher haydovchiga kirish beradi: login yo'q bo'lsa — yangi DRIVER login, bor bo'lsa — parol yangilanadi.
+ * Logistika yoki dispetcher haydovchiga kirish beradi: login yo'q bo'lsa — yangi DRIVER login, bor bo'lsa — parol yangilanadi.
  * Parolni tizim yaratadi va u vaqtinchalik (`lib/temp-password.ts`): haydovchi kirishda o'z parolini qo'yadi,
  * shundan keyin dispetcher bilgan parol ishlamaydi. Cheklov: faqat faol, haydovchi lavozimidagi xodim va faqat
  * DRIVER roli — boshqa rolli, bloklangan yoki ECO ilovasi orqali kiradigan loginga dispetcher tegmaydi (bu kadr ishi).

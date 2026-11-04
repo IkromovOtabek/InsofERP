@@ -58,7 +58,7 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
           <CardHeader title="Haydovchi kartasi" description="F.I.O., telefon, passport — Otdel kadrda" icon={IdCard} />
           <DriverCardForm id={d.id} vehicles={vehicles} v={{ workSchedule: d.workSchedule, licenseNo: d.licenseNo, licenseCategory: d.licenseCategory, licenseExpiry: d.licenseExpiry ? isoDate(d.licenseExpiry) : "", vehicleId: d.vehicleId }} />
           {canLogin && (
-            <div className="mt-6 border-t border-slate-100 pt-5">
+            <div id="kirish" className="mt-6 scroll-mt-20 border-t border-slate-100 pt-5">
               <CardHeader title="Tizimga kirish" description={loginStatus(d.user)} icon={KeyRound} />
               {loginBlock
                 ? <p className="text-sm text-slate-500">{loginBlock}</p>

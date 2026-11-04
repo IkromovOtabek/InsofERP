@@ -17,7 +17,7 @@ import type { Prisma } from "@/generated/prisma";
 export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ q?: string; pos?: string; holat?: string; login?: string }> }) {
   // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
   await requirePage("/employees");
-  const s = await requireRoles(["HR", "LOGISTICS"], { module: "employees" });
+  const s = await requireRoles(["HR"], { module: "employees" });
   const isHR = ["HR", "DIRECTOR"].includes(s.role);
   const { q = "", pos = "", holat = "", login = "" } = await searchParams;
 

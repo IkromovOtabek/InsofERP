@@ -162,7 +162,8 @@ export const NAV: NavItem[] = [
   // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)
   { href: "/settings/davomat",          label: "Davomat sozlamalari", roles: ["HR"], group: "Otdel kadr" },
   { href: "/settings/ish-tartibi",      label: "Ish tartibi va bayramlar", roles: ["HR"], group: "Otdel kadr" },
-  { href: "/employees",   label: "Xodimlar",           roles: ["HR", "LOGISTICS"], group: "Boshqaruv" },
+  // Logistika haydovchiga kirishni Haydovchilar kartasida beradi (`logistika` → `driver_login`), Xodimlar unga kerak emas
+  { href: "/employees",   label: "Xodimlar",           roles: ["HR"], group: "Boshqaruv" },
   // Haydovchi ERP'ga kirsa faqat shu sahifani ko'radi — o'zining reyslari (qolgan bo'limlar yopiq)
   { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika", menuFor: ["DRIVER"] },
   // Brigadir ham xuddi shunday: vebda faqat o'z brigadasiga tayinlangan topshiriqlar
