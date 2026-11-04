@@ -46,7 +46,7 @@ export default async function SuperadminRoot({ children }: { children: React.Rea
   }
   return (
     <div className={`sa ${outfit.variable} ${plex.variable} ${mono.variable}`}
-      data-theme={prefs.colorMode === "system" ? undefined : prefs.colorMode} data-mobile={prefs.mobileLayout}>
+      data-theme={prefs.colorMode === "system" ? undefined : prefs.colorMode} data-mobile={prefs.mobileLayout} data-side={prefs.sideOpen ? "open" : undefined}>
       <script dangerouslySetInnerHTML={{ __html: SA_THEME }} />
       {children}
     </div>

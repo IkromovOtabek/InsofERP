@@ -168,6 +168,29 @@ html:has(.sa[data-theme="dark"]), html:has(.sa[data-theme="dark"]) body { backgr
   padding: 6px 10px; border-radius: 8px; z-index: 60; transition: opacity .12s ease;
 }
 .sa-side-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 10px; }
+.sa-side-head { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 10px; width: 100%; flex: none; }
+.sa-brand { display: flex; align-items: center; gap: 10px; min-width: 0; color: #fff; text-decoration: none; border-radius: 12px; }
+.sa-brand:focus-visible { outline: 2px solid #7aa7ff; outline-offset: 2px; }
+.sa-side-head .sa-mark { margin: 0; }
+.sa-side-toggle { height: 34px; color: var(--side-muted); }
+.sa-side .lbl { display: none; }
+
+/* Yoyilgan yon menyu (`.sa[data-side="open"]`, admin prefs'i): ikon yonida nom, yorliq chiqmaydi. Tor holat — yuqoridagi */
+.sa[data-side="open"] { --side-w: 236px; }
+@media (prefers-reduced-motion: no-preference) { .sa-app { transition: grid-template-columns .18s ease; } }
+.sa[data-side="open"] .sa-side { align-items: stretch; padding: 16px 12px; }
+.sa[data-side="open"] .sa-side-head { flex-direction: row; justify-content: space-between; padding-left: 2px; }
+.sa[data-side="open"] .sa-side-toggle { width: 36px; flex: none; }
+.sa[data-side="open"] .sa-brand .lbl { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.sa[data-side="open"] .sa-brand b { font-size: 15px; font-weight: 700; }
+.sa[data-side="open"] .sa-brand small { font-size: 12px; color: var(--side-muted); white-space: nowrap; }
+.sa[data-side="open"] .sa-nav { align-items: stretch; }
+.sa[data-side="open"] .sa-nav .sep { width: auto; margin: 6px 10px; }
+.sa[data-side="open"] :is(.sa-nav a, .sa-side-foot .sa-side-btn) { width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 0 12px; }
+.sa[data-side="open"] :is(.sa-nav, .sa-side-foot) .lbl { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
+.sa[data-side="open"] .sa-side-foot { align-items: stretch; }
+.sa[data-side="open"] .sa-nav .sa-badge { position: static; margin-left: auto; border: 0; }
+.sa[data-side="open"] .sa-side-foot form { display: contents; }
 
 .sa-main { min-width: 0; display: flex; flex-direction: column; }
 .sa-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 18px var(--pad) 6px; }

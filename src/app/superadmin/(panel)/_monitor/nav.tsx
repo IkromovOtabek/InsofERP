@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity, ChevronDown, CircleHelp, Database, DatabaseBackup, FileText, Globe, HardDrive, LayoutDashboard, ListChecks, LogOut, Menu, Monitor, Moon,
-  MoreHorizontal, Plus, Rocket, ScrollText, Settings, ShieldAlert, Siren, Sun, Users, type LucideIcon,
+  MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Rocket, ScrollText, Settings, ShieldAlert, Siren, Sun, Users, type LucideIcon,
 } from "lucide-react";
 import type { ColorMode, MobileLayout, UiPrefs } from "@/lib/control/ui-prefs";
 import { adminLogoutAction } from "../../login/actions";
@@ -60,7 +60,7 @@ function useHot() {
 const hotLabel = (n: number) => `${n} ta kritik yoki yuqori hodisa`;
 
 /* ─────────── Prefs va «Ko'proq» varag'i — butun qobiq uchun bitta holat ─────────── */
-type Shell = { prefs: UiPrefs; setColor: (c: ColorMode) => void; openMore: () => void };
+type Shell = { prefs: UiPrefs; setColor: (c: ColorMode) => void; setSide: (open: boolean) => void; openMore: () => void };
 const ShellCtx = createContext<Shell | null>(null);
 const useShell = () => useContext(ShellCtx)!;
 
@@ -78,27 +78,47 @@ export function PanelShell({ prefs: initial, children }: { prefs: UiPrefs; child
     setPrefs(next); applyUiPrefs(next);
     start(async () => { await saveUiPrefs({ colorMode: c }); router.refresh(); });
   };
+  // Yon menyu darhol yoyiladi/yig'iladi (atribut), bazaga fonda yoziladi — sahifa qayta chizilmaydi
+  const setSide = (open: boolean) => {
+    const next = { ...prefs, sideOpen: open };
+    setPrefs(next); applyUiPrefs(next);
+    start(async () => { await saveUiPrefs({ sideOpen: open }); });
+  };
   return (
-    <ShellCtx.Provider value={{ prefs, setColor, openMore: () => setMore(true) }}>
+    <ShellCtx.Provider value={{ prefs, setColor, setSide, openMore: () => setMore(true) }}>
       {children}
       <MoreSheet open={more} onClose={() => setMore(false)} layout={prefs.mobileLayout} />
     </ShellCtx.Provider>
   );
 }
 
-/* ─────────── Kompyuter: ikonli tor yon menyu ─────────── */
+/* ─────────── Kompyuter: yon menyu — tor (faqat ikon, yorliq o'ngda chiqadi) yoki yoyilgan (ikon + nom) ─────────── */
 export function PanelNav() {
   const path = usePathname();
   const hot = useHot();
+  const { prefs, setSide } = useShell();
+  const open = prefs.sideOpen;
   const [tip, setTip] = useState<{ label: string; top: number } | null>(null);
+  // Yoyilgan menyuda nomlar ko'rinib turadi — yorliq kerak emas
   const show = (label: string) => (e: React.SyntheticEvent<HTMLElement>) => {
+    if (open) return;
     const r = e.currentTarget.getBoundingClientRect();
     setTip({ label, top: r.top + r.height / 2 });
   };
   const hide = () => setTip(null);
+  const toggle = open ? "Menyuni yig'ish" : "Menyuni yoyish";
   return (
     <aside className="sa-side" onScroll={hide}>
-      <Link href="/superadmin" className="sa-mark" aria-label="Insof platforma — IT panel, bosh sahifa" onMouseEnter={show("Insof platforma · IT panel")} onMouseLeave={hide} onFocus={show("Insof platforma · IT panel")} onBlur={hide}>I</Link>
+      <div className="sa-side-head">
+        <Link href="/superadmin" className="sa-brand" aria-label="Insof platforma — IT panel, bosh sahifa" onMouseEnter={show("Insof platforma · IT panel")} onMouseLeave={hide} onFocus={show("Insof platforma · IT panel")} onBlur={hide}>
+          <span className="sa-mark" aria-hidden>I</span>
+          <span className="lbl"><b>Insof IT</b><small>platforma paneli</small></span>
+        </Link>
+        <button type="button" className="sa-side-btn sa-side-toggle" onClick={() => { hide(); setSide(!open); }} aria-expanded={open} aria-label={toggle}
+          onMouseEnter={show(toggle)} onMouseLeave={hide} onFocus={show(toggle)} onBlur={hide}>
+          {open ? <PanelLeftClose size={18} aria-hidden /> : <PanelLeftOpen size={18} aria-hidden />}
+        </button>
+      </div>
       <nav aria-label="Panel bo'limlari">
         <ul className="sa-nav">
           {NAV.map((n) => {
@@ -110,6 +130,7 @@ export function PanelNav() {
                 <Link href={n.href} aria-current={active ? "page" : undefined} aria-label={label}
                   onMouseEnter={show(n.label)} onMouseLeave={hide} onFocus={show(n.label)} onBlur={hide}>
                   <n.icon size={21} aria-hidden />
+                  <span className="lbl">{n.label}</span>
                   {n.alerts && hot > 0 && <span className="sa-badge" aria-hidden>{hot > 99 ? "99+" : hot}</span>}
                 </Link>
               </li>]
@@ -120,7 +141,7 @@ export function PanelNav() {
       <div className="sa-side-foot">
         <ThemeToggle variant="side" onTip={show} onHide={hide} />
         <form action={adminLogoutAction}>
-          <button className="sa-side-btn" aria-label="Chiqish" onMouseEnter={show("Chiqish")} onMouseLeave={hide} onFocus={show("Chiqish")} onBlur={hide}><LogOut size={20} aria-hidden /></button>
+          <button className="sa-side-btn" aria-label="Chiqish" onMouseEnter={show("Chiqish")} onMouseLeave={hide} onFocus={show("Chiqish")} onBlur={hide}><LogOut size={20} aria-hidden /><span className="lbl">Chiqish</span></button>
         </form>
       </div>
       {tip && <span className="sa-tip" role="tooltip" style={{ top: tip.top, opacity: 1 }}>{tip.label}</span>}
@@ -285,6 +306,7 @@ function ThemeToggle({ variant, onTip, onHide }: { variant: "side" | "grid"; onT
     <button type="button" className="sa-side-btn" onClick={click} aria-label={label}
       onMouseEnter={onTip?.(`Rejim: ${name}`)} onMouseLeave={onHide} onFocus={onTip?.(`Rejim: ${name}`)} onBlur={onHide}>
       <I size={20} aria-hidden />
+      <span className="lbl">Rejim: {name}</span>
     </button>
   );
 }

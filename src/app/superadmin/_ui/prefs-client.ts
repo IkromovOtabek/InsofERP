@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { encodeUiCookie, UI_PREFS_COOKIE, type ColorMode, type UiPrefs } from "@/lib/control/ui-prefs";
 
 /**
- * Prefs'ni sahifaga qo'llash (saqlashdan oldin darhol — optimistik): `.sa[data-theme|data-mobile]`, ERP `html.dark`,
+ * Prefs'ni sahifaga qo'llash (saqlashdan oldin darhol — optimistik): `.sa[data-theme|data-mobile|data-side]`, ERP `html.dark`,
  * localStorage "insof-sa-theme" (eski kalit — moslik uchun) va cookie (login sahifasi va keyingi birinchi bo'yoq uchun).
  * Manba baribir baza: server action yozadi, layout keyingi so'rovda bazadan o'qiydi.
  */
@@ -13,6 +13,7 @@ export function applyUiPrefs(p: UiPrefs) {
   if (sa) {
     if (p.colorMode === "system") sa.removeAttribute("data-theme"); else sa.setAttribute("data-theme", p.colorMode);
     sa.setAttribute("data-mobile", p.mobileLayout);
+    if (p.sideOpen) sa.setAttribute("data-side", "open"); else sa.removeAttribute("data-side");
   }
   syncDark(p.colorMode);
   try { if (p.colorMode === "system") localStorage.removeItem("insof-sa-theme"); else localStorage.setItem("insof-sa-theme", p.colorMode); } catch { /* yashirin rejim */ }
