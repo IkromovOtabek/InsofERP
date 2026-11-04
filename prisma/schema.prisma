@@ -551,6 +551,9 @@ model Vehicle {
   /// Ko'chadan chaqirilgan (yollangan) mashina — o'z parkimiz band bo'lganda «Yangi reys»da yoziladi, raqam bo'yicha
   /// qayta ishlatiladi. Doim `isActive: false`: park ro'yxatlari, dashbord va ECO sinxronga kirmaydi.
   external         Boolean   @default(false)
+  /// Ko'chadan mashina «Yangi reys» ro'yxatidan olingan vaqt (o'chirilmaydi — reyslari, nakladnoy, reys haqi bog'liq).
+  /// Shu raqam bilan qayta chaqirilsa yana ro'yxatga qaytadi
+  hiddenAt         DateTime?
 
   trips        Trip[]
   drivers      Employee[]         @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar (smena bo'yicha bir nechta)
@@ -1720,6 +1723,7 @@ model Trip {
   note           String?
   createdAt      DateTime   @default(now())
   bru            String? // beton qaysi BRU (beton qorishma uzeli) dan olinadi — ro'yxat `CompanySettings.bruNames`, nakladnoyda ko'rinadi
+  driverReason   String? // texnikaga biriktirilmagan haydovchi berilgan sabab (asosiy haydovchi kasal, dam olishda...) — logist yozadi
 
   // ── Yukni olgan joyi (zavod/sklad) — logistika "Yuklandi" bosqichida belgilaydi ──
   pickupAddress String? // yuk olingan joy manzili

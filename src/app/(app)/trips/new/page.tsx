@@ -28,8 +28,9 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
     db.vehicle.findMany({ where: { isActive: true, status: { not: "REPAIR" }, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }], include: { trips: { where: { status: { in: ACTIVE_TRIP } }, select: { status: true } } } }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" } }),
     db.companySettings.findUnique({ where: { id: "main" }, select: { bruNames: true } }),
-    // Avval chaqirilgan ko'cha mashinalari — raqam yozilganda haydovchi va sig'im o'zi to'lsin
-    db.vehicle.findMany({ where: { external: true }, orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true, drivers: { where: { external: true }, select: { fullName: true, phone: true }, take: 1 } } }),
+    // Avval chaqirilgan ko'cha mashinalari — ro'yxatdan tanlanadi yoki raqam yozilganda haydovchi va sig'im o'zi to'ladi.
+    // Ro'yxatdan olingani (hiddenAt) ko'rinmaydi
+    db.vehicle.findMany({ where: { external: true, hiddenAt: null }, orderBy: { plate: "asc" }, select: { id: true, plate: true, type: true, capacityM3: true, drivers: { where: { external: true }, select: { fullName: true, phone: true }, take: 1 } } }),
   ]);
   // Otdel kadr "haydovchi ilovasiga chiqsin" deb belgilagan lavozimlar — reys faqat shularga ochiladi (`createTrip` ham tekshiradi)
   const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
@@ -37,8 +38,8 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
   const marks = await customerMarks(orders.map((o) => o.customerId));
   // Haydovchi ilovasiga reys telefon raqami bo'yicha boradi — raqamsiz xodim ECO'da topilmaydi
   const driverList = driverOpts.map((d) => ({ id: d.id, fullName: d.fullName, vehicleId: d.vehicleId, phoneOk: !!normalizePhone(d.phone) }));
-  // Qoldiq zayavkadagi mahsulot birligida (beton m³, ustun/blok dona). Tayyori yo'q zayavka ham jadvalda
-  // ko'rinadi (tanlab bo'lmaydi) — logist nima uchun reysga berilmayotganini bilsin
+  // Ro'yxatda faqat brigada tayyorlab bergan (hali jo'natilmagan) miqdori bor zayavkalar —
+  // qoldiq zayavkadagi mahsulot birligida (beton m³, ustun/blok dona)
   const all = orders.map((o) => {
     const rd = orderReadiness(o);
     const plan = orderPlannedAt(o);
@@ -53,16 +54,19 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
       unit: mixed ? "birlik" : unitLabel(rd.unit ?? "m3"), mixed, pieceUnit: unitLabel(pieceUnit), lines,
     };
   });
-  const open = all.filter((o) => o.total - o.shipped > 0.001);
+  const opts = all.filter((o) => o.remainingM3 > 0);
+  // Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavkalar — logist nima uchun ro'yxatda yo'qligini bilsin
+  const waiting = all.filter((o) => o.remainingM3 <= 0 && o.total - o.shipped > 0.001);
   return (
     <div>
       <PageHeader back={{ href: "/trips", label: "Reyslar" }} title="Yangi reys" subtitle="Faqat brigada tayyorlab bergan miqdor reysga beriladi · nakladnoy raqami avtomatik" />
       <TripForm
-        orders={open}
+        orders={opts}
+        waiting={waiting.map((o) => ({ id: o.id, date: o.date, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))}
         vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 && v.capacityUnit === "M3" ? Number(v.capacityM3) : null, mainDriverId: v.mainDriverId, state: v.trips.length ? VEHICLE_LIVE[vehicleLive(v, v.trips)].label.toLowerCase() : undefined }))}
         drivers={driverList}
         bruNames={settings?.bruNames ?? []}
-        externals={externals.map((v) => ({ plate: v.plate, type: v.type === "MIXER" ? "MIXER" : "TRUCK", capacity: v.capacityM3 != null ? Number(v.capacityM3) : null, driverName: v.drivers[0]?.fullName ?? "", driverPhone: v.drivers[0]?.phone ?? "" }))}
+        externals={externals.map((v) => ({ id: v.id, plate: v.plate, type: v.type === "MIXER" ? "MIXER" : "TRUCK", capacity: v.capacityM3 != null ? Number(v.capacityM3) : null, driverName: v.drivers[0]?.fullName ?? "", driverPhone: v.drivers[0]?.phone ?? "" }))}
         initialOrderId={orderId}
       />
     </div>

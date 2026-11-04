@@ -96,7 +96,8 @@ if (ord) {
   // Yuklash uchun reys: mikser + haydovchi
   const veh = q1(`select id from "Vehicle" where type='MIXER' and status<>'REPAIR' limit 1`) ?? q1(`select id from "Vehicle" where type='MIXER' limit 1`)!;
   const drv = q1(`select e.id from "Employee" e where e."isActive" and e."firedAt" is null and (e.position ilike '%haydovchi%') limit 1`)!;
-  r = await logist.action("(app)/trips/actions#createTrip", [undefined, fd({ orderId: oid, vehicleId: veh, driverId: drv, qtyM3: 6 })], "/trips/new");
+  // Haydovchi texnikaga biriktirilmagan bo'lishi mumkin — sabab yuboriladi (biriktirilgan bo'lsa e'tiborga olinmaydi)
+  r = await logist.action("(app)/trips/actions#createTrip", [undefined, fd({ orderId: oid, vehicleId: veh, driverId: drv, qtyM3: 6, driverReason: "QA: boshqa haydovchi" })], "/trips/new");
   const tid = idFrom(r.redirect);
   check(!!tid, "reys ochildi", r.error ?? r.text.slice(0, 200));
   if (tid) {

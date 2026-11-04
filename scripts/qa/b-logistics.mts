@@ -104,8 +104,38 @@ xp = await dir.get("/employees");
 check(xp.status === 200 && !xp.text.includes("QA Ko&#x27;cha Haydovchi"), "Xodimlar ro'yxatida ko'chadan haydovchi yo'q", xp.status);
 xp = await logist.get("/trips/new");
 check(xp.status === 200 && xp.text.includes(`01Q${extNo}XT`) && xp.text.includes("BRU-2"), "Yangi reys: avvalgi ko'chadan mashina va BRU ro'yxati", xp.status);
-for (const t of [tx1, tx2]) await logist.action(`${TA}#cancelTrip`, [t], `/trips/${t}`);
-check(n1(`select count(*) from "Trip" where id in ('${tx1}','${tx2}') and status='CANCELLED'`) === 2, "ko'chadan mashina reyslari bekor qilindi");
+// Ro'yxatdan olish: mashina va reyslari bazada qoladi (hiddenAt + AuditLog), qayta chaqirilsa o'sha yozuv ro'yxatga qaytadi
+r = await logist.action(`${TA}#hideExternalVehicle`, [xv], "/trips/new");
+check(r.ok && q1(`select ("hiddenAt" is not null)::text from "Vehicle" where id='${xv}'`) === "true", "ko'chadan mashina ro'yxatdan olindi (hiddenAt)", r.error);
+check(n1(`select count(*) from "Trip" where "vehicleId"='${xv}'`) === 2 && n1(`select count(*) from "AuditLog" where entity='Vehicle' and "entityId"='${xv}' and action='UPDATE'`) >= 1, "olingan mashina va reyslari bazada, AuditLog'da");
+xp = await logist.get("/trips/new");
+check(xp.status === 200 && !xp.text.includes(`01Q${extNo}XT`), "Yangi reys ro'yxatida olingan mashina yo'q", xp.status);
+r = await logist.action(`${TA}#hideExternalVehicle`, [mixer], "/trips/new");
+check(!!r.error && q1(`select ("hiddenAt" is null)::text from "Vehicle" where id='${mixer}'`) === "true", "o'z mashinamiz ro'yxatdan olinmaydi", r.error);
+r = await logist.action(`${TA}#createTrip`, [undefined, extF({ qtyM3: 0.5 })], "/trips/new");
+const tx3 = idFrom(r.redirect)!;
+check(!!tx3 && extOf(tx3)[0] === xv && q1(`select ("hiddenAt" is null)::text from "Vehicle" where id='${xv}'`) === "true", "qayta chaqirilgan mashina ro'yxatga qaytdi (o'sha yozuv)", r.error ?? extOf(tx3));
+for (const t of [tx1, tx2, tx3]) await logist.action(`${TA}#cancelTrip`, [t], `/trips/${t}`);
+check(n1(`select count(*) from "Trip" where id in ('${tx1}','${tx2}','${tx3}') and status='CANCELLED'`) === 3, "ko'chadan mashina reyslari bekor qilindi");
+
+// O'z haydovchisi bor texnikaga boshqa haydovchi: sababsiz rad etiladi, sabab reysda va AuditLog'da qoladi;
+// texnikaning o'z haydovchisida sabab so'ralmaydi (yuborilsa ham yozilmaydi)
+const mixer2 = q1(`select v.id from "Vehicle" v where v.type='MIXER' and v.status='ACTIVE' and v."isActive" and v.id<>'${mixer}' and ("inspectionUntil" is null or "inspectionUntil">now())
+  and ("insuranceUntil" is null or "insuranceUntil">now()) and exists (select 1 from "Employee" e where e."vehicleId"=v.id and e."isActive" and e.id<>'${driver}') limit 1`);
+if (mixer2) {
+  r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer2, driverId: driver, qtyM3: 0.5 })], "/trips/new");
+  check(/sabab/.test(r.error ?? ""), "boshqa texnikaning haydovchisi sababsiz rad etildi", r.error);
+  r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer2, driverId: driver, qtyM3: 0.5, driverReason: "Asosiy haydovchi kasal" })], "/trips/new");
+  const td1 = idFrom(r.redirect)!;
+  check(!!td1 && q1(`select "driverReason" from "Trip" where id='${td1}'`) === "Asosiy haydovchi kasal"
+    && q1(`select after->>'driverReason' from "AuditLog" where entity='Trip' and "entityId"='${td1}' and action='CREATE'`) === "Asosiy haydovchi kasal", "boshqa haydovchi sabab bilan: reysda va AuditLog'da", r.error ?? r.text.slice(0, 200));
+  xp = await logist.get(`/trips/${td1}`);
+  check(xp.status === 200 && xp.text.includes("Boshqa haydovchi sababi") && xp.text.includes("Asosiy haydovchi kasal"), "reys kartasida boshqa haydovchi sababi", xp.status);
+  r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 0.5, driverReason: "keraksiz" })], "/trips/new");
+  const td2 = idFrom(r.redirect)!;
+  check(!!td2 && q1(`select coalesce("driverReason",'-') from "Trip" where id='${td2}'`) === "-", "o'z haydovchisida sabab yozilmadi", r.error ?? r.text.slice(0, 200));
+  for (const t of [td1, td2].filter(Boolean)) await logist.action(`${TA}#cancelTrip`, [t], `/trips/${t}`);
+} else check(false, "o'z haydovchisi bor ikkinchi mikser topilmadi (test bazasi)");
 
 // Haydovchi sahifasi — o'z reysi ko'rinadi
 let page = await hay.get("/mening-reyslarim");

@@ -286,6 +286,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         <CardHeader title="Yetkazish" icon={MapPin} action={<Link href={`/orders/${t.orderId}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavkaga o'tish →</Link>} />
         <DL items={[
           ...(t.bru ? [{ k: "BRU", v: t.bru }] : []),
+          ...(t.driverReason ? [{ k: "Boshqa haydovchi sababi", v: `${t.driver.fullName} — ${t.driverReason}` }] : []),
           ...(t.pickupAddress ? [{ k: "Yukni olgani joyi", v: t.pickupAddress }] : []),
           { k: "Manzil", v: t.order.deliveryAddress },
           { k: "Sana", v: date(t.order.deliveryDate) },

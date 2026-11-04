@@ -725,6 +725,8 @@ export async function orderTripAction(user: MobileUser, orderId: string): Promis
     id: "order.trip", label: "Reys ochish", tone: "brand",
     form: [
       ...(await tripResourceFields()),
+      // Texnikaning o'z haydovchisi bor, boshqasi berilsa — majburiy (`createTrip` tekshiradi)
+      { name: "driverReason", label: "Boshqa haydovchi sababi", type: "text", hint: "Texnikaga biriktirilmagan haydovchi tanlansa yoziladi" },
       { name: "qtyM3", label: `Hajmi${rd.unit ? `, ${unitLabel(rd.unit)}` : ""}`, type: "number", required: true, value: String(rd.available), hint: `Tayyor ${rd.available}${rd.inProduction > 0 ? ` · sexda ${rd.inProduction}` : ""}` },
       ...plannedFields(plan.plannedDate, plan.plannedTime),
       { name: "note", label: "Izoh", type: "text" },
@@ -1359,7 +1361,7 @@ export async function runLogiAction(user: MobileUser, action: string, id: string
       if (!textOf(payload, "driverId")) fail("Haydovchi tanlanmagan");
       let r: { id: string; deliveryNoteNo: string };
       try {
-        r = await createTrip({ orderId: id, vehicleId: textOf(payload, "vehicleId"), driverId: textOf(payload, "driverId"), qtyM3, note: textOf(payload, "note") || null, plannedAt: plannedAtOf(payload, o.deliveryDate) }, user.id);
+        r = await createTrip({ orderId: id, vehicleId: textOf(payload, "vehicleId"), driverId: textOf(payload, "driverId"), qtyM3, note: textOf(payload, "note") || null, plannedAt: plannedAtOf(payload, o.deliveryDate), driverReason: textOf(payload, "driverReason") || null }, user.id);
       } catch (e) { if (e instanceof ListError) throw e; return fail((e as Error).message); }
       if (ecoEnabled()) {
         const push = await pushTripToEco(r.id);

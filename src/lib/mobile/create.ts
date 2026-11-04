@@ -778,6 +778,8 @@ async function tripForm(): Promise<CreateForm> {
         options: drivers.map((d) => ({ value: d.id, label: `${d.fullName}${d.vehicle ? ` · ${d.vehicle.plate}` : " · texnikasiz"}${normalizePhone(d.phone) ? "" : " · telefonsiz"}`, extra: d.vehicleId ? { vehicleId: d.vehicleId } : undefined })),
         hint: "Haydovchining biriktirilgan texnikasi yonida ko'rsatiladi; telefoni yo'q haydovchi ilovada reysni ko'rmaydi",
       },
+      // Texnikaning o'z haydovchisi bor, boshqasi berilsa — majburiy (`createTrip` tekshiradi)
+      { name: "driverReason", label: "Boshqa haydovchi sababi", type: "text", hint: "Texnikaga biriktirilmagan haydovchi tanlansa yoziladi" },
       { name: "qtyM3", label: "Hajmi (zayavka birligida)", type: "number", required: true, placeholder: "0" },
       // Reja vaqti (veb `plannedAt`) — zayavka tanlanganda uning sanasi/soati qo'yiladi; bo'sh — zayavkadagi vaqt
       ...plannedFields(),
@@ -823,6 +825,7 @@ const TripBody = z.object({
   driverId: z.string().trim().min(1, "Haydovchi tanlanmagan"),
   qtyM3: z.coerce.number().positive("Hajm 0 dan katta bo'lsin"),
   note: z.string().trim().optional(),
+  driverReason: z.string().trim().optional(),
 });
 
 const SupplyBody = z.object({

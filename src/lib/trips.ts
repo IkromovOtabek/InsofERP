@@ -741,6 +741,8 @@ export type NewTripInput = {
   orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null; plannedAt?: Date | null;
   /** Beton qaysi BRU dan olinadi — faqat beton reysida saqlanadi. */
   bru?: string | null;
+  /** Texnikaga biriktirilmagan haydovchi berilsa — sababi (majburiy, faqat texnikaning o'z haydovchisi bo'lsa). */
+  driverReason?: string | null;
   /** Berilsa — vehicleId/driverId e'tiborga olinmaydi, mashina va haydovchi shu ma'lumotdan yoziladi. */
   external?: ExternalCar | null;
 };
@@ -757,11 +759,13 @@ async function upsertExternalCar(ext: ExternalCar, phone: string, userId: string
   const plate = normPlate(ext.plate);
   const capacityUnit = ext.type === "MIXER" ? "M3" : "TON";
   const car = { type: ext.type, capacityM3: ext.capacity, capacityUnit } as const;
-  const known = (await db.vehicle.findMany({ where: { external: true }, select: { id: true, plate: true } })).find((x) => normPlate(x.plate) === plate);
+  const known = (await db.vehicle.findMany({ where: { external: true }, select: { id: true, plate: true, hiddenAt: true } })).find((x) => normPlate(x.plate) === plate);
+  // Ro'yxatdan olingan mashina qayta chaqirilsa — yana ro'yxatga qaytadi
   const vehicle = known
-    ? await db.vehicle.update({ where: { id: known.id }, data: car })
+    ? await db.vehicle.update({ where: { id: known.id }, data: { ...car, hiddenAt: null } })
     : await db.vehicle.upsert({ where: { plate }, create: { plate, ...car, external: true, isActive: false, note: "Ko'chadan chaqirilgan" }, update: car });
   if (!known) await audit(db, userId, "CREATE", "Vehicle", vehicle.id, undefined, vehicle);
+  else if (known.hiddenAt) await audit(db, userId, "UPDATE", "Vehicle", vehicle.id, { hiddenAt: known.hiddenAt }, { hiddenAt: null, note: "Ko'chadan mashina qayta chaqirildi — ro'yxatga qaytdi" });
   const fullName = ext.driverName.trim();
   const prev = (await db.employee.findMany({ where: { external: true }, select: { id: true, phone: true } })).find((e) => normalizePhone(e.phone) === phone);
   const driver = prev
@@ -769,6 +773,21 @@ async function upsertExternalCar(ext: ExternalCar, phone: string, userId: string
     : await db.employee.create({ data: { fullName, phone, position: EXTERNAL_DRIVER_POSITION, external: true, isActive: false, vehicleId: vehicle.id, note: "Ko'chadan chaqirilgan mashina haydovchisi" } });
   if (!prev) await audit(db, userId, "CREATE", "Employee", driver.id, undefined, driver);
   return { vehicleId: vehicle.id, driverId: driver.id };
+}
+
+/**
+ * Ko'chadan mashinani «Yangi reys» ro'yxatidan olish. Bazadan o'chirilmaydi: reyslari, nakladnoy va reys haqi
+ * unga bog'liq — faqat `hiddenAt` qo'yiladi. Qayta bosilsa (allaqachon olingan) — xatosiz o'tadi.
+ */
+export async function hideExternalCar(id: string, userId: string): Promise<void> {
+  const at = new Date();
+  const n = await db.vehicle.updateMany({ where: { id, external: true, hiddenAt: null }, data: { hiddenAt: at } });
+  if (n.count) {
+    await audit(db, userId, "UPDATE", "Vehicle", id, { hiddenAt: null }, { hiddenAt: at, note: "Ko'chadan mashina ro'yxatdan olindi" });
+    return;
+  }
+  const v = await db.vehicle.findUnique({ where: { id }, select: { external: true } });
+  if (!v?.external) throw new Error("Ko'chadan chaqirilgan mashina topilmadi");
 }
 
 /**
@@ -830,12 +849,19 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   if (expired(v.inspectionUntil)) throw new Error(`${v.plate}: texnik ko'rik muddati o'tgan (${dmy(v.inspectionUntil!)}) — Transport kartasida yangilang`);
   if (expired(v.insuranceUntil)) throw new Error(`${v.plate}: sug'urta muddati o'tgan (${dmy(v.insuranceUntil!)}) — Transport kartasida yangilang`);
 
+  let driverReason: string | null = null;
   if (!ext) {
     const d = await db.employee.findUnique({ where: { id: input.driverId } });
     if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
     const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
     if (!driverNames.includes(d.position.trim().toLowerCase())) throw new Error(`${d.fullName} haydovchi lavozimida emas (${d.position}) — Otdel kadrda lavozimini tekshiring`);
     if (expired(d.licenseExpiry)) throw new Error(`${d.fullName}: haydovchilik guvohnomasi muddati o'tgan (${dmy(d.licenseExpiry!)}) — haydovchi kartasida yangilang`);
+    // Texnikaning o'z haydovchisi bor, lekin boshqasi berilyapti (asosiy haydovchi kasal, dam olishda...) — logist
+    // sababini yozadi, u reysda va AuditLog'da qoladi. Haydovchisi biriktirilmagan texnikada sabab so'ralmaydi
+    if (d.vehicleId !== input.vehicleId && await db.employee.count({ where: { vehicleId: input.vehicleId, isActive: true } })) {
+      driverReason = input.driverReason?.trim().slice(0, 200) || null;
+      if (!driverReason || driverReason.length < 3) throw new Error(`${d.fullName} ${v.plate} ga biriktirilmagan — boshqa haydovchi berish sababini yozing`);
+    }
   }
 
   const mixed = new Set(items.map((i) => i.productId)).size > 1;
@@ -863,7 +889,7 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     }
     const t = await tx.trip.create({
       data: {
-        deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru,
+        deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru, driverReason,
         // QR havolasidagi kalit: raqam ketma-ket, kalitsiz ochiq sahifadan mijozlar ro'yxatini yig'ib bo'lmasin
         verifyToken: randomBytes(18).toString("base64url"),
       },
