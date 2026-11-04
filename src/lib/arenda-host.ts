@@ -57,13 +57,23 @@ const arendaPathOpen = (p: string) =>
  * Arenda domenida «/» va boshqa bo'limlar → /arenda (kirmagan bo'lsa /login). Arenda'ga ruxsati yo'q hisob
  * (sahifa himoyasi `/dashboard?denied` ga qaytargan yoki faqat o'z sahifasi bor rol) — shu domendagi cookie
  * o'chiriladi va kirish sahifasida sabab chiqadi: aks holda /arenda ↔ /dashboard aylanib qolardi.
- * Asosiy domenda (`ARENDA_HOST` berilgan bo'lsa) /arenda sahifalari arenda domeniga o'tadi.
+ * Asosiy domenda (`ARENDA_HOST` berilgan bo'lsa) /arenda sahifalari arenda domeniga o'tadi. Faqat Arenda bilan
+ * ishlaydigan hisob (sekretar) sessiyasi bu domenda kirish sahifasini to'smaydi: cookie o'chadi va forma ochiladi —
+ * aks holda /login → /dashboard → /arenda → arenda domeni aylanib, asosiy domenda boshqa hisob bilan kirib bo'lmasdi.
  */
 export function arendaRedirect(req: NextRequest, role: Role | null): NextResponse | null {
   const { pathname, search, searchParams } = req.nextUrl;
   if (!isArendaHost(req.headers)) {
     const host = arendaHost();
-    return host && isArendaPath(pathname) ? NextResponse.redirect(new URL(`${pathname}${search}`, `https://${host}`)) : null;
+    if (!host) return null;
+    if (role && OWN_PAGE_ONLY[role] === ARENDA_PATH && pathname.startsWith("/login")) {
+      const headers = new Headers(req.headers);
+      headers.set("cookie", (req.headers.get("cookie") ?? "").split(/;\s*/).filter((c) => !c.startsWith("insof_session=")).join("; "));
+      const res = NextResponse.next({ request: { headers } });
+      res.cookies.delete("insof_session");
+      return res;
+    }
+    return isArendaPath(pathname) ? NextResponse.redirect(new URL(`${pathname}${search}`, `https://${host}`)) : null;
   }
   const own = role ? OWN_PAGE_ONLY[role] : undefined;
   if (role && ((pathname === "/dashboard" && searchParams.has("denied")) || (own && own !== ARENDA_PATH))) {

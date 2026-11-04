@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { getSession, issueSession, login, logout } from "@/lib/auth";
 import { completeTempPassword, signTempChange, TEMP_EXPIRED } from "@/lib/temp-password";
 import { TOUR_COOKIE } from "@/lib/tour";
-import { ARENDA_DENIED, ARENDA_PATH, isArendaHost } from "@/lib/arenda-host";
+import { ARENDA_DENIED, ARENDA_PATH, arendaHost, isArendaHost } from "@/lib/arenda-host";
 import { OWN_PAGE_ONLY, moduleForPath, pathAllowed } from "@/lib/nav";
 import { pathOff } from "@/lib/platform-modules";
 import { looksLikePhone, loginWithAppPhone } from "@/lib/eco/app-login";
@@ -23,9 +23,16 @@ import { recordLogin } from "@/lib/visits";
 /**
  * Kirgandan keyingi sahifa. Arenda domenida (lib/arenda-host.ts) — /arenda; u yerga ruxsati yo'q hisob kiritilmaydi:
  * yangi sessiya darhol yopiladi va forma sababini ko'rsatadi (aks holda arenda domenida ERP sahifasi ochilardi).
+ * Asosiy domenda faqat Arenda bilan ishlaydigan hisob (sekretar) kirsa — arenda domenining kirish sahifasiga:
+ * sessiya domenga bog'langan, bu yerdagisi unga keraksiz (va kirish sahifasini to'sib qo'yardi).
  */
 async function homeAfterLogin(): Promise<{ to: string } | { error: string }> {
-  if (!isArendaHost(await headers())) return { to: "/dashboard" };
+  if (!isArendaHost(await headers())) {
+    const host = arendaHost();
+    const s = host ? await getSession() : null;
+    if (host && s && OWN_PAGE_ONLY[s.role] === ARENDA_PATH) { await logout(); return { to: `https://${host}/login` }; }
+    return { to: "/dashboard" };
+  }
   const s = await getSession();
   const own = s ? OWN_PAGE_ONLY[s.role] : undefined;
   if (s && (!own || own === ARENDA_PATH) && !pathOff(ARENDA_PATH, moduleForPath(ARENDA_PATH)) && pathAllowed(ARENDA_PATH, s.role, s.perms)) {
