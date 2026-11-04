@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { hashPassword, issueSession, revokeSessions, type Session } from "@/lib/auth";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { recordLogin } from "@/lib/visits";
 import { TOUR_COOKIE } from "@/lib/tour";
 import { cookies } from "next/headers";
 import { eco, ecoEnabled, EcoError, normalizePhone } from "./client";
@@ -56,6 +57,7 @@ export async function loginWithAppPhone(phone: string, password: string): Promis
   if (!user.isActive) return { ok: false, reason: "closed", message: "ERP'ga kirish ruxsatingiz yopilgan — direktorga murojaat qiling" };
 
   const session = await issueSession(user);
+  await recordLogin(user.id, "eco");
   (await cookies()).delete(TOUR_COOKIE);
   return { ok: true, session };
 }

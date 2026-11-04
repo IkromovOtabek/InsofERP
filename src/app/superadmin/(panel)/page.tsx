@@ -114,7 +114,7 @@ export default async function Overview() {
                     const b = bills.get(t.id)!;
                     if (b.stage === "none" || b.stage === "ok") return null;
                     return (
-                      <Link href={`/superadmin/korxonalar/${t.slug}#obuna`} className="inline-flex w-fit">
+                      <Link href={`/superadmin/korxonalar/${t.slug}?tab=obuna#obuna`} className="inline-flex w-fit">
                         <Tag tone={b.stage === "soon" ? "warn" : "crit"}>Obuna: {STAGE_LABEL[b.stage].label.toLowerCase()} · {b.paidUntil}{b.daysLeft !== null && b.daysLeft >= 0 ? ` (${b.daysLeft} kun)` : ""}</Tag>
                       </Link>
                     );
@@ -130,6 +130,7 @@ export default async function Overview() {
                     <div className="cell" style={{ background: "var(--card)" }}><b>{s ? fmtNum(s.users.active) : "—"}</b><span>xodim (24 s: {s?.users.active24h ?? "—"})</span></div>
                     <div className="cell" style={{ background: "var(--card)" }}><b>{s ? fmtNum(s.orders.today) : "—"}</b><span>zayavka bugun / oy {s ? fmtNum(s.orders.month) : "—"}</span></div>
                     <div className="cell" style={{ background: "var(--card)" }}><b>{s?.db.sizeMb != null ? fmtNum(s.db.sizeMb) : "—"}</b><span>MB baza</span></div>
+                    <Link href={`/superadmin/korxonalar/${t.slug}?tab=tashriflar`} className="cell" style={{ background: "var(--card)" }}><b>{s?.visits ? fmtNum(s.visits.usersToday) : "—"}</b><span>bugun kirgan · sahifa {s?.visits ? fmtNum(s.visits.viewsToday) : "—"}</span></Link>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="sa-sub">{ver ? <>Versiya <span data-no-translit>{ver}</span> · </> : null}oxirgi faollik {ago(s?.lastActivityAt)}{s ? ` · aylanma ${moneyShort(s.orders.revenueMonth)}` : ""}</span>

@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { verifySso, tenantSsoKeySet } from "@/lib/control/token";
 import { isControlMode, tenantSlug } from "@/lib/tenant";
 import { redirectUrl } from "@/lib/redirect-url";
+import { recordLogin } from "@/lib/visits";
 
 /**
  * IT superadmin markaziy paneldan korxonaga kiradi (SSO). Panel 60 soniyalik, bir martalik, shu korxona
@@ -47,6 +48,7 @@ export async function POST(req: Request) {
 
   await issueSession(user);
   await audit(db, user.id, "UPDATE", "User", user.id, undefined, { itKirish: true, admin: c.adminLogin });
+  await recordLogin(user.id, "sso", { superadmin: true });
   // cookies().set alohida yaratilgan redirect javobiga tushmaydi (api/logout dagi kabi) — javobning o'ziga ko'chiramiz
   const res = NextResponse.redirect(redirectUrl(req, "/dashboard"), 303);
   const session = (await cookies()).get("insof_session")?.value;

@@ -302,6 +302,10 @@ export function AppShell({ items, user, brand, product = "Insof ERP", ai = false
   const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
   useEffect(() => { setOpen(false); }, [path]);
+  // Tashriflar jurnali (IT panel → korxona → Tashriflar): yo'l o'zgarganda bir marta; avto-yangilanish yo'lni o'zgartirmaydi
+  useEffect(() => {
+    try { navigator.sendBeacon("/api/visit", JSON.stringify({ path })); } catch { /* eski brauzer — yozilmaydi */ }
+  }, [path]);
   // Menyu ochiq: orqadagi sahifa aylanmasin, Esc bilan yopilsin
   useEffect(() => {
     if (!open) return;

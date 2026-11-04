@@ -70,6 +70,7 @@ model User {
   cashTransfers          CashTransfer[]           @relation("CashTransferCreatedBy")
   cashTransfersCancelled CashTransfer[]           @relation("CashTransferCancelledBy")
   auditLogs              AuditLog[]
+  visits                 VisitLog[]
   offers                 CommercialOffer[]        @relation("OfferManager")
   employee               Employee?
   marketing              MarketingEntry[]         @relation("MarketingCreatedBy")
@@ -2494,6 +2495,37 @@ model SalesRegister {
 }
 
 // ───────────────────────── Audit ─────────────────────────
+
+/// Tashriflar jurnali — IT panel → korxona → «Tashriflar»: kim, qachon, qaysi sahifani, qaysi qurilmadan ochdi
+/// va qaysi usul bilan kirdi (`lib/visits.ts`). Hujjat emas: 90 kundan eskisi o'chiriladi.
+model VisitLog {
+  id         String    @id @default(cuid())
+  userId     String
+  kind       VisitKind
+  /// PAGE — sahifa yo'li (so'rov parametrlarisiz)
+  path       String?
+  /// LOGIN — kirish usuli: parol | kod | eco | sso | yangi_parol | mobil | mobil_kod (`LOGIN_METHODS`)
+  method     String?
+  ip         String?
+  userAgent  String?
+  /// desktop | mobile | tablet | app (ERP mobil ilovasi) | unknown
+  device     String
+  os         String?
+  browser    String?
+  /// IT superadmin SSO orqali kirgan (korxona xodimi emas)
+  superadmin Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+enum VisitKind {
+  PAGE
+  LOGIN
+}
 
 model AuditLog {
   id        String   @id @default(cuid())

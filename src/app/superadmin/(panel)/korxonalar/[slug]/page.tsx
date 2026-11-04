@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/control/auth";
 import { roleAllows } from "@/lib/control/roles";
 import { notFound } from "next/navigation";
-import { RefreshCw, Play } from "lucide-react";
+import { CreditCard, Footprints, LayoutDashboard, Play, RefreshCw, Settings } from "lucide-react";
 import { control } from "@/lib/control/db";
 import { envPathFor } from "@/lib/control/provision";
 import type { TenantStats } from "@/lib/control/stats";
@@ -9,7 +9,7 @@ import { EVENT_LABEL } from "@/lib/control/events";
 import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { date, dateTime, fmtNum, money, moneyShort } from "@/lib/format";
-import { Badge, Button, Callout, Card, DL, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Card, DL, Empty, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { PageHeader } from "../../../_ui";
 import { TenantStatusBadge, Health, ago } from "../../status";
 import { DirectorForm, EditTenantForm, SsoButton, SuspendForm } from "../../forms";
@@ -20,21 +20,37 @@ import { billingState, isoOf, PAYMENT_METHODS, paymentPeriod, PLAN_LABEL, STAGE_
 import { BillingSettingsForm, CancelPaymentButton, PaymentForm, TariffForm } from "./billing";
 import { MODULES } from "@/lib/nav";
 import { PLATFORM_MODULES } from "@/lib/platform-modules";
+import { visitFilter } from "@/lib/control/visits";
+import { TenantVisitsTab } from "./visits";
 
 export const dynamic = "force-dynamic";
 
-export default async function TenantPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ yangi?: string }> }) {
+/** Korxona sahifasi tablari (`?tab=`): holat va statistika, tashriflar, obuna va modullar, boshqaruv. */
+const TABS = [
+  { key: "umumiy", label: "Umumiy", icon: LayoutDashboard },
+  { key: "tashriflar", label: "Tashriflar", icon: Footprints },
+  { key: "obuna", label: "Obuna va modullar", icon: CreditCard },
+  { key: "sozlamalar", label: "Sozlamalar", icon: Settings },
+] as const;
+type TabKey = (typeof TABS)[number]["key"];
+
+type Query = { yangi?: string; tab?: string; kun?: string; u?: string; qurilma?: string; tur?: string; it?: string; bet?: string };
+
+export default async function TenantPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Query> }) {
   const me = await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   // Direktor paroli, ma'lumotni tahrirlash, to'xtatish — faqat «Egasi» (server action ham tekshiradi)
   const owner = roleAllows(me.role, "OWNER");
   const { slug } = await params;
-  const { yangi } = await searchParams;
+  const query = await searchParams;
+  const { yangi } = query;
+  const tab: TabKey = TABS.some((x) => x.key === query.tab) ? (query.tab as TabKey) : "umumiy";
   const t = await control.tenant.findUnique({ where: { slug } });
   if (!t) notFound();
+  // Har tab faqat o'ziga keraklisini o'qiydi
   const [history, events, payments] = await Promise.all([
-    control.tenantStat.findMany({ where: { tenantId: t.id }, orderBy: { day: "desc" }, take: 30 }),
-    control.controlEvent.findMany({ where: { tenantId: t.id }, orderBy: { createdAt: "desc" }, take: 30, include: { admin: { select: { fullName: true } } } }),
-    control.tenantPayment.findMany({ where: { tenantId: t.id }, orderBy: { createdAt: "desc" }, take: 24 }),
+    tab === "umumiy" ? control.tenantStat.findMany({ where: { tenantId: t.id }, orderBy: { day: "desc" }, take: 30 }) : [],
+    tab === "sozlamalar" ? control.controlEvent.findMany({ where: { tenantId: t.id }, orderBy: { createdAt: "desc" }, take: 30, include: { admin: { select: { fullName: true } } } }) : [],
+    tab === "obuna" ? control.tenantPayment.findMany({ where: { tenantId: t.id }, orderBy: { createdAt: "desc" }, take: 24 }) : [],
   ]);
   // Obuna: holat, keyingi to'lov qaysi davrni qoplashi (forma izohi uchun), storno qilinadigan oxirgi to'lov
   const today = todayIso();
@@ -44,6 +60,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
   const lastActive = payments.find((p) => !p.cancelledAt);
   const iso = (d: Date | null) => (d ? isoOf(d) : "—");
   const s = t.lastStats as TenantStats | null;
+  const href = (k: TabKey) => (k === "umumiy" ? `/superadmin/korxonalar/${t.slug}` : `/superadmin/korxonalar/${t.slug}?tab=${k}`);
 
   return (
     <div className="space-y-6">
@@ -68,11 +85,19 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
       )}
       {t.lastError && <Callout tone="danger" title="Oxirgi tekshiruvdagi muammo">{t.lastError}</Callout>}
 
-      {s ? (
+      <Tabs current={tab} className="mb-0" items={TABS.map((x) => ({
+        key: x.key, label: x.label, icon: x.icon, href: href(x.key),
+        count: x.key === "tashriflar" && s?.visits ? s.visits.usersToday : undefined,
+      }))} />
+
+      {tab === "tashriflar" && <TenantVisitsTab slug={t.slug} dbName={t.dbName} f={visitFilter(query)} />}
+
+      {tab === "umumiy" && (s ? (
         <>
           <div className="flex flex-wrap items-center gap-2 text-sm"><HelpButton topic="tenant:check" /><Health up={s.web.up} label={`ERP ${s.web.ms ?? "—"}ms`} /><Health up={s.db.ok} label={`Baza ${s.db.sizeMb ?? "—"} MB`} /><Health up={s.eco.configured ? s.eco.up : null} label={`ECO ${s.eco.ms ?? "—"}ms`} /><span className="text-slate-500">tekshirildi {ago(s.at)} · oxirgi faollik {ago(s.lastActivityAt)}</span></div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Foydalanuvchilar" value={s.users.active} hint={`24 soatda: ${s.users.active24h} · jami ${s.users.total}`} href="#rollar" />
+            <StatCard label="Bugun kirgan" value={s.visits ? s.visits.usersToday : "—"} hint={s.visits ? `sahifa: ${fmtNum(s.visits.viewsToday)} · kirish: ${s.visits.loginsToday}` : "tashriflar jurnali hali yo'q"} href={href("tashriflar")} />
             <StatCard label="Xodimlar / mijozlar" value={`${s.employees} / ${s.customers}`} />
             <StatCard label="Zayavka bugun / oy" value={`${s.orders.today} / ${s.orders.month}`} hint={`qoralama ${s.orders.draft} · bloklangan ${s.orders.blocked}`} href={history.length > 1 ? "#tarix" : undefined} />
             <StatCard label="Aylanma / to'lov (oy)" value={moneyShort(s.orders.revenueMonth)} hint={`to'lovlar ${moneyShort(s.payments.month)}`} tone="success" href={history.length > 1 ? "#tarix" : undefined} />
@@ -86,9 +111,21 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
             <div className="flex flex-wrap gap-2 text-sm">{Object.entries(s.users.byRole).map(([r, c]) => <span key={r} className="rounded-md bg-slate-100 px-2 py-0.5">{ROLE_LABELS[r as Role] ?? r}: <b>{c}</b></span>)}</div>
           </Card>
         </>
-      ) : <Card><Empty text="Statistika hali olinmagan — «Tekshirish»ni bosing" /></Card>}
+      ) : <Card><Empty text="Statistika hali olinmagan — «Tekshirish»ni bosing" /></Card>)}
 
-      <Card>
+      {tab === "umumiy" && history.length > 1 && (
+        <Card>
+          <div id="tarix" className="mb-2 scroll-mt-20 text-sm font-semibold">Oxirgi {history.length} kun</div>
+          <Table>
+            <thead><tr><Th>Kun</Th><Th right>Faol (24s)</Th><Th right>Kirgan (kun)</Th><Th right>Zayavka (kun)</Th><Th right>Aylanma (oy)</Th><Th right>Baza</Th><Th>ERP</Th></tr></thead>
+            <tbody>{history.map((h) => { const x = h.stats as TenantStats; return (
+              <Tr key={h.id}><Td>{h.day.toISOString().slice(0, 10)}</Td><Td right>{x.users.active24h}</Td><Td right>{x.visits?.usersToday ?? "—"}</Td><Td right>{x.orders.today}</Td><Td right>{moneyShort(x.orders.revenueMonth)}</Td><Td right>{x.db.sizeMb ?? "—"} MB</Td><Td><Health up={x.web.up} label={x.web.up ? "ishladi" : "o'chiq"} /></Td></Tr>
+            ); })}</tbody>
+          </Table>
+        </Card>
+      )}
+
+      {tab === "obuna" && <Card>
         <div id="obuna" className="mb-3 flex scroll-mt-20 flex-wrap items-center gap-2 font-semibold">
           Obuna <Badge color={STAGE_LABEL[bill.stage].color}>{STAGE_LABEL[bill.stage].label}</Badge>
           {t.suspendKind === "billing" && <Badge color="red" dot={false}>to&apos;lov uchun to&apos;xtatilgan</Badge>}
@@ -128,9 +165,9 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
             ))}</tbody>
           </Table>
         )}
-      </Card>
+      </Card>}
 
-      <Card>
+      {tab === "obuna" && <Card>
         <div id="tarif" className="mb-3 flex scroll-mt-20 flex-wrap items-center gap-2 font-semibold">
           Modullar va limit
           {t.modulesOff.length > 0 && <Badge color="amber" dot={false}>{t.modulesOff.length} ta modul o&apos;chiq</Badge>}
@@ -146,21 +183,9 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
             {" "}Foydalanuvchi chegarasi: {t.userLimit ?? "cheklovsiz"}.
           </p>
         )}
-      </Card>
+      </Card>}
 
-      {history.length > 1 && (
-        <Card>
-          <div id="tarix" className="mb-2 scroll-mt-20 text-sm font-semibold">Oxirgi {history.length} kun</div>
-          <Table>
-            <thead><tr><Th>Kun</Th><Th right>Faol (24s)</Th><Th right>Zayavka (kun)</Th><Th right>Aylanma (oy)</Th><Th right>Baza</Th><Th>ERP</Th></tr></thead>
-            <tbody>{history.map((h) => { const x = h.stats as TenantStats; return (
-              <Tr key={h.id}><Td>{h.day.toISOString().slice(0, 10)}</Td><Td right>{x.users.active24h}</Td><Td right>{x.orders.today}</Td><Td right>{moneyShort(x.orders.revenueMonth)}</Td><Td right>{x.db.sizeMb ?? "—"} MB</Td><Td><Health up={x.web.up} label={x.web.up ? "ishladi" : "o'chiq"} /></Td></Tr>
-            ); })}</tbody>
-          </Table>
-        </Card>
-      )}
-
-      {owner && <div className="grid gap-6 lg:grid-cols-2">
+      {tab === "sozlamalar" && owner && <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <div className="mb-1 flex items-center gap-1 font-semibold">Direktor login/paroli <HelpButton topic="tenant:director" /></div>
           <p className="mb-3 text-sm text-slate-500">Yangi direktor ochiladi yoki mavjudining paroli almashtiriladi (eski sessiyalari tugaydi). Hozirgi: <b>{t.directorLogin ?? "—"}</b></p>
@@ -173,7 +198,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
         </Card>
       </div>}
 
-      {owner && <Card>
+      {tab === "sozlamalar" && owner && <Card>
         <div className="mb-1 flex items-center gap-1 font-semibold">To&apos;xtatish <HelpButton topic="tenant:suspend" /></div>
         {t.status === "SUSPENDED" ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -188,7 +213,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
         )}
       </Card>}
 
-      <Card>
+      {tab === "sozlamalar" && <Card>
         <div className="mb-3 flex items-center gap-1 font-semibold">Texnik <HelpButton topic="tenant:tech" /></div>
         <DL items={[
           { k: "Ichki manzil", v: <code>{t.internalUrl}</code> },
@@ -199,16 +224,16 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
           { k: "Oxirgi javob", v: t.lastSeenAt ? dateTime(t.lastSeenAt) : "—" },
         ]} />
         {t.status === "ACTIVE" && <div className="mt-3 border-t border-slate-100 pt-3"><TenantUpPanel slug={t.slug} domain={t.domain} compact /></div>}
-      </Card>
+      </Card>}
 
-      <Card>
+      {tab === "sozlamalar" && <Card>
         <div className="mb-3 flex items-center gap-1 font-semibold">Jurnal <HelpButton topic="tenant:journal" /></div>
         {events.length === 0 ? <Empty text="Yozuv yo'q" /> : (
           <ul className="divide-y divide-slate-100 text-sm">
             {events.map((e) => <li key={e.id} className="flex flex-wrap gap-x-3 py-1.5"><span className="text-slate-500">{dateTime(e.createdAt)}</span><b>{EVENT_LABEL[e.action] ?? e.action}</b><span className="text-slate-500">{e.admin?.fullName ?? "skript"}</span></li>)}
           </ul>
         )}
-      </Card>
+      </Card>}
     </div>
   );
 }

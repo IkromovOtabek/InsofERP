@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { issueSession } from "@/lib/auth";
+import { recordLogin } from "@/lib/visits";
 import { TOUR_COOKIE } from "@/lib/tour";
 import { normalizePhone } from "@/lib/phone";
 import { hit } from "@/lib/rate-limit";
@@ -198,6 +199,7 @@ export async function confirmLoginCode(rawPhone: string, code: string): Promise<
   const r = await verifyLoginCode(rawPhone, code);
   if (!r.ok) return r;
   await issueSession(r.user);
+  await recordLogin(r.user.id, "kod");
   // Instruksiya har kirishda boshidan ko'rsatiladi (login() bilan bir xil).
   (await cookies()).delete(TOUR_COOKIE);
   return { ok: true, login: r.user.login };

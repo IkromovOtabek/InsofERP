@@ -16,6 +16,7 @@ import { runRentReminders } from "@/lib/rent-tenant";
 import { runLeaseExpiry } from "@/lib/rent-contract";
 import { PAY_APPROVER_ROLES, PAY_SINCE, PRICER_ROLES, pendingApprovalWhere, unpricedWhere } from "@/lib/driver-trip-pay";
 import { releaseDueRequests } from "@/lib/mechanic-requests";
+import { pruneVisits } from "@/lib/visits";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
@@ -220,6 +221,8 @@ async function sendDue(now: Date): Promise<number> {
   try { sent += await runRentReminders(now); } catch (e) { console.error("[reminders] arenda", e instanceof Error ? e.message : e); }
   // Arenda: ijara shartnomasi muddati tugashiga 30 / 7 kun qolganda va tugaganda — sekretarga (`lib/rent-contract.ts`)
   try { await runLeaseExpiry(); } catch (e) { console.error("[reminders] arenda shartnoma", e instanceof Error ? e.message : e); }
+  // Tashriflar jurnali: `VISIT_KEEP_DAYS` dan eski yozuvlar (`lib/visits.ts`)
+  try { await pruneVisits(now); } catch (e) { console.error("[reminders] tashriflar", e instanceof Error ? e.message : e); }
   return sent;
 }
 

@@ -9,6 +9,7 @@ import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { verifyLoginCode } from "@/lib/code-login";
 import { DUMMY_PASSWORD_HASH, parsePerms, type Perms } from "@/lib/auth";
 import { completeTempPassword, signTempChange, TEMP_EXPIRED } from "@/lib/temp-password";
+import { recordLogin } from "@/lib/visits";
 
 /**
  * Mobil ilova (Insof ECO) uchun autentifikatsiya — ERP login/paroli bo'yicha.
@@ -75,7 +76,9 @@ export async function mobileLogin(loginName: string, password: string) {
     if (user.tempPasswordUntil <= new Date()) throw new MobileAuthError(TEMP_PASSWORD_EXPIRED, TEMP_EXPIRED, 403);
     throw new MobileAuthError(PASSWORD_CHANGE_REQUIRED, "Vaqtinchalik parol bilan kirdingiz. Ilovani yangilang yoki insof-erp.uz saytida kirib o'z parolingizni o'rnating", 403, { changeToken: await signTempChange(user) });
   }
-  return issue(user);
+  const tokens = await issue(user);
+  await recordLogin(user.id, "mobil", { app: true }); // tashriflar jurnali — token yangilash (`mobileRefresh`) yozilmaydi
+  return tokens;
 }
 
 /** Parol to'g'ri, lekin vaqtinchalik — qo'pol kuch urinishi emas (login route qulfga sanamaydi). */
@@ -86,7 +89,9 @@ export const TEMP_PASSWORD_EXPIRED = "TEMP_PASSWORD_EXPIRED";
 export async function mobileSetTempPassword(changeToken: string, password: string) {
   const r = await completeTempPassword(changeToken, password);
   if (!r.ok) throw r.restart ? new MobileAuthError("TOKEN_INVALID", r.error, 401) : new MobileAuthError("BAD_REQUEST", r.error, 400);
-  return issue(r.user);
+  const tokens = await issue(r.user);
+  await recordLogin(r.user.id, "yangi_parol", { app: true });
+  return tokens;
 }
 
 /**
@@ -98,7 +103,9 @@ export async function mobileSetTempPassword(changeToken: string, password: strin
 export async function mobileLoginWithCode(phone: string, code: string) {
   const r = await verifyLoginCode(phone, code);
   if (!r.ok) throw new MobileAuthError("BAD_CODE", r.error);
-  return issue(r.user);
+  const tokens = await issue(r.user);
+  await recordLogin(r.user.id, "mobil_kod", { app: true });
+  return tokens;
 }
 
 /**

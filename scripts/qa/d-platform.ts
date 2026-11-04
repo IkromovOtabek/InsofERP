@@ -303,7 +303,7 @@ async function main() {
 
   /* ═════════ 6. To'xtatish / qayta yoqish ═════════ */
   console.log("\n── 6. To'xtatish ──");
-  r = await submit(PANEL, "/superadmin/korxonalar/alfa", 'name="reason"', { reason: "QA sinov: to'lov kechikdi" }, admin);
+  r = await submit(PANEL, "/superadmin/korxonalar/alfa?tab=sozlamalar", 'name="reason"', { reason: "QA sinov: to'lov kechikdi" }, admin);
   check(r.status === 200 || r.status === 303, "panel: alfa to'xtatildi", `${r.status}`);
   check((await ctl.tenant.findUniqueOrThrow({ where: { slug: "alfa" } })).status === "SUSPENDED", "control: alfa SUSPENDED");
   r = await req(`${urlOf("alfa")}/dashboard`, ad.jar);
@@ -318,7 +318,7 @@ async function main() {
   check(p.r.status === 303 && r.status === 200, "IT to'xtatilgan korxonaga kira oladi", `${p.r.status} ${r.status}`);
   const bOk = await tenantLogin("beta", "beta.direktor", "BetaDir2026x");
   check(bOk.r.status === 303, "beta ta'sirlanmadi");
-  r = await submit(PANEL, "/superadmin/korxonalar/alfa", "Qayta yoqish", {}, admin);
+  r = await submit(PANEL, "/superadmin/korxonalar/alfa?tab=sozlamalar", "Qayta yoqish", {}, admin);
   check((await ctl.tenant.findUniqueOrThrow({ where: { slug: "alfa" } })).status === "ACTIVE", "panel: alfa qayta yoqildi", `${r.status}`);
   const back = await tenantLogin("alfa", "alfa.direktor", "AlfaDir2026x");
   check(back.r.status === 303, "qayta yoqilgach direktor kiradi", `${back.r.status}`);

@@ -2,6 +2,7 @@ import { statfs } from "node:fs/promises";
 import os from "node:os";
 import { control, isDbMissing, tenantDb } from "./db";
 import { releaseVersion } from "./release";
+import { visitsToday } from "./visits";
 import type { Tenant } from "@/generated/control";
 
 /**
@@ -21,6 +22,8 @@ export type TenantStats = {
   payments: { month: number };
   trips: { today: number; onRoad: number };
   usage: { ai30d: number; notifications30d: number; audit24h: number };
+  /** Tashriflar jurnali (bugun, IT'siz); korxona bazasi yangilanmagan yoki eski surat — yo'q */
+  visits?: { usersToday: number; viewsToday: number; loginsToday: number } | null;
   lastActivityAt: string | null;
 };
 
@@ -115,16 +118,19 @@ const EMPTY = {
 
 /** Bitta korxona: hamma tekshiruv parallel; natija control bazada saqlanadi (oxirgi holat + kunlik surat). */
 export async function collectStats(t: Tenant): Promise<TenantStats> {
-  const [web, eco, data] = await Promise.all([
+  const [web, eco, data, visits] = await Promise.all([
     ping(`${t.internalUrl}/login`),
     t.ecoApiUrl ? ping(`${t.ecoApiUrl.replace(/\/+$/, "")}/v1/health`) : Promise.resolve(null),
     dbStats(t.dbName).catch((e: Error) => ({ ...EMPTY, db: { ok: false, sizeMb: null, error: e.message.split("\n").slice(-1)[0].slice(0, 200) } })),
+    // Alohida: VisitLog jadvali hali yo'q (migratsiya kutilmoqda) bo'lsa qolgan statistika buzilmasin
+    visitsToday(t.dbName),
   ]);
   const stats: TenantStats = {
     at: new Date().toISOString(),
     web,
     eco: { configured: !!t.ecoApiUrl, up: eco ? eco.up : null, ms: eco?.ms ?? null },
     ...data,
+    visits,
   };
   const error = [!web.up && `Veb: ${web.error ?? "ishlamayapti"}`, !stats.db.ok && `Baza: ${stats.db.error}`, eco && !eco.up && `ECO: ${eco.error ?? "javob yo'q"}`].filter(Boolean).join(" · ") || null;
   // Jarayon birinchi marta javob berdi — yaratilgan korxona endi faol

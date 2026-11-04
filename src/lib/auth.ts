@@ -10,6 +10,7 @@ import { authSecret, JWT_ALGS } from "./secret";
 import { companySuspension, effectiveRole, loadPlatformGate } from "./tenant";
 import { isModuleOff } from "./platform-modules";
 import { AccessDenied, notSignedIn } from "./access-denied";
+import { recordLogin } from "./visits";
 
 const COOKIE = "insof_session";
 const SESSION_TTL_SEC = 60 * 60 * 12;
@@ -102,6 +103,7 @@ export async function login(loginName: string, password: string): Promise<Sessio
   if (user.tempPasswordUntil) return { temp: { id: user.id, sessionVersion: user.sessionVersion, expired: user.tempPasswordUntil <= new Date() } };
 
   const session = await issueSession(user);
+  await recordLogin(user.id, "parol");
   // Instruksiya har kirishda boshidan ko'rsatiladi: oldingi sessiyada "o'tkazib yuborildi"
   // deb belgilangan bo'lsa ham, yangi kirishda belgi o'chadi.
   (await cookies()).delete(TOUR_COOKIE);

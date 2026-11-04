@@ -18,6 +18,7 @@ import { isTestMode } from "@/lib/test-mode";
 const CODE_REQ_PER_IP_HOUR = 10;
 const CODE_REQ_LIMITED = "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling.";
 import { companySuspension, SUSPENDED_MESSAGE } from "@/lib/tenant";
+import { recordLogin } from "@/lib/visits";
 
 /**
  * Kirgandan keyingi sahifa. Arenda domenida (lib/arenda-host.ts) — /arenda; u yerga ruxsati yo'q hisob kiritilmaydi:
@@ -88,6 +89,7 @@ export async function setTempPasswordAction(_prev: LoginState, fd: FormData): Pr
   const r = await completeTempPassword(token, password);
   if (!r.ok) return r.restart ? { error: r.error } : { error: r.error, tempToken: token };
   await issueSession(r.user);
+  await recordLogin(r.user.id, "yangi_parol");
   (await cookies()).delete(TOUR_COOKIE);
   const home = await homeAfterLogin();
   if ("error" in home) return home;
