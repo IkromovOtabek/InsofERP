@@ -11,8 +11,8 @@ import type { Holding } from "@/lib/holdings";
 
 const KIND = {
   brigade: { label: "Brigada", icon: HardHat, color: "amber" as const, note: "qo'lida" },
-  employee: { label: "Xodim", icon: User, color: "blue" as const, note: "shu oy olgan" },
-  recipient: { label: "Oluvchi", icon: Users, color: "slate" as const, note: "shu oy olgan" },
+  employee: { label: "Xodim", icon: User, color: "blue" as const, note: "jami olgani" },
+  recipient: { label: "Oluvchi", icon: Users, color: "slate" as const, note: "jami olgani" },
 };
 type Filter = "all" | Holding["kind"];
 
@@ -24,10 +24,7 @@ function Items({ h, max }: { h: Holding; max?: number }) {
       {list.map((x) => (
         <li key={x.materialId} className="flex items-baseline justify-between gap-3 py-1">
           <span className="min-w-0 truncate text-slate-700">{x.name}</span>
-          <span className="shrink-0 tabular whitespace-nowrap">
-            <b className="font-semibold text-slate-900">{`${fmtNum(x.qty, 3)} ${unitShort(x.unit)}`}</b>
-            {h.kind !== "brigade" && x.total > x.qty && <span className="ml-1.5 text-xs text-slate-400">{`jami ${fmtNum(x.total, 3)}`}</span>}
-          </span>
+          <b className="shrink-0 tabular font-semibold whitespace-nowrap text-slate-900">{`${fmtNum(x.qty, 3)} ${unitShort(x.unit)}`}</b>
         </li>
       ))}
       {max && h.items.length > max && <li className="pt-1 text-xs text-slate-500">{`yana ${h.items.length - max} xil…`}</li>}
@@ -35,7 +32,7 @@ function Items({ h, max }: { h: Holding; max?: number }) {
   );
 }
 
-/** Formada tanlangan «Kimga» da hozir nima borligi (brigada — qo'lidagi qoldiq, xodim/oluvchi — shu oy olgani). */
+/** Formada tanlangan «Kimga» da hozir nima borligi (brigada — qo'lidagi qoldiq, xodim/oluvchi — barcha vaqt jami olgani). */
 export function TargetHoldings({ holdings, targetKey }: { holdings: Holding[]; targetKey: string }) {
   if (!targetKey) return null;
   const h = holdings.find((x) => x.key === targetKey);
@@ -44,7 +41,7 @@ export function TargetHoldings({ holdings, targetKey }: { holdings: Holding[]; t
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-        <span>{`${h?.name ?? "Tanlangan oluvchi"} — ${KIND[kind].note}${kind === "brigade" ? "" : " (yonida — barcha vaqt jami)"}`}</span>
+        <span>{`${h?.name ?? "Tanlangan oluvchi"} — ${KIND[kind].note}`}</span>
         {h && <Link href={h.href} className="font-medium text-slate-700 underline hover:text-slate-900">Kartasi</Link>}
       </div>
       {h ? <Items h={h} max={12} /> : <p className="text-sm text-slate-400">{kind === "brigade" ? "Qo'lida xomashyo yo'q" : "Hali hech narsa olmagan"}</p>}
@@ -72,7 +69,7 @@ export function HoldingsPanel({ holdings, collapsible = false }: { holdings: Hol
         className={cn("flex w-full items-center justify-between gap-3 px-4 py-3 text-left", collapsible && "hover:bg-slate-50")}>
         <span>
           <span className="block text-sm font-semibold text-slate-900">Kimda nima bor</span>
-          <span className="block text-xs text-slate-500">Brigada — qo&apos;lidagi qoldiq; xodim va oluvchi — shu oyda olgani (yonida barcha vaqt jami)</span>
+          <span className="block text-xs text-slate-500">Brigada — qo&apos;lidagi qoldiq; xodim va oluvchi — jami olgani</span>
         </span>
         {collapsible && <ChevronDown size={18} className={cn("shrink-0 text-slate-400 transition", open && "rotate-180")} />}
       </button>

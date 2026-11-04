@@ -45,7 +45,7 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
   balances: Record<string, Record<string, number>>;
   /** Sklad → xomashyo → jami kirim va jami chiqim (nom tanlashda «Kirim · Chiqim · Qoldi») */
   flows: Record<string, Record<string, { received: number; issued: number }>>;
-  /** «Kimga» tanlanganda — unda hozir nima bor (brigada qo'lida / xodim shu oy olgani) */
+  /** «Kimga» tanlanganda — unda hozir nima bor (brigada qo'lida / xodim jami olgani) */
   holdings: Holding[];
   clientToken: string; today: string; minDate: string; defaultTo: string;
 }) {

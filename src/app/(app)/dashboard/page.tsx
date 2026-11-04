@@ -27,6 +27,7 @@ import { LogisticsHome } from "./logistics-home";
 import { MechanicHome } from "./mechanic-home";
 import { HrHome } from "./hr-home";
 import { DispatcherHome } from "./dispatcher-home";
+import { WarehouseHome } from "./warehouse-home";
 import { SalesStatusSection } from "./sales-status";
 import { PulQabulSection } from "./pul-qabul-section";
 import { methodsFor } from "@/lib/payment-requests";
@@ -62,6 +63,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const hrView = !!s && (s.role === "HR" || (isDirector && view === "hr"));
   // Dispetcher — haydovchilar va transport holati, muddati o'tayotgan hujjat va texnik xizmat
   const dispatcherView = !!s && (s.role === "DISPATCHER" || (isDirector && view === "dispatcher"));
+  // Sklad xodimi — xomashyo holati va brigadaga berilmagan mahsulot; operatsion ko'rinish (debitorka, reyslar) unga kerak emas
+  const warehouseView = !!s && (s.role === "WAREHOUSE" || (isDirector && view === "warehouse"));
   const ownerView = isDirector && view === "owner";
   const nazoratView = isDirector && view === "nazorat";
   // Direktor bosh sahifasi — «Bugun» (pul, sotuv, qarzlar, 30 kunlik kassa prognozi); BI tahlil «Tahlil» tabida (?view=tahlil)
@@ -71,14 +74,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // Tahlil ko'radigan rollar (direktor, moliya, buxgalteriya) uchun bosh sahifa — BI tahlil ko'rinishi;
   // /bi-tahlil shu yerga yo'naltiriladi. Boshqa ko'rinishlar tabda (?view=…)
   const biView = !!s && (isDirector ? view === "tahlil" || (!view && biParams) : !view || view === "tahlil") && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
-  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : ownerView ? "owner" : nazoratView ? "nazorat" : todayView ? "today" : biView ? "" : "operations";
+  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : warehouseView ? "warehouse" : ownerView ? "owner" : nazoratView ? "nazorat" : todayView ? "today" : biView ? "" : "operations";
   const biTabs = !!s && !isDirector && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
   // Xodimlarga mas'ul lavozimlar (otdel kadr, direktor, sex boshliqlari) — Face ID davomat skaneri
   const faceAttendance = !!s && !!faceScope(s);
   const davomat = faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>;
   const nav = (
     <>
-      {isDirector && <Tabs current={tabKey} items={[{ key: "today", label: "Bugun", href: "/dashboard" }, { key: "nazorat", label: "Nazorat", href: "/dashboard?view=nazorat" }, { key: "", label: "Tahlil", href: "/dashboard?view=tahlil" }, { key: "owner", label: "Egasi", href: "/dashboard?view=owner" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {isDirector && <Tabs current={tabKey} items={[{ key: "today", label: "Bugun", href: "/dashboard" }, { key: "nazorat", label: "Nazorat", href: "/dashboard?view=nazorat" }, { key: "", label: "Tahlil", href: "/dashboard?view=tahlil" }, { key: "owner", label: "Egasi", href: "/dashboard?view=owner" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "warehouse", label: "Sklad", href: "/dashboard?view=warehouse" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {biTabs && <Tabs current={tabKey} items={[{ key: "", label: "Tahlil", href: "/dashboard" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {denied && <Callout tone="warning">{denied === "modul" ? MODULE_OFF_MESSAGE : "Bu sahifa sizning bo'limingizga tegishli emas."}</Callout>}
     </>
@@ -87,7 +90,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : dispatcherView ? "Dispetcher · haydovchilar va transport" : ownerView ? "Owner dashboard · boshqaruv ekrani" : todayView ? "Bugun · direktor kabineti" : nazoratView ? "Nazorat · kunlik tekshiruv" : "Bosh sahifa"}</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : dispatcherView ? "Dispetcher · haydovchilar va transport" : warehouseView ? "Sklad · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : todayView ? "Bugun · direktor kabineti" : nazoratView ? "Nazorat · kunlik tekshiruv" : "Bosh sahifa"}</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
         </div>
         {davomat}
@@ -103,6 +106,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (mechanicView) return <div>{header}<MechanicHome day={dayParam} unit={sp.birlik} base={isDirector ? "/dashboard?view=mechanic" : "/dashboard"} /></div>;
   if (hrView) return <div>{header}<HrHome /></div>;
   if (dispatcherView) return <div>{header}<DispatcherHome /></div>;
+  if (warehouseView && s) return <div>{header}<WarehouseHome s={s} /></div>;
   if (ownerView) return <div>{header}<OwnerHome /></div>;
   if (todayView) return <div>{header}<TodayHome date={dayParam} /></div>;
   if (nazoratView) return <div>{header}<NazoratHome date={dayParam} /></div>;

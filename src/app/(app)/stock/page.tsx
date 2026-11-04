@@ -68,7 +68,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   // «Qoldiqlar» va xomashyo harakatlari davri (?from&to, standart — joriy oy); sklad filtri (?wh)
   const period = stockPeriod(sp);
   const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
-  // «Kimda nima bor» — brigadalar qo'lida va xodim/oluvchilar shu oy olgani (Qoldiqlar oynasida, yig'ilgan holda)
+  // «Kimda nima bor» — brigadalar qo'lida va xodim/oluvchilar jami olgani (Qoldiqlar oynasida, yig'ilgan holda)
   const holdings = tab === "balance" ? await holdingsOverview() : null;
   const [materials, mSums, whSums, allWarehouses] = await Promise.all([
     tab === "brigades" ? db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }) : [],
@@ -447,17 +447,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             </div>
           </div>
           <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...bolimQ, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ }} />
-          {/* Qidiruv: nomi yoki kodi bo'yicha (davr, sklad va kategoriya saqlanadi) */}
-          <form action="/stock" className="flex flex-wrap items-center gap-2">
-            {Object.entries({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-            <div className="relative w-full sm:w-80">
-              <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" aria-hidden />
-              <Input type="search" name="q" defaultValue={q} placeholder="Xomashyo nomi yoki kodi" aria-label="Qidiruv" className="pl-9" />
-            </div>
-            <Button type="submit" variant="secondary">Qidirish</Button>
-            {q && <Link href={`/stock?${new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }).toString()}`} prefetch={false} className="text-sm text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline">Tozalash</Link>}
-          </form>
-          {/* Kategoriya: Zavod zapchast / Avto zapchast / Xomashyo (mexanikka — ikkitasi) */}
+          {/* Kategoriya: Zavod zapchast / Avto zapchast / Xomashyo (mexanikka — ikkitasi) — chapda, qidiruv — o'ngda */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
             {[null, ...cats].map((c) => {
               const active = c === kat;
@@ -471,6 +462,17 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 </Link>
               );
             })}
+          </div>
+          {/* Qidiruv: nomi yoki kodi bo'yicha (davr, sklad va kategoriya saqlanadi) */}
+          <form action="/stock" className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-1">
+            {Object.entries({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
+            {q && <Link href={`/stock?${new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }).toString()}`} prefetch={false} className="text-sm text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline">Tozalash</Link>}
+            <div className="relative min-w-0 flex-1 sm:min-w-44 sm:max-w-72">
+              <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" aria-hidden />
+              <Input type="search" name="q" defaultValue={q} placeholder="Xomashyo nomi yoki kodi" aria-label="Qidiruv" className="pl-9" />
+            </div>
+            <Button type="submit" variant="secondary">Qidirish</Button>
+          </form>
           </div>
           {perWarehouse && (
             <div className="flex flex-wrap items-center gap-1">

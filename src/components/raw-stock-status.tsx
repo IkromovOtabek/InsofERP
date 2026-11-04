@@ -4,34 +4,40 @@ import { date, fmtNum, qty } from "@/lib/format";
 import { stockHighlights, stockStatus, STOCK_LEVEL_LABEL } from "@/lib/production-report";
 import { Badge, Card, Empty, Progress, Section, Td, Th, Tr } from "@/components/ui";
 import { MobileFold } from "@/app/(app)/dashboard/mobile-fold";
+import { getSession } from "@/lib/auth";
+import { pathAllowed } from "@/lib/nav";
 
 /**
  * Xomashyo holati — nima kerak, nima kam: qoldiq, kunlik sarf (30 kun o'rtachasi), necha kunga yetadi,
  * tasdiqlangan zayavkalarga va minimal qoldiqqa yetmaydigani (`lib/production-report.ts` → `stockStatus`).
- * Sklad → «Qoldiqlar» sahifasining tepasida turadi (avval ishlab chiqarish bosh sahifasida edi).
+ * Sklad → «Sklad holati — xomashyo» oynasida va sklad xodimi bosh sahifasida turadi (avval ishlab chiqarish bosh sahifasida edi).
  */
 /** Kartada shuncha zayavka ko'rinadi, qolgani «yana N ta» ichida (JS'siz, `<details>`) */
 const SHOW_ORDERS = 4;
 
 type Gap = Awaited<ReturnType<typeof stockStatus>>[number];
 
-/** Zayavka chipi: mijoz, yetkazish sanasi (o'tgani qizil) va shu zayavkaga kerak miqdor. */
-function OrderChip({ o, unit, today }: { o: Gap["orders"][number]; unit: string; today: number }) {
+/** Zayavka chipi: mijoz, yetkazish sanasi (o'tgani qizil) va shu zayavkaga kerak miqdor. Zayavkalar yopiq rolga (sklad) — havolasiz. */
+function OrderChip({ o, unit, today, link }: { o: Gap["orders"][number]; unit: string; today: number; link: boolean }) {
   const late = !!o.date && o.date.getTime() < today;
-  return (
-    <Link href={`/orders/${o.id}`} title={`${o.customer} — ${qty(o.qty)} ${unit}${late ? " (muddati o'tgan)" : ""}`}
-      className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12.5px] transition hover:border-slate-300 hover:bg-slate-50">
+  const body = (
+    <>
       <span className="min-w-0 truncate font-medium text-slate-800">{o.customer}</span>
       <span className="flex shrink-0 items-center gap-2 tabular">
         {o.date && <span className={late ? "font-medium text-red-600" : "text-slate-400"}>{date(o.date).slice(0, 5)}</span>}
         <span className="font-semibold text-slate-900">{qty(o.qty)}</span>
       </span>
-    </Link>
+    </>
   );
+  const title = `${o.customer} — ${qty(o.qty)} ${unit}${late ? " (muddati o'tgan)" : ""}`;
+  const cls = "flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12.5px]";
+  return link
+    ? <Link href={`/orders/${o.id}`} title={title} className={`${cls} transition hover:border-slate-300 hover:bg-slate-50`}>{body}</Link>
+    : <div title={title} className={cls}>{body}</div>;
 }
 
 /** Zayavkaga yetmaydigan xomashyo kartasi: qancha kam, skladdagi qism qanchasini qoplaydi, qaysi zayavkalar kutmoqda. */
-function GapCard({ m, today }: { m: Gap; today: number }) {
+function GapCard({ m, today, link }: { m: Gap; today: number; link: boolean }) {
   const cover = m.planned > 0 ? Math.max(0, Math.min(1, m.balance / m.planned)) : 1;
   const orders = [...m.orders].sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
   const shown = orders.slice(0, SHOW_ORDERS), more = orders.slice(SHOW_ORDERS);
@@ -58,13 +64,13 @@ function GapCard({ m, today }: { m: Gap; today: number }) {
         </div>
       </div>
       <div className="grid min-w-0 gap-1.5">
-        {shown.map((o) => <OrderChip key={o.id} o={o} unit={m.unit} today={today} />)}
+        {shown.map((o) => <OrderChip key={o.id} o={o} unit={m.unit} today={today} link={link} />)}
         {more.length > 0 && (
           <details className="group/more min-w-0">
             <summary className="cursor-pointer list-none rounded-lg px-2.5 py-1 text-[12.5px] font-medium text-slate-500 hover:text-slate-900 [&::-webkit-details-marker]:hidden">
               <span className="group-open/more:hidden">Yana {more.length} ta zayavka</span><span className="hidden group-open/more:inline">Yig&apos;ish</span>
             </summary>
-            <div className="mt-1.5 grid min-w-0 gap-1.5">{more.map((o) => <OrderChip key={o.id} o={o} unit={m.unit} today={today} />)}</div>
+            <div className="mt-1.5 grid min-w-0 gap-1.5">{more.map((o) => <OrderChip key={o.id} o={o} unit={m.unit} today={today} link={link} />)}</div>
           </details>
         )}
       </div>
@@ -72,8 +78,10 @@ function GapCard({ m, today }: { m: Gap; today: number }) {
   );
 }
 
-export async function RawStockStatus() {
-  const stock = await stockStatus();
+/** `stock` — chaqiruvchi allaqachon hisoblagan bo'lsa (sklad bosh sahifasi kartalari), qayta so'ralmaydi. */
+export async function RawStockStatus({ stock: given }: { stock?: Gap[] } = {}) {
+  const [stock, s] = await Promise.all([given ?? stockStatus(), getSession()]);
+  const link = !!s && pathAllowed("/orders", s.role, s.perms);
   const { low: lowStock, ok: okStock, rest: restStock } = stockHighlights(stock, 8);
   const orderGap = stock.filter((m) => m.orderGap > 0);
   const stockNeed = stock.filter((m) => m.need > 0).sort((a, b) => b.orderGap - a.orderGap);
@@ -94,7 +102,7 @@ export async function RawStockStatus() {
               <span className="text-slate-500">· yashil chiziq — skladdagi qoldiq qancha qismini qoplashi</span>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {gaps.map((m) => <GapCard key={m.id} m={m} today={today} />)}
+              {gaps.map((m) => <GapCard key={m.id} m={m} today={today} link={link} />)}
             </div>
           </div>
         )}
@@ -134,7 +142,7 @@ export async function RawStockStatus() {
             </tbody>
           </table>
         </div>
-        {restStock > 0 && <div className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">Yana {restStock} ta xomashyo yetarli — to&apos;liq ro&apos;yxat pastdagi «Xomashyo qoldiqlari» jadvalida.</div>}
+        {restStock > 0 && <div className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">Yana {restStock} ta xomashyo yetarli — to&apos;liq ro&apos;yxat <Link href="/stock#xomashyo" className="underline hover:text-slate-900">Sklad → «Xomashyo qoldiqlari»</Link> jadvalida.</div>}
       </Card>
       </MobileFold>
     </Section>
