@@ -2,11 +2,51 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { requireAction } from "@/lib/auth";
-import { parseForm, type ActionState } from "@/lib/action";
+import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
 import { batchSchema, createProductionBatch } from "@/lib/production-batch";
 import { cancelBatch } from "@/lib/storno";
 import { orderReschedule } from "@/lib/orders";
+import { createStockOrder as createStockOrderDomain } from "@/lib/stock-orders";
+
+const stockSchema = z.object({
+  dueDate: zStr("Tayyor bo'lish muddati kerak").refine((v) => Number.isFinite(new Date(v).getTime()), "Tayyor bo'lish muddati noto'g'ri"),
+  isUrgent: z.string().optional().transform((v) => v === "on"),
+  note: zOpt,
+  productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
+  qty: z.array(z.coerce.number({ message: "Miqdor raqam bo'lsin" }).positive("Miqdor 0 dan katta bo'lsin").max(100_000, "Miqdor juda katta (100 000 dan oshmasin)")),
+});
+
+/**
+ * «Skladga zayavka» (zaxiraga ishlab chiqarish): mijozsiz, narxsiz. Ochgan xodimda sklad zayavkasini qabul qilish
+ * ruxsati ham bor (`orders` → `stock`), shuning uchun zayavka darhol qabul qilinadi va shu oynada brigada tayinlash
+ * ochiladi — matritsa va doskada ham ko'rinadi. Qoida `lib/stock-orders.ts` da.
+ */
+export async function createStockOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("orders", "stock");
+  const r = parseForm(stockSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+
+  let res;
+  try {
+    res = await createStockOrderDomain({
+      dueDate: new Date(d.dueDate),
+      items: d.productId.map((productId, i) => ({ productId, qtyM3: d.qty[i] ?? 0 })).filter((i) => i.productId && i.qtyM3 > 0),
+      isUrgent: d.isUrgent,
+      note: d.note,
+      confirmed: true,
+    }, s.userId);
+  } catch (e) {
+    const err = e as Error;
+    if (err?.name?.startsWith("PrismaClient")) { console.error("[production] sklad zayavkasi", e); return { error: "Zayavka saqlanmadi: ma'lumotlarni tekshirib, qayta urinib ko'ring" }; }
+    return { error: err?.message || "Zayavka saqlanmadi" };
+  }
+
+  revalidatePath("/production"); revalidatePath("/orders"); revalidatePath("/stock");
+  redirect(`/production?order=${res.id}&yangi=1`);
+}
 
 /**
  * Zames qaydi: retsept bo'yicha xomashyo sarfi, tayyor mahsulot kirimi, zayavka → IN_PRODUCTION.

@@ -131,12 +131,16 @@ const STATUS_WORD: Record<string, string> = {
   NEW: "yangi holatga qaytarildi", PLANNED: "rejalashtirildi", IN_PROGRESS: "ishga olindi", CONVERTED: "mijozga aylantirildi", REJECTED: "rad etildi", DONE: "bajarildi",
 };
 
-type AuditRow = { action: string; entity: string; after: Prisma.JsonValue; before: Prisma.JsonValue; createdAt: Date };
+type AuditRow = { action: string; entity: string; entityId: string; after: Prisma.JsonValue; before: Prisma.JsonValue; createdAt: Date };
 
-/** Audit yozuvi → odam o'qiydigan bir qator: "Yangi zayavka · 1 200 000", "Reys N-… yetkazildi" (zayavka raqami ko'rsatilmaydi). */
-function describe(a: AuditRow): string {
+/**
+ * Audit yozuvi → odam o'qiydigan bir qator: "Yangi zayavka · 1 200 000", "Reys N-… yetkazildi" (zayavka raqami ko'rsatilmaydi).
+ * Brigada topshirig'ining raqami ham ko'rsatilmaydi — o'rniga brigada nomi (`brigadeOf`: topshiriq id → brigada).
+ */
+function describe(a: AuditRow, brigadeOf?: Map<string, string>): string {
   const x = (a.after ?? {}) as Record<string, unknown>;
-  const ref = String(x.deliveryNoteNo ?? x.docNo ?? x.invoiceNo ?? x.batchNo ?? x.taskNo ?? x.name ?? x.fullName ?? x.plate ?? x.title ?? x.product ?? "");
+  const task = a.entity === "BrigadeTask" ? brigadeOf?.get(a.entityId) ?? "" : null;
+  const ref = String(task ?? x.deliveryNoteNo ?? x.docNo ?? x.invoiceNo ?? x.batchNo ?? x.name ?? x.fullName ?? x.plate ?? x.title ?? x.product ?? "");
   const what = ENTITY[a.entity] ?? a.entity;
   const amount = typeof x.amount === "number" || typeof x.amount === "string" ? ` · ${money(Number(x.amount))}` : "";
   const refTxt = ref ? ` ${ref}` : "";
@@ -184,12 +188,16 @@ export async function activityDetail(userId: string): Promise<MobileDetail> {
   const { from, to } = todayRange();
   const [user, log] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { fullName: true, role: true, login: true } }),
-    db.auditLog.findMany({ where: { userId, createdAt: { gte: from, lt: to } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, action: true, entity: true, after: true, before: true, createdAt: true } }),
+    db.auditLog.findMany({ where: { userId, createdAt: { gte: from, lt: to } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, action: true, entity: true, entityId: true, after: true, before: true, createdAt: true } }),
   ]);
   if (!user) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
+  const taskIds = [...new Set(log.filter((l) => l.entity === "BrigadeTask").map((l) => l.entityId))];
+  const brigadeOf = new Map(taskIds.length
+    ? (await db.brigadeTask.findMany({ where: { id: { in: taskIds } }, select: { id: true, brigade: { select: { name: true } } } })).map((t) => [t.id, t.brigade.name] as const)
+    : []);
   const section: HomeSection = {
     title: "Bugungi amallar", empty: "Bugun amal yo'q", icon: "clock",
-    rows: log.map((l) => ({ id: l.id, title: describe(l), right: hm(l.createdAt), tone: (l.action === "DELETE" ? "danger" : l.action === "CREATE" ? "success" : "info") as Tone })),
+    rows: log.map((l) => ({ id: l.id, title: describe(l, brigadeOf), right: hm(l.createdAt), tone: (l.action === "DELETE" ? "danger" : l.action === "CREATE" ? "success" : "info") as Tone })),
   };
   return {
     key: "activity", id: userId, title: user.fullName, subtitle: ROLE_LABELS[user.role] ?? user.role,

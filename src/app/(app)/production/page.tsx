@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { Plus, HardHat, Zap, Truck, Factory, AlarmClock, CalendarDays, ListTodo, CheckCheck, Layers } from "lucide-react";
+import { Plus, HardHat, Zap, Truck, Factory, AlarmClock, CalendarDays, ListTodo, CheckCheck, Layers, Boxes } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { BlacklistMark, ContractMark } from "@/components/customer-name";
 import { date, qty, deliveryAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
-import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 // Filtrlar va "muddati yaqin" qoidasi mobil ilova bilan bitta joyda — `lib/production.ts`
 import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, itemTasks, partlyAssigned, prodFilter, prodSort, workItems } from "@/lib/production";
 import { AssignForm, type Capacity } from "./assign-form";
@@ -21,11 +21,13 @@ import { ProductionMatrixView, type BoardOrder } from "./matrix";
  * Matritsa (sklad × zayavka) va uning ostida filtrli «Zayavkalar doskasi» — har kartada brigada holati
  * (tayinlangan / qisman / tayinlanmagan).
  * Tayinlash formasi shu oynaning o'zida ochiladi; "Tasdiqlash" bosilganda topshiriq brigadaga yuboriladi.
+ * «Skladga zayavka» (Zames yonida) — zaxiraga ishlab chiqarish: saqlangach shu oynaga `?order=…&yangi=1` bilan qaytadi.
  */
-export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ order?: string; tab?: string; item?: string }> }) {
+export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ order?: string; tab?: string; item?: string; yangi?: string }> }) {
   const session = await requirePage("/production");
   const canBatch = canDo(session, "production", "batch");
-  const { order: selectedId, tab = "open", item: focusItem } = await searchParams;
+  const canStockOrder = canDo(session, "orders", "stock") && pathAllowed("/production/sklad", session.role, session.perms);
+  const { order: selectedId, tab = "open", item: focusItem, yangi } = await searchParams;
   const [allOrders, brigades, batches, matrix] = await Promise.all([
     db.order.findMany({
       where: { status: { not: "CANCELLED" } },
@@ -65,7 +67,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
     const share = total > 0 ? Math.min(1, o.trips.reduce((s, t) => s + Number(t.qtyM3), 0) / total) : 0;
     return {
       id: o.id, customer: o.customer.name, deliveryDate: o.deliveryDate.toISOString(), deliveryTime: o.deliveryTime, dateUnknown: o.dateUnknown, isUrgent: o.isUrgent,
-      draft: o.status === "DRAFT", pickup: !o.needsDelivery, blacklisted: marks.black.has(o.customerId), soon: isSoon(o),
+      draft: o.status === "DRAFT", pickup: o.kind !== "STOCK" && !o.needsDelivery, blacklisted: marks.black.has(o.customerId), soon: isSoon(o),
       due: isOpen(o) && !o.dateUnknown ? dueLabel(o.deliveryDate) : null,
       finished: isDone(o), movable: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"].includes(o.status),
       assign: assigned(o) ? "full" : partlyAssigned(o) ? "part" : "none",
@@ -98,7 +100,13 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <PageHeader title="Ishlab chiqarish" subtitle={`Bugun: ${qty(todayM3)} m³ · brigada kutayotgan: ${unassignedCount} · muddati yaqin (≤ 2 kun): ${soonCount}`} action={canBatch ? <LinkButton href="/production/new"><Plus size={16} /> Zames</LinkButton> : undefined} />
+      <PageHeader title="Ishlab chiqarish" subtitle={`Bugun: ${qty(todayM3)} m³ · brigada kutayotgan: ${unassignedCount} · muddati yaqin (≤ 2 kun): ${soonCount}`} action={canBatch || canStockOrder ? <div className="flex flex-wrap gap-2">{canStockOrder && <LinkButton href="/production/sklad" variant="secondary"><Boxes size={16} /> Skladga zayavka</LinkButton>}{canBatch && <LinkButton href="/production/new"><Plus size={16} /> Zames</LinkButton>}</div> : undefined} />
+
+      {selected && yangi && selected.kind === "STOCK" && (
+        <Callout tone="success" title="Skladga zayavka saqlandi">
+          Zayavka matritsa va doskaga tushdi. Endi pastda brigadani tanlang: mahsulotni bir nechta brigadaga bo&apos;lish uchun miqdorni kamaytirib, «Qator qo&apos;shish» bosing.
+        </Callout>
+      )}
 
       {selected && (
         <Card padded={false} className="mb-5 border-brand-500/40">
@@ -106,19 +114,23 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
             <CardHeader
               icon={HardHat}
               title={`Brigada tayinlash · ${selected.customer.name}`}
-              description={`Yetkazish ${selected.dateUnknown ? "sanasi aniq emas" : deliveryAt(selected.deliveryDate, selected.deliveryTime)} · ${selected.deliveryAddress}`}
-              action={<span className="inline-flex items-center gap-2">{marks.black.has(selected.customerId) && <BlacklistMark />}{marks.contract.has(selected.customerId) && <ContractMark />}{selected.isUrgent && <Badge color="red"><Zap size={11} /> Zarur</Badge>}{!selected.needsDelivery && <Badge color="slate"><Truck size={11} /> O&apos;zi oladi</Badge>}{onlyItem && selected.items.length > 1 && <Link href={`/production?order=${selected.id}${filter.key !== "open" ? `&tab=${filter.key}` : ""}`} className="text-sm text-slate-500 hover:text-slate-900">Barcha qatorlar ({selected.items.length})</Link>}<Link href={`/orders/${selected.id}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavka</Link><Link href={filter.key !== "open" ? `/production?tab=${filter.key}` : "/production"} className="text-sm text-slate-500 hover:text-slate-900">Yopish</Link></span>}
+              description={selected.kind === "STOCK"
+                ? `Zaxiraga · tayyor bo'lish muddati ${date(selected.deliveryDate)}${selected.note ? ` · ${selected.note}` : ""}`
+                : `Yetkazish ${selected.dateUnknown ? "sanasi aniq emas" : deliveryAt(selected.deliveryDate, selected.deliveryTime)} · ${selected.deliveryAddress}`}
+              action={<span className="inline-flex items-center gap-2">{marks.black.has(selected.customerId) && <BlacklistMark />}{marks.contract.has(selected.customerId) && <ContractMark />}{selected.isUrgent && <Badge color="red"><Zap size={11} /> Zarur</Badge>}{selected.kind === "STOCK" ? <Badge color="slate"><Boxes size={11} /> Sklad zaxirasi</Badge> : !selected.needsDelivery && <Badge color="slate"><Truck size={11} /> O&apos;zi oladi</Badge>}{onlyItem && selected.items.length > 1 && <Link href={`/production?order=${selected.id}${filter.key !== "open" ? `&tab=${filter.key}` : ""}`} className="text-sm text-slate-500 hover:text-slate-900">Barcha qatorlar ({selected.items.length})</Link>}<Link href={`/orders/${selected.id}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavka</Link><Link href={filter.key !== "open" ? `/production?tab=${filter.key}` : "/production"} className="text-sm text-slate-500 hover:text-slate-900">Yopish</Link></span>}
             />
           </div>
           {brigades.length === 0 && <p className="px-5 pb-3 text-sm text-red-600">Brigadalar yo&apos;q — avval <Link href="/brigades" className="underline">Brigadalar</Link> sahifasida qo&apos;shing.</p>}
           {/* Qoralama zayavka ishlab chiqarishga berilmaydi — avval sotuv tasdiqlaydi (server ham rad etadi) */}
-          {selected.status === "DRAFT" && <p className="px-5 pb-5 text-sm text-amber-700">Zayavka hali tasdiqlanmagan (qoralama). Sotuv bo&apos;limi qabul qilgach brigada tayinlanadi.</p>}
+          {selected.status === "DRAFT" && <p className="px-5 pb-5 text-sm text-amber-700">{selected.kind === "STOCK"
+            ? <>Sklad zayavkasi hali qabul qilinmagan (qoralama). <Link href={`/orders/${selected.id}`} className="font-medium underline">Zayavka</Link> sahifasida «Qabul qilish» bosilgach brigada tayinlanadi.</>
+            : <>Zayavka hali tasdiqlanmagan (qoralama). Sotuv bo&apos;limi qabul qilgach brigada tayinlanadi.</>}</p>}
           {selected.status !== "DRAFT" && <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
             focus={focusItem}
             items={workItems(selected.items).filter((i) => !onlyItem || i.id === onlyItem).map((i) => ({
               id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit),
               left: itemTasks(i.qtyM3, i.tasks).left,
-              tasks: i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => ({ taskNo: t.taskNo, brigade: t.brigade.name, qty: qty(t.qty), status: t.status })),
+              tasks: i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => ({ id: t.id, brigade: t.brigade.name, qty: qty(t.qty), status: t.status })),
             }))} />}
         </Card>
       )}

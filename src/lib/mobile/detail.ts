@@ -1071,7 +1071,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   // Hujjatdagi tartib: Ishni boshlash → fakt (qisman) → yakunlash; yon tomonda muammo va brak
   const actions: DetailAction[] = [];
   if (open && !t.startedAt && t.status === "NEW" && can(user, "task.start")) {
-    actions.push({ id: "task.start", label: "Ishni boshlash", tone: "brand", confirm: `${t.taskNo} — ish boshlandi deb belgilansinmi?` });
+    actions.push({ id: "task.start", label: "Ishni boshlash", tone: "brand", confirm: `${t.brigade.name} · ${t.orderItem.product.name} — ish boshlandi deb belgilansinmi?` });
   }
   if (open && can(user, "task.progress")) {
     actions.push({
@@ -1096,7 +1096,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   if (open && can(user, "task.cancel")) actions.push({ id: "task.cancel", label: "Bekor qilish", tone: "danger", confirm: "Topshiriq bekor qilinsinmi?" });
 
   return {
-    key: "tasks", id: t.id, title: t.taskNo, subtitle: `${t.brigade.name} · ${t.order.customer.name}`, status: ph.label,
+    key: "tasks", id: t.id, title: `${t.brigade.name} · ${t.orderItem.product.name}`, subtitle: t.order.customer.name, status: ph.label,
     fields: [
       { label: "Holat", value: ph.label, tone: ph.tone === "brand" || ph.tone === "info" ? undefined : ph.tone },
       { label: "Mahsulot", value: t.orderItem.product.name },
@@ -1433,7 +1433,7 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
       ...(tasks.length
         ? [{
             title: "Brigada topshiriqlari", empty: "Ochiq topshiriq yo'q", target: "tasks",
-            rows: tasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigadeName}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)}`, status: t.status, tone: (t.dueDate < new Date() ? "danger" : "warning") as Tone })),
+            rows: tasks.map((t) => ({ id: t.id, title: `${t.brigadeName} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)}`, status: t.status, tone: (t.dueDate < new Date() ? "danger" : "warning") as Tone })),
           }]
         : []),
       ...(e.trips.length
@@ -2019,8 +2019,8 @@ async function brigadeDetail(user: MobileUser, id: string): Promise<MobileDetail
       { label: "Ochilgan", value: day(b.createdAt) },
     ],
     sections: [
-      { title: "Ochiq topshiriqlar", empty: "Ochiq topshiriq yo'q", target: "tasks", rows: open.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: (t.dueDate < today ? "danger" : t.status === "NEW" ? "info" : "warning") as Tone })) },
-      { title: "Yaqinda bajarilganlar", empty: "Hali bajarilgan topshiriq yo'q", target: "tasks", rows: done.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · ${day(t.updatedAt)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), tone: "success" as Tone })) },
+      { title: "Ochiq topshiriqlar", empty: "Ochiq topshiriq yo'q", target: "tasks", rows: open.map((t) => ({ id: t.id, title: `${b.name} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: (t.dueDate < today ? "danger" : t.status === "NEW" ? "info" : "warning") as Tone })) },
+      { title: "Yaqinda bajarilganlar", empty: "Hali bajarilgan topshiriq yo'q", target: "tasks", rows: done.map((t) => ({ id: t.id, title: `${b.name} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · ${day(t.updatedAt)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), tone: "success" as Tone })) },
       ...(b.leader ? [{ title: "Brigadir", empty: "", target: "employees", rows: [{ id: b.leader.id, title: b.leader.fullName, subtitle: b.leader.phone ?? undefined, tone: "success" as Tone }] }] : []),
       // Brigada skladi — qo'lidagi xomashyo, berish / qaytarish (`./sklad-extra.ts`)
       ...brigadeStockLink(user, b.id),

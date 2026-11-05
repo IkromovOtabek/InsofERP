@@ -83,7 +83,7 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
     }),
     db.productDefect.findMany({
       where: { date: { gte: dayFrom, lt: dayTo } }, orderBy: { date: "asc" },
-      select: { date: true, qty: true, reason: true, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } }, task: { select: { taskNo: true } } },
+      select: { date: true, qty: true, reason: true, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } }, task: { select: { brigade: { select: { name: true } } } } },
     }),
     // Shu kuni yozilgan muammolar + oldin yozilib hali ochiq turganlari (kecha buzilgan uskuna bugun ham to'xtatib turibdi)
     db.brigadeIssue.findMany({
@@ -91,11 +91,11 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
       orderBy: { createdAt: "asc" },
       select: {
         id: true, kind: true, equipment: true, note: true, downtimeMin: true, createdAt: true, resolvedAt: true, resolution: true,
-        brigade: { select: { name: true } }, task: { select: { taskNo: true } }, createdBy: { select: { fullName: true } }, resolvedBy: { select: { fullName: true } },
+        brigade: { select: { name: true } }, task: { select: { orderItem: { select: { product: { select: { name: true } } } } } }, createdBy: { select: { fullName: true } }, resolvedBy: { select: { fullName: true } },
       },
     }),
     db.brigadeShift.findMany({ where: { date: dayUtc(iso) }, select: { openedAt: true, closedAt: true, brigade: { select: { name: true } } } }),
-    db.brigadeTask.findMany({ where: { startedAt: { gte: dayFrom, lt: dayTo } }, select: { startedAt: true, taskNo: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true } } } } } }),
+    db.brigadeTask.findMany({ where: { startedAt: { gte: dayFrom, lt: dayTo } }, select: { startedAt: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true } } } } } }),
   ]);
 
   // ── Hisobot oxiri ──
@@ -140,17 +140,17 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
       if (sh.closedAt && sh.closedAt.getTime() >= b0 && sh.closedAt.getTime() < b1) events.push({ time: hhmm(sh.closedAt), brigade: sh.brigade.name, text: "smena yopildi", tone: "info" });
     }
     for (const s of started) {
-      if (s.startedAt!.getTime() >= b0 && s.startedAt!.getTime() < b1) events.push({ time: hhmm(s.startedAt!), brigade: s.brigade.name, text: `${s.taskNo} (${s.orderItem.product.name}) ishi boshlandi`, tone: "info" });
+      if (s.startedAt!.getTime() >= b0 && s.startedAt!.getTime() < b1) events.push({ time: hhmm(s.startedAt!), brigade: s.brigade.name, text: `${s.orderItem.product.name} — ish boshlandi`, tone: "info" });
     }
     for (const i of stops) {
       if (i.s >= b0 && i.s < b1) {
-        events.push({ time: hhmm(i.createdAt), brigade: i.brigade.name, text: `${BRIGADE_ISSUE[i.kind].label}${i.equipment ? `: ${i.equipment}` : ""} — ${i.note}${i.task ? ` (${i.task.taskNo})` : ""}`, tone: i.kind === "EQUIPMENT" ? "danger" : "warning" });
+        events.push({ time: hhmm(i.createdAt), brigade: i.brigade.name, text: `${BRIGADE_ISSUE[i.kind].label}${i.equipment ? `: ${i.equipment}` : ""} — ${i.note}${i.task ? ` (${i.task.orderItem.product.name})` : ""}`, tone: i.kind === "EQUIPMENT" ? "danger" : "warning" });
       }
       if (i.resolvedAt && i.resolvedAt.getTime() >= b0 && i.resolvedAt.getTime() < b1) {
         events.push({ time: hhmm(i.resolvedAt), brigade: i.brigade.name, text: `hal qilindi: ${BRIGADE_ISSUE[i.kind].label}${i.equipment ? ` (${i.equipment})` : ""}${i.resolution ? ` — ${i.resolution}` : ""}`, tone: "success" });
       }
     }
-    for (const x of def) events.push({ time: hhmm(x.date), brigade: x.brigade?.name ?? null, text: `brak ${x.product.name} ${fmtUnitTotals([{ unit: x.product.unit, qty: Number(x.qty) }])} — ${x.reason}${x.task ? ` (${x.task.taskNo})` : ""}`, tone: "danger" });
+    for (const x of def) events.push({ time: hhmm(x.date), brigade: x.brigade?.name ?? null, text: `brak ${x.product.name} ${fmtUnitTotals([{ unit: x.product.unit, qty: Number(x.qty) }])} — ${x.reason}${x.task && x.task.brigade.name !== x.brigade?.name ? ` (${x.task.brigade.name})` : ""}`, tone: "danger" });
     events.sort((a, c) => a.time.localeCompare(c.time));
 
     const minutes = (b1 - b0) / 60_000;
@@ -176,7 +176,7 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
     issues: stops.map((i) => ({
       id: i.id,
       time: i.createdAt < dayFrom ? `${hhmm(i.createdAt)} (${i.createdAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })})` : hhmm(i.createdAt),
-      brigade: i.brigade.name, kind: BRIGADE_ISSUE[i.kind].label, equipment: i.equipment, note: i.note, task: i.task?.taskNo ?? null, by: i.createdBy.fullName,
+      brigade: i.brigade.name, kind: BRIGADE_ISSUE[i.kind].label, equipment: i.equipment, note: i.note, task: i.task?.orderItem.product.name ?? null, by: i.createdBy.fullName,
       downtimeMin: i.stops ? Math.round(overlapMin(i.s, i.e, start.getTime(), end.getTime())) : 0,
       resolved: i.resolvedAt && i.resolvedAt <= end ? `${hhmm(i.resolvedAt)}${i.resolvedBy ? ` · ${i.resolvedBy.fullName}` : ""}` : null,
       resolution: i.resolvedAt && i.resolvedAt <= end ? i.resolution : null,

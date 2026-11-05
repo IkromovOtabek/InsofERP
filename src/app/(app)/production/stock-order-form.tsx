@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Plus, Boxes, Zap, TriangleAlert, Sparkles, Factory } from "lucide-react";
+import { X, Plus, Boxes, Zap, TriangleAlert, Sparkles, HardHat } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
 import { fmtNum, isoDate } from "@/lib/format";
 import { createStockOrder } from "./actions";
@@ -8,17 +8,18 @@ import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, 
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
 import type { ProductCreate } from "@/lib/catalog";
 import { ProductField } from "@/components/product-field";
-import { blockEnterSubmit, submitKeepingState, type ProductStock } from "./order-form";
+import { blockEnterSubmit, submitKeepingState, type ProductStock } from "../orders/order-form";
 import { cn } from "@/lib/utils";
 
 type Row = { key: number; productId: string; qty: string };
 
 /**
- * Sklad zayavkasi — zaxiraga ishlab chiqarish. Mijoz ham, narx ham, manzil ham yo'q:
- * "shu mahsulotdan shuncha ishlab chiqarilib, hovliga qo'yib qo'yilsin".
+ * «Skladga zayavka» (Ishlab chiqarish → Zames yonidagi tugma) — zaxiraga ishlab chiqarish. Mijoz ham, narx ham,
+ * manzil ham yo'q: "shu mahsulotdan shuncha ishlab chiqarilib, hovliga qo'yib qo'yilsin".
+ * Saqlanganda zayavka darhol qabul qilinadi va shu oynadagi «Brigada tayinlash» ochiladi.
  *
  * Faqat dona mahsulot: beton zakaz olingandan keyin tayyorlanadi, zaxira qilib
- * qo'yib bo'lmaydi — shuning uchun ro'yxat `pieceOnly` bilan yuklanadi.
+ * qo'yib bo'lmaydi — shuning uchun ro'yxatda beton yo'q (server ham rad etadi).
  */
 export function StockOrderForm({ products, groups, canCreateProduct, stock }: {
   products: CatalogProduct[];
@@ -84,8 +85,8 @@ export function StockOrderForm({ products, groups, canCreateProduct, stock }: {
 
       <Callout tone="info" title="Sklad zayavkasi — zaxiraga">
         Mijoz uchun emas, o&apos;zimiz uchun: ishlab chiqarilgan mahsulot hovlida <b>erkin qoldiq</b> bo&apos;lib turadi va keyin kelgan
-        har qanday mijozga darhol beriladi. Narx, dastavka va shartnoma so&apos;ralmaydi. Zayavka qabul qilingach Ishlab chiqarish
-        bo&apos;limida brigadaga tayinlanadi.
+        har qanday mijozga darhol beriladi. Narx, dastavka va shartnoma so&apos;ralmaydi. Saqlangach zayavka matritsa va doskaga
+        tushadi va shu zahoti brigadaga tayinlaysiz.
       </Callout>
 
       {/* ── Tavsiya: nimaga zaxira kerak ── */}
@@ -220,14 +221,14 @@ export function StockOrderForm({ products, groups, canCreateProduct, stock }: {
       </Field>
 
       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1"><Factory size={13} /> Qabul qilingach brigadaga tayinlanadi</span>
+        <span className="inline-flex items-center gap-1"><HardHat size={13} /> Saqlangach brigadaga tayinlanadi</span>
         <span className="inline-flex items-center gap-1"><Boxes size={13} /> Tayyor mahsulot hech kimga band qilinmaydi</span>
         <span className="inline-flex items-center gap-1"><Zap size={13} /> Zarur — brigadalar uchun ustuvorlik</span>
       </div>
 
       <FormActions>
-        <Button disabled={pending || filled.length === 0}>{pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>
-        <LinkButton href="/orders" variant="secondary">Bekor</LinkButton>
+        <Button disabled={pending || filled.length === 0}><HardHat size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash — brigada tayinlash"}</Button>
+        <LinkButton href="/production" variant="secondary">Bekor</LinkButton>
         {filled.length === 0 && <span className="inline-flex items-center gap-1 text-xs text-slate-500"><TriangleAlert size={14} /> Mahsulot va miqdorini kiriting</span>}
         {products.length === 0 && <Badge color="red">Dona mahsulot yo&apos;q — avval spravochnikka qo&apos;shing</Badge>}
       </FormActions>

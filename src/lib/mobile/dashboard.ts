@@ -422,7 +422,7 @@ async function brigadeWork(r: DashRange, brigadeIds: string[] | null, mineLabel:
     db.taskProgress.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo }, task: bw }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
     db.brigadeTask.count({ where: { ...bw, status: "DONE", updatedAt: { gte: r.from, lt: r.to } } }),
     // Ochiq — muddati davr oxirigacha bo'lgan (kechikkanlari ham) hali bajarilmagan topshiriqlar
-    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: r.to } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, qty: true, doneQty: true, dueDate: true, brigadeId: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } }),
+    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: r.to } }, orderBy: { dueDate: "asc" }, select: { id: true, qty: true, doneQty: true, dueDate: true, brigadeId: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } }),
     db.productDefect.findMany({ where: { date: { gte: r.from, lt: r.to }, ...(brigadeIds ? { brigadeId: { in: brigadeIds } } : {}) }, select: { qty: true, product: { select: { unit: true } } } }),
     db.brigade.findMany({ where: { isActive: true, ...(brigadeIds ? { id: { in: brigadeIds } } : {}) }, select: { id: true, name: true } }),
   ]);
@@ -434,7 +434,7 @@ async function brigadeWork(r: DashRange, brigadeIds: string[] | null, mineLabel:
   const bars = barsChart(r, rows, (x) => x.date, series, `Jami ${totalsText(unitRows(rows))}`);
   // Brigadalar bo'yicha ochiq topshiriqlarning bajarilishi (ish boshqaruvchi) / topshiriqlar bo'yicha (brigadir)
   const progItems = mineLabel
-    ? open.slice(0, 8).map((t) => progressItem(`${t.taskNo} · ${t.orderItem.product.name}`, sum(t.doneQty), sum(t.qty), (v) => inUnit(v, t.orderItem.product.unit), false, "tasks"))
+    ? open.slice(0, 8).map((t) => progressItem(`${t.brigade.name} · ${t.orderItem.product.name}`, sum(t.doneQty), sum(t.qty), (v) => inUnit(v, t.orderItem.product.unit), false, "tasks"))
     : brigades.map((b) => {
         const ts = open.filter((t) => t.brigadeId === b.id);
         const u = soleUnit(ts.map((t) => ({ unit: t.orderItem.product.unit, qty: t.qty })));
@@ -471,7 +471,7 @@ async function brigadier(r: DashRange, brigadeIds: string[]): Promise<RoleDashbo
     db.taskProgress.findMany({ where: { date: { gte: r.from, lt: r.to }, task: bw }, select: { date: true, qty: true, task: { select: { orderItem: { select: { product: { select: { name: true, unit: true } } } } } } } }),
     db.taskProgress.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo }, task: bw }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
     db.brigadeTask.findMany({ where: { ...bw, status: { not: "CANCELLED" }, dueDate: { gte: r.from, lt: r.to } }, select: { dueDate: true, qty: true, orderItem: { select: { product: { select: { unit: true } } } } } }),
-    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: r.to } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, orderItem: { select: { product: { select: { name: true, unit: true } } } }, issues: { where: { resolvedAt: null }, select: { kind: true } } } }),
+    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: r.to } }, orderBy: { dueDate: "asc" }, select: { id: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } }, issues: { where: { resolvedAt: null }, select: { kind: true } } } }),
     db.productDefect.findMany({ where: { ...bw, date: { gte: r.from, lt: r.to } }, select: { qty: true, product: { select: { name: true, unit: true } } } }),
     db.brigadeIssue.findMany({ where: { ...bw, createdAt: { gte: r.from, lt: r.to } }, select: { kind: true, downtimeMin: true } }),
     // Davrda ochilgan va hali hal qilinmagan muammolar
@@ -504,8 +504,8 @@ async function brigadier(r: DashRange, brigadeIds: string[]): Promise<RoleDashbo
     { label: "Fakt", value: (x) => x.fact, fmt: (v) => inUnit(v, u) },
   ], `Reja ${inUnit(planMain, u)} · fakt ${inUnit(factMain, u)}`);
   const taskItems = dp
-    ? dp.rows.map((t) => progressItem(`${t.taskNo} · ${t.product}`, t.fact, t.plan, (v) => inUnit(v, t.unit), false, "tasks"))
-    : open.slice(0, 8).map((t) => progressItem(`${t.taskNo} · ${t.orderItem.product.name}`, sum(t.doneQty), sum(t.qty), (v) => inUnit(v, t.orderItem.product.unit), false, "tasks"));
+    ? dp.rows.map((t) => progressItem(`${t.brigade.name} · ${t.product}`, t.fact, t.plan, (v) => inUnit(v, t.unit), false, "tasks"))
+    : open.slice(0, 8).map((t) => progressItem(`${t.brigade.name} · ${t.orderItem.product.name}`, sum(t.doneQty), sum(t.qty), (v) => inUnit(v, t.orderItem.product.unit), false, "tasks"));
 
   // Sifat nazorati (E blok): mahsulot bo'yicha ishlab chiqarilgan, qabul qilingan, brak, brak %
   const byProduct = new Map<string, { unit: string; made: number; bad: number }>();

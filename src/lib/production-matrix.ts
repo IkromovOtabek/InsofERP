@@ -10,6 +10,8 @@ import { unitTotals, type UnitTotal } from "./unit";
  * Qoldiq = SUM(StockMove.qty) (barcha skladlar). Band — tasdiqlangan mijoz zayavkalarining hali jo'natilmagan qismi
  * (`ostatka.ts` bilan bir xil to'plam: kind SALE, CONFIRMED / IN_PRODUCTION; qoralama band qilmaydi).
  * Reys zayavka bo'yicha yoziladi (mahsulotsiz), shuning uchun jo'natilgani qatorlarga miqdoriga mutanosib bo'linadi.
+ * Sklad (zaxira) zayavkasi ham ustun bo'ladi: uning katagi — hali ishlab chiqarilmagani (jo'natish yo'q, chiqargani hovlida
+ * erkin qoldiq bo'ladi). Mavjud qoldiq unga taqsimlanmaydi — zaxira zayavkasi aynan «yana shuncha ishlab chiqarish» degani.
  *
  * Matritsa katagi brigada holatini ko'rsatadi: tayinlanmagan / qisman (qatorning bir qismi brigadaga berilgan) / tayinlangan;
  * katak bosilsa shu qator «Brigada tayinlash» formasida ochiladi. Doska uchun holat: tayyor — hamma qatori brigadada
@@ -27,7 +29,9 @@ const PRI: Record<MatrixStatus, number> = { ready: 0, pour: 1, queue: 2 };
 export type MatrixProduct = { id: string; code: string; name: string; unit: string; stock: number; band: number };
 export type MatrixOrder = {
   id: string; customer: string; deliveryDate: string; dateUnknown: boolean; isUrgent: boolean; status: MatrixStatus; assign: MatrixAssign;
-  /** mahsulot id → jo'natilmagan miqdor */
+  /** Sklad (zaxira) zayavkasi — mijozsiz, hovliga ishlab chiqariladi */
+  stock: boolean;
+  /** mahsulot id → jo'natilmagan miqdor (sklad zayavkasida — hali ishlab chiqarilmagani) */
   items: Record<string, number>;
   /** mahsulot id → skladdan unga to'g'ri keladigan qism */
   alloc: Record<string, number>;
@@ -56,9 +60,9 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
     db.product.findMany({ where: { isActive: true }, select: { id: true, code: true, name: true, unit: true } }),
     db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
     db.order.findMany({
-      where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
+      where: { kind: { in: ["SALE", "STOCK"] }, status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
       select: {
-        id: true, deliveryDate: true, dateUnknown: true, isUrgent: true, customer: { select: { name: true } },
+        id: true, kind: true, deliveryDate: true, dateUnknown: true, isUrgent: true, customer: { select: { name: true } },
         items: { select: { id: true, productId: true, qtyM3: true, product: { select: { unit: true } }, tasks: { select: { status: true, qty: true, doneQty: true, brigade: { select: { name: true } } } } } },
         trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
       },
@@ -71,18 +75,25 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   let late = 0, open = 0;
   for (const o of orders) {
+    const isStock = o.kind === "STOCK";
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
     const shipped = o.trips.reduce((s, t) => s + Number(t.qtyM3), 0);
     const left = total > 0 ? Math.max(0, 1 - shipped / total) : 0;
     // Beton (m³) qatorlari sexga tegishli emas — faqat dona mahsulot
     const dona = o.items.filter((i) => i.product.unit !== "m3");
     if (!dona.length) continue;
-    if (left > 0) open++;
+    // Qatorning ochiq qismi: mijozniki — jo'natilmagani; sklad zayavkasiniki — brigadalar hali chiqarmagani
+    // (bekor qilingan topshiriqda chiqarib ulgurilgani ham hovlida turibdi)
+    const openQty = (i: (typeof dona)[number]) => (isStock
+      ? Math.max(0, Number(i.qtyM3) - i.tasks.reduce((s, t) => s + Number(t.doneQty), 0))
+      : Number(i.qtyM3) * left);
+    const pending = isStock ? dona.some((i) => openQty(i) > 0.0005) : left > 0;
+    if (pending) open++;
     const donaOpen = dona.some((i) => !itemTasks(i.qtyM3, i.tasks).done);
-    if (!o.dateUnknown && o.deliveryDate < today && left > 0 && donaOpen) late++;
+    if (!o.dateUnknown && o.deliveryDate < today && pending && donaOpen) late++;
     const items: Record<string, number> = {};
     for (const i of dona) {
-      const q = round3(Number(i.qtyM3) * left);
+      const q = round3(openQty(i));
       if (q > 0) items[i.productId] = (items[i.productId] ?? 0) + q;
     }
     if (!Object.keys(items).length) continue;
@@ -96,7 +107,7 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
       c.qty = round3(c.qty + Number(i.qtyM3)); c.given = round3(c.given + st[n]!.given);
       for (const t of i.tasks) if (t.status !== "CANCELLED" && !c.brigades.includes(t.brigade.name)) c.brigades.push(t.brigade.name);
     });
-    rows.push({ id: o.id, customer: o.customer.name, deliveryDate: o.deliveryDate.toISOString(), dateUnknown: o.dateUnknown, isUrgent: o.isUrgent, status, assign, items, alloc: {}, cells });
+    rows.push({ id: o.id, customer: o.customer.name, deliveryDate: o.deliveryDate.toISOString(), dateUnknown: o.dateUnknown, isUrgent: o.isUrgent, status, assign, stock: isStock, items, alloc: {}, cells });
   }
   rows.sort((a, b) => PRI[a.status] - PRI[b.status] || a.deliveryDate.localeCompare(b.deliveryDate));
 
@@ -106,7 +117,8 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
   for (const o of rows) {
     for (const [pid, q] of Object.entries(o.items)) {
       const have = Math.max(0, left.get(pid) ?? 0);
-      const g = Math.min(q, have);
+      // Sklad zayavkasi qoldiqdan yopilmaydi — u qoldiqqa qo'shiladigan ish (natijada «quyish kerak» ga tushadi)
+      const g = o.stock ? 0 : Math.min(q, have);
       o.alloc[pid] = round3(g);
       left.set(pid, have - g);
       band.set(pid, (band.get(pid) ?? 0) + q);

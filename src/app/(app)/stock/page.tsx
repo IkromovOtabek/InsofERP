@@ -212,8 +212,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
             {canSeePrixod(s) && canDo(s, "stock", "receipt") && visionEnabled() && <LinkButton href="/stock/prixod/new?scan=1" variant="secondary" size="lg"><ScanText size={18} /> <span>Nakladnoyni skanerlash</span></LinkButton>}
             {canAdd && <>
-            {/* Zaxiraga ishlab chiqarish: mijozsiz zayavka — tayyor mahsulot hovlida erkin qoldiq bo'lib turadi */}
-            <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Factory size={16} /> Zaxiraga zayavka</LinkButton>
+            {/* Zaxiraga ishlab chiqarish: mijozsiz zayavka — Ishlab chiqarish → «Skladga zayavka» */}
+            {canDo(s, "orders", "stock") && pathAllowed("/production/sklad", s.role, s.perms) && <LinkButton href="/production/sklad" variant="secondary"><Factory size={16} /> Skladga zayavka</LinkButton>}
             <LinkButton href="/stock/materials/new" variant="secondary"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
             {/* Qoldiqni faqat hujjat bilan o'zgartirish: sanab chiqish farqi va hisobdan chiqarish (sabab majburiy) */}
             {pathAllowed("/stock/inventarizatsiya", s.role, s.perms) && <>

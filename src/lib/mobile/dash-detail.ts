@@ -183,14 +183,14 @@ async function salesCustomers({ r }: Ctx): Promise<Part> {
 
 // ───────────────────────── Brigadalar (ish boshqaruvchi / brigadir) ─────────────────────────
 
-const TASK_SELECT = { id: true, taskNo: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, updatedAt: true, brigade: { select: { name: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, orderItem: { select: { product: { select: { name: true, unit: true } } } }, issues: { where: { resolvedAt: null }, select: { kind: true } } } as const;
-type TaskRow = { id: string; taskNo: string; qty: unknown; doneQty: unknown; status: "NEW" | "IN_PROGRESS" | "DONE" | "CANCELLED"; startedAt: Date | null; dueDate: Date; updatedAt: Date; brigade: { name: string }; order: { orderNo: string; customer: { name: string } }; orderItem: { product: { name: string; unit: string } }; issues: { kind: BrigadeIssueKind }[] };
+const TASK_SELECT = { id: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, updatedAt: true, brigade: { select: { name: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, orderItem: { select: { product: { select: { name: true, unit: true } } } }, issues: { where: { resolvedAt: null }, select: { kind: true } } } as const;
+type TaskRow = { id: string; qty: unknown; doneQty: unknown; status: "NEW" | "IN_PROGRESS" | "DONE" | "CANCELLED"; startedAt: Date | null; dueDate: Date; updatedAt: Date; brigade: { name: string }; order: { orderNo: string; customer: { name: string } }; orderItem: { product: { name: string; unit: string } }; issues: { kind: BrigadeIssueKind }[] };
 const taskRow = (t: TaskRow, right?: string): HomeRow => {
   const ph = taskPhase(t, t.issues.map((i) => i.kind));
   const u = t.orderItem.product.unit;
   return {
-    id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`,
-    subtitle: `${t.brigade.name} · ${t.order.customer.name} · muddat ${day(t.dueDate)}`,
+    id: t.id, title: `${t.brigade.name} · ${t.orderItem.product.name}`,
+    subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`,
     right: right ?? `${inUnit(sum(t.doneQty), u)} / ${inUnit(sum(t.qty), u)}`, status: ph.label, tone: ph.tone,
   };
 };
@@ -305,7 +305,7 @@ async function brigadierPlan(r: DashRange, ids: string[]): Promise<Part> {
         f("Bajarilganlar", String(rows.filter((t) => t.left <= 0.001).length), "success"),
       ],
       sections: [sec("Topshiriqlar", rows.map((t) => ({
-        id: t.id, title: `${t.taskNo} · ${t.product}`, subtitle: `reja ${inUnit(t.plan, t.unit)} · bugun ${inUnit(t.fact, t.unit)} · qoldi ${inUnit(Math.max(0, t.left), t.unit)}`,
+        id: t.id, title: `${t.brigade.name} · ${t.product}`, subtitle: `reja ${inUnit(t.plan, t.unit)} · bugun ${inUnit(t.fact, t.unit)} · qoldi ${inUnit(Math.max(0, t.left), t.unit)}`,
         right: pctText(t.plan > 0 ? (t.fact / t.plan) * 100 : null), status: taskPhase(t).label, tone: t.left <= 0.001 ? "success" : t.fact > 0 ? "warning" : "info",
       })), { target: "tasks", empty: "Bugunga reja yo'q" })],
     };
@@ -371,11 +371,11 @@ async function defects(r: DashRange, ids: string[] | null): Promise<Part> {
 
 async function brigadierIssues(r: DashRange, ids: string[]): Promise<Part> {
   const [open, inPeriod] = await Promise.all([
-    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, select: { id: true, kind: true, note: true, downtimeMin: true, createdAt: true, equipment: true, task: { select: { taskNo: true } } } }),
-    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, createdAt: { gte: r.from, lt: r.to } }, orderBy: { createdAt: "desc" }, select: { id: true, kind: true, note: true, downtimeMin: true, createdAt: true, resolvedAt: true, equipment: true, task: { select: { taskNo: true } } } }),
+    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, select: { id: true, kind: true, note: true, downtimeMin: true, createdAt: true, equipment: true, brigade: { select: { name: true } } } }),
+    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, createdAt: { gte: r.from, lt: r.to } }, orderBy: { createdAt: "desc" }, select: { id: true, kind: true, note: true, downtimeMin: true, createdAt: true, resolvedAt: true, equipment: true, brigade: { select: { name: true } } } }),
   ]);
   const row = (x: (typeof inPeriod)[number] | (typeof open)[number]): HomeRow => ({
-    id: x.id, title: `${BRIGADE_ISSUE[x.kind].label}${x.task ? ` · ${x.task.taskNo}` : ""}`,
+    id: x.id, title: `${BRIGADE_ISSUE[x.kind].label} · ${x.brigade.name}`,
     subtitle: [dt(x.createdAt), x.equipment, x.note, x.downtimeMin ? `to'xtash ${x.downtimeMin} daq` : null].filter(Boolean).join(" · "),
     status: "resolvedAt" in x && x.resolvedAt ? "Hal qilindi" : "Ochiq", tone: "resolvedAt" in x && x.resolvedAt ? "success" : "danger",
   });

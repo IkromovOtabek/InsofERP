@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { customersCredit, customersHistory, contractedIds, defaultCreditLimit } from "@/lib/finance";
@@ -5,8 +6,6 @@ import { stockSnapshot } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { OrderForm, type CustomerOpt, type OrderPrefill, type ProductStock } from "../order-form";
-import { StockOrderForm } from "../stock-order-form";
-import { NewOrderMode } from "../new-order-mode";
 import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
 import { canDo } from "@/lib/permissions";
 import { geoSearchEnabled } from "@/lib/geo";
@@ -49,27 +48,24 @@ async function DocHeader() {
 }
 
 /**
- * Yangi zayavka ikki xil bo'ladi:
- *  — Mijoz uchun: odatdagi sotuv formasi (narx, to'lov, shartnoma, yetkazish);
- *  — Sklad uchun: zaxiraga ishlab chiqarish — mijozsiz, narxsiz; tayyor mahsulot
- *    hovlida erkin qoldiq bo'lib turadi (`lib/stock-orders.ts`).
- * `?tur=sklad` bilan to'g'ridan-to'g'ri sklad formasi ochiladi.
- * Sotuvdan tashqari rollar (sklad, ishlab chiqarish) faqat sklad zayavkasini ocha oladi.
+ * Yangi zayavka — mijoz uchun sotuv formasi (narx, to'lov, shartnoma, yetkazish).
+ * Sklad (zaxira) zayavkasi bu yerdan olindi: u Ishlab chiqarish → «Skladga zayavka» da (`/production/sklad`),
+ * eski `?tur=sklad` havolasi va sotuv ruxsati yo'q xodim (ishlab chiqarish, sklad) o'sha yerga yo'naltiriladi.
  */
 export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string }> }) {
   // Direktor "create" yoki "stock" ruxsatini bergan xodim ham kiradi (rol ro'yxatida bo'lmasa ham)
   const s = await requireRoles([...STOCK_ORDER_ROLES], { module: "orders", actions: ["create", "stock"] });
   const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId } = await searchParams;
   const canSale = canDo(s, "orders", "create");
-  const canStockOrder = canDo(s, "orders", "stock");
+  if (tur === "sklad" || !canSale) redirect("/production/sklad");
 
   const [catalog, stock, lead, amoDeal] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
     stockSnapshot(),
     // Sayt arizasidan ochilgan zayavka: mahsulot, hajm va manzil arizadan olinadi
-    canSale && leadId ? db.lead.findUnique({ where: { id: leadId }, select: { productId: true, qty: true, address: true, message: true, customerId: true } }) : null,
+    leadId ? db.lead.findUnique({ where: { id: leadId }, select: { productId: true, qty: true, address: true, message: true, customerId: true } }) : null,
     // amoCRM kelishuvidan: mijoz, manzil va sdelka nomi; zayavka sdelkaga bog'lanadi (`lib/amocrm/sync.ts`)
-    canSale && amoId ? db.amoDeal.findFirst({ where: { id: amoId, state: { in: ["READY", "ORDERED", "IN_AMO"] } }, select: { id: true, name: true, amoLeadId: true, address: true, customerId: true, lead: { select: { productId: true, qty: true } } } }) : null,
+    amoId ? db.amoDeal.findFirst({ where: { id: amoId, state: { in: ["READY", "ORDERED", "IN_AMO"] } }, select: { id: true, name: true, amoLeadId: true, address: true, customerId: true, lead: { select: { productId: true, qty: true } } } }) : null,
   ]);
   const customer = amoDeal?.customerId ?? customerParam;
   const prefill: OrderPrefill | undefined = amoDeal
@@ -85,59 +81,45 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
     ...stock.concrete.map((p) => [p.id, { free: p.free, total: p.total, owned: 0, canMake: p.make?.canMake ?? null, by: p.last?.by ?? null, kind: "concrete" as const }] as const),
   ]);
 
-  let opts: CustomerOpt[] = [];
-  if (canSale) {
-    const credit = await customersCredit();
-    const [customers, history, contracted, sites, siteLast] = await Promise.all([
-      db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true, inn: true, address: true, createdAt: true } }),
-      customersHistory(undefined, credit),
-      contractedIds(),
-      // «Obyekt» katagi uchun: mijozning faol obyektlari, oxirgi zayavka ochilgani birinchi
-      db.site.findMany({ where: { isActive: true, customer: { isActive: true, isInternal: false } }, orderBy: { name: "asc" }, select: { id: true, customerId: true, name: true, address: true, lat: true, lng: true } }),
-      db.order.groupBy({ by: ["siteId"], where: { siteId: { not: null } }, _max: { createdAt: true } }),
-    ]);
-    const lastAt = new Map(siteLast.map((r) => [r.siteId, r._max.createdAt?.getTime() ?? 0]));
-    const sitesBy = new Map<string, CustomerOpt["sites"]>();
-    for (const x of [...sites].sort((a, b) => (lastAt.get(b.id) ?? 0) - (lastAt.get(a.id) ?? 0))) {
-      const list = sitesBy.get(x.customerId) ?? [];
-      list.push({ id: x.id, name: x.name, address: x.address, lat: x.lat, lng: x.lng });
-      sitesBy.set(x.customerId, list);
-    }
-    opts = customers.map((c) => {
-      const cr = credit.get(c.id);
-      const h = history.get(c.id);
-      return {
-        id: c.id, name: c.name, phone: c.phone, inn: c.inn, address: c.address, since: c.createdAt.getTime(),
-        limit: cr?.limit ?? 0, used: cr?.used ?? 0, free: cr?.free ?? 0, debt: cr?.debt ?? 0, blacklisted: cr?.blacklisted ?? false, contracted: contracted.has(c.id),
-        bought: h?.bought ?? 0, orders: h?.orders ?? 0, paid: h?.paid ?? 0, lastOrderAt: h?.lastOrderAt?.getTime() ?? null,
-        stars: h?.stars ?? 0, label: h?.label ?? "Yangi mijoz",
-        sites: sitesBy.get(c.id) ?? [],
-      };
-    });
+  const credit = await customersCredit();
+  const [customers, history, contracted, sites, siteLast] = await Promise.all([
+    db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true, inn: true, address: true, createdAt: true } }),
+    customersHistory(undefined, credit),
+    contractedIds(),
+    // «Obyekt» katagi uchun: mijozning faol obyektlari, oxirgi zayavka ochilgani birinchi
+    db.site.findMany({ where: { isActive: true, customer: { isActive: true, isInternal: false } }, orderBy: { name: "asc" }, select: { id: true, customerId: true, name: true, address: true, lat: true, lng: true } }),
+    db.order.groupBy({ by: ["siteId"], where: { siteId: { not: null } }, _max: { createdAt: true } }),
+  ]);
+  const lastAt = new Map(siteLast.map((r) => [r.siteId, r._max.createdAt?.getTime() ?? 0]));
+  const sitesBy = new Map<string, CustomerOpt["sites"]>();
+  for (const x of [...sites].sort((a, b) => (lastAt.get(b.id) ?? 0) - (lastAt.get(a.id) ?? 0))) {
+    const list = sitesBy.get(x.customerId) ?? [];
+    list.push({ id: x.id, name: x.name, address: x.address, lat: x.lat, lng: x.lng });
+    sitesBy.set(x.customerId, list);
   }
-
-  // Zaxiraga faqat dona mahsulot qo'yiladi: beton zakaz olingandan keyin tayyorlanadi
-  const pieceProducts = catalog.products.filter((p) => p.rawUnit !== "m3");
+  const opts: CustomerOpt[] = customers.map((c) => {
+    const cr = credit.get(c.id);
+    const h = history.get(c.id);
+    return {
+      id: c.id, name: c.name, phone: c.phone, inn: c.inn, address: c.address, since: c.createdAt.getTime(),
+      limit: cr?.limit ?? 0, used: cr?.used ?? 0, free: cr?.free ?? 0, debt: cr?.debt ?? 0, blacklisted: cr?.blacklisted ?? false, contracted: contracted.has(c.id),
+      bought: h?.bought ?? 0, orders: h?.orders ?? 0, paid: h?.paid ?? 0, lastOrderAt: h?.lastOrderAt?.getTime() ?? null,
+      stars: h?.stars ?? 0, label: h?.label ?? "Yangi mijoz",
+      sites: sitesBy.get(c.id) ?? [],
+    };
+  });
 
   return (
     <div>
       <PageHeader
-        back={{ href: tur === "sklad" || !canSale ? "/orders?tur=sklad" : "/orders", label: "Zayavkalar" }}
+        back={{ href: "/orders", label: "Zayavkalar" }}
         title="Yangi zayavka"
-        subtitle={canSale
-          ? "Mijoz uchun — sotuv zayavkasi; Sklad uchun — zaxiraga ishlab chiqarish. Saqlangandan keyin “Qabul qilish” bosiladi."
-          : "Sklad zayavkasi: zaxiraga ishlab chiqarish. Saqlangandan keyin “Qabul qilish” bosiladi va ishlab chiqarishga tushadi."}
+        subtitle="Mijoz uchun sotuv zayavkasi. Saqlangandan keyin “Qabul qilish” bosiladi."
       />
       {/* Blanka keng (QQS ustunli jadval) — to'liq kenglikda; sklad qoldig'i pastda */}
       <div className="space-y-5">
         <div>
-          <NewOrderMode
-            initial={tur === "sklad" || !canSale ? "stock" : "sale"}
-            sale={canSale ? (
-              <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
-            ) : null}
-            stock={canStockOrder ? <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} /> : null}
-          />
+          <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
         </div>
         <div>
           {/* Uzun jadval formani siqib qo'ymasligi uchun bo'limlar yig'iladi */}

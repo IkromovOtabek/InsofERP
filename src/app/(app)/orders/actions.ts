@@ -8,7 +8,6 @@ import { requireAction } from "@/lib/auth";
 import { saveDailyOrderLimits } from "@/lib/company";
 import { createOrder as createOrderDomain, orderConfirm, orderEdit, orderSetDate, orderUnblock } from "@/lib/orders";
 import { cancelOrderWithReason, closeStockOrderLib, setGuarantee, setOrderContract } from "@/lib/order-docs";
-import { createStockOrder as createStockOrderDomain } from "@/lib/stock-orders";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { saveContractFile } from "@/lib/uploads";
@@ -127,42 +126,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
   redirect(q ? `/orders/${res.id}?${q}` : `/orders/${res.id}`);
 }
 
-const stockSchema = z.object({
-  dueDate: zStr("Tayyor bo'lish muddati kerak"),
-  isUrgent: z.string().optional().transform((v) => v === "on"),
-  note: zOpt,
-  productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
-  qty: z.array(z.coerce.number().positive("miqdor 0 dan katta bo'lsin")),
-});
-
-/**
- * Sklad zayavkasi (zaxiraga ishlab chiqarish): mijozsiz, narxsiz.
- * Qoida `lib/stock-orders.ts` da.
- */
-export async function createStockOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireAction("orders", "stock");
-  const r = parseForm(stockSchema, fd);
-  if ("error" in r) return { error: r.error };
-  const d = r.data;
-
-  let res;
-  try {
-    res = await createStockOrderDomain(
-      {
-        dueDate: new Date(d.dueDate),
-        items: d.productId.map((productId, i) => ({ productId, qtyM3: d.qty[i]! })).filter((i) => i.productId && i.qtyM3 > 0),
-        isUrgent: d.isUrgent,
-        note: d.note,
-      },
-      s.userId,
-    );
-  } catch (e) {
-    return { error: userError(e) };
-  }
-
-  revalidatePath("/orders"); revalidatePath("/production"); revalidatePath("/stock");
-  redirect(`/orders/${res.id}`);
-}
+// Sklad (zaxira) zayavkasini ochish — Ishlab chiqarish → «Skladga zayavka» (`production/actions.ts`)
 
 /**
  * Qabul qilish: DRAFT → CONFIRMED (Sotuv bo'limiga o'tadi) yoki BLOCKED (limit yetmaydi — direktor ochadi).

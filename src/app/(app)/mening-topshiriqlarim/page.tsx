@@ -77,7 +77,7 @@ export default async function MyTasksPage() {
       <Card className="mb-5" padded={false}>
         <div id="bajarilishi-kerak" className="scroll-mt-20 p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Ishlab chiqarish brigadangizga tayinlagan topshiriqlar" /></div>
         <Table>
-          <thead><tr><Th>№</Th><Th>Muddat</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Brigada</Th><Th>Muddat</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {open.length === 0 && <Empty text="Ochiq topshiriq yo'q — brigadangizga tayinlansa shu yerda chiqadi" icon={ListChecks} />}
             {open.map((t) => {
@@ -85,7 +85,7 @@ export default async function MyTasksPage() {
               const unit = unitLabel(t.orderItem.product.unit);
               return (
                 <Tr key={t.id}>
-                  <Td className="font-medium">{t.taskNo}{brigades.length > 1 && <div className="text-xs text-slate-500">{t.brigade.name}</div>}</Td>
+                  <Td className="font-medium">{t.brigade.name}</Td>
                   <Td className={t.dueDate < today ? "text-red-700" : undefined}>
                     {deliveryAt(t.dueDate, t.order.deliveryTime)}
                     {t.order.isUrgent && <div><Badge color="red"><Zap size={11} /> Zarur</Badge></div>}
@@ -108,12 +108,12 @@ export default async function MyTasksPage() {
 
       <h2 className="mb-3 font-semibold">Tarix</h2>
       <Table>
-        <thead><tr><Th>№</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th>Muddat</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>Brigada</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th>Muddat</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {done.length === 0 && <Empty text="Hali yakunlangan topshiriq yo'q" />}
           {done.map((t) => (
             <Tr key={t.id}>
-              <Td className="font-medium">{t.taskNo}</Td>
+              <Td className="font-medium">{t.brigade.name}</Td>
               <Td>{t.order.customer.name}</Td>
               <Td>{t.orderItem.product.name}</Td>
               <Td>{date(t.dueDate)}</Td>

@@ -114,12 +114,12 @@ export async function batchForm(): Promise<CreateForm> {
     // kirim bo'ladi, ustiga zames yozilsa ikki marta hisoblanadi (veb formadagi ogohlantirish)
     db.brigadeTask.findMany({
       where: { status: { in: ["NEW", "IN_PROGRESS"] }, orderItem: { product: { unit: { not: "m3" } } } },
-      select: { taskNo: true, brigade: { select: { name: true } }, orderItem: { select: { productId: true } } },
+      select: { brigade: { select: { name: true } }, orderItem: { select: { productId: true } } },
     }),
   ]);
   const marks = await customerMarks(orders.map((o) => o.customerId));
   const busy = new Map<string, string[]>();
-  for (const t of tasks) busy.set(t.orderItem.productId, [...(busy.get(t.orderItem.productId) ?? []), `${t.brigade.name} ${t.taskNo}`]);
+  for (const t of tasks) busy.set(t.orderItem.productId, [...new Set([...(busy.get(t.orderItem.productId) ?? []), t.brigade.name])]);
   // Zames `orderItemId` saqlamaydi — qoldiq (zayavka, mahsulot) juftligi bo'yicha; zames faqat beton (m³) uchun
   const orderOpts: FormOption[] = orders.flatMap((o) => {
     const byProduct = new Map<string, { name: string; total: number }>();
@@ -334,8 +334,10 @@ export async function sexExtraAction(user: MobileUser, action: string, id: strin
       const r = await assignOrderBrigades(id, picks, user.id);
       if ("error" in r) fail(r.error);
       clearDashCache();
-      const made = (r as { made: { taskNo: string }[] }).made;
-      return `${made.length} ta topshiriq brigadalarga yuborildi: ${made.map((m) => m.taskNo).join(", ")}`;
+      // Topshiriq raqamlari emas — brigada nomlari
+      const made = (r as { made: { brigadeId: string }[] }).made;
+      const names = await db.brigade.findMany({ where: { id: { in: [...new Set(made.map((m) => m.brigadeId))] } }, orderBy: { name: "asc" }, select: { name: true } });
+      return `${made.length} ta topshiriq brigadalarga yuborildi: ${names.map((b) => b.name).join(", ")}`;
     }
     case "batch.storno": {
       const r = await cancelBatch(id, textOf(payload, "reason").slice(0, 300), user.id);
@@ -423,8 +425,8 @@ export async function tasksList(title: string, q?: string, filter?: string): Pro
     key: "tasks", title: picked ? `${title} · ${picked.name}` : title,
     rows: list.map((t) => ({
       id: t.id,
-      title: `${t.taskNo} · ${t.brigade.name}`,
-      subtitle: `${t.order.customer.name} · ${t.orderItem.product.name} · muddat ${day(t.dueDate)}${t.order.isUrgent ? " · zarur" : ""}`,
+      title: `${t.brigade.name} · ${t.orderItem.product.name}`,
+      subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}${t.order.isUrgent ? " · zarur" : ""}`,
       right: `${num(Math.max(0, sum(t.qty) - sum(t.doneQty)))} / ${num(sum(t.qty))} ${unitLabel(t.orderItem.product.unit)}`,
       status: TASK_LABEL[t.status],
       tone: (t.status === "DONE" ? "success" : t.status === "CANCELLED" ? "info" : t.dueDate < now ? "danger" : "warning") as Tone,

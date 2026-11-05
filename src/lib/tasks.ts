@@ -56,7 +56,7 @@ const TASK_STALE = "Topshiriq shu payt boshqa joyda yangilandi — sahifani yang
 export async function taskProgress(taskId: string, qty: number, userId: string, note?: string | null): Promise<TaskResult> {
   const t = await db.brigadeTask.findUniqueOrThrow({
     where: { id: taskId },
-    include: { orderItem: { include: { product: { select: { id: true, name: true, unit: true } } } }, order: { select: { kind: true, status: true } } },
+    include: { orderItem: { include: { product: { select: { id: true, name: true, unit: true } } } }, order: { select: { kind: true, status: true } }, brigade: { select: { name: true } } },
   });
   if (["DONE", "CANCELLED"].includes(t.status)) return { changed: false, orderId: t.orderId, error: "Topshiriq yopilgan" };
   const remaining = Number(t.qty) - Number(t.doneQty);
@@ -91,7 +91,7 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
       await tx.stockMove.create({
         data: {
           type: "PRODUCTION_OUTPUT", warehouseId: wh.id, productId: product.id, brigadeId: t.brigadeId, qty,
-          refType: "BrigadeTask", refId: taskId, note: `Brigada chiqardi · ${t.taskNo}`, createdById: userId,
+          refType: "BrigadeTask", refId: taskId, note: `Brigada chiqardi · ${t.brigade.name}`, createdById: userId,
         },
       });
     }
@@ -123,7 +123,7 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
   if (status === "DONE") {
     notifyAfter(() => notifyRoles(["PRODUCTION", "SUPERVISOR"], {
       type: "TASK_DONE",
-      title: `Topshiriq bajarildi — ${t.taskNo}`,
+      title: `Topshiriq bajarildi — ${t.brigade.name}`,
       body: `${fq(Number(t.qty))} ${unitLabel(product.unit)} ${product.name}${res.closed ? " · zaxira zayavkasi yopildi" : ""}`,
       link: { key: "tasks", id: taskId },
     }, { except: userId }));
@@ -153,8 +153,8 @@ export async function taskCancel(taskId: string, userId: string): Promise<TaskRe
   });
   // Brigadir sexda ishni davom ettirmasin
   notifyAfter(async () => {
-    const b = await db.brigade.findUnique({ where: { id: t.brigadeId }, select: { leaderId: true } });
-    await notifyEmployees([b?.leaderId], { type: "TASK_CANCELLED", title: `Topshiriq bekor qilindi — ${t.taskNo}`, body: "Ishni to'xtating", link: { key: "tasks", id: taskId } });
+    const b = await db.brigade.findUnique({ where: { id: t.brigadeId }, select: { name: true, leaderId: true } });
+    await notifyEmployees([b?.leaderId], { type: "TASK_CANCELLED", title: `Topshiriq bekor qilindi — ${b?.name ?? "brigada"}`, body: "Ishni to'xtating", link: { key: "tasks", id: taskId } });
   });
   return { changed: true, orderId: t.orderId, status: "CANCELLED" };
 }
@@ -173,7 +173,7 @@ export type SubstituteInput = { productId: string; qty: number; brigadeId?: stri
 class SubstituteError extends Error {}
 
 export async function taskSubstitute(taskId: string, input: SubstituteInput, userId: string): Promise<TaskResult & { newTaskNo?: string }> {
-  const t = await db.brigadeTask.findUnique({ where: { id: taskId }, include: { orderItem: { include: { product: true } }, order: { select: { status: true } } } });
+  const t = await db.brigadeTask.findUnique({ where: { id: taskId }, include: { orderItem: { include: { product: true } }, order: { select: { status: true } }, brigade: { select: { name: true } } } });
   if (!t) return { changed: false, orderId: "", error: "Topshiriq topilmadi" };
   if (!["NEW", "IN_PROGRESS"].includes(t.status)) return { changed: false, orderId: t.orderId, error: "Topshiriq yopilgan" };
   if (!["CONFIRMED", "IN_PRODUCTION"].includes(t.order.status)) return { changed: false, orderId: t.orderId, error: "Zayavka ishlab chiqarishda emas — o'lchamni almashtirib bo'lmaydi" };
@@ -204,19 +204,20 @@ export async function taskSubstitute(taskId: string, input: SubstituteInput, use
     await tx.orderItem.update({ where: { id: item.id }, data: { qtyM3: Number(item.qtyM3) - qty } });
     const ni = await tx.orderItem.create({ data: { orderId: t.orderId, productId: to.id, qtyM3: qty, price: item.price, nds: item.nds, brigadeId } });
     const nt = await tx.brigadeTask.create({
-      data: { taskNo: await nextNo(tx, "brigadeTask", "T"), orderId: t.orderId, orderItemId: ni.id, brigadeId, qty, dueDate: cur.dueDate, note: `${cur.taskNo} dan o'tkazildi: ${from.name} o'rniga${reason ? ` · ${reason}` : ""}`, createdById: userId },
+      data: { taskNo: await nextNo(tx, "brigadeTask", "T"), orderId: t.orderId, orderItemId: ni.id, brigadeId, qty, dueDate: cur.dueDate, note: `${t.brigade.name} topshirig'idan o'tkazildi: ${from.name} o'rniga${reason ? ` · ${reason}` : ""}`, createdById: userId },
+      include: { brigade: { select: { name: true } } },
     });
     const meta = { from: from.code, to: to.code, qty, reason, fromTask: cur.taskNo, toTask: nt.taskNo, price: Number(item.price) };
     await audit(tx, userId, "UPDATE", "BrigadeTask", taskId, { qty: Number(cur.qty), status: cur.status }, { qty: newQty, status, substitute: meta });
     await audit(tx, userId, "UPDATE", "OrderItem", item.id, { qtyM3: Number(item.qtyM3) }, { qtyM3: Number(item.qtyM3) - qty, substitute: meta });
     await audit(tx, userId, "CREATE", "OrderItem", ni.id, undefined, { ...ni, substitute: meta });
     await audit(tx, userId, "CREATE", "BrigadeTask", nt.id, undefined, { ...nt, substitute: meta });
-    return { newTaskId: nt.id, newTaskNo: nt.taskNo, status };
+    return { newTaskId: nt.id, newTaskNo: nt.taskNo, newBrigade: nt.brigade.name, status };
   }).catch((e: Error) => { if (e instanceof SubstituteError) return { error: e.message }; throw e; });
   if ("error" in res) return { changed: false, orderId: t.orderId, error: res.error };
 
   // Allaqachon quyilgan bo'lsa — oddiy qayd: hovliga kirim va xomashyo yechish bir joyda (`taskProgress`)
-  let note = `${qty} ${unitLabel(from.unit)} ${to.name} ga o'tkazildi · ${res.newTaskNo}`;
+  let note = `${qty} ${unitLabel(from.unit)} ${to.name} ga o'tkazildi · ${res.newBrigade}`;
   if (input.done) {
     const p = await taskProgress(res.newTaskId, qty, userId, reason ? `O'rinbosar: ${reason}` : "O'rinbosar o'lcham");
     note = p.error ? `${note} · qayd qilinmadi: ${p.error}` : `${note} · bajarildi${p.note ? ` · ${p.note}` : ""}`;
@@ -224,7 +225,7 @@ export async function taskSubstitute(taskId: string, input: SubstituteInput, use
   // Mijozga boshqa o'lcham ketadi — sotuv bilishi kerak (narx o'zgarmaydi)
   notifyAfter(() => notifyRoles(["SALES", "PRODUCTION", "SUPERVISOR"], {
     type: "TASK_DONE",
-    title: `O'lcham almashtirildi — ${t.taskNo}`,
+    title: `O'lcham almashtirildi — ${t.brigade.name}`,
     body: `${qty} ${unitLabel(from.unit)}: ${from.name} o'rniga ${to.name} (narx o'zgarmaydi)${reason ? ` · ${reason}` : ""}`,
     link: { key: "orders", id: t.orderId },
   }, { except: userId }));

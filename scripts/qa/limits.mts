@@ -237,8 +237,10 @@ try {
   let sklad = q1(`select id, "creditLimit" from "Customer" where "isInternal" limit 1`);
   if (!sklad) {
     // Ichki "Sklad" kartochkasi birinchi sklad zayavkasida ochiladi — zayavka darhol bekor qilinadi
-    r = await dir.action("orders/actions#createStockOrder", [undefined, fd({ dueDate: tomorrow, "productId[]": [P.M300], "qty[]": [1] })], "/orders/new");
-    const so = orderIdFrom(r);
+    // Sklad zayavkasi Ishlab chiqarish → «Skladga zayavka» da; faqat dona mahsulot (beton zaxiraga qo'yilmaydi)
+    const piece = q1(`select id from "Product" where unit <> 'm3' and "isActive" order by code limit 1`)?.id;
+    r = await dir.action("production/actions#createStockOrder", [undefined, fd({ dueDate: tomorrow, "productId[]": [piece], "qty[]": [1] })], "/production/sklad");
+    const so = r.redirect?.match(/[?&]order=([^&;]+)/)?.[1]; // → /production?order=…&yangi=1
     if (so) await dir.action("orders/actions#cancelOrder", [so, "QA: Sklad kartochkasi uchun"], `/orders/${so}`);
     sklad = q1(`select id, "creditLimit" from "Customer" where "isInternal" limit 1`);
   }

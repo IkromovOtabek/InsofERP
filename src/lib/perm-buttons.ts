@@ -60,6 +60,8 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
   ],
   production: [
     { key: "ishlab", label: "Ishlab chiqarish", paths: ["/production"], actions: ["batch", "batch_storno", "assign", "reschedule", "report", "plan", "staff"] },
+    // Zaxiraga ishlab chiqarish oynasi; ochish amali — «Zayavkalar» → «Sklad (zaxira) zayavkasi» (`orders` → `stock`)
+    { key: "skladga", label: "Skladga zayavka", paths: ["/production/sklad"], actions: [] },
     { key: "retseptlar", label: "Retseptlar", paths: ["/recipes"], actions: ["recipe"] },
   ],
   tasks: [

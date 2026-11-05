@@ -75,7 +75,7 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
   const [progress, batches, defects, issues, shifts, started, staff] = await Promise.all([
     db.taskProgress.findMany({
       where: { date: range, task: taskWhere }, orderBy: { date: "asc" },
-      select: { id: true, qty: true, date: true, note: true, createdBy: { select: { fullName: true } }, task: { select: { id: true, taskNo: true, brigade: { select: { name: true } }, order: { select: { customer: { select: { name: true } } } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } },
+      select: { id: true, qty: true, date: true, note: true, createdBy: { select: { fullName: true } }, task: { select: { id: true, brigade: { select: { name: true } }, order: { select: { customer: { select: { name: true } } } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } },
     }),
     // Zames brigadaga bog'lanmaydi — brigada kartasida chiqmaydi
     s.brigadeId ? Promise.resolve([]) : db.productionBatch.findMany({
@@ -84,7 +84,7 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
     }),
     db.productDefect.findMany({
       where: { date: range, ...(s.brigadeId ? { brigadeId: s.brigadeId } : {}), ...(s.productId ? { productId: s.productId } : {}) }, orderBy: { date: "asc" },
-      select: { id: true, qty: true, date: true, reason: true, note: true, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } }, task: { select: { taskNo: true } }, createdBy: { select: { fullName: true } } },
+      select: { id: true, qty: true, date: true, reason: true, note: true, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } } },
     }),
     // Oraliqqa to'g'ri kelgan muammolar: shu oraliqda ochilgan, yopilgan yoki butun oraliq davomida ochiq turgan
     db.brigadeIssue.findMany({
@@ -93,7 +93,7 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
         ...(s.brigadeId ? { brigadeId: s.brigadeId } : {}), ...(s.productId ? { task: { orderItem: { productId: s.productId } } } : {}),
       },
       orderBy: { createdAt: "asc" },
-      select: { id: true, kind: true, equipment: true, note: true, downtimeMin: true, createdAt: true, resolvedAt: true, resolution: true, brigade: { select: { name: true } }, task: { select: { taskNo: true } }, createdBy: { select: { fullName: true } }, resolvedBy: { select: { fullName: true } } },
+      select: { id: true, kind: true, equipment: true, note: true, downtimeMin: true, createdAt: true, resolvedAt: true, resolution: true, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } }, resolvedBy: { select: { fullName: true } } },
     }),
     s.productId ? Promise.resolve([]) : db.brigadeShift.findMany({
       where: { OR: [{ openedAt: range }, { closedAt: range }], ...(s.brigadeId ? { brigadeId: s.brigadeId } : {}) },
@@ -101,7 +101,7 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
     }),
     db.brigadeTask.findMany({
       where: { startedAt: range, ...taskWhere }, orderBy: { startedAt: "asc" },
-      select: { id: true, taskNo: true, startedAt: true, qty: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } },
+      select: { id: true, startedAt: true, qty: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } },
     }),
     s.attendance ? productionStaff(s.iso) : Promise.resolve(null),
   ]);
@@ -123,7 +123,7 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
       const closed = i.resolvedAt && i.resolvedAt < s.to ? `hal qilindi ${time(i.resolvedAt)}${i.resolvedBy ? ` (${i.resolvedBy.fullName})` : ""}${i.resolution ? `: ${i.resolution}` : ""}` : null;
       return {
         id: `brig-issue:${i.id}`, title: `${BRIGADE_ISSUE[i.kind].label}${i.equipment ? ` · ${i.equipment}` : ""}`,
-        subtitle: [opened, i.brigade.name, i.createdBy.fullName, i.note, i.task?.taskNo, i.downtimeMin ? `to'xtash ${minText(i.downtimeMin)}` : null, closed].filter(Boolean).join(" · "),
+        subtitle: [opened, i.brigade.name, i.createdBy.fullName, i.note, i.downtimeMin ? `to'xtash ${minText(i.downtimeMin)}` : null, closed].filter(Boolean).join(" · "),
         right: closed ? "hal qilindi" : i.resolvedAt ? "keyin hal qilindi" : "ochiq", tone: (closed ? "success" : "danger") as Tone,
       };
     });
@@ -133,13 +133,13 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
     if (sh.openedAt >= s.from && sh.openedAt < s.to) shiftRows.push({ id: `brig-shift:${sh.id}`, title: `${sh.brigade.name} — smena ochildi`, subtitle: `${time(sh.openedAt)} · ${sh.openedBy.fullName}`, right: time(sh.openedAt), tone: "info" });
     if (sh.closedAt && sh.closedAt >= s.from && sh.closedAt < s.to) shiftRows.push({ id: `brig-shift:${sh.id}`, title: `${sh.brigade.name} — smena yopildi`, subtitle: [time(sh.closedAt), sh.closedBy?.fullName, sh.summary, sh.note ? `izoh: ${sh.note}` : null].filter(Boolean).join(" · "), right: time(sh.closedAt), tone: "success" });
   }
-  for (const t of started) shiftRows.push({ id: `tasks:${t.id}`, title: `${t.taskNo} — ish boshlandi`, subtitle: `${time(t.startedAt!)} · ${t.brigade.name} · ${t.orderItem.product.name} ${inUnit(sum(t.qty), t.orderItem.product.unit)}`, right: time(t.startedAt!), tone: "info" });
+  for (const t of started) shiftRows.push({ id: `tasks:${t.id}`, title: `${t.brigade.name} — ish boshlandi`, subtitle: `${time(t.startedAt!)} · ${t.orderItem.product.name} ${inUnit(sum(t.qty), t.orderItem.product.unit)}`, right: time(t.startedAt!), tone: "info" });
   shiftRows.sort((a, b) => (a.right ?? "").localeCompare(b.right ?? ""));
 
   const sections: HomeSection[] = [
     sec(`Brigada qaydlari (bajarildi) · ${progress.length}`, progress.map((p) => ({
-      id: `tasks:${p.task.id}`, title: `${p.task.taskNo} · ${p.task.orderItem.product.name}`,
-      subtitle: [time(p.date), p.task.brigade.name, p.createdBy.fullName, p.task.order.customer.name, p.note ? `izoh: ${p.note}` : null].filter(Boolean).join(" · "),
+      id: `tasks:${p.task.id}`, title: `${p.task.brigade.name} · ${p.task.orderItem.product.name}`,
+      subtitle: [time(p.date), p.createdBy.fullName, p.task.order.customer.name, p.note ? `izoh: ${p.note}` : null].filter(Boolean).join(" · "),
       right: inUnit(sum(p.qty), p.task.orderItem.product.unit), tone: "success" as Tone,
     })), "Bu vaqtda brigada qaydi yo'q", "square-check"),
     ...(s.brigadeId ? [] : [sec(`Zameslar · ${batches.length}`, batches.map((b) => ({
@@ -149,7 +149,7 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
     })), "Bu vaqtda zames yo'q", "factory")]),
     sec(`Brak · ${defects.length}`, defects.map((d) => ({
       id: repId.defect(d.id), title: `${d.product.name} — ${d.reason}`,
-      subtitle: [time(d.date), d.brigade?.name, d.task?.taskNo, d.createdBy.fullName, d.note ? `izoh: ${d.note}` : null].filter(Boolean).join(" · "),
+      subtitle: [time(d.date), d.brigade?.name, d.createdBy.fullName, d.note ? `izoh: ${d.note}` : null].filter(Boolean).join(" · "),
       right: inUnit(sum(d.qty), d.product.unit), tone: "danger" as Tone,
     })), "Brak yozilmagan", "triangle-alert"),
     sec(`To'xtash va muammolar · ${issueRows.length}`, issueRows, "Brigadir muammo belgilamagan", "wrench"),
@@ -245,12 +245,12 @@ async function defectDetail(id: string): Promise<MobileDetail> {
     select: {
       qty: true, date: true, reason: true, note: true, taskId: true, brigadeId: true,
       product: { select: { name: true, unit: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
-      task: { select: { taskNo: true, doneQty: true, order: { select: { customer: { select: { name: true } } } } } },
+      task: { select: { doneQty: true, brigade: { select: { name: true } }, order: { select: { customer: { select: { name: true } } } } } },
     },
   });
   if (!d) throw new ListError("NOT_FOUND", "Brak yozuvi topilmadi", 404);
   const links: HomeRow[] = [
-    ...(d.taskId && d.task ? [{ id: `tasks:${d.taskId}`, title: `Topshiriq ${d.task.taskNo}`, subtitle: `${d.task.order.customer.name} · bajarilgan ${inUnit(sum(d.task.doneQty), d.product.unit)}` }] : []),
+    ...(d.taskId && d.task ? [{ id: `tasks:${d.taskId}`, title: `Topshiriq — ${d.task.brigade.name}`, subtitle: `${d.task.order.customer.name} · bajarilgan ${inUnit(sum(d.task.doneQty), d.product.unit)}` }] : []),
     ...(d.brigadeId && d.brigade ? [{ id: `brigades:${d.brigadeId}`, title: d.brigade.name, subtitle: "brigada kartochkasi" }] : []),
   ];
   return {
@@ -260,8 +260,7 @@ async function defectDetail(id: string): Promise<MobileDetail> {
       f("Miqdor", inUnit(sum(d.qty), d.product.unit), "danger"),
       f("Sabab", d.reason),
       ...(d.note ? [f("Izoh", d.note)] : []),
-      f("Brigada", d.brigade?.name ?? "—"),
-      ...(d.task ? [f("Topshiriq", d.task.taskNo)] : []),
+      f("Brigada", d.brigade?.name ?? d.task?.brigade.name ?? "—"),
       f("Kim yozdi", d.createdBy.fullName),
       f("Hisobdan", "hovli qoldig'idan chiqarildi (hisobdan chiqarish)"),
     ],

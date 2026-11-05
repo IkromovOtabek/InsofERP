@@ -34,7 +34,7 @@ export default async function NewBatch() {
   const openTasks: Record<string, OpenTask[]> = {};
   for (const t of tasks) {
     (openTasks[t.orderItem.productId] ??= []).push({
-      taskNo: t.taskNo, brigade: t.brigade.name, order: orderLabel(t.order.customer.name, t.order.dateUnknown ? null : t.order.deliveryDate),
+      id: t.id, brigade: t.brigade.name, order: orderLabel(t.order.customer.name, t.order.dateUnknown ? null : t.order.deliveryDate),
       qty: Number(t.qty), doneQty: Number(t.doneQty), unit: unitLabel(t.orderItem.product.unit),
     });
   }

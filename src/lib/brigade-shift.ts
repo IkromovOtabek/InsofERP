@@ -110,7 +110,7 @@ export async function dayPlan(brigadeIds: string[], iso = today()) {
   const [tasks, progress] = await Promise.all([
     db.brigadeTask.findMany({
       where: { brigadeId: { in: brigadeIds }, status: { not: "CANCELLED" }, dueDate: { lt: to }, OR: [{ status: { in: ["NEW", "IN_PROGRESS"] } }, { progress: { some: { date: { gte: from, lt: to } } } }] },
-      select: { id: true, taskNo: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, orderItem: { select: { product: { select: { name: true, unit: true } } } } },
+      select: { id: true, taskNo: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } },
     }),
     db.taskProgress.findMany({ where: { date: { gte: from, lt: to }, task: { brigadeId: { in: brigadeIds } } }, select: { taskId: true, qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
   ]);
@@ -231,7 +231,7 @@ export async function reportBrigadeIssue(i: IssueInput, userId: string): Promise
   if (i.downtimeMin != null && (i.downtimeMin < 0 || i.downtimeMin > 24 * 60)) return { error: "To'xtash vaqti 0–1440 daqiqa" };
   const brigade = await db.brigade.findUnique({ where: { id: i.brigadeId }, select: { name: true } });
   if (!brigade) return { error: "Brigada topilmadi" };
-  const task = i.taskId ? await db.brigadeTask.findUnique({ where: { id: i.taskId }, select: { brigadeId: true, taskNo: true } }) : null;
+  const task = i.taskId ? await db.brigadeTask.findUnique({ where: { id: i.taskId }, select: { brigadeId: true } }) : null;
   if (i.taskId && task?.brigadeId !== i.brigadeId) return { error: "Topshiriq bu brigadaniki emas" };
   const issue = await db.$transaction(async (tx) => {
     const x = await tx.brigadeIssue.create({
@@ -243,7 +243,6 @@ export async function reportBrigadeIssue(i: IssueInput, userId: string): Promise
   const detail = [
     i.kind === "EQUIPMENT" ? i.equipment?.trim() : null,
     i.kind === "STAFF" && i.qty ? `${i.qty} ta ishchi kerak` : null,
-    task ? task.taskNo : null,
     note,
   ].filter(Boolean).join(" · ");
   notifyAfter(() => notifyRoles(meta.owner, {

@@ -19,7 +19,7 @@ type Wh = { id: string; name: string };
  * tayyor mahsulot hovliga o'zi kirim bo'ladi. Shu ustiga zames ham yozilsa, bitta ish
  * ikki marta hisoblanadi — shuning uchun mahsulot tanlanganda ogohlantirish chiqadi.
  */
-export type OpenTask = { taskNo: string; brigade: string; order: string; qty: number; doneQty: number; unit: string };
+export type OpenTask = { id: string; brigade: string; order: string; qty: number; doneQty: number; unit: string };
 
 export function BatchForm({ orders, products, groups, canCreateProduct, warehouses, openTasks = {} }: { orders: Order[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; warehouses: Wh[]; openTasks?: Record<string, OpenTask[]> }) {
   const [state, action, pending] = useActionState(createBatch, undefined);
@@ -74,8 +74,8 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
         <Callout tone="warning" title="Bu mahsulotni brigada ham chiqaryapti">
           <ul className="ml-4 list-disc space-y-0.5">
             {brigadeTasks.map((t) => (
-              <li key={t.taskNo}>
-                <b>{t.brigade}</b> · topshiriq {t.taskNo} ({t.order}) — {t.qty} {t.unit} dan <b>{t.doneQty}</b> tasi bajarilgan
+              <li key={t.id}>
+                <b>{t.brigade}</b> · {t.order} — {t.qty} {t.unit} dan <b>{t.doneQty}</b> tasi bajarilgan
               </li>
             ))}
           </ul>

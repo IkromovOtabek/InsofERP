@@ -665,7 +665,7 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
       const list = await db.brigadeTask.findMany({
         where: {
           ...(brigadeIds ? { brigadeId: { in: brigadeIds } } : {}),
-          ...(q ? { OR: [{ taskNo: { contains: q, mode: "insensitive" } }, { brigade: { name: { contains: q, mode: "insensitive" } } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : {}),
+          ...(q ? { OR: [{ taskNo: { contains: q, mode: "insensitive" } }, { brigade: { name: { contains: q, mode: "insensitive" } } }, { orderItem: { product: { name: { contains: q, mode: "insensitive" } } } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : {}),
         },
         orderBy: [{ status: "asc" }, { dueDate: "asc" }], take: TAKE,
         include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } },
@@ -675,8 +675,8 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         const unit = unitLabel(t.orderItem.product.unit);
         return {
         id: t.id,
-        // Brigadirga o'z brigadasining nomi har qatorda takrorlanmaydi — mahsulot muhimroq
-        title: brigadeIds ? `${t.taskNo} · ${t.orderItem.product.name}` : `${t.taskNo} · ${t.brigade.name}`,
+        // Topshiriq raqami (`taskNo`) ko'rsatilmaydi — brigada nomi va mahsulot
+        title: `${t.brigade.name} · ${t.orderItem.product.name}`,
         subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`,
         right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${sum(t.qty)} ${unit}`,
         status: t.status,

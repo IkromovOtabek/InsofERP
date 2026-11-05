@@ -54,9 +54,9 @@ async function assertBrigade(user: MobileUser, brigadeId: string) {
 
 const noteField = (label = "Izoh", required = false, placeholder?: string): FormField => ({ name: "note", label, type: "text", required, placeholder });
 const downtimeField: FormField = { name: "downtimeMin", label: "To'xtab qolgan vaqt (daqiqa)", type: "number", placeholder: "masalan 45", hint: "bilmasangiz bo'sh qoldiring — hal bo'lganda yoziladi" };
-type TaskOpt = { id: string; taskNo: string; product: string };
+type TaskOpt = { id: string; brigade: string; product: string };
 const taskField = (tasks: TaskOpt[]): FormField[] => tasks.length
-  ? [{ name: "taskId", label: "Qaysi topshiriq", type: "select", value: "", options: [{ value: "", label: "— umumiy (topshiriqqa bog'lanmagan) —" }, ...tasks.map((t) => ({ value: t.id, label: `${t.taskNo} · ${t.product}` }))] }]
+  ? [{ name: "taskId", label: "Qaysi topshiriq", type: "select", value: "", options: [{ value: "", label: "— umumiy (topshiriqqa bog'lanmagan) —" }, ...tasks.map((t) => ({ value: t.id, label: `${t.brigade} · ${t.product}` }))] }]
   : [];
 
 /**
@@ -113,7 +113,7 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
       where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 30,
       include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } }, issues: { where: { resolvedAt: null }, select: { kind: true } } },
     }),
-    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, include: { task: { select: { taskNo: true } } } }),
+    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, include: { brigade: { select: { name: true } } } }),
     db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, kind: "EQUIPMENT", createdAt: { gte: month } }, orderBy: { createdAt: "desc" }, select: { id: true, equipment: true, resolvedAt: true, createdAt: true, downtimeMin: true, note: true } }),
     brigDayRows(mine, 7),
     db.productDefect.findMany({ where: { brigadeId: { in: ids }, date: { gte: start } }, select: { qty: true, product: { select: { unit: true } } } }),
@@ -149,11 +149,11 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
   const alerts: HomeRow[] = [];
   for (const t of open) {
     const ph = taskPhase(t, t.issues.map((x) => x.kind));
-    if (ph.late) alerts.push({ id: `tasks:${t.id}`, title: `Kechikmoqda — ${t.taskNo}`, subtitle: `${t.orderItem.product.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), tone: "danger" });
-    else if (t.order.isUrgent && t.status === "NEW" && !t.startedAt) alerts.push({ id: `tasks:${t.id}`, title: `Shoshilinch — ${t.taskNo}`, subtitle: `${t.orderItem.product.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), tone: "warning" });
+    if (ph.late) alerts.push({ id: `tasks:${t.id}`, title: `Kechikmoqda — ${t.brigade.name}`, subtitle: `${t.orderItem.product.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), tone: "danger" });
+    else if (t.order.isUrgent && t.status === "NEW" && !t.startedAt) alerts.push({ id: `tasks:${t.id}`, title: `Shoshilinch — ${t.brigade.name}`, subtitle: `${t.orderItem.product.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), tone: "warning" });
   }
   for (const i of issues) {
-    alerts.push({ id: `brig-issue:${i.id}`, title: BRIGADE_ISSUE[i.kind].label, subtitle: [i.equipment, i.task?.taskNo, i.note].filter(Boolean).join(" · "), right: `${day(i.createdAt)} ${time(i.createdAt)}`, tone: i.kind === "EQUIPMENT" || i.kind === "MATERIAL" ? "danger" : "warning" });
+    alerts.push({ id: `brig-issue:${i.id}`, title: BRIGADE_ISSUE[i.kind].label, subtitle: [i.equipment, i.brigade.name, i.note].filter(Boolean).join(" · "), right: `${day(i.createdAt)} ${time(i.createdAt)}`, tone: i.kind === "EQUIPMENT" || i.kind === "MATERIAL" ? "danger" : "warning" });
   }
   const hour = new Date().getHours();
   const main = plan.units[0];
@@ -196,8 +196,8 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
       const ph = taskPhase(t, t.issues.map((x) => x.kind));
       const left = sum(t.qty) - sum(t.doneQty);
       return {
-        id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`,
-        subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)} · ${Math.round((sum(t.doneQty) / (sum(t.qty) || 1)) * 100)}% bajarildi${many ? ` · ${t.brigade.name}` : ""}`,
+        id: t.id, title: `${t.brigade.name} · ${t.orderItem.product.name}`,
+        subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)} · ${Math.round((sum(t.doneQty) / (sum(t.qty) || 1)) * 100)}% bajarildi`,
         right: `${inUnit(left, t.orderItem.product.unit)} qoldi`, status: ph.label, tone: ph.tone,
       };
     }), { empty: "Ochiq topshiriq yo'q — brigadangizga tayinlansa shu yerda chiqadi", target: "tasks", icon: "list" }),
@@ -217,7 +217,8 @@ const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSta
 const dayTitle = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return `${d.getDate()}-${MONTHS_UZ[d.getMonth()]}, ${WEEKDAYS_UZ[d.getDay()]}`; };
 
 export type BrigTask = {
-  id: string; taskNo: string; product: string; productId: string; unit: string;
+  /** `taskNo` — eski ilova uchun qoldi; ko'rinadigan yorliq — `brigade` (brigada nomi). */
+  id: string; taskNo: string; brigade: string; product: string; productId: string; unit: string;
   qty: number; done: number; left: number; pct: number;
   due: string; late: boolean; dueToday: boolean; customer: string;
   phase: string; tone: Tone; started: boolean; blocked: boolean; urgent: boolean;
@@ -256,11 +257,11 @@ export async function brigadeToday(user: MobileUser): Promise<BrigadeToday | nul
   const [open, doneMonth, issues, equipment, members, defectsToday, plan] = await Promise.all([
     db.brigadeTask.findMany({
       where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 60,
-      include: { order: { include: { customer: true } }, orderItem: { include: { product: true } }, issues: { where: { resolvedAt: null }, select: { kind: true } } },
+      include: { brigade: { select: { name: true } }, order: { include: { customer: true } }, orderItem: { include: { product: true } }, issues: { where: { resolvedAt: null }, select: { kind: true } } },
     }),
     // Yopilgan topshiriq boshqa o'zgarmaydi — `updatedAt` yopilgan vaqt
     db.brigadeTask.count({ where: { brigadeId: { in: ids }, status: "DONE", updatedAt: { gte: monthStart } } }),
-    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, include: { task: { select: { taskNo: true } } } }),
+    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, include: { brigade: { select: { name: true } } } }),
     db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, kind: "EQUIPMENT", equipment: { not: null } }, orderBy: { createdAt: "desc" }, take: 60, select: { equipment: true } }),
     brigadeMembers(ids[0]!),
     db.productDefect.findMany({ where: { brigadeId: ids[0]!, date: { gte: start } }, select: { qty: true, product: { select: { unit: true } } } }),
@@ -274,7 +275,7 @@ export async function brigadeToday(user: MobileUser): Promise<BrigadeToday | nul
     const ph = taskPhase(t, t.issues.map((x) => x.kind));
     const qty = sum(t.qty), done = sum(t.doneQty);
     return {
-      id: t.id, taskNo: t.taskNo, product: t.orderItem.product.name, productId: t.orderItem.product.id, unit: unitLabel(t.orderItem.product.unit),
+      id: t.id, taskNo: t.taskNo, brigade: t.brigade.name, product: t.orderItem.product.name, productId: t.orderItem.product.id, unit: unitLabel(t.orderItem.product.unit),
       qty, done, left: Math.max(0, qty - done), pct: qty ? Math.round((done / qty) * 100) : 0,
       due: day(t.dueDate), late: ph.late, dueToday: isoOf(t.dueDate) === isoOf(start), customer: t.order.customer.name,
       phase: ph.label, tone: ph.tone, started: !!t.startedAt || t.status === "IN_PROGRESS", blocked: t.issues.length > 0, urgent: t.order.isUrgent,
@@ -306,7 +307,7 @@ export async function brigadeToday(user: MobileUser): Promise<BrigadeToday | nul
       open: issues.length,
       rows: issues.map((i) => ({
         id: `brig-issue:${i.id}`, title: i.kind === "EQUIPMENT" && i.equipment ? `${i.equipment} — to'xtagan` : BRIGADE_ISSUE[i.kind].label,
-        subtitle: [i.task?.taskNo, BRIGADE_ISSUE[i.kind].owner.map((r) => ROLE_NAME[r] ?? r).join(", ")].filter(Boolean).join(" · "),
+        subtitle: [i.brigade.name, BRIGADE_ISSUE[i.kind].owner.map((r) => ROLE_NAME[r] ?? r).join(", ")].filter(Boolean).join(" · "),
         right: ago(i.createdAt), tone: (i.kind === "EQUIPMENT" || i.kind === "MATERIAL" ? "danger" : "warning") as Tone,
       })),
     },
@@ -457,8 +458,9 @@ function reportFields(r: ShiftReport, closedBy: string | null): DetailField[] {
 
 function reportSections(r: ShiftReport): HomeSection[] {
   return [
+    // Topshiriq raqami (`taskNo`) ko'rsatilmaydi — hisobot bitta brigadaniki, yorliq brigada nomi
     section("Topshiriqlar: reja va fakt", r.tasks.map((t, i) => ({
-      id: `t${i}`, title: `${t.taskNo} · ${t.product}`, subtitle: `reja ${inUnit(t.plan, t.unit)} · fakt ${inUnit(t.fact, t.unit)}${t.late ? " · kechikkan" : ""}${t.reason ? ` · ${t.reason}` : ""}`,
+      id: `t${i}`, title: `${r.brigade} · ${t.product}`, subtitle: `reja ${inUnit(t.plan, t.unit)} · fakt ${inUnit(t.fact, t.unit)}${t.late ? " · kechikkan" : ""}${t.reason ? ` · ${t.reason}` : ""}`,
       right: t.phase, tone: t.late ? "danger" : t.fact >= t.plan && t.plan > 0 ? "success" : "warning",
     })), { empty: "Topshiriq bo'lmagan", icon: "list" }),
     section("Muammolar", r.issues.map((x, i) => ({ id: `i${i}`, title: x.kind, subtitle: [x.equipment, x.note, x.downtimeMin ? `to'xtash ${minText(x.downtimeMin)}` : null].filter(Boolean).join(" · "), right: x.resolved ? "hal qilindi" : "ochiq", tone: x.resolved ? "success" : "danger" })), { empty: "Muammo bo'lmadi", icon: "triangle-alert" }),
@@ -477,7 +479,7 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
   const now = new Date();
   const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
   const r = await buildShiftReport(brigadeId, today(), s?.openedAt ?? dayStart, now, null);
-  const open = await db.brigadeTask.findMany({ where: { brigadeId, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, orderItem: { select: { product: { select: { id: true, name: true, unit: true } } } } } });
+  const open = await db.brigadeTask.findMany({ where: { brigadeId, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, select: { id: true, orderItem: { select: { product: { select: { id: true, name: true, unit: true } } } } } });
   const members = await brigadeMembers(brigadeId);
   const mine = user.role === "BRIGADIER";
 
@@ -490,7 +492,7 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
       ? new Set((await db.faceTemplate.findMany({ where: { employeeId: { in: unmarked.map((m) => m.id) } }, select: { employeeId: true }, distinct: ["employeeId"] })).map((t) => t.employeeId))
       : new Set<string>();
     if (unmarked.some((m) => !withFace.has(m.id)) && !faceAiFallbackEnabled()) actions.push({ id: "att.all", label: "Qolganlari keldi", tone: "success", confirm: "Belgilanmagan brigada a'zolari \"Keldi\" deb belgilansinmi?" });
-    actions.push(...issueActions(open.map((t) => ({ id: t.id, taskNo: t.taskNo, product: t.orderItem.product.name }))));
+    actions.push(...issueActions(open.map((t) => ({ id: t.id, brigade: b.name, product: t.orderItem.product.name }))));
     const products = [...new Map(open.map((t) => [t.orderItem.product.id, t.orderItem.product])).values()];
     if (products.length) actions.push(defectAction("shift.defect", products));
   }
@@ -511,7 +513,7 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
       })), { empty: "Brigadaga xodim taqsimlanmagan", target: "sex-emp", icon: "users" }),
       section("Kunlik topshiriqlar", (await dayPlan([brigadeId])).rows.map((t) => {
         const ph = taskPhase(t);
-        return { id: t.id, title: `${t.taskNo} · ${t.product}`, subtitle: `reja ${inUnit(t.plan, t.unit)} · fakt ${inUnit(t.fact, t.unit)} · muddat ${day(t.dueDate)}`, right: ph.label, tone: ph.tone };
+        return { id: t.id, title: `${t.brigade.name} · ${t.product}`, subtitle: `reja ${inUnit(t.plan, t.unit)} · fakt ${inUnit(t.fact, t.unit)} · muddat ${day(t.dueDate)}`, right: ph.label, tone: ph.tone };
       }), { empty: "Bugunga topshiriq yo'q", target: "tasks", icon: "list" }),
       ...reportSections(r).slice(1, 3),
     ],
@@ -524,7 +526,7 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
 export async function brigIssueDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const i = await db.brigadeIssue.findUnique({
     where: { id },
-    include: { brigade: { select: { name: true } }, task: { select: { id: true, taskNo: true, orderItem: { select: { product: { select: { name: true } } } } } }, createdBy: { select: { fullName: true } }, resolvedBy: { select: { fullName: true } } },
+    include: { brigade: { select: { name: true } }, task: { select: { id: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true } } } } } }, createdBy: { select: { fullName: true } }, resolvedBy: { select: { fullName: true } } },
   });
   if (!i) throw new ListError("NOT_FOUND", "Muammo topilmadi", 404);
   await assertBrigade(user, i.brigadeId);
@@ -553,7 +555,7 @@ export async function brigIssueDetail(user: MobileUser, id: string): Promise<Mob
       f("Holat", i.resolvedAt ? `hal qilindi ${day(i.resolvedAt)} ${time(i.resolvedAt)}` : "ochiq", i.resolvedAt ? "success" : "danger"),
       ...(i.equipment ? [f("Uskuna", i.equipment)] : []),
       ...(i.kind === "STAFF" && i.qty ? [f("Kerakli ishchi", `${num(sum(i.qty))} kishi`, "warning")] : []),
-      ...(i.task ? [f("Topshiriq", `${i.task.taskNo} · ${i.task.orderItem.product.name}`)] : []),
+      ...(i.task ? [f("Topshiriq", `${i.task.brigade.name} · ${i.task.orderItem.product.name}`)] : []),
       f("Tavsif", i.note),
       ...(i.downtimeMin != null ? [f("To'xtash vaqti", minText(i.downtimeMin), "warning")] : []),
       f("Bildirdi", i.createdBy.fullName),
@@ -587,14 +589,14 @@ export async function brigIssuesList(user: MobileUser, title: string, q?: string
     ...(q ? { OR: [{ note: { contains: q, mode: "insensitive" } }, { equipment: { contains: q, mode: "insensitive" } }, { brigade: { name: { contains: q, mode: "insensitive" } } }] } : {}),
   });
   const [rows, counts] = await Promise.all([
-    db.brigadeIssue.findMany({ where: where(key), orderBy: { createdAt: "desc" }, take: 60, include: { brigade: { select: { name: true } }, task: { select: { taskNo: true } } } }),
+    db.brigadeIssue.findMany({ where: where(key), orderBy: { createdAt: "desc" }, take: 60, include: { brigade: { select: { name: true } } } }),
     Promise.all(ISSUE_FILTERS.map((x) => db.brigadeIssue.count({ where: where(x.key) }))),
   ]);
   return {
     key: "brig-issues", title,
     rows: rows.map((i) => ({
       id: i.id, title: `${BRIGADE_ISSUE[i.kind].label} · ${i.brigade.name}`,
-      subtitle: [i.equipment, i.task?.taskNo, i.note].filter(Boolean).join(" · "),
+      subtitle: [i.equipment, i.note].filter(Boolean).join(" · "),
       right: `${day(i.createdAt)} ${time(i.createdAt)}`, status: i.resolvedAt ? "Hal qilindi" : "Ochiq", tone: i.resolvedAt ? "success" : "danger",
     })),
     filters: ISSUE_FILTERS.map((x, n) => ({ key: x.key, label: x.label, count: counts[n]!, active: x.key === key })),
@@ -629,10 +631,10 @@ export async function brigTasksList(title: string, brigadeIds: string[], q?: str
   const list = await db.brigadeTask.findMany({
     where: {
       brigadeId: { in: brigadeIds },
-      ...(q ? { OR: [{ taskNo: { contains: q, mode: "insensitive" } }, { orderItem: { product: { name: { contains: q, mode: "insensitive" } } } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : {}),
+      ...(q ? { OR: [{ taskNo: { contains: q, mode: "insensitive" } }, { brigade: { name: { contains: q, mode: "insensitive" } } }, { orderItem: { product: { name: { contains: q, mode: "insensitive" } } } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : {}),
     },
     orderBy: [{ status: "asc" }, { dueDate: "asc" }], take: 200,
-    include: { order: { include: { customer: true } }, orderItem: { include: { product: true } }, issues: { where: { resolvedAt: null }, select: { kind: true } } },
+    include: { brigade: { select: { name: true } }, order: { include: { customer: true } }, orderItem: { include: { product: true } }, issues: { where: { resolvedAt: null }, select: { kind: true } } },
   });
   const rows = list.map((t) => ({ t, ph: taskPhase(t, t.issues.map((i) => i.kind)), open: t.status === "NEW" || t.status === "IN_PROGRESS" }));
   const test: Record<string, (x: (typeof rows)[number]) => boolean> = {
@@ -643,7 +645,7 @@ export async function brigTasksList(title: string, brigadeIds: string[], q?: str
   return {
     key: "tasks", title,
     rows: rows.filter(test[key]!).slice(0, 60).map(({ t, ph }) => ({
-      id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`,
+      id: t.id, title: `${t.brigade.name} · ${t.orderItem.product.name}`,
       subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}${t.order.isUrgent ? " · shoshilinch" : ""}`,
       right: `${num(sum(t.qty) - sum(t.doneQty))} / ${num(sum(t.qty))} ${unitLabel(t.orderItem.product.unit)}`,
       status: ph.label, tone: ph.tone,

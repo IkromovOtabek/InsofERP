@@ -39,11 +39,17 @@ export type NewStockOrderInput = {
   items: { productId: string; qtyM3: number }[];
   isUrgent?: boolean;
   note?: string | null;
+  /**
+   * Darhol qabul qilingan (CONFIRMED) holda ochish — Ishlab chiqarish → «Skladga zayavka»: ochgan xodimda
+   * qabul qilish ruxsati ham bor (`orders` → `stock`), zayavka shu zahoti brigada tayinlashga o'tadi.
+   * Berilmasa — qoralama (mobil ilova), keyin «Qabul qilish» bosiladi.
+   */
+  confirmed?: boolean;
 };
 
 export type NewStockOrderResult = { id: string; orderNo: string };
 
-/** Sklad zayavkasini ochish (qoralama). Narx yozilmaydi — hamma qator 0 so'm. */
+/** Sklad zayavkasini ochish (qoralama yoki darhol qabul qilingan). Narx yozilmaydi — hamma qator 0 so'm. */
 export async function createStockOrder(input: NewStockOrderInput, userId: string): Promise<NewStockOrderResult> {
   const items = input.items.filter((i) => i.productId && i.qtyM3 > 0);
   if (items.length === 0) throw new Error("Kamida bitta mahsulot qatori kerak");
@@ -53,6 +59,13 @@ export async function createStockOrder(input: NewStockOrderInput, userId: string
   const merged = new Map<string, number>();
   for (const i of items) merged.set(i.productId, (merged.get(i.productId) ?? 0) + i.qtyM3);
 
+  // Zaxiraga faqat dona mahsulot: beton zakaz olingandan keyin quyiladi, hovlida saqlanmaydi
+  const products = await db.product.findMany({ where: { id: { in: [...merged.keys()] } }, select: { id: true, name: true, unit: true, isActive: true } });
+  if (products.length !== merged.size || products.some((p) => !p.isActive)) throw new Error("Mahsulot topilmadi yoki o'chirilgan — sahifani yangilab, qayta tanlang");
+  const beton = products.find((p) => p.unit === "m3");
+  if (beton) throw new Error(`${beton.name}: beton zaxiraga qo'yilmaydi — faqat dona mahsulot`);
+  for (const p of products) if (!Number.isInteger(merged.get(p.id))) throw new Error(`${p.name}: miqdor butun son bo'lsin`);
+
   return db.$transaction(async (tx) => {
     const customerId = await stockCustomerId(tx);
     const o = await tx.order.create({
@@ -60,6 +73,7 @@ export async function createStockOrder(input: NewStockOrderInput, userId: string
         orderNo: await nextNo(tx, "order", "Z"),
         customerId,
         kind: "STOCK",
+        status: input.confirmed ? "CONFIRMED" : "DRAFT",
         deliveryDate: input.dueDate,
         deliveryAddress: STOCK_ORDER_ADDRESS,
         needsDelivery: false, // hech qayerga yetkazilmaydi — hovlida qoladi
@@ -72,6 +86,7 @@ export async function createStockOrder(input: NewStockOrderInput, userId: string
       },
     });
     await audit(tx, userId, "CREATE", "Order", o.id, undefined, { ...o, items: [...merged], kind: "STOCK" });
+    if (input.confirmed) await audit(tx, userId, "STATUS_CHANGE", "Order", o.id, { status: "DRAFT" }, { status: "CONFIRMED", kind: "STOCK", via: "production" });
     return { id: o.id, orderNo: o.orderNo };
   });
 }

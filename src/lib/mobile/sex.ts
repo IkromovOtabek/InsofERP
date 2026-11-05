@@ -251,7 +251,7 @@ async function brigades(r: DashRange): Promise<MobileDetail> {
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, select: { dueDate: true } } } }),
     db.taskProgress.findMany({
       where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" },
-      select: { id: true, qty: true, date: true, createdBy: { select: { fullName: true } }, task: { select: { id: true, taskNo: true, brigadeId: true, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } },
+      select: { id: true, qty: true, date: true, createdBy: { select: { fullName: true } }, task: { select: { id: true, brigadeId: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } },
     }),
     productionStaff(),
   ]);
@@ -277,7 +277,7 @@ async function brigades(r: DashRange): Promise<MobileDetail> {
       }), { target: "brigades", empty: "Faol brigada yo'q" }),
       section("Qaydlar", progress.slice(0, 40).map((p) => ({
         id: p.task.id, title: `${p.task.orderItem.product.name}`,
-        subtitle: `${day(p.date)} ${hhmm(p.date)} · ${list.find((b) => b.id === p.task.brigadeId)?.name ?? "—"} · ${p.task.taskNo} · ${p.createdBy.fullName}`,
+        subtitle: `${day(p.date)} ${hhmm(p.date)} · ${p.task.brigade.name} · ${p.createdBy.fullName}`,
         right: inUnit(sum(p.qty), p.task.orderItem.product.unit),
       })), { target: "tasks", empty: "Bu davrda brigada qaydi yo'q" }),
     ],
