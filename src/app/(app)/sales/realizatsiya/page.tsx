@@ -3,7 +3,7 @@ import { Search, Truck, Wallet, Receipt, FileWarning } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { dateRu, fmtNum, isoDate } from "@/lib/format";
-import { realizationRows, type RealizationRow } from "@/lib/realization";
+import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Input, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
@@ -24,8 +24,6 @@ const COL_W = [6.2, 4.8, 6.4, 7.9, 6.9, 7.7, 5.3, 8, 8, 9.1, 6.4, 9.1, 6, 8.2];
 
 const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
 const nq = (v: number) => fmtNum(v, 3);
-/** «N-2026-00161» → «161» (varaqdagidek qisqa); to'liq raqam — sarlavhada va Excel'da */
-const shortTtn = (v: string | null) => (v ? v.replace(/^.*-0*(?=\d)/, "") : "");
 const parse = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : null);
 
 export default async function RealizatsiyaPage({ searchParams }: { searchParams: Promise<SP> }) {

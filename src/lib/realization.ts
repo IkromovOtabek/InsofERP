@@ -24,10 +24,14 @@ export type RealizationRow = {
   ttn: string | null; vehicle: string | null; unit: string; qty: number;
   price: number; delivery: number; net: number; vat: number; total: number;
   address: string; phone: string | null; contractNo: string | null; invoiceNo: string | null; missing: string[];
+  /** Reys ma'lumoti (Logistika → Realizatsiya): yuk olingan joy — BRU yoki manzil, haydovchi */
+  loadPlace: string | null; driver: string | null; driverPhone: string | null;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
+/** «N-2026-00161» → «161» (varaqdagidek qisqa); to'liq raqam — sarlavhada va Excel'da */
+export const shortTtn = (v: string | null) => (v ? v.replace(/^.*-0*(?=\d)/, "") : "");
 const PAY_LABEL = Object.fromEntries(PAY_GROUPS.map((g) => [g.key, g.label])) as Record<PayGroupKey, string>;
 
 const ORDER_SELECT = {
@@ -48,7 +52,10 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
   const [trips, pickups, groups] = await Promise.all([
     db.trip.findMany({
       where: { status: { not: "CANCELLED" }, order: live, OR: [{ loadedAt: { gte: a, lt: b } }, { loadedAt: null, createdAt: { gte: a, lt: b } }] },
-      select: { id: true, deliveryNoteNo: true, qtyM3: true, acceptedQty: true, loadedAt: true, createdAt: true, vehicle: { select: { plate: true } }, order: { select: ORDER_SELECT } },
+      select: {
+        id: true, deliveryNoteNo: true, qtyM3: true, acceptedQty: true, loadedAt: true, createdAt: true, bru: true, pickupAddress: true,
+        vehicle: { select: { plate: true } }, driver: { select: { fullName: true, phone: true } }, order: { select: ORDER_SELECT },
+      },
     }),
     db.order.findMany({
       where: { ...live, status: { in: ["DELIVERED", "CLOSED"] }, deliveryDate: { gte: a, lt: b }, trips: { none: { status: { not: "CANCELLED" } } } },
@@ -61,7 +68,8 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
   type O = (typeof pickups)[number];
   const rows: RealizationRow[] = [];
   const tripQty = (t: { qtyM3: unknown; acceptedQty: unknown }) => Number(t.acceptedQty ?? t.qtyM3);
-  const push = (o: O, date: Date, trip: { id: string; no: string; plate: string } | null) => {
+  type TripInfo = { id: string; no: string; plate: string; loadPlace: string | null; driver: string; driverPhone: string | null };
+  const push = (o: O, date: Date, trip: TripInfo | null) => {
     const pay = payGroupOf(o);
     // Shu reysning yuki zayavka qatorlari bo'yicha: [oldingi reyslar yig'indisi; + shu reys) oralig'i qatorlar oralig'iga solinadi
     const idx = trip ? o.trips.findIndex((t) => t.id === trip.id) : -1;
@@ -75,6 +83,7 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
       customerId: o.customerId, customer: o.customer.name, ttn: trip?.no ?? null, vehicle: trip ? trip.plate : "o'zi oldi",
       address: o.site?.name || o.deliveryAddress, phone: o.site?.contactPhone || o.customer.phone || null,
       contractNo: o.contractNo, invoiceNo, missing,
+      loadPlace: trip?.loadPlace ?? null, driver: trip?.driver ?? null, driverPhone: trip?.driverPhone ?? null,
     };
     const fee = withFee ? Number(o.deliveryFee) : 0;
     let start = 0;
@@ -101,7 +110,12 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
     }
   };
 
-  for (const t of trips) push(t.order, t.loadedAt ?? t.createdAt, { id: t.id, no: t.deliveryNoteNo, plate: t.vehicle.plate });
+  for (const t of trips) {
+    push(t.order, t.loadedAt ?? t.createdAt, {
+      id: t.id, no: t.deliveryNoteNo, plate: t.vehicle.plate, loadPlace: t.bru || t.pickupAddress || null,
+      driver: t.driver.fullName, driverPhone: t.driver.phone,
+    });
+  }
   for (const o of pickups) push(o, o.deliveryDate, null);
 
   return rows.sort((x, y) => x.date.getTime() - y.date.getTime() || (x.ttn ?? "").localeCompare(y.ttn ?? "", "uz", { numeric: true }) || x.key.localeCompare(y.key));

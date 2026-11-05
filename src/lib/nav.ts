@@ -85,6 +85,8 @@ export const NAV: NavItem[] = [
   // Haydovchilar tabeli: yetkazilgan reyslar o'zi tushadi, dispetcher narx qo'yadi → Ish haqi (`lib/driver-trip-pay.ts`)
   // Ish boshqaruvchi reys haqini tasdiqlaydi, buxgalter oylikka tushadiganini ko'radi
   { href: "/logistika/tabel",       label: "Haydovchilar tabeli", roles: [...LOGI, "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], group: "Logistika" },
+  // Realizatsiya: reys (TTN) qatorlari zayavkadan o'zi tushadi, tizimdan tashqari jo'natma qo'lda (`lib/realization-log.ts`). Faqat reestr
+  { href: "/logistika/realizatsiya", label: "Realizatsiya",     roles: [...LOGI, "DISPATCHER"], group: "Logistika" },
   // Sotuvda mijoz obyekti mijoz kartasidan ochiladi; GPS — logistika ishi (sex Reyslar'dagi jonli xaritani ko'radi)
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika", menuHide: ["SALES"] },
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika", menuHide: ["PRODUCTION", "SUPERVISOR"] },

@@ -105,6 +105,7 @@ model User {
   payments               Payment[]                @relation("PaymentCreatedBy")
   vehicleServices        VehicleService[]         @relation("VehicleServiceBy")
   logisticsEntries       LogisticsEntry[]         @relation("LogisticsEntryBy")
+  realizationEntries     RealizationEntry[]       @relation("RealizationEntryBy")
   agentCustomers         Customer[]               @relation("CustomerAgent")
   aiChats                AiChat[]                 @relation("AiChatUser")
   rentTx                 RentTx[]                 @relation("RentTxCreatedBy")
@@ -272,6 +273,7 @@ model Customer {
   leads       Lead[]
   amoDeals    AmoDeal[]
   register    SalesRegister[]
+  realizations RealizationEntry[]
   agent       User?             @relation("CustomerAgent", fields: [agentId], references: [id])
   openings    OpeningBalance[]
   offers      CommercialOffer[]
@@ -413,6 +415,7 @@ model Product {
   defects     ProductDefect[]
   openings    OpeningBalance[]
   offerItems  CommercialOfferItem[]
+  realizations RealizationEntry[]
 
   @@index([groupId])
 }
@@ -1985,6 +1988,56 @@ model LogisticsEntry {
   @@index([date])
   @@index([driverId, date])
   @@index([vehicleId, date])
+}
+
+/// Logistika → «Realizatsiya»: tizimga reys bo'lib tushmagan jo'natma — dispetcher qo'lda kiritadi (`lib/realization-log.ts`).
+/// Reysdan tushadigan qatorlar saqlanmaydi (jonli, `lib/realization.ts`). Faqat reestr: mijoz qarzi, kassa va skladga
+/// ta'sir qilmaydi. O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
+model RealizationEntry {
+  id            String    @id @default(cuid())
+  date          DateTime
+  payGroup      String // BANK | CASH | DEBT — `PayGroupKey` (lib/order-day-sheet.ts)
+  seller        String?
+  customerId    String? // nomi mijozlar ro'yxatidagiga (yoki aliasiga) mos kelsa
+  customerName  String
+  productId     String?
+  productName   String
+  groupName     String // mahsulot papkasining yuqori nomi (Beton, Plita…) yoki qo'lda
+  ttn           String?
+  vehicle       String? // mashina raqami (matn)
+  unit          String
+  qty           Decimal   @db.Decimal(18, 3)
+  price         Decimal   @db.Decimal(18, 2) // QQSsiz
+  delivery      Decimal   @default(0) @db.Decimal(18, 2)
+  vat           Decimal   @default(0) @db.Decimal(18, 2) // perechisleniyeda 12% (miqdor × narx dan)
+  loadPlace     String? // ortilgan joy: BSU-1, Sklad-2…
+  destination   String? // boradigan manzil
+  note          String?
+  refName       String? // xaridor (spravka nomi)
+  clientToken   String?   @unique // ikki marta yuborilsa dublikat bo'lmasin
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  product   Product?  @relation(fields: [productId], references: [id])
+  createdBy User      @relation("RealizationEntryBy", fields: [createdById], references: [id])
+
+  @@index([date])
+}
+
+/// Reysdan tushgan realizatsiya qatoriga dispetcher to'ldiradigan maydonlar (reys ma'lumoti o'zgarmaydi).
+model RealizationNote {
+  key         String   @id // reys id; reyssiz (mijoz o'zi olib ketgan) zayavka — "o:<orderId>"
+  loadPlace   String?
+  destination String?
+  note        String?
+  refName     String?
+  updatedById String
+  updatedAt   DateTime @updatedAt
 }
 
 enum TransportExpenseKind {

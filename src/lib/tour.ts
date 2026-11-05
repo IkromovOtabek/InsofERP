@@ -303,6 +303,7 @@ const DISPATCHER_STEPS: TourStep[] = [
   openPage("/logistika/haydovchilar", "Haydovchilar", "Haydovchilar ro'yxati: mavjudlik (bo'sh / reysda / kelmadi), guvohnoma muddati, biriktirilgan transport. Ism ustiga bossangiz — haydovchi kartasi (guvohnoma, grafik, transport)."),
   openPage("/logistika/transport", "Transport", "Hamma texnika va joriy holati: bo'sh, reysda, ta'mirda. Transport qo'shish, kartani tahrirlash, texnik xizmat va hujjat muddatlari shu yerda."),
   openPage("/logistika/tabel", "Haydovchilar tabeli", "Yetkazilgan har reys shu yerga o'zi tushadi: km, kutish, mikser aylantirish, ishlagan soat va tarif bo'yicha taklif. Narxni tasdiqlang — reys haydovchi oyligiga qo'shiladi. Narxsiz reyslar tepada turadi va eslatma keladi."),
+  openPage("/logistika/realizatsiya", "Realizatsiya", "Jo'natmalar reestri (TTN bo'yicha): reys ochilgan zahoti qator o'zi tushadi — mijoz, mahsulot, narx zayavkadan. Ortilgan joy, manzil va izohni to'ldiring; tizimga tushmagan jo'natmani «Qo'lda qator» bilan qo'shing."),
 ];
 
 const SECRETARY_STEPS: TourStep[] = [
