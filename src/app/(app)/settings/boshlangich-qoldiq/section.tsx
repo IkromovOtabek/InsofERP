@@ -46,7 +46,7 @@ const IMPORT_FIELDS: Record<OpeningKind, ImportField[]> = {
     { key: "note", label: "Izoh", synonyms: ["izoh", "примеч", "note"] },
   ],
   STOCK: [
-    { key: "name", label: "Mahsulot (kod yoki nomi)", required: true, synonyms: ["mahsulot", "товар", "продукц", "kod", "код", "marka", "марка", "nomi", "наимен", "name"] },
+    { key: "name", label: "Mahsulot nomi", required: true, synonyms: ["mahsulot", "товар", "продукц", "kod", "код", "marka", "марка", "nomi", "наимен", "name"] },
     { key: "warehouse", label: "Sklad", hint: "bo'sh — formadagi standart sklad", synonyms: ["sklad", "склад", "ombor", "warehouse"] },
     { key: "qty", label: "Miqdor", required: true, synonyms: ["miqdor", "кол", "к-во", "qoldiq", "остаток", "soni", "qty"] },
     { key: "unitCost", label: "Tannarx (birlik)", synonyms: ["tannarx", "себестоим", "narx", "цена", "cost"] },
@@ -114,7 +114,7 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
         ? (await db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, inn: true } })).filter((c) => !usedIds.has(c.id)).map((c) => ({ id: c.id, label: c.inn ? `${c.name} · ${c.inn}` : c.name }))
         : kind === "CASH"
           ? accounts.filter((a) => !usedIds.has(a.id)).map((a) => ({ id: a.id, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"})` }))
-          : (await db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true } })).map((p) => ({ id: p.id, label: `${p.code} · ${p.name}` }));
+          : (await db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true } })).map((p) => ({ id: p.id, label: p.name }));
 
   const dues = kind === "SUPPLIER" ? new Map((await supplierOpeningDues()).map((d) => [d.id, d])) : new Map();
   // Yetkazuvchi qoldig'iga qilingan to'lovlar — xato yozilganini direktor storno qiladi
@@ -205,7 +205,7 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
             const who = r.customer ? <Link href={`/customers/${r.customer.id}`} className="font-medium hover:underline">{r.customer.name}</Link>
               : r.supplier ? <Link href={`/suppliers/${r.supplier.id}`} className="font-medium hover:underline">{r.supplier.name}</Link>
               : r.cashAccount ? <span className="font-medium">{r.cashAccount.name} <span className="text-xs text-slate-500">{r.cashAccount.type === "CASH" ? "naqd" : "bank"}</span></span>
-              : r.product ? <span className="font-medium">{r.product.code} · {r.product.name} <span className="text-xs text-slate-500">· {r.warehouse?.name}</span></span> : "—";
+              : r.product ? <span className="font-medium">{r.product.name} <span className="text-xs text-slate-500">· {r.warehouse?.name}</span></span> : "—";
             return (
               <Tr key={r.id} className={r.cancelledAt ? "opacity-60" : ""}>
                 <Td>{date(r.date)}</Td>

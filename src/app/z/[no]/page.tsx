@@ -93,18 +93,17 @@ export default async function PublicOrderPage({ params, searchParams }: { params
   const paid = [...paidMap.values()].reduce((a, b) => a + b, 0);
   const rest = Math.max(0, total - paid);
 
-  // Ishlab chiqarilgani: dona mahsulot — brigada topshirig'i, beton — zames (zayavka sahifasidagi bilan bir xil qoida)
-  const producedRows = [
-    ...o.items.filter((i) => i.product.unit !== "m3" && i.tasks.length).map((i) => ({ unit: i.product.unit, qty: i.tasks.reduce((s, t) => s + Number(t.doneQty), 0) })),
-    ...o.batches.filter((b) => b.product.unit === "m3").map((b) => ({ unit: b.product.unit, qty: b.qtyM3 })),
-  ];
+  // Ishlab chiqarilgani: dona mahsulot — brigada topshirig'i (zayavka sahifasidagi bilan bir xil qoida).
+  // Beton sexga tushmaydi (to'g'ridan-to'g'ri logistikaga): faqat betonli zayavkada bu bosqich qabul bilan yopiq
+  const workRows = itemRows.filter((r) => r.unit !== "m3");
+  const producedRows = o.items.filter((i) => i.product.unit !== "m3" && i.tasks.length).map((i) => ({ unit: i.product.unit, qty: i.tasks.reduce((s, t) => s + Number(t.doneQty), 0) }));
   const totalQty = itemRows.reduce((s, r) => s + Number(r.qty), 0);
   const delivered = o.trips.filter((t) => t.status === "DELIVERED").reduce((s, t) => s + Number(t.acceptedQty ?? t.qtyM3), 0);
   const cancelled = o.status === "CANCELLED";
   const pending = o.status === "DRAFT" || o.status === "BLOCKED";
   const closed = o.status === "CLOSED";
   const done = ["DELIVERED", "CLOSED"].includes(o.status);
-  const producedPct = done ? 100 : donePercent(producedRows, itemRows);
+  const producedPct = done || !workRows.length ? 100 : donePercent(producedRows, workRows);
   const shippedPct = done ? 100 : totalQty > 0 ? Math.min(100, (delivered / totalQty) * 100) : 0;
   const steps = [
     { icon: ClipboardCheck, label: T.steps[0], pct: pending || cancelled ? 0 : 100 },

@@ -28,8 +28,13 @@ export type ProdOrder = {
   /** Sana aniq emas (qoralama) — muddat hisoblanmaydi */
   dateUnknown?: boolean;
   isUrgent: boolean;
-  items: { qtyM3: unknown; tasks: { status: string; qty: unknown; doneQty: unknown }[] }[];
+  items: { qtyM3: unknown; product?: { unit: string }; tasks: { status: string; qty: unknown; doneQty: unknown }[] }[];
 };
+
+/** Sex qatorlari: beton (m³) ishlab chiqarishga tushmaydi — zayavka qabul qilingach to'g'ridan-to'g'ri logistikaga (reys). */
+export const workItems = <T extends ProdOrder["items"][number]>(items: T[]) => items.filter((i) => i.product?.unit !== "m3");
+/** Sexga ishi bor zayavka: kamida bitta dona / m² qatori bor. Faqat betondan iborat zayavka sexda ko'rinmaydi. */
+export const hasWork = (o: ProdOrder) => workItems(o.items).length > 0;
 
 export type ItemTask = { status: string; qty?: unknown; doneQty?: unknown };
 
@@ -53,12 +58,12 @@ export function itemTasks(itemQty: unknown, tasks: ItemTask[]) {
 }
 
 /** Hamma qatorning to'liq miqdori brigadalarga berilgan (bir qator bir nechta brigadaga bo'lingan bo'lishi mumkin). */
-export const assigned = (o: ProdOrder) => o.items.length > 0 && o.items.every((i) => itemTasks(i.qtyM3, i.tasks).full);
+export const assigned = (o: ProdOrder) => hasWork(o) && workItems(o.items).every((i) => itemTasks(i.qtyM3, i.tasks).full);
 /** Bir qismi brigadaga berilgan. */
-export const partlyAssigned = (o: ProdOrder) => !assigned(o) && o.items.some((i) => itemTasks(i.qtyM3, i.tasks).given > 0);
-export const isOpen = (o: ProdOrder) => OPEN.includes(o.status);
+export const partlyAssigned = (o: ProdOrder) => !assigned(o) && workItems(o.items).some((i) => itemTasks(i.qtyM3, i.tasks).given > 0);
+export const isOpen = (o: ProdOrder) => OPEN.includes(o.status) && hasWork(o);
 /** Yopilgan: yetkazilgan/yopilgan yoki hammasi brigadalarga berilib, barcha topshiriqlari bajarilgan. */
-export const isDone = (o: ProdOrder) => o.status === "DELIVERED" || o.status === "CLOSED" || (o.items.length > 0 && o.items.every((i) => itemTasks(i.qtyM3, i.tasks).done));
+export const isDone = (o: ProdOrder) => hasWork(o) && (o.status === "DELIVERED" || o.status === "CLOSED" || workItems(o.items).every((i) => itemTasks(i.qtyM3, i.tasks).done));
 /** Muddati yaqin — ochiq va yetkazishgacha 2 kundan kam qolgan (kechikkanlar ham). */
 export const isSoon = (o: ProdOrder) => isOpen(o) && !o.dateUnknown && daysLeft(o.deliveryDate) <= 2;
 
@@ -66,12 +71,12 @@ export type ProdFilter = { key: string; label: string; test: (o: ProdOrder) => b
 
 export const PRODUCTION_FILTERS: ProdFilter[] = [
   { key: "open", label: "Ochiq", test: (o) => isOpen(o) && !isDone(o) },
-  { key: "today", label: "Bugungilar", test: (o) => daysLeft(o.deliveryDate) === 0 },
+  { key: "today", label: "Bugungilar", test: (o) => hasWork(o) && daysLeft(o.deliveryDate) === 0 },
   { key: "soon", label: "Muddati yaqin", test: isSoon },
   { key: "unassigned", label: "Brigada kutayotgan", test: (o) => isOpen(o) && !assigned(o) },
   { key: "urgent", label: "Zarur", test: (o) => isOpen(o) && o.isUrgent },
   { key: "done", label: "Tugallanganlar", test: isDone },
-  { key: "all", label: "Hammasi", test: () => true },
+  { key: "all", label: "Hammasi", test: hasWork },
 ];
 
 export const prodFilter = (key?: string) => PRODUCTION_FILTERS.find((f) => f.key === key) ?? PRODUCTION_FILTERS[0];

@@ -361,13 +361,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           <div>
             <h2 className="mb-2 font-semibold">Dona mahsulotlar (hovlida)</h2>
             <Table>
-              <thead><tr><Th>Mahsulot</Th><Th>Kod</Th><Th>Birlik</Th><Th right>Jami</Th><Th right>Erkin</Th><Th right>Band</Th><Th>Holat</Th><Th></Th></tr></thead>
+              <thead><tr><Th>Mahsulot</Th><Th>Birlik</Th><Th right>Jami</Th><Th right>Erkin</Th><Th right>Band</Th><Th>Holat</Th><Th></Th></tr></thead>
               <tbody>
                 {pieces.length === 0 && <Empty text={"Dona mahsulot yo'q — Sozlamalar → Beton markalari bo'limida birligi \"dona\" bo'lgan mahsulot (ustun, blok, bordyur…) qo'shing"} icon={Boxes} />}
                 {piecesSorted.map((r) => (
                   <Tr key={r.id} className="[&>td]:py-4 [&>td]:text-[15px]">
                     <Td><Link href={`/stock/products/${r.id}`} className="hover:underline">{r.name}</Link></Td>
-                    <Td className="text-slate-500">{r.code}</Td>
                     <Td className="text-slate-500">{unitLabel(r.unit)}</Td>
                     <Td right className="font-semibold">{qty(r.total)}</Td>
                     <Td right className="text-lg font-semibold text-emerald-600">{qty(r.free)}</Td>
@@ -378,7 +377,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 ))}
                 {pieces.length > 0 && (
                   <tr className="bg-slate-50/80 [&>td]:py-4 [&>td]:text-[15px]">
-                    <Td className="font-semibold">Jami mahsulot</Td><Td /><Td />
+                    <Td className="font-semibold">Jami mahsulot</Td><Td />
                     <Td right className="font-semibold">{qty(pieceTotals.total)}</Td>
                     <Td right className="text-lg font-semibold text-emerald-600">{qty(pieceTotals.free)} ta</Td>
                     <Td right className="text-lg font-semibold text-blue-600">{qty(pieceTotals.owned)} ta</Td>

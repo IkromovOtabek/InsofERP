@@ -33,7 +33,7 @@ export async function ProductsTab({ range }: { range: Range }) {
               {(["A", "B", "C"] as const).map((a, i) => (
                 <tr key={a}><td className="pr-2 text-right font-semibold text-slate-600">{a}</td>{d.matrix[i].map((cell, j) => {
                   const strong = i === 0 && j === 0, weak = i === 2 && j >= 2;
-                  return <td key={j} className={cn("min-h-12 rounded-md p-2 align-top", strong ? "bg-emerald-50 ring-1 ring-emerald-200" : weak ? "bg-red-50 ring-1 ring-red-200" : "bg-slate-50")}>{cell.length ? cell.map((p) => <span key={p.id} title={`${p.name} · ${moneyShort(p.revenue)} so'm`} className="mr-1 inline-block rounded bg-white px-1.5 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">{p.code}</span>) : <span className="text-slate-300">—</span>}</td>;
+                  return <td key={j} className={cn("min-h-12 rounded-md p-2 align-top", strong ? "bg-emerald-50 ring-1 ring-emerald-200" : weak ? "bg-red-50 ring-1 ring-red-200" : "bg-slate-50")}>{cell.length ? cell.map((p) => <span key={p.id} title={`${p.name} · ${moneyShort(p.revenue)} so'm`} className="mr-1 inline-block rounded bg-white px-1.5 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200">{p.name}</span>) : <span className="text-slate-300">—</span>}</td>;
                 })}</tr>
               ))}
             </tbody>
@@ -66,7 +66,7 @@ export async function ProductsTab({ range }: { range: Range }) {
       </Panel>
 
       <Panel title="Mahsulot × oy — hajm" info="Oxirgi 6 oy, sotilgan miqdor (m³ yoki dona). Rang — hajm.">
-        {monthRows.length ? <Heatmap rows={monthRows.map((x) => x.code)} cols={d.monthLabels} cells={monthRows.map((x) => x.monthly)} formatValue={(v) => fmtNum(v, 0)} tone="info" rowLabel="Marka" /> : <Note>Ma'lumot yo'q.</Note>}
+        {monthRows.length ? <Heatmap rows={monthRows.map((x) => x.name)} cols={d.monthLabels} cells={monthRows.map((x) => x.monthly)} formatValue={(v) => fmtNum(v, 0)} tone="info" rowLabel="Marka" /> : <Note>Ma'lumot yo'q.</Note>}
       </Panel>
 
       <Panel id="mahsulotlar-royxati" title="Mahsulotlar ro'yxati" info="Tannarx — faol retsept × xomashyo o'rtacha kirim narxi. CM/birlik — o'rtacha sotuv narxi − tannarx." padded={false}>
@@ -76,7 +76,7 @@ export async function ProductsTab({ range }: { range: Range }) {
             {d.rows.length === 0 && <Empty text="Mahsulot yo'q" />}
             {d.rows.map((p) => (
               <Tr key={p.id}>
-                <Td><span className="font-semibold">{p.code}</span> <span className="text-xs text-slate-500">{p.name}</span>{!p.isActive && <span className="ml-1 text-[10px] text-slate-400">nofaol</span>}</Td>
+                <Td><span className="font-semibold">{p.name}</span>{!p.isActive && <span className="ml-1 text-[10px] text-slate-400">nofaol</span>}</Td>
                 <Td className="text-xs">{p.cluster}</Td><Td><Tag>{p.abc}</Tag></Td><Td><Tag>{p.xyz}</Tag></Td>
                 <Td right>{moneyShort(p.revenue)}</Td><Td right>{qty(p.qty)} {p.unit}</Td><Td right>{fmtNum(p.share, 1)}%</Td>
                 <Td right>{moneyShort(p.price)}</Td><Td right>{p.cost === null ? <Link href="/recipes" className="text-amber-600 hover:underline" title="Faol retsept yo'q yoki retseptdagi xomashyo narxi kiritilmagan">tannarx yo'q</Link> : moneyShort(p.cost)}</Td>

@@ -27,7 +27,8 @@ check(!!idFrom(r.redirect), "ikkinchi skladga xomashyo kirimi", r.error);
 const row = q(`select o.id, o."orderNo", i."qtyM3", p.id from "Order" o join "OrderItem" i on i."orderId"=o.id join "Product" p on p.id=i."productId"
   where o.status='CONFIRMED' and p.code='M300' and (select count(*) from "OrderItem" x where x."orderId"=o.id)=1 and (select count(*) from "Trip" t where t."orderId"=o.id)=0 order by o."orderNo" desc limit 1`)[0];
 if (!row) { check(false, "M300 zayavka topilmadi"); summary("b-logistics"); process.exit(); }
-const [oid, , , M300] = row;
+const [oid, , qtyRaw, M300] = row;
+const total = Number(qtyRaw);
 const mixer = q1(`select id from "Vehicle" where type='MIXER' and status='ACTIVE' and "capacityM3">=8 and ("inspectionUntil" is null or "inspectionUntil">now()) order by "capacityM3" limit 1`)!;
 const repair = q1(`select id from "Vehicle" where status='REPAIR' limit 1`);
 const pump = q1(`select id from "Vehicle" where type='PUMP' limit 1`);
@@ -35,9 +36,9 @@ const truck = q1(`select id from "Vehicle" where type='TRUCK' limit 1`)!;
 const driver = q1(`select e.id from "Employee" e join "User" u on u.id=e."userId" where u.login='test.haydovchi'`)!;
 const notDriver = q1(`select e.id from "Employee" e join "User" u on u.id=e."userId" where u.login='test.sklad'`) ?? q1(`select id from "Employee" where position not ilike '%haydovchi%' and "isActive" limit 1`)!;
 
-// Zames yo'q — reys ochilmaydi, beton uchun tushunarli xabar
-r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 5 })], "/trips/new");
-check(/zames|tayyor/.test(r.error ?? ""), "zamessiz reys rad etildi (aniq xabar)", r.error);
+// Beton ishlab chiqarishga tushmaydi: zames kutilmaydi, reys faqat zayavka hajmidan oshmasin
+r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: total + 1 })], "/trips/new");
+check(/qoldi/.test(r.error ?? "") && !/zames/.test(r.error ?? ""), "zayavka hajmidan ko'p beton reysi rad etildi (zames talab qilinmaydi)", r.error);
 // Zames 8 m³ ikkinchi skladdan (asosiyda M300 yo'q)
 const mainM300 = pbal(M300, main);
 r = await ishlab.action("(app)/production/actions#createBatch", [undefined, fd({ orderId: oid, productId: M300, warehouseId: wh2, qtyM3: 8, shift: 1 })], "/production/new");
@@ -45,8 +46,6 @@ check(!!idFrom(r.redirect), "zames 8 m³ (ikkinchi sklad)", r.error ?? r.text.sl
 check(Math.abs(pbal(M300, wh2) - 8) < 0.001 || pbal(M300, wh2) >= 8, "M300 ikkinchi skladda", pbal(M300, wh2));
 
 // Reys ochish: tekshiruvlar
-r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 9 })], "/trips/new");
-check(!!r.error, "tayyordan (8) ko'p reys rad etildi", r.error);
 if (repair) { r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: repair, driverId: driver, qtyM3: 5 })], "/trips/new"); check(/ta'mir/.test(r.error ?? ""), "ta'mirdagi mikser rad etildi", r.error); }
 if (pump) { r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: pump, driverId: driver, qtyM3: 5 })], "/trips/new"); check(/Nasos/.test(r.error ?? ""), "nasos rad etildi", r.error); }
 r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: truck, driverId: driver, qtyM3: 5 })], "/trips/new");
@@ -63,8 +62,8 @@ check(!!t1, "logistika reys ochdi (6 m³)", r.error ?? r.text.slice(0, 200));
 // ikkinchi reys 2 m³ — keyin bekor
 r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 2 })], "/trips/new");
 const t2 = idFrom(r.redirect)!;
-r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 1 })], "/trips/new");
-check(!!r.error, "tayyor hajm tugadi — uchinchi reys rad etildi", r.error);
+r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: Math.round((total - 8 + 1) * 1000) / 1000 })], "/trips/new");
+check(!!r.error, "zayavka hajmi tugadi — qoldiqdan ko'p uchinchi reys rad etildi", r.error);
 await logist.action(`${TA}#cancelTrip`, [t2], `/trips/${t2}`);
 check(q1(`select status from "Trip" where id='${t2}'`) === "CANCELLED", "ikkinchi reys bekor qilindi");
 

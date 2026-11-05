@@ -616,8 +616,8 @@ export async function tripArrival(tripId: string): Promise<TripArrival> {
  * "zayavka − jo'natilgan" edi va hali chiqmagan mahsulotga reys ochilib ketardi.
  *
  * Qator tayyorligi: brigada topshirig'i bo'lsa — brigadir tasdiqlagan `doneQty`;
- * beton (m³) uchun zames orqali quyilgani ham hisobga olinadi (u brigadaga bermay
- * to'g'ridan-to'g'ri zavodda quyilishi mumkin); topshiriqsiz dona mahsulot — hali 0.
+ * topshiriqsiz dona mahsulot — hali 0. Beton (m³) ishlab chiqarishga tushmaydi: RBU mikserga
+ * yuklash paytida quyadi, shuning uchun beton qatori zames kutmasdan to'liq tayyor hisoblanadi.
  */
 export type OrderReadiness = {
   /** Zayavkadagi jami miqdor */ total: number;
@@ -633,8 +633,6 @@ export type OrderReadiness = {
 export const READINESS_INCLUDE = {
   items: { include: { product: { select: { unit: true, name: true } }, tasks: { select: { doneQty: true, status: true } } } },
   trips: { select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } },
-  // Storno qilingan zames tayyor hisoblanmaydi
-  batches: { where: { cancelledAt: null }, select: { productId: true, qtyM3: true } },
 } as const;
 
 /**
@@ -653,18 +651,16 @@ export function tripCoveredQty(t: { status: string; qtyM3: unknown; acceptedQty?
 type ReadinessOrder = {
   items: { productId: string; qtyM3: unknown; product: { unit: string }; tasks: { doneQty: unknown; status: string }[] }[];
   trips: { status: string; qtyM3: unknown; acceptedQty?: unknown; returnedQty?: unknown }[];
-  batches: { productId: string; qtyM3: unknown }[];
 };
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /** Qatorning tayyor miqdori (qator miqdoridan oshmaydi). */
-function itemReady(i: ReadinessOrder["items"][number], batches: ReadinessOrder["batches"]): number {
-  let r = 0;
+function itemReady(i: ReadinessOrder["items"][number]): number {
+  // Beton zayavkasi to'g'ridan-to'g'ri logistikaga: zames va brigadasiz butun miqdori reysga ochiq
+  if (i.product.unit === "m3") return Number(i.qtyM3);
   // Qator bir nechta brigadaga bo'lingan bo'lishi mumkin; bekor qilingan topshiriq tayyor hisoblanmaydi (avvalgidek)
-  if (i.tasks.length) r = i.tasks.reduce((s, t) => s + (t.status === "CANCELLED" ? 0 : Number(t.doneQty)), 0);
-  // Beton uchun zames ham ishlab chiqarish tasdig'i — brigada qayd qilmagan bo'lsa ham quyilgani jo'natiladi
-  if (i.product.unit === "m3") r = Math.max(r, batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0));
+  const r = i.tasks.reduce((s, t) => s + (t.status === "CANCELLED" ? 0 : Number(t.doneQty)), 0);
   return Math.min(Number(i.qtyM3), r);
 }
 
@@ -672,7 +668,7 @@ export function orderReadiness(o: ReadinessOrder): OrderReadiness {
   let total = 0, ready = 0;
   for (const i of o.items) {
     total += Number(i.qtyM3);
-    ready += itemReady(i, o.batches);
+    ready += itemReady(i);
   }
   const hasTasks = o.items.some((i) => i.tasks.length > 0);
   const shipped = o.trips.reduce((s, t) => s + tripCoveredQty(t), 0);
@@ -700,7 +696,7 @@ export function orderLines(o: Omit<ReadinessOrder, "items" | "trips"> & {
   return o.items.map((i) => {
     const mixer = i.product.unit === "m3";
     const q = Number(i.qtyM3);
-    const ready = itemReady(i, o.batches);
+    const ready = itemReady(i);
     const shipped = Math.min(q, left.get(mixer) ?? 0);
     left.set(mixer, (left.get(mixer) ?? 0) - shipped);
     return { productId: i.productId, name: i.product.name, unit: i.product.unit, qty: r3(q), ready: r3(ready), shipped: r3(shipped), available: r3(Math.max(0, ready - shipped)), inProduction: r3(Math.max(0, q - ready)), mixer };
@@ -718,10 +714,7 @@ export function readinessError(rd: OrderReadiness, qty: number): string | null {
   if (rd.ready <= 0.001) {
     return rd.hasTasks
       ? `Hali tayyor mahsulot yo'q — ${rd.inProduction}${u} ishlab chiqarilmoqda, brigada tasdiqini kuting`
-      // Beton uchun brigada shart emas — zames ham tayyorlik hisoblanadi; xabar shuni aytsin
-      : rd.unit === "m3"
-        ? `Hali beton quyilmagan — avval Ishlab chiqarish bo'limida zames qayd qiling (yoki brigada tayinlang)`
-        : `Zayavkaga brigada tayinlanmagan — avval Ishlab chiqarish bo'limida tayinlang`;
+      : `Zayavkaga brigada tayinlanmagan — avval Ishlab chiqarish bo'limida tayinlang`;
   }
   // Hammasi tayyor, faqat qolgani allaqachon jo'natilgan — sexda kutish gapi o'rinsiz
   if (rd.inProduction <= 0.001) return `Zayavkada faqat ${rd.available}${u} qoldi`;

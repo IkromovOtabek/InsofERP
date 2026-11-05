@@ -256,8 +256,7 @@ export async function SkladLogistika({ day, unit, base = "/dashboard", middle }:
                 return (
                   <Tr key={p.id}>
                     <Td>
-                      <Link href={`/stock/products/${p.id}`} className="font-medium hover:underline">{p.code}</Link>
-                      <div className="text-xs text-slate-500">{p.name}</div>
+                      <Link href={`/stock/products/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
                     </Td>
                     <Td right className="tabular">
                       {p.today ? q(p.today, p.unit) : "—"}
@@ -358,7 +357,7 @@ export function ZayavkaTable({ orders, empty, orderHref }: { orders: SlOrder[]; 
               <ul className="space-y-0.5">
                 {o.items.map((i, k) => (
                   <li key={k} className="flex justify-between gap-3">
-                    <span className="truncate" title={i.name}><b className="text-slate-900">{i.code}</b> <span className="text-slate-500">{i.name !== i.code ? i.name : ""}</span></span>
+                    <span className="truncate" title={i.name}><b className="text-slate-900">{i.name}</b></span>
                     <span className="shrink-0 font-semibold tabular text-slate-900">{q(i.qty, i.unit)}</span>
                   </li>
                 ))}

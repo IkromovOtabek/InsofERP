@@ -40,7 +40,7 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   const abcMap = abc(byProduct, (p) => p.revenue);
   const productRows = byProduct.map((p) => ({ ...p, abc: abcMap.get(p) ?? "C", share: safeDiv(p.revenue, revenue) * 100 }));
   let acc = 0;
-  const pareto = productRows.map((p) => { acc += p.revenue; return { label: p.code, value: acc / (revenue || 1) * 100, share: p.share }; });
+  const pareto = productRows.map((p) => { acc += p.revenue; return { label: p.name, value: acc / (revenue || 1) * 100, share: p.share }; });
   const paretoCount = pareto.findIndex((p) => p.value >= 80) + 1;
 
   // Mijoz bo'yicha
@@ -50,7 +50,7 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   // Nima o'sdi / pasaydi (mahsulot va mijoz kesimida)
   const prevProd = new Map([...groupBy(prev, (x) => x.productId).entries()].map(([id, rows]) => [id, sum(rows.map((x) => x.revenue))]));
   const prevCust = new Map([...groupBy(prev, (x) => x.customerId).entries()].map(([id, rows]) => [id, sum(rows.map((x) => x.revenue))]));
-  const prodNames = new Map([...cur, ...prev].map((x) => [x.productId, x.code]));
+  const prodNames = new Map([...cur, ...prev].map((x) => [x.productId, x.product]));
   const custNames = new Map([...cur, ...prev].map((x) => [x.customerId, x.customer]));
   const curProd = new Map(byProduct.map((p) => [p.id, p.revenue])), curCust = new Map(byCustomer.map((c) => [c.id, c.revenue]));
   const movers = (curM: Map<string, number>, prevM: Map<string, number>, names: Map<string, string>) =>
@@ -87,7 +87,7 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   const pageRows = detail.slice((page - 1) * size, page * size);
 
   const customerOptions = byCustomer.map((c) => ({ id: c.id, name: c.name }));
-  const productOptions = byProduct.map((p) => ({ id: p.id, name: p.code }));
+  const productOptions = byProduct.map((p) => ({ id: p.id, name: p.name }));
 
   return {
     kpis: { revenue: kpi(revenue, prevRevenue), avgCheck: kpi(safeDiv(revenue, orders), safeDiv(prevRevenue, prevOrders)), orders: kpi(orders, prevOrders), customers: kpi(customers, prevCustomers), gross: kpi(gross, prevGross), margin: kpi(marginOf(cur), marginOf(prev)), volume: kpi(volume, prevVolume), uncosted },

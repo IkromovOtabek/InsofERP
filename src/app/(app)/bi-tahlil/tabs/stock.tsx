@@ -85,7 +85,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
           <div className="text-2xl font-bold tabular text-violet-600">{moneyShort(d.deadValue)} <span className="text-sm font-normal text-slate-400">so'm</span></div>
           <div className="mt-2 space-y-1 text-[13px]">
             {d.dead.map((m) => <div key={m.id} className="flex justify-between"><span>{m.name} <span className="text-xs text-slate-400">{qty(m.balance)} {m.unit}</span></span><span className="tabular">{moneyShort(m.value)}</span></div>)}
-            {d.finished.map((f) => <div key={f.id} className="flex justify-between"><span>{f.code} <span className="text-xs text-slate-400">{qty(f.qty)} {f.unit} · tayyor</span></span><span className="tabular">{f.cost === null ? <span className="text-xs text-slate-400">tannarx yo&apos;q</span> : moneyShort(f.value)}</span></div>)}
+            {d.finished.map((f) => <div key={f.id} className="flex justify-between"><span>{f.name} <span className="text-xs text-slate-400">{qty(f.qty)} {f.unit} · tayyor</span></span><span className="tabular">{f.cost === null ? <span className="text-xs text-slate-400">tannarx yo&apos;q</span> : moneyShort(f.value)}</span></div>)}
             {!d.dead.length && !d.finished.length && <Note>Muzlagan zaxira yo'q.</Note>}
           </div>
           {(d.dead.length > 0 || d.finished.length > 0) && <div className="mt-3"><Action href="/stock?tab=capacity">Aksiya yoki qaytarish orqali aylantiring — bu pul o'zi harakatga kelmaydi</Action></div>}

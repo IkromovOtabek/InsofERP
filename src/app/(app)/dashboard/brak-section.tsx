@@ -26,7 +26,7 @@ export function BrakSection({ d, brigades, userId, isDirector }: { d: Production
                   return (
                     <Tr key={r.id}>
                       <Td className="whitespace-nowrap tabular text-slate-500">{dateTime(r.date)}</Td>
-                      <Td><span className="font-medium">{r.product.code}</span></Td>
+                      <Td><span className="font-medium">{r.product.name}</span></Td>
                       <Td right className="font-medium text-red-600">{qty(r.qty)} {unitLabel(r.product.unit)}</Td>
                       <Td right className="whitespace-nowrap tabular text-slate-600">{fmtNum(r.amount)}</Td>
                       <Td>{r.reason}{r.note && <div className="text-xs text-slate-400">{r.note}</div>}</Td>
@@ -44,7 +44,7 @@ export function BrakSection({ d, brigades, userId, isDirector }: { d: Production
             <ul className="space-y-1.5">
               {d.produced.filter((r) => r.defectMonth > 0).map((r) => (
                 <li key={r.product.id} className="flex justify-between gap-2">
-                  <span>{r.product.code}</span>
+                  <span>{r.product.name}</span>
                   <span className="tabular"><span className="text-red-600">{qty(r.defectMonth)}</span> / {qty(r.month)} {unitLabel(r.product.unit)} · <b>{r.month > 0 ? pct((r.defectMonth / r.month) * 100) : "—"}</b></span>
                 </li>
               ))}

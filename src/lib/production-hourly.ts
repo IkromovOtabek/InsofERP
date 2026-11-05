@@ -79,11 +79,11 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
     db.stockMove.findMany({
       where: { type: "PRODUCTION_OUTPUT", productId: { not: null }, date: { gte: dayFrom, lt: dayTo } },
       orderBy: { date: "asc" },
-      select: { date: true, qty: true, product: { select: { code: true, unit: true } }, brigade: { select: { name: true } } },
+      select: { date: true, qty: true, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } } },
     }),
     db.productDefect.findMany({
       where: { date: { gte: dayFrom, lt: dayTo } }, orderBy: { date: "asc" },
-      select: { date: true, qty: true, reason: true, product: { select: { code: true, unit: true } }, brigade: { select: { name: true } }, task: { select: { taskNo: true } } },
+      select: { date: true, qty: true, reason: true, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } }, task: { select: { taskNo: true } } },
     }),
     // Shu kuni yozilgan muammolar + oldin yozilib hali ochiq turganlari (kecha buzilgan uskuna bugun ham to'xtatib turibdi)
     db.brigadeIssue.findMany({
@@ -95,7 +95,7 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
       },
     }),
     db.brigadeShift.findMany({ where: { date: dayUtc(iso) }, select: { openedAt: true, closedAt: true, brigade: { select: { name: true } } } }),
-    db.brigadeTask.findMany({ where: { startedAt: { gte: dayFrom, lt: dayTo } }, select: { startedAt: true, taskNo: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { code: true } } } } } }),
+    db.brigadeTask.findMany({ where: { startedAt: { gte: dayFrom, lt: dayTo } }, select: { startedAt: true, taskNo: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true } } } } } }),
   ]);
 
   // ── Hisobot oxiri ──
@@ -115,14 +115,14 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
   const stopped = union(stops.filter((x) => x.stops));
 
   const itemsText = (rows: typeof outputs) => {
-    const g = new Map<string, { code: string; unit: string; brigade: string; qty: number }>();
+    const g = new Map<string, { name: string; unit: string; brigade: string; qty: number }>();
     for (const o of rows) {
       const brigade = o.brigade?.name ?? "zames";
-      const k = `${o.product!.code}|${brigade}`;
-      const cur = g.get(k) ?? { code: o.product!.code, unit: o.product!.unit, brigade, qty: 0 };
+      const k = `${o.product!.name}|${brigade}`;
+      const cur = g.get(k) ?? { name: o.product!.name, unit: o.product!.unit, brigade, qty: 0 };
       cur.qty += Number(o.qty); g.set(k, cur);
     }
-    return [...g.values()].map((x) => `${x.code} ${fmtUnitTotals([{ unit: x.unit, qty: x.qty }])} (${x.brigade})`).join("; ");
+    return [...g.values()].map((x) => `${x.name} ${fmtUnitTotals([{ unit: x.unit, qty: x.qty }])} (${x.brigade})`).join("; ");
   };
 
   const blocks: HourlyBlock[] = [];
@@ -140,7 +140,7 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
       if (sh.closedAt && sh.closedAt.getTime() >= b0 && sh.closedAt.getTime() < b1) events.push({ time: hhmm(sh.closedAt), brigade: sh.brigade.name, text: "smena yopildi", tone: "info" });
     }
     for (const s of started) {
-      if (s.startedAt!.getTime() >= b0 && s.startedAt!.getTime() < b1) events.push({ time: hhmm(s.startedAt!), brigade: s.brigade.name, text: `${s.taskNo} (${s.orderItem.product.code}) ishi boshlandi`, tone: "info" });
+      if (s.startedAt!.getTime() >= b0 && s.startedAt!.getTime() < b1) events.push({ time: hhmm(s.startedAt!), brigade: s.brigade.name, text: `${s.taskNo} (${s.orderItem.product.name}) ishi boshlandi`, tone: "info" });
     }
     for (const i of stops) {
       if (i.s >= b0 && i.s < b1) {
@@ -150,7 +150,7 @@ export async function hourlyReport(iso: string, cutoff = new Date()): Promise<Ho
         events.push({ time: hhmm(i.resolvedAt), brigade: i.brigade.name, text: `hal qilindi: ${BRIGADE_ISSUE[i.kind].label}${i.equipment ? ` (${i.equipment})` : ""}${i.resolution ? ` — ${i.resolution}` : ""}`, tone: "success" });
       }
     }
-    for (const x of def) events.push({ time: hhmm(x.date), brigade: x.brigade?.name ?? null, text: `brak ${x.product.code} ${fmtUnitTotals([{ unit: x.product.unit, qty: Number(x.qty) }])} — ${x.reason}${x.task ? ` (${x.task.taskNo})` : ""}`, tone: "danger" });
+    for (const x of def) events.push({ time: hhmm(x.date), brigade: x.brigade?.name ?? null, text: `brak ${x.product.name} ${fmtUnitTotals([{ unit: x.product.unit, qty: Number(x.qty) }])} — ${x.reason}${x.task ? ` (${x.task.taskNo})` : ""}`, tone: "danger" });
     events.sort((a, c) => a.time.localeCompare(c.time));
 
     const minutes = (b1 - b0) / 60_000;

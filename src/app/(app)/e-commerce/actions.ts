@@ -173,7 +173,7 @@ export async function createShopProduct(_prev: ActionState, fd: FormData): Promi
     where: { OR: [{ name: { equals: d.name, mode: "insensitive" } }, ...(code ? [{ code: { equals: code, mode: "insensitive" as const } }] : [])] },
     select: { name: true, code: true },
   });
-  if (dup) return { error: `«${dup.name}» (${dup.code}) spravochnikda bor — ro'yxatdan «Tahrirlash» orqali do'konga chiqaring` };
+  if (dup) return { error: `«${dup.name}» spravochnikda bor — ro'yxatdan «Tahrirlash» orqali do'konga chiqaring` };
   if (d.groupId && !(await db.productGroup.findUnique({ where: { id: d.groupId }, select: { id: true } }))) return { error: "Papka topilmadi — sahifani yangilang" };
 
   let product: { id: string; name: string };
@@ -191,7 +191,7 @@ export async function createShopProduct(_prev: ActionState, fd: FormData): Promi
       return p;
     });
   } catch (e) {
-    if (String(e).includes("Unique constraint")) return { error: "Bu kod bilan mahsulot bor — boshqa kod yozing yoki bo'sh qoldiring" };
+    if (String(e).includes("Unique constraint")) return { error: "Mahsulot saqlanmadi — shu payt boshqa mahsulot qo'shildi, qayta urinib ko'ring" };
     throw e;
   }
 

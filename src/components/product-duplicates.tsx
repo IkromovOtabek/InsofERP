@@ -69,7 +69,6 @@ export function ProductDuplicates({ groups, onDone, onCancel }: {
                     <span className="min-w-0 flex-1 truncate">{p.name}</span>
                     <span className="shrink-0 text-xs text-slate-500">{p.unit}</span>
                     <span className="shrink-0 text-xs text-slate-500">{Number(p.price) > 0 ? `${fmtNum(Number(p.price))} so'm` : "narx yo'q"}</span>
-                    <span className="shrink-0 text-xs text-slate-400 tabular">{p.code}</span>
                   </label>
                 ))}
               </div>

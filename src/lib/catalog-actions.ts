@@ -9,6 +9,7 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { flatName, num, str } from "@/lib/excel";
 import { normalizeUnit, PRODUCT_UNITS } from "@/lib/unit";
 import { PRODUCT_KINDS, PRODUCT_CATALOG_ROLES, PRODUCT_ADD_ROLES } from "@/lib/catalog";
+import { nextCatalogCode } from "@/lib/numbering";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -18,19 +19,6 @@ import type { Prisma } from "@/generated/prisma";
  * avvalgidek faqat direktorda).
  */
 const CATALOG_ROLES = PRODUCT_CATALOG_ROLES;
-
-/** Kod berilmasa — ro'yxatdagi eng katta raqamli koddan keyingisi (1C dagidek). */
-async function nextCatalogCode(tx: Prisma.TransactionClient): Promise<string> {
-  const [products, groups] = await Promise.all([
-    tx.product.findMany({ select: { code: true } }),
-    tx.productGroup.findMany({ select: { code: true } }),
-  ]);
-  const max = [...products, ...groups]
-    .map((x) => Number(x.code))
-    .filter((n) => Number.isFinite(n))
-    .reduce((a, b) => Math.max(a, b), 0);
-  return String(max + 1);
-}
 
 const groupSchema = z.object({
   name: zStr("Papka nomi kerak"),
@@ -52,16 +40,25 @@ export async function createProductGroup(_prev: ActionState, fd: FormData): Prom
       await audit(tx, s.userId, "CREATE", "ProductGroup", g.id, undefined, g);
     });
   } catch (e) {
-    if (String(e).includes("Unique constraint")) return { error: "Bu kod band" };
+    if (String(e).includes("Unique constraint")) return { error: "Papka saqlanmadi — qayta urinib ko'ring" };
     throw e;
   }
   refresh();
   return { ok: true };
 }
 
+/**
+ * «1 dona hajmi, m³» — plitadan necha kub chiqadi (`lib/volume.ts`). Vergul ham qabul qilinadi; bo'sh — null
+ * (tanlagichda og'irlikdan taxminiy ko'rinadi).
+ */
+const zVolume = zOpt
+  .transform((v) => (v == null ? null : Number(v.replace(",", "."))))
+  .refine((v) => v == null || (Number.isFinite(v) && v > 0 && v <= 1000), "Hajm 0 dan katta raqam bo'lsin (m³, masalan 1,05)");
+
 const productSchema = z.object({
   name: zStr("Mahsulot nomi kerak"),
   code: zOpt,
+  volumeM3: zVolume,
   kind: zOpt,
   unit: zStr("O'lchov birligi kerak"),
   price: z.coerce.number().min(0, "narx manfiy bo'lmasin").default(0),
@@ -82,11 +79,11 @@ export async function createCatalogProduct(_prev: ActionState, fd: FormData): Pr
   try {
     await db.$transaction(async (tx) => {
       const w = await catalogWriter(tx, s.userId, d.groupId);
-      const res = await w.put({ name: d.name, code: d.code ?? undefined, kind: d.kind, unit: d.unit, price: d.price, note: d.note, groupId: d.groupId });
+      const res = await w.put({ name: d.name, code: d.code ?? undefined, kind: d.kind, unit: d.unit, price: d.price, note: d.note, groupId: d.groupId, volumeM3: d.volumeM3 });
       merged = res === "updated";
     });
   } catch (e) {
-    if (String(e).includes("Unique constraint")) return { error: "Bu kod bilan mahsulot bor" };
+    if (String(e).includes("Unique constraint")) return { error: "Bu nomli mahsulot bor" };
     throw e;
   }
   refresh();
@@ -95,28 +92,33 @@ export async function createCatalogProduct(_prev: ActionState, fd: FormData): Pr
     : { ok: true };
 }
 
-const renameSchema = z.object({ name: zStr("Mahsulot nomi kerak").pipe(z.string().max(200, "Nom juda uzun")) });
+const renameSchema = z.object({ name: zStr("Mahsulot nomi kerak").pipe(z.string().max(200, "Nom juda uzun")), volumeM3: zVolume });
 
 /**
- * Mavjud mahsulot nomini tuzatish (zayavka va sklad tanlagichidagi qalam, Sklad → Tayyor mahsulot qo'shish).
- * Faqat nom: kod, birlik va narx Sozlamalar → Mahsulotlar'da. Hujjatlar mahsulotga id bilan bog'langan —
+ * Mavjud mahsulot nomi va «1 dona hajmi, m³» ni tuzatish (zayavka va sklad tanlagichidagi qalam, Sklad → Tayyor mahsulot qo'shish).
+ * Birlik va narx Sozlamalar → Mahsulotlar'da. Hujjatlar mahsulotga id bilan bog'langan —
  * eski zayavka va harakatlarda ham yangi nom ko'rinadi. Shu nomli boshqa mahsulot bo'lsa — rad etiladi (dublikat ochilmasin).
+ * Hajm maydoni formada bo'lmasa (beton m³) — o'zgarmaydi.
  */
 export async function renameCatalogProduct(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireModuleWrite("production", CATALOG_ROLES);
   const r = parseForm(renameSchema, fd);
   if ("error" in r) return { error: r.error };
   const name = r.data.name.replace(/\s+/g, " ");
+  const withVolume = fd.has("volumeM3");
   const res = await db.$transaction(async (tx): Promise<ActionState> => {
     const before = await tx.product.findUnique({ where: { id } });
     if (!before) return { error: "Mahsulot topilmadi" };
-    if (before.name === name) return { ok: true, note: "Nom o'zgarmadi" };
-    const flat = flatName(name);
-    const same = (await tx.product.findMany({ where: { id: { not: id } }, select: { name: true, code: true, isActive: true } })).find((p) => flatName(p.name) === flat);
-    if (same) return { error: `«${same.name}» (kod ${same.code}) ro'yxatda bor${same.isActive ? "" : ", arxivda"} — ikkinchi bir xil nom ochilmaydi` };
-    const after = await tx.product.update({ where: { id }, data: { name } });
-    await audit(tx, s.userId, "UPDATE", "Product", id, { name: before.name }, { name: after.name, by: "rename" });
-    return { ok: true, note: `Nomi o'zgardi: «${before.name}» → «${after.name}»` };
+    const volumeChanged = withVolume && (before.volumeM3 == null ? null : Number(before.volumeM3)) !== r.data.volumeM3;
+    if (before.name === name && !volumeChanged) return { ok: true, note: "O'zgarish yo'q" };
+    if (before.name !== name) {
+      const flat = flatName(name);
+      const same = (await tx.product.findMany({ where: { id: { not: id } }, select: { name: true, isActive: true } })).find((p) => flatName(p.name) === flat);
+      if (same) return { error: `«${same.name}» ro'yxatda bor${same.isActive ? "" : ", arxivda"} — ikkinchi bir xil nom ochilmaydi` };
+    }
+    const after = await tx.product.update({ where: { id }, data: { name, ...(volumeChanged ? { volumeM3: r.data.volumeM3 } : {}) } });
+    await audit(tx, s.userId, "UPDATE", "Product", id, { name: before.name, volumeM3: before.volumeM3 }, { name: after.name, volumeM3: after.volumeM3, by: "rename" });
+    return { ok: true, note: before.name !== name ? `Nomi o'zgardi: «${before.name}» → «${after.name}»` : "Hajm saqlandi" };
   });
   if (res?.ok) refresh();
   return res;
@@ -124,7 +126,7 @@ export async function renameCatalogProduct(id: string, _prev: ActionState, fd: F
 
 /* ───────── Ko'p mahsulotni birdan yozish (Excel va matritsa uchun umumiy) ───────── */
 
-type PutInput = { name: string; code?: string; unit?: string | null; price?: number | null; kind?: string | null; note?: string | null; groupId?: string | null };
+type PutInput = { name: string; code?: string; unit?: string | null; price?: number | null; kind?: string | null; note?: string | null; groupId?: string | null; volumeM3?: number | null };
 
 /**
  * Bitta tranzaksiya ichida spravochnikka ko'p yozuv qo'shadigan yordamchi.
@@ -186,6 +188,7 @@ async function catalogWriter(tx: Prisma.TransactionClient, userId: string, rootI
           ...(x.kind ? { kind: x.kind } : {}),
           ...(x.note ? { note: x.note } : {}),
           ...(x.groupId ? { groupId: x.groupId } : {}),
+          ...(x.volumeM3 != null ? { volumeM3: x.volumeM3 } : {}),
         },
       });
       await audit(tx, userId, "UPDATE", "Product", found, before, after);
@@ -194,7 +197,7 @@ async function catalogWriter(tx: Prisma.TransactionClient, userId: string, rootI
     }
     const c = nextCode(code);
     const p = await tx.product.create({
-      data: { code: c, name: x.name, unit: x.unit ?? "dona", price: x.price ?? 0, kind: x.kind ?? null, note: x.note ?? null, groupId: x.groupId ?? null },
+      data: { code: c, name: x.name, unit: x.unit ?? "dona", price: x.price ?? 0, kind: x.kind ?? null, note: x.note ?? null, groupId: x.groupId ?? null, volumeM3: x.volumeM3 ?? null },
     });
     idOf.set(c, p.id); idOf.set(flatName(x.name), p.id);
     await audit(tx, userId, "CREATE", "Product", p.id, undefined, p);

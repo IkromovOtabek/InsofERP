@@ -15,6 +15,10 @@ export type CatalogProduct = {
   id: string; code: string; name: string; kind: string | null; unit: string; price: string; groupId: string | null;
   /** Reys hisobi (zayavka formasi): 1 dona og'irligi, kg va bir reysga max dona — kartada kiritilgan bo'lsa. */
   weightKg?: number | null; perTrip?: number | null;
+  /** 1 birligidan necha m³ beton chiqadi (`lib/volume.ts`): "1,05", taxminiy bo'lsa "≈0,96"; noma'lum — null. */
+  m3?: string | null;
+  /** Kartada kiritilgan hajm (tahrir formasi uchun); bo'sh bo'lsa `m3` taxminiy */
+  volumeM3?: number | null;
 };
 export type CatalogGroup = { id: string; code: string; name: string; parentId: string | null };
 
@@ -55,13 +59,15 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
         { label: "Turi" },
         // Birlik shu yerda ko'rinsin — zayavkadagi "Hajmi" maydoni aynan shu birlikda to'ldiriladi
         { label: "Birlik", className: "w-20" },
-        { label: "Kod", className: "w-24", right: true },
+        // Kod o'rniga — ishlab chiqarish samaradorligi: 1 dona plitadan necha kub chiqadi («≈» — og'irlikdan taxminiy)
+        { label: "1 birlik, m³", className: "w-24", right: true },
       ]}
       items={products.map((p) => ({
         id: p.id, name: p.name, code: p.code, groupId: p.groupId,
         hint: hint?.(p) ?? null,
-        cells: [p.kind || "—", p.unit || "—", p.code],
+        cells: [p.kind || "—", p.unit || "—", p.m3 ?? "—"],
       }))}
+      codes={false}
       groups={groups}
       emptyText="Bu papka bo'sh"
       noMatchText="Mos mahsulot topilmadi"

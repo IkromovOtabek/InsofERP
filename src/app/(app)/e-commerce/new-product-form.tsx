@@ -41,11 +41,8 @@ export function NewProductForm({ groups }: { groups: { id: string; name: string 
         <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}><X size={14} /> Yopish</Button>
       </div>
       <form ref={formRef} action={action} className="grid gap-3 sm:grid-cols-6">
-        <Field label="Nomi" className="sm:col-span-3">
+        <Field label="Nomi" className="sm:col-span-4">
           <Input name="name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="masalan: Bordyur BR 100.30.15" />
-        </Field>
-        <Field label="Kod" hint="bo'sh bo'lsa o'zi beriladi">
-          <Input name="code" placeholder="BR100" maxLength={32} />
         </Field>
         <Field label="Birlik">
           <Select name="unit" value={unit} onChange={(e) => setUnit(e.target.value)}>

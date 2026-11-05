@@ -19,7 +19,7 @@ export function ProductField({ products, value, onPick, onOpenPicker, hint }: {
   hint?: (p: CatalogProduct) => string | null;
 }) {
   const selected = products.find((p) => p.id === value) ?? null;
-  const label = selected ? `${selected.name}${selected.code ? ` (${selected.code})` : ""}` : "";
+  const label = selected?.name ?? "";
   const [q, setQ] = useState<string | null>(null); // null — yozilmayapti, tanlangan nom ko'rinadi
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
@@ -28,7 +28,7 @@ export function ProductField({ products, value, onPick, onOpenPicker, hint }: {
   const matches = useMemo(() => {
     const term = (q ?? "").trim().toLowerCase();
     if (!term) return products.slice(0, 50);
-    return products.filter((p) => p.name.toLowerCase().includes(term) || p.code.toLowerCase().includes(term)).slice(0, 50);
+    return products.filter((p) => p.name.toLowerCase().includes(term)).slice(0, 50);
   }, [q, products]);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export function ProductField({ products, value, onPick, onOpenPicker, hint }: {
     <div ref={boxRef} className="relative flex">
       <input
         value={q ?? label}
-        placeholder="Mahsulot nomi yoki kodi"
+        placeholder="Mahsulot nomi"
         autoComplete="off"
         onChange={(e) => { setQ(e.target.value); setOpen(true); setCursor(0); }}
         onFocus={() => setOpen(true)}
@@ -85,7 +85,8 @@ export function ProductField({ products, value, onPick, onOpenPicker, hint }: {
                 {extra && <span className="shrink-0 text-xs text-slate-500">{extra}</span>}
                 {/* Birlik: "Hajmi" maydoni shu birlikda to'ldiriladi */}
                 <span className="shrink-0 text-xs text-slate-400">{p.unit}</span>
-                <span data-no-translit className="shrink-0 text-xs text-slate-400 tabular">{p.code}</span>
+                {/* Kod o'rniga — 1 birligidan necha m³ chiqadi */}
+                {p.m3 && p.unit !== "m³" && <span className="shrink-0 text-xs text-slate-400 tabular">{p.m3} m³</span>}
               </button>
             );
           })}

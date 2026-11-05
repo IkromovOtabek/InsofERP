@@ -84,7 +84,7 @@ export async function OwnerHome() {
         <Card className="py-3">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500"><span>Ishlab chiqarish</span><Dot level={L.production} /></div>
           <div className="mt-1 text-lg font-semibold tabular">{qty(S.production.concreteMonth)} m³{S.production.concretePlan ? <span className="text-sm font-normal text-slate-500"> / {qty(S.production.concretePlan)}</span> : ""}</div>
-          <div className="truncate text-xs text-slate-500">{S.production.pieces.length ? S.production.pieces.map((p) => `${p.code} ${qty(p.fact)}/${qty(p.plan)}`).join(" · ") : "Temir-beton plani yo'q"}{S.production.capacityPct !== null && <> · quvvat bugun {pct(S.production.capacityPct, 0)}</>}</div>
+          <div className="truncate text-xs text-slate-500">{S.production.pieces.length ? S.production.pieces.map((p) => `${p.name} ${qty(p.fact)}/${qty(p.plan)}`).join(" · ") : "Temir-beton plani yo'q"}{S.production.capacityPct !== null && <> · quvvat bugun {pct(S.production.capacityPct, 0)}</>}</div>
         </Card>
         <Card className="py-3">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500"><span>Otgruzka (beton)</span><Dot level={S.shipment.plan ? (S.shipment.month / S.shipment.plan >= 0.9 ? "ok" : S.shipment.month / S.shipment.plan >= 0.7 ? "warn" : "crit") : "ok"} /></div>
@@ -94,7 +94,7 @@ export async function OwnerHome() {
         <Card className="py-3">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500"><span>Marja</span><Dot level={d.marginTotal >= 25 ? "ok" : d.marginTotal >= 15 ? "warn" : "crit"} /></div>
           <div className="mt-1 text-lg font-semibold tabular">{fmtNum(d.marginTotal, 1)}%{d.marginPlan !== null && <span className="text-sm font-normal text-slate-500"> / plan {fmtNum(d.marginPlan, 1)}%</span>}</div>
-          <div className="truncate text-xs text-slate-500">{S.margin.byProduct.map((p) => `${p.code} ${fmtNum(p.margin, 0)}%`).join(" · ") || "sotuv yo'q"}</div>
+          <div className="truncate text-xs text-slate-500">{S.margin.byProduct.map((p) => `${p.name} ${fmtNum(p.margin, 0)}%`).join(" · ") || "sotuv yo'q"}</div>
         </Card>
       </div>
 
@@ -278,7 +278,7 @@ export async function OwnerHome() {
               {d.production.rows.length === 0 && <tr><Td colSpan={6} className="py-5 text-center text-slate-500">Bu oyga ishlab chiqarish plani belgilanmagan — <Link href="/dashboard?view=production" className="underline">plan qo&apos;ying</Link>. Beton fakt: {qty(S.production.concreteMonth)} m³.</Td></tr>}
               {d.production.rows.map((r) => (
                 <Tr key={r.id}>
-                  <Td><span className="font-medium">{r.code}</span> <span className="text-slate-500">{r.name}</span></Td>
+                  <Td><span className="font-medium">{r.name}</span></Td>
                   <Td right className="tabular">{qty(r.factDay)} {unitLabel(r.unit)}</Td>
                   <Td right className="tabular font-medium">{qty(r.fact)}</Td>
                   <Td right className="tabular text-slate-500">{qty(r.plan)}</Td>
@@ -296,7 +296,7 @@ export async function OwnerHome() {
             <div>
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Tannarx va marja (oy sotuvi)</div>
               <ul className="space-y-1">
-                {d.production.unitCosts.slice(0, 5).map((p) => <li key={p.id} className="flex justify-between gap-2"><span>{p.code} <span className="text-slate-400">· {p.unitCost !== null ? `${moneyShort(p.unitCost)} / ${unitLabel(p.unit)}` : "retsept yo'q"}</span></span><span className={cn("tabular font-medium", p.margin >= 25 ? "text-emerald-700" : p.margin >= 15 ? "text-amber-700" : "text-red-600")}>{fmtNum(p.margin, 0)}%</span></li>)}
+                {d.production.unitCosts.slice(0, 5).map((p) => <li key={p.id} className="flex justify-between gap-2"><span>{p.name} <span className="text-slate-400">· {p.unitCost !== null ? `${moneyShort(p.unitCost)} / ${unitLabel(p.unit)}` : "retsept yo'q"}</span></span><span className={cn("tabular font-medium", p.margin >= 25 ? "text-emerald-700" : p.margin >= 15 ? "text-amber-700" : "text-red-600")}>{fmtNum(p.margin, 0)}%</span></li>)}
                 {d.production.unitCosts.length === 0 && <li className="text-xs text-slate-400">oyda sotuv yo&apos;q</li>}
               </ul>
             </div>

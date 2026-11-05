@@ -102,7 +102,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             <Tr key={o.id}>
               <Td className="whitespace-nowrap"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{deliveryAt(o.deliveryDate, o.deliveryTime)}</Link></Td>
               <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} href={`/customers/${o.customerId}`} /></Td>
-              <Td>{o.items.map((i) => i.product.code).join(", ")}{o.needsPump && " · nasos"}{!o.needsDelivery && " · o'zi oladi"}{o.isUrgent && <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}{o.onCredit && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">qarzga</span>}</Td>
+              <Td>{o.items.map((i) => i.product.name).join(", ")}{o.needsPump && " · nasos"}{!o.needsDelivery && " · o'zi oladi"}{o.isUrgent && <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}{o.onCredit && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">qarzga</span>}</Td>
               <Td right className="whitespace-nowrap">{vol}</Td>
               <Td right className="whitespace-nowrap">{money(sum)}</Td>
               <Td right className={"whitespace-nowrap " + (paid >= sum && sum > 0 ? "text-emerald-700" : paid > 0 ? "text-amber-700" : "text-slate-400")}>{money(paid)}</Td>

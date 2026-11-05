@@ -9,7 +9,7 @@ import { importRecipesFromExcel } from "../actions";
 export default async function RecipeImport() {
   await requireRoles(["PRODUCTION", "WAREHOUSE", "PROCUREMENT"], { module: "production", actions: ["recipe"] });
   const [products, materials] = await Promise.all([
-    db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, select: { code: true } }),
+    db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true, unit: true } }),
   ]);
   return (
@@ -20,10 +20,10 @@ export default async function RecipeImport() {
           action={importRecipesFromExcel}
           submitLabel="Retseptlarni import qilish"
           templateName="retsept-namuna"
-          example={{ product: products[0]?.code ?? "M300", material: materials[0]?.name ?? "Sement M400", qty: 380, unit: materials[0]?.unit ?? "kg" }}
+          example={{ product: products[0]?.name ?? "M300", material: materials[0]?.name ?? "Sement M400", qty: 380, unit: materials[0]?.unit ?? "kg" }}
           merge={{ sum: ["qty"], unitKeys: ["unit"] }}
           fields={[
-            { key: "product", label: "Mahsulot", required: true, hint: "kodi (M300) yoki nomi", synonyms: FIELD_SYNONYMS.product },
+            { key: "product", label: "Mahsulot", required: true, hint: "nomi", synonyms: FIELD_SYNONYMS.product },
             { key: "material", label: "Xomashyo", required: true, hint: "nomi yoki kodi", synonyms: FIELD_SYNONYMS.material.filter((x) => x !== "mahsulot") },
             { key: "qty", label: "Miqdor (1 birlikka)", required: true, hint: "masalan 380", synonyms: FIELD_SYNONYMS.qty },
             { key: "unit", label: "Birlik", hint: "yangi xomashyo uchun (kg, l, dona)", synonyms: FIELD_SYNONYMS.unit },

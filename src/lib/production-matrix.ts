@@ -35,17 +35,17 @@ export type MatrixOrder = {
   cells: Record<string, MatrixCell>;
 };
 /**
- * Yuqoridagi kartalar — birlik bo'yicha (dona, m², m³ bir songa qo'shilmaydi). Beton (m³) matritsaga kirmaydi,
- * lekin bu yerda hisoblanadi: band = jo'natilmagani, quyish kerak = jo'natilmagani − zamesda quyilgani (beton saqlanmaydi).
+ * Yuqoridagi kartalar — birlik bo'yicha (dona, m² bir songa qo'shilmaydi). Beton (m³) bu yerda umuman yo'q:
+ * u ishlab chiqarishga tushmaydi — zayavka qabul qilingach to'g'ridan-to'g'ri logistikaga (reys) o'tadi.
  */
 export type MatrixSummary = {
   stock: UnitTotal[]; stockKinds: number;
   band: UnitTotal[]; orders: number;
   need: UnitTotal[]; needKinds: number;
-  /** Muddati o'tgan, hali to'liq ishlab chiqarilmagan zayavkalar; shundan beton qatori borlari */
-  late: number; lateBeton: number;
+  /** Muddati o'tgan, dona qatorlari hali to'liq ishlab chiqarilmagan zayavkalar */
+  late: number;
 };
-/** Mahsulot bo'yicha «ishlab chiqarish kerak» (dona: band − qoldiq; beton: jo'natilmagani − quyilgani) — bosh sahifa ro'yxati. */
+/** Mahsulot bo'yicha «ishlab chiqarish kerak» (band − qoldiq) — bosh sahifa ro'yxati. */
 export type MatrixNeed = { id: string; code: string; name: string; unit: string; band: number; stock: number; need: number };
 export type ProductionMatrix = { products: MatrixProduct[]; orders: MatrixOrder[]; summary: MatrixSummary; needList: MatrixNeed[] };
 
@@ -61,8 +61,6 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
         id: true, deliveryDate: true, dateUnknown: true, isUrgent: true, customer: { select: { name: true } },
         items: { select: { id: true, productId: true, qtyM3: true, product: { select: { unit: true } }, tasks: { select: { status: true, qty: true, doneQty: true, brigade: { select: { name: true } } } } } },
         trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
-        // Beton uchun: zamesda quyilgani (storno qilinmagan)
-        batches: { where: { cancelledAt: null }, select: { productId: true, qtyM3: true } },
       },
       take: 300,
     }),
@@ -70,25 +68,18 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
   const stock = new Map(sums.map((s) => [s.productId!, Number(s._sum.qty ?? 0)]));
 
   const rows: MatrixOrder[] = [];
-  const betonBand: { unit: string; qty: number }[] = [], betonNeed = new Map<string, number>(), betonBandBy = new Map<string, number>();
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  let late = 0, lateBeton = 0;
+  let late = 0, open = 0;
   for (const o of orders) {
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
     const shipped = o.trips.reduce((s, t) => s + Number(t.qtyM3), 0);
     const left = total > 0 ? Math.max(0, 1 - shipped / total) : 0;
-    // Beton qatorlari: jo'natilmagani band, undan zamesda quyilgani (jo'natilgandan ortig'i) ayiriladi
-    let betonShort = 0;
-    for (const i of o.items.filter((x) => x.product.unit === "m3")) {
-      const q = Number(i.qtyM3), sent = q * (1 - left);
-      const poured = o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0);
-      const need = Math.max(0, q - Math.max(sent, poured));
-      betonBand.push({ unit: "m3", qty: q * left }); betonBandBy.set(i.productId, (betonBandBy.get(i.productId) ?? 0) + q * left); betonNeed.set(i.productId, (betonNeed.get(i.productId) ?? 0) + need);
-      betonShort += need;
-    }
+    // Beton (m³) qatorlari sexga tegishli emas — faqat dona mahsulot
     const dona = o.items.filter((i) => i.product.unit !== "m3");
+    if (!dona.length) continue;
+    if (left > 0) open++;
     const donaOpen = dona.some((i) => !itemTasks(i.qtyM3, i.tasks).done);
-    if (!o.dateUnknown && o.deliveryDate < today && left > 0 && (donaOpen || betonShort > 0.0005)) { late++; if (betonShort > 0.0005) lateBeton++; }
+    if (!o.dateUnknown && o.deliveryDate < today && left > 0 && donaOpen) late++;
     const items: Record<string, number> = {};
     for (const i of dona) {
       const q = round3(Number(i.qtyM3) * left);
@@ -131,16 +122,14 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
   const summary: MatrixSummary = {
     stock: round(unitTotals(list.map((p) => ({ unit: p.unit, qty: Math.max(0, p.stock) })))),
     stockKinds: list.filter((p) => p.stock > 0).length,
-    band: round(unitTotals([...list.map((p) => ({ unit: p.unit, qty: p.band })), ...betonBand])),
-    orders: orders.filter((o) => o.trips.reduce((s, t) => s + Number(t.qtyM3), 0) < o.items.reduce((s, i) => s + Number(i.qtyM3), 0) - 0.0005).length,
-    need: round(unitTotals([...needRows, ...[...betonNeed.values()].map((qty) => ({ unit: "m3", qty }))])),
-    needKinds: needRows.filter((x) => x.qty > 0.0005).length + [...betonNeed.values()].filter((q) => q > 0.0005).length,
-    late, lateBeton,
+    band: round(unitTotals(list.map((p) => ({ unit: p.unit, qty: p.band })))),
+    orders: open,
+    need: round(unitTotals(needRows)),
+    needKinds: needRows.filter((x) => x.qty > 0.0005).length,
+    late,
   };
-  const byId = new Map(products.map((p) => [p.id, p]));
-  const needList: MatrixNeed[] = [
-    ...list.map((p) => ({ ...p, need: round3(Math.max(0, p.band - Math.max(0, p.stock))) })),
-    ...[...betonNeed].flatMap(([id, need]) => { const p = byId.get(id); return p ? [{ ...p, band: round3(betonBandBy.get(id) ?? 0), stock: 0, need: round3(need) }] : []; }),
-  ].filter((x) => x.need > 0.0005).sort((a, b) => (a.unit === "m3" ? 0 : 1) - (b.unit === "m3" ? 0 : 1) || b.need - a.need);
+  const needList: MatrixNeed[] = list
+    .map((p) => ({ ...p, need: round3(Math.max(0, p.band - Math.max(0, p.stock))) }))
+    .filter((x) => x.need > 0.0005).sort((a, b) => b.need - a.need);
   return { products: list, orders: rows, summary, needList };
 }

@@ -9,6 +9,7 @@ import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, type ActionState } from "@/lib/action";
+import { nextCatalogCode } from "@/lib/numbering";
 import { approveRequest, rejectRequest } from "@/lib/account-deletion";
 import { saveDailyOrderLimits as saveDailyOrderLimitsDb } from "@/lib/company";
 import { setCustomerCreditLimits } from "@/lib/customer-limits";
@@ -65,8 +66,10 @@ const optPositive = (msg: string, max: number, int = false) =>
     .transform((v) => (v == null ? null : Number(v)));
 
 const productSchema = z.object({
-  code: zStr("Kod kerak").transform((v) => v.toUpperCase()),
+  // Kod formada yo'q (foydalanuvchiga ko'rinmaydi) — yangi mahsulotga avtomatik beriladi
   name: zStr("Nomi kerak"), strengthClass: zOpt, unit: z.enum(["m3", "dona", "m2", "m", "t"]), price: zDec(0), isActive: zBool,
+  // 1 dona hajmi, m³ — ishlab chiqarish samaradorligi (plitadan necha kub); bo'sh — og'irlikdan taxminiy
+  volumeM3: optPositive("Hajm 0 dan katta raqam bo'lsin (m³, masalan 1,05)", 1000),
   // Reys hisobi (zayavka formasi): bo'sh qoldirilsa — GOST jadvalidan taxminiy
   weightKg: optPositive("Og'irlik 0 dan katta raqam bo'lsin", 99_999_999),
   perTrip: optPositive("Bir reysga max — 1 dan katta butun son", 100_000, true),
@@ -82,10 +85,10 @@ export async function saveProduct(id: string | null, _prev: ActionState, fd: For
       const after = await db.product.update({ where: { id }, data: r.data });
       await audit(db, s.userId, "UPDATE", "Product", id, before, after);
     } else {
-      const p = await db.product.create({ data: { ...r.data, isActive: true } });
+      const p = await db.product.create({ data: { ...r.data, code: await nextCatalogCode(db), isActive: true } });
       await audit(db, s.userId, "CREATE", "Product", p.id, undefined, p);
     }
-  } catch (e) { return uniq(e, "Bu kod bilan marka bor") ?? (() => { throw e; })(); }
+  } catch (e) { return uniq(e, "Mahsulot saqlanmadi — qayta urinib ko'ring") ?? (() => { throw e; })(); }
   refresh(); revalidatePath("/recipes"); revalidatePath("/orders/new");
   return { ok: true };
 }

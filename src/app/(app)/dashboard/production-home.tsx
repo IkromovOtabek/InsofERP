@@ -48,8 +48,8 @@ export async function ProductionHome({ s }: { s: Session }) {
     productionMatrix(),
     brigadeProducts({ activeOnly: true }),
   ]);
-  const needBeton = matrix.summary.need.filter((u) => u.unit === "m3");
-  const needDona = matrix.summary.need.filter((u) => u.unit !== "m3");
+  // Beton (m³) sexga tushmaydi — matritsa faqat dona mahsulotni hisoblaydi
+  const needDona = matrix.summary.need;
   const todayReports = reports.filter((r) => r.iso === iso);
   const marks = await customerMarks(d.load.orders.map((o) => o.customerId));
   const isDirector = s.role === "DIRECTOR";
@@ -79,13 +79,13 @@ export async function ProductionHome({ s }: { s: Session }) {
           ) : null}
         </div>
       ) : null}
-      <div data-tour="stats" className={`grid grid-cols-2 gap-3 ${isSupervisor ? "xl:grid-cols-5" : "xl:grid-cols-6"} [&>*]:min-w-0`}>
+      <div data-tour="stats" className={`grid grid-cols-2 gap-3 ${isSupervisor ? "xl:grid-cols-4" : "xl:grid-cols-5"} [&>*]:min-w-0`}>
         {/* Sex xodimlari kartasi o'rniga — ishlab chiqarish kerak (davomat sex boshlig'ida «Ishga keldi» bilan qoladi) */}
-        <StatCard label="Quyish kerak — beton" value={needBeton.length ? fmtUnitTotals(needBeton) : "—"} hint={`${matrix.needList.filter((x) => x.unit === "m3").length} xil marka`} icon={Factory} tone={needBeton.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
-        <StatCard label="Ishlab chiqarish kerak — dona" value={needDona.length ? fmtUnitTotals(needDona) : "—"} hint={`${matrix.needList.filter((x) => x.unit !== "m3").length} xil mahsulot · ${matrix.summary.orders} zayavka`} icon={Boxes} tone={needDona.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
+        <StatCard label="Ishlab chiqarish kerak — dona" value={needDona.length ? fmtUnitTotals(needDona) : "—"} hint={`${matrix.needList.length} xil mahsulot · ${matrix.summary.orders} zayavka`} icon={Boxes} tone={needDona.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
         {!isSupervisor && <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="/dashboard/sex" />}
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
-        <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint="bugun" icon={Factory} tone="brand" href="/production" />
+        {/* Samaradorlik m³ da: plita, blok, ustun — bir o'lchovda (1 dona hajmi × soni) */}
+        <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint={d.producedM3.day.m3 > 0 ? `bugun · ${d.producedM3.day.approx ? "≈" : ""}${fmtNum(d.producedM3.day.m3, 2)} m³ · oyda ${fmtNum(d.producedM3.month.m3, 1)} m³` : "bugun"} icon={Factory} tone="brand" href="/production" />
         <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} href="/dashboard/brak" />
       </div>
 
@@ -100,7 +100,7 @@ export async function ProductionHome({ s }: { s: Session }) {
               <tbody>
                 {d.load.products.map((p) => (
                   <Tr key={p.id}>
-                    <Td><span className="font-medium">{p.code}</span> <span className="text-slate-500">{p.name}</span></Td>
+                    <Td className="font-medium">{p.name}</Td>
                     <Td right className="font-semibold">{qty(p.need)} {unitLabel(p.unit)}</Td>
                     <Td right className="text-slate-500">{p.orders}</Td>
                   </Tr>
@@ -116,7 +116,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                     <Tr key={o.id}>
                       <Td className="tabular">{o.time ?? "—"}</Td>
                       <Td><CustomerName name={o.customer} href={`/orders/${o.id}`} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td>
-                      <Td>{o.items.map((i) => `${i.code} ${qty(i.qty)} ${unitLabel(i.unit)}`).join(", ")}{o.pickup && <span className="text-slate-400"> · o&apos;zi oladi</span>}</Td>
+                      <Td>{o.items.map((i) => `${i.name} ${qty(i.qty)} ${unitLabel(i.unit)}`).join(", ")}{o.pickup && <span className="text-slate-400"> · o&apos;zi oladi</span>}</Td>
                       <Td right className="tabular">{qty(o.shipped)} {one}</Td>
                       <Td right className={o.left > 0 ? "font-semibold text-amber-700" : "text-emerald-700"}>{o.left > 0 ? `${qty(o.left)} ${one}` : "✓"}</Td>
                       <Td><OrderStatusBadge status={o.status} /></Td>
@@ -145,7 +145,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                     const tone = (v: number) => (v >= 100 ? "success" : v >= 70 ? "warning" : "danger");
                     return (
                       <Tr key={p.id}>
-                        <Td><span className="font-medium">{p.product.code}</span> <span className="text-slate-500">{p.product.name}</span>{p.note && <div className="text-xs text-slate-400">{p.note}</div>}</Td>
+                        <Td><span className="font-medium">{p.product.name}</span>{p.note && <div className="text-xs text-slate-400">{p.note}</div>}</Td>
                         <Td>
                           <div className="mb-1 flex justify-between text-xs"><span className="tabular">{qty(p.factDay)} / {qty(p.dayQty)} {un}</span><span className="text-slate-500">{pct(p.dayPct, 0)}</span></div>
                           <Progress value={Math.min(p.dayPct, 100)} max={100} tone={tone(p.dayPct)} />
@@ -223,7 +223,7 @@ export async function ProductionHome({ s }: { s: Session }) {
         <Section id="ishlab-chiqarish-kerak" title="Ishlab chiqarilishi kerak" action={more("/production", "Matritsa")}>
           <MobileFold label="Ishlab chiqarish kerak jadvali">
             <Card padded={false}>
-              <p className="px-5 pt-4 text-xs text-slate-500">Tasdiqlangan zayavkalardagi jo&apos;natilmagan qism − skladdagi qoldiq (beton — zamesda quyilgani ayiriladi).</p>
+              <p className="px-5 pt-4 text-xs text-slate-500">Tasdiqlangan zayavkalardagi jo&apos;natilmagan qism − skladdagi qoldiq (beton sexga tushmaydi — u to&apos;g&apos;ridan-to&apos;g&apos;ri logistikaga).</p>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[520px] text-sm">
                   <thead><tr><Th>Mahsulot</Th><Th right>Zayavkalarda</Th><Th right>Skladda</Th><Th right>Ishlab chiqarish kerak</Th></tr></thead>
@@ -231,9 +231,9 @@ export async function ProductionHome({ s }: { s: Session }) {
                     {matrix.needList.length === 0 && <Empty text="Hammasi skladdan yopiladi — ishlab chiqarish kerak emas" icon={Boxes} />}
                     {matrix.needList.map((p) => (
                       <Tr key={p.id}>
-                        <Td><span className="font-medium">{p.code}</span> <span className="text-slate-500">{p.name}</span></Td>
+                        <Td className="font-medium">{p.name}</Td>
                         <Td right className="tabular text-slate-500">{qty(p.band)} {unitLabel(p.unit)}</Td>
-                        <Td right className="tabular text-slate-500">{p.unit === "m3" ? "—" : `${qty(Math.max(0, p.stock))} ${unitLabel(p.unit)}`}</Td>
+                        <Td right className="tabular text-slate-500">{qty(Math.max(0, p.stock))} {unitLabel(p.unit)}</Td>
                         <Td right className="font-semibold tabular text-amber-700">{qty(p.need)} {unitLabel(p.unit)}</Td>
                       </Tr>
                     ))}

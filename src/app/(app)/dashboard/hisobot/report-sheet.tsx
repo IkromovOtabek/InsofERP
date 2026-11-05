@@ -53,7 +53,7 @@ export function ReportSheet({ r, company, stamp }: { r: ReportSnapshot; company:
       </div>
       {lagging.length > 0 && (
         <p className="mt-3 rounded border border-red-300 bg-red-50 px-3 py-2 print:bg-transparent">
-          <b>Plandan orqada:</b> {lagging.map((p) => `${p.code} — ${qty(p.behind ?? 0)} ${unitLabel(p.unit)}`).join("; ")}
+          <b>Plandan orqada:</b> {lagging.map((p) => `${p.name} — ${qty(p.behind ?? 0)} ${unitLabel(p.unit)}`).join("; ")}
         </p>
       )}
       {lowStock.length > 0 && (
@@ -71,7 +71,7 @@ export function ReportSheet({ r, company, stamp }: { r: ReportSnapshot; company:
               const un = unitLabel(p.unit);
               return (
                 <tr key={p.code}>
-                  <td className={td}><b>{p.code}</b> {p.name}</td>
+                  <td className={td}><b>{p.name}</b></td>
                   <td className={tdr}>{qty(p.day)} {un}</td>
                   <td className={tdr}>{p.dayPlan !== null ? `${qty(p.dayPlan)} ${un}` : "—"}</td>
                   <td className={tdr}>{qty(p.month)} {un}</td>
@@ -188,7 +188,7 @@ export function ReportSheet({ r, company, stamp }: { r: ReportSnapshot; company:
           <tbody>
             {r.defects.map((x, i) => (
               <tr key={i}>
-                <td className={td}>{x.time}</td><td className={td}>{x.code}</td>
+                <td className={td}>{x.time}</td><td className={td}>{x.name ?? x.code}</td>
                 <td className={tdr}>{qty(x.qty)} {unitLabel(x.unit)}</td>
                 <td className={td}>{x.reason}</td><td className={td}>{x.brigade ?? "—"}</td><td className={td}>{x.by}</td>
               </tr>

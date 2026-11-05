@@ -40,7 +40,7 @@ export function ProductSelect({ name, products, groups, canCreate = false, value
       {disabled ? (
         // Masalan zayavkaga bog'langan zames: mahsulot zayavkadan keladi, almashtirilmaydi
         <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
-          {selected ? `${selected.name}${selected.code ? ` (${selected.code})` : ""}` : "—"}
+          {selected?.name ?? "—"}
         </div>
       ) : (
         <ProductField products={products} value={id} onPick={pick} onOpenPicker={() => setOpen(true)} hint={hint} />

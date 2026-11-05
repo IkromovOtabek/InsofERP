@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { monthDays } from "@/lib/davomat";
 import { fmtUnitTotals } from "@/lib/unit";
 import { productionStaff } from "@/lib/production-staff";
+import { unitVolume, type UnitVolume } from "@/lib/volume";
 
 /**
  * Ishlab chiqarish bosh sahifasi va direktorga kunlik hisobot — bitta kun bo'yicha hamma raqamlar.
@@ -57,7 +58,7 @@ export async function dayLoad(from: Date, to: Date) {
     }
     return {
       id: o.id, orderNo: o.orderNo, time: o.deliveryTime, status: o.status, pickup: !o.needsDelivery, customerId: o.customerId, customer: o.customer.name,
-      items: o.items.map((i) => ({ code: i.product.code, unit: i.product.unit, qty: Number(i.qtyM3) })),
+      items: o.items.map((i) => ({ code: i.product.code, name: i.product.name, unit: i.product.unit, qty: Number(i.qtyM3) })),
       need, shipped, left: Math.max(0, need - shipped),
     };
   });
@@ -73,7 +74,7 @@ export async function productionDay(iso: string) {
   const ym = iso.slice(0, 7);
   const [year, month] = ym.split("-").map(Number);
 
-  const [staff, brigades, progressToday, progressMonth, openTasks, load, outputs, plans, defects, products] = await Promise.all([
+  const [staff, brigades, progressToday, progressMonth, openTasks, load, outputs, plans, defects, productRows] = await Promise.all([
     productionStaff(iso),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
     db.taskProgress.findMany({
@@ -91,8 +92,11 @@ export async function productionDay(iso: string) {
       orderBy: { date: "desc" },
       include: { product: { select: { id: true, code: true, name: true, unit: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } } },
     }),
-    db.product.findMany({ where: { isActive: true }, select: { id: true, code: true, name: true, unit: true }, orderBy: { code: "asc" } }),
+    db.product.findMany({ where: { isActive: true }, select: { id: true, code: true, name: true, unit: true, volumeM3: true, weightKg: true }, orderBy: { code: "asc" } }),
   ]);
+  // 1 birlik hajmi faqat shu yerda hisoblanadi — Decimal maydonlar mijoz formalariga (`products`) ketmasin
+  const volOf = new Map<string, UnitVolume | null>(productRows.map((p) => [p.id, unitVolume(p)]));
+  const products = productRows.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: p.unit }));
   const productById = new Map(products.map((p) => [p.id, p]));
 
   // ── 1–2. Sex xodimlari va davomat (faqat ishlab chiqarish tarkibi — `production-staff.ts`) ──
@@ -149,6 +153,14 @@ export async function productionDay(iso: string) {
     })
     .sort((a, b) => a.product.code.localeCompare(b.product.code));
 
+  // Ishlab chiqarish samaradorligi m³ da: miqdor × 1 birlik hajmi (plitadan necha kub); hajmi noma'lum mahsulot kirmaydi
+  const toM3 = (sums: Sum) => {
+    let m3 = 0, approx = false;
+    for (const [id, q] of sums) { const v = volOf.get(id); if (v) { m3 += q * v.m3; approx ||= v.approx; } }
+    return { m3: Math.round(m3 * 1000) / 1000, approx };
+  };
+  const producedM3 = { day: toM3(outDay), month: toM3(outMonth) };
+
   // Plansiz ishlab chiqarilganlar ham hisobotda ko'rinsin
   const producedIds = new Set([...outMonth.keys(), ...defMonth.keys()]);
   const produced = [...producedIds]
@@ -170,7 +182,7 @@ export async function productionDay(iso: string) {
     brigades: brigadeRows,
     load,
     plan: { rows: planRows, workDays: wd.length, elapsed },
-    produced,
+    produced, producedM3,
     defects: { today: defectRows.filter((d) => d.date >= from), month: defectRows, byReason: [...byReason].sort((a, b) => b[1] - a[1]) },
     products,
   };

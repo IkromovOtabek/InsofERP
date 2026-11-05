@@ -198,7 +198,7 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
     return {
       id: o.id, orderNo: o.orderNo, customer: o.customer.name,
       time: overdue ? `${String(o.deliveryDate.getDate()).padStart(2, "0")}.${String(o.deliveryDate.getMonth() + 1).padStart(2, "0")}` : o.deliveryTime,
-      products: o.items.map((i) => i.product.code).join(", "),
+      products: o.items.map((i) => i.product.name).join(", "),
       total: s.total, shipped: s.shipped, unit: units.length === 1 ? units[0]!.unit : null,
       address: o.deliveryAddress, phone: o.customer.phone, createdBy: o.createdBy.fullName, volume: fmtUnitTotals(units), pump: o.needsPump, note: o.note,
       items: o.items.map((i) => ({ code: i.product.code, name: i.product.name, qty: Number(i.qtyM3), unit: i.product.unit })),
@@ -265,14 +265,14 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
   for (const p of shortProducts) {
     alerts.push({
       key: `short:${p.id}`, tone: "danger", href: `/stock/products/${p.id}`,
-      title: `${dayWord} ${p.code} — ${inUnit(p.tomorrow, p.unit)} kerak`,
+      title: `${dayWord} ${p.name} — ${inUnit(p.tomorrow, p.unit)} kerak`,
       text: `Skladda — ${inUnit(p.forTomorrow, p.unit)}${p.todayLeft > EPS ? " (bugungi jo'natishdan keyin)" : ""}. Yetishmaydi — ${inUnit(-p.balance, p.unit)}.${p.canMake ? ` Xomashyodan yana ${inUnit(p.canMake, p.unit)} chiqadi.` : ""}`,
     });
   }
   for (const p of products.filter((x) => x.todayLeft > EPS && x.onHand < x.todayLeft - EPS)) {
     alerts.push({
       key: `today:${p.id}`, tone: "danger", href: `/stock/products/${p.id}`,
-      title: `${range ? "Shu davrda" : "Bugun"} ${p.code} yetmaydi`,
+      title: `${range ? "Shu davrda" : "Bugun"} ${p.name} yetmaydi`,
       text: `Jo'natilishi kerak — ${inUnit(p.todayLeft, p.unit)}, skladda — ${inUnit(p.onHand, p.unit)}. Yetishmaydi — ${inUnit(p.todayLeft - p.onHand, p.unit)}.`,
     });
   }

@@ -396,6 +396,9 @@ model Product {
   weightKg      Decimal? @db.Decimal(10, 2)
   /// Bir reysga eng ko'pi bilan necha dona (taxlash qoidasi, uzun yuk) — og'irlikdan qat'i nazar
   perTrip       Int?
+  /// 1 birlik (dona / m²) hajmi, m³ — plitadan necha kub beton chiqadi: ishlab chiqarish samaradorligi m³ da o'lchanadi.
+  /// Bo'sh bo'lsa og'irlikdan taxminiy olinadi (`lib/volume.ts`); beton (m³) mahsulotda kerak emas
+  volumeM3      Decimal? @db.Decimal(10, 4)
   kind          String? // "Tovar turi": Tayyor mahsulot, Tovar, Yarim tayyor...
   groupId       String? // papka; bo'sh bo'lsa ro'yxat ildizida turadi
   note          String?

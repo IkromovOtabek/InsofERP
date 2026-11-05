@@ -106,7 +106,7 @@ export async function overviewTab(r: Range) {
   if (todayRevenue > planPerDay && planPerDay > 0) goodNews.push(`Bugungi sotuv o'tgan oy o'rtachasidan ${Math.round(((todayRevenue - planPerDay) / planPerDay) * 100)}% yuqori.`);
   if (monthForecastValue > prevMonthRevenue && prevMonthRevenue > 0) goodNews.push(`Hozirgi temp bilan oy oxirida o'tgan oydan ${Math.round(((monthForecastValue - prevMonthRevenue) / prevMonthRevenue) * 100)}% ko'p sotiladi.`);
   if (margin >= 25) goodNews.push(`Yalpi marja ${margin.toFixed(1)}% — sog'lom darajada.`);
-  const topProduct = [...new Set(cur.map((x) => x.code))].map((c) => ({ c, v: sum(cur.filter((x) => x.code === c).map((x) => x.revenue)) })).sort((a, b) => b.v - a.v)[0];
+  const topProduct = [...new Set(cur.map((x) => x.product))].map((c) => ({ c, v: sum(cur.filter((x) => x.product === c).map((x) => x.revenue)) })).sort((a, b) => b.v - a.v)[0];
 
   return {
     todayRevenue, yestRevenue, todayDelta: delta(todayRevenue, yestRevenue), todayM3: sum(todayS.filter((x) => x.unit === "m3").map((x) => x.qty)), delivered, tripsToday: tripsToday.filter((t) => t.status !== "CANCELLED").length,

@@ -32,7 +32,7 @@ export async function returnsTab(r: Range, gran: Gran, filter: { product?: strin
     const m = new Map<K, typeof rows>(); for (const x of rows) { const k = key(x); const a = m.get(k); if (a) a.push(x); else m.set(k, [x]); }
     return [...m.entries()].map(([k, list]) => ({ key: String(k), name: name(list[0]), value: sum(list.map((x) => x.revenue)), qty: sum(list.map((x) => x.qty)), unit: list[0].unit, count: new Set(list.map((x) => x.orderId)).size, customers: new Set(list.map((x) => x.customerId)).size, margin: sum(list.map((x) => x.margin)), share: safeDiv(sum(list.map((x) => x.revenue)), total) * 100 })).sort((a, b) => b.value - a.value);
   };
-  const byProduct = group((x) => x.productId, (x) => `${x.code} — ${x.product}`);
+  const byProduct = group((x) => x.productId, (x) => x.product);
   const byReason = group((x) => x.reason, (x) => x.reason);
   const bySeller = group((x) => x.sellerId, (x) => x.seller);
   const byCustomer = group((x) => x.customerId, (x) => x.customer);

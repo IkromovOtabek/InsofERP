@@ -43,7 +43,7 @@ export async function productsTab(r: Range) {
   const medRev = median(sold.map((x) => x.revenue)), medMargin = median(sold.map((x) => x.margin));
   const quadrant = (x: { revenue: number; margin: number }): Quadrant => x.revenue >= medRev ? (x.margin >= medMargin ? "Yulduzlar" : "Barqaror daromad") : x.margin >= medMargin ? "Ixtisoslashgan" : "Kam samarali";
   const quadrants = withAbc.map((x) => ({ ...x, quadrant: x.revenue > 0 && x.cost !== null ? quadrant(x) : null }));
-  const scatter = sold.map((x) => ({ x: x.revenue, y: x.margin, r: x.qty, label: `${x.code} — ${x.name}`, color: { Yulduzlar: "#ffa800", "Barqaror daromad": "#0d78ff", Ixtisoslashgan: "#00cb80", "Kam samarali": "#fa1636" }[quadrant(x)] }));
+  const scatter = sold.map((x) => ({ x: x.revenue, y: x.margin, r: x.qty, label: x.name, color: { Yulduzlar: "#ffa800", "Barqaror daromad": "#0d78ff", Ixtisoslashgan: "#00cb80", "Kam samarali": "#fa1636" }[quadrant(x)] }));
 
   // Klasterlar (tezlik × barqarorlik) — qoida asosida
   const clusterOf = (x: typeof withAbc[number]) => {
@@ -62,10 +62,10 @@ export async function productsTab(r: Range) {
     Dogs: { title: "Dogs", sub: "SEKIN + PAST", advice: "Assortimentdan chiqarish nomzodlari — avval «yo'lakay» sotilishini tekshiring.", color: "#fa1636" },
     Sotilmagan: { title: "Sotilmagan", sub: "DAVRDA SOTUV YO'Q", advice: "Narx yoki talabni qayta ko'rib chiqing.", color: "#93a3bd" },
   };
-  const clusters = Object.keys(CLUSTER_META).map((k) => { const list = withAbc.filter((x) => clusterOf(x) === k); return { key: k, ...CLUSTER_META[k], count: list.length, revenue: sum(list.map((x) => x.revenue)), share: safeDiv(sum(list.map((x) => x.revenue)), totalRevenue) * 100, margin: marginOf(cur.filter((s) => list.some((x) => x.id === s.productId))), products: list.map((x) => x.code) }; }).filter((c) => c.count);
+  const clusters = Object.keys(CLUSTER_META).map((k) => { const list = withAbc.filter((x) => clusterOf(x) === k); return { key: k, ...CLUSTER_META[k], count: list.length, revenue: sum(list.map((x) => x.revenue)), share: safeDiv(sum(list.map((x) => x.revenue)), totalRevenue) * 100, margin: marginOf(cur.filter((s) => list.some((x) => x.id === s.productId))), products: list.map((x) => x.name) }; }).filter((c) => c.count);
 
   // Pareto
-  let acc = 0; const pareto = withAbc.filter((x) => x.revenue > 0).map((x) => { acc += x.revenue; return { label: x.code, value: acc / (totalRevenue || 1) * 100 }; });
+  let acc = 0; const pareto = withAbc.filter((x) => x.revenue > 0).map((x) => { acc += x.revenue; return { label: x.name, value: acc / (totalRevenue || 1) * 100 }; });
   const paretoCount = Math.max(1, pareto.findIndex((p) => p.value >= 80) + 1);
 
   // Mahsulot × oy (hajm)

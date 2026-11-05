@@ -90,7 +90,7 @@ export async function importOpenings(
     }
     // STOCK
     const p = prodByCode.get(name.toLowerCase()) ?? prodByName.get(flatName(name));
-    if (!p) { errors.push(`${no}-qator: «${name}» mahsuloti topilmadi (kodi yoki nomi bo'yicha)`); continue; }
+    if (!p) { errors.push(`${no}-qator: «${name}» mahsuloti topilmadi (nomi bo'yicha)`); continue; }
     const whName = str(x.warehouse);
     const wh = whName ? whByName.get(flatName(whName)) : warehouses.find((w) => w.id === opts.warehouseId);
     if (!wh) { errors.push(`${no}-qator (${name}): sklad ${whName ? `«${whName}» topilmadi` : "tanlanmagan — formada standart skladni tanlang"}`); continue; }

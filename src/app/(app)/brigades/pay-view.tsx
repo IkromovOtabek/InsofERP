@@ -133,7 +133,7 @@ export function BrigadeDefectsView({ data, month, brigadeId, canEdit }: { data: 
                 <Tr key={d.id}>
                   <Td className="whitespace-nowrap tabular text-slate-500">{dateTime(d.date)}<div className="text-xs">{d.createdBy.fullName}</div></Td>
                   <Td className={d.brigade ? "" : "text-amber-700"}>{d.brigade?.name ?? "brigadasiz"}</Td>
-                  <Td><span className="font-medium">{d.product.code}</span> <span className="text-slate-500">{d.product.name}</span></Td>
+                  <Td><span className="font-medium">{d.product.name}</span></Td>
                   <Td right className="font-medium tabular text-red-600">{qty(d.qty)} {unitLabel(d.product.unit)}</Td>
                   <Td>{d.reason}{d.note && <div className="text-xs text-slate-400">{d.note}</div>}</Td>
                   <Td right className="tabular text-slate-500">{money(auto)}</Td>

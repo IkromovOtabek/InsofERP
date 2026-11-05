@@ -7,7 +7,7 @@ import { date, qty, deliveryAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 // Filtrlar va "muddati yaqin" qoidasi mobil ilova bilan bitta joyda — `lib/production.ts`
-import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, itemTasks, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
+import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, itemTasks, partlyAssigned, prodFilter, prodSort, workItems } from "@/lib/production";
 import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
 import { requirePage } from "@/lib/page-guard";
@@ -58,7 +58,9 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   // Qator bo'yicha tayyor = max(brigada bajargani, jo'natilgan ulushi, zamesda quyilgani); dona qatorlarga hovlidagi qoldiq doskada qo'shiladi
   // Barcha zayavkalar uchun (matritsa ustunlari ham tayyorlik bo'yicha guruhlanadi), doska — filtrdagilari
   const toBoard = (o: (typeof allOrders)[number]): BoardOrder => {
-    const st = o.items.map((i) => itemTasks(i.qtyM3, i.tasks));
+    // Beton qatorlari sexda ko'rinmaydi (to'g'ridan-to'g'ri logistikaga); jo'natilgan ulushi esa butun zayavkadan
+    const work = workItems(o.items);
+    const st = work.map((i) => itemTasks(i.qtyM3, i.tasks));
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
     const share = total > 0 ? Math.min(1, o.trips.reduce((s, t) => s + Number(t.qtyM3), 0) / total) : 0;
     return {
@@ -67,8 +69,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
       due: isOpen(o) && !o.dateUnknown ? dueLabel(o.deliveryDate) : null,
       finished: isDone(o), movable: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"].includes(o.status),
       assign: assigned(o) ? "full" : partlyAssigned(o) ? "part" : "none",
-      brigades: [...new Set(o.items.flatMap((i) => i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => t.brigade.name)))],
-      items: o.items.map((i, n) => {
+      brigades: [...new Set(work.flatMap((i) => i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => t.brigade.name)))],
+      items: work.map((i, n) => {
         const q = Number(i.qtyM3);
         const cancelledDone = i.tasks.filter((t) => t.status === "CANCELLED").reduce((s, t) => s + Number(t.doneQty), 0);
         const poured = o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0);
@@ -113,7 +115,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           {selected.status === "DRAFT" && <p className="px-5 pb-5 text-sm text-amber-700">Zayavka hali tasdiqlanmagan (qoralama). Sotuv bo&apos;limi qabul qilgach brigada tayinlanadi.</p>}
           {selected.status !== "DRAFT" && <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
             focus={focusItem}
-            items={selected.items.filter((i) => !onlyItem || i.id === onlyItem).map((i) => ({
+            items={workItems(selected.items).filter((i) => !onlyItem || i.id === onlyItem).map((i) => ({
               id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit),
               left: itemTasks(i.qtyM3, i.tasks).left,
               tasks: i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => ({ taskNo: t.taskNo, brigade: t.brigade.name, qty: qty(t.qty), status: t.status })),

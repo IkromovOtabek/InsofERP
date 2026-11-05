@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { unitLabel } from "@/lib/unit";
+import { fmtVolume, unitVolume } from "@/lib/volume";
 import type { CatalogProduct, CatalogGroup } from "@/components/product-picker";
 
 /**
@@ -28,6 +29,7 @@ export async function productCatalog(opts: { pieceOnly?: boolean; exclude?: stri
       id: p.id, code: p.code, name: p.name, kind: p.kind, groupId: p.groupId,
       price: p.price.toString(), unit: unitLabel(p.unit), rawUnit: p.unit, hasRecipe: p.recipes.length > 0,
       weightKg: p.weightKg != null ? Number(p.weightKg) : null, perTrip: p.perTrip,
+      m3: fmtVolume(unitVolume(p)), volumeM3: p.volumeM3 != null ? Number(p.volumeM3) : null,
     })),
     groups,
   };

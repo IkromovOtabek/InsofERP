@@ -20,7 +20,7 @@ export function PlanForm({ month, products, plans }: { month: string; products: 
       <input type="hidden" name="month" value={month} />
       <Field label="Mahsulot">
         <Select name="productId" value={productId} onChange={(e) => setProductId(e.target.value)}>
-          {products.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}{plans.some((x) => x.productId === p.id) ? " ✓" : ""}</option>)}
+          {products.map((p) => <option key={p.id} value={p.id}>{p.name}{plans.some((x) => x.productId === p.id) ? " ✓" : ""}</option>)}
         </Select>
       </Field>
       <Field label={`Oylik plan (${unit})`}>
@@ -62,7 +62,7 @@ export function DefectForm({ products, brigades, reasons }: { products: Product[
     <form ref={ref} action={action} className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_110px_1fr_1fr_1fr_auto]">
       <Field label="Mahsulot">
         <Select name="productId" value={productId} onChange={(e) => setProductId(e.target.value)}>
-          {products.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+          {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
       </Field>
       <Field label={`Miqdor (${unit})`}>

@@ -63,16 +63,14 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   // Hajm har doim mahsulot birligida: beton m³, ustun/blok dona. Turli birlik bitta
   // songa qo'shilmaydi — 12 m³ + 500 dona "512 m³" emas.
   const itemRows = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
-  // Ishlab chiqarilgani: dona mahsulotni brigada chiqaradi (topshiriq qaydi — o'shanda hovliga kirim
-  // bo'ladi), betonni esa zames. Shuning uchun ikki manba aralashtirilmaydi.
-  const producedRows = [
-    ...o.items.filter((i) => i.product.unit !== "m3" && i.tasks.length).map((i) => ({ unit: i.product.unit, qty: i.tasks.reduce((s, t) => s + Number(t.doneQty), 0) })),
-    ...o.batches.filter((b) => b.product.unit === "m3").map((b) => ({ unit: b.product.unit, qty: b.qtyM3 })),
-  ];
+  // Ishlab chiqarilgani: dona mahsulotni brigada chiqaradi (topshiriq qaydi — o'shanda hovliga kirim bo'ladi).
+  // Beton sexga tushmaydi (to'g'ridan-to'g'ri logistikaga) — foiz faqat dona qatorlardan
+  const workRows = itemRows.filter((r) => r.unit !== "m3");
+  const producedRows = o.items.filter((i) => i.product.unit !== "m3" && i.tasks.length).map((i) => ({ unit: i.product.unit, qty: i.tasks.reduce((s, t) => s + Number(t.doneQty), 0) }));
   const orderUnit = soleUnit(itemRows); // aralash birlikli zayavkada — null
   const totalQty = itemRows.reduce((sum, r) => sum + Number(r.qty), 0);
   const shippedM3 = o.trips.filter((t) => t.status !== "CANCELLED").reduce((sum, t) => sum + Number(t.qtyM3), 0);
-  const producedPct = donePercent(producedRows, itemRows);
+  const producedPct = donePercent(producedRows, workRows);
   const shippedPct = totalQty > 0 ? Math.min(100, (shippedM3 / totalQty) * 100) : 0;
   // To'langan: schyot to'lovlari + zayavkaga bog'langan avans (bir to'lov ikkala joyda bo'lishi mumkin — id bo'yicha bir marta)
   const paidMap = new Map<string, number>();
@@ -274,15 +272,19 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         {isStock ? (
           <>
             {/* Sklad zayavkasida summa yo'q — o'rniga muddat va zaxira holati */}
-            <StatCard label="So'ralgan zaxira" value={fmtUnitTotals(itemRows)} icon={Boxes} hint={o.items.map((i) => i.product.code).join(", ")} href="#mahsulotlar" />
+            <StatCard label="So'ralgan zaxira" value={fmtUnitTotals(itemRows)} icon={Boxes} hint={o.items.map((i) => i.product.name).join(", ")} href="#mahsulotlar" />
             <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} href="#zameslar" />
             <StatCard label="Tayyor bo'lish muddati" value={dateText} icon={CalendarDays} hint={o.isUrgent ? "zarur — birinchi navbatda" : undefined} href={noDate ? undefined : `/orders/kun/${isoDate(o.deliveryDate)}`} />
           </>
         ) : (
           <>
             <StatCard label="Summa" value={money(total)} icon={Wallet} hint={paid > 0 ? `to'landi ${money(paid)}` : undefined} href="#mahsulotlar" />
-            <StatCard label="Hajm" value={fmtUnitTotals(itemRows)} icon={Package} hint={o.items.map((i) => i.product.code).join(", ")} href="#mahsulotlar" />
-            <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} href="#zameslar" />
+            <StatCard label="Hajm" value={fmtUnitTotals(itemRows)} icon={Package} hint={o.items.map((i) => i.product.name).join(", ")} href="#mahsulotlar" />
+            {workRows.length ? (
+              <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} href="#zameslar" />
+            ) : (
+              <StatCard label="Ishlab chiqarish" value="Kerak emas" icon={Factory} hint="beton — to'g'ridan-to'g'ri logistikaga" href="#reyslar" />
+            )}
             <StatCard label="Jo'natildi" value={orderUnit ? `${qty(shippedM3)} ${unitLabel(orderUnit)}` : qty(shippedM3)} icon={Truck} tone={shippedPct >= 100 ? "success" : "default"} hint={<Progress value={shippedPct} max={100} tone="success" />} href="#reyslar" />
           </>
         )}

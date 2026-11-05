@@ -53,7 +53,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
                   <Td><Link href={`/trips/${t.id}`} className="font-medium tabular hover:underline">{t.deliveryNoteNo}</Link></Td>
                   <Td><div className="text-sm">{t.order.customer.name}</div><div className="max-w-[14rem] truncate text-xs text-slate-500">{t.order.deliveryAddress}</div></Td>
                   <Td className="text-sm"><span className="tabular">{t.vehicle.plate}</span><div className="text-xs text-slate-500">{t.driver.fullName}</div></Td>
-                  <Td className="text-sm">{p?.code ?? p?.name ?? "—"}</Td>
+                  <Td className="text-sm">{p?.name ?? "—"}</Td>
                   <Td right className="tabular">{qty(t.qtyM3)} {unitShort(p?.unit ?? "m3")}</Td>
                   <Td className="text-xs tabular">{hm(t.loadedAt)}</Td>
                   <Td className="text-xs tabular">{hm(t.departedAt)}</Td>

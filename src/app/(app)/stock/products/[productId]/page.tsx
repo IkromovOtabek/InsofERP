@@ -19,7 +19,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
 
   return (
     <div>
-      <PageHeader back={{ href: "/stock?tab=capacity", label: "Sklad" }} title={d.product.name} subtitle={`${d.product.code} · birlik: ${u}`} />
+      <PageHeader back={{ href: "/stock?tab=capacity", label: "Sklad" }} title={d.product.name} subtitle={`Birlik: ${u}`} />
       {d.shortage > 0 && <Callout tone="danger" title="Zayavkalarga tayyor mahsulot yetishmaydi">Band qilingan miqdor qoldiqdan {qty(d.shortage)} {u} ko'p — ishlab chiqarish rejalashtiring.</Callout>}
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">

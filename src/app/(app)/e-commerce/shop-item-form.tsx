@@ -57,7 +57,6 @@ export function ShopItemForm({ p }: { p: ShopRowProduct }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs text-slate-500">{p.code}</span>
             <span className="font-medium text-slate-900">{it?.title?.trim() || p.name}</span>
             {p.strengthClass && <Badge color="slate" dot={false}>{p.strengthClass}</Badge>}
             {it?.badge && <Badge color="amber" dot={false}>{it.badge}</Badge>}

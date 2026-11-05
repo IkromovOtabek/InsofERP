@@ -59,7 +59,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     where: { id: { in: tripIds } },
     select: {
       id: true, vehicleId: true, orderId: true, qtyM3: true, pickupAddress: true, deliveryComment: true,
-      order: { select: { deliveryAddress: true, deliveryFee: true, payMethod: true, site: { select: { name: true } }, items: { select: { product: { select: { code: true, unit: true } } } } } },
+      order: { select: { deliveryAddress: true, deliveryFee: true, payMethod: true, site: { select: { name: true } }, items: { select: { product: { select: { name: true, unit: true } } } } } },
     },
   }) : [];
   const vehicleIds = [...new Set(extra.map((t) => t.vehicleId))];
@@ -162,7 +162,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     const pay = r.amount ?? r.suggested;
     const total = fuelSum + pay + e.repair + e.parts + e.other;
 
-    const codes = [...new Set(t.order.items.map((i) => i.product.code))];
+    const names = [...new Set(t.order.items.map((i) => i.product.name))];
     const unit = t.order.items[0]?.product.unit === "m3" ? "m³" : t.order.items[0]?.product.unit ?? "";
     const hr = r.deliveredAt.getHours();
     const remarks = [
@@ -175,7 +175,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       pickup: t.pickupAddress?.trim() || "Zavod",
       dropoff: t.order.site?.name ?? r.customer,
       address: t.order.deliveryAddress || null,
-      cargo: `${codes.join(", ") || "—"} · ${fmtNum(Number(t.qtyM3), 2)} ${unit}`.trim(),
+      cargo: `${names.join(", ") || "—"} · ${fmtNum(Number(t.qtyM3), 2)} ${unit}`.trim(),
       unit: tracked === "gas" ? "m³" : "l",
       balBefore: r1(balBefore), refuel: r1(refuel), use: use != null ? r1(use) : null, balAfter: r1(balAfter), useExtra: useExtra != null ? r1(useExtra) : null,
       fuelSum: r2(fuelSum), fuelPriceMissing: (use != null && pMain == null) || (useExtra != null && pDt == null),

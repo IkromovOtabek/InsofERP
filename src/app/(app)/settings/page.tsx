@@ -15,6 +15,7 @@ import { MATERIAL_CATEGORY_OPTIONS } from "@/lib/material-category";
 import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { refWeight } from "@/lib/trip-plan";
+import { fmtVolume, unitVolume } from "@/lib/volume";
 import { ProductExcelPanel } from "@/components/product-excel-import";
 import { ProductMatrixPanel } from "@/components/product-matrix-add";
 import { DeleteButton } from "@/components/delete-button";
@@ -372,6 +373,12 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
   );
 }
 
+/** Hajm kiritilmagan dona mahsulot — maydonda og'irlikdan taxminiy qiymat ko'rinsin. */
+const volumeHint = (p: { code: string; name: string; unit: string; weightKg: unknown }) => {
+  if (p.unit === "m3") return "beton — 1";
+  return fmtVolume(unitVolume(p)) ?? "masalan 1.05";
+};
+
 /** Og'irlik kiritilmagan dona mahsulot — maydonda GOST bo'yicha taxminiy qiymat ko'rinsin. */
 const weightHint = (p: { code: string; name: string; unit: string }) => {
   if (p.unit === "m3") return "beton — kerak emas";
@@ -380,9 +387,8 @@ const weightHint = (p: { code: string; name: string; unit: string }) => {
 };
 
 async function ProductsTab() {
-  const products = await db.product.findMany({ orderBy: { code: "asc" }, include: { recipes: { where: { isActive: true }, select: { version: true } } } });
+  const products = await db.product.findMany({ orderBy: { name: "asc" }, include: { recipes: { where: { isActive: true }, select: { version: true } } } });
   const fields = (p?: (typeof products)[number]) => [
-    { name: "code", label: "Kod", defaultValue: p?.code, placeholder: "M300", required: true },
     { name: "name", label: "Nomi", defaultValue: p?.name, placeholder: "Beton M300 (B22.5)", required: true, className: "sm:col-span-2" },
     { name: "strengthClass", label: "Klass", defaultValue: p?.strengthClass, placeholder: "B22.5" },
     { name: "unit", label: "Birlik", type: "select" as const, defaultValue: p?.unit ?? "m3", options: PRODUCT_UNITS },
@@ -390,6 +396,8 @@ async function ProductsTab() {
     // Dona mahsulot: zayavkadagi reys hisobi — bort mashinaga nechtasi sig'adi
     { name: "weightKg", label: "1 dona og'irligi, kg", type: "number" as const, step: "0.01", defaultValue: p?.weightKg != null ? Number(p.weightKg) : "", placeholder: p ? weightHint(p) : "1300" },
     { name: "perTrip", label: "Bir reysga max, dona", type: "number" as const, step: "1", defaultValue: p?.perTrip ?? "", placeholder: "cheklovsiz" },
+    // Kod o'rniga: 1 dona plitadan necha kub chiqadi — ishlab chiqarish samaradorligi m³ da (tanlagichda ham shu ustun)
+    { name: "volumeM3", label: "1 dona hajmi, m³", type: "number" as const, step: "0.0001", defaultValue: p?.volumeM3 != null ? Number(p.volumeM3) : "", placeholder: p ? volumeHint(p) : "1.05" },
     ...(p ? [{ name: "isActive", label: "Faol", type: "checkbox" as const, defaultValue: p.isActive }] : []),
   ];
   return (
@@ -401,6 +409,7 @@ async function ProductsTab() {
           <div className="flex flex-wrap items-center gap-2"><ProductExcelPanel /><ProductMatrixPanel /></div>
         </div>
         <p className="mb-3 text-xs text-slate-500">Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Sklad → Ishlab chiqarish imkoni bo'limida hisoblanadi.
+          «1 dona hajmi, m³» — plitadan necha kub chiqadi (ishlab chiqarish samaradorligi, mahsulot tanlagichida ko&apos;rinadi); bo&apos;sh bo&apos;lsa og&apos;irlikdan taxminiy.
           Og&apos;irlik va «bir reysga max» — zayavkadagi reys hisobi uchun (bort mashinaga nechtasi sig&apos;adi); og&apos;irlik bo&apos;sh bo&apos;lsa GOST bo&apos;yicha taxminiy olinadi (maydonda kulrang ko&apos;rinadi).</p>
         <RowForm action={saveProduct.bind(null, null)} mode="create" cols={6} fields={fields()} />
       </Card>

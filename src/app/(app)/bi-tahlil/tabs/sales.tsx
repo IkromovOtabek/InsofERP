@@ -48,7 +48,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel id="markalar" title="Marka bo'yicha sotuv" info="Tushum ulushi — beton markasi (mahsulot) kesimida.">
-          {d.productRows.length ? <DonutChart data={d.productRows.slice(0, 8).map((p) => ({ label: p.code, value: p.revenue }))} formatValue={(v) => moneyShort(v)} center={{ value: String(d.productRows.length), label: "marka" }} /> : <Note>Ma'lumot yo'q.</Note>}
+          {d.productRows.length ? <DonutChart data={d.productRows.slice(0, 8).map((p) => ({ label: p.name, value: p.revenue }))} formatValue={(v) => moneyShort(v)} center={{ value: String(d.productRows.length), label: "marka" }} /> : <Note>Ma'lumot yo'q.</Note>}
         </Panel>
         <Panel id="top-mijozlar" title="Top mijozlar" info="Davr ichidagi tushum bo'yicha." action={<Link href={tabHref(range, "customers")} className="font-medium text-blue-600 hover:underline">Barchasini ko'rish →</Link>}>
           {d.byCustomer.length ? <HBarList data={d.byCustomer.slice(0, 8).map((c) => ({ label: c.name, value: c.revenue, hint: `${c.orders} zayavka`, sub: c.qty ? `${qty(c.qty)} m³ beton` : undefined }))} formatValue={(v) => moneyShort(v)} /> : <Note>Ma'lumot yo'q.</Note>}
@@ -67,7 +67,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
                 <div className="px-4 pt-3 text-xs font-semibold text-slate-500">{title as string}</div>
                 <table className="w-full text-[13px]">
                   <thead><tr><Th>#</Th><Th>Marka</Th><Th>ABC</Th><Th right>Sotuv</Th><Th right>Foyda</Th><Th right>Ulush</Th></tr></thead>
-                  <tbody>{(rows as typeof top10).map((p, i) => <Tr key={p.id}><Td className="text-slate-400">{i + 1}</Td><Td>{p.code}</Td><Td><Tag>{p.abc}</Tag></Td><Td right>{moneyShort(p.revenue)}</Td><Td right className={p.gross < 0 ? "text-red-600" : ""}>{p.costKnown ? moneyShort(p.gross) : <span className="text-xs text-slate-400">tannarx yo&apos;q</span>}</Td><Td right>{fmtNum(p.share, 1)}%</Td></Tr>)}</tbody>
+                  <tbody>{(rows as typeof top10).map((p, i) => <Tr key={p.id}><Td className="text-slate-400">{i + 1}</Td><Td>{p.name}</Td><Td><Tag>{p.abc}</Tag></Td><Td right>{moneyShort(p.revenue)}</Td><Td right className={p.gross < 0 ? "text-red-600" : ""}>{p.costKnown ? moneyShort(p.gross) : <span className="text-xs text-slate-400">tannarx yo&apos;q</span>}</Td><Td right>{fmtNum(p.share, 1)}%</Td></Tr>)}</tbody>
                 </table>
               </div>
             ))}
@@ -109,7 +109,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
             <div className="mt-3"><Action href="/orders?status=BLOCKED">Bloklangan zayavkalarni ko'rib chiqing — direktor limitni ochsin yoki mijoz oldindan to'lasin</Action></div>
           </Panel>
           <Panel id="imkoniyat" title="Sales Opportunity — qaysi markani sotish foydali" info="Marja × tushum bo'yicha eng foydali markalar. Chegirma — bazaviy narxdan past sotilgan summa.">
-            {d.opportunity.length ? <HBarList data={d.opportunity.map((p) => ({ label: `${p.code} — ${p.name}`, value: p.margin, hint: `marja · ${moneyShort(p.revenue)} sotuv`, tone: "success" as const }))} formatValue={(v) => `${fmtNum(v, 1)}%`} max={100} /> : <Note>Retsept tannarxi kiritilmagan — marja hisoblanmaydi.</Note>}
+            {d.opportunity.length ? <HBarList data={d.opportunity.map((p) => ({ label: p.name, value: p.margin, hint: `marja · ${moneyShort(p.revenue)} sotuv`, tone: "success" as const }))} formatValue={(v) => `${fmtNum(v, 1)}%`} max={100} /> : <Note>Retsept tannarxi kiritilmagan — marja hisoblanmaydi.</Note>}
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">Chegirma: <b>{moneyShort(d.discount)} so'm</b> ({d.discountCount} ta pozitsiya bazaviy narxdan past). O'lchanmagan chegirma — nazorat qilinmaydigan foyda teshigi.</div>
           </Panel>
         </div>
@@ -138,7 +138,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
           <thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Marka</Th><Th right>Miqdor</Th><Th right>Narx</Th><Th right>Summa</Th><Th right>Foyda</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {d.detail.rows.length === 0 && <Empty text="Tranzaksiya topilmadi" />}
-            {d.detail.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td><Link href={`/orders/${x.orderId}`} className="hover:underline">{x.customer}</Link></Td><Td>{x.code}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right className={x.price < x.basePrice ? "text-amber-600" : ""}>{moneyShort(x.price)}</Td><Td right className="font-medium">{money(x.revenue)}</Td><Td right className={x.revenue - x.cost < 0 ? "text-red-600" : "text-emerald-700"}>{x.cost ? moneyShort(x.revenue - x.cost) : "—"}</Td><Td><Tag>{x.status}</Tag></Td></Tr>)}
+            {d.detail.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td><Link href={`/orders/${x.orderId}`} className="hover:underline">{x.customer}</Link></Td><Td>{x.product}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right className={x.price < x.basePrice ? "text-amber-600" : ""}>{moneyShort(x.price)}</Td><Td right className="font-medium">{money(x.revenue)}</Td><Td right className={x.revenue - x.cost < 0 ? "text-red-600" : "text-emerald-700"}>{x.cost ? moneyShort(x.revenue - x.cost) : "—"}</Td><Td><Tag>{x.status}</Tag></Td></Tr>)}
           </tbody>
         </Table>
         <Pager total={d.detail.total} page={d.detail.page} size={d.detail.size} href={(p) => href({ page: String(p), size: String(size) })} />

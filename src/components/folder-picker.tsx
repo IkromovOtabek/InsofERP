@@ -40,7 +40,7 @@ type Sel = { type: "group" | "item"; id: string };
 export function FolderPicker({
   open, title, ariaLabel, nameLabel = "Nomi", cols, items, groups, initialQuery,
   emptyText = "Bu papka bo'sh", noMatchText = "Mos yozuv topilmadi", footerHint,
-  onPick, onClose, tools, panel, rowAction,
+  onPick, onClose, tools, panel, rowAction, codes = true,
 }: {
   open: boolean;
   title: string;
@@ -57,6 +57,8 @@ export function FolderPicker({
   onClose: () => void;
   tools?: (ctx: PickerCtx) => React.ReactNode;
   panel?: (ctx: PickerCtx) => React.ReactNode;
+  /** Kod ishlatiladimi (xomashyo): papka qatorining oxirgi ustuni va qidiruv. Mahsulotda kod yo'q — `false`. */
+  codes?: boolean;
   /** Qator oxiridagi amal (masalan o'chirish tugmasi); berilmasa ustun ham chizilmaydi. */
   rowAction?: (row: { id: string; name: string; kind: "group" | "item" }) => React.ReactNode;
 }) {
@@ -88,14 +90,14 @@ export function FolderPicker({
     if (term) {
       return {
         groups: [] as PickerGroup[],
-        items: items.filter((x) => x.name.toLowerCase().includes(term) || x.code.toLowerCase().includes(term)),
+        items: items.filter((x) => x.name.toLowerCase().includes(term) || (codes && x.code.toLowerCase().includes(term))),
       };
     }
     return {
       groups: groups.filter((g) => (g.parentId ?? null) === currentId),
       items: items.filter((x) => (x.groupId ?? null) === currentId),
     };
-  }, [q, items, groups, currentId]);
+  }, [q, items, groups, currentId, codes]);
 
   if (!open || !mounted) return null;
 
@@ -139,7 +141,7 @@ export function FolderPicker({
           {tools?.(ctx)}
           <div className="relative min-w-52 flex-1">
             <Search size={15} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-400" />
-            <input ref={searchRef} value={q} onChange={(e) => { setQ(e.target.value); setSel(null); }} placeholder="Qidirish (nomi yoki kodi)" className={cn(inputCls, "pr-8 pl-8")} />
+            <input ref={searchRef} value={q} onChange={(e) => { setQ(e.target.value); setSel(null); }} placeholder={codes ? "Qidirish (nomi yoki kodi)" : "Qidirish (nomi)"} className={cn(inputCls, "pr-8 pl-8")} />
             {q && <button type="button" onClick={() => setQ("")} className="absolute top-1/2 right-2 -translate-y-1/2 text-slate-400 hover:text-slate-700" aria-label="Tozalash"><X size={15} /></button>}
           </div>
         </div>
@@ -194,7 +196,7 @@ export function FolderPicker({
                     {cols.map((c, i) => (
                       <td key={c.label} className={cn("px-4 py-1.5", c.right && "text-right tabular", active ? "text-slate-200" : "text-slate-600")}>
                         {/* Papkada faqat oxirgi ustun (kod) to'ladi */}
-                        {i === cols.length - 1 ? g.code : ""}
+                        {codes && i === cols.length - 1 ? g.code : ""}
                       </td>
                     ))}
                     {rowAction && (

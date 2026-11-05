@@ -217,7 +217,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 const shipPct = needQty > 0 ? Math.min(100, (shipped / needQty) * 100) : 0;
                 return (
                   <Tr key={o.id}>
-                    <Td><CustomerName name={o.customer.name} href={`/orders/${o.id}`} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td><Td>{o.items.map((i) => i.product.code).join(", ")}</Td>
+                    <Td><CustomerName name={o.customer.name} href={`/orders/${o.id}`} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td><Td>{o.items.map((i) => i.product.name).join(", ")}</Td>
                     <Td>
                       <div className="space-y-1.5">
                         <div className="flex justify-between text-[11px] text-slate-500"><span>Ishlab ch.</span><span className="tabular">{u ? `${qty(madeQty)}/${qty(needQty)} ${unitLabel(u)}` : pct(madePct, 0)}</span></div><Progress value={madePct} max={100} tone="default" />

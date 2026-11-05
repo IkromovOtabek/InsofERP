@@ -90,7 +90,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             <thead><tr><Th>Sana</Th><Th>Marka</Th><Th right>Miqdor</Th><Th right>Narx</Th><Th right>Summa</Th><Th>Sotuvchi</Th><Th>Mijoz</Th><Th>Sabab</Th></tr></thead>
             <tbody>
               {d.list.rows.length === 0 && <Empty text="Bekor qilingan zayavka topilmadi" />}
-              {d.list.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td>{x.code}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right>{moneyShort(x.price)}</Td><Td right className="font-medium">{moneyShort(x.revenue)}</Td><Td className="text-xs">{x.seller}</Td><Td className="text-xs"><Link href={`/orders/${x.orderId}`} className="hover:underline">{x.customer}</Link></Td><Td className="text-xs text-slate-500">{x.reason}</Td></Tr>)}
+              {d.list.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td>{x.product}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right>{moneyShort(x.price)}</Td><Td right className="font-medium">{moneyShort(x.revenue)}</Td><Td className="text-xs">{x.seller}</Td><Td className="text-xs"><Link href={`/orders/${x.orderId}`} className="hover:underline">{x.customer}</Link></Td><Td className="text-xs text-slate-500">{x.reason}</Td></Tr>)}
             </tbody>
           </Table>
           <Pager total={d.list.total} page={d.list.page} size={d.list.size} href={(p) => href({ page: String(p), size: String(size) })} />

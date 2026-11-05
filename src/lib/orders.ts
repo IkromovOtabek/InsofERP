@@ -9,7 +9,7 @@ import { routeDistance, type Distance } from "@/lib/geo";
 import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/notify";
 import { syncCustomerLater } from "@/lib/eco/customers";
 import { expectedAdvance } from "@/lib/payments";
-import type { PayMethod, Prisma } from "@/generated/prisma";
+import type { PayMethod, Prisma, Role } from "@/generated/prisma";
 import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest, syncPaymentRequest } from "@/lib/payment-requests";
 import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
@@ -24,6 +24,12 @@ import { orderTotal } from "@/lib/order-total";
  * Sessiya/ruxsat tekshiruvi va `revalidatePath` — chaqiruvchida.
  */
 export type OrderResult = { changed: boolean; status?: string; error?: string };
+
+/**
+ * Beton (m³) ishlab chiqarishga tushmaydi: zayavka qabul qilingach to'g'ridan-to'g'ri logistikaga — reys ochiladi.
+ * Faqat betondan iborat zayavka haqida sex xabardor qilinmaydi; dona mahsulot qatori bo'lsa — ishlab chiqarish ham.
+ */
+const crewRoles = (units: string[]): Role[] => (units.length && units.every((u) => u === "m3") ? ["LOGISTICS"] : ["PRODUCTION", "LOGISTICS"]);
 
 /** m³ birligidagi (beton) qatorlar yig'indisi — ustun/blok (dona) kunlik beton limitiga kirmaydi. */
 const concreteM3 = (items: { qtyM3: unknown; product: { unit: string } }[]) =>
@@ -157,7 +163,7 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
         body: `${o.customer.name} · ${money(total)}. Blokni oching yoki to'lov kutiladi`,
         link,
       })
-    : notifyRoles(["PRODUCTION", "LOGISTICS"], {
+    : notifyRoles(crewRoles(o.items.map((i) => i.product.unit)), {
         type: "ORDER_CONFIRMED",
         title: "Yangi zayavka",
         body: `${o.customer.name} · ${o.deliveryAddress}`,
@@ -168,7 +174,8 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     notifyAfter(() => notifyUsers([o.createdById], {
       type: status === "BLOCKED" ? "ORDER_BLOCKED" : "ORDER_CONFIRMED",
       title: status === "BLOCKED" ? `Zayavka bloklandi — ${o.customer.name}` : "Zayavka qabul qilindi",
-      body: status === "BLOCKED" ? "Kredit limiti oshgan — direktor qarorini kutmoqda" : `${o.customer.name} · ishlab chiqarishga o'tdi`,
+      body: status === "BLOCKED" ? "Kredit limiti oshgan — direktor qarorini kutmoqda"
+        : `${o.customer.name} · ${crewRoles(o.items.map((i) => i.product.unit)).includes("PRODUCTION") ? "ishlab chiqarishga" : "logistikaga"} o'tdi`,
       link,
     }));
   }
@@ -283,14 +290,14 @@ export async function orderUnblock(id: string, userId: string): Promise<OrderRes
   // Zayavkani kiritgan sotuvchi kutib turibdi — javobni o'zi so'ramasin
   notifyAfter(async () => {
     await notifyUsers([o.createdById], { type: "ORDER_UNBLOCKED", title: `Blok ochildi — ${o.customer.name}`, body: "Direktor zayavkani tasdiqladi", link: { key: "orders", id } });
-    await notifyRoles(["PRODUCTION", "LOGISTICS"], { type: "ORDER_CONFIRMED", title: `Yangi zayavka — ${o.customer.name}`, body: "Blok ochildi, ishga tushiring", link: { key: "orders", id } });
+    await notifyRoles(crewRoles(o.items.map((i) => i.product.unit)), { type: "ORDER_CONFIRMED", title: `Yangi zayavka — ${o.customer.name}`, body: "Blok ochildi, ishga tushiring", link: { key: "orders", id } });
   });
   return { changed: true, status: "CONFIRMED" };
 }
 
 /** Bekor qilish. Zames yoki reys boshlangan bo'lsa — mumkin emas. */
 export async function orderCancel(id: string, userId: string): Promise<OrderResult> {
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: { where: { cancelledAt: null } }, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, customer: { select: { name: true } } } });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { select: { product: { select: { unit: true } } } }, batches: { where: { cancelledAt: null } }, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, customer: { select: { name: true } } } });
   if (o.batches.length || o.trips.length) return { changed: false, error: "Zames yoki reys bor — bekor qilib bo'lmaydi" };
   if (!["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status)) return { changed: false, error: "Bu holatdagi zayavka bekor qilinmaydi" };
   // Schyot qolib ketsa mijoz yetkazilmagan mahsulot uchun qarzdor bo'lib turardi — avval schyot bekor qilinadi.
@@ -311,7 +318,7 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
   // Tasdiqlangan zayavkani sex va logistika rejalashtirgan bo'lishi mumkin — bekor qilingani darhol bilinsin
   notifyAfter(async () => {
     const n = { type: "ORDER_CANCELLED", title: `Zayavka bekor qilindi — ${o.customer.name}`, body: o.status === "CONFIRMED" ? "Ishlab chiqarish va reys rejalashtirmang" : "Qoralama bekor qilindi", link: { key: "orders", id } };
-    if (o.status === "CONFIRMED") await notifyRoles(["PRODUCTION", "LOGISTICS"], n, { except: userId });
+    if (o.status === "CONFIRMED") await notifyRoles(crewRoles(o.items.map((i) => i.product.unit)), n, { except: userId });
     await notifyUsers([o.createdById].filter((u) => u !== userId), n);
     const leaders = openTasks.map((t) => t.brigade.leaderId);
     if (leaders.length) await notifyEmployees(leaders, { ...n, title: `Topshiriq bekor qilindi — ${o.customer.name}`, body: "Zayavka bekor qilindi, ishni to'xtating" });
@@ -773,7 +780,8 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
     }
     // Qabul qilingan zayavkani sex va logistika rejalashtirgan — o'zgargani darhol bilinsin
     if (o.status === "CONFIRMED") {
-      await notifyRoles(["PRODUCTION", "LOGISTICS"], { type: "ORDER_CHANGED", title: `Zayavka o'zgartirildi — ${name}`, body: res.status === "BLOCKED" ? "Limit oshdi — direktor qarorini kuting" : "Mahsulot, soni yoki sanani tekshiring", link }, { except: userId });
+      // Eski yoki yangi qatorlardan birortasi dona bo'lsa — sex ham bilsin (betonga dona qo'shilgan / olingan)
+      await notifyRoles(crewRoles([...o.items.map((i) => i.product.unit), ...items.map((i) => unitOf.get(i.productId) ?? "")]), { type: "ORDER_CHANGED", title: `Zayavka o'zgartirildi — ${name}`, body: res.status === "BLOCKED" ? "Limit oshdi — direktor qarorini kuting" : "Mahsulot, soni yoki sanani tekshiring", link }, { except: userId });
     }
     if (o.createdById !== userId) await notifyUsers([o.createdById], { type: "ORDER_CHANGED", title: `Zayavka o'zgartirildi — ${name}`, body: res.status === "BLOCKED" ? "Limit oshdi — zayavka bloklandi" : "Zayavka ma'lumotlari yangilandi", link });
   });

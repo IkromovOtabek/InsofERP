@@ -51,3 +51,19 @@ export async function nextNo(tx: Tx, table: Table, prefix: string) {
   const n = last ? Number(last.slice(head.length)) || 0 : 0;
   return `${head}${String(n + 1).padStart(5, "0")}`;
 }
+
+/**
+ * Mahsulot / mahsulot papkasi kodi — foydalanuvchiga ko'rinmaydi va kiritilmaydi (bazada yagona kalit bo'lib qoladi):
+ * ro'yxatdagi eng katta raqamli koddan keyingisi (1C dagidek).
+ */
+export async function nextCatalogCode(tx: Tx): Promise<string> {
+  const [products, groups] = await Promise.all([
+    tx.product.findMany({ select: { code: true } }),
+    tx.productGroup.findMany({ select: { code: true } }),
+  ]);
+  const max = [...products, ...groups]
+    .map((x) => Number(x.code))
+    .filter((n) => Number.isFinite(n))
+    .reduce((a, b) => Math.max(a, b), 0);
+  return String(max + 1);
+}

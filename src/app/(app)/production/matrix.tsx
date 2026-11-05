@@ -121,11 +121,11 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
   const groups = FLOW.map((s) => ({ s, n: cols.filter((o) => readyOf(o) === s).length })).filter((g) => g.n);
   const maxDef = Math.max(1, ...data.products.map((p) => -net(p)));
 
-  // Kartalar — serverdagi birlik bo'yicha yig'indi (dona, m², beton m³ alohida)
+  // Kartalar — serverdagi birlik bo'yicha yig'indi (dona, m² alohida; beton sexga tushmaydi)
   const sm = data.summary;
-  // Har birlik alohida qatorda: avval hovlidagi (dona, m²), keyin beton m³ — tor kartada ham o'qiladi
+  // Har birlik alohida qatorda — tor kartada ham o'qiladi
   const ut = (t: UnitTotal[]) => (t.length
-    ? [...t].sort((a, b) => Number(a.unit === "m3") - Number(b.unit === "m3")).map((x, k) => <span key={x.unit} className={cn("block whitespace-nowrap", k > 0 && "text-base font-medium sm:text-lg")}>{n0(x.qty)} {unitLabel(x.unit)}</span>)
+    ? t.map((x, k) => <span key={x.unit} className={cn("block whitespace-nowrap", k > 0 && "text-base font-medium sm:text-lg")}>{n0(x.qty)} {unitLabel(x.unit)}</span>)
     : "0");
   const needAny = sm.need.length > 0;
   const cnt = FLOW.reduce((a, s) => ({ ...a, [s]: data.orders.filter((o) => readyOf(o) === s).length }), {} as Record<ReadyCol, number>);
@@ -143,7 +143,7 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
           <StatCard label="Skladda tayyor" value={ut(sm.stock)} hint={`${sm.stockKinds} turdagi mahsulot · beton saqlanmaydi`} icon={Boxes} href={stockHref} />
           <StatCard label="Zayavkalarda band" value={ut(sm.band)} hint={`${sm.orders} ta ochiq zayavka`} icon={ClipboardList} href="/production#doska" />
           <StatCard label="Quyish kerak" value={ut(sm.need)} hint={needAny ? `${sm.needKinds} turda kamomad` : "hammasi yetarli"} icon={Factory} tone={needAny ? "danger" : "success"} href="#matritsa" />
-          <StatCard label="Muddati o'tgan" value={`${sm.late} ta`} hint={sm.lateBeton ? `tayyor bo'lmagan · shundan ${sm.lateBeton} tasi beton` : "tayyor bo'lmagan zayavkalar"} icon={AlarmClock} tone={sm.late ? "warning" : "default"} href="/production?tab=soon#doska" />
+          <StatCard label="Muddati o'tgan" value={`${sm.late} ta`} hint="tayyor bo'lmagan zayavkalar" icon={AlarmClock} tone={sm.late ? "warning" : "default"} href="/production?tab=soon#doska" />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 px-5 pt-4">
@@ -316,7 +316,7 @@ function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, 
       <div id="doska" className="scroll-mt-20 px-5 pt-5">
         <CardHeader icon={KanbanSquare}
           title={sel ? `Zayavkalar doskasi · ${sel.name}` : "Zayavkalar doskasi"}
-          description={sel ? "Shu mahsulotni olayotgan zayavkalar. Boshqa mahsulotni tanlash uchun jadvaldagi mahsulot nomini bosing." : "Mahsulotni tanlang — qaysi zayavkalar olayotgani shu yerda chiqadi. Filtr bo'yicha barcha zayavkalar (beton ham)."}
+          description={sel ? "Shu mahsulotni olayotgan zayavkalar. Boshqa mahsulotni tanlash uchun jadvaldagi mahsulot nomini bosing." : "Mahsulotni tanlang — qaysi zayavkalar olayotgani shu yerda chiqadi. Filtr bo'yicha barcha zayavkalar (beton sexga tushmaydi — u logistikada)."}
           action={sel ? <button type="button" onClick={onClear} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"><X size={14} /> Tanlovni olish</button> : undefined} />
       </div>
       <div className="px-5">{filters}</div>

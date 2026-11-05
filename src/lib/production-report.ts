@@ -35,7 +35,7 @@ export type ReportSnapshot = {
   producedToday: string;
   load: { total: string; orders: { id?: string; orderNo: string; time: string | null; customer: string; items: string; shipped: number; left: number }[] };
   brigades: { id?: string; name: string; leader: string | null; today: string; month: string; open: number; overdue: number }[];
-  defects: { id?: string; taskId?: string | null; time: string; code: string; qty: number; unit: string; reason: string; brigade: string | null; by: string }[];
+  defects: { id?: string; taskId?: string | null; time: string; code: string; name?: string; qty: number; unit: string; reason: string; brigade: string | null; by: string }[];
   stock: { id?: string; name: string; unit: string; balance: number; perDay: number; days: number | null; planned: number; minStock: number; need: number; level: StockLevel }[];
   /** 08:00 dan qayd etilgan daqiqagacha soatma-soat + brigadirlar belgilagan muammolar (eski nusxalarda yo'q). */
   hourly?: HourlyReport;
@@ -95,14 +95,14 @@ export async function buildReport(iso = today(), at = new Date()): Promise<Repor
     },
     producedToday: fmtUnitTotals(d.produced.filter((r) => r.day > 0).map((r) => ({ unit: r.product.unit, qty: r.day }))),
     load: {
-      total: d.load.products.map((p) => `${p.code} ${+p.need.toFixed(2)} ${unitLabel(p.unit)}`).join(" · "),
-      orders: d.load.orders.map((o) => ({ id: o.id, orderNo: o.orderNo, time: o.time, customer: o.customer, items: o.items.map((i) => `${i.code} ${+i.qty.toFixed(2)} ${unitLabel(i.unit)}`).join(", "), shipped: o.shipped, left: o.left })),
+      total: d.load.products.map((p) => `${p.name} ${+p.need.toFixed(2)} ${unitLabel(p.unit)}`).join(" · "),
+      orders: d.load.orders.map((o) => ({ id: o.id, orderNo: o.orderNo, time: o.time, customer: o.customer, items: o.items.map((i) => `${i.name} ${+i.qty.toFixed(2)} ${unitLabel(i.unit)}`).join(", "), shipped: o.shipped, left: o.left })),
     },
     brigades: d.brigades.map((b) => ({
       id: b.id, name: b.name, leader: b.leader, today: b.today.map((t) => `${t.product} ${+t.qty.toFixed(2)} ${unitLabel(t.unit)}`).join("; "),
       month: b.monthText, open: b.openCount, overdue: b.overdue,
     })),
-    defects: d.defects.today.map((r) => ({ id: r.id, taskId: r.taskId, time: hhmm(r.date), code: r.product.code, qty: r.qty, unit: r.product.unit, reason: r.note ? `${r.reason} · ${r.note}` : r.reason, brigade: r.brigade, by: r.by })),
+    defects: d.defects.today.map((r) => ({ id: r.id, taskId: r.taskId, time: hhmm(r.date), code: r.product.code, name: r.product.name, qty: r.qty, unit: r.product.unit, reason: r.note ? `${r.reason} · ${r.note}` : r.reason, brigade: r.brigade, by: r.by })),
     // Varaqqa hamma xomashyo emas: kam qolganlar + eng tez tugaydigan 10 tasi
     stock: (() => { const h = stockHighlights(stock); return [...h.low, ...h.ok].map((s) => ({ id: s.id, name: s.name, unit: s.unit, balance: s.balance, perDay: s.perDay, days: s.days, planned: s.planned, minStock: s.minStock, need: s.need, level: s.level })); })(),
     hourly,

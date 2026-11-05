@@ -114,7 +114,6 @@ export function NewProductGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx;
       <input type="hidden" name="parentId" value={ctx.groupId ?? ""} />
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Papka nomi *" className="min-w-52 flex-1"><Input name="name" required autoComplete="off" placeholder="Masalan: Plita" /></Field>
-        <Field label="Kod" hint="bo'sh qoldirsangiz — avtomatik" className="w-28"><Input name="code" autoComplete="off" /></Field>
         <Button size="sm" disabled={pending}><FolderPlus size={15} /> Qo&apos;shish</Button>
         <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
       </div>
@@ -133,8 +132,9 @@ export function NewProductForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDo
     <form action={action} className="space-y-3">
       <input type="hidden" name="groupId" value={ctx.groupId ?? ""} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <Field label="Kod" hint="avtomatik" className="sm:col-span-1"><Input name="code" autoComplete="off" placeholder="0" /></Field>
         <Field label="Mahsulot nomi *" className="sm:col-span-3"><Input name="name" required autoComplete="off" placeholder="Masalan: PK 71-12-8 A 400" /></Field>
+        {/* Kod o'rniga: 1 dona plitadan necha kub chiqadi — ishlab chiqarish samaradorligi m³ da */}
+        <Field label="1 dona hajmi, m³" hint="bo'sh — taxminiy"><Input name="volumeM3" inputMode="decimal" autoComplete="off" placeholder="1,05" /></Field>
         <Field label="Tovar turi">
           <Select name="kind" defaultValue={PRODUCT_KINDS[1]}>
             {PRODUCT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
@@ -160,15 +160,21 @@ export function NewProductForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDo
 }
 
 /** Mavjud mahsulot nomini tuzatish — tanlagichdagi qalam va Sklad → Tayyor mahsulot qo'shish. */
-export function RenameProductForm({ product, onDone, onCancel }: { product: Pick<CatalogProduct, "id" | "name" | "code" | "unit">; onDone: () => void; onCancel: () => void }) {
+export function RenameProductForm({ product, onDone, onCancel }: { product: Pick<CatalogProduct, "id" | "name" | "unit" | "volumeM3" | "m3">; onDone: () => void; onCancel: () => void }) {
   const [state, action, pending] = useActionState(renameCatalogProduct.bind(null, product.id), undefined);
   useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
   return (
     <form action={action} className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Mahsulot nomi *" hint={`kod ${product.code} · ${product.unit} — o'zgarmaydi`} className="min-w-64 flex-1">
+        <Field label="Mahsulot nomi *" hint={`${product.unit} — o'zgarmaydi`} className="min-w-64 flex-1">
           <Input name="name" required autoComplete="off" defaultValue={product.name} autoFocus />
         </Field>
+        {/* Beton (m³) o'zi kub — hajm faqat dona / m² mahsulotda */}
+        {product.unit !== "m³" && (
+          <Field label={`1 ${product.unit} hajmi, m³`} hint="bo'sh — taxminiy" className="w-36">
+            <Input name="volumeM3" inputMode="decimal" autoComplete="off" defaultValue={product.volumeM3 != null ? String(product.volumeM3).replace(".", ",") : ""} placeholder={product.m3 ?? "1,05"} />
+          </Field>
+        )}
         <Button size="sm" disabled={pending}><Save size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
         <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
       </div>

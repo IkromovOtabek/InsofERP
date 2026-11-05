@@ -42,6 +42,9 @@ export async function assignOrderBrigades(orderId: string, picks: Record<string,
     })
     .filter((x) => x.brigadeId);
   if (chosen.length === 0) return { error: "Kamida bitta qator uchun brigada tanlang" };
+  // Beton ishlab chiqarishga tushmaydi — mikserga yuklash paytida quyiladi, reysni logistika ochadi
+  const beton = chosen.find((c) => c.item.product.unit === "m3");
+  if (beton) return { error: `${beton.item.product.name}: beton brigadaga berilmaydi — u to'g'ridan-to'g'ri logistikaga (reys) o'tadi` };
   for (const c of chosen) {
     if (c.qty === null) continue;
     if (!(c.qty > 0)) return { error: `${c.item.product.name}: miqdor 0 dan katta bo'lsin` };

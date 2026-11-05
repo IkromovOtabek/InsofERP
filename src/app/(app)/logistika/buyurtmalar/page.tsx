@@ -76,7 +76,7 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
                     {o.site ? <Link href={`/logistika/obyektlar/${o.site.id}`} className="block max-w-[16rem] truncate text-xs text-slate-500 hover:underline">{o.deliveryAddress}</Link> : <div className="max-w-[16rem] truncate text-xs text-slate-500">{o.deliveryAddress}</div>}
                     {o.lat == null && <div className="text-xs text-amber-700">xaritada nuqta yo'q</div>}
                   </Td>
-                  <Td className="text-sm">{o.items.map((i) => i.product.code ?? i.product.name).join(", ")}{o.needsPump && <div className="text-xs text-violet-700">+ nasos</div>}</Td>
+                  <Td className="text-sm">{o.items.map((i) => i.product.name).join(", ")}{o.needsPump && <div className="text-xs text-violet-700">+ nasos</div>}</Td>
                   <Td right className="tabular">{qty(l.total)} {unitShort(unit)}</Td>
                   <Td right className={`tabular ${l.remaining > 0.001 ? "text-amber-700" : ""}`}>{qty(l.assigned)}</Td>
                   <Td right className="tabular">{qty(l.delivered)}</Td>

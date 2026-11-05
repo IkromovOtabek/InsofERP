@@ -429,7 +429,7 @@ export async function ownerDashboard() {
     `Xarajatlar: ${moneyShort(expenseToday)} so'm (oyda ${moneyShort(expenseMonth)}). Sof natija oyda: ${moneyShort(netMonth)} so'm.`,
     `Pul: ${moneyShort(cashTotal)} so'm (kassa ${moneyShort(cashOnHand)}, bank ${moneyShort(bankTotal)}).`,
     `Debitorka: ${moneyShort(receivable)} so'm, shundan muddati o'tgan ${moneyShort(overdueReceivable)}.`,
-    `Ishlab chiqarish: beton ${fq(concreteToday)} m³ bugun${concretePlan ? `, oyda ${fq(concreteMonth)} / ${fq(concretePlan)} m³` : ""}${piecesPlan.length ? `; ${piecesPlan.map((p) => `${p.code} ${fq(p.fact)}/${fq(p.plan)} ${unitLabel(p.unit)}`).join(", ")}` : ""}.`,
+    `Ishlab chiqarish: beton ${fq(concreteToday)} m³ bugun${concretePlan ? `, oyda ${fq(concreteMonth)} / ${fq(concretePlan)} m³` : ""}${piecesPlan.length ? `; ${piecesPlan.map((p) => `${p.name} ${fq(p.fact)}/${fq(p.plan)} ${unitLabel(p.unit)}`).join(", ")}` : ""}.`,
     overList ? `Byudjetdan oshgan: ${overList}.` : "Byudjetdan oshgan xarajat yo'q.",
     minDays ? `Asosiy xavf: ${minDays.name} zaxirasi ${minDays.days.toFixed(1)} kun.` : "",
     decisions.length ? `Qaror kerak: ${decisions.slice(0, 2).map((d) => d.problem.toLowerCase()).join("; ")}.` : "Egasi qarorini talab qiladigan masala yo'q.",

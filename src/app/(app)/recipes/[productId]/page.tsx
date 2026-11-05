@@ -60,7 +60,6 @@ export default async function RecipePage({ params }: { params: Promise<{ product
               <LinkButton href="/settings?tab=products" variant="ghost" size="sm"><Pencil size={13} /> Tahrirlash</LinkButton>
             </div>
             <DL items={[
-              { k: "Kod", v: p.code },
               { k: "Tovar turi", v: p.kind ?? "—" },
               { k: "Bo'lim", v: p.group?.name ?? "Ro'yxat ildizi" },
               { k: "O'lchov birligi", v: unitLabel(p.unit) },

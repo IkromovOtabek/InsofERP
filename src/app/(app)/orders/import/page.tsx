@@ -14,7 +14,7 @@ import { importOrdersFromExcel } from "../actions";
  */
 export default async function OrdersImport() {
   await requireRoles(["SALES"], { module: "orders", actions: ["import"] });
-  const products = await db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, select: { code: true, unit: true } });
+  const products = await db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true, unit: true } });
   return (
     <div>
       <PageHeader
@@ -33,12 +33,12 @@ export default async function OrdersImport() {
             action={importOrdersFromExcel}
             submitLabel="Zayavkalarni ochish"
             templateName="zayavka-namuna"
-            example={{ customer: "Эсо Картон", product: products[0]?.code ?? "M300", unit: products[0]?.unit ?? "dona", qty: 12, date: isoDate(), price: "" }}
+            example={{ customer: "Эсо Картон", product: products[0]?.name ?? "M300", unit: products[0]?.unit ?? "dona", qty: 12, date: isoDate(), price: "" }}
             merge={{ sum: ["qty"], unitKeys: ["unit"] }}
             matrix={{ colKey: "customer", rowKey: "product", qtyKey: "qty", unitKey: "unit", dateKey: "date" }}
             fields={[
               { key: "customer", label: "Mijoz / obyekt", required: true, hint: "matritsada — ustun nomi", synonyms: ["mijoz", "zakazchi", "obyekt", "клиент", "заказчик", "объект", "customer", "buyurtmachi"] },
-              { key: "product", label: "Mahsulot", required: true, hint: "kodi yoki nomi", synonyms: FIELD_SYNONYMS.product },
+              { key: "product", label: "Mahsulot", required: true, hint: "nomi", synonyms: FIELD_SYNONYMS.product },
               { key: "unit", label: "Birlik", hint: "faqat ko'rish uchun — birlik mahsulotdan olinadi", synonyms: FIELD_SYNONYMS.unit },
               { key: "qty", label: "Miqdor", required: true, synonyms: FIELD_SYNONYMS.qty },
               { key: "date", label: "Yetkazish sanasi", hint: "bo'sh bo'lsa pastdagi standart sana", synonyms: ["sana", "yetkazish", "muddat", "дата", "срок", "date"] },

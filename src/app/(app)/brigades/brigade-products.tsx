@@ -48,7 +48,7 @@ export function BrigadeProductsView({ data, compact }: { data: BrigadeProducts; 
                   {b.rows.map((r) => (
                     <li key={r.productId}>
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="min-w-0 truncate"><span className="font-medium">{r.code}</span> <span className="text-slate-500">{r.name}</span></span>
+                        <span className="min-w-0 truncate"><span className="font-medium">{r.name}</span></span>
                         <span className="shrink-0 font-semibold tabular">{qty(r.left)} {unitLabel(r.unit)}</span>
                       </div>
                       <Progress value={r.done} max={r.given || 1} tone={r.done >= r.given && r.given > 0 ? "success" : "default"} />

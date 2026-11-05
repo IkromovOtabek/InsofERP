@@ -48,7 +48,7 @@ export async function operationsTab(r: Range, gran: Gran) {
   const prodDyn = series(batches, r.from, r.to, gran, (b) => b.date, (b) => Number(b.qtyM3));
   const shipDyn = series(delivered, r.from, r.to, gran, (t) => t.deliveredAt ?? t.createdAt, m3Of);
   const byShift = [1, 2, 3].map((s) => ({ label: `${s}-smena`, value: sum(batches.filter((b) => b.shift === s).map((b) => Number(b.qtyM3))) })).filter((x) => x.value > 0);
-  const byProduct = [...new Map(batches.map((b) => [b.productId, b.product])).entries()].map(([id, p]) => ({ id, label: `${p.code} — ${p.name}`, value: sum(batches.filter((b) => b.productId === id).map((b) => Number(b.qtyM3))), batches: batches.filter((b) => b.productId === id).length })).sort((a, b) => b.value - a.value);
+  const byProduct = [...new Map(batches.map((b) => [b.productId, b.product])).entries()].map(([id, p]) => ({ id, label: p.name, value: sum(batches.filter((b) => b.productId === id).map((b) => Number(b.qtyM3))), batches: batches.filter((b) => b.productId === id).length })).sort((a, b) => b.value - a.value);
   const noOrder = batches.filter((b) => !b.orderId);
 
   // Mikserlar

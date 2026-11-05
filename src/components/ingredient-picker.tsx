@@ -57,6 +57,8 @@ export function IngredientPicker({ open, ingredients, groups, products = [], can
   const dupes = duplicateNames(products);
   /** Ochiq papka xomashyoniki yoki mahsulotniki — ildizda (papkasiz) ikkalasi ham taklif qilinadi. */
   const folderKind = (groupId: string | null) => (groupId ? groups.find((g) => g.id === groupId)?.kind ?? null : null);
+  // Mahsulot va mahsulot papkasi kodi ko'rsatilmaydi — «Kod» ustuni faqat xomashyoniki
+  const shownGroups = useMemo(() => groups.map((g) => (g.kind === "product" ? { ...g, code: "" } : g)), [groups]);
 
   return (
     <FolderPicker
@@ -71,9 +73,9 @@ export function IngredientPicker({ open, ingredients, groups, products = [], can
       ]}
       items={ingredients.map((x) => ({
         id: x.id, name: x.name, code: x.code, groupId: x.groupId,
-        cells: [x.kind === "product" ? <Badge key="k" color="blue">Mahsulot</Badge> : <span key="k" className="text-slate-500">Xomashyo</span>, unitLabel(x.unit), x.code],
+        cells: [x.kind === "product" ? <Badge key="k" color="blue">Mahsulot</Badge> : <span key="k" className="text-slate-500">Xomashyo</span>, unitLabel(x.unit), x.kind === "product" ? "" : x.code],
       }))}
-      groups={groups}
+      groups={shownGroups}
       initialQuery={initialQuery}
       emptyText="Bu papka bo'sh"
       noMatchText="Mos yozuv topilmadi"
@@ -148,7 +150,7 @@ export function IngredientField({ ingredients, groups, products, canCreateMateri
   return (
     <div ref={boxRef} className="relative flex">
       <input
-        value={q ?? (selected ? `${selected.name} (${selected.code})` : "")}
+        value={q ?? (selected ? (selected.kind === "product" ? selected.name : `${selected.name} (${selected.code})`) : "")}
         placeholder="Xomashyo yoki mahsulot nomi"
         autoComplete="off"
         onChange={(e) => { setQ(e.target.value); setOpen(true); setCursor(0); }}
@@ -176,7 +178,7 @@ export function IngredientField({ ingredients, groups, products, canCreateMateri
               <span className="min-w-0 flex-1 truncate">{x.name}</span>
               {x.kind === "product" && <span className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">mahsulot</span>}
               <span className="shrink-0 text-xs text-slate-500">{unitLabel(x.unit)}</span>
-              <span className="shrink-0 text-xs text-slate-400 tabular">{x.code}</span>
+              {x.kind === "material" && <span className="shrink-0 text-xs text-slate-400 tabular">{x.code}</span>}
             </button>
           ))}
         </div>
