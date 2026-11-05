@@ -163,9 +163,14 @@ export function AssignForm({ orderId, items, brigades, capacity, focus }: { orde
     .reduce((s, r) => s + (Number.isFinite(parseNum(r.qty)) ? Math.max(0, parseNum(r.qty)) : 0), 0);
   /** Tayinlanmay qolayotgani: birinchi `count` qismdan keyin (sukut — hammasidan keyin) */
   const rest = (i: Item, count?: number) => i.left - given(i, count);
+  // Yangi qism: qolgani bo'lsa — o'sha; hammasi taqsimlangan bo'lsa oxirgi qismdagi miqdor teng ikkiga bo'linadi (60 → 30 + 30)
   const addPart = (i: Item) => {
-    const r = rest(i);
-    setItem(i, [...partsOf(i), { key: Date.now(), brigade: "", qty: r > 0.0005 ? String(+r.toFixed(3)) : "" }]);
+    const list = partsOf(i), r = rest(i);
+    if (r > 0.0005) return setItem(i, [...list, { key: Date.now(), brigade: "", qty: String(+r.toFixed(3)) }]);
+    const last = list[list.length - 1]!, have = Number.isFinite(parseNum(last.qty)) ? parseNum(last.qty) : 0;
+    const half = i.unit === "m³" ? +(have / 2).toFixed(3) : Math.floor(have / 2);
+    const next = { key: Date.now(), brigade: "", qty: half > 0 ? String(half) : "" };
+    setItem(i, half > 0 ? [...list.slice(0, -1), { ...last, qty: String(+(have - half).toFixed(3)) }, next] : [...list, next]);
   };
   // Brigada tanlangan qismda miqdor: bo'sh / 0 / dona uchun kasr — yuborib bo'lmaydi
   const partErr = (i: Item, r: Part): string | null => {
@@ -198,7 +203,6 @@ export function AssignForm({ orderId, items, brigades, capacity, focus }: { orde
             const isFocus = focus === i.id;
             const list = partsOf(i);
             const left = rest(i), ierr = itemErr(i);
-            const allPicked = list.every((r) => r.brigade);
             return (
               <Tr key={i.id} className={cn(isFocus && "bg-brand-50/70 ring-2 ring-brand-400 ring-inset")}>
                 <Td className="align-top font-medium">{isFocus && <span ref={focusRow} />}{i.product}</Td>
@@ -275,11 +279,10 @@ export function AssignForm({ orderId, items, brigades, capacity, focus }: { orde
                         );
                       })}
                       {ierr && <span role="alert" className="block text-xs font-medium text-red-600">{ierr}</span>}
-                      {left > 0.0005 && allPicked && !ierr && (
-                        <button type="button" onClick={() => addPart(i)} className="inline-flex items-center gap-1 text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline">
-                          <Plus size={14} /> Qator qo&apos;shish — qolgan {amt(left, i.unit)} boshqa brigadaga
-                        </button>
-                      )}
+                      {/* Har doim ko'rinadi: qatorni yana bir brigadaga bo'lish */}
+                      <Button type="button" variant="secondary" size="sm" onClick={() => addPart(i)}>
+                        <Plus size={14} /> Qator qo&apos;shish{left > 0.0005 && !ierr ? ` — qolgan ${amt(left, i.unit)} boshqa brigadaga` : " — boshqa brigadaga bo'lish"}
+                      </Button>
                     </div>
                   )}
                 </Td>
