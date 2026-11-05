@@ -158,7 +158,7 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   // Vazifa — o'ziga yoki (huquqi bo'lsa) boshqa xodimga (`lib/hr/tasks.ts`)
   vazifa: { roles: ALL_STAFF, title: "Yangi vazifa", label: "Vazifa yozish" },
   // Otdel kadrga murojaat (HR chat) — anonim bo'lishi mumkin (`lib/hr/voice.ts`)
-  murojaat: { roles: ALL_STAFF, title: "Otdel kadrga murojaat", label: "Murojaat yozish" },
+  murojaat: { roles: ALL_STAFF.filter((r) => r !== "BRIGADIER"), title: "Otdel kadrga murojaat", label: "Murojaat yozish" },
   // Ish haqi vedomosti — oy + tur bo'yicha hisoblash (veb «Ish haqi» → «Hisoblash», `lib/hr/payroll.ts` → `calculateRun`); `./moliya-extra.ts`
   "ish-haqi": { roles: ["HR", "ACCOUNTING"], title: "Ish haqini hisoblash", label: "Ish haqini hisoblash" },
   // Otdel kadr kabineti: xodim qo'shish, jarima/bonus, vakansiya, nomzod, ommaviy xabar, kechikish jarimasi (`./kadr-extra.ts`)
@@ -261,7 +261,7 @@ async function formOf(user: MobileUser, key: string, defaults: Record<string, st
     case "kirim-zavod": return kirimZavodForm();
     case "kirim-boshqa": return kirimBoshqaForm();
     // Otdel kadr — boshida «Kim uchun» (xodim nomidan ariza, veb `createRequestForEmployee`)
-    case "ariza": return kadrRequestForm(user, requestForm());
+    case "ariza": return kadrRequestForm(user, requestForm(user.role));
     case "vazifa": return taskForm(user);
     case "murojaat": return feedbackForm();
     case "arenda-kirim": return arendaKirimForm();

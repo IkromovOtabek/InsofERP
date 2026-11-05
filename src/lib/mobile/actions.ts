@@ -376,13 +376,12 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       return { ok: true, message: [r.note ? `${base}. ${r.note}` : base, def].filter(Boolean).join(" · ") };
     }
     case "task.start": {
-      // Smena ochilmagan bo'lsa — ish boshlanishi smenani ham ochadi (brigadir unutib qo'ymasin)
-      const { brigadeId } = await brigadeOf(user, id);
-      const sh = user.role === "BRIGADIER" ? await openShift(brigadeId, user.id) : null;
+      // Smena yo'q — ish boshlanishi faqat topshiriqqa yoziladi (`startedAt`)
+      await brigadeOf(user, id);
       const r = await startTask(id, user.id);
       if ("error" in r) fail(r.error);
       clearDashCache();
-      return { ok: true, message: sh && "created" in sh && sh.created ? "Ish boshlandi — bugungi smena ham ochildi" : "Ish boshlandi" };
+      return { ok: true, message: "Ish boshlandi" };
     }
     case "task.finish": {
       const t = await db.brigadeTask.findUniqueOrThrow({ where: { id }, select: { qty: true, doneQty: true } });
@@ -439,7 +438,9 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const r = await reportBrigadeIssue({
         brigadeId, taskId: taskId ?? (textOf(payload, "taskId") || null), kind: kind as never,
         equipment: textOf(payload, "equipment") || null, qty: optNum(payload, "qty"),
-        downtimeMin: optNum(payload, "downtimeMin") != null ? Math.round(optNum(payload, "downtimeMin")!) : null, note: textOf(payload, "note"),
+        downtimeMin: optNum(payload, "downtimeMin") != null ? Math.round(optNum(payload, "downtimeMin")!) : null,
+        // Yangi ilovada uskuna/ishchi muammosi tanlab yuboriladi — izoh ixtiyoriy, bo'sh bo'lsa umumiy matn
+        note: textOf(payload, "note") || (kind === "EQUIPMENT" ? "Uskuna to'xtadi" : kind === "STAFF" ? "Qo'shimcha ishchi kerak" : ""),
       }, user.id);
       if ("error" in r) fail(r.error);
       clearDashCache();

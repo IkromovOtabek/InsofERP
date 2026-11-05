@@ -16,7 +16,7 @@ import { materialTurnover, type TurnoverRow } from "@/lib/stock-turnover";
 import { canDo } from "@/lib/permissions";
 import type { MobileUser } from "./auth";
 import { reportRows } from "./sex";
-import { brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
+import { brigDaysList, brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
 import type { HomeRow, Tone } from "./home";
 import type { LeadStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
@@ -80,7 +80,9 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // Mexanik — uskuna nosozligining egasi (`BRIGADE_ISSUE.EQUIPMENT`)
   "brig-issues": { title: "Brigada muammolari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "PROCUREMENT", "MECHANIC", "HR"] },
   // Brigadir yopgan smena hisobotlari (`./brigadier.ts`)
-  "brig-shifts": { title: "Smena hisobotlari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR"] },
+  // Brigadir smena ochmaydi (ish tartibida smena yo'q) — eski yopilgan smenalar faqat ishlab chiqarishga; brigadirga «Ish tarixi»
+  "brig-shifts": { title: "Smena hisobotlari", roles: ["PRODUCTION", "SUPERVISOR"] },
+  "brig-days": { title: "Ish tarixi", roles: ["BRIGADIER"] },
   // ── Logistika ──
   trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC", "DISPATCHER"] },
   drivers: { title: "Haydovchilar", roles: ["LOGISTICS", "HR", "DISPATCHER"] },
@@ -147,7 +149,7 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
 // «Kirim» qatori — kirim kartochkasi (id `<receiptId>~<itemId>`: bir kirimning qatorlari takrorlanmasin, `detail.ts` `~` dan keyingisini tashlaydi).
 // «Chiqim» qatori id'si `stock:<materialId>~<n>` (splitRef — xomashyo kartochkasi), «Chiqim» kartochkasi esa berish hujjati (`rasxod`, id = ref).
 // «Qoldiqlar» qatori — xomashyo kartochkasi (id — xomashyo), birinchi qator — jami (`detail.ts` `ostatki`).
-export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts", "arenda-jurnal": "arenda-tx", "arenda-shops": "arenda-shop", "arenda-debtors": "arenda-shop", "arenda-svet": "arenda-shop", ...SKLAD_DETAIL_KEY, ...LOGI_DETAIL_KEY, ...SOTUV_DETAIL_KEY };
+export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", "brig-days": "brig-day", prixod: "receipts", "arenda-jurnal": "arenda-tx", "arenda-shops": "arenda-shop", "arenda-debtors": "arenda-shop", "arenda-svet": "arenda-shop", ...SKLAD_DETAIL_KEY, ...LOGI_DETAIL_KEY, ...SOTUV_DETAIL_KEY };
 
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
 const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {
@@ -275,6 +277,7 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "leads") return leads(meta.title, s, filter);
   if (key === "brig-issues") return brigIssuesList(user, meta.title, s, filter);
   if (key === "brig-shifts") return brigShiftsList(user, meta.title, s);
+  if (key === "brig-days") return brigDaysList(user, meta.title);
   // Sklad / snabjeniye qo'shimcha ro'yxatlari (`./sklad-extra.ts`)
   if (SKLAD_LISTS.has(key)) return skladList(user, key, meta.title, s, filter);
   // Sklad jurnallari (ruscha) — davr chiplari bilan

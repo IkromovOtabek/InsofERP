@@ -43,7 +43,7 @@ import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
 import { repDetail } from "./report-detail";
 import { dashDetail } from "./dash-detail";
 import { problemDetail } from "./problems";
-import { brigIssueDetail, brigShiftDetail, defectAction, issueActions, brigStockDetail } from "./brigadier";
+import { brigDayDetail, brigIssueDetail, brigShiftDetail, defectAction, issueActions, brigStockDetail } from "./brigadier";
 import { BRIGADE_ISSUE, ISSUE_RESOLVERS, taskPhase } from "@/lib/brigade-shift";
 import { DEFECT_REASONS } from "@/lib/production-day";
 import { TASK_ROLES } from "@/lib/tasks";
@@ -327,8 +327,9 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "task.finish": [...TASK_ROLES.progress, "BRIGADIER"],
   "task.defect": ["BRIGADIER"],
   // Smena kartochkasi (id — `b~<brigadeId>`) va topshiriq kartasi (id — topshiriq): smena, muammolar, brak
-  "shift.open": ["BRIGADIER"],
-  "shift.close": ["BRIGADIER"],
+  // Ish tartibida smena yo'q — smenani ochish/yopish hech kimga ochiq emas (eski yopilgan smenalar tarix sifatida qoladi)
+  "shift.open": [],
+  "shift.close": [],
   "shift.defect": ["BRIGADIER"],
   "issue.equipment": ["BRIGADIER"],
   "issue.material": ["BRIGADIER"],
@@ -571,6 +572,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   "brig-issue": ["BRIGADIER", ...ISSUE_RESOLVERS],
   // Brigadaning sklad kartasi: qo'lidagi xomashyo, berilgani, samaradorlik (`./brigadier.ts` → `brigStockDetail`)
   "brig-stock": ["PRODUCTION", "SUPERVISOR", "BRIGADIER", "WAREHOUSE", "PROCUREMENT"],
+  "brig-day": ["BRIGADIER"],
   "prod-report": ["PRODUCTION", "SUPERVISOR"],
   // Hisobotdan bosib ochiladigan soat / brigada / mahsulot / brak kartalari — faqat ko'rish (`./report-detail.ts`)
   rep: ["PRODUCTION", "SUPERVISOR"],
@@ -610,7 +612,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   ...SOTUV_DETAIL_ROLES,
 };
 
-const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "brig-stock", "sex-emp", "dash", ...SELF_CARDS];
+const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-day", "brig-issue", "brig-stock", "sex-emp", "dash", ...SELF_CARDS];
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
@@ -683,6 +685,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "prod-report": return savedReportDetail(user, id);
     case "rep": return repDetail(user, id);
     case "brig-shift": return brigShiftDetail(user, id);
+    case "brig-day": return brigDayDetail(user, id);
     case "brig-issue": return brigIssueDetail(user, id);
     case "brig-stock": return brigStockDetail(user, id);
     // Egasi qarori kerak bo'lgan masala (direktor dashboardidagi "Muammolar") — `./problems.ts`
@@ -1068,7 +1071,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   // Hujjatdagi tartib: Ishni boshlash → fakt (qisman) → yakunlash; yon tomonda muammo va brak
   const actions: DetailAction[] = [];
   if (open && !t.startedAt && t.status === "NEW" && can(user, "task.start")) {
-    actions.push({ id: "task.start", label: "Ishni boshlash", tone: "brand", confirm: `${t.taskNo} — ish boshlandi deb belgilansinmi? Smena ochilmagan bo'lsa, u ham ochiladi.` });
+    actions.push({ id: "task.start", label: "Ishni boshlash", tone: "brand", confirm: `${t.taskNo} — ish boshlandi deb belgilansinmi?` });
   }
   if (open && can(user, "task.progress")) {
     actions.push({

@@ -16,7 +16,9 @@ const LISTS: Record<string, string[]> = {
   brigades: ["SUPERVISOR", "PRODUCTION", "HR", "SALES"],
   "prod-report": ["PRODUCTION", "SUPERVISOR"],
   "brig-issues": ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "PROCUREMENT", "MECHANIC", "HR"], // sklad — faqat bildirishnomadan (detail ISSUE_RESOLVERS); mexanik — uskuna nosozligi
-  "brig-shifts": ["BRIGADIER", "PRODUCTION", "SUPERVISOR"],
+  // Ish tartibida smena yo'q (2026-11-05): brigadir smena hisobotlari o'rniga «Ish tarixi»ni ko'radi
+  "brig-shifts": ["PRODUCTION", "SUPERVISOR"],
+  "brig-days": ["BRIGADIER"],
   trips: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC", "DISPATCHER"],
   drivers: ["LOGISTICS", "HR", "DISPATCHER"],
   stock: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"],

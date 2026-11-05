@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import type { HrRequestStatus } from "@/generated/prisma";
+import type { HrRequestKind, HrRequestStatus, Role } from "@/generated/prisma";
 import { dayUtc, isoDay, monthTitle, shiftDay, today } from "@/lib/davomat";
 import { cancelHrRequest, createHrRequest, decideHrRequest, employeeOfUser, listHrRequests, periodText } from "@/lib/hr/requests";
 import { plansInRange } from "@/lib/hr/shifts";
@@ -256,11 +256,16 @@ async function runDetail(user: MobileUser, id: string): Promise<MobileDetail> {
 
 // ───────────────────────── Forma va amallar ─────────────────────────
 
-export function requestForm(): { key: string; title: string; submitLabel: string; fields: FormField[] } {
+/** Brigadir kabinetida ta'til, kasallik va dam olish arizasi yo'q — faqat avans, kechikish/kelmaslik sababi, boshqa. */
+const BRIGADIER_OFF_KINDS: HrRequestKind[] = ["VACATION", "UNPAID", "SICK", "DAYOFF"];
+const requestKindsFor = (role?: Role) => (role === "BRIGADIER" ? REQUEST_KINDS.filter((k) => !BRIGADIER_OFF_KINDS.includes(k)) : REQUEST_KINDS);
+
+export function requestForm(role?: Role): { key: string; title: string; submitLabel: string; fields: FormField[] } {
+  const kinds = requestKindsFor(role);
   return {
     key: "ariza", title: "Ariza yuborish", submitLabel: "Yuborish",
     fields: [
-      { name: "kind", label: "Ariza turi", type: "select", required: true, value: "VACATION", options: REQUEST_KINDS.map((k) => ({ value: k, label: REQUEST_KIND[k].label, hint: REQUEST_KIND[k].hint })) },
+      { name: "kind", label: "Ariza turi", type: "select", required: true, value: kinds[0], options: kinds.map((k) => ({ value: k, label: REQUEST_KIND[k].label, hint: REQUEST_KIND[k].hint })) },
       { name: "dateFrom", label: "Boshlanishi", type: "date", value: today() },
       { name: "dateTo", label: "Tugashi", type: "date", hint: "Bir kun bo'lsa — bo'sh qoldiring" },
       { name: "amount", label: "Avans summasi, so'm", type: "number", showIf: { field: "kind", equals: "ADVANCE" } },
@@ -274,7 +279,7 @@ export async function createRequestMobile(user: MobileUser, payload: unknown): P
   const e = await myEmployee(user);
   const s = (k: string) => { const v = String(p[k] ?? "").trim(); return v || null; };
   const kind = s("kind");
-  if (!kind || !REQUEST_KINDS.includes(kind as never)) throw new Error("Ariza turini tanlang");
+  if (!kind || !requestKindsFor(user.role).includes(kind as never)) throw new Error("Ariza turini tanlang");
   // Sana tanlanmagan bo'lsa (sabab arizasi / avans) — bugun; sanasiz turlarda e'tiborsiz
   const r = await createHrRequest({
     employeeId: e.id, kind: kind as never, dateFrom: s("dateFrom") ?? today(), dateTo: s("dateTo"),

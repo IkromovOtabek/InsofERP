@@ -30,7 +30,7 @@ import { ownerCached } from "./owner-cache";
 import { periodId } from "./sex";
 import { hasDashDetail } from "./dash-detail";
 import { financeExtraCards } from "./moliya-extra";
-import { brigadierHome } from "./brigadier";
+import { brigadierHome, brigadeToday, type BrigadeToday } from "./brigadier";
 import { gpsStale, toFleet } from "./fleet";
 import { logisticsSettings } from "@/lib/logistics";
 import { webList } from "./problems";
@@ -158,6 +158,8 @@ export type MobileHome = {
    * faqat otdel kadr va direktorga; ruxsat bo'lsa Skaner / Yuzlar. `faceAttendance` eski ilova uchun o'zgarishsiz qoladi (u Davomat ekranida skanerni ochadi).
    */
   attendance?: AttendanceAccess;
+  /** Brigadir: yangi ilovaning «Bugun» sahifasi — smenasiz (`./brigadier.ts` → `brigadeToday`). Eski ilova bilmaydi. */
+  brigadeToday?: BrigadeToday | null;
   /**
    * Bosh ekran tepasidagi banner (mexanik: yangi avto zapchastlar) — «Ko'rish» `/erp/list/<open.key>` ni ochadi.
    * Eski ilova bilmaydi — u shu xabarni «Avtomatik ogohlantirish» qatoridan ko'radi.
@@ -254,7 +256,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
 /** Tezkor amal katakchasi ikonlari (ilovadagi `design/icons.tsx` nomlari). */
 const LIST_ICON: Record<string, string> = {
   orders: "document-text", sales: "trending-up", customers: "users", leads: "inbox", invoices: "receipt",
-  production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat", "brig-issues": "triangle-alert", "brig-shifts": "clipboard-check",
+  production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat", "brig-issues": "triangle-alert", "brig-shifts": "clipboard-check", "brig-days": "clipboard-check",
   trips: "bus", drivers: "id-card",
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
   prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse", "avto-zapchast": "car",
@@ -919,6 +921,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
   }
   // Mexanik: yangi qo'shilgan / skladga kelgan avto zapchastlar — yangi ilova tepada `notice`, eskisi «E'tibor talab qiladi» qatori
   const notice = user.role === "MECHANIC" ? await avtoNotice(user.id).catch((e) => { console.error("[mobile-home] avto", e); return null; }) : null;
+  const brigToday = user.role === "BRIGADIER" ? await brigadeToday(user).catch((e) => { console.error("[mobile-home] brigada", e); return null; }) : null;
   if (notice) {
     const row: HomeRow = { id: "avto:new", title: notice.title, subtitle: notice.lines.join(" · "), tone: "info", status: "Yangi", open: notice.open.key };
     const alerts = sections.find((x) => /^Avtomatik ogohlantirish/.test(x.title));
@@ -926,7 +929,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     else sections.unshift({ title: "Avtomatik ogohlantirish", empty: "", icon: "bell", rows: [row] });
   }
   const [selfAtt, manage, settings] = await Promise.all([selfAttendance(user).catch(() => null), attendanceManage(user).catch(() => null), logisticsSettings().catch(() => null)]);
-  return { ...base, cards, sections, ...(notice ? { notice } : {}), live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage, faceAttendance: faceKioskAccess(user), attendance: attendanceAccess(user, !!selfAtt) };
+  return { ...base, cards, sections, ...(notice ? { notice } : {}), ...(brigToday ? { brigadeToday: brigToday } : {}), live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage, faceAttendance: faceKioskAccess(user), attendance: attendanceAccess(user, !!selfAtt) };
 }
 
 /**
@@ -943,7 +946,7 @@ async function attendanceManage(user: MobileUser): Promise<MobileHome["attendanc
     const { myBrigades } = await import("@/lib/brigades");
     const { TODAY_PREFIX } = await import("./brigadier");
     const b = (await myBrigades(user.id))[0];
-    return b ? { title: "Brigada davomati", subtitle: `${b.name} · bugungi smena`, key: "brig-shift", id: `${TODAY_PREFIX}${b.id}` } : null;
+    return b ? { title: "Brigada davomati", subtitle: `${b.name} · bugun`, key: "brig-shift", id: `${TODAY_PREFIX}${b.id}` } : null;
   }
   return null;
 }

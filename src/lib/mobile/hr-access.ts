@@ -9,11 +9,13 @@ const DECIDERS: Role[] = ["HR", "DIRECTOR"];
 
 /** Har bir xodim (login egasi) — o'z arizasi, grafigi va oyligi uchun. */
 export const ALL_STAFF: Role[] = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "DRIVER", "BRIGADIER", "SECRETARY", "AGENT"];
+/** Brigadir kabineti soddaroq: smena grafigi, so'rovnoma, ommaviy xabarlar va murojaatlar unga kerak emas (ish tartibida smena yo'q). */
+const STAFF_BUT_BRIGADIER: Role[] = ALL_STAFF.filter((r) => r !== "BRIGADIER");
 /** O'z ishi kartochkalari — haydovchi, brigadir, agent ham ochadi (ularning ilovasi boshqa bo'limlarni yopadi). */
 export const SELF_CARDS = ["arizalarim", "oyligim", "grafigim", "vazifalarim", "cheklistim", "kpim", "kurslarim", "moslashuvim", "suhbatlarim", "sorovnomalar", "murojaatlarim", "xabarlar"];
 export const HR_ACCESS: Record<string, { title: string; roles: Role[] }> = {
   arizalarim: { title: "Arizalarim", roles: ALL_STAFF },
-  grafigim: { title: "Smena grafigim", roles: ALL_STAFF },
+  grafigim: { title: "Smena grafigim", roles: STAFF_BUT_BRIGADIER },
   oyligim: { title: "Ish haqim", roles: ALL_STAFF },
   vazifalarim: { title: "Vazifalarim", roles: ALL_STAFF },
   cheklistim: { title: "Bugungi cheklist", roles: ALL_STAFF },
@@ -22,9 +24,9 @@ export const HR_ACCESS: Record<string, { title: string; roles: Role[] }> = {
   moslashuvim: { title: "Moslashuv", roles: ALL_STAFF },
   suhbatlarim: { title: "Suhbatlarim", roles: ALL_STAFF },
   nomzodlar: { title: "Nomzodlar", roles: ["HR"] },
-  sorovnomalar: { title: "So'rovnomalar", roles: ALL_STAFF },
-  murojaatlarim: { title: "Murojaatlarim", roles: ALL_STAFF },
-  xabarlar: { title: "Xabarlar", roles: ALL_STAFF },
+  sorovnomalar: { title: "So'rovnomalar", roles: STAFF_BUT_BRIGADIER },
+  murojaatlarim: { title: "Murojaatlarim", roles: STAFF_BUT_BRIGADIER },
+  xabarlar: { title: "Xabarlar", roles: STAFF_BUT_BRIGADIER },
   murojaatlar: { title: "Xodim murojaatlari", roles: ["HR"] },
   arizalar: { title: "Xodim arizalari", roles: ["HR"] },
   "ish-haqi": { title: "Ish haqi vedomostlari", roles: PAYROLL_ROLES },

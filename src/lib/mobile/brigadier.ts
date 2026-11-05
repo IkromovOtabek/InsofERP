@@ -5,7 +5,7 @@ import {
 } from "@/lib/brigade-shift";
 import { DEFECT_REASONS } from "@/lib/production-day";
 import { markOf, today } from "@/lib/davomat";
-import { unitLabel } from "@/lib/unit";
+import { unitLabel, type UnitRow } from "@/lib/unit";
 import { faceAiFallbackEnabled } from "@/lib/ai/face";
 import { brigadeStocks } from "@/lib/brigade-stock";
 import { recipientCard } from "@/lib/recipient-card";
@@ -21,11 +21,15 @@ import { brigadeStockActions } from "./sklad-extra";
 /**
  * Brigadir ish joyi (ECO ilova) — "Brigadir Dashboard" hujjati bo'yicha.
  *
- * Bosh ekran: KPI (`dashboard.ts` → `brigadier`) + shu fayldagi smena kartasi va bo'limlar
- * (ogohlantirishlar, brigada xodimlari, faol topshiriqlar, uskunalar, smena hisobotlari).
+ * Ish tartibida SMENA YO'Q: brigadir kunni ochmaydi va yopmaydi — ish topshiriqdagi «Ishni boshlash»dan
+ * boshlanadi, kun hisoboti sana bo'yicha o'zi tuziladi (`brig-day`).
+ *
+ * Bosh ekran: KPI (`dashboard.ts` → `brigadier`) + shu fayldagi davomat kartasi va bo'limlar
+ * (ogohlantirishlar, brigada xodimlari, faol topshiriqlar, uskunalar, ish tarixi). Yangi ilova — `brigadeToday` bloki.
  * Kartochkalar:
- *   · `brig-shift/b~<brigadeId>` — bugungi smena: smenani boshlash, davomat, muammo, brak, yopish;
- *   · `brig-shift/<shiftId>` — yopilgan smenaning muzlatilgan hisoboti;
+ *   · `brig-shift/b~<brigadeId>` — bugungi kun: davomat, topshiriqlar, muammo, brak (nomi eski — ilova keshi uchun);
+ *   · `brig-shift/<shiftId>` — avval yopilgan smenaning muzlatilgan hisoboti (tarix);
+ *   · `brig-day/<brigadeId>.<YYYY-MM-DD>` — kun hisoboti (smenasiz);
  *   · `brig-issue/<id>` — bitta muammo: mas'ul bo'lim (yoki brigadir) hal qiladi.
  * Qoidalar `lib/brigade-shift.ts` da, amallar ijrosi `actions.ts` da.
  */
@@ -63,13 +67,13 @@ export function issueActions(tasks: TaskOpt[] | null): DetailAction[] {
   const t = tasks ? taskField(tasks) : [];
   return [
     { id: "issue.equipment", label: "Uskuna muammosi", tone: "danger", form: [
-      { name: "equipment", label: "Uskuna", type: "text", required: true, placeholder: "masalan: vibrostol, beton aralashtirgich" }, ...t, downtimeField, noteField("Nosozlik sababi", true),
+      { name: "equipment", label: "Uskuna", type: "text", required: true, placeholder: "masalan: vibrostol, beton aralashtirgich" }, ...t, downtimeField, noteField("Nosozlik sababi", false),
     ] },
     { id: "issue.material", label: "Material yetishmayapti", tone: "warning", form: [
       ...t, noteField("Qaysi material, qancha kerak", true, "masalan: armatura 12 mm — 200 kg"),
     ] },
     { id: "issue.staff", label: "Qo'shimcha ishchi so'rash", tone: "brand", form: [
-      { name: "qty", label: "Nechta ishchi kerak", type: "number", required: true, value: "1" }, ...t, noteField("Nima uchun", true, "ish hajmi, kelmagan xodim o'rniga..."),
+      { name: "qty", label: "Nechta ishchi kerak", type: "number", required: true, value: "1" }, ...t, noteField("Nima uchun", false, "ish hajmi, kelmagan xodim o'rniga..."),
     ] },
     { id: "issue.other", label: "Boshqa muammo", tone: "warning", form: [
       { name: "kind", label: "Muammo turi", type: "select", required: true, value: "DELAY", options: (["DELAY", "QUALITY", "OTHER"] as BrigadeIssueKind[]).map((k) => ({ value: k, label: BRIGADE_ISSUE[k].label })) },
@@ -103,8 +107,7 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
   const many = mine.length > 1;
   const start = new Date(); start.setHours(0, 0, 0, 0);
   const month = new Date(start); month.setDate(month.getDate() - 30);
-  const [shifts, members, open, issues, equipment, reports, defectsToday, plan, stocks] = await Promise.all([
-    Promise.all(mine.map((b) => shiftOf(b.id))),
+  const [members, open, issues, equipment, days, defectsToday, plan, stocks] = await Promise.all([
     Promise.all(mine.map((b) => brigadeMembers(b.id))),
     db.brigadeTask.findMany({
       where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 30,
@@ -112,22 +115,22 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
     }),
     db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, include: { task: { select: { taskNo: true } } } }),
     db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, kind: "EQUIPMENT", createdAt: { gte: month } }, orderBy: { createdAt: "desc" }, select: { id: true, equipment: true, resolvedAt: true, createdAt: true, downtimeMin: true, note: true } }),
-    db.brigadeShift.findMany({ where: { brigadeId: { in: ids }, closedAt: { not: null } }, orderBy: { date: "desc" }, take: 7, select: { id: true, date: true, summary: true, closedAt: true, brigade: { select: { name: true } } } }),
+    brigDayRows(mine, 7),
     db.productDefect.findMany({ where: { brigadeId: { in: ids }, date: { gte: start } }, select: { qty: true, product: { select: { unit: true } } } }),
     dayPlan(ids),
     // Qo'lidagi xomashyo va qiymati — «Mening skladim» kartasi (batafsil — `brig-stock` kartochkasi)
     brigadeStocks({ includeInactive: true }),
   ]);
 
-  // ── Smena holati (hujjatdagi A blok) — har brigadaga bitta karta, bosilsa smena kartochkasi ──
+  // ── Bugungi davomat — har brigadaga bitta karta, bosilsa bugungi kun kartochkasi (smena yo'q) ──
   const cards: HomeCard[] = mine.map((b, i) => {
-    const s = shifts[i], m = members[i]!;
+    const m = members[i]!;
     const present = m.filter((x) => x.status === "PRESENT").length;
-    const state = !s ? "Ochilmagan" : s.closedAt ? `Yopildi ${time(s.closedAt)}` : `Ochiq · ${time(s.openedAt)} dan`;
+    const notMarked = m.filter((x) => !x.status).length;
     return {
-      key: `shift-${b.id}`, label: many ? `Smena — ${b.name}` : "Smena holati", value: state,
-      hint: `${present}/${m.length} xodim keldi${s && !s.closedAt ? " · yopish uchun bosing" : !s ? " · boshlash uchun bosing" : ""}`,
-      tone: !s ? "warning" : s.closedAt ? "success" : "brand", icon: "clock", open: { key: "brig-shift", id: `${TODAY_PREFIX}${b.id}` },
+      key: `att-${b.id}`, label: many ? `Davomat — ${b.name}` : "Brigada davomati", value: `${present} / ${m.length}`,
+      hint: `keldi${notMarked ? ` · ${notMarked} belgilanmagan` : ""} · bosing`,
+      tone: notMarked ? "warning" : "success", icon: "users", open: { key: "brig-shift", id: `${TODAY_PREFIX}${b.id}` },
     };
   });
   // ── Mening skladim: brigada qo'lidagi xomashyo qiymati; bosilsa — berilganlar, qoldiq, samaradorlik ──
@@ -199,9 +202,182 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
       };
     }), { empty: "Ochiq topshiriq yo'q — brigadangizga tayinlansa shu yerda chiqadi", target: "tasks", icon: "list" }),
     section("Uskunalar holati", equipRows, { empty: "Uskuna nosozligi qayd qilinmagan (30 kun)", target: "brig-issue", icon: "wrench" }),
-    section("Smena hisobotlari", reports.map((r) => ({ id: r.id, title: `${day(r.date)}${many ? ` · ${r.brigade.name}` : ""}`, subtitle: r.summary ?? undefined, right: r.closedAt ? time(r.closedAt) : undefined, tone: "success" as Tone })), { empty: "Hali smena yopilmagan", target: "brig-shift", icon: "clipboard-check" }),
+    section("Ish tarixi", days, { empty: "Oxirgi kunlarda fakt yozilmagan", target: "brig-day", icon: "clipboard-check" }),
   ];
   return { cards, sections };
+}
+
+// ───────────────────────── Yangi ilova: «Bugun» sahifasi va ish tarixi (smenasiz) ─────────────────────────
+
+const MONTHS_UZ = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+const WEEKDAYS_UZ = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
+/** Mahalliy sana `YYYY-MM-DD` (server vaqt mintaqasida — `today()` bilan bir xil hisob). */
+const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** "4-noyabr, chorshanba". */
+const dayTitle = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return `${d.getDate()}-${MONTHS_UZ[d.getMonth()]}, ${WEEKDAYS_UZ[d.getDay()]}`; };
+
+export type BrigTask = {
+  id: string; taskNo: string; product: string; productId: string; unit: string;
+  qty: number; done: number; left: number; pct: number;
+  due: string; late: boolean; dueToday: boolean; customer: string;
+  phase: string; tone: Tone; started: boolean; blocked: boolean; urgent: boolean;
+};
+export type BrigMember = { id: string; fullName: string; position: string; label: string; tone: Tone; marked: boolean; present: boolean; late: boolean; face: boolean };
+/**
+ * Yangi ilovadagi brigadir «Bugun» sahifasi (`/api/mobile/home` → `brigadeToday`); eski ilova bu maydonni bilmaydi.
+ * Smena yo'q — davomat, topshiriqlar, muammo va brak sana bo'yicha. Amallar `ref` (`b~<brigadeId>`, `brigadeOf`) yoki topshiriq id bilan.
+ * Bir nechta brigada bo'lsa — birinchisi (davomat va brak uchun); topshiriqlar va muammolar hammasidan.
+ */
+export type BrigadeToday = {
+  brigade: { id: string; name: string };
+  ref: string;
+  now: BrigTask | null;
+  tasks: BrigTask[];
+  /** Oy davomida yopilganlar va hozir ochiqlar: «4 / 7 bajarildi». */
+  done: { done: number; total: number; label: string };
+  issues: { open: number; rows: HomeRow[] };
+  attendance: { present: number; late: number; absent: number; notMarked: number; total: number; members: BrigMember[] };
+  defect: { text: string; pct: string | null };
+  /** Bugungi reja / fakt (asosiy birlik) — «Topshiriqlar» sarlavhasidagi «42 / 60 m³». Topshiriq bo'lmasa null. */
+  day: { plan: number; fact: number; unit: string } | null;
+  /** Muammo formasidagi uskuna variantlari — oxirgi nosozliklarda yozilgan nomlar (8 tagacha). */
+  equipment: string[];
+  /** Brak formasi uchun — ochiq topshiriqlardagi mahsulotlar (`unit` — tayyor yorliq). */
+  products: { id: string; name: string; unit: string }[];
+  defectReasons: string[];
+};
+
+export async function brigadeToday(user: MobileUser): Promise<BrigadeToday | null> {
+  const mine = await myBrigades(user.id);
+  if (!mine.length) return null;
+  const ids = mine.map((b) => b.id);
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
+  const [open, doneMonth, issues, equipment, members, defectsToday, plan] = await Promise.all([
+    db.brigadeTask.findMany({
+      where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 60,
+      include: { order: { include: { customer: true } }, orderItem: { include: { product: true } }, issues: { where: { resolvedAt: null }, select: { kind: true } } },
+    }),
+    // Yopilgan topshiriq boshqa o'zgarmaydi — `updatedAt` yopilgan vaqt
+    db.brigadeTask.count({ where: { brigadeId: { in: ids }, status: "DONE", updatedAt: { gte: monthStart } } }),
+    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, resolvedAt: null }, orderBy: { createdAt: "desc" }, include: { task: { select: { taskNo: true } } } }),
+    db.brigadeIssue.findMany({ where: { brigadeId: { in: ids }, kind: "EQUIPMENT", equipment: { not: null } }, orderBy: { createdAt: "desc" }, take: 60, select: { equipment: true } }),
+    brigadeMembers(ids[0]!),
+    db.productDefect.findMany({ where: { brigadeId: ids[0]!, date: { gte: start } }, select: { qty: true, product: { select: { unit: true } } } }),
+    dayPlan([ids[0]!]),
+  ]);
+  const faces = members.length
+    ? new Set((await db.faceTemplate.findMany({ where: { employeeId: { in: members.map((m) => m.id) } }, select: { employeeId: true }, distinct: ["employeeId"] })).map((t) => t.employeeId))
+    : new Set<string>();
+
+  const tasks: BrigTask[] = open.map((t) => {
+    const ph = taskPhase(t, t.issues.map((x) => x.kind));
+    const qty = sum(t.qty), done = sum(t.doneQty);
+    return {
+      id: t.id, taskNo: t.taskNo, product: t.orderItem.product.name, productId: t.orderItem.product.id, unit: unitLabel(t.orderItem.product.unit),
+      qty, done, left: Math.max(0, qty - done), pct: qty ? Math.round((done / qty) * 100) : 0,
+      due: day(t.dueDate), late: ph.late, dueToday: isoOf(t.dueDate) === isoOf(start), customer: t.order.customer.name,
+      phase: ph.label, tone: ph.tone, started: !!t.startedAt || t.status === "IN_PROGRESS", blocked: t.issues.length > 0, urgent: t.order.isUrgent,
+    };
+  });
+  // Hozirgi ish: boshlangan va to'xtamagan → to'xtamagan birinchisi → birinchisi
+  const now = tasks.find((t) => t.started && !t.blocked) ?? tasks.find((t) => !t.blocked) ?? tasks[0] ?? null;
+
+  const att = members.map((m): BrigMember => {
+    const late = isLate(m);
+    return {
+      id: m.id, fullName: m.fullName, position: m.position,
+      label: !m.status ? "belgilanmagan" : late ? `Kechikdi ${m.checkIn ?? ""}`.trim() : `${markOf(m.status).label}${m.status === "PRESENT" && m.checkIn ? ` ${m.checkIn}` : ""}`,
+      tone: !m.status || late ? "warning" : ATT_TONE[m.status] ?? "info",
+      marked: !!m.status, present: m.status === "PRESENT", late, face: faces.has(m.id),
+    };
+  });
+
+  const main = plan.units[0];
+  const defTotal = defectsToday.reduce((a, d) => a + sum(d.qty), 0);
+  // Ochiq muammo qancha turibdi: "35 daq", "2 soat 10 daq", "3 kun"
+  const ago = (d: Date) => { const m = Math.max(0, Math.round((Date.now() - d.getTime()) / 60_000)); return m >= 1440 ? `${Math.floor(m / 1440)} kun` : minText(m); };
+  return {
+    brigade: { id: mine[0]!.id, name: mine[0]!.name },
+    ref: `${TODAY_PREFIX}${mine[0]!.id}`,
+    now, tasks,
+    done: { done: doneMonth, total: doneMonth + open.length, label: MONTHS_UZ[start.getMonth()]! },
+    issues: {
+      open: issues.length,
+      rows: issues.map((i) => ({
+        id: `brig-issue:${i.id}`, title: i.kind === "EQUIPMENT" && i.equipment ? `${i.equipment} — to'xtagan` : BRIGADE_ISSUE[i.kind].label,
+        subtitle: [i.task?.taskNo, BRIGADE_ISSUE[i.kind].owner.map((r) => ROLE_NAME[r] ?? r).join(", ")].filter(Boolean).join(" · "),
+        right: ago(i.createdAt), tone: (i.kind === "EQUIPMENT" || i.kind === "MATERIAL" ? "danger" : "warning") as Tone,
+      })),
+    },
+    attendance: {
+      present: att.filter((m) => m.present).length, late: att.filter((m) => m.late).length,
+      absent: att.filter((m) => m.marked && !m.present).length, notMarked: att.filter((m) => !m.marked).length, total: att.length, members: att,
+    },
+    defect: {
+      text: defectsToday.length ? totalsText(defectsToday.map((d) => ({ unit: d.product.unit, qty: d.qty }))) : "0",
+      pct: main && main.fact > 0 && defTotal > 0 ? pctText((defTotal / main.fact) * 100) : null,
+    },
+    day: main ? { plan: main.plan, fact: main.fact, unit: unitLabel(main.unit) } : null,
+    equipment: [...new Set(equipment.map((e) => (e.equipment ?? "").trim()).filter(Boolean))].slice(0, 8),
+    products: [...new Map(open.map((t) => [t.orderItem.product.id, { id: t.orderItem.product.id, name: t.orderItem.product.name, unit: unitLabel(t.orderItem.product.unit) }])).values()],
+    defectReasons: DEFECT_REASONS,
+  };
+}
+
+/** «Ish tarixi» — fakt yozilgan oxirgi `limit` kun, har brigada alohida. Qator id: `<brigadeId>.<YYYY-MM-DD>` (`brig-day`). */
+async function brigDayRows(mine: { id: string; name: string }[], limit: number): Promise<HomeRow[]> {
+  if (!mine.length) return [];
+  const ids = mine.map((b) => b.id);
+  const since = new Date(); since.setHours(0, 0, 0, 0); since.setDate(since.getDate() - 45);
+  const [prog, defects] = await Promise.all([
+    db.taskProgress.findMany({ where: { date: { gte: since }, task: { brigadeId: { in: ids } } }, select: { date: true, qty: true, taskId: true, task: { select: { brigadeId: true, orderItem: { select: { product: { select: { unit: true } } } } } } } }),
+    db.productDefect.findMany({ where: { brigadeId: { in: ids }, date: { gte: since } }, select: { date: true, qty: true, brigadeId: true, product: { select: { unit: true } } } }),
+  ]);
+  type Day = { brigadeId: string; iso: string; fact: UnitRow[]; tasks: Set<string>; defects: UnitRow[] };
+  const days = new Map<string, Day>();
+  for (const p of prog) {
+    const iso = isoOf(p.date), k = `${p.task.brigadeId}.${iso}`;
+    const d = days.get(k) ?? { brigadeId: p.task.brigadeId, iso, fact: [], tasks: new Set<string>(), defects: [] };
+    d.fact.push({ unit: p.task.orderItem.product.unit, qty: p.qty });
+    d.tasks.add(p.taskId);
+    days.set(k, d);
+  }
+  for (const x of defects) if (x.brigadeId) days.get(`${x.brigadeId}.${isoOf(x.date)}`)?.defects.push({ unit: x.product.unit, qty: x.qty });
+  const many = mine.length > 1;
+  const name = new Map(mine.map((b) => [b.id, b.name]));
+  return [...days.entries()].sort((a, b) => (a[1].iso < b[1].iso ? 1 : a[1].iso > b[1].iso ? -1 : 0)).slice(0, limit).map(([k, d]) => ({
+    id: k, title: `${dayTitle(d.iso)}${many ? ` · ${name.get(d.brigadeId)}` : ""}`,
+    subtitle: `${d.tasks.size} topshiriq${d.defects.length ? ` · brak ${totalsText(d.defects)}` : ""}`,
+    right: totalsText(d.fact), tone: (d.defects.length ? "warning" : "success") as Tone,
+  }));
+}
+
+/** `brig-days` — brigadirning ish tarixi (smena hisobotlari o'rniga). */
+export async function brigDaysList(user: MobileUser, title: string): Promise<MobileList> {
+  const mine = user.role === "BRIGADIER" ? await myBrigades(user.id) : [];
+  return { key: "brig-days", title, rows: await brigDayRows(mine, 45) };
+}
+
+/** `brig-day/<brigadeId>.<YYYY-MM-DD>` — kun hisoboti: o'sha sana bo'yicha o'zi tuziladi, yopish shart emas. */
+export async function brigDayDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  const [brigadeId, iso] = id.split(".");
+  if (!brigadeId || !iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) throw new ListError("NOT_FOUND", "Kun topilmadi", 404);
+  await assertBrigade(user, brigadeId);
+  const from = new Date(`${iso}T00:00:00`), to = new Date(from); to.setDate(to.getDate() + 1);
+  const r = await buildShiftReport(brigadeId, iso, from, to.getTime() > Date.now() ? new Date() : to, null);
+  return {
+    key: "brig-day", id, title: `${dayTitle(iso)}`, subtitle: r.brigade,
+    fields: [
+      ...r.totals.map((t) => f(`Reja / fakt (${unitLabel(t.unit)})`, `${num(t.plan)} / ${num(t.fact)} · ${pctText(t.plan ? (t.fact / t.plan) * 100 : null)}`, t.plan && t.fact / t.plan >= 0.9 ? "success" : "warning")),
+      ...(r.totals.length ? [] : [f("Reja / fakt", "topshiriq bo'lmagan")]),
+      f("Davomat", `${r.staff.present}/${r.staff.total} keldi${r.staff.late ? ` · ${r.staff.late} kechikdi` : ""}${r.staff.absent ? ` · ${r.staff.absent} kelmadi` : ""}`, r.staff.absent ? "danger" : "success"),
+      f("To'xtab qolish", r.downtimeMin ? minText(r.downtimeMin) : "yo'q", r.downtimeMin ? "warning" : "success"),
+      f("Brak", r.defects.length ? totalsText(r.defects.map((d) => ({ unit: d.unit, qty: d.qty }))) : "yo'q", r.defects.length ? "warning" : "success"),
+    ],
+    sections: reportSections(r),
+    actions: [],
+  };
 }
 
 // ───────────────────────── Sklad kartochkasi («Mening skladim») ─────────────────────────
@@ -299,14 +475,14 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
   // Yopilgan bo'lsa — muzlatilgan hisobot
   if (s?.closedAt && s.report) return brigShiftDetail(user, s.id);
   const now = new Date();
-  const r = await buildShiftReport(brigadeId, today(), s?.openedAt ?? now, now, null);
+  const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+  const r = await buildShiftReport(brigadeId, today(), s?.openedAt ?? dayStart, now, null);
   const open = await db.brigadeTask.findMany({ where: { brigadeId, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, orderItem: { select: { product: { select: { id: true, name: true, unit: true } } } } } });
   const members = await brigadeMembers(brigadeId);
   const mine = user.role === "BRIGADIER";
 
   const actions: DetailAction[] = [];
   if (mine) {
-    if (!s) actions.push({ id: "shift.open", label: "Smenani boshlash", tone: "success", confirm: `${b.name} — bugungi smena ochilsinmi? Ochilgan vaqt ish vaqtining boshi hisoblanadi.` });
     // AI yuz tekshiruvi zaxirasi (FACE_AI_FALLBACK) yoqiq bo'lsa hammani birdan "Keldi" qilib bo'lmaydi — har biri yuz bilan.
     // Face ID namunasi bor a'zolar ham faqat yuz bilan — tugma faqat namunasiz belgilanmagan a'zo bo'lsa (server ularni o'tkazib yuboradi)
     const unmarked = members.filter((m) => !m.status);
@@ -317,17 +493,13 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
     actions.push(...issueActions(open.map((t) => ({ id: t.id, taskNo: t.taskNo, product: t.orderItem.product.name }))));
     const products = [...new Map(open.map((t) => [t.orderItem.product.id, t.orderItem.product])).values()];
     if (products.length) actions.push(defectAction("shift.defect", products));
-    if (s) actions.push({ id: "shift.close", label: "Smenani yopish", tone: "brand", form: [noteField("Brigadir izohi", false, "kechikish sabablari, ertangi reja...")] });
   }
   return {
-    key: "brig-shift", id: `${TODAY_PREFIX}${brigadeId}`, title: `Smena — ${day(now)}`, subtitle: b.name,
-    status: s ? "Ochiq" : "Ochilmagan",
+    // Smena yo'q: kartochka — bugungi kun (davomat, topshiriqlar, muammo, brak); ochish/yopish tugmasi yo'q
+    key: "brig-shift", id: `${TODAY_PREFIX}${brigadeId}`, title: `Bugun — ${day(now)}`, subtitle: b.name,
     fields: [
-      f("Smena", s ? `ochildi ${time(s.openedAt)}` : "hali boshlanmagan", s ? "success" : "warning"),
-      f("Boshlanish", s ? time(s.openedAt) : "—"),
-      f("Tugash", "ochiq"),
       f("Brigadir", b.leader?.fullName ?? "—"),
-      f("Faol xodimlar", `${r.staff.present}/${r.staff.total}${r.staff.late ? ` · ${r.staff.late} kechikdi` : ""}${r.staff.notMarked ? ` · ${r.staff.notMarked} belgilanmagan` : ""}`, r.staff.notMarked || r.staff.absent ? "warning" : "success"),
+      f("Davomat", `${r.staff.present}/${r.staff.total}${r.staff.late ? ` · ${r.staff.late} kechikdi` : ""}${r.staff.notMarked ? ` · ${r.staff.notMarked} belgilanmagan` : ""}`, r.staff.notMarked || r.staff.absent ? "warning" : "success"),
       ...r.totals.map((t) => f(`Reja / fakt (${unitLabel(t.unit)})`, `${num(t.plan)} / ${num(t.fact)} · ${pctText(t.plan ? (t.fact / t.plan) * 100 : null)}`)),
       ...(r.downtimeMin ? [f("To'xtab qolish", minText(r.downtimeMin), "warning")] : []),
     ],
@@ -392,7 +564,7 @@ export async function brigIssueDetail(user: MobileUser, id: string): Promise<Mob
     actions,
   };
 }
-const ROLE_NAME: Partial<Record<Role, string>> = { PRODUCTION: "Ishlab chiqarish", SUPERVISOR: "Ish boshqaruvchi", WAREHOUSE: "Sklad", PROCUREMENT: "Snabjeniye", HR: "Otdel kadr" };
+const ROLE_NAME: Partial<Record<Role, string>> = { PRODUCTION: "Ishlab chiqarish", SUPERVISOR: "Ish boshqaruvchi", MECHANIC: "Mexanik", WAREHOUSE: "Sklad", PROCUREMENT: "Snabjeniye", HR: "Otdel kadr" };
 
 // ───────────────────────── Ro'yxatlar ─────────────────────────
 
