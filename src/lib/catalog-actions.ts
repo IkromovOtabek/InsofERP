@@ -95,6 +95,33 @@ export async function createCatalogProduct(_prev: ActionState, fd: FormData): Pr
     : { ok: true };
 }
 
+const renameSchema = z.object({ name: zStr("Mahsulot nomi kerak").pipe(z.string().max(200, "Nom juda uzun")) });
+
+/**
+ * Mavjud mahsulot nomini tuzatish (zayavka va sklad tanlagichidagi qalam, Sklad → Tayyor mahsulot qo'shish).
+ * Faqat nom: kod, birlik va narx Sozlamalar → Mahsulotlar'da. Hujjatlar mahsulotga id bilan bog'langan —
+ * eski zayavka va harakatlarda ham yangi nom ko'rinadi. Shu nomli boshqa mahsulot bo'lsa — rad etiladi (dublikat ochilmasin).
+ */
+export async function renameCatalogProduct(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
+  const r = parseForm(renameSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const name = r.data.name.replace(/\s+/g, " ");
+  const res = await db.$transaction(async (tx): Promise<ActionState> => {
+    const before = await tx.product.findUnique({ where: { id } });
+    if (!before) return { error: "Mahsulot topilmadi" };
+    if (before.name === name) return { ok: true, note: "Nom o'zgarmadi" };
+    const flat = flatName(name);
+    const same = (await tx.product.findMany({ where: { id: { not: id } }, select: { name: true, code: true, isActive: true } })).find((p) => flatName(p.name) === flat);
+    if (same) return { error: `«${same.name}» (kod ${same.code}) ro'yxatda bor${same.isActive ? "" : ", arxivda"} — ikkinchi bir xil nom ochilmaydi` };
+    const after = await tx.product.update({ where: { id }, data: { name } });
+    await audit(tx, s.userId, "UPDATE", "Product", id, { name: before.name }, { name: after.name, by: "rename" });
+    return { ok: true, note: `Nomi o'zgardi: «${before.name}» → «${after.name}»` };
+  });
+  if (res?.ok) refresh();
+  return res;
+}
+
 /* ───────── Ko'p mahsulotni birdan yozish (Excel va matritsa uchun umumiy) ───────── */
 
 type PutInput = { name: string; code?: string; unit?: string | null; price?: number | null; kind?: string | null; note?: string | null; groupId?: string | null };

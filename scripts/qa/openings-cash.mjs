@@ -1,4 +1,4 @@
-// Boshlang'ich qoldiqlar (qo'lda: kiritish, tahrir, bekor — 4 tur, takrordan himoya, yetkazuvchi to'lovi va
+// Boshlang'ich qoldiqlar (qo'lda: kiritish, tahrir, kamaytirish, bekor — 4 tur, takrordan himoya, yetkazuvchi to'lovi va
 // uning stornosi) va kassa/bank: bank hisobi ham minusga tushmaydi (overdraft ruxsati bo'lmasa).
 import { Client, fd, check, eq2, summary } from "./client.mjs";
 import { q1, lit } from "./db.mjs";
@@ -12,6 +12,7 @@ const PAGE = "/settings/boshlangich-qoldiq";
 const create = (c, o) => c.action(`${OB}#createOpeningAction`, [undefined, fd({ date: today, sign: "1", ...o })], PAGE);
 const update = (c, id, o) => c.action(`${OB}#updateOpeningAction`, [id, undefined, fd({ date: today, sign: "1", ...o })], PAGE);
 const cancel = (c, id, why = "QA: xato kiritilgan") => c.action(`${OB}#cancelOpeningAction`, [id, why], PAGE);
+const reduce = (c, id, by, reason = "QA: kelishuv") => c.action(`${OB}#reduceOpeningAction`, [id, undefined, fd({ by, reason })], "/bi-tahlil/mijozlar/xaridorlar/kiritish");
 const active = (kind, col, id) => q1(`select * from "OpeningBalance" where kind=${lit(kind)} and ${col}=${lit(id)} and "cancelledAt" is null`);
 const balance = (accId) => Number(q1(`select
   coalesce((select sum(amount) from "Payment" where "cashAccountId"=${lit(accId)}),0)
@@ -88,6 +89,13 @@ r = await update(dir, ob.id, { amount: "300 000" });
 check("C23 summani to'langandan kam qilish — rad", /kam bo'lolmaydi/.test(r.result?.error ?? ""), r.result);
 r = await update(dir, ob.id, { amount: "800 000" });
 check("C24 tahrir 800 000 → schyot 800 000 PARTIAL", r.result?.ok === true && eq2(q1(`select amount from "Invoice" where id=${lit(ob.invoiceId)}`).amount, 800000), r.result);
+r = await reduce(buh, ob.id, "100000");
+check("C24a buxgalter summani kamaytira olmaydi (403)", r.status === 403, `${r.status}`);
+r = await reduce(dir, ob.id, "500000");
+check("C24b kamaytirish to'langandan pastga (800 − 500 < 400) — rad", /kam bo'lolmaydi/.test(r.result?.error ?? ""), r.result);
+r = await reduce(dir, ob.id, "100000");
+check("C24c direktor 100 000 ga kamaytirdi → schyot 700 000, auditda sabab", r.result?.ok === true && eq2(q1(`select amount from "Invoice" where id=${lit(ob.invoiceId)}`).amount, 700000)
+  && /Kamaytirildi/.test(q1(`select after::text a from "AuditLog" where entity='OpeningBalance' and "entityId"=${lit(ob.id)} order by "createdAt" desc limit 1`)?.a ?? ""), r.result);
 r = await cancel(dir, ob.id);
 check("C25 to'lovi bor qoldiqni bekor qilish — rad", /to'lov yozilgan/.test(r.result?.error ?? ""), r.result);
 const pay = q1(`select id from "Payment" where "invoiceId"=${lit(ob.invoiceId)}`);
@@ -97,6 +105,10 @@ check("C26 to'lov storno qilingach bekor qilindi → schyot CANCELLED", r.result
 r = await create(buh, { kind: "CUSTOMER", entityId: cust, sign: "-1", amount: "250 000,25" });
 const ob2 = active("CUSTOMER", `"customerId"`, cust);
 check("C27 bekor qilingandan keyin qayta kiritish (avans −250 000,25) → PAID", r.result?.ok === true && q1(`select status, amount from "Invoice" where id=${lit(ob2.invoiceId)}`).status === "PAID", r.result);
+r = await reduce(dir, ob2.id, "50000");
+check("C28 avansni 50 000 ga kamaytirish → −200 000,25", r.result?.ok === true && eq2(q1(`select amount from "Invoice" where id=${lit(ob2.invoiceId)}`).amount, -200000.25), r.result);
+r = await reduce(dir, ob2.id, "200000,25");
+check("C29 to'liq kamaytirish — rad («O'chirish»ga yo'naltiradi)", /O'chirish/.test(r.result?.error ?? ""), r.result);
 
 // ───────── SUPPLIER ─────────
 console.log("\nSUPPLIER: qarzimiz, to'lov, ortiqcha to'lov, xato to'lov stornosi (direktor)");
@@ -111,9 +123,11 @@ if (!sup) { // createSupplier boshqa nom bilan bo'lsa — import orqali
 r = await create(buh, { kind: "SUPPLIER", entityId: sup.id, amount: "5 000 000" });
 ob = active("SUPPLIER", `"supplierId"`, sup.id);
 check("C30 yetkazuvchiga qarz 5 000 000", r.result?.ok === true && !!ob, r.result);
+r = await reduce(dir, ob.id, "1 000 000");
+check("C30a yetkazuvchi qarzi 1 000 000 ga kamaytirildi → 4 000 000", r.result?.ok === true && eq2(active("SUPPLIER", `"supplierId"`, sup.id).amount, 4000000), r.result);
 const paySup = (c, amount, acc = KASSA) => c.action(`${OB}#paySupplierOpeningAction`, [ob.id, undefined, fd({ cashAccountId: acc, amount })], PAGE);
 r = await paySup(fin, "6000000");
-check("C31 ortiqcha to'lov (6 mln > 5 mln) — rad", /Qolgan qarzdan ko'p/.test(r.result?.error ?? ""), r.result);
+check("C31 ortiqcha to'lov (6 mln > 4 mln) — rad", /Qolgan qarzdan ko'p/.test(r.result?.error ?? ""), r.result);
 r = await paySup(fin, "900000", BANK);
 check("C32 bankda pul yetmasa (9 000) — rad", /yetarli pul yo'q/.test(r.result?.error ?? ""), r.result);
 r = await paySup(fin, "300000");

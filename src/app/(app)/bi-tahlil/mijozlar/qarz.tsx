@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowDownWideNarrow, Crown, Hourglass, HandCoins, Scale, Search, SlidersHorizontal, Truck, UserRound, Users, Wallet, X } from "lucide-react";
+import { ArrowDownWideNarrow, Crown, FileSpreadsheet, Hourglass, HandCoins, Scale, Search, SlidersHorizontal, Truck, UserRound, Users, Wallet, X } from "lucide-react";
 import { type SP } from "../shell";
 import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_LABEL } from "@/lib/fin-report/debts";
 import { MONTHS_UZ } from "@/lib/bi/plans";
@@ -25,7 +25,7 @@ const isToday = (d: Date) => isoDate(d) === isoDate(new Date());
 const Num = ({ v, className }: { v: number; className?: string }) => (Math.abs(v) < 1 ? <span className="text-slate-300">—</span> : <span className={className}>{fmtNum(v)}</span>);
 
 /** Sana, qidiruv va Excel — har uch hisobot tepasida. */
-function Toolbar({ base, day, start, sp, keep, excel, extra, placeholder }: { base: string; day: Date; start?: Date; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; extra?: React.ReactNode; placeholder: string }) {
+function Toolbar({ base, day, start, sp, keep, excel, extra, entry, placeholder }: { base: string; day: Date; start?: Date; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; extra?: React.ReactNode; entry?: React.ReactNode; placeholder: string }) {
   return (
     <form method="get" action={base} className="mb-4 flex flex-wrap items-center gap-2">
       {Object.entries(keep).map(([k, v]) => v && <input key={k} type="hidden" name={k} value={v} />)}
@@ -45,6 +45,7 @@ function Toolbar({ base, day, start, sp, keep, excel, extra, placeholder }: { ba
       {!isToday(day) && <Link href={`${base}${qs({ ...keep, q: sp.q })}`} className="h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Bugun</Link>}
       {extra}
       {excel}
+      {entry}
     </form>
   );
 }
@@ -122,7 +123,11 @@ const SH = {
 } as const;
 
 /** «Ta'minotchilar oldidagi qarzdorlik» va «Xaridorlar qarzdorligi» — bir xil ko'rinish. Qatorni bosish — akt sverka. */
-export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; company: string }) {
+export function DebtSheetView({ who, s, sp, base, company, entryHref }: {
+  who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; company: string;
+  /** «Qarzlarni kiritish» sahifasi (Excel / qo'lda, tahrir, kamaytirish, o'chirish) — kiritish huquqi borlarga */
+  entryHref?: string;
+}) {
   const sup = who === "supplier";
   const kind = sp.tur === "CASH" || sp.tur === "BANK" ? sp.tur : undefined;
   // Debitorka — bizga qarzdorlar (mijoz qarzi, ta'minotchiga bergan avansimiz);
@@ -184,6 +189,12 @@ export function DebtSheetView({ who, s, sp, base, company }: { who: "supplier" |
         extra={<SumFilter on={sumOn} label={sumLabel} side={sumSide} smin={smin} smax={smax} sort={sort}
           presets={SUM_PRESETS.map((v) => ({ v, href: sumHref({ smin: String(v), smax: undefined }), on: smin === v && smax == null }))}
           clearHref={sumHref({ smin: undefined, smax: undefined })} />}
+        entry={entryHref && (
+          <Link href={entryHref} title={sup ? "Ta'minotchi qarzini Excel'dan yoki qo'lda kiritish, tahrirlash va kamaytirish" : "Mijoz qarzini Excel'dan yoki qo'lda kiritish, tahrirlash va kamaytirish"}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700">
+            <FileSpreadsheet size={15} /> Qarzlarni kiritish
+          </Link>
+        )}
         excel={<ExcelButton file={`${sheetTitle} ${sana}`} sheets={[{ name: sup ? "Ta'minotchilar" : "Xaridorlar", rows: excelRows }]} />} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">

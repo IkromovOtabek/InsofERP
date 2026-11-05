@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAction, requireModuleWrite, requireSession } from "@/lib/auth";
 import { AccessDenied } from "@/lib/access-denied";
 import { parseForm, zOpt, zStr, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, reverseSupplierOpeningPayment, updateOpening } from "@/lib/opening-balances";
+import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, reduceOpening, reverseSupplierOpeningPayment, updateOpening } from "@/lib/opening-balances";
 import { importOpenings, type OpeningRow } from "@/lib/import-openings";
 import type { OpeningKind } from "@/generated/prisma";
 
@@ -26,6 +26,7 @@ const KINDS = ["CUSTOMER", "SUPPLIER", "CASH", "STOCK"] as const;
 
 function refresh() {
   for (const p of ["/settings/boshlangich-qoldiq", "/customers", "/suppliers", "/payments", "/cashflow", "/invoices", "/stock", "/"]) revalidatePath(p);
+  revalidatePath("/bi-tahlil/mijozlar", "layout"); // debitorka / kreditorka varaqlari va ulardagi «Qarzlarni kiritish»
 }
 
 const money = z.coerce.number({ message: "Summa raqam bo'lsin" }).refine((n) => n !== 0, "Summa 0 bo'lmasin").refine((n) => Math.abs(n) <= MAX_AMOUNT, "Summa juda katta");
@@ -121,6 +122,22 @@ export async function updateOpeningAction(id: string, _prev: ActionState, fd: Fo
   if (res.error) return { error: res.error };
   refresh();
   return { ok: true, note: "Saqlandi" };
+}
+
+const reduceSchema = z.object({
+  by: optNum.refine((v) => v != null && v > 0, "Summa 0 dan katta bo'lsin").refine((v) => v == null || v <= MAX_AMOUNT, "Summa juda katta"),
+  reason: zOpt,
+});
+
+/** Mijoz / yetkazuvchi qoldig'ini kamaytirish (masalan kelishuv bo'yicha qisman kechildi) — faqat direktor. */
+export async function reduceOpeningAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await director();
+  const r = parseForm(reduceSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await reduceOpening(id, r.data.by!, r.data.reason, s.userId);
+  if (res.error) return { error: res.error };
+  refresh();
+  return { ok: true, note: "Summa kamaytirildi" };
 }
 
 export async function cancelOpeningAction(id: string, reason: string): Promise<ActionState> {

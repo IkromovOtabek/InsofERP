@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Plus, Save, Pencil, Banknote } from "lucide-react";
+import { Plus, Save, Pencil, Banknote, MinusCircle } from "lucide-react";
 import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
-import { createOpeningAction, paySupplierOpeningAction, updateOpeningAction } from "./actions";
+import { money } from "@/lib/format";
+import { createOpeningAction, paySupplierOpeningAction, reduceOpeningAction, updateOpeningAction } from "./actions";
 import type { OpeningKind } from "@/generated/prisma";
 
 type Opt = { id: string; label: string };
@@ -99,6 +100,37 @@ export function OpeningEditForm({ id, kind, date, amount, qty, unitCost, note }:
       <Input name="note" defaultValue={note ?? ""} placeholder="izoh" className="h-8 w-44" />
       <Button size="sm" disabled={pending}><Save size={14} /> {pending ? "…" : "Saqlash"}</Button>
       <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:underline">yopish</button>
+      <FormError error={state?.error} />
+    </form>
+  );
+}
+
+/** Direktor uchun: mijoz / yetkazuvchi qoldig'ini summaga kamaytirish (to'langan qismidan pastga tushmaydi). */
+export function OpeningReduceForm({ id, amount, paid }: { id: string; amount: number; paid: number }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(reduceOpeningAction.bind(null, id), undefined);
+  useEffect(() => { if (state?.ok) setOpen(false); }, [state]);
+  // Qarz (+) to'langan qismidan pastga tushmaydi; 0 gacha kamaytirish — bu o'chirish
+  const floor = amount > 0 && paid > 0.005 ? paid : 0;
+  const max = Math.abs(amount) - floor;
+  if (!open) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <button type="button" onClick={() => setOpen(true)} disabled={max < 1} title={max < 1 ? "Kamaytiriladigan qism qolmagan" : "Qarz / avans summasini kamaytirish"}
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-40 disabled:hover:bg-transparent"><MinusCircle size={14} /> Kamaytirish</button>
+        {state?.ok && <span className="text-xs text-emerald-700">{state.note}</span>}
+      </span>
+    );
+  }
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg bg-amber-50/70 p-2">
+      <div className="w-44"><MoneyInput name="by" decimals={2} placeholder="qanchaga" required ariaLabel="Qanchaga kamaytirish" /></div>
+      <Input name="reason" placeholder="sabab (masalan: kelishuv)" className="h-8 w-48" />
+      <Button size="sm" disabled={pending}><MinusCircle size={14} /> {pending ? "…" : "Kamaytirish"}</Button>
+      <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:underline">yopish</button>
+      <span className="w-full text-[11px] text-slate-500">
+        Hozir {money(Math.abs(amount))}{floor ? ` · to'langan ${money(floor)} dan pastga tushmaydi` : " · to'liq olib tashlash — «O'chirish»"}
+      </span>
       <FormError error={state?.error} />
     </form>
   );

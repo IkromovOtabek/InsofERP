@@ -168,7 +168,7 @@ export function FolderPicker({
               <tr>
                 <th className="px-4 py-2">{nameLabel}</th>
                 {cols.map((c) => <th key={c.label} className={cn("px-4 py-2", c.className, c.right && "text-right")}>{c.label}</th>)}
-                {rowAction && <th className="w-10 px-2 py-2" />}
+                {rowAction && <th className="w-16 px-2 py-2" />}
               </tr>
             </thead>
             <tbody>

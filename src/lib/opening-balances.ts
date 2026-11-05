@@ -170,17 +170,22 @@ export async function createOpening(input: OpeningInput, userId: string): Promis
     .catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
 }
 
-export type OpeningPatch = { date: Date; amount?: number; qty?: number | null; unitCost?: number | null; note?: string | null };
+export type OpeningPatch = { date: Date; amount?: number; qty?: number | null; unitCost?: number | null; note?: string | null; /** Auditga yoziladigan sabab (summani kamaytirish) */ reason?: string | null };
+type OpeningRecord = NonNullable<Awaited<ReturnType<typeof db.openingBalance.findUnique>>>;
 
 /**
  * Tahrir (faqat direktor): summa/sana/izoh. Bog'langan hujjat ham moslanadi:
  * mijoz schyoti summasi (to'langanidan kam bo'lmaydi), kassa yozuvi, sklad — tuzatuvchi harakat.
+ * `patch` funksiya bo'lsa — qulf ostida qayta o'qilgan yozuvdan hisoblanadi (kamaytirish ikki marta bosilsa ham to'g'ri).
  */
-export async function updateOpening(id: string, patch: OpeningPatch, userId: string): Promise<{ error?: string }> {
+export async function updateOpening(id: string, patchOf: OpeningPatch | ((o: OpeningRecord) => OpeningPatch), userId: string): Promise<{ error?: string }> {
   return db.$transaction(async (tx) => {
-    const o = await tx.openingBalance.findUnique({ where: { id } });
-    if (!o || o.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki bekor qilingan");
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
+    const head = await tx.openingBalance.findUnique({ where: { id }, select: { activeKey: true, cancelledAt: true } });
+    if (!head || head.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki bekor qilingan");
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + head.activeKey}))`;
+    const o = await tx.openingBalance.findUniqueOrThrow({ where: { id } });
+    if (o.cancelledAt) throw new OpeningError("Yozuv shu payt bekor qilindi");
+    const patch = typeof patchOf === "function" ? patchOf(o) : patchOf;
     const note = patch.note?.trim() || null;
     let data: Prisma.OpeningBalanceUpdateInput = { date: patch.date, note };
 
@@ -241,9 +246,24 @@ export async function updateOpening(id: string, patch: OpeningPatch, userId: str
       }
     }
     const after = await tx.openingBalance.update({ where: { id }, data });
-    await audit(tx, userId, "UPDATE", "OpeningBalance", id, o, after);
+    await audit(tx, userId, "UPDATE", "OpeningBalance", id, o, patch.reason ? { ...after, reason: patch.reason } : after);
     return {};
   }).catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
+}
+
+/**
+ * Mijoz / yetkazuvchi qoldig'ini `by` so'mga kamaytirish (faqat direktor): qarz ham, avans ham moduli bo'yicha kamayadi.
+ * To'langan qismidan pastga tushmaydi (`updateOpening` tekshiradi); to'liq olib tashlash — bekor qilish.
+ */
+export async function reduceOpening(id: string, by: number, reason: string | null, userId: string): Promise<{ error?: string }> {
+  return updateOpening(id, (o) => {
+    if (o.kind !== "CUSTOMER" && o.kind !== "SUPPLIER") throw new OpeningError("Kamaytirish faqat mijoz va yetkazuvchi qoldig'iga");
+    const cur = Number(o.amount);
+    const left = Math.abs(cur) - by;
+    if (!(by > 0)) throw new OpeningError("Kamaytirish summasi 0 dan katta bo'lsin");
+    if (left < 0.005) throw new OpeningError(`Qoldiq ${money(Math.abs(cur))} — to'liq olib tashlash uchun «O'chirish» tugmasini bosing`);
+    return { date: o.date, amount: Math.sign(cur) * left, note: o.note, reason: `Kamaytirildi −${money(by)}${reason ? `: ${reason}` : ""}` };
+  }, userId);
 }
 
 /**

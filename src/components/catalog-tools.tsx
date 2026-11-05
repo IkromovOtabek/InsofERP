@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
-import { FileSpreadsheet, FolderPlus, Grid3x3, Plus } from "lucide-react";
-import { createCatalogProduct, createProductGroup } from "@/lib/catalog-actions";
+import { FileSpreadsheet, FolderPlus, Grid3x3, Plus, Save } from "lucide-react";
+import { createCatalogProduct, createProductGroup, renameCatalogProduct } from "@/lib/catalog-actions";
 import { createCatalogMaterial, createMaterialGroup } from "@/lib/material-actions";
 import { MATERIAL_CATEGORY_OPTIONS } from "@/lib/material-category";
 import type { PickerCtx } from "@/components/folder-picker";
@@ -155,6 +155,25 @@ export function NewProductForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDo
       <FormError error={state?.error} />
       {/* "Bu nomli mahsulot bor edi — yangisi ochilmadi" xabari shu yerda chiqadi */}
       <FormSuccess text={state?.ok ? state.note : undefined} />
+    </form>
+  );
+}
+
+/** Mavjud mahsulot nomini tuzatish — tanlagichdagi qalam va Sklad → Tayyor mahsulot qo'shish. */
+export function RenameProductForm({ product, onDone, onCancel }: { product: Pick<CatalogProduct, "id" | "name" | "code" | "unit">; onDone: () => void; onCancel: () => void }) {
+  const [state, action, pending] = useActionState(renameCatalogProduct.bind(null, product.id), undefined);
+  useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
+  return (
+    <form action={action} className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Mahsulot nomi *" hint={`kod ${product.code} · ${product.unit} — o'zgarmaydi`} className="min-w-64 flex-1">
+          <Input name="name" required autoComplete="off" defaultValue={product.name} autoFocus />
+        </Field>
+        <Button size="sm" disabled={pending}><Save size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
+      </div>
+      <p className="text-xs text-slate-600">Yangi nom eski zayavka, sklad va hisobotlarda ham ko&apos;rinadi (hujjatlar mahsulotga bog&apos;langan, nomga emas).</p>
+      <FormError error={state?.error} />
     </form>
   );
 }
