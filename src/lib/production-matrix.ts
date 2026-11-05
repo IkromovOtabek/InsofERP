@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { itemTasks } from "./production";
 import { unitTotals, type UnitTotal } from "./unit";
+import { STOCK_CUSTOMER_NAME } from "./stock-orders";
 
 /**
  * Ishlab chiqarish oynasidagi «Matritsa» (zavodning Excel jadvali o'rniga): qatorlar — dona mahsulot,
@@ -107,7 +108,7 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
       c.qty = round3(c.qty + Number(i.qtyM3)); c.given = round3(c.given + st[n]!.given);
       for (const t of i.tasks) if (t.status !== "CANCELLED" && !c.brigades.includes(t.brigade.name)) c.brigades.push(t.brigade.name);
     });
-    rows.push({ id: o.id, customer: o.customer.name, deliveryDate: o.deliveryDate.toISOString(), dateUnknown: o.dateUnknown, isUrgent: o.isUrgent, status, assign, stock: isStock, items, alloc: {}, cells });
+    rows.push({ id: o.id, customer: isStock ? STOCK_CUSTOMER_NAME : o.customer.name, deliveryDate: o.deliveryDate.toISOString(), dateUnknown: o.dateUnknown, isUrgent: o.isUrgent, status, assign, stock: isStock, items, alloc: {}, cells });
   }
   rows.sort((a, b) => PRI[a.status] - PRI[b.status] || a.deliveryDate.localeCompare(b.deliveryDate));
 

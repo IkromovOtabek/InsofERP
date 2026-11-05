@@ -25,9 +25,9 @@ export const STOCK_CUSTOMER_NAME = "Sklad — zaxira";
 /** Sklad zayavkasining "manzili": mahsulot hech qayerga ketmaydi, zavod hovlisida qoladi. */
 export const STOCK_ORDER_ADDRESS = "Zavod hovlisi — zaxira";
 
-/** Ichki "Sklad" kartochkasi: bo'lmasa bir marta ochiladi. */
+/** Ichki "Sklad" kartochkasi: bo'lmasa bir marta ochiladi. Nomi bilan qidiriladi — boshqa ichki kartochkalar (QA, demo) ham bo'lishi mumkin. */
 export async function stockCustomerId(tx: Prisma.TransactionClient): Promise<string> {
-  const found = await tx.customer.findFirst({ where: { isInternal: true }, select: { id: true } });
+  const found = await tx.customer.findFirst({ where: { isInternal: true, name: STOCK_CUSTOMER_NAME }, select: { id: true } });
   if (found) return found.id;
   const c = await tx.customer.create({ data: { name: STOCK_CUSTOMER_NAME, isInternal: true, creditLimit: 0 } });
   return c.id;

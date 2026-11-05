@@ -10,6 +10,7 @@ import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, Table,
 import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, itemTasks, partlyAssigned, prodFilter, prodSort, workItems } from "@/lib/production";
 import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
+import { STOCK_CUSTOMER_NAME } from "@/lib/stock-orders";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { pathAllowed } from "@/lib/nav";
@@ -66,7 +67,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
     const share = total > 0 ? Math.min(1, o.trips.reduce((s, t) => s + Number(t.qtyM3), 0) / total) : 0;
     return {
-      id: o.id, customer: o.customer.name, deliveryDate: o.deliveryDate.toISOString(), deliveryTime: o.deliveryTime, dateUnknown: o.dateUnknown, isUrgent: o.isUrgent,
+      id: o.id, customer: o.kind === "STOCK" ? STOCK_CUSTOMER_NAME : o.customer.name, deliveryDate: o.deliveryDate.toISOString(), deliveryTime: o.deliveryTime, dateUnknown: o.dateUnknown, isUrgent: o.isUrgent,
       draft: o.status === "DRAFT", pickup: o.kind !== "STOCK" && !o.needsDelivery, blacklisted: marks.black.has(o.customerId), soon: isSoon(o),
       due: isOpen(o) && !o.dateUnknown ? dueLabel(o.deliveryDate) : null,
       finished: isDone(o), movable: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"].includes(o.status),
@@ -113,7 +114,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           <div className="px-5 pt-5">
             <CardHeader
               icon={HardHat}
-              title={`Brigada tayinlash · ${selected.customer.name}`}
+              title={`Brigada tayinlash · ${selected.kind === "STOCK" ? STOCK_CUSTOMER_NAME : selected.customer.name}`}
               description={selected.kind === "STOCK"
                 ? `Zaxiraga · tayyor bo'lish muddati ${date(selected.deliveryDate)}${selected.note ? ` · ${selected.note}` : ""}`
                 : `Yetkazish ${selected.dateUnknown ? "sanasi aniq emas" : deliveryAt(selected.deliveryDate, selected.deliveryTime)} · ${selected.deliveryAddress}`}
