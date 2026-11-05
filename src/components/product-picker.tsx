@@ -19,6 +19,8 @@ export type CatalogProduct = {
   m3?: string | null;
   /** Kartada kiritilgan hajm (tahrir formasi uchun); bo'sh bo'lsa `m3` taxminiy */
   volumeM3?: number | null;
+  /** Skladdagi xomashyodan retsept bo'yicha necha m³ chiqadi: "34", "≈12,5"; retsepti yo'q — null */
+  fromStockM3?: string | null;
 };
 export type CatalogGroup = { id: string; code: string; name: string; parentId: string | null };
 
@@ -61,11 +63,13 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
         { label: "Birlik", className: "w-20" },
         // Kod o'rniga — ishlab chiqarish samaradorligi: 1 dona plitadan necha kub chiqadi («≈» — og'irlikdan taxminiy)
         { label: "1 birlik, m³", className: "w-24", right: true },
+        // Hozirgi xomashyo qoldig'i retsept bo'yicha necha kub betonga yetadi
+        { label: "Xomashyodan, m³", className: "w-28", right: true },
       ]}
       items={products.map((p) => ({
         id: p.id, name: p.name, code: p.code, groupId: p.groupId,
         hint: hint?.(p) ?? null,
-        cells: [p.kind || "—", p.unit || "—", p.m3 ?? "—"],
+        cells: [p.kind || "—", p.unit || "—", p.m3 ?? "—", p.fromStockM3 ?? "—"],
       }))}
       codes={false}
       groups={groups}
