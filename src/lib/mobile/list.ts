@@ -119,10 +119,11 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   openings: { title: "Boshlang'ich qoldiqlar", roles: ["ACCOUNTING", "FINANCE"] },
   realizatsiya: { title: "Realizatsiya jurnali", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   // ── Arenda (do'konlar ijarasi, `./arenda.ts`) — sekretar; vebdagi `/arenda` sahifasi bilan bir xil ──
-  "arenda-jurnal": { title: "Kirim-chiqim jurnali", roles: ["SECRETARY"] },
-  "arenda-shops": { title: "Do'konlar", roles: ["SECRETARY"] },
-  "arenda-debtors": { title: "Qarzdorlar", roles: ["SECRETARY"] },
-  "arenda-svet": { title: "Svet hisobi", roles: ["SECRETARY"] },
+  // Direktor to'rida ko'rinmaydi (vebda ham menyusida yo'q)
+  "arenda-jurnal": { title: "Kirim-chiqim jurnali", roles: ["SECRETARY"], menuHide: ["DIRECTOR"] },
+  "arenda-shops": { title: "Do'konlar", roles: ["SECRETARY"], menuHide: ["DIRECTOR"] },
+  "arenda-debtors": { title: "Qarzdorlar", roles: ["SECRETARY"], menuHide: ["DIRECTOR"] },
+  "arenda-svet": { title: "Svet hisobi", roles: ["SECRETARY"], menuHide: ["DIRECTOR"] },
   // ── Boshqaruv ──
   // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek). Logistikaga kerak emas (vebda ham yo'q)
   employees: { title: "Xodimlar", roles: ["HR", "PRODUCTION", "SUPERVISOR"] },
@@ -218,7 +219,7 @@ export function listAllowed(user: Pick<MobileUser, "role" | "perms">, key: strin
  */
 export function listsFor(role: Role, perms?: MobileUser["perms"]) {
   return Object.entries(ACCESS)
-    .filter(([key, m]) => role === "DIRECTOR" || (m.roles.includes(role) && !m.menuHide?.includes(role)) || journalGranted({ role, perms }, key))
+    .filter(([key, m]) => ((role === "DIRECTOR" || m.roles.includes(role)) && !m.menuHide?.includes(role)) || journalGranted({ role, perms }, key))
     .filter(([key]) => !moduleClosed({ role, perms }, key))
     .map(([key, m]) => ({ key, title: m.title }));
 }

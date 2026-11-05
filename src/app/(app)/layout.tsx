@@ -38,10 +38,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const tourStart = tourHidden ? TOUR_DONE : tourRaw ? decodeURIComponent(tourRaw) : null;
   // Snabjeniye jo'natmasi — qabul qiladigan sklad xodimiga tepada banner (direktor qabul qilmaydi — unga ko'rsatilmaydi)
   // Arenda domeni: menyuda faqat Arenda, ERP bannerlari, AI va boshqa rollar instruksiyasi yo'q.
-  // Asosiy domenda (ARENDA_HOST berilgan bo'lsa) «Arenda» bandi yo'q — u faqat o'z domenida (asosiy domendagi /arenda o'sha yerga o'tadi)
+  // Asosiy domenda (ARENDA_HOST berilgan bo'lsa) «Arenda» bandi yo'q — u faqat o'z domenida (asosiy domendagi /arenda o'sha yerga o'tadi).
+  // Direktor menyusida ham yo'q (sahifa havola orqali ochiladi), arenda domenida esa qoladi
   const arenda = isArendaHost(await headers());
   const nav = navFor(s.role, s.perms);
-  const items = arenda ? nav.filter((i) => i.href === ARENDA_PATH) : arendaHost() ? nav.filter((i) => i.href !== ARENDA_PATH) : nav;
+  const items = arenda ? nav.filter((i) => i.href === ARENDA_PATH)
+    : arendaHost() || s.role === "DIRECTOR" ? nav.filter((i) => i.href !== ARENDA_PATH) : nav;
   const tourSteps = s.superadmin || (arenda && s.role !== "SECRETARY") ? []
     : arenda ? tourFor(s.role).map((t) => (t.id === "intro" ? { ...t, title: "Insof Arenda — qisqa instruksiya" } : t)) : tourFor(s.role);
   const shipments = !arenda && s.role !== "DIRECTOR" && canDo(s, "stock", "shipment_accept") ? await pendingShipments() : null;
