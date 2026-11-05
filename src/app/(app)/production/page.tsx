@@ -53,7 +53,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const unassignedCount = allOrders.filter((o) => isOpen(o) && !assigned(o)).length;
   const soonCount = allOrders.filter(isSoon).length;
   const selected = selectedId ? allOrders.find((o) => o.id === selectedId) : undefined;
-  // Matritsadan bosilgan katak — faqat shu mahsulot qatori ochiladi; «Barcha qatorlar» qolganlarini ham ko'rsatadi
+  // Matritsadan bosilgan katak — faqat shu mahsulot qatori ochiladi
   const onlyItem = selected && focusItem && selected.items.some((i) => i.id === focusItem) ? focusItem : null;
   const canMove = canDo(session, "production", "reschedule");
   // «Zayavkalar doskasi» — tanlangan filtr bo'yicha: ustun tayyorlikdan (Tayyor emas / Qisman / Tayyor), brigada holati — qatorlardan.
@@ -117,7 +117,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
               description={selected.kind === "STOCK"
                 ? `Zaxiraga · tayyor bo'lish muddati ${date(selected.deliveryDate)}${selected.note ? ` · ${selected.note}` : ""}`
                 : `Yetkazish ${selected.dateUnknown ? "sanasi aniq emas" : deliveryAt(selected.deliveryDate, selected.deliveryTime)} · ${selected.deliveryAddress}`}
-              action={<span className="inline-flex items-center gap-2">{marks.black.has(selected.customerId) && <BlacklistMark />}{marks.contract.has(selected.customerId) && <ContractMark />}{selected.isUrgent && <Badge color="red"><Zap size={11} /> Zarur</Badge>}{selected.kind === "STOCK" ? <Badge color="slate"><Boxes size={11} /> Sklad zaxirasi</Badge> : !selected.needsDelivery && <Badge color="slate"><Truck size={11} /> O&apos;zi oladi</Badge>}{onlyItem && selected.items.length > 1 && <Link href={`/production?order=${selected.id}${filter.key !== "open" ? `&tab=${filter.key}` : ""}`} className="text-sm text-slate-500 hover:text-slate-900">Barcha qatorlar ({selected.items.length})</Link>}<Link href={`/orders/${selected.id}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavka</Link><Link href={filter.key !== "open" ? `/production?tab=${filter.key}` : "/production"} className="text-sm text-slate-500 hover:text-slate-900">Yopish</Link></span>}
+              action={<span className="inline-flex items-center gap-2">{marks.black.has(selected.customerId) && <BlacklistMark />}{marks.contract.has(selected.customerId) && <ContractMark />}{selected.isUrgent && <Badge color="red"><Zap size={11} /> Zarur</Badge>}{selected.kind === "STOCK" ? <Badge color="slate"><Boxes size={11} /> Sklad zaxirasi</Badge> : !selected.needsDelivery && <Badge color="slate"><Truck size={11} /> O&apos;zi oladi</Badge>}<Link href={`/orders/${selected.id}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavka</Link><Link href={filter.key !== "open" ? `/production?tab=${filter.key}` : "/production"} className="text-sm text-slate-500 hover:text-slate-900">Yopish</Link></span>}
             />
           </div>
           {brigades.length === 0 && <p className="px-5 pb-3 text-sm text-red-600">Brigadalar yo&apos;q — avval <Link href="/brigades" className="underline">Brigadalar</Link> sahifasida qo&apos;shing.</p>}
