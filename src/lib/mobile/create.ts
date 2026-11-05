@@ -287,7 +287,7 @@ function recentDays(): FormOption[] {
 const dateField = (): FormField => ({ name: "date", label: "Sana", type: "select", required: true, value: ymd(new Date()), options: recentDays() });
 
 /** Kassa/bank hisoblari — qoldig'i bilan (chiqim qoldiqdan oshmasin, kassir oldindan ko'rsin). */
-async function cashAccountOptions(): Promise<{ options: FormOption[]; cash?: string; bank?: string }> {
+async function cashAccountOptions(): Promise<{ options: FormOption[]; cash?: string; bank?: string; hasCash: boolean }> {
   const [accounts, bal] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
     accountBalances(),
@@ -296,6 +296,7 @@ async function cashAccountOptions(): Promise<{ options: FormOption[]; cash?: str
     options: accounts.map((a) => ({ value: a.id, label: `${a.name} · ${a.type === "CASH" ? "naqd kassa" : "bank"}`, hint: `qoldiq ${money(bal.get(a.id) ?? 0)}${a.type === "BANK" && a.allowOverdraft ? " · overdraft ruxsat" : ""}` })),
     cash: accounts.find((a) => a.type === "CASH")?.id ?? accounts[0]?.id,
     bank: accounts.find((a) => a.type === "BANK")?.id,
+    hasCash: accounts.some((a) => a.type === "CASH"),
   };
 }
 
@@ -377,7 +378,7 @@ async function cashForm(): Promise<CreateForm> {
     key: "cashflow", title: "Kirim / chiqim", submitLabel: "Saqlash",
     fields: [
       { name: "type", label: "Turi", type: "select", required: true, value: "EXPENSE", options: [{ value: "EXPENSE", label: "Chiqim (pul chiqdi)" }, { value: "INCOME", label: "Kirim (pul kirdi)" }] },
-      { name: "cashAccountId", label: "Kassa / hisob", type: "select", required: true, options: acc.options, value: acc.cash, hint: "Naqd kassa qoldiqdan oshib chiqim qilmaydi" },
+      { name: "cashAccountId", label: "Kassa / hisob", type: "select", required: true, options: acc.options, value: acc.cash, hint: acc.hasCash ? "Naqd kassa qoldiqdan oshib chiqim qilmaydi" : "Naqd kassa ochilmagan — direktor Sozlamalar → Kassa / hisoblar'da «Naqd» hisob qo'shsin" },
       { name: "amount", label: "Summa (so'm)", type: "number", required: true, placeholder: "0" },
       { name: "categoryExpense", label: "Kategoriya", type: "select", required: true, value: outCats[0], options: outCats.map((c) => ({ value: c, label: c })), showIf: expense },
       { name: "categoryIncome", label: "Kategoriya", type: "select", required: true, value: inCats[0], options: inCats.map((c) => ({ value: c, label: c })), showIf: income },

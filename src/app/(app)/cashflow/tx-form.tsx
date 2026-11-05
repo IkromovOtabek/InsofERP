@@ -4,7 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Banknote, Landmark } from "lucide-react";
 import { isoDate } from "@/lib/format";
 import { createCashTx } from "./actions";
-import { Button, Field, FormError, FormSuccess, Input, Select, FormActions } from "@/components/ui";
+import { Button, Callout, Field, FormError, FormSuccess, Input, Select, FormActions } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
 import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, type CashMethod } from "@/lib/cash-categories";
@@ -69,6 +69,10 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
           </div>
         )}
       </div>
+      {/* Naqd kassa ochilmagan korxonada «Naqd» tugmasi o'chiq — sababi faqat title'da qolib, xodim nega bosilmayotganini bilmasdi */}
+      {!perekit && !accounts.some((a) => a.type === "CASH") && (
+        <Callout tone="warning">Naqd kassa ochilmagan — naqd kirim/chiqim yozib bo&apos;lmaydi. Direktor Sozlamalar → Kassa / hisoblar bo&apos;limida «Naqd» turidagi hisob qo&apos;shsin.</Callout>
+      )}
       <div key={formKey} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
         <Field label={perekit ? "Qayerdan (hisob) *" : "Kassa / hisob *"}><Select name="cashAccountId" value={accId} onChange={(e) => setFromId(e.target.value)} required>{shownAccounts.map((a) => <option key={a.id} value={a.id}>{perekit ? accLabel(a) : a.name}</option>)}</Select></Field>
