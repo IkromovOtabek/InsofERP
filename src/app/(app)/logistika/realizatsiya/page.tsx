@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { randomUUID } from "crypto";
-import { PenLine, Receipt, Search, Truck, Undo2, Wallet } from "lucide-react";
+import { FileSpreadsheet, PenLine, Receipt, Search, Truck, Undo2, Wallet } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { dateRu, fmtNum, isoDate } from "@/lib/format";
 import { realizationLog, realizationOptions, type LogRow, type LogSource } from "@/lib/realization-log";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
-import { Button, Input, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
+import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
 import { ExcelButton } from "../excel-button";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { cancelRealizationAction } from "./actions";
@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  * zayavkadan o'zi tushadi — dispetcher ortilgan joy, manzil, izohni to'ldiradi (`logistika.real_auto`); tizimga tushmagan
  * jo'natma qo'lda qo'shiladi (`logistika.real_manual`). Faqat reestr — qarz va kassaga ta'sir qilmaydi. Hisob — `lib/realization-log.ts`.
  */
-type SP = { from?: string; to?: string; tur?: string; guruh?: string; manba?: string; joy?: string; q?: string };
+type SP = { from?: string; to?: string; tur?: string; guruh?: string; manba?: string; joy?: string; q?: string; import?: string };
 
 const PAY_COLOR: Record<PayGroupKey, string> = { BANK: "text-blue-700", CASH: "text-emerald-700", DEBT: "text-red-700" };
 const SOURCES: { key: LogSource; label: string }[] = [{ key: "AUTO", label: "Reysdan" }, { key: "MANUAL", label: "Qo'lda" }];
@@ -70,6 +70,8 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
   const trips = new Set(rows.map((r) => r.tripId).filter(Boolean)).size;
   const manual = rows.filter((r) => r.source === "MANUAL").length;
   const period = `${dateRu(from)} — ${dateRu(to)}`;
+  // Excel importdan qaytganda: «qo'shildi-o'tkazib yuborildi»
+  const imported = /^(\d+)-(\d+)$/.exec(sp.import ?? "");
 
   // Excel — varaqdagi ustunlar tartibida
   const excelRows = rows.map((r) => ({
@@ -167,11 +169,18 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
         subtitle={`${period} · ${trips} ta reys (TTN) · ${rows.length} qator`}
         action={(
           <div className="flex flex-wrap items-center gap-2">
+            {canManual && <LinkButton href="/logistika/realizatsiya/import" variant="secondary"><FileSpreadsheet size={16} /> Excel&apos;dan import</LinkButton>}
             {canManual && <EntryButton clientToken={randomUUID()} />}
             <ExcelButton file={`Realizatsiya ${period}`} sheets={[{ name: "Realizatsiya", rows: excelRows }]} />
           </div>
         )}
       />
+
+      {imported && (
+        <Callout tone="success" title="Excel'dan import qilindi">
+          {imported[1]} ta qator «Qo&apos;lda» bo&apos;lib qo&apos;shildi{Number(imported[2]) > 0 && `, ${imported[2]} tasi reestrda bor edi — o'tkazib yuborildi`}.
+        </Callout>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Jo'natildi" value={qtyText} hint={`${trips} ta reys`} icon={Truck} />

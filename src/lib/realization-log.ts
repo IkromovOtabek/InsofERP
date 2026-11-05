@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
-import { audit } from "@/lib/audit";
+import { audit, auditMany } from "@/lib/audit";
 import { NDS_RATE } from "@/lib/nds";
-import { PRODUCT_UNITS, unitLabel } from "@/lib/unit";
+import { PRODUCT_UNITS, normalizeUnit, unitLabel } from "@/lib/unit";
+import { isoDate } from "@/lib/format";
+import { matchKey, num, numMoney, parseDate, str, valueMapper, type ValueMaps } from "@/lib/excel";
 import { dayField, numIn } from "@/lib/logistics-admin";
 import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
 import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-sheet";
@@ -21,6 +23,8 @@ import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-she
  *    ta'sir qilmaydi. Mijoz (yoki aliasi) va mahsulot nomi ro'yxatdagiga mos kelsa bog'lanadi, birlik va guruh mahsulotdan.
  *    QQS — perechisleniyeda 12% (miqdor × narx dan, dastavkasiz). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
  *  · Summa (QQSsiz) = miqdor × narx + dastavka; Jami = Summa + QQS (`lib/realization.ts` bilan bitta qoida).
+ *  · Excel'dan import: varaqdagi qatorlar qo'lda qator bo'lib tushadi. Reestrda bori (reys yoki avval kiritilgan) o'tkazib
+ *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`).
  */
 
 export type LogSource = "AUTO" | "MANUAL";
@@ -166,28 +170,55 @@ export type EntryInput = z.infer<typeof entrySchema>;
 export const noteSchema = z.object({ loadPlace: text(60), destination: text(200), note: text(300), refName: text(200) });
 export type NoteInput = z.infer<typeof noteSchema>;
 
+/** Umumiy son xabari («ko'pi bilan …») qaysi maydonniki ekani ko'rinsin — forma va Excel import xatolarida */
+export const ENTRY_LABELS: Record<string, string> = {
+  date: "Sana", payGroup: "To'lov turi", qty: "Miqdor", price: "Narx (QQSsiz)", delivery: "Dostavka", customerName: "Xaridor", productName: "Mahsulot",
+  seller: "Sotuvchi", groupName: "Guruh", unit: "O'lchov", ttn: "TTN", vehicle: "Mashina", loadPlace: "Ortilgan joy", destination: "Boradigan manzil",
+  note: "Izoh", refName: "Spravka nomi",
+};
+
 type Result = { ok: true; id: string } | { error: string };
 
-/** Forma qiymatlari → jadval qatori: mijoz/mahsulot ro'yxatga bog'lanadi, birlik va guruh mahsulotdan, QQS to'lov turidan. */
-async function entryData(d: EntryInput) {
-  const [customer, product] = await Promise.all([
-    db.customer.findFirst({
-      where: { isInternal: false, OR: [{ name: { equals: d.customerName, mode: "insensitive" } }, { aliases: { has: d.customerName } }] },
-      orderBy: { isActive: "desc" }, select: { id: true },
-    }),
-    db.product.findFirst({
-      where: { OR: [{ name: { equals: d.productName, mode: "insensitive" } }, { code: { equals: d.productName, mode: "insensitive" } }] },
-      orderBy: { isActive: "desc" }, select: { id: true, name: true, unit: true, groupId: true },
-    }),
+type ProductHit = { id: string; name: string; unit: string; groupId: string | null };
+type Lookup = { customer: (name: string) => string | null; product: (name: string) => ProductHit | null; group: (groupId: string | null) => string };
+
+/**
+ * Mijoz (nomi yoki aliasi) va mahsulot (nomi yoki kodi) ro'yxatdan: katta-kichik harfsiz, faoli ustun, nomi aliasdan ustun.
+ * Bitta forma ham, Excel import ham shu bilan — importda hamma nom bitta so'rovda.
+ */
+async function entryLookup(customerNames: string[], productNames: string[]): Promise<Lookup> {
+  const cn = uniq(customerNames), pn = uniq(productNames);
+  const ci = (v: string) => ({ equals: v, mode: "insensitive" as const });
+  const [customers, products, groups] = await Promise.all([
+    cn.length
+      ? db.customer.findMany({ where: { isInternal: false, OR: [...cn.map((n) => ({ name: ci(n) })), { aliases: { hasSome: cn } }] }, orderBy: { isActive: "desc" }, select: { id: true, name: true, aliases: true } })
+      : [],
+    pn.length
+      ? db.product.findMany({ where: { OR: pn.flatMap((n) => [{ name: ci(n) }, { code: ci(n) }]) }, orderBy: { isActive: "desc" }, select: { id: true, name: true, code: true, unit: true, groupId: true } })
+      : [],
+    pn.length ? db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }) : [],
   ]);
-  let group = d.groupName;
-  if (!group && product) group = rootGroupName(await db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }))(product.groupId);
+  const lc = (v: string) => v.toLowerCase();
+  const cust = new Map<string, string>();
+  for (const c of customers) if (!cust.has(lc(c.name))) cust.set(lc(c.name), c.id);
+  for (const c of customers) for (const a of c.aliases) if (!cust.has(lc(a))) cust.set(lc(a), c.id);
+  const prod = new Map<string, ProductHit>();
+  for (const p of products) if (!prod.has(lc(p.name))) prod.set(lc(p.name), p);
+  for (const p of products) if (p.code && !prod.has(lc(p.code))) prod.set(lc(p.code), p);
+  return { customer: (n) => cust.get(lc(n)) ?? null, product: (n) => prod.get(lc(n)) ?? null, group: rootGroupName(groups) };
+}
+
+/** Forma qiymatlari → jadval qatori: mijoz/mahsulot ro'yxatga bog'lanadi, birlik va guruh mahsulotdan, QQS to'lov turidan. */
+function entryData(d: EntryInput, lk: Lookup) {
+  const customerId = lk.customer(d.customerName);
+  const product = lk.product(d.productName);
+  const group = d.groupName ?? (product ? lk.group(product.groupId) : null);
   const unit = product?.unit ?? d.unit ?? "m3";
   if (!product && !PRODUCT_UNITS.some(([u]) => u === unit)) return { error: "O'lchov birligini tanlang" } as const;
   const qty = d.qty!, price = Math.round(d.price ?? 0), delivery = Math.round(d.delivery ?? 0);
   return {
     data: {
-      date: d.date!, payGroup: d.payGroup, seller: d.seller, customerId: customer?.id ?? null, customerName: d.customerName,
+      date: d.date!, payGroup: d.payGroup, seller: d.seller, customerId, customerName: d.customerName,
       productId: product?.id ?? null, productName: product?.name ?? d.productName, groupName: group ?? "Boshqa",
       ttn: d.ttn, vehicle: d.vehicle, unit, qty, price, delivery, vat: d.payGroup === "BANK" ? r2(qty * price * NDS_RATE) : 0,
       loadPlace: d.loadPlace, destination: d.destination, note: d.note, refName: d.refName,
@@ -203,7 +234,7 @@ export async function createRealizationEntry(d: EntryInput, userId: string): Pro
     if (dup) return dup.createdById === userId ? { ok: true, id: dup.id } : { error: "Forma kaliti band — sahifani yangilang" };
   }
   if (future(d.date!)) return { error: "Sana kelajakda bo'lmasin" };
-  const r = await entryData(d);
+  const r = entryData(d, await entryLookup([d.customerName], [d.productName]));
   if ("error" in r) return { error: r.error! };
   try {
     const e = await db.$transaction(async (tx) => {
@@ -228,7 +259,7 @@ export async function updateRealizationEntry(id: string, d: EntryInput, userId: 
   if (!before) return { error: "Qator topilmadi" };
   if (before.cancelledAt) return { error: "Qator bekor qilingan" };
   if (future(d.date!)) return { error: "Sana kelajakda bo'lmasin" };
-  const r = await entryData(d);
+  const r = entryData(d, await entryLookup([d.customerName], [d.productName]));
   if ("error" in r) return { error: r.error! };
   const ok = await db.$transaction(async (tx) => {
     const u = await tx.realizationEntry.updateMany({ where: { id, cancelledAt: null, updatedAt: before.updatedAt }, data: r.data });
@@ -267,4 +298,119 @@ export async function saveRealizationNote(key: string, d: NoteInput, userId: str
     await audit(tx, userId, before ? "UPDATE" : "CREATE", "RealizationNote", key, before ?? undefined, data);
   });
   return { ok: true, id: key };
+}
+
+// ───────────────────────── Excel'dan import ─────────────────────────
+
+export type ImportRow = Record<string, unknown>;
+export type ImportResult = { ok: true; added: number; skipped: number; from: Date; to: Date } | { error: string };
+
+const IMPORT_MAX = 3000;
+const DAY = 86_400_000;
+
+/** To'lov turi so'z boshidan (`matchKey` ko'rinishida): «Перечисление», «Безнал» → BANK; «Нал», «Нақд» → CASH; «Қарз», «Долг» → DEBT. */
+const PAY_WORDS: [PayGroupKey, RegExp][] = [
+  ["BANK", /^(perec|bezn|bank|xisob)/],
+  ["CASH", /^(naqd|nakd|naqt|nal|cash)/],
+  ["DEBT", /^(qarz|karz|dolg|nasiya|nasia|tekin|debt)/],
+];
+export function payGroupOf(v: string): PayGroupKey | null {
+  const k = matchKey(v);
+  return k ? PAY_WORDS.find(([, re]) => re.test(k))?.[0] ?? null : null;
+}
+
+/** TTN solishtirish kaliti: «N-2026-00161», «№161», «161» — bitta. */
+const ttnKey = (v: string | null) => matchKey(shortTtn(v)).replace(/^0+(?=\d)/, "");
+const day0 = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+/** Takrorni topish uchun qatorning solishtiriladigan qismi: nomlar `matchKey` bilan (kirill/lotin, katta-kichik farqi yo'q). */
+type Seen = { day: number; customerId: string | null; cust: string; prod: string; qty: number; ttn: string; vehicle: string };
+const seenOf = (r: { date: Date; customerId: string | null; customer: string; product: string; qty: number; ttn: string | null; vehicle: string | null }): Seen => ({
+  day: day0(r.date), customerId: r.customerId, cust: matchKey(r.customer), prod: matchKey(r.product), qty: r.qty, ttn: ttnKey(r.ttn), vehicle: matchKey(r.vehicle ?? ""),
+});
+const sameCust = (a: Seen, b: Seen) => (!!a.customerId && a.customerId === b.customerId) || (!!a.cust && a.cust === b.cust);
+const sameQty = (a: Seen, b: Seen) => Math.abs(a.qty - b.qty) < 0.0005;
+
+/**
+ * Varaqdagi jo'natmalar → qo'lda qatorlar (bitta formadagi qoidalar bilan). Biror qatorda xato bo'lsa hech narsa yozilmaydi.
+ * Reestrda bor qator o'tkazib yuboriladi:
+ *  · TTN bor — shu TTN reysdan yoki qo'lda qatorda ±1 kun ichida bor (mijoz, mahsulot, miqdor yoki mashinadan biri mos);
+ *  · TTN'siz — o'sha kuni xaridor, mahsulot va miqdori bir xil qator bor (har mavjud qator bitta fayl qatoriga sanaladi).
+ * Ikki import bir vaqtda kelsa — qulf ostida navbat bilan, ikkinchisi birinchisi yozganini ko'radi.
+ */
+export async function importRealizationEntries(rows: ImportRow[], maps: ValueMaps, userId: string): Promise<ImportResult> {
+  if (!rows.length) return { error: "Faylda qator yo'q" };
+  if (rows.length > IMPORT_MAX) return { error: `Bir martada ko'pi bilan ${IMPORT_MAX} qator — faylni bo'lib yuklang` };
+  const pay = valueMapper(maps, "payGroup");
+  const errors: string[] = [];
+  const where = (i: number, name: string) => `${i + 1}-qator${name ? ` (${name})` : ""}`;
+
+  const inputs: EntryInput[] = [];
+  rows.forEach((x, i) => {
+    const cell = (k: string) => str(x[k]);
+    // Raqam katakdan (minglik ajratkich, vergul) — o'qilmasa matnicha qoladi va forma qoidasi xato beradi
+    const amount = (k: string, read: (v: unknown) => number) => {
+      if (!cell(k)) return "";
+      const n = read(x[k]);
+      return Number.isFinite(n) ? String(n) : cell(k);
+    };
+    const date = parseDate(x.date);
+    const payGroup = payGroupOf(pay(cell("payGroup")));
+    // Fayldagi qiymat bor, lekin o'qilmadi — qiymatning o'zi bilan aytiladi (forma xabari «tanlang» bo'lib chalg'itmasin)
+    if (cell("date") && !date) { errors.push(`${where(i, cell("customerName"))}: Sana o'qilmadi — «${cell("date")}»`); return; }
+    if (cell("payGroup") && !payGroup) { errors.push(`${where(i, cell("customerName"))}: To'lov turi aniqlanmadi — «${cell("payGroup")}» (Perechisleniye, Naqd yoki Qarz)`); return; }
+    const p = entrySchema.safeParse({
+      date: date ? isoDate(date) : "",
+      payGroup: payGroup ?? "",
+      seller: cell("seller"), customerName: cell("customerName"), productName: cell("productName"), groupName: cell("groupName"),
+      unit: normalizeUnit(cell("unit")) ?? cell("unit"), ttn: cell("ttn"), vehicle: cell("vehicle"),
+      qty: amount("qty", num), price: amount("price", numMoney), delivery: amount("delivery", numMoney),
+      loadPlace: cell("loadPlace"), destination: cell("destination"), note: cell("note"), refName: cell("refName"),
+    });
+    if (!p.success) {
+      const is = p.error.issues[0];
+      const label = ENTRY_LABELS[String(is.path[0] ?? "")];
+      errors.push(`${where(i, cell("customerName"))}: ${label && !is.message.startsWith(label) ? `${label} — ` : ""}${is.message}`);
+    } else if (future(p.data.date!)) errors.push(`${where(i, p.data.customerName)}: sana kelajakda`);
+    else inputs.push(p.data);
+  });
+
+  const lk = errors.length ? null : await entryLookup(inputs.map((d) => d.customerName), inputs.map((d) => d.productName));
+  const built = lk ? inputs.map((d, i) => {
+    const r = entryData(d, lk);
+    if ("error" in r) { errors.push(`${where(i, d.customerName)}: ${r.error} — «${d.productName}» mahsulotlar ro'yxatida yo'q`); return null; }
+    return r.data;
+  }) : [];
+  if (errors.length) {
+    return { error: `${errors.slice(0, 5).join("; ")}${errors.length > 5 ? `; yana ${errors.length - 5} ta qatorda xato` : ""}. Faylni tuzatib qayta yuklang — hech narsa yozilmadi` };
+  }
+  const data = built.filter((b) => b !== null);
+
+  const times = data.map((b) => day0(b.date));
+  const from = new Date(Math.min(...times)), to = new Date(Math.max(...times));
+  const auto = (await realizationRows(new Date(from.getTime() - DAY), new Date(to.getTime() + DAY))).map(seenOf);
+
+  const res = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"realization-import"}))`;
+    const manual = await tx.realizationEntry.findMany({
+      where: { cancelledAt: null, date: { gte: new Date(from.getTime() - DAY), lt: new Date(to.getTime() + 2 * DAY) } },
+      select: { date: true, customerId: true, customerName: true, productName: true, qty: true, ttn: true, vehicle: true },
+    });
+    const existing = [...auto, ...manual.map((e) => seenOf({ ...e, customer: e.customerName, product: e.productName, qty: Number(e.qty) }))];
+    const used = new Set<number>();
+    const fresh = data.filter((b) => {
+      const s = seenOf({ ...b, customer: b.customerName, product: b.productName });
+      if (s.ttn && existing.some((e) => e.ttn === s.ttn && Math.abs(e.day - s.day) <= DAY
+        && (sameCust(e, s) || e.prod === s.prod || sameQty(e, s) || (!!s.vehicle && e.vehicle === s.vehicle)))) return false;
+      const twin = existing.findIndex((e, j) => !used.has(j) && e.day === s.day && (!s.ttn || !e.ttn) && sameCust(e, s) && e.prod === s.prod && sameQty(e, s));
+      if (twin < 0) return true;
+      used.add(twin);
+      return false;
+    });
+    if (!fresh.length) return { added: 0, skipped: data.length };
+    const created = await tx.realizationEntry.createManyAndReturn({ data: fresh.map((b) => ({ ...b, createdById: userId })) });
+    await auditMany(tx, userId, "CREATE", "RealizationEntry", created.map((row) => ({ id: row.id, after: row })));
+    return { added: created.length, skipped: data.length - created.length };
+  }, { timeout: 60_000 });
+  return { ok: true, ...res, from, to };
 }
