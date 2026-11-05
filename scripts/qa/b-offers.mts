@@ -10,7 +10,12 @@ const sotuv = await as("sotuv"), dir = await as("direktor"), sklad = await as("s
 const tag = Date.now() % 1_000_000;
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
-const inDays = (n: number) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
+// Bugun — Toshkent sanasi (server `offerToday` bilan bir xil); UTC olinsa 00:00–05:00 da kecha bo'lib qolardi
+const inDays = (n: number) => {
+  const d = new Date(`${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tashkent" }).format(new Date())}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return iso(d);
+};
 
 type Row = { id: string; offerNo: string; token: string };
 async function createAs(c: Client, over: Record<string, unknown> = {}) {
