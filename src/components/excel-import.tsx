@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List, ArrowRightLeft } from "lucide-react";
 import { Button, FormError, FormSuccess, Select, Table, Td, Th, Tr } from "@/components/ui";
@@ -478,6 +478,15 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   // Muammolilarini tashlab, qolganini qo'shish mumkin bo'lgan holat
   const canSkip = allRows.length > 0 && missingRequired.length === 0 && badList.length > 0 && validRows.length > 0;
   const submitValid = () => { flushSync(() => setSkipBad(true)); formRef.current?.requestSubmit(); };
+  // `onSubmit` + `startTransition`: `<form action>` bo'lsa React 19 action'dan keyin formani reset qiladi — «Qiymatlarni
+  // moslash» va `children` dagi select'lar ko'rinishda standartga qaytadi (holat esa eskisicha qoladi, chalg'itadi)
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    // Portal orqali ko'tarilgan ichki forma (masalan «+ Yangi …» oynasi) — unga tegilmaydi
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    startTransition(() => formAction(fd));
+  };
   const mismatches = flagged.filter((x) => x.a?.mismatch).length;
 
   const source = onlyBad ? badList : flagged;
@@ -799,7 +808,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   );
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-5">
+    <form ref={formRef} onSubmit={submit} className="space-y-5">
       <FormError error={state?.error} />
       <FormSuccess text={state?.note} />
       <input type="hidden" name="rows" value={JSON.stringify(skipBad ? validRows : allRows)} />
@@ -811,7 +820,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
               <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700"><FileSpreadsheet size={14} /> Excel faylni tanlash</span>
-              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+              {/* Tanlov tozalanadi — tuzatilgan o'sha faylni qayta tanlasa ham o'qilsin (reset endi buni qilmaydi) */}
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
             </label>
             {scan?.enabled && <DocScan endpoint={scan.endpoint} label={scan.label} onResult={onScan} />}
             <span className="text-sm text-slate-500">{fileName || ".xlsx, .xls yoki .csv"}</span>
