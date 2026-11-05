@@ -15,7 +15,10 @@ import type { OpeningKind } from "@/generated/prisma";
  */
 const writer = () => requireModuleWrite("opening", OPENING_WRITERS);
 
-/** Tahrir va bekor qilish — faqat direktor: tasdiqlangan boshlang'ich holat jimgina o'zgarmasin. */
+/**
+ * Ta'minotchi qoldig'iga yozilgan to'lovni storno qilish — faqat direktor (kassaga pul qaytadi).
+ * Qoldiqni tahrirlash, kamaytirish va o'chirish — kirituvchilarga (`writer`): har o'zgarish auditda.
+ */
 async function director() {
   const s = await requireSession();
   if (s.role !== "DIRECTOR") throw new AccessDenied("Boshlang'ich qoldiqni faqat direktor o'zgartira yoki bekor qila oladi");
@@ -114,7 +117,7 @@ const updateSchema = z.object({
 });
 
 export async function updateOpeningAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await director();
+  const s = await writer();
   const r = parseForm(updateSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -129,9 +132,9 @@ const reduceSchema = z.object({
   reason: zOpt,
 });
 
-/** Mijoz / yetkazuvchi qoldig'ini kamaytirish (masalan kelishuv bo'yicha qisman kechildi) — faqat direktor. */
+/** Mijoz / yetkazuvchi qoldig'ini kamaytirish (masalan kelishuv bo'yicha qisman kechildi). */
 export async function reduceOpeningAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await director();
+  const s = await writer();
   const r = parseForm(reduceSchema, fd);
   if ("error" in r) return { error: r.error };
   const res = await reduceOpening(id, r.data.by!, r.data.reason, s.userId);
@@ -141,7 +144,7 @@ export async function reduceOpeningAction(id: string, _prev: ActionState, fd: Fo
 }
 
 export async function cancelOpeningAction(id: string, reason: string): Promise<ActionState> {
-  const s = await director();
+  const s = await writer();
   if (reason.trim().length < 3) return { error: "Sababini yozing" };
   const res = await cancelOpening(id, reason.trim(), s.userId);
   if (res.error) return { error: res.error };

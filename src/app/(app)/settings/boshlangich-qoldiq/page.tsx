@@ -8,7 +8,7 @@ import type { OpeningKind } from "@/generated/prisma";
 /**
  * Sozlamalar → Boshlang'ich qoldiqlar: real korxonani tizimga o'tkazish sanasidagi holat.
  * Mijozlar qarzi/avansi, yetkazuvchilarga qarz, kassa/bank qoldiqlari va tayyor mahsulot qoldig'i —
- * qo'lda yoki Excel'dan. Kiritish — direktor va buxgalteriya; tahrir/kamaytirish/o'chirish — faqat direktor.
+ * qo'lda yoki Excel'dan. Kiritish, tahrir, kamaytirish va o'chirish — direktor va buxgalteriya (yoki «opening» ruxsati berilgan xodim).
  * Bo'limning o'zi `section.tsx` da (Tahlil → debitorka sahifalaridagi «Qarzlarni kiritish» ham shuni ishlatadi).
  * Qanday hisobotlarga tushishi — `lib/opening-balances.ts` boshidagi izohda.
  */
@@ -26,7 +26,7 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
     <div>
       <PageHeader
         title="Boshlang'ich qoldiqlar"
-        subtitle="Tizimga o'tish sanasidagi holat: mijozlar va yetkazuvchilar bilan hisob-kitob, kassa/bank va tayyor mahsulot qoldig'i. Kiritish — direktor va buxgalteriya; tahrir va o'chirish — faqat direktor (har o'zgarish auditda)."
+        subtitle="Tizimga o'tish sanasidagi holat: mijozlar va yetkazuvchilar bilan hisob-kitob, kassa/bank va tayyor mahsulot qoldig'i. Kiritish, tahrir va o'chirish — direktor va buxgalteriya (har o'zgarish auditda)."
       />
       <Tabs current={kind} className="mb-4" items={KINDS.map((k) => ({ key: k, label: KIND_LABEL[k], href: `/settings/boshlangich-qoldiq?tab=${k}`, icon: OPENING_ICON[k], count: countOf(k) || undefined }))} />
       <OpeningSection kind={kind} s={s} base="/settings/boshlangich-qoldiq" keep={{ tab: kind }} showCancelled={sp.bekor === "1"} q={sp.q} />

@@ -84,7 +84,7 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
   help?: boolean;
 }) {
   const canEdit = moduleWriteAllowed(s, "opening", OPENING_WRITERS) === true; // Finance — faqat ko'radi va to'laydi
-  const isDirector = s.role === "DIRECTOR";
+  const isDirector = s.role === "DIRECTOR"; // ta'minotchi to'lovini storno qilish — faqat direktor
   const canPay = canDo(s, "cashflow", "pay");
   const term = q?.trim() ?? "";
 
@@ -184,7 +184,6 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
           <Link href={href({ bekor: !showCancelled, q: term })} className="text-sm text-slate-500 hover:underline">{showCancelled ? "Faqat faollari" : "O'chirilganlarini ham ko'rsatish"}</Link>
         </div>
       </div>
-      {!isDirector && canEdit && <p className="mb-2 text-xs text-slate-500">Tahrirlash{debtKind ? ", kamaytirish" : ""} va o&apos;chirish — faqat direktorda (har o&apos;zgarish auditga yoziladi).</p>}
       <Table>
         <thead>
           <tr>
@@ -231,9 +230,9 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
                   {!r.cancelledAt && (
                     <div className="flex flex-wrap items-center justify-end gap-1">
                       {kind === "SUPPLIER" && canPay && due && due.left > 0.005 && <SupplierPayForm id={r.id} left={due.left} accounts={accounts.map((a) => ({ id: a.id, label: a.name }))} />}
-                      {isDirector && <OpeningEditForm id={r.id} kind={kind} date={isoDate(r.date)} amount={amount} qty={r.qty == null ? null : Number(r.qty)} unitCost={r.unitCost == null ? null : Number(r.unitCost)} note={r.note} />}
-                      {isDirector && debtKind && <OpeningReduceForm id={r.id} amount={amount} paid={kind === "CUSTOMER" ? paidCustomer : due?.paid ?? 0} />}
-                      {isDirector && <ConfirmButton action={cancelOpeningAction.bind(null, r.id)} label="O'chirish" icon={<Trash2 size={14} />} question="Qoldiq o'chirilsinmi? Qarz hisobotlardan chiqadi, yozuv «O'chirilganlar»da tarix uchun qoladi" reason="required" okText="O'chirildi" className="h-7 px-2 text-xs" />}
+                      {canEdit && <OpeningEditForm id={r.id} kind={kind} date={isoDate(r.date)} amount={amount} qty={r.qty == null ? null : Number(r.qty)} unitCost={r.unitCost == null ? null : Number(r.unitCost)} note={r.note} />}
+                      {canEdit && debtKind && <OpeningReduceForm id={r.id} amount={amount} paid={kind === "CUSTOMER" ? paidCustomer : due?.paid ?? 0} />}
+                      {canEdit && <ConfirmButton action={cancelOpeningAction.bind(null, r.id)} label="O'chirish" icon={<Trash2 size={14} />} question="Qoldiq o'chirilsinmi? Qarz hisobotlardan chiqadi, yozuv «O'chirilganlar»da tarix uchun qoladi" reason="required" okText="O'chirildi" className="h-7 px-2 text-xs" />}
                     </div>
                   )}
                 </Td>

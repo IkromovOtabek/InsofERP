@@ -33,8 +33,10 @@ check("C1 kassa qoldig'i 1 000 000 kiritildi (buxgalter)", r.result?.ok === true
 r = await create(buh, { kind: "CASH", entityId: KASSA, amount: "5" });
 check("C2 takror kiritish rad etildi", /allaqachon kiritilgan/.test(r.result?.error ?? ""), r.result);
 let ob = active("CASH", `"cashAccountId"`, KASSA);
-r = await update(buh, ob.id, { amount: "2 000 000" });
-check("C3 buxgalter tahrirlay olmaydi (403)", r.status === 403, `${r.status}`);
+r = await update(fin, ob.id, { amount: "2 000 000" });
+check("C3 finance (faqat ko'radi) tahrirlay olmaydi (403)", r.status === 403, `${r.status}`);
+r = await update(buh, ob.id, { amount: "1 500 000" });
+check("C3b buxgalter tahrirladi → qoldiq 1 500 000", r.result?.ok === true && eq2(balance(KASSA), 1500000), r.result);
 r = await update(dir, ob.id, { amount: "2 000 000,50" });
 check("C4 direktor tahrirladi → qoldiq 2 000 000,50", r.result?.ok === true && eq2(balance(KASSA), 2000000.5), r.result);
 r = await cashTx({ type: "EXPENSE", cashAccountId: KASSA, amount: "1500000" });
@@ -89,19 +91,19 @@ r = await update(dir, ob.id, { amount: "300 000" });
 check("C23 summani to'langandan kam qilish — rad", /kam bo'lolmaydi/.test(r.result?.error ?? ""), r.result);
 r = await update(dir, ob.id, { amount: "800 000" });
 check("C24 tahrir 800 000 → schyot 800 000 PARTIAL", r.result?.ok === true && eq2(q1(`select amount from "Invoice" where id=${lit(ob.invoiceId)}`).amount, 800000), r.result);
-r = await reduce(buh, ob.id, "100000");
-check("C24a buxgalter summani kamaytira olmaydi (403)", r.status === 403, `${r.status}`);
+r = await reduce(fin, ob.id, "100000");
+check("C24a finance summani kamaytira olmaydi (403)", r.status === 403, `${r.status}`);
 r = await reduce(dir, ob.id, "500000");
 check("C24b kamaytirish to'langandan pastga (800 − 500 < 400) — rad", /kam bo'lolmaydi/.test(r.result?.error ?? ""), r.result);
-r = await reduce(dir, ob.id, "100000");
-check("C24c direktor 100 000 ga kamaytirdi → schyot 700 000, auditda sabab", r.result?.ok === true && eq2(q1(`select amount from "Invoice" where id=${lit(ob.invoiceId)}`).amount, 700000)
+r = await reduce(buh, ob.id, "100000");
+check("C24c buxgalter 100 000 ga kamaytirdi → schyot 700 000, auditda sabab", r.result?.ok === true && eq2(q1(`select amount from "Invoice" where id=${lit(ob.invoiceId)}`).amount, 700000)
   && /Kamaytirildi/.test(q1(`select after::text a from "AuditLog" where entity='OpeningBalance' and "entityId"=${lit(ob.id)} order by "createdAt" desc limit 1`)?.a ?? ""), r.result);
 r = await cancel(dir, ob.id);
 check("C25 to'lovi bor qoldiqni bekor qilish — rad", /to'lov yozilgan/.test(r.result?.error ?? ""), r.result);
 const pay = q1(`select id from "Payment" where "invoiceId"=${lit(ob.invoiceId)}`);
 await buh.action("payments/actions#stornoPayment", [pay.id, "QA: noto'g'ri"], "/payments");
-r = await cancel(dir, ob.id);
-check("C26 to'lov storno qilingach bekor qilindi → schyot CANCELLED", r.result?.ok === true && q1(`select status from "Invoice" where id=${lit(ob.invoiceId)}`).status === "CANCELLED", r.result);
+r = await cancel(buh, ob.id);
+check("C26 to'lov storno qilingach buxgalter o'chirdi → schyot CANCELLED", r.result?.ok === true && q1(`select status from "Invoice" where id=${lit(ob.invoiceId)}`).status === "CANCELLED", r.result);
 r = await create(buh, { kind: "CUSTOMER", entityId: cust, sign: "-1", amount: "250 000,25" });
 const ob2 = active("CUSTOMER", `"customerId"`, cust);
 check("C27 bekor qilingandan keyin qayta kiritish (avans −250 000,25) → PAID", r.result?.ok === true && q1(`select status, amount from "Invoice" where id=${lit(ob2.invoiceId)}`).status === "PAID", r.result);

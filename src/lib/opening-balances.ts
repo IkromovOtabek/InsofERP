@@ -23,7 +23,7 @@ import type { OpeningKind, Prisma } from "@/generated/prisma";
  *   STOCK    → `StockMove` ADJUSTMENT (refType = "OpeningBalance") tannarx bilan, sklad bo'yicha.
  *
  * Bitta obyektga bitta faol qoldiq: `activeKey` unique (bekor qilinganda bo'shaydi).
- * Kiritish — direktor va buxgalteriya; tahrir va bekor qilish — faqat direktor (action'da tekshiriladi).
+ * Kiritish, tahrir, kamaytirish va bekor qilish — direktor va buxgalteriya (`OPENING_WRITERS`, action'da tekshiriladi).
  */
 
 export const OPENING_REF = "OpeningBalance";
@@ -99,7 +99,7 @@ export async function createOpeningTx(tx: Tx, input: OpeningInput, userId: strin
   const exists = await tx.openingBalance.findUnique({ where: { activeKey: key }, select: { amount: true, qty: true, date: true } });
   if (exists) {
     const what = input.kind === "STOCK" ? `${Number(exists.qty ?? 0)} birlik` : money(Number(exists.amount));
-    throw new OpeningError(`Bu obyektga boshlang'ich qoldiq allaqachon kiritilgan (${what}, ${exists.date.toLocaleDateString("ru-RU")} holatiga). O'zgartirish kerak bo'lsa — direktor ro'yxatdan tahrirlaydi`);
+    throw new OpeningError(`Bu obyektga boshlang'ich qoldiq allaqachon kiritilgan (${what}, ${exists.date.toLocaleDateString("ru-RU")} holatiga). O'zgartirish kerak bo'lsa — ro'yxatdan tahrirlang yoki kamaytiring`);
   }
   const note = input.note?.trim() || null;
   const base = { kind: input.kind, date: input.date, note, activeKey: key, createdById: userId };
@@ -174,7 +174,7 @@ export type OpeningPatch = { date: Date; amount?: number; qty?: number | null; u
 type OpeningRecord = NonNullable<Awaited<ReturnType<typeof db.openingBalance.findUnique>>>;
 
 /**
- * Tahrir (faqat direktor): summa/sana/izoh. Bog'langan hujjat ham moslanadi:
+ * Tahrir: summa/sana/izoh. Bog'langan hujjat ham moslanadi:
  * mijoz schyoti summasi (to'langanidan kam bo'lmaydi), kassa yozuvi, sklad — tuzatuvchi harakat.
  * `patch` funksiya bo'lsa — qulf ostida qayta o'qilgan yozuvdan hisoblanadi (kamaytirish ikki marta bosilsa ham to'g'ri).
  */
@@ -252,7 +252,7 @@ export async function updateOpening(id: string, patchOf: OpeningPatch | ((o: Ope
 }
 
 /**
- * Mijoz / yetkazuvchi qoldig'ini `by` so'mga kamaytirish (faqat direktor): qarz ham, avans ham moduli bo'yicha kamayadi.
+ * Mijoz / yetkazuvchi qoldig'ini `by` so'mga kamaytirish: qarz ham, avans ham moduli bo'yicha kamayadi.
  * To'langan qismidan pastga tushmaydi (`updateOpening` tekshiradi); to'liq olib tashlash — bekor qilish.
  */
 export async function reduceOpening(id: string, by: number, reason: string | null, userId: string): Promise<{ error?: string }> {
@@ -267,7 +267,7 @@ export async function reduceOpening(id: string, by: number, reason: string | nul
 }
 
 /**
- * Bekor qilish (faqat direktor, sabab bilan). Yozuv o'chirilmaydi — tarix uchun qoladi, faol kaliti bo'shaydi
+ * Bekor qilish (sabab bilan). Yozuv o'chirilmaydi — tarix uchun qoladi, faol kaliti bo'shaydi
  * (keyin to'g'ri qoldiqni qayta kiritish mumkin). Bog'langan hujjat ham qaytariladi.
  */
 export async function cancelOpening(id: string, reason: string, userId: string): Promise<{ error?: string }> {

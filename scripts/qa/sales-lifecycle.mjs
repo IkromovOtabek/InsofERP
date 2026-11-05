@@ -143,8 +143,8 @@ check("D1 logist (zayavkani faqat ko'radi) createOrder → 403 (500 emas)", r.st
 check("D2 ruxsatsiz mijoz ochilmadi", !q1(`select id from "Customer" where name='QA ruxsatsiz'`));
 r = await sklad.action("receipts/actions#stornoReceipt", ["yoq-id", "QA sabab"], "/receipts/yoq-id");
 check("D3 sklad stornoReceipt (faqat direktor) → 403", r.status === 403, `${r.status} ${r.text.slice(0, 120)}`);
-r = await buh.action("settings/boshlangich-qoldiq/actions#cancelOpeningAction", ["nonexistent", "sabab"], "/settings/boshlangich-qoldiq");
-check("D4 buxgalter qoldiqni bekor qila olmaydi (faqat direktor) → 403", r.status === 403, `${r.status}`);
+r = await sotuv.action("settings/boshlangich-qoldiq/actions#cancelOpeningAction", ["nonexistent", "sabab"], "/settings/boshlangich-qoldiq");
+check("D4 sotuvchi qoldiqni o'chira olmaydi (direktor va buxgalteriya) → 403", r.status === 403, `${r.status}`);
 r = await sotuv.action("orders/actions#confirmOrder", ["yoq-id"], "/orders");
 check("D5 mavjud bo'lmagan zayavka — o'zbekcha xato (500 emas)", r.status === 200 && /topilmadi/.test(r.result?.error ?? ""), `${r.status} ${JSON.stringify(r.result)}`);
 
