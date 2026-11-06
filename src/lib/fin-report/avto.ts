@@ -11,7 +11,8 @@ import { tripPayKm } from "@/lib/trip-summary";
  *  - yoqilg'i normasi — transport kartasidagi norma × km + soat (dizel litr, metan m³); berilgan — `FuelLog`;
  *  - ish haqi — reys haqi (`Trip.payAmount`) + «Haydovchi haqi» transport xarajati; remont / zapchast / boshqa — `TransportExpense`;
  *  - daromad — zayavka dastavka haqi reyslarga hajm ulushida bo'linadi;
- *  - dispetcherning qo'lda yozuvi (`LogisticsEntry`, reys tizimga tushmagan ish) — haydovchi haqi ish haqiga, kirim daromadga;
+ *  - dispetcherning qo'lda yozuvi (`LogisticsEntry`, reys tizimga tushmagan ish) — reys/km/baraban soati va normasi,
+ *    haydovchi haqi ish haqiga, kirim daromadga (zapravka va xarajati `FuelLog` / `TransportExpense` da);
  *  - nazorat: kassadan chiqqan (izohda shu mashina raqami yozilgan chiqim) va mexanik so'rovlari (to'langan) farqi.
  */
 
@@ -53,7 +54,7 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
     db.mechanicRequest.findMany({ where: { status: "PAID", paidAt: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, paidAt: true, amount: true } }),
     db.cashTransaction.findMany({ where: { cancelledAt: null, type: "EXPENSE", date: inMonth }, select: { date: true, amount: true, note: true, counterparty: true, subCategory: true } }),
     db.goodsReceipt.findMany({ where: { cancelledAt: null, date: inMonth, carrier: { not: null } }, select: { carrier: true } }),
-    db.logisticsEntry.findMany({ where: { cancelledAt: null, date: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, date: true, payAmount: true, revenue: true } }),
+    db.logisticsEntry.findMany({ where: { cancelledAt: null, date: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, date: true, payAmount: true, revenue: true, trips: true, km: true, drumHours: true } }),
   ]);
 
   // Dastavka haqi zayavkaning barcha reyslariga hajm ulushida
@@ -126,9 +127,18 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
     else r.other += a;
   }
   for (const e of manual) {
-    if (!vById.has(e.vehicleId!)) continue;
-    const r = row(e.vehicleId!), d = day(e.date), pay = Number(e.payAmount ?? 0), rev = Number(e.revenue ?? 0);
+    const v = vById.get(e.vehicleId!); if (!v) continue;
+    const r = row(v.id), d = day(e.date), pay = Number(e.payAmount ?? 0), rev = Number(e.revenue ?? 0);
+    const km = Number(e.km ?? 0), hours = Number(e.drumHours ?? 0);
     r.pay += pay; r.revenue += rev; d.pay += pay; d.revenue += rev;
+    r.trips += e.trips; r.km += km; r.hours += hours; d.trips += e.trips; d.km += km;
+    // Norma — reysdagidek (hisob varag'i bilan bir xil)
+    if (km || hours) {
+      const main = tripFuelNorm(v, km, hours);
+      if (v.fuelType === "METHANE") r.gasNorm = addNorm(r.gasNorm, main);
+      else r.dtNorm = addNorm(r.dtNorm, main);
+      if (v.fuelType === "DIESEL_METHANE") r.gasNorm = addNorm(r.gasNorm, tripFuelNorm({ fuelNormL100: v.gasNormPer100, idleNormPerHour: v.gasIdlePerHour }, km, hours));
+    }
   }
   for (const m of mech) { const r = row(m.vehicleId!), a = Number(m.amount); r.mechanic += a; day(m.paidAt!).mechanic += a; }
 

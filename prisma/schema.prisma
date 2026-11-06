@@ -1945,13 +1945,18 @@ model FuelLog {
   cancelledById String?
   cancelReason  String?
 
-  vehicle Vehicle   @relation(fields: [vehicleId], references: [id])
-  driver  Employee? @relation(fields: [driverId], references: [id])
-  trip    Trip?     @relation(fields: [tripId], references: [id])
+  // Hisob varag'idagi qo'lda qator bilan birga yozilgan zapravka (qator bekor qilinsa — bu ham)
+  entryId       String?
+
+  vehicle Vehicle         @relation(fields: [vehicleId], references: [id])
+  driver  Employee?       @relation(fields: [driverId], references: [id])
+  trip    Trip?           @relation(fields: [tripId], references: [id])
+  entry   LogisticsEntry? @relation(fields: [entryId], references: [id])
 
   @@index([date])
   @@index([vehicleId, date])
   @@index([tripId])
+  @@index([entryId])
 }
 
 /// Transport xarajati (yoqilg'idan tashqari): haydovchi haqi, yo'l, ta'mir, jarima...
@@ -1972,12 +1977,17 @@ model TransportExpense {
   cancelledById String?
   cancelReason  String?
 
-  vehicle Vehicle?  @relation(fields: [vehicleId], references: [id])
-  driver  Employee? @relation(fields: [driverId], references: [id])
-  trip    Trip?     @relation(fields: [tripId], references: [id])
+  // Hisob varag'idagi qo'lda qator bilan birga yozilgan xarajat (qator bekor qilinsa — bu ham)
+  entryId       String?
+
+  vehicle Vehicle?        @relation(fields: [vehicleId], references: [id])
+  driver  Employee?       @relation(fields: [driverId], references: [id])
+  trip    Trip?           @relation(fields: [tripId], references: [id])
+  entry   LogisticsEntry? @relation(fields: [entryId], references: [id])
 
   @@index([date])
   @@index([tripId])
+  @@index([entryId])
 }
 
 /// Dispetcherning qo'lda yozuvi (Logistika → Haydovchilar tabeli → «Qo'lda yozuvlar»): reys tizimga tushmagan ish
@@ -2006,10 +2016,18 @@ model LogisticsEntry {
   cancelledAt       DateTime?
   cancelledById     String?
   cancelReason      String?
+  // Hisob varag'i qatori (dispetcher Excel'i): ECO'ga tushmagan reys — qayerdan/qayerga, yuk, baraban soati, kirim turi
+  pickup            String?
+  dropoff           String?
+  cargo             String?
+  drumHours         Decimal?           @db.Decimal(5, 2)
+  revenueType       LedgerRevenueType?
 
-  driver    Employee? @relation(fields: [driverId], references: [id])
-  vehicle   Vehicle?  @relation(fields: [vehicleId], references: [id])
-  createdBy User      @relation("LogisticsEntryBy", fields: [createdById], references: [id])
+  driver    Employee?          @relation(fields: [driverId], references: [id])
+  vehicle   Vehicle?           @relation(fields: [vehicleId], references: [id])
+  createdBy User               @relation("LogisticsEntryBy", fields: [createdById], references: [id])
+  fuelLogs  FuelLog[]
+  expenses  TransportExpense[]
 
   @@index([date])
   @@index([driverId, date])
@@ -3087,6 +3105,13 @@ model MechanicRequest {
 enum DriverPayType {
   CASH // naqd — tasdiqdan keyin kassa beradi (kassa chiqimi)
   PAYROLL // oylik — tasdiqdan keyin oy yakuni vedomostiga tushadi
+}
+
+/// Qo'lda yozuv kirimi qayerga tushgan — hisob varag'idagi «Bajarilgan» ustunlari
+enum LedgerRevenueType {
+  BANK // P/R — perechisleniye
+  CASH // N/L — naqd
+  OBJECT // obyektda olingan
 }
 
 enum MechanicTarget {

@@ -116,6 +116,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "driver_login", label: "Haydovchiga kirish berish (vaqtinchalik parol)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Faqat haydovchi roli; parol 72 soat amal qiladi, haydovchi kirishda o'z parolini qo'yadi" },
     { key: "pay",      label: "Reys narxi, to'lov turi, haydovchi tarifi va usta puli (tabel)", roles: ["DISPATCHER"], hint: "Narx va usta puli ish boshqaruvchi tasdig'iga boradi" },
     { key: "pay_approve", label: "Reys haqini tasdiqlash (naqd → kassa, oylik → vedomost)", roles: ["SUPERVISOR"] },
+    { key: "ledger",   label: "Hisob varag'i: qo'lda qator, km va baraban soatini tuzatish", roles: ["LOGISTICS", "DISPATCHER"], hint: "ECO'ga tushmagan reys qatori (zapravka, xarajat bilan); haq ish boshqaruvchi tasdig'iga boradi" },
     { key: "real_auto", label: "Realizatsiya: reysdan tushgan qatorni to'ldirish (ortilgan joy, manzil, izoh)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Qatorlar reyslardan (TTN) o'zi tushadi; miqdor, narx va mijoz zayavkadan — ular o'zgarmaydi" },
     { key: "real_manual", label: "Realizatsiya: qo'lda qator kiritish, tuzatish, bekor qilish", roles: ["LOGISTICS", "DISPATCHER"], hint: "Tizimga reys bo'lib tushmagan jo'natma. Faqat reestr — mijoz qarzi, kassa va skladga ta'sir qilmaydi" },
     { key: "settings", label: "Logistika sozlamalari",           roles: ["LOGISTICS"] },

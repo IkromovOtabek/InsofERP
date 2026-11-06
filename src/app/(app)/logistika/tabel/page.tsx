@@ -9,14 +9,15 @@ import { normMonth } from "@/lib/attendance-report";
 import { monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { driverTariff, fuelNormText, PAY_TYPE_LABEL, payTrips, pendingApprovalWhere, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
 import { MASTER_PROBLEMS, MECH_STATUS_COLOR, MECH_STATUS_LABEL } from "@/lib/mechanic-requests";
-import { driverLedger, fuelBalances } from "@/lib/driver-ledger";
-import { driverEmployees } from "@/lib/logistics";
+import { driverLedger, fuelBalances, ledgerTotals } from "@/lib/driver-ledger";
+import { driverEmployees, mainDriverOf } from "@/lib/logistics";
 import { avtoReport } from "@/lib/fin-report/avto";
 import { entryRows, pendingEntryWhere, type EntryRow } from "@/lib/logistics-entry";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
-import { Badge, Button, Callout, Card, CardHeader, Empty, PageHeader, Section, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { AllCheck, ApproveButton, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
+import { LedgerRowForm, type LedgerOptions } from "./ledger-forms";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { ExpenseForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
@@ -121,7 +122,8 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
  * Haydovchilar tabeli (dispetcher): yetkazilgan har reys o'zi tushadi — km, obyektda kutish, mikser aylantirish,
  * ishlagan soat, yoqilg'i normasi va tarif bo'yicha taklif. Dispetcher narx qo'yadi; narxsizlari tepada alohida
  * (har 12 soatda eslatma). Narxlangan reyslar oy yakunida Ish haqi vedomostiga «Reyslar» bo'lib tushadi.
- * «Hisob varag'i» (`?view=hisob`) — dispetcher Excel'i: gaz qoldig'i/zapravka/sarf, xarajatlar, dastavka daromadi, foyda.
+ * «Hisob varag'i» (`?view=hisob`) — dispetcher Excel'i, mashina bo'yicha varaq (tab): gaz qoldig'i/zapravka/sarf, xarajatlar,
+ * dastavka daromadi, foyda. Reyslar ECO'dan o'zi tushadi, tushmagani — qo'lda qator (logistika va dispetcher, `ledger`).
  * «Oylik hisoblash» — BARCHA faol haydovchi va transport (reysi yo'q, ECO'ga ulanmagani ham); «Qo'lda yozuvlar» — reys tizimga
  * tushmagan ish, haq, kirim (`lib/logistics-entry.ts`) va transport chiqimi.
  */
@@ -141,18 +143,13 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const bolim: SectionKey = (SECTIONS as readonly string[]).includes(sp.bolim ?? "") ? (sp.bolim as SectionKey)
     : sp.view === "hisob" ? "hisob" : sp.driver ? "reyslar" : "narxsiz";
   const view = bolim === "hisob" ? "hisob" : "tabel";
-  const filtered = !!(sp.driver || sp.transport);
-  const [unpriced, monthTrips, tariff, full, filteredLedger, monthVehicles, pending, masters, vehicles, payees] = await Promise.all([
+  const canLedger = canDo(s, "logistika", "ledger");
+  const [unpriced, monthTrips, tariff, full, pending, masters, vehicles, payees] = await Promise.all([
     payTrips(unpricedWhere()),
     payTrips({ status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) }, 3000),
     driverTariff(),
     // Yoqilg'i qoldig'i mashina bo'yicha — oyning hamma reysidan (haydovchi filtri qoldiqni buzmasin)
     driverLedger(from, to),
-    view === "hisob" && filtered ? driverLedger(from, to, { driverId: sp.driver, vehicleId: sp.transport }) : null,
-    view === "hisob"
-      ? db.trip.groupBy({ by: ["vehicleId"], where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) } })
-        .then((g) => db.vehicle.findMany({ where: { id: { in: g.map((x) => x.vehicleId) } }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }))
-      : [],
     payTrips(pendingApprovalWhere()),
     // Usta puli: muddatlilari va ochiqlari hammasi, yopilganlari — oxirgi 30 kun
     db.mechanicRequest.findMany({
@@ -177,13 +174,24 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   ]);
   const liveEntries = monthEntries.filter((e) => !e.cancelledAt);
 
-  const ledger = view === "hisob" ? filteredLedger ?? full : null;
+  // Hisob varag'i: mashina varag'i (tab) — butun hisobdan filtr (qoldiq baribir mashina bo'yicha hisoblangan)
+  const ledgerRows = view === "hisob" ? full.rows.filter((r) => (!sp.transport || r.vehicleId === sp.transport) && (!sp.driver || r.driverId === sp.driver)) : [];
+  const ledger = view === "hisob" ? { rows: ledgerRows, total: ledgerTotals(ledgerRows) } : null;
+  const ledgerOpts: LedgerOptions | null = view === "hisob" ? await ledgerOptions(canLedger) : null;
+  // Tablar: faol o'z transporti va shu oyda qatori borlari (ko'chadan mashina ham)
+  const sheetCount = new Map<string, number>();
+  for (const r of full.rows) if (!sp.driver || r.driverId === sp.driver) sheetCount.set(r.vehicleId, (sheetCount.get(r.vehicleId) ?? 0) + 1);
+  const sheetTabs = ledgerOpts ? [...new Map([
+    ...ledgerOpts.vehicles.map((v) => [v.id, v.plate] as const),
+    ...full.rows.filter((r) => sheetCount.has(r.vehicleId)).map((r) => [r.vehicleId, r.plate] as const),
+  ])].sort((a, b) => a[1].localeCompare(b[1])) : [];
   const balOf: BalMap = new Map(full.rows.map((r) => [r.id, { after: r.balAfter, unit: r.unit }]));
   const balances = fuelBalances(full.rows);
   const balById = new Map(balances.map((b) => [b.vehicleId, b]));
   // Haydovchi oxirgi yurgan mashinalari (yangisi oldin) — jadvaldagi qoldiq ustuni uchun
   const driverVehicles = new Map<string, string[]>();
   for (const r of [...full.rows].reverse()) {
+    if (!r.driverId) continue;
     const list = driverVehicles.get(r.driverId) ?? [];
     if (!list.includes(r.vehicleId)) list.push(r.vehicleId);
     driverVehicles.set(r.driverId, list);
@@ -451,23 +459,15 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         {balances.length === 0 && <Card><Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /></Card>}
       </Section>}
 
-      {/* ── Hisob varag'i (dispetcher Excel'i ko'rinishida) ── */}
-      {bolim === "hisob" && ledger && <Section title={monthTitleText} className="mt-0" action={monthNav}>
-          <>
-            <form method="get" action="/logistika/tabel" className="mb-3 flex flex-wrap items-center gap-2">
-              <input type="hidden" name="oy" value={month} />
-              <input type="hidden" name="bolim" value="hisob" />
-              {sp.driver && <input type="hidden" name="driver" value={sp.driver} />}
-              <Select name="transport" defaultValue={sp.transport ?? ""} className="w-56" aria-label="Transport">
-                <option value="">Hamma transport</option>
-                {monthVehicles.map((v) => <option key={v.id} value={v.id}>{v.plate}</option>)}
-              </Select>
-              <Button type="submit" variant="secondary">Ko&apos;rsatish</Button>
-            </form>
-            {ledger.rows.length === 0 ? <Card><Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /></Card>
-              : <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked}
-                file={`Haydovchi tabeli ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${monthVehicles.find((v) => v.id === sp.transport)?.plate ?? ""}` : ""}`} />}
-          </>
+      {/* ── Hisob varag'i (dispetcher Excel'i ko'rinishida): har mashina — alohida varaq ── */}
+      {bolim === "hisob" && ledger && ledgerOpts && <Section title={monthTitleText} className="mt-0" action={monthNav}>
+        <Tabs scroll={false} current={sp.transport ?? "all"} className="[&_a]:tabular" items={[
+          { key: "all", label: "Hammasi", href: qs({ transport: null }), count: [...sheetCount.values()].reduce((a, n) => a + n, 0) },
+          ...sheetTabs.map(([id, plate]) => ({ key: id, label: plate, href: qs({ transport: id }), ...(sheetCount.get(id) ? { count: sheetCount.get(id) } : {}) })),
+        ]} />
+        <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger}
+          file={`Hisob varag'i ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
+        {canLedger && <div className="mt-3"><LedgerRowForm options={ledgerOpts} vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
       </Section>}
 
       {/* ── Reyslar va narx: haydovchilar bo'yicha oy, haydovchi tanlansa — uning reyslari ── */}
@@ -710,4 +710,37 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       </Section>}
     </div>
   );
+}
+
+/**
+ * Hisob varag'i: tab va qo'lda qator formasi uchun — faol o'z transporti (asosiy haydovchi, yoqilg'i normasi, oxirgi
+ * zapravka narxi), haydovchilar va oldingi qo'lda qatorlardagi joy/yuk nomlari (taklif ro'yxati).
+ */
+async function ledgerOptions(withForm: boolean): Promise<LedgerOptions> {
+  const [list, drivers, recent, sites, prices] = await Promise.all([
+    db.vehicle.findMany({
+      where: { isActive: true, external: false, hiddenAt: null }, orderBy: { plate: "asc" },
+      select: { id: true, plate: true, mainDriverId: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true, drivers: { where: { isActive: true }, select: { id: true } } },
+    }),
+    withForm ? driverEmployees({ activeOnly: true }) : Promise.resolve([]),
+    withForm ? db.logisticsEntry.findMany({ where: { cancelledAt: null, OR: [{ pickup: { not: null } }, { dropoff: { not: null } }, { cargo: { not: null } }] }, orderBy: { createdAt: "desc" }, take: 300, select: { pickup: true, dropoff: true, cargo: true } }) : Promise.resolve([]),
+    withForm ? db.site.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true }, take: 500 }) : Promise.resolve([]),
+    withForm ? db.fuelLog.findMany({ where: { cancelledAt: null, pricePerL: { gt: 0 } }, orderBy: { date: "desc" }, distinct: ["fuelType"], select: { fuelType: true, pricePerL: true } }) : Promise.resolve([]),
+  ]);
+  const price = new Map(prices.map((p) => [p.fuelType, Number(p.pricePerL)]));
+  const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x?.trim()))].slice(0, 200);
+  return {
+    vehicles: list.map((v) => {
+      const dual = v.fuelType === "DIESEL_METHANE", gas = dual || v.fuelType === "METHANE";
+      return {
+        id: v.id, plate: v.plate, driverId: mainDriverOf(v)?.id ?? null, unit: gas ? "m³" : "l",
+        per100: Number((dual ? v.gasNormPer100 : v.fuelNormL100) ?? 0), perHour: Number((dual ? v.gasIdlePerHour : v.idleNormPerHour) ?? 0),
+        lastPrice: price.get(gas ? "METHANE" : v.fuelType ?? "DIESEL") ?? null,
+      };
+    }),
+    drivers: drivers.map((d) => ({ id: d.id, name: d.fullName })),
+    pickups: uniq(["Zavod", ...recent.map((r) => r.pickup)]),
+    dropoffs: uniq([...recent.map((r) => r.dropoff), ...sites.map((x) => x.name)]),
+    cargos: uniq(recent.map((r) => r.cargo)),
+  };
 }

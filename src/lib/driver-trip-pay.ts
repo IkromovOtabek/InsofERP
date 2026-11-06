@@ -128,6 +128,30 @@ export async function snapshotTripPay(tripId: string, opts: { notify?: boolean }
   }
 }
 
+/**
+ * Hisob varag'ida ECO bermagan (yoki xato) km va baraban soatini dispetcher qo'lda yozadi: `payKm` va `workHours`.
+ * Narxi hali qo'yilmagan reysda taklif ham yangi km bilan qayta hisoblanadi; narxlangan reys summasi o'zgarmaydi.
+ */
+export async function fixTripKmHours(tripId: string, input: { km: number | null; hours: number | null }, userId: string): Promise<{ error?: string }> {
+  const t = await db.trip.findUnique({
+    where: { id: tripId },
+    select: { status: true, payKm: true, workHours: true, waitMin: true, pricedAt: true, paySuggested: true, vehicle: { select: { type: true } } },
+  });
+  if (!t) return { error: "Reys topilmadi" };
+  if (t.status !== "DELIVERED") return { error: "Faqat yetkazilgan reys tuzatiladi" };
+  if (input.km == null && input.hours == null) return { error: "Km yoki baraban soatini yozing" };
+  const data: { payKm?: number; workHours?: number; paySuggested?: number } = {};
+  if (input.km != null) data.payKm = Math.round(input.km * 10) / 10;
+  if (input.hours != null) data.workHours = Math.round(input.hours * 100) / 100;
+  if (!t.pricedAt && data.payKm != null) data.paySuggested = suggestPay(await driverTariff(), data.payKm, t.waitMin, t.vehicle.type === "MIXER");
+  const before = { payKm: t.payKm, workHours: t.workHours, paySuggested: t.paySuggested };
+  await db.$transaction(async (tx) => {
+    await tx.trip.update({ where: { id: tripId }, data });
+    await audit(tx, userId, "UPDATE", "Trip", tripId, before, { ...data, reason: "Hisob varag'i: km / baraban soati qo'lda" });
+  });
+  return {};
+}
+
 /** Narxsiz reyslar (dispetcher ro'yxati va eslatmasi) — eskisi oldin. */
 export function unpricedWhere(driverId?: string) {
   return { status: "DELIVERED" as const, pricedAt: null, deliveredAt: { gte: PAY_SINCE }, ...(driverId ? { driverId } : {}) };

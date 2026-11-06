@@ -4,14 +4,15 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireAction } from "@/lib/auth";
+import { getSession, requireAction } from "@/lib/auth";
+import { canDo } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 import { parseForm, type ActionState } from "@/lib/action";
 import {
   addExpenseRecord, addFuelRecord, addVehicleServiceRecord, cancelExpenseRecord, cancelFuelRecord, cancelVehicleServiceRecord,
   driverCardSchema, expenseSchema, fuelSchema, saveDriverCardRecord, saveSiteRecord, saveVehicleRecord, serviceSchema, siteSchema, vehicleSchema,
 } from "@/lib/logistics-admin";
-import { approveTripPays, PAY_TYPES, priceTrip, priceTripsBySuggestion, rejectTripPay } from "@/lib/driver-trip-pay";
+import { approveTripPays, fixTripKmHours, PAY_TYPES, priceTrip, priceTripsBySuggestion, rejectTripPay } from "@/lib/driver-trip-pay";
 import { createMechanicRequest, MASTER_PROBLEMS } from "@/lib/mechanic-requests";
 import { approveLogisticsEntries, cancelLogisticsEntry, createLogisticsEntry, entrySchema, rejectLogisticsEntry } from "@/lib/logistics-entry";
 import { driverTempLoginCore } from "@/lib/kadr-employee";
@@ -266,12 +267,48 @@ export async function createEntryAction(_prev: ActionState, fd: FormData): Promi
   return { ok: true, note: `${res.docNo} yozildi${r.data.payAmount ? " — haq ish boshqaruvchi tasdig'ini kutmoqda" : ""}` };
 }
 
+/** Bekor qilish: «Qo'lda yozuvlar» (dispetcher, `pay`) yoki hisob varag'i qatori (logistika ham, `ledger`). */
 export async function cancelEntryAction(id: string, reason: string): Promise<ActionState> {
-  const s = await requireAction("logistika", "pay");
+  const cur = await getSession();
+  const s = cur && canDo(cur, "logistika", "ledger") ? cur : await requireAction("logistika", "pay");
   const res = await cancelLogisticsEntry(id, String(reason ?? ""), s.userId);
   if ("error" in res) return { error: res.error };
   refresh();
   return { ok: true, note: "Bekor qilindi" };
+}
+
+// ───────────────────────── Hisob varag'i (mashina varag'i): qo'lda qator, km / baraban soati ─────────────────────────
+
+/**
+ * ECO'ga tushmagan reys qatori — Excel'dagidek: qayerdan/qayerga, yuk, km, baraban, zapravka, haq, xarajat, kirim.
+ * Bitta `LogisticsEntry` + zapravka (`FuelLog`) + xarajatlar (`TransportExpense`) — `lib/logistics-entry.ts`.
+ */
+export async function createLedgerRowAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "ledger");
+  const r = parseForm(entrySchema, fd);
+  if ("error" in r) return { error: r.error };
+  if (!r.data.vehicleId) return { error: "Transportni tanlang" };
+  if ((r.data.revenue ?? 0) > 0 && !r.data.revenueType) return { error: "Kirim turini tanlang: P/R, N/L yoki obyekt" };
+  const res = await createLogisticsEntry(r.data, s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true, note: `${res.docNo} qo'shildi${r.data.payAmount ? " — haq ish boshqaruvchi tasdig'ini kutmoqda" : ""}` };
+}
+
+const kmFixSchema = z.object({
+  km: z.preprocess((v) => (String(v ?? "").trim() === "" ? null : Number(String(v).replace(",", "."))), z.number({ message: "Km raqam bo'lsin" }).min(0).max(5000, "Km juda katta").nullable()),
+  hours: z.preprocess((v) => (String(v ?? "").trim() === "" ? null : Number(String(v).replace(",", "."))), z.number({ message: "Soat raqam bo'lsin" }).min(0).max(24, "Soat 24 dan oshmaydi").nullable()),
+});
+
+/** ECO bermagan km / baraban soatini reysga qo'lda yozish (`fixTripKmHours`, AuditLog'da). */
+export async function fixTripKmAction(tripId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "ledger");
+  const r = parseForm(kmFixSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await fixTripKmHours(tripId, r.data, s.userId);
+  if (res.error) return { error: res.error };
+  refresh();
+  return { ok: true };
 }
 
 /** Ish boshqaruvchi: qo'lda yozilgan haqni tasdiqlash (naqd — kassaga, oylik — vedomostga). */
