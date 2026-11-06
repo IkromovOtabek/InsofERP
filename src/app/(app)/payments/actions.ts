@@ -6,8 +6,10 @@ import { redirect } from "next/navigation";
 import { requireAction } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { addPayment, linkPaymentToInvoice, reversePayment } from "@/lib/payments";
-import { num, numMoney, parseDate, str } from "@/lib/excel";
-import { deleteRegisterBatch, importSalesRegister, type RegisterRow } from "@/lib/sales-register";
+import type { ValueMaps } from "@/lib/excel";
+import { isoDate } from "@/lib/format";
+import { importCashEntries, type CashImportRow } from "@/lib/cash-import";
+import { deleteRegisterBatch } from "@/lib/sales-register";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 
 const schema = z.object({
@@ -54,79 +56,33 @@ export async function stornoPayment(paymentId: string, reason: string): Promise<
   return { ok: true, note: "Bekor qilindi" };
 }
 
-/* ───────── Realizatsiya jurnali (Excel import) ───────── */
-
-const importSchema = z.object({
-  rows: zStr("Excel qatorlari yo'q"),
-  cashAccountId: zStr("Naqd kassa tanlanmagan"),
-  bankAccountId: zStr("Bank hisobi tanlanmagan"),
-  dateOrder: z.enum(["dmy", "mdy"]).default("dmy"),
-  toCash: z.string().optional(),
-  createMissing: z.string().optional(),
-});
-
-/** Fayldagi bitta qator — kalitlar `payments/import` sahifasidagi maydon nomlari bilan bir xil. */
-type FileRow = Record<string, unknown>;
+/* ───────── Kassa jurnali (Excel import) ───────── */
 
 /**
- * Kassa/bank → "Excel orqali qo'shish": rasmdagi kunlik jo'natma jadvali jurnalga tushadi,
- * "Деньги" ustuniga qarab pul naqd kassaga yoki bank hisobiga kirim bo'lib yoziladi.
+ * Kassa / bank → «Excel orqali qo'shish»: Kassa jurnali ustunlaridagi fayl (Sana, Hisob, Kirim, Chiqim, Manba, Sub manba,
+ * Kontragent, Izoh) qo'lda kirim/chiqim bo'lib yoziladi — qoidalar `lib/cash-import.ts` da. Tugagach jurnal shu davr bilan ochiladi.
  */
-export async function importSalesRegisterFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
+export async function importCashJournalFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("payments", "import");
-  const r = parseForm(importSchema, fd);
-  if ("error" in r) return { error: r.error };
-  const d = r.data;
-
-  let file: FileRow[];
-  try { file = JSON.parse(d.rows); } catch { return { error: "Excel ma'lumotlari o'qilmadi" }; }
-  file = file.filter((x) => str(x.customer) || str(x.productName));
-  if (!file.length) return { error: "Faylda qator yo'q" };
-
-  const monthFirst = d.dateOrder === "mdy";
-  const rows: RegisterRow[] = [];
-  for (const [i, x] of file.entries()) {
-    const no = i + 1;
-    const date = parseDate(x.date, monthFirst);
-    if (!date) return { error: `${no}-qator: sana o'qilmadi ("${str(x.date)}") — "Sana tartibi"ni tekshiring` };
-    const customer = str(x.customer);
-    if (!customer) return { error: `${no}-qator: mijoz (Kimga) bo'sh` };
-    const productName = str(x.productName);
-    if (!productName) return { error: `${no}-qator (${customer}): mahsulot nomi bo'sh` };
-    const qty = num(x.qty);
-    if (!(qty > 0)) return { error: `${no}-qator (${customer}): miqdor 0 dan katta raqam bo'lsin` };
-    // Pul ustunlari bo'sh bo'lishi mumkin (hisoblanadi), lekin yozilgani raqam bo'lsin
-    const money: Record<string, number | undefined> = {};
-    for (const k of ["price", "sum", "nds", "totalSum", "deliverySum"]) {
-      if (str(x[k]) === "") continue;
-      const v = numMoney(x[k]);
-      if (!Number.isFinite(v)) return { error: `${no}-qator (${customer}): "${k}" ustunida raqam emas ("${str(x[k])}")` };
-      if (v < 0) return { error: `${no}-qator (${customer}): "${k}" manfiy (${str(x[k])}) — qaytarish/tuzatish qatorlari importda qabul qilinmaydi` };
-      money[k] = v;
+  let rows: unknown;
+  const maps: ValueMaps = {};
+  try {
+    rows = JSON.parse(String(fd.get("rows") ?? "[]"));
+    const raw: unknown = JSON.parse(String(fd.get("valueMaps") || "{}"));
+    for (const key of ["account", "manba"]) {
+      const m = (raw as Record<string, unknown>)?.[key];
+      if (m && typeof m === "object") maps[key] = Object.fromEntries(Object.entries(m).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].trim() !== ""));
     }
-    rows.push({
-      date, customer, productName, qty,
-      unit: str(x.unit), vehicleNo: str(x.vehicleNo), ttn: str(x.ttn), fromWho: str(x.fromWho), payType: str(x.payType),
-      deliveryFee: money.deliverySum, price: money.price, sum: money.sum, nds: money.nds, total: money.totalSum,
-      address: str(x.address), contractNo: str(x.contractNo), invoiceNo: str(x.invoiceNo), monthNo: str(x.monthNo), note: str(x.note),
-    });
-  }
+  } catch { return { error: "Excel ma'lumotlari o'qilmadi" }; }
+  if (!Array.isArray(rows)) return { error: "Excel ma'lumotlari o'qilmadi" };
+  const list = rows.filter((x): x is CashImportRow => !!x && typeof x === "object" && !Array.isArray(x));
 
-  const out = await importSalesRegister({
-    rows,
-    cashAccountId: d.cashAccountId,
-    bankAccountId: d.bankAccountId,
-    createMissing: !!d.createMissing,
-    toCash: !!d.toCash,
-  }, s.userId).catch((e: Error) => ({ error: e.message }));
-  if ("error" in out) return out;
+  const res = await importCashEntries(list, { defaultAccountId: String(fd.get("cashAccountId") ?? ""), maps }, s.userId);
+  if ("error" in res) return { error: res.error };
+  if (!res.added) return { error: `Yangi qator yo'q: faylning ${res.skipped} ta qatori Kassa jurnalida allaqachon bor` };
 
-  revalidatePath("/payments"); revalidatePath("/cashflow"); revalidatePath("/customers"); revalidatePath("/");
-  const q = new URLSearchParams({ tab: "jurnal", batch: out.batch });
-  if (out.skipped) q.set("skipped", String(out.skipped));
-  if (out.unknownPayType) q.set("unknown", String(out.unknownPayType));
-  if (out.payments) q.set("paid", String(out.payments));
-  redirect(`/payments?${q.toString()}`);
+  revalidatePath("/payments"); revalidatePath("/cashflow"); revalidatePath("/"); revalidatePath("/moliya", "layout");
+  redirect(`/payments?tab=kassa&from=${isoDate(res.from)}&to=${isoDate(res.to)}&import=${res.added}-${res.skipped}`);
 }
 
 /**

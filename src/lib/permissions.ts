@@ -167,7 +167,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "receive_cash", label: "Naqd bosh to'lovni qabul qilish (kassa)", roles: ["CASHIER"] },
     { key: "receive_bank", label: "Perechisleniyeni tasdiqlash (bank)", roles: ["ACCOUNTING"] },
     { key: "storno", label: "To'lovni bekor qilish",           roles: ["ACCOUNTING"] },
-    { key: "import", label: "Sotuv reyestri importi",           roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
+    { key: "import", label: "Kassa jurnaliga Excel import",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   ],
   cashflow: [
     { key: "create", label: "Kirim-chiqim yozish",              roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },

@@ -19,9 +19,10 @@ import { orderTotal } from "@/lib/order-total";
  * Kassa / bank — tepada hisoblar matritsasi (qoldiq, bugun, shu oy), ostida uch ko'rinish:
  *  · Kassa jurnali — kassa va bank hisoblari bo'yicha barcha kirim/chiqim (Google jadvalidagi «Kassa» varag'i kabi);
  *  · To'lovlar — qo'lda qayd etilgan mijoz to'lovlari;
- *  · Realizatsiya jurnali — Excel'dan yuklangan kunlik jo'natma jadvali (mijoz nomi bosilsa uning sahifasi).
+ *  · Realizatsiya jurnali — avval Excel'dan yuklangan kunlik jo'natma jadvali (mijoz nomi bosilsa uning sahifasi).
+ * «Excel orqali qo'shish» — Kassa jurnali ustunlaridagi fayl kirim/chiqim bo'lib yoziladi (`payments/import`).
  */
-export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; batch?: string; skipped?: string; unknown?: string; paid?: string; account?: string; kind?: string; manba?: string; q?: string }> }) {
+export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; batch?: string; skipped?: string; unknown?: string; paid?: string; account?: string; kind?: string; manba?: string; q?: string; import?: string }> }) {
   const sp = await searchParams;
   const s = await requirePage("/payments");
   const role = s?.role ?? "";
@@ -238,7 +239,7 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
         <Card>
           <h2 className="mb-3 flex items-center gap-2 font-semibold"><FileSpreadsheet size={16} className="text-slate-400" /> Oxirgi importlar</h2>
           {imports.length === 0 ? (
-            <p className="text-sm text-slate-500">Hali Excel yuklanmagan. <Link href="/payments/import" className="font-medium text-slate-800 underline">Yuklash →</Link></p>
+            <p className="text-sm text-slate-500">Excel&apos;dan yuklangan partiya yo&apos;q.</p>
           ) : (
             <ul className="space-y-1.5 text-sm">
               {imports.map((b) => (

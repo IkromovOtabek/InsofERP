@@ -58,6 +58,9 @@ type MatrixCols = { colKey: string; rowKey: string; qtyKey: string; unitKey?: st
 /** Matritsa qanday o'qilayotgani: qator/ustun tanlovi, ustunlar ro'yxati va ustun bo'yicha yetkazish sanasi. */
 type MxState = MatrixPick & { cols: MatrixCol[]; dates: Record<number, string> };
 
+/** Jadval oxiridagi jami qatori sana katagida shunday yoziladi. */
+const TOTAL_ROW = /^(jami|итого|итог|всего|жами)\b/i;
+
 /** "Qiymatlarni moslash" jadvalining bitta qatori: fayldagi qiymat, nechta qatorda, taxmin va yakuniy tanlov ("" — yangi). */
 type VmItem = { key: string; value: string; count: number; fromGroup: boolean; suggested: string; choice: string };
 
@@ -417,8 +420,10 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const numericKeys = fields.filter((f) => /qty|price|amount|sum|nds/.test(f.key)).map((f) => f.key);
   const requiredKeys = fields.filter((f) => f.required).map((f) => f.key);
   // Majburiy maydonlari butunlay bo'sh qator — faylning ortiqcha satri (izoh, "jami", bo'sh qator):
-  // muammo emas, shunchaki import qilinmaydi — aks holda katta fayl bitta tugmani ham bloklab qo'yadi
-  const isBlank = (r: Row) => requiredKeys.length > 0 && requiredKeys.every((k) => str(r[k]) === "");
+  // muammo emas, shunchaki import qilinmaydi — aks holda katta fayl bitta tugmani ham bloklab qo'yadi.
+  // Sana katagida «Jami» / «Итого» turgan qator ham (jadval eksporti oxiridagi jami) — ma'lumot emas
+  const isBlank = (r: Row) => requiredKeys.length > 0
+    && (requiredKeys.every((k) => str(r[k]) === "") || requiredKeys.some((k) => /date$/i.test(k) && TOTAL_ROW.test(str(r[k]))));
   // Fayldagi tartib (`i`) saqlanadi — tahrirlar shu raqam bo'yicha yoziladi
   const dataRows = mapped.map((r, i) => ({ r, i })).filter((x) => !isBlank(x.r));
   const blankCount = mapped.length - dataRows.length;

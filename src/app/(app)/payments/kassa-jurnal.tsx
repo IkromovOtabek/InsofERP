@@ -4,9 +4,10 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { money, moneyShort, date, isoDate } from "@/lib/format";
-import { Badge, Button, Empty, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Empty, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { JOURNAL_ONLY, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
+import { SALES_MANBA } from "@/lib/cash-import";
 import { ExcelButton } from "../logistika/excel-button";
 
 type Account = { id: string; name: string; type: "CASH" | "BANK" };
@@ -115,7 +116,7 @@ const MAX_ROWS = 1000;
  * yozuv ko'rinadi, lekin jamiga kirmaydi. Ustunlar Google jadvalidagidek: Sana, Hisob, Kirim, Chiqim, Manba, Sub manba,
  * Kontragent, Izoh.
  */
-export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp: { from?: string; to?: string; account?: string; kind?: string; manba?: string; q?: string } }) {
+export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp: { from?: string; to?: string; account?: string; kind?: string; manba?: string; q?: string; import?: string } }) {
   const now = new Date();
   const from = new Date(sp.from || isoDate(new Date(now.getFullYear(), now.getMonth(), 1)));
   const to = new Date(sp.to || isoDate(now)); to.setHours(23, 59, 59, 999);
@@ -141,7 +142,7 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
     ...payments.map((p): JRow => ({
       id: p.id, date: p.date, createdAt: p.createdAt, accountId: p.cashAccountId, account: p.cashAccount.name, method: p.cashAccount.type,
       inc: Number(p.amount), exp: 0, transfer: false,
-      manba: "Savdo tushumi",
+      manba: SALES_MANBA,
       sub: p.invoice ? `Schyot ${p.invoice.invoiceNo}` : p.register ? "Realizatsiya" : p.orderId ? "Zayavka avansi" : "Mijoz avansi",
       who: p.customer.name, whoHref: `/customers/${p.customerId}`, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId),
       note: p.note, by: p.createdBy?.fullName ?? null, href: p.orderId && !p.invoice ? `/orders/${p.orderId}` : undefined, cancelled: null,
@@ -187,8 +188,16 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
     { Sana: "Jami", Hisob: "", Usul: "", Kirim: inc, Chiqim: exp, Manba: "perekit va bekor qilinganlarsiz", "Sub manba": null, Kontragent: null, Izoh: null, Kiritdi: null, Holat: null },
   ];
 
+  // Excel importidan qaytganda: «yozildi-o'tkazildi»
+  const [imported, dupes] = (sp.import ?? "").split("-").map((n) => Number(n) || 0);
+
   return (
     <>
+      {sp.import && (
+        <Callout tone="success" title="Excel importi">
+          {imported} ta qator Kassa jurnaliga yozildi.{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
+        </Callout>
+      )}
       <form className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <input type="hidden" name="tab" value="kassa" />
         <Input name="from" type="date" aria-label="Boshlanish sanasi" defaultValue={isoDate(from)} className="h-9 w-40" />
