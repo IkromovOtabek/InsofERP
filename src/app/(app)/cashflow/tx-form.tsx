@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Banknote, Landmark } from "lucide-react";
 import { isoDate } from "@/lib/format";
 import { createCashTx } from "./actions";
@@ -11,9 +11,10 @@ import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, type CashMethod } 
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
 import { QuickAdd, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
-import { quickAddCashCategory, quickAddProject } from "@/lib/quick-add-actions";
+import { quickAddCashCategory, quickAddLoan, quickAddProject } from "@/lib/quick-add-actions";
 
 type Opt = { id: string; name: string };
+type LoanOpt = Opt & { kind: "BANK" | "BORROWED" | "LENT" };
 type Acc = Opt & { type?: CashMethod };
 
 /**
@@ -21,14 +22,15 @@ type Acc = Opt & { type?: CashMethod };
  * `canPerekit` — Chiqim kategoriyalarida «Perekit»: o'z hisoblarimiz orasida o'tkazma (chiqim emas, `lib/cash-transfer.ts`).
  * «Naqd / Bank» — to'lov usuli: hisob ro'yxatini shu turdagi hisoblarga toraytiradi (usul hisob turidan olinadi).
  * Kategoriya — «Manba → Sub manba» daraxti (`CashCategory`); manba loyiha yoki kredit so'rasa, qo'shimcha tanlov chiqadi.
- * `canAdd` — manba, sub manba, loyiha va yetkazuvchi tanlovlari yonida «+»: ro'yxatda yo'g'i shu yerning o'zida qo'shiladi
+ * `canAdd` — manba, sub manba, loyiha, kredit / qarz va yetkazuvchi tanlovlari yonida «+»: ro'yxatda yo'g'i shu yerning o'zida qo'shiladi
  * va darhol tanlanadi (sahifa yangilanguncha mahalliy ro'yxatga ham qo'shib turiladi).
  */
 export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, clientToken = "" }: {
   accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: CategoryOption[]; expenseCats: CategoryOption[];
-  projects?: Opt[]; loans?: (Opt & { kind: "BANK" | "BORROWED" | "LENT" })[]; canPerekit?: boolean; canAdd?: boolean; clientToken?: string;
+  projects?: Opt[]; loans?: LoanOpt[]; canPerekit?: boolean; canAdd?: boolean; clientToken?: string;
 }) {
   const [state, action, pending] = useActionState(createCashTx, undefined);
+  const formRef = useRef<HTMLFormElement>(null);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   // Saqlangandan keyin maydonlar qayta mount qilinadi — summa (MoneyInput) ham, tanlovlar ham to'liq tozalanadi
   const [formKey, setFormKey] = useState(0);
@@ -36,15 +38,16 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   const [category, setCategory] = useState("");
   const [sub, setSub] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [loanId, setLoanId] = useState("");
   // «+» bilan qo'shilganlar — sahifa ma'lumoti yangilanguncha ham ro'yxatda tursin
-  const [added, setAdded] = useState<{ cats: (CategoryOption & { type: "INCOME" | "EXPENSE" })[]; subs: Record<string, string[]>; projects: Opt[]; suppliers: Opt[] }>({ cats: [], subs: {}, projects: [], suppliers: [] });
+  const [added, setAdded] = useState<{ cats: (CategoryOption & { type: "INCOME" | "EXPENSE" })[]; subs: Record<string, string[]>; projects: Opt[]; suppliers: Opt[]; loans: LoanOpt[] }>({ cats: [], subs: {}, projects: [], suppliers: [], loans: [] });
   const merge = <T,>(base: T[], extra: T[], key: (x: T) => string) => [...base, ...extra.filter((x) => !base.some((b) => key(b) === key(x)))];
-  const pickCategory = (v: string) => { setCategory(v); setSub(""); };
+  const pickCategory = (v: string) => { setCategory(v); setSub(""); setLoanId(""); };
   const [method, setMethod] = useState<CashMethod>(accounts.some((a) => a.type === "CASH") || !accounts.some((a) => a.type === "BANK") ? "CASH" : "BANK");
   const [fromId, setFromId] = useState(accounts[0]?.id ?? "");
   // Perekit uchun bir martalik kalit: ikki marta bosilgan «Saqlash» ikkinchi o'tkazma ochmaydi; saqlangach yangilanadi
   const [token, setToken] = useState(clientToken);
-  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setSupplierId(""); setCategory(""); setSub(""); setProjectId(""); setToken(crypto.randomUUID()); } }, [state]);
+  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setSupplierId(""); setCategory(""); setSub(""); setProjectId(""); setLoanId(""); setToken(crypto.randomUUID()); } }, [state]);
   const perekitOpt: CategoryOption = { name: PEREKIT_CATEGORY, needs: null, loanPart: null, subs: [] };
   const typeCats = merge(type === "INCOME" ? incomeCats : expenseCats, added.cats.filter((c) => c.type === type), (c) => c.name);
   const cats = type === "EXPENSE" && canPerekit && accounts.length >= 2 ? [...typeCats, perekitOpt] : typeCats;
@@ -61,10 +64,17 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   const shownReceipts = supplierId ? receipts.filter((r) => r.supplierId === supplierId) : receipts;
   // Kredit kategoriyasi: «Qarz berildi / qaytdi» — biz bergan qarzlar, qolganlari — kreditlar va olingan qarzlar
   const lentCat = /qarz berildi|berilgan qarz/i.test(cat);
-  const shownLoans = loans.filter((l) => (l.kind === "LENT") === lentCat);
+  const shownLoans = merge(loans, added.loans, (l) => l.id).filter((l) => (l.kind === "LENT") === lentCat);
+  const loanVal = shownLoans.some((l) => l.id === loanId) ? loanId : "";
+  // Yangi qarzning sanasi — shu kirim/chiqim sanasi (qarz qoldig'i shu sanadan oldingi yozuvlarni hisobga olmaydi)
+  const saveLoan = (fd: FormData) => {
+    const d = formRef.current ? new FormData(formRef.current).get("date") : null;
+    if (typeof d === "string") fd.set("date", d);
+    return quickAddLoan(fd);
+  };
 
   return (
-    <form action={action} className="space-y-4">
+    <form ref={formRef} action={action} className="space-y-4">
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}
       <input type="hidden" name="type" value={type} />
@@ -135,8 +145,26 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
           </Field>
         )}
         {!perekit && cur?.needs === "LOAN" && (
-          <Field label="Kredit / qarz *" hint={shownLoans.length ? (cur.loanPart === "INTEREST" ? "foiz — PNL xarajati" : "asosiy qarz — qoldiqni o'zgartiradi") : "Moliya → Kreditlar sahifasida qo'shing"}>
-            <Select key={cat} name="loanId" required defaultValue=""><option value="" disabled>— tanlang —</option>{shownLoans.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>
+          <Field label="Kredit / qarz *" hint={shownLoans.length ? (cur.loanPart === "INTEREST" ? "foiz — PNL xarajati" : "asosiy qarz — qoldiqni o'zgartiradi") : canAdd ? "«+» bilan qo'shing" : "Moliya → Kreditlar sahifasida qo'shing"}>
+            <WithAdd add={canAdd && (
+              <QuickAdd label={lentCat ? "Yangi berilgan qarz" : "Yangi kredit / qarz"} title={lentCat ? "Yangi berilgan qarz" : "Yangi kredit yoki olingan qarz"} save={saveLoan}
+                onCreated={(x: QuickAdded) => { setAdded((a) => ({ ...a, loans: [...a.loans, { id: x.id, name: x.name, kind: lentCat ? "LENT" : "BANK" }] })); setLoanId(x.id); }}>
+                {lentCat ? <input type="hidden" name="kind" value="LENT" /> : (
+                  <Field label="Turi *">
+                    <Select name="kind" defaultValue="BANK" required>
+                      <option value="BANK">Bank krediti</option>
+                      <option value="BORROWED">Olingan qarz (shaxs / firma)</option>
+                    </Select>
+                  </Field>
+                )}
+                <Field label={lentCat ? "Kimga berildi *" : "Bank / kimdan *"}><Input name="counterparty" required maxLength={160} autoFocus autoComplete="off" placeholder={lentCat ? "F.I.O. yoki tashkilot" : "Aloqabank"} /></Field>
+                <Field label="Nomi" hint="bo'sh qolsa — yuqoridagi nom"><Input name="name" maxLength={160} autoComplete="off" placeholder={lentCat ? "Masalan: Aliyev — 2026 qarz" : "Masalan: Aloqabank — 2026 kredit"} /></Field>
+                <Field label="Izoh"><Input name="note" maxLength={300} autoComplete="off" placeholder="ixtiyoriy" /></Field>
+                <p className="text-[13px] text-slate-500">Qoldiq 0 dan boshlanadi — qarzni shu yozuvning o&apos;zi ochadi. Boshlang&apos;ich qoldiq kerak bo&apos;lsa — Moliya → Kreditlar va qarzlar.</p>
+              </QuickAdd>
+            )}>
+              <Select name="loanId" required value={loanVal} onChange={(e) => setLoanId(e.target.value)}><option value="" disabled>— tanlang —</option>{shownLoans.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>
+            </WithAdd>
           </Field>
         )}
         {perekit ? (

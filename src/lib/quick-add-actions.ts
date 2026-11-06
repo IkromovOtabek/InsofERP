@@ -8,6 +8,8 @@ import { canDo } from "@/lib/permissions";
 import { parseInn } from "@/lib/inn";
 import { upsertRecipient } from "@/lib/stock-recipients";
 import { createCashCategory } from "@/lib/fin-report/categories";
+import { validDate } from "@/lib/action";
+import { isoDate } from "@/lib/format";
 
 /** PNL qatorlari (`PnlLine`) — yangi manba uchun tanlov; klient ro'yxati `PNL_LINE_LABEL` dan. */
 const PNL_LINES = ["OTHER_INCOME", "MATERIALS", "PRODUCTION", "PAYROLL", "TRANSPORT", "ADMIN", "COMMERCIAL", "TAX", "INTEREST", "DIVIDEND", "NONE"] as const;
@@ -86,6 +88,31 @@ export async function quickAddCashCategory(fd: FormData): Promise<QuickAddResult
   if ("error" in res) return res;
   revalidatePath("/cashflow"); revalidatePath("/moliya/kategoriyalar"); revalidatePath("/payments/import");
   return res;
+}
+
+const LOAN_KINDS = ["BANK", "BORROWED", "LENT"] as const;
+
+/**
+ * «Kredit / qarz» ichidagi «+»: yangi kredit yoki qarz (Moliya → Kreditlar va qarzlardagi kabi). Qoldiq 0 dan, sanasi — kassa
+ * yozuvining sanasi: qarzni shu kirim/chiqimning o'zi ochadi (boshlang'ich qoldiq kiritilsa, summa ikki marta hisoblanardi).
+ */
+export async function quickAddLoan(fd: FormData): Promise<QuickAddResult> {
+  const s = await getSession();
+  if (!s || !(canDo(s, "moliya", "loans") || canDo(s, "cashflow", "create"))) return { error: NO_RIGHT };
+  const kind = LOAN_KINDS.find((k) => k === fd.get("kind"));
+  if (!kind) return { error: "Turi tanlanmagan" };
+  const counterparty = text(fd, "counterparty", 160);
+  if (!counterparty) return { error: kind === "LENT" ? "Kimga berilganini yozing" : "Bank yoki kimdan olinganini yozing" };
+  const name = text(fd, "name", 160) || counterparty;
+  if (await db.loan.findFirst({ where: { kind, name: { equals: name, mode: "insensitive" }, cancelledAt: null, closedAt: null }, select: { id: true } })) return { error: "Bunday qarz bor — ro'yxatdan tanlang" };
+  const date = String(fd.get("date") ?? "");
+  const l = await db.$transaction(async (tx) => {
+    const l = await tx.loan.create({ data: { kind, name, counterparty, openingBalance: 0, openingDate: new Date(validDate(date) ? date : isoDate()), note: text(fd, "note", 300) || null, createdById: s.userId } });
+    await audit(tx, s.userId, "CREATE", "Loan", l.id, undefined, { ...l, via: "kirim-chiqim" });
+    return l;
+  });
+  revalidatePath("/cashflow"); revalidatePath("/moliya/kreditlar"); revalidatePath("/moliya");
+  return { id: l.id, name: l.name };
 }
 
 /** «Loyiha» ichidagi «+»: yangi loyiha (Moliya → Kategoriyalar → Loyihalardagi kabi). */
