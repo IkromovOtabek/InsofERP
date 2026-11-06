@@ -8,6 +8,9 @@ import { Badge, Button, Callout, Empty, Input, Select, StatCard, Table, Td, Th, 
 import { JOURNAL_ONLY, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { SALES_MANBA } from "@/lib/cash-import";
+import { cashEntryEditBlock, cashEntrySig } from "@/lib/cash-entry";
+import { categoryOptions } from "@/lib/fin-report/categories";
+import { CashEditButton, CashEditProvider, type CashEditEntry } from "./cash-edit";
 import { ExcelButton } from "../logistika/excel-button";
 
 type Account = { id: string; name: string; type: "CASH" | "BANK" };
@@ -99,6 +102,8 @@ type JRow = {
   inc: number; exp: number; transfer: boolean;
   manba: string; sub: string; who: string; whoHref?: string; blacklisted?: boolean; contracted?: boolean;
   note: string | null; by: string | null; href?: string; cancelled: string | null;
+  /** Kirim-chiqim yozuvida: tahrir qiymatlari yoki nega tahrirlanmasligi (mijoz to'lovida — yo'q) */
+  edit?: CashEditEntry; editBlock?: string | null;
 };
 
 const KINDS = [
@@ -116,7 +121,7 @@ const MAX_ROWS = 1000;
  * yozuv ko'rinadi, lekin jamiga kirmaydi. Ustunlar Google jadvalidagidek: Sana, Hisob, Kirim, Chiqim, Manba, Sub manba,
  * Kontragent, Izoh.
  */
-export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp: { from?: string; to?: string; account?: string; kind?: string; manba?: string; q?: string; import?: string } }) {
+export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accounts: Account[]; sp: { from?: string; to?: string; account?: string; kind?: string; manba?: string; q?: string; import?: string }; canEdit?: boolean }) {
   const now = new Date();
   const from = new Date(sp.from || isoDate(new Date(now.getFullYear(), now.getMonth(), 1)));
   const to = new Date(sp.to || isoDate(now)); to.setHours(23, 59, 59, 999);
@@ -136,7 +141,11 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
       include: { cashAccount: true, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } },
     }),
   ]);
-  const [marks, cNames] = await Promise.all([customerMarks(payments.map((p) => p.customerId)), cancellerNames(txs)]);
+  const [marks, cNames, editCats] = await Promise.all([
+    customerMarks(payments.map((p) => p.customerId)), cancellerNames(txs),
+    canEdit ? Promise.all([categoryOptions("INCOME"), categoryOptions("EXPENSE")]) : null,
+  ]);
+  const editOptions = editCats ? { accounts, income: editCats[0], expense: editCats[1] } : null;
 
   const all: JRow[] = [
     ...payments.map((p): JRow => ({
@@ -158,6 +167,11 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
         sub: transfer ? (t.counterparty ?? "") : (t.subCategory ?? ""),
         who: transfer ? "" : (t.supplier?.name ?? t.counterparty ?? ""),
         note: t.note, by: t.createdBy.fullName, cancelled: cancelNote(t, cNames),
+        editBlock: canEdit && !transfer ? cashEntryEditBlock(t) : null,
+        edit: canEdit && !transfer && (t.type === "INCOME" || t.type === "EXPENSE") ? {
+          id: t.id, type: t.type, date: isoDate(t.date), cashAccountId: t.cashAccountId, amount: amount, category: t.category,
+          subCategory: t.subCategory ?? "", counterparty: t.counterparty ?? "", note: t.note ?? "", sig: cashEntrySig(t),
+        } : undefined,
         href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
           : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
           : t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}`
@@ -189,13 +203,50 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
   ];
 
   // Excel importidan qaytganda: «yozildi-o'tkazildi»
-  const [imported, dupes] = (sp.import ?? "").split("-").map((n) => Number(n) || 0);
+  const [imported, dupes, transfers, newSubs] = (sp.import ?? "").split("-").map((n) => Number(n) || 0);
+
+  const table = (
+    <Table maxHeight="75vh">
+      <thead>
+        <tr><Th>Sana</Th><Th>Hisob</Th><Th right>Kirim</Th><Th right>Chiqim</Th><Th>Manba</Th><Th>Sub manba</Th><Th>Kontragent</Th><Th className="min-w-80">Izoh</Th>{canEdit && <Th><span className="sr-only">Tahrirlash</span></Th>}</tr>
+      </thead>
+      <tbody>
+        {shown.length === 0 && <Empty text="Davrda kirim-chiqim yo'q" />}
+        {shown.map((r) => {
+          const amtCls = r.cancelled ? "text-slate-400 line-through" : r.transfer ? "text-sky-700" : "";
+          return (
+            <Tr key={r.id} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
+              <Td className="whitespace-nowrap">{date(r.date)}</Td>
+              <Td className="whitespace-nowrap">
+                {r.account}
+                <span className="ml-1.5"><Badge color={r.method === "CASH" ? "amber" : "slate"} dot={false}>{r.method === "CASH" ? "naqd" : "bank"}</Badge></span>
+              </Td>
+              <Td right className={`font-medium ${amtCls || "text-emerald-700"}`}>{r.inc ? money(r.inc) : ""}</Td>
+              <Td right className={`font-medium ${amtCls || "text-red-600"}`}>{r.exp ? money(r.exp) : ""}</Td>
+              <Td className="whitespace-nowrap">
+                {r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.manba} →</Link> : r.manba}
+                {r.cancelled && <span className="mt-1 block"><Badge color="slate">Bekor qilingan</Badge></span>}
+              </Td>
+              <Td className="whitespace-nowrap text-slate-600">{r.sub}</Td>
+              <Td>{r.who ? <CustomerName name={r.who} blacklisted={!!r.blacklisted} contracted={!!r.contracted} href={r.whoHref} /> : <span className="text-slate-300">—</span>}</Td>
+              <Td className="text-slate-600">
+                {r.note ?? ""}
+                {r.by && <span className="block text-xs text-slate-400">kiritdi: {r.by}</span>}
+                {r.cancelled && <span className="block text-xs text-red-600">Bekor qilindi: {r.cancelled}</span>}
+              </Td>
+              {canEdit && <Td className="w-10">{(r.edit || r.editBlock) && <CashEditButton entry={r.edit} blocked={r.editBlock} />}</Td>}
+            </Tr>
+          );
+        })}
+      </tbody>
+    </Table>
+  );
 
   return (
     <>
       {sp.import && (
         <Callout tone="success" title="Excel importi">
-          {imported} ta qator Kassa jurnaliga yozildi.{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
+          {imported} ta qator Kassa jurnaliga yozildi.{transfers > 0 && ` ${transfers} ta perekit o'tkazma hujjati bo'lib yozildi.`}{newSubs > 0 && ` ${newSubs} ta yangi sub manba kategoriyalarga qo'shildi.`}{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
         </Callout>
       )}
       <form className="mb-4 flex flex-wrap items-center gap-2 text-sm">
@@ -231,39 +282,7 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
         </h2>
         <ExcelButton file={`Kassa jurnali ${isoDate(from)} — ${isoDate(to)}`} sheets={[{ name: "Kassa jurnali", rows: sheet }]} />
       </div>
-      <Table maxHeight="75vh">
-        <thead>
-          <tr><Th>Sana</Th><Th>Hisob</Th><Th right>Kirim</Th><Th right>Chiqim</Th><Th>Manba</Th><Th>Sub manba</Th><Th>Kontragent</Th><Th className="min-w-80">Izoh</Th></tr>
-        </thead>
-        <tbody>
-          {shown.length === 0 && <Empty text="Davrda kirim-chiqim yo'q" />}
-          {shown.map((r) => {
-            const amtCls = r.cancelled ? "text-slate-400 line-through" : r.transfer ? "text-sky-700" : "";
-            return (
-              <Tr key={r.id} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
-                <Td className="whitespace-nowrap">{date(r.date)}</Td>
-                <Td className="whitespace-nowrap">
-                  {r.account}
-                  <span className="ml-1.5"><Badge color={r.method === "CASH" ? "amber" : "slate"} dot={false}>{r.method === "CASH" ? "naqd" : "bank"}</Badge></span>
-                </Td>
-                <Td right className={`font-medium ${amtCls || "text-emerald-700"}`}>{r.inc ? money(r.inc) : ""}</Td>
-                <Td right className={`font-medium ${amtCls || "text-red-600"}`}>{r.exp ? money(r.exp) : ""}</Td>
-                <Td className="whitespace-nowrap">
-                  {r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.manba} →</Link> : r.manba}
-                  {r.cancelled && <span className="mt-1 block"><Badge color="slate">Bekor qilingan</Badge></span>}
-                </Td>
-                <Td className="whitespace-nowrap text-slate-600">{r.sub}</Td>
-                <Td>{r.who ? <CustomerName name={r.who} blacklisted={!!r.blacklisted} contracted={!!r.contracted} href={r.whoHref} /> : <span className="text-slate-300">—</span>}</Td>
-                <Td className="text-slate-600">
-                  {r.note ?? ""}
-                  {r.by && <span className="block text-xs text-slate-400">kiritdi: {r.by}</span>}
-                  {r.cancelled && <span className="block text-xs text-red-600">Bekor qilindi: {r.cancelled}</span>}
-                </Td>
-              </Tr>
-            );
-          })}
-        </tbody>
-      </Table>
+      {editOptions ? <CashEditProvider options={editOptions}>{table}</CashEditProvider> : table}
     </>
   );
 }

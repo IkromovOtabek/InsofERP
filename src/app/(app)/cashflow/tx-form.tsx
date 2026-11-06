@@ -9,6 +9,9 @@ import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
 import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, type CashMethod } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
+import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
+import { QuickAdd, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
+import { quickAddCashCategory, quickAddProject } from "@/lib/quick-add-actions";
 
 type Opt = { id: string; name: string };
 type Acc = Opt & { type?: CashMethod };
@@ -18,10 +21,12 @@ type Acc = Opt & { type?: CashMethod };
  * `canPerekit` — Chiqim kategoriyalarida «Perekit»: o'z hisoblarimiz orasida o'tkazma (chiqim emas, `lib/cash-transfer.ts`).
  * «Naqd / Bank» — to'lov usuli: hisob ro'yxatini shu turdagi hisoblarga toraytiradi (usul hisob turidan olinadi).
  * Kategoriya — «Manba → Sub manba» daraxti (`CashCategory`); manba loyiha yoki kredit so'rasa, qo'shimcha tanlov chiqadi.
+ * `canAdd` — manba, sub manba, loyiha va yetkazuvchi tanlovlari yonida «+»: ro'yxatda yo'g'i shu yerning o'zida qo'shiladi
+ * va darhol tanlanadi (sahifa yangilanguncha mahalliy ro'yxatga ham qo'shib turiladi).
  */
-export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, clientToken = "" }: {
+export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, clientToken = "" }: {
   accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: CategoryOption[]; expenseCats: CategoryOption[];
-  projects?: Opt[]; loans?: (Opt & { kind: "BANK" | "BORROWED" | "LENT" })[]; canPerekit?: boolean; clientToken?: string;
+  projects?: Opt[]; loans?: (Opt & { kind: "BANK" | "BORROWED" | "LENT" })[]; canPerekit?: boolean; canAdd?: boolean; clientToken?: string;
 }) {
   const [state, action, pending] = useActionState(createCashTx, undefined);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("EXPENSE");
@@ -29,14 +34,24 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   const [formKey, setFormKey] = useState(0);
   const [supplierId, setSupplierId] = useState("");
   const [category, setCategory] = useState("");
+  const [sub, setSub] = useState("");
+  const [projectId, setProjectId] = useState("");
+  // «+» bilan qo'shilganlar — sahifa ma'lumoti yangilanguncha ham ro'yxatda tursin
+  const [added, setAdded] = useState<{ cats: (CategoryOption & { type: "INCOME" | "EXPENSE" })[]; subs: Record<string, string[]>; projects: Opt[]; suppliers: Opt[] }>({ cats: [], subs: {}, projects: [], suppliers: [] });
+  const merge = <T,>(base: T[], extra: T[], key: (x: T) => string) => [...base, ...extra.filter((x) => !base.some((b) => key(b) === key(x)))];
+  const pickCategory = (v: string) => { setCategory(v); setSub(""); };
   const [method, setMethod] = useState<CashMethod>(accounts.some((a) => a.type === "CASH") || !accounts.some((a) => a.type === "BANK") ? "CASH" : "BANK");
   const [fromId, setFromId] = useState(accounts[0]?.id ?? "");
   // Perekit uchun bir martalik kalit: ikki marta bosilgan «Saqlash» ikkinchi o'tkazma ochmaydi; saqlangach yangilanadi
   const [token, setToken] = useState(clientToken);
-  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setSupplierId(""); setCategory(""); setToken(crypto.randomUUID()); } }, [state]);
+  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setSupplierId(""); setCategory(""); setSub(""); setProjectId(""); setToken(crypto.randomUUID()); } }, [state]);
   const perekitOpt: CategoryOption = { name: PEREKIT_CATEGORY, needs: null, loanPart: null, subs: [] };
-  const cats = type === "INCOME" ? incomeCats : canPerekit && accounts.length >= 2 ? [...expenseCats, perekitOpt] : expenseCats;
+  const typeCats = merge(type === "INCOME" ? incomeCats : expenseCats, added.cats.filter((c) => c.type === type), (c) => c.name);
+  const cats = type === "EXPENSE" && canPerekit && accounts.length >= 2 ? [...typeCats, perekitOpt] : typeCats;
   const cur = cats.find((c) => c.name === category) ?? cats[0];
+  const subs = cur ? merge(cur.subs, added.subs[cur.name] ?? [], (x) => x) : [];
+  const projectList = merge(projects, added.projects, (p) => p.id);
+  const supplierList = merge(suppliers, added.suppliers, (p) => p.id);
   const cat = cur?.name ?? "";
   const perekit = type === "EXPENSE" && cat === PEREKIT_CATEGORY;
   // Perekitda hamma hisob (kassa ⇄ bank); oddiy kirim/chiqimda — tanlangan usuldagi hisoblar
@@ -77,15 +92,46 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
         <Field label={perekit ? "Qayerdan (hisob) *" : "Kassa / hisob *"}><Select name="cashAccountId" value={accId} onChange={(e) => setFromId(e.target.value)} required>{shownAccounts.map((a) => <option key={a.id} value={a.id}>{perekit ? accLabel(a) : a.name}</option>)}</Select></Field>
         <Field label="Summa *"><MoneyInput name="amount" required /></Field>
-        <Field label="Manba (kategoriya) *" hint={type === "INCOME" && cat === SALES_CATEGORY ? "Mijoz qarzini kamaytirmaydi — mijoz to'lovi Kassa / bank → To'lovlar orqali kiritiladi" : undefined}><Select name="category" value={cat} onChange={(e) => setCategory(e.target.value)}>{cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</Select></Field>
-        {!perekit && cur && cur.subs.length > 0 && (
+        <Field label="Manba (kategoriya) *" hint={type === "INCOME" && cat === SALES_CATEGORY ? "Mijoz qarzini kamaytirmaydi — mijoz to'lovi Kassa / bank → To'lovlar orqali kiritiladi" : undefined}>
+          <WithAdd add={canAdd && (
+            <QuickAdd label="Yangi manba qo'shish" title={`Yangi ${type === "INCOME" ? "kirim" : "chiqim"} manbasi`} save={quickAddCashCategory}
+              onCreated={(x: QuickAdded) => { setAdded((a) => ({ ...a, cats: [...a.cats, { name: x.name, needs: null, loanPart: null, subs: [], type }] })); pickCategory(x.name); }}>
+              <input type="hidden" name="type" value={type} />
+              <Field label="Nomi *"><Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder={type === "INCOME" ? "Masalan: Ijara tushumi" : "Masalan: Qo'riqlash xizmati"} /></Field>
+              <Field label="Foyda-zarar (PNL) qatori" hint="Oqim turi, alias va boshqasi — Moliya → Kategoriyalar sahifasida">
+                <Select name="pnlLine" defaultValue={type === "INCOME" ? "OTHER_INCOME" : "PRODUCTION"}>
+                  {Object.entries(PNL_LINE_LABEL).filter(([k]) => k !== "PROJECT" && (type === "INCOME" ? ["OTHER_INCOME", "NONE"].includes(k) : k !== "OTHER_INCOME")).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </Select>
+              </Field>
+            </QuickAdd>
+          )}>
+            <Select name="category" value={cat} onChange={(e) => pickCategory(e.target.value)}>{cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</Select>
+          </WithAdd>
+        </Field>
+        {!perekit && cur && (subs.length > 0 || canAdd) && (
           <Field label="Sub manba" hint="tafsilot — hisobotda manba ichida ko'rinadi">
-            <Select key={cat} name="subCategory" defaultValue=""><option value="">— umumiy —</option>{cur.subs.map((s) => <option key={s} value={s}>{s}</option>)}</Select>
+            <WithAdd add={canAdd && (
+              <QuickAdd label="Yangi sub manba qo'shish" title={`«${cat}» ichida yangi sub manba`} save={quickAddCashCategory}
+                onCreated={(x: QuickAdded) => { setAdded((a) => ({ ...a, subs: { ...a.subs, [cat]: [...(a.subs[cat] ?? []), x.name] } })); setSub(x.name); }}>
+                <input type="hidden" name="parent" value={cat} />
+                <Field label="Nomi *"><Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder="Masalan: Ovqat (non, suv)" /></Field>
+              </QuickAdd>
+            )}>
+              <Select name="subCategory" value={sub} onChange={(e) => setSub(e.target.value)}><option value="">— umumiy —</option>{subs.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
+            </WithAdd>
           </Field>
         )}
         {!perekit && cur?.needs === "PROJECT" && (
-          <Field label="Loyiha *" hint={projects.length ? "zavod foydasiga kirmaydi" : "Moliya → Kategoriyalar sahifasida loyiha qo'shing"}>
-            <Select key={cat} name="projectId" required defaultValue=""><option value="" disabled>— loyiha —</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
+          <Field label="Loyiha *" hint={projectList.length ? "zavod foydasiga kirmaydi" : canAdd ? "«+» bilan loyiha qo'shing" : "Moliya → Kategoriyalar sahifasida loyiha qo'shing"}>
+            <WithAdd add={canAdd && (
+              <QuickAdd label="Yangi loyiha qo'shish" title="Yangi loyiha" save={quickAddProject}
+                onCreated={(x: QuickAdded) => { setAdded((a) => ({ ...a, projects: [...a.projects, { id: x.id, name: x.name }] })); setProjectId(x.id); }}>
+                <Field label="Nomi *"><Input name="name" required maxLength={120} autoFocus autoComplete="off" /></Field>
+                <Field label="Izoh"><Input name="note" maxLength={300} autoComplete="off" placeholder="ixtiyoriy" /></Field>
+              </QuickAdd>
+            )}>
+              <Select name="projectId" required value={projectId} onChange={(e) => setProjectId(e.target.value)}><option value="" disabled>— loyiha —</option>{projectList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
+            </WithAdd>
           </Field>
         )}
         {!perekit && cur?.needs === "LOAN" && (
@@ -98,7 +144,11 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
             <Select name="toAccountId" defaultValue="" required><option value="" disabled>Hisobni tanlang…</option>{accounts.filter((a) => a.id !== accId).map((a) => <option key={a.id} value={a.id}>{accLabel(a)}</option>)}</Select>
           </Field>
         ) : type === "EXPENSE" ? (
-          <Field label="Yetkazuvchi" hint="Xomashyo uchun"><Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}><option value="">—</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+          <Field label="Yetkazuvchi" hint="Xomashyo uchun">
+            <WithAdd add={canAdd && <SupplierAdd onCreated={(x) => { setAdded((a) => ({ ...a, suppliers: [...a.suppliers, { id: x.id, name: x.name }] })); setSupplierId(x.id); }} />}>
+              <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}><option value="">—</option>{supplierList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+            </WithAdd>
+          </Field>
         ) : null}
         {type === "EXPENSE" && !perekit && shownReceipts.length > 0 && (
           <Field label="Kirim hujjati" hint="Tanlansa — shu kirimga to'lov (qisman ham), qolgandan oshmaydi" className="sm:col-span-2">

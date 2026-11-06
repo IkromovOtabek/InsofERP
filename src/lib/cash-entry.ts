@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { money } from "@/lib/format";
+import { isoDate, money } from "@/lib/format";
 import { cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
@@ -150,6 +150,73 @@ export async function cancelCashEntry(id: string, reason: string, userId: string
     const r = await tx.cashTransaction.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt, cancelledById: userId, cancelReason: why.slice(0, 300) } });
     if (r.count === 0) throw new CashError("Bu yozuv allaqachon bekor qilingan");
     await audit(tx, userId, "STATUS_CHANGE", "CashTransaction", id, { cancelledAt: null, record: t }, { cancelledAt, reason: why.slice(0, 300) });
+    return {};
+  }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
+}
+
+// ───────────────────────── Tahrirlash (Kassa / bank → Kassa jurnali) ─────────────────────────
+
+/** Qo'lda yozilgan kirim/chiqimgina tahrirlanadi; bo'lmasa — sababi (jurnaldagi qalam shu bilan o'chadi). */
+export function cashEntryEditBlock(t: { type: string; refType: string | null; cancelledAt: Date | null; loanId: string | null; projectId: string | null }): string | null {
+  if (t.cancelledAt) return "Bekor qilingan yozuv tahrirlanmaydi";
+  if (t.type !== "INCOME" && t.type !== "EXPENSE") return "O'tkazma va boshlang'ich qoldiq tahrirlanmaydi";
+  if (t.refType) return "Hujjatga bog'langan yozuv — hujjatning o'zida tuzatiladi";
+  if (t.loanId || t.projectId) return "Kredit / loyiha yozuvi — bekor qilib, Kirim-Chiqim formasida qayta kiriting";
+  return null;
+}
+
+/** Tahrir oynasi ochilgandagi holat: saqlashda bazadagisi boshqacha bo'lsa — boshqa joyda o'zgartirilgan (ustma-ust yozilmasin). */
+export const cashEntrySig = (t: { amount: unknown; date: Date; cashAccountId: string; category: string; subCategory: string | null; counterparty: string | null; note: string | null }) =>
+  [Number(t.amount).toFixed(2), isoDate(t.date), t.cashAccountId, t.category, t.subCategory ?? "", t.counterparty ?? "", t.note ?? ""].join("|");
+
+export type CashEntryEdit = {
+  date: Date; cashAccountId: string; amount: number; category: string; subCategory?: string | null;
+  counterparty?: string | null; note?: string | null; sig: string;
+};
+
+/**
+ * Qo'lda yozilgan kirim/chiqimni tuzatish: sana, hisob, summa, manba, sub manba, kontragent, izoh (turi o'zgarmaydi).
+ * Kategoriya qoidasi yozishdagi bilan bir xil; kredit / loyiha manbasiga o'tkazilmaydi (ular bog'lanish so'raydi).
+ * Hisob bo'yicha navbat ostida: chiqim ko'paysa yoki boshqa hisobga o'tsa, kirim kamaysa yoki ko'chsa — hisob minusga
+ * tushmasin. Avvalgi va yangi qiymatlar AuditLog'ga (UPDATE) yoziladi.
+ */
+export async function updateCashEntry(id: string, d: CashEntryEdit, userId: string): Promise<{ error?: string }> {
+  const amount = r2(d.amount);
+  if (!(amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
+  if (amount > MAX_AMOUNT) return { error: "Summa juda katta" };
+  if (!Number.isFinite(d.date.getTime())) return { error: "Sana noto'g'ri" };
+  if (d.date.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
+  const t = await db.cashTransaction.findUnique({ where: { id } });
+  if (!t) return { error: "Yozuv topilmadi" };
+  const block = cashEntryEditBlock(t);
+  if (block) return { error: block };
+  if (d.category === PEREKIT_CATEGORY) return { error: "Perekit — hisoblararo o'tkazma: «Kassa ⇄ bank» orqali yozing" };
+  const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
+  if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
+  const top = makeResolver(await loadCategories())(d.category)?.top;
+  if (top?.needs === "LOAN" || top?.needs === "PROJECT") return { error: `«${top.name}» — ${top.needs === "LOAN" ? "kredit" : "loyiha"} tanlanadi: eski yozuvni bekor qilib, Kirim-Chiqim formasida kiriting` };
+  const type = t.type as "INCOME" | "EXPENSE";
+  const links = await categoryLinks({ type, category: d.category, subCategory: d.subCategory || null });
+  if ("error" in links) return { error: links.error };
+  const data = {
+    date: d.date, cashAccountId: d.cashAccountId, amount, category: links.data.category ?? d.category, subCategory: links.data.subCategory,
+    counterparty: d.counterparty?.trim() || null, note: d.note?.trim() || null,
+  };
+  return db.$transaction(async (tx) => {
+    for (const a of [...new Set([t.cashAccountId, d.cashAccountId])].sort()) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + a}))`;
+    const cur = await tx.cashTransaction.findUniqueOrThrow({ where: { id } });
+    if (cur.cancelledAt || cashEntrySig(cur) !== d.sig) throw new CashError("Yozuv boshqa joyda o'zgartirildi yoki bekor qilindi — sahifani yangilang");
+    const old = Number(cur.amount);
+    if (type === "EXPENSE") {
+      const extra = d.cashAccountId === cur.cashAccountId ? amount - old : amount;
+      if (extra > 0.005) { const err = await cashOutflowError(tx, d.cashAccountId, extra); if (err) throw new CashError(err); }
+    } else {
+      const lost = d.cashAccountId === cur.cashAccountId ? old - amount : old;
+      if (lost > 0.005) { const err = await cashOutflowError(tx, cur.cashAccountId, lost); if (err) throw new CashError(`Kirim kamaysa hisob minusga tushadi. ${err}`); }
+    }
+    await tx.cashTransaction.update({ where: { id }, data });
+    const before = { date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, note: cur.note };
+    await audit(tx, userId, "UPDATE", "CashTransaction", id, before, data);
     return {};
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
 }

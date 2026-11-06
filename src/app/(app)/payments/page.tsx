@@ -12,6 +12,7 @@ import { RegisterTable, toView } from "./register-table";
 import { deleteImportBatch, stornoPayment } from "./actions";
 import { ConfirmButton } from "./confirm-button";
 import { AccountMatrix, KassaJurnalTab } from "./kassa-jurnal";
+import { canDo } from "@/lib/permissions";
 import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance } from "@/lib/payments";
 import { orderTotal } from "@/lib/order-total";
 
@@ -65,7 +66,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         { key: "jurnal", label: "Realizatsiya jurnali", href: qs("jurnal"), icon: Receipt, count: regCount },
       ]} />
 
-      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
+      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={!!s && canDo(s, "cashflow", "edit")} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
         <JurnalTab where={regWhere} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={role === "CASHIER"} from={from} to={to}
           totals={{ rows: regTotals._count._all, qty: Number(regTotals._sum.qty ?? 0), sum: Number(regTotals._sum.sum ?? 0), nds: Number(regTotals._sum.nds ?? 0), total: Number(regTotals._sum.total ?? 0) }} />
       )}

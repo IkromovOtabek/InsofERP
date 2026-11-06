@@ -1,19 +1,25 @@
 import { db } from "@/lib/db";
-import { auditMany } from "@/lib/audit";
+import { audit, auditMany } from "@/lib/audit";
 import { isoDate, money } from "@/lib/format";
 import { accountBalances } from "@/lib/payments";
 import { JOURNAL_ONLY, isTransfer, txSign } from "@/lib/cash-tx";
-import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
+import { PEREKIT_CATEGORY, SALES_CATEGORY } from "@/lib/cash-categories";
+import { insertTransfer } from "@/lib/cash-transfer";
+import { DDS_FIXED } from "@/lib/fin-report/sheet-lines";
 import { MAX_AMOUNT } from "@/lib/action";
 import { matchKey, numMoney, parseDate, str, valueMapper, type ValueMaps } from "@/lib/excel";
-import { loadCategories, makeResolver, normCat } from "@/lib/fin-report/categories";
+import { loadCategories, makeResolver, normCat, resetCategoryCache } from "@/lib/fin-report/categories";
 
 /**
  * Kassa / bank → «Excel orqali qo'shish»: Kassa jurnali ustunlaridagi fayl (Sana, Hisob, Kirim, Chiqim, Manba,
  * Sub manba, Kontragent, Izoh) → qo'lda kirim/chiqim yozuvlari (`CashTransaction`), Kirim-Chiqim formasidagi qoidalar bilan:
- *  · Manba — kategoriya daraxtidagi nom (yoki aliasi), yozuv turiga mos; Sub manba — shu manbaniki;
+ *  · Manba — kategoriya daraxtidagi nom (yoki aliasi), yozuv turiga mos. Sub manba shu manbaniki bo'lmasa — o'sha manba
+ *    ostiga yangi sub manba bo'lib qo'shiladi (nomi boshqa manbada band bo'lsa — «Nom (Manba)»);
  *  · kredit / loyiha so'raydigan manba importda yozilmaydi (formada kredit yoki loyiha tanlanadi);
- *  · «Savdo tushumi» (mijoz to'lovi) va «Perekit» — o'z hujjatidan: jurnalda bor bo'lsa o'tkaziladi, yo'q bo'lsa xato;
+ *  · «Savdo tushumi» — mijoz to'lovi jurnalda (To'lovlar) bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi bo'lib yoziladi
+ *    (mijoz qarzini kamaytirmaydi);
+ *  · «Perekit» / «99999-Xisob raqam almashinuvi» — o'tkazma: jurnalda bo'lsa o'tkaziladi, bo'lmasa bir xil summali juft
+ *    qator (bir hisobdan chiqim + boshqasiga kirim, o'sha kuni yoki ±1 kun) o'tkazma hujjatiga (OT-…) aylanadi, jufti yo'q — xato;
  *  · jurnalda bor qator (kun, hisob, kirim/chiqim, summa, manba bir xil) qayta yozilmaydi — jurnalning o'zidan
  *    yuklab olingan faylni ham, bir faylni qayta ham yuklash mumkin (bekor qilingan yozuv ham «bor» hisoblanadi);
  *  · import tugagach naqd kassa (va overdraftsiz bank) minusga tushmaydi;
@@ -26,14 +32,20 @@ export const CASH_IMPORT_MAX = 2000;
 
 /** Fayldagi bitta qator — kalitlar import sahifasidagi maydonlar bilan bir xil. */
 export type CashImportRow = Record<string, unknown>;
-export type CashImportResult = { error: string } | { ok: true; added: number; skipped: number; from: Date; to: Date };
+export type CashImportResult = { error: string } | { ok: true; added: number; skipped: number; transfers: number; newSubs: string[]; from: Date; to: Date };
 
 type Fresh = {
   date: Date; type: "INCOME" | "EXPENSE"; cashAccountId: string; amount: number;
   category: string; subCategory: string | null; counterparty: string | null; note: string | null;
 };
-/** Fayl qatori: oddiy kirim/chiqim yoki faqat jurnalda borligi tekshiriladigan mijoz to'lovi / perekit. */
-type Parsed = { no: number; date: Date; accountId: string; key: string; data: Fresh | null };
+/**
+ * Fayl qatori: oddiy kirim/chiqim (`data`) yoki o'tkazma oyog'i (`leg`). `altKeys` — jurnalda boshqacha yozilgan bo'lishi
+ * mumkin: mijoz to'lovi «Savdo» kirimi bo'lib, perekit oyog'i ±1 kun bilan (o'tkazma chiqim kuni bilan yoziladi).
+ */
+type Parsed = { no: number; date: Date; accountId: string; key: string; altKeys?: string[]; data: Fresh | null; leg?: { sign: number; amount: number; note: string | null } };
+/** O'tkazma deb olinadigan manba nomlari (Google jadvalidagi «99999-Xisob raqam almashinuvi» ham). */
+const TRANSFER_NAMES = new Set([PEREKIT_CATEGORY, "Perekit", ...DDS_FIXED.transfers.slice(0, 3)].map(normCat));
+const isTransferManba = (m: string) => TRANSFER_NAMES.has(normCat(m)) || /perekit|raqam almashinuvi/.test(normCat(m));
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -59,6 +71,24 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
   for (const a of accounts) { const k = matchKey(a.name); accByName.set(k, accByName.has(k) ? null : a); }
   const defAcc = accById.get(opts.defaultAccountId);
   const resolve = makeResolver(cats);
+  // Yangi sub manbalar: nom (yoki alias) butun daraxtda yagona — band bo'lsa «Nom (Manba)»
+  const byNorm = new Map(cats.map((c) => [normCat(c.name), c]));
+  const taken = new Set(cats.flatMap((c) => [normCat(c.name), ...c.aliases.map(normCat)]));
+  const newSubs = new Map<string, { parentId: string; name: string }>();
+  const subOf = (top: (typeof cats)[number], raw: string): string | null => {
+    const plain = raw.replace(/\s+/g, " ").trim().slice(0, 80);
+    const suffixed = `${plain} (${top.name})`.slice(0, 80);
+    const own = byNorm.get(normCat(suffixed));
+    if (own?.parentId === top.id) return own.name;
+    const k = `${top.id}|${normCat(plain)}`;
+    const planned = newSubs.get(k);
+    if (planned) return planned.name;
+    const name = !taken.has(normCat(plain)) ? plain : !taken.has(normCat(suffixed)) ? suffixed : null;
+    if (!name) return null;
+    taken.add(normCat(name));
+    newSubs.set(k, { parentId: top.id, name });
+    return name;
+  };
   const accOf = valueMapper(opts.maps, "account");
   const manbaOf = valueMapper(opts.maps, "manba");
   const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
@@ -101,22 +131,39 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
 
     const manba = manbaOf(cell("manba"));
     if (!manba) return fail("Manba bo'sh");
-    // Mijoz to'lovi va perekit oddiy kirim/chiqim emas — faqat jurnalda borligi tekshiriladi
-    const special = normCat(manba) === normCat(SALES_MANBA) ? SALES_MANBA : normCat(manba) === normCat(PEREKIT_CATEGORY) ? PEREKIT_CATEGORY : null;
-    if (special) { parsed.push({ no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, special), data: null }); return; }
+    // Perekit — o'tkazma oyog'i: jurnalda bo'lmasa juftiga qarab o'tkazma hujjati bo'ladi
+    if (isTransferManba(manba)) {
+      const near = [-1, 1].map((k) => rowKey(new Date(date.getTime() + k * 86_400_000), acc.id, sign, amount, PEREKIT_CATEGORY));
+      parsed.push({ no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, PEREKIT_CATEGORY), altKeys: near, data: null, leg: { sign, amount, note: cell("note") || null } });
+      return;
+    }
+    const who = cell("who") || null, note = cell("note") || null;
+    // Mijoz to'lovi: To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi (mijoz qarziga tegmaydi)
+    if (normCat(manba) === normCat(SALES_MANBA)) {
+      if (type !== "INCOME") return fail(`«${SALES_MANBA}» — kirim, summa esa Chiqim ustunida`);
+      parsed.push({
+        no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, SALES_MANBA), altKeys: [rowKey(date, acc.id, sign, amount, SALES_CATEGORY)],
+        data: { date, type, cashAccountId: acc.id, amount, category: SALES_CATEGORY, subCategory: null, counterparty: who, note },
+      });
+      return;
+    }
 
     const sub = cell("sub");
     const base = resolve(manba);
     if (!base) return fail(`«${manba}» — bunday manba yo'q (moslang yoki Moliya → Kategoriyalarda qo'shing)`);
-    const r = sub ? resolve(manba, sub) : base;
-    if (sub && (!r?.sub || r.top.id !== base.top.id)) return fail(`«${sub}» — «${base.top.name}» ichida bunday sub manba yo'q`);
-    const top = r!.top;
+    const top = base.top;
     if (top.type !== type) return fail(`«${top.name}» — ${top.type === "INCOME" ? "kirim" : "chiqim"} manbasi, summa esa ${type === "INCOME" ? "Kirim" : "Chiqim"} ustunida`);
     if (!top.isActive) return fail(`«${top.name}» manbasi o'chirilgan`);
     if (top.needs === "LOAN" || top.needs === "PROJECT") return fail(`«${top.name}» — ${top.needs === "LOAN" ? "kredit" : "loyiha"} tanlanadi: Kirim-Chiqim formasida kiriting`);
+    let subName = base.sub?.name ?? null;
+    if (sub) {
+      const r = resolve(manba, sub);
+      subName = r?.sub && r.top.id === top.id ? r.sub.name : subOf(top, sub);
+      if (!subName) return fail(`«${sub}» — sub manba nomi band, «${top.name}» ostiga qo'shib bo'lmadi (Moliya → Kategoriyalarda qo'shing)`);
+    }
     parsed.push({
       no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, top.name),
-      data: { date, type, cashAccountId: acc.id, amount, category: top.name, subCategory: r!.sub?.name ?? null, counterparty: cell("who") || null, note: cell("note") || null },
+      data: { date, type, cashAccountId: acc.id, amount, category: top.name, subCategory: subName, counterparty: who, note },
     });
   });
   if (errors.length) return { error: `${errors.slice(0, 5).join("; ")}${errors.length > 5 ? `; yana ${errors.length - 5} ta qatorda xato` : ""}. Faylni tuzatib qayta yuklang — hech narsa yozilmadi` };
@@ -145,35 +192,63 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
       for (const t of txs) add(rowKey(t.date, t.cashAccountId, txSign(t.type), Number(t.amount), isTransfer(t.type) ? PEREKIT_CATEGORY : resolve(t.category, t.subCategory)?.top.name ?? t.category));
 
       const fresh: Fresh[] = [];
-      const missing: string[] = [];
+      const legs: Parsed[] = [];
       let skipped = 0;
       for (const p of parsed) {
-        const n = have.get(p.key) ?? 0;
-        if (n > 0) { have.set(p.key, n - 1); skipped++; continue; }
+        const hit = [p.key, ...(p.altKeys ?? [])].find((k) => (have.get(k) ?? 0) > 0);
+        if (hit) { have.set(hit, have.get(hit)! - 1); skipped++; continue; }
         if (p.data) fresh.push(p.data);
-        else missing.push(`${p.no}-qator`);
+        else legs.push(p);
       }
-      if (missing.length) {
-        throw new CashImportError(`${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` va yana ${missing.length - 5} ta` : ""}: «${SALES_MANBA}» yoki «${PEREKIT_CATEGORY}» jurnalda yo'q — mijoz to'lovini To'lovlar tabida, perekitni Kirim-Chiqim → «Kassa ⇄ bank» orqali kiriting yoki qatorni fayldan olib tashlang. Hech narsa yozilmadi`);
+      // Perekit: bir xil summa — bir hisobdan chiqim, boshqasiga kirim (fayl tartibida). Avval o'sha kuni, keyin ±1 kun:
+      // bankdan yechilgan naqd kassaga ertasi kuni kirim qilingan bo'lishi mumkin — o'tkazma sanasi chiqim kuni
+      const pairs: { out: Parsed; in: Parsed }[] = [];
+      const used = new Set<Parsed>();
+      const days = (a: Date, b: Date) => Math.abs(Math.round((new Date(isoDate(a)).getTime() - new Date(isoDate(b)).getTime()) / 86_400_000));
+      for (const gap of [0, 1]) {
+        for (const o of legs.filter((l) => l.leg!.sign < 0 && !used.has(l))) {
+          const m = legs.find((x) => !used.has(x) && x.leg!.sign > 0 && x.accountId !== o.accountId && days(x.date, o.date) === gap && Math.abs(x.leg!.amount - o.leg!.amount) < 0.005);
+          if (m) { used.add(o); used.add(m); pairs.push({ out: o, in: m }); }
+        }
       }
-      if (!fresh.length) return { added: 0, skipped };
+      const lonely = legs.filter((l) => !used.has(l));
+      if (lonely.length) {
+        throw new CashImportError(`${lonely.slice(0, 5).map((l) => `${l.no}-qator`).join(", ")}${lonely.length > 5 ? ` va yana ${lonely.length - 5} ta` : ""}: perekitning jufti yo'q — shu summa bilan (o'sha kuni yoki ±1 kun) boshqa hisobga kirim (yoki boshqa hisobdan chiqim) qatori bo'lishi kerak. Faylni tuzating yoki o'tkazmani Kirim-Chiqim → «Kassa ⇄ bank» orqali kiriting. Hech narsa yozilmadi`);
+      }
+      if (!fresh.length && !pairs.length) return { added: 0, skipped, transfers: 0, newSubs: [] };
 
       // Import tugagach hisob minusga tushmasin (naqd kassa — har doim, bank — overdraft ruxsati bo'lmasa)
       const balances = await accountBalances(tx, accIds);
       for (const id of accIds) {
         const a = accById.get(id)!;
         if (a.type === "BANK" && a.allowOverdraft) continue;
-        const delta = fresh.filter((f) => f.cashAccountId === id).reduce((s, f) => s + (f.type === "INCOME" ? f.amount : -f.amount), 0);
+        const delta = fresh.filter((f) => f.cashAccountId === id).reduce((s, f) => s + (f.type === "INCOME" ? f.amount : -f.amount), 0)
+          + pairs.reduce((s, p) => s + (p.in.accountId === id ? p.in.leg!.amount : 0) - (p.out.accountId === id ? p.out.leg!.amount : 0), 0);
         const left = (balances.get(id) ?? 0) + delta;
         if (delta < 0 && left < -0.005) {
           throw new CashImportError(`${a.name} ${a.type === "CASH" ? "kassasi" : "hisobi"} minusga tushadi: hozirgi qoldiq ${money(balances.get(id) ?? 0)}, import bilan ${money(left)}. Hech narsa yozilmadi`);
         }
       }
 
-      const created = await tx.cashTransaction.createManyAndReturn({ data: fresh.map((f) => ({ ...f, createdById: userId })) });
+      // Yangi sub manbalar — faqat yoziladigan qatorlarda ishlatilgani (ota-onaning turi, oqimi va PNL qatori bilan)
+      const subs = [...newSubs.values()].filter((n) => fresh.some((f) => f.subCategory === n.name));
+      for (const n of subs) {
+        const parent = cats.find((c) => c.id === n.parentId)!;
+        const c = await tx.cashCategory.create({ data: { name: n.name, type: parent.type, parentId: parent.id, flow: parent.flow, pnlLine: parent.pnlLine } });
+        await audit(tx, userId, "CREATE", "CashCategory", c.id, undefined, { ...c, via: "kassa-import" });
+      }
+
+      const created = fresh.length ? await tx.cashTransaction.createManyAndReturn({ data: fresh.map((f) => ({ ...f, createdById: userId })) }) : [];
       await auditMany(tx, userId, "CREATE", "CashTransaction", created.map((t) => ({ id: t.id, after: t })));
-      return { added: created.length, skipped };
+      for (const p of pairs) {
+        const from = accById.get(p.out.accountId)!, to = accById.get(p.in.accountId)!;
+        const note = [p.out.leg!.note, p.in.leg!.note].find(Boolean) ?? null;
+        const { t, outTx, inTx } = await insertTransfer(tx, { date: p.out.date, from, to, amount: p.out.leg!.amount, note }, userId);
+        await audit(tx, userId, "CREATE", "CashTransfer", t.id, undefined, { ...t, legs: [outTx.id, inTx.id], via: "kassa-import" });
+      }
+      return { added: created.length, skipped, transfers: pairs.length, newSubs: subs.map((n) => n.name) };
     }, { timeout: 60_000, maxWait: 15_000 });
+    if (res.newSubs.length) resetCategoryCache();
     return { ok: true, ...res, from, to };
   } catch (e) {
     if (e instanceof CashImportError) return { error: e.message };

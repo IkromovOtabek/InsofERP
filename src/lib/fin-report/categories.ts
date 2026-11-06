@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
 import type { CashCategoryNeeds, CashFlowKind, CashTxType, LoanPart, PnlLine } from "@/generated/prisma";
 export { FLOW_LABEL, PNL_LINE_LABEL, NEEDS_LABEL } from "./labels";
 
@@ -71,4 +72,48 @@ export type CategoryOption = { name: string; needs: CashCategoryNeeds | null; lo
 
 export async function categoryOptions(type: "INCOME" | "EXPENSE"): Promise<CategoryOption[]> {
   return toTree(await loadCategories(), { type, activeOnly: true }).map((t) => ({ name: t.name, needs: t.needs, loanPart: t.loanPart, subs: t.children.map((c) => c.name) }));
+}
+
+/** Nom boshqa kategoriya nomi yoki alias'i bilan to'qnashmasin — aks holda yozuv qaysi biriga tushishi noaniq. */
+export async function categoryNameTaken(name: string, exceptId?: string) {
+  const k = normCat(name);
+  const all = await db.cashCategory.findMany({ select: { id: true, name: true, aliases: true } });
+  return all.some((c) => c.id !== exceptId && (normCat(c.name) === k || c.aliases.includes(k)));
+}
+
+export type NewCategory = {
+  name: string; parentId?: string | null; type?: CashTxType; flow?: CashFlowKind; pnlLine?: PnlLine;
+  needs?: CashCategoryNeeds | null; loanPart?: LoanPart | null; via?: string;
+};
+
+/**
+ * Yangi manba yoki sub manba — Moliya → Kategoriyalar sahifasi ham, Kirim-Chiqim formasidagi «+» ham shu bilan.
+ * Sub manba ota-onasining turini, oqimini va PNL qatorini oladi; sub manba ostiga yana sub manba qo'shilmaydi.
+ */
+export async function createCashCategory(d: NewCategory, userId: string): Promise<{ id: string; name: string } | { error: string }> {
+  const name = d.name.replace(/\s+/g, " ").trim();
+  if (!name) return { error: "Nomi kerak" };
+  if (name.length > 80) return { error: "Nomi juda uzun" };
+  if (await categoryNameTaken(name)) return { error: "Bunday nom (yoki alias) allaqachon bor" };
+  let data;
+  if (d.parentId) {
+    const p = await db.cashCategory.findUnique({ where: { id: d.parentId } });
+    if (!p || p.parentId) return { error: "Manba topilmadi (sub manba ostiga yana sub manba qo'shilmaydi)" };
+    data = { name, type: p.type, parentId: p.id, flow: p.flow, pnlLine: p.pnlLine };
+  } else {
+    if (!d.type || !d.flow || !d.pnlLine) return { error: "Turi, oqim turi va PNL qatorini tanlang" };
+    data = { name, type: d.type, flow: d.flow, pnlLine: d.pnlLine, needs: d.needs || null, loanPart: d.needs === "LOAN" ? d.loanPart || "PRINCIPAL" : null, sort: 500 };
+  }
+  try {
+    const c = await db.$transaction(async (tx) => {
+      const c = await tx.cashCategory.create({ data });
+      await audit(tx, userId, "CREATE", "CashCategory", c.id, undefined, d.via ? { ...c, via: d.via } : c);
+      return c;
+    });
+    resetCategoryCache();
+    return { id: c.id, name: c.name };
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") return { error: "Bunday nom allaqachon bor" };
+    throw e;
+  }
 }

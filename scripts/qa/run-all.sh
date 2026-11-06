@@ -139,6 +139,7 @@ if want a; then
   suite "a/limits" npx tsx scripts/qa/limits.mts
   suite "a/prepay-gate" env DATABASE_URL="$DBURL" npx tsx scripts/qa/prepay-gate.mts
   suite "a/transfers" env DATABASE_URL="$DBURL" npx tsx scripts/qa/transfers.mts
+  suite "a/cash-import" env DATABASE_URL="$DBURL" npx tsx scripts/qa/cash-import.mts
   suite "a/pul-qabul" env DATABASE_URL="$DBURL" npx tsx scripts/qa/pul-qabul.mts
   suite "a/receivables" env DATABASE_URL="$DBURL" npx tsx scripts/qa/receivables.mts
   stop_server

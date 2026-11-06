@@ -111,7 +111,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "schyotlar", label: "Schyotlar", paths: ["/invoices"], actions: [] },
   ],
   cashflow: [
-    { key: "kirimchiqim", label: "Kirim-chiqim", paths: ["/cashflow"], actions: ["create", "delete", "transfer", "transfer_storno", "close"] },
+    { key: "kirimchiqim", label: "Kirim-chiqim", paths: ["/cashflow"], actions: ["create", "edit", "delete", "transfer", "transfer_storno", "close"] },
     { key: "tolash", label: "Yetkazuvchiga to'lash (yetkazuvchi kartasida)", actions: ["pay"] },
   ],
   arenda: [

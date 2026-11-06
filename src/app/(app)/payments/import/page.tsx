@@ -4,9 +4,16 @@ import { Callout, Card, Field, PageHeader, Select } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { dateRu } from "@/lib/format";
 import { categoryOptions } from "@/lib/fin-report/categories";
-import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
+import { PEREKIT_CATEGORY, SALES_CATEGORY } from "@/lib/cash-categories";
+import { matchKey } from "@/lib/excel";
 import { SALES_MANBA } from "@/lib/cash-import";
 import { importCashJournalFromExcel } from "../actions";
+
+/** Hisob nomining o'zagi va jadvaldagi ko'rinishlari: «Hamkor Bank» → hamkor, hamkor mchj, hamkor bank, hamkor aj (`matchKey` ko'rinishida). */
+const aliasesOf = (name: string) => {
+  const core = matchKey(name.replace(/\b(bank|банк|mchj|мчж|aj|аж|atb|атб)\b/gi, ""));
+  return core && core !== matchKey(name) ? ["", "bank", "mcxj", "aj", "atb"].map((x) => core + x) : [];
+};
 
 /**
  * Kassa / bank → «Excel orqali qo'shish»: Kassa jurnali ustunlaridagi fayl (Sana, Hisob, Kirim, Chiqim, Manba, Sub manba,
@@ -51,7 +58,8 @@ export default async function CashJournalImport() {
               {
                 key: "account", label: "Hisob", hint: "bo'sh bo'lsa — pastda tanlangan hisob", synonyms: ["hisob", "ҳисоб", "хисоб", "счёт", "счет", "касса", "kassa", "account"],
                 valueMap: {
-                  options: accounts.map((a) => ({ value: a.name, label: `${a.name} (${kind(a.type)})` })),
+                  // «"Hamkor" MCHJ», «Hamkor bank» → Hamkor Bank: nomning o'zagi bo'yicha taxmin
+                  options: accounts.map((a) => ({ value: a.name, label: `${a.name} (${kind(a.type)})`, aliases: aliasesOf(a.name) })),
                   newLabel: "Topilmadi",
                   note: "Fayldagi hisob nomi tizimdagi kassa / bank hisobiga moslanadi. Moslanmagan nom bilan import to'xtaydi.",
                 },
@@ -66,10 +74,10 @@ export default async function CashJournalImport() {
                     ...expenseCats.map((c) => ({ value: c.name, label: c.name, group: "Chiqim manbalari" })),
                   ],
                   newLabel: "Nomidan aniqlanadi",
-                  note: `Manba tizimdagi kategoriyaga moslanadi; sub manba nomi yozilgan bo'lsa o'z manbasi topiladi. «${SALES_MANBA}» va «${PEREKIT_CATEGORY}» qatorlari yozilmaydi — jurnalda bor bo'lsa o'tkaziladi.`,
+                  note: `Manba tizimdagi kategoriyaga moslanadi. Tizimda yo'q sub manba o'sha manba ostiga yangi bo'lib qo'shiladi. «${SALES_MANBA}» — To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «${SALES_CATEGORY}» kirimi bo'lib yoziladi (mijoz qarziga tegmaydi). «${PEREKIT_CATEGORY}» / «99999-Xisob raqam almashinuvi» — bir xil summali juft qator (bir hisobdan chiqim, boshqasiga kirim; o'sha kuni yoki ±1 kun) o'tkazma hujjati bo'ladi.`,
                 },
               },
-              { key: "sub", label: "Sub manba", hint: "shu manbaniki bo'lsin", synonyms: ["sub manba", "sub", "подкатег", "подстат"] },
+              { key: "sub", label: "Sub manba", hint: "yo'q bo'lsa manbaga qo'shiladi", synonyms: ["sub manba", "sub", "подкатег", "подстат"] },
               { key: "who", label: "Kontragent", hint: "kimdan / kimga", synonyms: ["kontragent", "контрагент", "kimdan", "kimga", "кимдан", "кимга", "получател", "плательщ"] },
               { key: "note", label: "Izoh", synonyms: ["izoh", "изох", "изоҳ", "примеч", "коммент", "назначен", "note"] },
             ]}
@@ -82,6 +90,7 @@ export default async function CashJournalImport() {
             <p className="text-xs text-slate-500">
               Har qatorda Kirim yoki Chiqim summasidan bittasi to&apos;ldiriladi. Kassa jurnalida bor qator (kun, hisob, summa, manba bir xil) qayta yozilmaydi —
               jurnalning o&apos;zidan yuklab olingan faylni ham yuklash mumkin. Kredit va loyiha manbalari Kirim-Chiqim formasida kiritiladi.
+              Tizimda yo&apos;q sub manba o&apos;sha manba ostiga yangi bo&apos;lib qo&apos;shiladi (nomi boshqa manbada band bo&apos;lsa — «Nom (Manba)»).
               Naqd kassa minusga tushsa yoki biror qatorda xato bo&apos;lsa hech narsa yozilmaydi. Noto&apos;g&apos;ri yozuv Kirim-Chiqim jadvalida sabab bilan bekor qilinadi.
             </p>
           </ExcelImport>

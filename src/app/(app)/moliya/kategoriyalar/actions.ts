@@ -6,7 +6,7 @@ import { requireAction } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
-import { normCat, resetCategoryCache } from "@/lib/fin-report/categories";
+import { categoryNameTaken, createCashCategory, normCat, resetCategoryCache } from "@/lib/fin-report/categories";
 
 /** Kategoriyalar daraxti va loyihalar — buxgalteriya (`moliya.categories`), direktor doim. */
 const writer = () => requireAction("moliya", "categories");
@@ -19,12 +19,7 @@ const PARTS = ["", "PRINCIPAL", "INTEREST"] as const;
 
 const aliasList = (s: string | null) => [...new Set((s ?? "").split(/[,;\n]/).map(normCat).filter(Boolean))].slice(0, 40);
 
-/** Nom boshqa kategoriya nomi yoki alias'i bilan to'qnashmasin — aks holda yozuv qaysi biriga tushishi noaniq. */
-async function nameTaken(name: string, exceptId?: string) {
-  const k = normCat(name);
-  const all = await db.cashCategory.findMany({ select: { id: true, name: true, aliases: true } });
-  return all.some((c) => c.id !== exceptId && (normCat(c.name) === k || c.aliases.includes(k)));
-}
+const nameTaken = categoryNameTaken;
 
 const createSchema = z.object({
   name: zStr("Nomi kerak").pipe(z.string().max(80, "Nomi juda uzun")),
@@ -41,26 +36,8 @@ export async function createCategoryAction(_p: ActionState, fd: FormData): Promi
   const r = parseForm(createSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
-  if (await nameTaken(d.name)) return { error: "Bunday nom (yoki alias) allaqachon bor" };
-  let data;
-  if (d.parentId) {
-    // Sub manba ota-onasining turini, oqimini va PNL qatorini oladi
-    const p = await db.cashCategory.findUnique({ where: { id: d.parentId } });
-    if (!p || p.parentId) return { error: "Manba topilmadi (sub manba ostiga yana sub manba qo'shilmaydi)" };
-    data = { name: d.name, type: p.type, parentId: p.id, flow: p.flow, pnlLine: p.pnlLine };
-  } else {
-    if (!d.type || !d.flow || !d.pnlLine) return { error: "Turi, oqim turi va PNL qatorini tanlang" };
-    data = { name: d.name, type: d.type, flow: d.flow, pnlLine: d.pnlLine, needs: d.needs || null, loanPart: d.needs === "LOAN" ? d.loanPart || "PRINCIPAL" : null, sort: 500 };
-  }
-  try {
-    await db.$transaction(async (tx) => {
-      const c = await tx.cashCategory.create({ data });
-      await audit(tx, s.userId, "CREATE", "CashCategory", c.id, undefined, c);
-    });
-  } catch (e) {
-    if ((e as { code?: string }).code === "P2002") return { error: "Bunday nom allaqachon bor" };
-    throw e;
-  }
+  const res = await createCashCategory({ name: d.name, parentId: d.parentId, type: d.type, flow: d.flow, pnlLine: d.pnlLine, needs: d.needs || null, loanPart: d.loanPart || null }, s.userId);
+  if ("error" in res) return { error: res.error };
   refresh();
   return { ok: true };
 }

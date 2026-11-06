@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { cancelCashEntry, createCashEntry, payReceiptEntry } from "@/lib/cash-entry";
+import { cancelCashEntry, createCashEntry, payReceiptEntry, updateCashEntry } from "@/lib/cash-entry";
 import { createTransfer } from "@/lib/cash-transfer";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 
@@ -56,6 +56,28 @@ const ASSET_PURCHASE_CATEGORY = "Asosiy vosita xaridi";
  * Qo'lda yozilgan kirim/chiqimni bekor qilish — sabab bilan (`ConfirmButton reason="required"`). Yozuv o'chirilmaydi,
  * «Bekor qilingan» bo'lib qoladi. Qoida `lib/cash-entry.ts` da (mobil ham). Ruxsat — avvalgi `cashflow.delete` amali.
  */
+const editSchema = z.object({
+  date: zStr("Sana kerak").refine(validDate, "sana noto'g'ri"),
+  cashAccountId: zStr("Kassa/hisob tanlanmagan"),
+  amount: z.coerce.number().positive("summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "summa juda katta"),
+  category: zStr("Manba tanlanmagan"),
+  subCategory: zOpt,
+  counterparty: zOpt,
+  note: zOpt,
+  sig: z.string().max(5000),
+});
+
+/** Kassa / bank → Kassa jurnali: qo'lda yozilgan kirim/chiqimni tuzatish. Qoida — `lib/cash-entry.ts` → `updateCashEntry`. */
+export async function updateCashTx(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("cashflow", "edit");
+  const r = parseForm(editSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await updateCashEntry(id, { ...r.data, date: new Date(r.data.date) }, s.userId);
+  if (res.error) return { error: res.error };
+  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
+  return { ok: true, note: "Saqlandi" };
+}
+
 export async function cancelCashTx(id: string, reason: string): Promise<ActionState> {
   const s = await requireAction("cashflow", "delete");
   const res = await cancelCashEntry(id, String(reason ?? ""), s.userId);

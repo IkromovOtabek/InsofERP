@@ -79,6 +79,19 @@ function QuickAddDialog({ title, open, onClose, save, onCreated, children }: {
   ), document.body);
 }
 
+/** Istalgan tanlov yonidagi «+»: tugma + oyna (maydonlar `children`, saqlash — `save` server amali). */
+export function QuickAdd({ label, title, save, onCreated, children }: {
+  label: string; title: string; save: (fd: FormData) => Promise<QuickAddResult>; onCreated: (x: QuickAdded) => void; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <AddButton label={label} onClick={() => setOpen(true)} />
+      <QuickAddDialog title={title} open={open} onClose={() => setOpen(false)} save={save} onCreated={onCreated}>{children}</QuickAddDialog>
+    </>
+  );
+}
+
 /** «Kimdan» ichidagi «+»: yangi yetkazuvchi (Yetkazuvchilar spravochnigiga yoziladi). */
 export function SupplierAdd({ onCreated }: { onCreated: (x: QuickAdded) => void }) {
   const [open, setOpen] = useState(false);

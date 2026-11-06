@@ -55,6 +55,23 @@ export function defaultFeeAccount(from: { id: string; type: string }, to: { id: 
   return from.id;
 }
 
+/**
+ * O'tkazma hujjati (OT-…) va uning ikki oyog'i — tranzaksiya ichida, qulf va qoldiq tekshiruvi chaqiruvchida.
+ * «Kassa ⇄ bank» formasi ham, Kassa / bank Excel importidagi juft «perekit» qatorlari ham shu bilan yozadi.
+ */
+export async function insertTransfer(tx: Tx, d: {
+  date: Date; from: { id: string; name: string }; to: { id: string; name: string }; amount: number;
+  fee?: number; feeAccountId?: string | null; note: string | null; clientToken?: string | null;
+}, userId: string) {
+  const t = await tx.cashTransfer.create({
+    data: { docNo: await nextNo(tx, "cashTransfer", "OT"), date: d.date, fromAccountId: d.from.id, toAccountId: d.to.id, amount: d.amount, fee: d.fee && d.fee > 0 ? d.fee : null, feeAccountId: d.feeAccountId ?? null, note: d.note, createdById: userId, clientToken: d.clientToken ?? null },
+  });
+  const base = { date: d.date, amount: d.amount, category: TRANSFER_CATEGORY, refType: TRANSFER_REF, refId: t.id, createdById: userId, note: [t.docNo, d.note].filter(Boolean).join(" · ") };
+  const outTx = await tx.cashTransaction.create({ data: { ...base, type: "TRANSFER_OUT", cashAccountId: d.from.id, counterparty: `→ ${d.to.name}` } });
+  const inTx = await tx.cashTransaction.create({ data: { ...base, type: "TRANSFER_IN", cashAccountId: d.to.id, counterparty: `← ${d.from.name}` } });
+  return { t, outTx, inTx };
+}
+
 export async function createTransfer(input: TransferInput, userId: string): Promise<{ id?: string; docNo?: string; duplicate?: boolean; error?: string }> {
   const amount = r2(input.amount), fee = input.fee && input.fee > 0 ? r2(input.fee) : 0;
   if (!(amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
@@ -90,12 +107,7 @@ export async function createTransfer(input: TransferInput, userId: string): Prom
       // Manba: o'tkazma (+ komissiya shu hisobdan bo'lsa) qoldiqdan oshmasin — naqd kassa hech qachon, bank overdraftsiz
       const outErr = await cashOutflowError(tx, from.id, amount + (feeAccountId === from.id ? fee : 0));
       if (outErr) throw new TransferError(outErr);
-      const t = await tx.cashTransfer.create({
-        data: { docNo: await nextNo(tx, "cashTransfer", "OT"), date: input.date, fromAccountId: from.id, toAccountId: to.id, amount, fee: fee > 0 ? fee : null, feeAccountId, note, createdById: userId, clientToken: input.clientToken ?? null },
-      });
-      const base = { date: input.date, amount, category: TRANSFER_CATEGORY, refType: TRANSFER_REF, refId: t.id, createdById: userId, note: [t.docNo, note].filter(Boolean).join(" · ") };
-      const outTx = await tx.cashTransaction.create({ data: { ...base, type: "TRANSFER_OUT", cashAccountId: from.id, counterparty: `→ ${to.name}` } });
-      const inTx = await tx.cashTransaction.create({ data: { ...base, type: "TRANSFER_IN", cashAccountId: to.id, counterparty: `← ${from.name}` } });
+      const { t, outTx, inTx } = await insertTransfer(tx, { date: input.date, from, to, amount, fee, feeAccountId, note, clientToken: input.clientToken }, userId);
       let feeTx = null;
       if (fee > 0 && feeAccountId) {
         // Qabul qiluvchidan yechiladigan komissiya: o'tkazma tushgandan keyingi qoldiqdan oshmasin

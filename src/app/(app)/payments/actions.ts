@@ -79,10 +79,10 @@ export async function importCashJournalFromExcel(_prev: ActionState, fd: FormDat
 
   const res = await importCashEntries(list, { defaultAccountId: String(fd.get("cashAccountId") ?? ""), maps }, s.userId);
   if ("error" in res) return { error: res.error };
-  if (!res.added) return { error: `Yangi qator yo'q: faylning ${res.skipped} ta qatori Kassa jurnalida allaqachon bor` };
+  if (!res.added && !res.transfers) return { error: `Yangi qator yo'q: faylning ${res.skipped} ta qatori Kassa jurnalida allaqachon bor` };
 
   revalidatePath("/payments"); revalidatePath("/cashflow"); revalidatePath("/"); revalidatePath("/moliya", "layout");
-  redirect(`/payments?tab=kassa&from=${isoDate(res.from)}&to=${isoDate(res.to)}&import=${res.added}-${res.skipped}`);
+  redirect(`/payments?tab=kassa&from=${isoDate(res.from)}&to=${isoDate(res.to)}&import=${res.added}-${res.skipped}-${res.transfers}-${res.newSubs.length}`);
 }
 
 /**
