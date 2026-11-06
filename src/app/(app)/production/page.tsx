@@ -102,7 +102,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   }
 
   return (
-    <div>
+    <div data-wide>
       <PageHeader title="Ishlab chiqarish" subtitle={`Bugun: ${qty(todayM3)} m³ · brigada kutayotgan: ${unassignedCount} · muddati yaqin (≤ 2 kun): ${soonCount}`} action={canBatch || canStockOrder ? <div className="flex flex-wrap gap-2">{canStockOrder && <LinkButton href="/production/sklad" variant="secondary"><Boxes size={16} /> Skladga zayavka</LinkButton>}{canBatch && <LinkButton href="/production/new"><Plus size={16} /> Zames</LinkButton>}</div> : undefined} />
 
       {selected && yangi && selected.kind === "STOCK" && (
