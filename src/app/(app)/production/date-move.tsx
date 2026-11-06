@@ -79,7 +79,8 @@ function placeAt(el: HTMLElement | null): { top: number; left: number } | null {
   return { top: below ? r.bottom + 6 : Math.max(8, r.top - 6 - H), left: Math.min(Math.max(8, r.left), window.innerWidth - W - 8) };
 }
 
-export function DateMove({ o, name, label, className }: { o: { id: string; deliveryDate: string; dateUnknown: boolean }; name: string; label: string; className?: string }) {
+/** `compact` — matritsaning tor ustuni uchun: ikonkasiz, sig'masa keyingi qatorga o'raladi (qo'shni ustunga chiqmaydi) */
+export function DateMove({ o, name, label, className, compact }: { o: { id: string; deliveryDate: string; dateUnknown: boolean }; name: string; label: string; className?: string; compact?: boolean }) {
   const btn = useRef<HTMLButtonElement>(null);
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -127,11 +128,12 @@ export function DateMove({ o, name, label, className }: { o: { id: string; deliv
   };
 
   return (
-    <span className="relative inline-flex flex-col">
+    <span className={cn("relative inline-flex flex-col", compact && "max-w-full")}>
       <button ref={btn} type="button" onClick={toggle} disabled={pending} title="Bosing — boshqa sanaga ko'chirish" aria-expanded={!!pos} aria-haspopup="dialog"
-        className={cn("inline-flex items-center gap-1 rounded px-1 -mx-1 whitespace-nowrap underline decoration-dotted underline-offset-2 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60", className,
+        className={cn("inline-flex items-center gap-1 rounded px-1 -mx-1 whitespace-nowrap underline decoration-dotted underline-offset-2 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60",
+          compact && "mx-0 max-w-full flex-wrap justify-center px-0.5 whitespace-normal [overflow-wrap:anywhere]", className,
           moved && moved === current && "bg-emerald-600 text-[#fff] no-underline ring-2 ring-emerald-300 hover:bg-emerald-600 hover:text-[#fff]")}>
-        {pending ? <Loader2 size={11} className="animate-spin" /> : moved && moved === current ? <Check size={11} /> : <CalendarDays size={11} />} {label}
+        {pending ? <Loader2 size={11} className="animate-spin" /> : moved && moved === current ? <Check size={11} /> : !compact && <CalendarDays size={11} />} {label}
       </button>
       {moved && moved === current && createPortal(
         <div role="status" className="fixed bottom-5 left-1/2 z-[90] flex -translate-x-1/2 items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-[#fff] shadow-(--shadow-pop)">

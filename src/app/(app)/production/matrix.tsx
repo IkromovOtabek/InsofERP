@@ -212,11 +212,13 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
                         {o.site && <span className="mt-0.5 block text-[10.5px] leading-tight font-medium text-slate-600">{o.site}</span>}
                         <BlockTag name={o.block} className="mt-1 gap-0.5 px-1 text-[10.5px]" />
                       </>}
+                      {/* Ustun tor (25 tagacha): sana va «zarur» alohida qatorda, sig'masa o'raladi — qo'shni ustunga chiqmaydi */}
                       <span className="mt-1 block">
                         {canMove && (allById.get(o.id)?.movable ?? true)
-                          ? <DateMove o={o} name={o.customer} label={`${short(o)}${o.isUrgent ? " · zarur" : ""}`} className={dateCls} />
-                          : <span className={dateCls}>{short(o)}{o.isUrgent && " · zarur"}</span>}
+                          ? <DateMove o={o} name={o.customer} label={short(o)} className={dateCls} compact />
+                          : <span className={dateCls}>{short(o)}</span>}
                       </span>
+                      {o.isUrgent && <span className="block text-[10.5px] leading-tight font-semibold text-red-700">zarur</span>}
                     </SheetTh>
                   );
                 })}
