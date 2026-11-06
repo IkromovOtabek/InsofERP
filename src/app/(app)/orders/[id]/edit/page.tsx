@@ -10,6 +10,7 @@ import { unitLabel } from "@/lib/unit";
 import { isoDate } from "@/lib/format";
 import { withoutNds } from "@/lib/nds";
 import { isEditable } from "@/lib/orders";
+import { BLOCK_ORDER } from "@/lib/site-blocks";
 import { OrderEditForm, type OrderEditData } from "./edit-form";
 
 /**
@@ -24,7 +25,7 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
     where: { id },
     include: {
       customer: { select: { name: true } },
-      items: { include: { product: { select: { id: true, code: true, name: true, unit: true, price: true, groupId: true } }, tasks: { select: { qty: true, doneQty: true, status: true } } } },
+      items: { include: { product: { select: { id: true, code: true, name: true, unit: true, price: true, groupId: true } }, block: { select: { name: true } }, tasks: { select: { qty: true, doneQty: true, status: true } } } },
       batches: { where: { cancelledAt: null }, select: { id: true } },
       trips: { select: { id: true } },
       invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } },
@@ -37,7 +38,7 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
 
   const [catalog, sites] = await Promise.all([
     productCatalog(isStock ? { pieceOnly: true } : {}),
-    isStock ? [] : db.site.findMany({ where: { customerId: o.customerId, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, address: true, lat: true, lng: true } }),
+    isStock ? [] : db.site.findMany({ where: { customerId: o.customerId, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, address: true, lat: true, lng: true, blocks: { where: { isActive: true }, orderBy: BLOCK_ORDER, select: { name: true } } } }),
   ]);
   // Arxivlangan mahsulot qatorda qolgan bo'lsa ham ro'yxatda ko'rinsin
   const products = [...catalog.products];
@@ -52,7 +53,7 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
     items: o.items.map((i) => ({
       id: i.id, productId: i.productId, qty: Number(i.qtyM3),
       // Formada narx NDS'siz turadi — saqlashda «QQS 12%» belgilangan qatorga soliq qayta qo'shiladi
-      price: i.nds ? withoutNds(Number(i.price)) : Number(i.price), nds: i.nds,
+      price: i.nds ? withoutNds(Number(i.price)) : Number(i.price), nds: i.nds, block: i.block?.name ?? "",
       // Brigadaga berilgan qator: o'chmaydi, mahsuloti almashmaydi, soni berilgan/bajarilganidan kam bo'lmaydi
       locked: i.tasks.length > 0,
       min: Math.max(i.tasks.filter((t) => t.status !== "CANCELLED").reduce((a, t) => a + Number(t.qty), 0), i.tasks.reduce((a, t) => a + Number(t.doneQty), 0)),
@@ -68,7 +69,7 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
   return (
     <div>
       <PageHeader back={{ href: `/orders/${id}`, label: "Zayavka" }} title={isStock ? "Sklad zayavkasini tahrirlash" : "Zayavkani tahrirlash"} subtitle={isStock ? "Zaxiraga ishlab chiqarish" : o.customer.name} />
-      <OrderEditForm data={data} products={products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} sites={sites} geoSearch={geoSearchEnabled()} />
+      <OrderEditForm data={data} products={products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} sites={sites.map(({ blocks, ...x }) => ({ ...x, blocks: blocks.map((b) => b.name) }))} geoSearch={geoSearchEnabled()} />
     </div>
   );
 }

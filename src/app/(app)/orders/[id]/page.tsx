@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays, FileBadge2, Printer, Pencil } from "lucide-react";
 import { db } from "@/lib/db";
+import { BlockTag } from "@/components/site-blocks";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { customerCredit } from "@/lib/finance";
@@ -49,7 +50,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     where: { id },
     include: {
       customer: true, createdBy: true,
-      items: { include: { product: true, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
+      items: { include: { product: true, block: { select: { name: true } }, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
       batches: { include: { product: true }, orderBy: { date: "desc" } },
       trips: { include: { vehicle: true, driver: true }, orderBy: { createdAt: "desc" } },
       invoices: { where: { status: { not: "CANCELLED" } }, include: { payments: true } },
@@ -244,7 +245,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                 const u = unitLabel(i.product.unit);
                 return (
                   <Tr key={i.id}>
-                    <Td className="font-medium">{i.product.name}</Td>
+                    <Td className="font-medium">{i.product.name}{i.block && <BlockTag name={i.block.name} className="ml-2 align-middle" />}</Td>
                     <Td right>{qty(need)} {u}</Td>
                     <Td right className={ready > 0 ? "font-semibold text-emerald-700" : "text-slate-400"}>{qty(ready)} {u}</Td>
                     <Td right>{canMake == null ? <span className="text-slate-300" title="Retsept kiritilmagan">—</span> : <span className={canMake > 0 ? "" : "text-red-600"}>{qty(canMake)} {u}</span>}</Td>
@@ -400,7 +401,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                 const tq = live.reduce((s, t) => s + Number(t.qty), 0), td = live.reduce((s, t) => s + Number(t.doneQty), 0);
                 return (
                   <Tr key={i.id}>
-                    <Td>{i.product.name}</Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td>
+                    <Td>{i.product.name}{i.block && <BlockTag name={i.block.name} className="ml-2 align-middle" />}</Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td>
                     {!isStock && <><Td right>{money(i.price)}{i.nds && <span className="ml-1 text-[11px] font-medium text-slate-500">{NDS_LABEL}</span>}</Td><Td right className="font-semibold">{money(Number(i.qtyM3) * Number(i.price))}</Td></>}
                     <Td>{live.length ? live.map((t) => <div key={t.id} className="flex flex-wrap items-center gap-1.5 py-0.5"><span>{t.brigade.name}</span>{live.length > 1 && <span className="text-xs tabular text-slate-500">{qty(t.qty)}</span>}<TaskStatusBadge status={t.status} /></div>) : <span className="text-slate-400">—</span>}{live.length > 0 && st.left > 0.0005 && <div className="mt-0.5 text-xs font-medium text-amber-700">Tayinlanmagan: {qty(st.left)} {unitLabel(i.product.unit)}</div>}</Td>
                     <Td right>{live.length ? <><span className="text-emerald-700">{qty(td)}</span> / <span className={tq - td > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(Math.max(0, tq - td))}</span><div className="mt-1 ml-auto w-20"><Progress value={td} max={tq} tone={td >= tq ? "success" : "default"} /></div></> : <span className="text-slate-400">—</span>}</Td>

@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Star, Wallet, FileText, Upload, Check, Smartphone } from "lucide-react";
+import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Star, Wallet, FileText, Upload, Check, Smartphone, Building2 } from "lucide-react";
 import { AddressPicker, type SavedPlace } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { startTransition, useActionState, useMemo, useState, type ReactNode } from "react";
@@ -12,6 +12,7 @@ import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/compone
 import type { ProductCreate } from "@/lib/catalog";
 import { ProductField } from "@/components/product-field";
 import { MoneyInput } from "@/components/money-input";
+import { BlockField } from "@/components/site-blocks";
 import { ndsOf } from "@/lib/nds";
 import { cn } from "@/lib/utils";
 
@@ -27,8 +28,13 @@ export type CustomerOpt = {
   lastOrderAt: number | null; // so'nggi zayavka sanasi (ms)
   stars: 0 | 1 | 2 | 3 | 4 | 5; // ishonch reytingi, 0 — yangi mijoz
   label: string;
-  sites: SavedPlace[]; // faol obyektlari — oxirgi zayavka ochilgani birinchi
+  sites: SitePlace[]; // faol obyektlari — oxirgi zayavka ochilgani birinchi
 };
+/** Mijoz obyekti va uning bloklari (A blok, B blok… — obyekt ichidagi binolar) */
+export type SitePlace = SavedPlace & { blocks: string[] };
+/** Manzil bo'yicha obyekt — serverdagi `ensureSite` bilan bir xil taqqoslash (bo'sh joylar, katta-kichik harf) */
+const normAddr = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+export const siteByAddress = (sites: SitePlace[], address: string) => sites.find((x) => normAddr(x.address) === normAddr(address)) ?? null;
 
 /** Mijoz tanlanganda «Obyekt»ga tushadigan manzil: so'ralgan obyekt → oxirgi ishlatilgan obyekt → mijoz manzili. */
 function defaultSite(c: CustomerOpt | null, siteId?: string): { address: string; lat: number | null; lng: number | null } | null {
@@ -45,7 +51,7 @@ function defaultSite(c: CustomerOpt | null, siteId?: string): { address: string;
  */
 export type ProductStock = Record<string, { free: number; total: number; owned: number; canMake: number | null; by: string | null; kind: "piece" | "concrete" }>;
 /** `price` — kelishilgan narx (NDS'siz); `nds` — shu narxga NDS 12% qo'shilsinmi. */
-type Row = { key: number; productId: string; qtyM3: string; price: string; nds: boolean };
+type Row = { key: number; productId: string; qtyM3: string; price: string; nds: boolean; /** Obyekt bloki nomi, "" — blokka bog'lanmagan */ block: string };
 export type CashAccountOpt = { id: string; name: string; type: "CASH" | "BANK" };
 
 const money = (n: number) => `${fmtNum(n)} so'm`;
@@ -212,6 +218,9 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   // obyekti ham, manzili ham yo'q mijozda yozilgan manzil o'chmaydi. Birinchi ochilishda ariza/amoCRM manzili (prefill) ustun.
   const [site, setSite] = useState(() => (prefill?.address ? { address: prefill.address, lat: null, lng: null } : defaultSite(customer, preselectSite)));
   const [siteKey, setSiteKey] = useState(0);
+  // «Obyekt» katagidagi joriy manzil — shu bo'yicha mijozning obyekti va uning bloklari topiladi
+  const [addr, setAddr] = useState(site?.address ?? "");
+  const [blocksOn, setBlocksOn] = useState(false);
   // To'lov turi: naqd (kassa) / perechisleniye (bank) — oldindan to'lov (`payment=prepay`), qarzga — kredit limitdan
   const [kind, setKind] = useState<"cash" | "bank" | "credit">("cash");
   const payment: "prepay" | "credit" = kind === "credit" ? "credit" : "prepay";
@@ -236,7 +245,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const [tripNds, setTripNds] = useState(false);
   // Arizadan kelgan mahsulot ro'yxatda bo'lsa — birinchi qator shu bilan to'ldiriladi
   const firstProduct = products.find((p) => p.id === prefill?.productId) ?? products[0];
-  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false }]);
+  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false, block: "" }]);
   const [pickFor, setPickFor] = useState<number | null>(null); // qaysi qator uchun spravochnik ochiq
 
   // Mahsulot yonidagi qoldiq izohi: beton — xomashyodan qancha chiqadi, dona mahsulot — hovlidagi erkin qoldiq
@@ -294,10 +303,16 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const contractN = Number(contractAmount) || 0;
   const contractLeft = contractN - total; // shartnoma summasidan zayavka summasi ayirilgan qoldiq
 
+  // Obyekt bloklari: tanlangan obyektniki + qatorlarda yangi yozilgani. Ustun — obyektda blok bo'lsa yoki qo'lda yoqilsa
+  const curSite = mode === "existing" && customer ? siteByAddress(customer.sites, addr) : null;
+  const siteBlocks = curSite?.blocks ?? [];
+  const blockOpts = [...new Set([...siteBlocks, ...rows.map((r) => r.block.trim()).filter(Boolean)])];
+  const showBlocks = blocksOn || siteBlocks.length > 0 || rows.some((r) => r.block.trim());
+
   const cell = "border border-slate-300 px-2 py-1";
   const th = `${cell} bg-slate-100 text-center font-serif text-[13px] font-bold italic leading-tight text-[#2f6fc9]`;
   const num = `${cell} text-right font-serif italic tabular-nums whitespace-nowrap`;
-  const cols = showVat ? 8 : 6;
+  const cols = (showVat ? 8 : 6) + (showBlocks ? 1 : 0);
   const lbl = "text-right font-serif text-[13px] font-bold italic text-slate-900";
 
   return (
@@ -339,6 +354,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                   setCustomer(c);
                   const d = c && c.id !== customer?.id ? defaultSite(c) : null;
                   if (d) { setSite(d); setSiteKey((k) => k + 1); }
+                  // Boshqa mijozning obyekti — eski obyekt bloklari qatorlarda qolmasin
+                  if (c?.id !== customer?.id) setRows((rs) => rs.map((r) => ({ ...r, block: "" })));
                   // Kredit limiti yo'q mijoz: to'lov turi darhol "naqd" va bosh to'lov ochiq — sotuvchi summani kiritadi
                   if (c?.blacklisted) { if (kind === "credit") pickPayment("cash"); setHasDeposit(true); }
                 }} />
@@ -436,7 +453,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         <div className="mt-4 grid grid-cols-2 gap-2">
           <AddressPicker
             key={mode === "existing" ? `c${siteKey}` : "new"}
-            searchEnabled={geoSearch} required label="Obyekt" onDistance={setDistance}
+            searchEnabled={geoSearch} required label="Obyekt" onDistance={setDistance} onAddress={setAddr}
             defaultAddress={mode === "existing" ? site?.address ?? "" : ""}
             defaultLat={mode === "existing" ? site?.lat : null} defaultLng={mode === "existing" ? site?.lng : null}
             saved={mode === "existing" ? customer?.sites ?? [] : []}
@@ -444,6 +461,13 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
           <div className="col-span-2 flex items-center gap-1 font-serif italic text-slate-600">
             (<Input name="addressNote" placeholder="izoh: mo'ljal, darvoza, qavat…" aria-label="Obyekt izohi" className="h-8 text-sm" />)
           </div>
+          {siteBlocks.length > 0 && (
+            <div className="col-span-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+              <Building2 size={13} className="text-indigo-400" /> <span className="font-medium text-slate-700">{curSite!.name}</span> obyektida {siteBlocks.length} ta blok:
+              {siteBlocks.map((b) => <span key={b} className="rounded-md bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-800 ring-1 ring-indigo-200 ring-inset">{b}</span>)}
+              <span>— jadvalda har qatorga blokni tanlang</span>
+            </div>
+          )}
         </div>
 
         {/* ── Jadval ── */}
@@ -453,6 +477,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               <tr>
                 <th className={cn(th, "w-10")}>№</th>
                 <th className={th}>Mahsulot nomi, turi</th>
+                {showBlocks && <th className={cn(th, "w-40")}>Blok</th>}
                 <th className={cn(th, "w-20")}>O&apos;lchov birligi</th>
                 <th className={cn(th, "w-24")}>Soni</th>
                 <th className={cn(th, "w-36")}>Narxi</th>
@@ -475,10 +500,12 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                     <td className={cn(cell, "min-w-[220px]")}>
                       <input type="hidden" name="productId[]" value={r.productId} />
                       <input type="hidden" name="nds[]" value={showVat && r.nds ? "1" : "0"} />
+                      <input type="hidden" name="block[]" value={r.block} />
                       {/* Yozilgan harflar bo'yicha qidiradi; "…" tugmasi papkali spravochnikni ochadi */}
                       <ProductField products={products} value={r.productId} onPick={(id) => onProduct(r.key, id)} onOpenPicker={() => setPickFor(r.key)} hint={stockHint} />
                       <div className="mt-1"><StockNote st={stock[r.productId]} need={Number(r.qtyM3) || 0} unit={unit} /></div>
                     </td>
+                    {showBlocks && <td className={cell}><BlockField value={r.block} onChange={(v) => update(r.key, { block: v })} options={blockOpts} /></td>}
                     <td className={cn(cell, "pt-3 text-center font-serif italic")}>{unit}</td>
                     <td className={cell}>
                       <Input name="qtyM3[]" type="number" step={unit === "m³" ? "0.5" : "1"} min={unit === "m³" ? "0.5" : "1"} placeholder="0" aria-label="Soni"
@@ -503,7 +530,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               {needsDelivery ? (
                 <tr className="bg-amber-50/60 align-top">
                   <td className={cn(cell, "pt-3 text-center font-serif italic")}>{rows.length + 1}</td>
-                  <td className={cell}>
+                  <td className={cell} colSpan={showBlocks ? 2 : 1}>
                     <label className="flex cursor-pointer items-center gap-2 pt-1.5 font-serif font-bold italic text-slate-900">
                       <input type="checkbox" checked onChange={() => setNeedsDelivery(false)} className="h-[18px] w-[18px] accent-[#25236b]" /> Dastavka
                       <Truck size={14} className="text-slate-400" />
@@ -539,14 +566,20 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               <tr>
                 <td className={cn(cell, "text-center font-serif italic")}>{rows.length + 2}</td>
                 <td className={cell} colSpan={cols - 1}>
-                  <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: showVat }])}
-                    className="inline-flex items-center gap-1 py-1 font-serif text-sm italic text-[#2f6fc9] hover:underline"><Plus size={14} /> mahsulot qo&apos;shish</button>
+                  <span className="flex flex-wrap items-center gap-x-5">
+                    <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: showVat, block: "" }])}
+                      className="inline-flex items-center gap-1 py-1 font-serif text-sm italic text-[#2f6fc9] hover:underline"><Plus size={14} /> mahsulot qo&apos;shish</button>
+                    {/* Obyektda hali blok kiritilmagan bo'lsa ham — qatorlarni A, B… bloklarga bo'lish (yangi nom obyektga qo'shiladi) */}
+                    {!showBlocks && (
+                      <button type="button" onClick={() => setBlocksOn(true)} className="inline-flex items-center gap-1 py-1 font-serif text-sm italic text-indigo-700 hover:underline"><Building2 size={14} /> bloklarga bo&apos;lish</button>
+                    )}
+                  </span>
                 </td>
               </tr>
 
               <tr className="font-bold">
                 <td className={cell} />
-                <td className={cell} />
+                <td className={cell} colSpan={showBlocks ? 2 : 1} />
                 <td className={cn(cell, "text-center font-serif italic")}>Jami</td>
                 <td className={num}>{units.size === 1 ? fmtNum(totalQty) : ""}</td>
                 <td className={cell} />

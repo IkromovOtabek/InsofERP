@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 import { Plus, X, HardHat, Truck, Wallet, ShieldAlert } from "lucide-react";
 import type { OrderStatus, PayMethod } from "@/generated/prisma";
 import { Button, Callout, Card, CardHeader, Checkbox, Field, FormActions, FormError, Input, LinkButton, Select, Textarea } from "@/components/ui";
-import { AddressPicker, type SavedPlace } from "@/components/address-picker";
+import { AddressPicker } from "@/components/address-picker";
+import { BlockField } from "@/components/site-blocks";
 import { ProductField } from "@/components/product-field";
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
 import { MoneyInput } from "@/components/money-input";
@@ -13,12 +14,12 @@ import { fmtNum, isoDate } from "@/lib/format";
 import { withNds } from "@/lib/nds";
 import { cn } from "@/lib/utils";
 import { editOrder } from "../../actions";
-import { blockEnterSubmit, submitKeepingState } from "../../order-form";
+import { blockEnterSubmit, siteByAddress, submitKeepingState, type SitePlace } from "../../order-form";
 
 export type OrderEditData = {
   id: string; kind: "SALE" | "STOCK"; status: OrderStatus; customerName: string;
   /** `price` — NDS'siz; `locked` — brigadaga berilgan qator, `min` — undan kam qilib bo'lmaydigan miqdor */
-  items: { id: string; productId: string; qty: number; price: number; nds: boolean; locked: boolean; min: number }[];
+  items: { id: string; productId: string; qty: number; price: number; nds: boolean; locked: boolean; min: number; /** obyekt bloki nomi, "" — yo'q */ block: string }[];
   deliveryDate: string; dateUnknown: boolean;
   deliveryAddress: string; lat: number | null; lng: number | null;
   needsPump: boolean; needsDelivery: boolean; deliveryFee: number; isUrgent: boolean; note: string;
@@ -28,7 +29,7 @@ export type OrderEditData = {
   invoices: string[];
 };
 
-type Row = { key: string; id: string | null; productId: string; qty: string; price: string; nds: boolean; locked: boolean; min: number };
+type Row = { key: string; id: string | null; productId: string; qty: string; price: string; nds: boolean; locked: boolean; min: number; block: string };
 const num = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000));
 
 /**
@@ -36,11 +37,14 @@ const num = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(
  * brigadaga berilgan qator qulflanadi, tasdiqlangan zayavkada summa oshsa limit qayta tekshiriladi.
  */
 export function OrderEditForm({ data, products, groups, canCreateProduct, sites, geoSearch }: {
-  data: OrderEditData; products: CatalogProduct[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; sites: SavedPlace[]; geoSearch: boolean;
+  data: OrderEditData; products: CatalogProduct[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; sites: SitePlace[]; geoSearch: boolean;
 }) {
   const [state, action, pending] = useActionState(editOrder.bind(null, data.id), undefined);
   const isStock = data.kind === "STOCK";
-  const [rows, setRows] = useState<Row[]>(() => data.items.map((i) => ({ key: i.id, id: i.id, productId: i.productId, qty: num(i.qty), price: String(i.price), nds: i.nds, locked: i.locked, min: i.min })));
+  const [rows, setRows] = useState<Row[]>(() => data.items.map((i) => ({ key: i.id, id: i.id, productId: i.productId, qty: num(i.qty), price: String(i.price), nds: i.nds, locked: i.locked, min: i.min, block: i.block })));
+  // Obyekt bloklari: «Obyekt» katagidagi manzil bo'yicha mijoz obyekti + qatorlarda yozilgani
+  const [addr, setAddr] = useState(data.deliveryAddress);
+  const blockOpts = [...new Set([...(siteByAddress(sites, addr)?.blocks ?? []), ...rows.map((r) => r.block.trim()).filter(Boolean)])];
   const [pickFor, setPickFor] = useState<string | null>(null);
   const [dateUnknown, setDateUnknown] = useState(data.dateUnknown);
   const [needsDelivery, setNeedsDelivery] = useState(data.needsDelivery);
@@ -55,7 +59,7 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
   const onProduct = (key: string, productId: string) => update(key, { productId, price: productOf(productId)?.price ?? "0" });
   const addRow = () => {
     const p = products[0];
-    setRows((rs) => [...rs, { key: `n${Date.now()}`, id: null, productId: p?.id ?? "", qty: "", price: isStock ? "0" : p?.price ?? "0", nds: kind === "bank", locked: false, min: 0 }]);
+    setRows((rs) => [...rs, { key: `n${Date.now()}`, id: null, productId: p?.id ?? "", qty: "", price: isStock ? "0" : p?.price ?? "0", nds: kind === "bank", locked: false, min: 0, block: "" }]);
   };
 
   const lineOf = (r: Row) => (Number(r.qty) || 0) * (r.nds ? withNds(Number(r.price) || 0) : Number(r.price) || 0);
@@ -92,7 +96,8 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
                 <input type="hidden" name="itemId[]" value={r.id ?? ""} />
                 <input type="hidden" name="productId[]" value={r.productId} />
                 {!isStock && <input type="hidden" name="nds[]" value={r.nds ? "1" : "0"} />}
-                <div className={cn("grid grid-cols-1 gap-3", isStock ? "sm:grid-cols-[minmax(0,1fr)_160px_40px]" : "sm:grid-cols-[minmax(0,1fr)_130px_170px_40px]")}>
+                {!isStock && <input type="hidden" name="block[]" value={r.block} />}
+                <div className={cn("grid grid-cols-1 gap-3", isStock ? "sm:grid-cols-[minmax(0,1fr)_160px_40px]" : "sm:grid-cols-[minmax(0,1fr)_150px_130px_170px_40px]")}>
                   <div className="min-w-0">
                     <div className="mb-1.5 text-[13px] font-medium text-slate-700">{idx + 1}. Mahsulot</div>
                     {r.locked ? (
@@ -104,6 +109,12 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
                       <ProductField products={products} value={r.productId} onPick={(id) => onProduct(r.key, id)} onOpenPicker={() => setPickFor(r.key)} />
                     )}
                   </div>
+                  {!isStock && (
+                    <div>
+                      <div className="mb-1.5 text-[13px] font-medium text-slate-700">Blok</div>
+                      <BlockField value={r.block} onChange={(v) => update(r.key, { block: v })} options={blockOpts} />
+                    </div>
+                  )}
                   <Field label={`Soni${unit ? `, ${unit}` : ""}`} error={short ? `kamida ${fmtNum(r.min, 3)}` : undefined}>
                     <Input name="qtyM3[]" type="number" step="any" min={r.locked && r.min > 0 ? String(r.min) : "0.001"} required value={r.qty}
                       onChange={(e) => update(r.key, { qty: e.target.value })} aria-invalid={short || undefined}
@@ -151,7 +162,7 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
           </div>
           {!isStock && (
             <div className="sm:col-span-2">
-              <AddressPicker searchEnabled={geoSearch} required label="Obyekt" defaultAddress={data.deliveryAddress} defaultLat={data.lat} defaultLng={data.lng} saved={sites} />
+              <AddressPicker searchEnabled={geoSearch} required label="Obyekt" defaultAddress={data.deliveryAddress} defaultLat={data.lat} defaultLng={data.lng} saved={sites} onAddress={setAddr} />
             </div>
           )}
           {!isStock && (

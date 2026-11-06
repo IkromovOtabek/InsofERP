@@ -19,6 +19,9 @@ const schema = z.object({
   deliveryHours: zOpt,
   instructions: zOpt,
   isActive: z.string().optional().transform((v) => v === "on"),
+  // Obyekt ichidagi bloklar (A blok, B blok…) — forma har doim yuboradi (bo'sh ro'yxat — bloklar yo'q)
+  block: z.array(z.string()).optional(),
+  blocksSent: z.string().optional(),
 });
 
 export async function saveSite(customerId: string, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -26,7 +29,8 @@ export async function saveSite(customerId: string, id: string | null, _prev: Act
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   // Qoida `lib/customer-sites.ts` da — mobil ilova (mijoz kartasi) ham shuni chaqiradi
-  const res = await saveCustomerSite(customerId, id, r.data, s.userId);
+  const { block, blocksSent, ...site } = r.data;
+  const res = await saveCustomerSite(customerId, id, { ...site, blocks: blocksSent ? block ?? [] : undefined }, s.userId);
   if (!res.ok) return { error: res.error };
   revalidatePath(`/customers/${customerId}`);
   return { ok: true };

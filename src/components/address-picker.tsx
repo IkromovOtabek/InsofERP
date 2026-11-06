@@ -41,6 +41,7 @@ export function AddressPicker({
   showDistance = true,
   className = "col-span-2",
   onDistance,
+  onAddress,
   saved = [],
 }: {
   defaultAddress?: string;
@@ -59,6 +60,8 @@ export function AddressPicker({
   className?: string;
   /** Masofa o'zgarganda (nuqta tanlandi/olib tashlandi) — zayavka formasi reys hisobi uchun oladi. */
   onDistance?: (d: Distance | null) => void;
+  /** Manzil matni o'zgarganda — zayavka formasi qaysi obyekt (va uning bloklari) tanlanganini shundan biladi. */
+  onAddress?: (address: string) => void;
   /** Mijozning mavjud obyektlari — katak bosilganda tanlash uchun (zayavka formasi beradi). */
   saved?: SavedPlace[];
 }) {
@@ -77,6 +80,7 @@ export function AddressPicker({
   const [distance, setDistance] = useState<Distance | null>(null);
   const [plantUnset, setPlantUnset] = useState(false);
   useEffect(() => { onDistance?.(distance); }, [distance, onDistance]);
+  useEffect(() => { onAddress?.(address); }, [address, onAddress]);
 
   const el = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);

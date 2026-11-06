@@ -5,6 +5,7 @@ import { customersCredit, customersHistory, contractedIds, defaultCreditLimit } 
 import { stockSnapshot } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
+import { BLOCK_ORDER } from "@/lib/site-blocks";
 import { OrderForm, type CustomerOpt, type OrderPrefill, type ProductStock } from "../order-form";
 import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
 import { canDo } from "@/lib/permissions";
@@ -87,14 +88,14 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
     customersHistory(undefined, credit),
     contractedIds(),
     // «Obyekt» katagi uchun: mijozning faol obyektlari, oxirgi zayavka ochilgani birinchi
-    db.site.findMany({ where: { isActive: true, customer: { isActive: true, isInternal: false } }, orderBy: { name: "asc" }, select: { id: true, customerId: true, name: true, address: true, lat: true, lng: true } }),
+    db.site.findMany({ where: { isActive: true, customer: { isActive: true, isInternal: false } }, orderBy: { name: "asc" }, select: { id: true, customerId: true, name: true, address: true, lat: true, lng: true, blocks: { where: { isActive: true }, orderBy: BLOCK_ORDER, select: { name: true } } } }),
     db.order.groupBy({ by: ["siteId"], where: { siteId: { not: null } }, _max: { createdAt: true } }),
   ]);
   const lastAt = new Map(siteLast.map((r) => [r.siteId, r._max.createdAt?.getTime() ?? 0]));
   const sitesBy = new Map<string, CustomerOpt["sites"]>();
   for (const x of [...sites].sort((a, b) => (lastAt.get(b.id) ?? 0) - (lastAt.get(a.id) ?? 0))) {
     const list = sitesBy.get(x.customerId) ?? [];
-    list.push({ id: x.id, name: x.name, address: x.address, lat: x.lat, lng: x.lng });
+    list.push({ id: x.id, name: x.name, address: x.address, lat: x.lat, lng: x.lng, blocks: x.blocks.map((b) => b.name) });
     sitesBy.set(x.customerId, list);
   }
   const opts: CustomerOpt[] = customers.map((c) => {

@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState, useTransition } from "react";
 import { Building2, Plus, Pencil, Trash2, MapPin, Phone, Clock, Wallet, ClipboardList } from "lucide-react";
 import { Badge, Button, Field, FormError, Input, LinkButton, Textarea, Checkbox, Empty } from "@/components/ui";
 import { AddressPicker } from "@/components/address-picker";
+import { BlockTag, BlocksEditor } from "@/components/site-blocks";
 import { money } from "@/lib/format";
 import type { SiteDebt } from "@/lib/customer-sites";
 import { saveSite, deleteSite } from "../site-actions";
@@ -12,6 +13,8 @@ import { saveSite, deleteSite } from "../site-actions";
  * Mijoz kartasidagi "Obyektlar" bo'limi: mijozning obyektlari ro'yxati, har biriga qo'shish/tahrirlash,
  * va har obyekt bo'yicha qarz (yozilgan schyot − to'langan + schyotsiz ochiq zayavka).
  * Kiritilgan obyektlar yangi zayavkaning «Obyekt» katagida tanlanadi; obyektdan to'g'ridan-to'g'ri zayavka ochsa ham bo'ladi.
+ * Obyekt ichidagi bloklar (A, B… binolar) shu yerda kiritiladi — zayavka qatorida blok tanlanadi va ishlab chiqarish
+ * matritsasida har blok alohida ustun bo'ladi.
  */
 export function SitesPanel({ customerId, sites, canEdit, canOrder, geoSearch }: { customerId: string; sites: SiteDebt[]; canEdit: boolean; canOrder: boolean; geoSearch: boolean }) {
   const [adding, setAdding] = useState(false);
@@ -80,6 +83,12 @@ function SiteRow({ row, customerId, canEdit, canOrder, onEdit }: { row: SiteDebt
               {(row.site!.contactName || row.site!.contactPhone) && <div className="flex items-center gap-1.5"><Phone size={13} className="shrink-0 text-slate-400" /> {[row.site!.contactName, row.site!.contactPhone].filter(Boolean).join(" · ")}</div>}
               {row.site!.deliveryHours && <div className="flex items-center gap-1.5"><Clock size={13} className="shrink-0 text-slate-400" /> {row.site!.deliveryHours}</div>}
               {row.site!.instructions && <div className="text-slate-400">{row.site!.instructions}</div>}
+              {row.site!.blocks.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1 pt-1">
+                  <span className="mr-0.5 text-xs text-slate-400">Bloklar:</span>
+                  {row.site!.blocks.map((b) => <BlockTag key={b} name={b} />)}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -136,6 +145,12 @@ function SiteForm({ customerId, site, geoSearch, onDone }: { customerId: string;
         <Field label="Ish vaqti" hint="qabul qilish vaqti, masalan 08:00–18:00"><Input name="deliveryHours" defaultValue={s?.deliveryHours ?? ""} /></Field>
       </div>
       <Field label="Maxsus ko'rsatma" hint="kirish darvozasi, nasos joyi, yo'l cheklovi..."><Textarea name="instructions" defaultValue={s?.instructions ?? ""} /></Field>
+      {/* <label> emas (Field): label bosilganda ichidagi birinchi tugma — blokni olib tashlash — bosilib ketardi */}
+      <div>
+        <div className="mb-1.5 text-[13px] font-medium text-slate-700">Bloklar</div>
+        <BlocksEditor defaultValue={s?.blocks ?? []} />
+        <p className="mt-1 text-xs text-slate-500">Obyekt ichidagi binolar. Zayavkada har mahsulot qatoriga blok tanlanadi, ishlab chiqarishda har blok alohida ustunda ko&apos;rinadi.</p>
+      </div>
       <Checkbox name="isActive" defaultChecked={s?.isActive ?? true} label="Faol" />
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>

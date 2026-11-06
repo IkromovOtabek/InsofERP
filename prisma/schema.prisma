@@ -1447,16 +1447,20 @@ model OrderItem {
   price     Decimal @db.Decimal(18, 2) // kelishilgan narx (1 m3) — NDS belgilangan bo'lsa soliq qo'shilgan holda
   nds       Boolean @default(false) // narxga "NDS 12%" qo'shilgan (hujjatda alohida qator bo'lib ko'rinadi)
   brigadeId String? // ishlab chiqarish bo'limida tayinlanadi; tasdiqlanganda topshiriq yaratiladi
+  /// Obyekt ichidagi blok (A, B…): matritsada bir obyektning har bloki alohida ustun bo'ladi
+  blockId   String?
 
   order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product      @relation(fields: [productId], references: [id])
   brigade Brigade?     @relation(fields: [brigadeId], references: [id])
+  block   SiteBlock?   @relation(fields: [blockId], references: [id])
   /// Bir qatorni bir nechta brigadaga bo'lib berish mumkin: har biriga o'z miqdori (jami ≤ qator miqdori)
   tasks   BrigadeTask[]
 
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([orderId])
   @@index([productId])
+  @@index([blockId])
 }
 
 // ───────────────────────── Brigadalar va topshiriqlar ─────────────────────────
@@ -1896,10 +1900,28 @@ model Site {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  customer Customer @relation(fields: [customerId], references: [id])
+  customer Customer    @relation(fields: [customerId], references: [id])
   orders   Order[]
+  blocks   SiteBlock[]
 
   @@index([customerId])
+}
+
+/// Obyekt ichidagi bino / blok (A, B, C…). Zayavka qatori qaysi blok uchun ekanini bildiradi — ishlab chiqarish
+/// matritsasida bir obyektning har bloki alohida ustun bo'ladi. Nomi obyekt ichida takrorlanmaydi; zayavkada yangi
+/// nom yozilsa o'zi qo'shiladi (`lib/site-blocks.ts`). Zayavkasi bor blok o'chirilmaydi — «faol emas» qilinadi.
+model SiteBlock {
+  id        String   @id @default(cuid())
+  siteId    String
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  site  Site        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  items OrderItem[]
+
+  @@unique([siteId, name])
 }
 
 /// Zapravka — yoqilg'i quyilgani. Haydovchi ilovadan yoki logistika vebdan kiritadi.

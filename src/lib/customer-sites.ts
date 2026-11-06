@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { audit } from "./audit";
 import { orderTotal } from "@/lib/order-total";
+import { BLOCK_ORDER, syncSiteBlocks } from "@/lib/site-blocks";
 
 /**
  * Mijoz obyektlari (Site) bo'yicha qarz — mijoz kartasidagi "Obyektlar" bo'limi uchun.
@@ -33,6 +34,8 @@ export type SiteDebt = {
     deliveryHours: string | null;
     instructions: string | null;
     isActive: boolean;
+    /** Faol bloklar (A blok, B blok…) — kiritilgan tartibda */
+    blocks: string[];
   } | null;
   invoiced: number; // yozilgan schyotlar
   paid: number; // to'langan
@@ -50,7 +53,7 @@ export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
     db.site.findMany({
       where: { customerId },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
-      select: { id: true, name: true, address: true, lat: true, lng: true, contactName: true, contactPhone: true, deliveryHours: true, instructions: true, isActive: true },
+      select: { id: true, name: true, address: true, lat: true, lng: true, contactName: true, contactPhone: true, deliveryHours: true, instructions: true, isActive: true, blocks: { where: { isActive: true }, orderBy: BLOCK_ORDER, select: { name: true } } },
     }),
     // Mijozning barcha sotuv zayavkalari: obyekti, holati, mahsulot summasi va bekor qilinmagan schyotlari
     db.order.findMany({
@@ -99,7 +102,7 @@ export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
     return { site, invoiced: inv, paid: pd, open: op, net, debt: Math.max(0, net), orders: n, canDelete: site !== null && n === 0 };
   };
 
-  const out: SiteDebt[] = sites.map((s) => build(s.id, s));
+  const out: SiteDebt[] = sites.map((s) => build(s.id, { ...s, blocks: s.blocks.map((b) => b.name) }));
   // "Obyektsiz" guruh — faqat obyektsiz zayavka/to'lov bo'lsa ko'rsatiladi
   if ((orderCount.get(null) ?? 0) > 0 || (invoiced.get(null) ?? 0) > 0 || (paid.get(null) ?? 0) > 0 || (open.get(null) ?? 0) > 0) {
     out.push(build(null, null));
@@ -121,6 +124,8 @@ export type SiteInput = {
   deliveryHours: string | null;
   instructions: string | null;
   isActive: boolean;
+  /** Obyekt bloklari — veb forma doim yuboradi; mobil yubormaydi (`undefined`) — bloklar o'zgarmaydi. */
+  blocks?: string[];
 };
 export type SiteResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -131,20 +136,23 @@ export async function saveCustomerSite(customerId: string, id: string | null, d:
   const customer = await db.customer.findUnique({ where: { id: customerId }, select: { id: true } });
   if (!customer) return { ok: false, error: "Mijoz topilmadi" };
   let savedId = id;
+  const { blocks, ...data } = d;
   try {
     await db.$transaction(async (tx) => {
       if (id) {
         const before = await tx.site.findUnique({ where: { id } });
         if (!before || before.customerId !== customerId) throw new Error("NOT_OWNER");
-        const after = await tx.site.update({ where: { id }, data: d });
-        await audit(tx, userId, "UPDATE", "Site", id, before, after);
+        const after = await tx.site.update({ where: { id }, data });
+        const b = blocks ? await syncSiteBlocks(tx, id, blocks) : null;
+        await audit(tx, userId, "UPDATE", "Site", id, { ...before, ...(b ? { blocks: b.before } : {}) }, { ...after, ...(b ? { blocks: b.after } : {}) });
         // Nuqta qo'yilsa — shu obyektning nuqtasiz ochiq zayavkalari ham to'ladi (Logistika → Obyektlar bilan bir xil)
         if (d.lat != null && d.lng != null) {
           await tx.order.updateMany({ where: { siteId: id, lat: null, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"] } }, data: { lat: d.lat, lng: d.lng } });
         }
       } else {
-        const c = await tx.site.create({ data: { ...d, customerId } });
-        await audit(tx, userId, "CREATE", "Site", c.id, undefined, c);
+        const c = await tx.site.create({ data: { ...data, customerId } });
+        const b = blocks ? await syncSiteBlocks(tx, c.id, blocks) : null;
+        await audit(tx, userId, "CREATE", "Site", c.id, undefined, { ...c, ...(b ? { blocks: b.after } : {}) });
         savedId = c.id;
       }
     });

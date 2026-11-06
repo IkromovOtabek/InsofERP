@@ -34,7 +34,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
       where: { status: { not: "CANCELLED" } },
       orderBy: [{ deliveryDate: "asc" }],
       include: {
-        customer: true, items: { include: { product: true, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
+        customer: true, site: { select: { name: true } },
+        items: { include: { product: true, block: { select: { name: true } }, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
         // Doskadagi tayyorlik: jo'natilgani va zamesda quyilgani (beton)
         trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
         batches: { where: { cancelledAt: null }, select: { productId: true, qtyM3: true } },
@@ -73,11 +74,12 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
       finished: isDone(o), movable: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"].includes(o.status),
       assign: assigned(o) ? "full" : partlyAssigned(o) ? "part" : "none",
       brigades: [...new Set(work.flatMap((i) => i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => t.brigade.name)))],
+      site: o.kind === "STOCK" ? null : o.site?.name ?? null,
       items: work.map((i, n) => {
         const q = Number(i.qtyM3);
         const cancelledDone = i.tasks.filter((t) => t.status === "CANCELLED").reduce((s, t) => s + Number(t.doneQty), 0);
         const poured = o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0);
-        return { itemId: i.id, productId: i.productId, name: i.product.name, unit: i.product.unit, qty: q, left: st[n]!.left, shipped: q * share, done: Math.min(q, Math.max(st[n]!.doneQty + cancelledDone, q * share, poured)) };
+        return { itemId: i.id, productId: i.productId, name: i.product.name, unit: i.product.unit, qty: q, left: st[n]!.left, shipped: q * share, done: Math.min(q, Math.max(st[n]!.doneQty + cancelledDone, q * share, poured)), block: i.block?.name ?? null };
       }),
     };
   };
@@ -129,7 +131,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           {selected.status !== "DRAFT" && <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
             focus={focusItem}
             items={workItems(selected.items).filter((i) => !onlyItem || i.id === onlyItem).map((i) => ({
-              id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit),
+              id: i.id, product: i.block ? `${i.product.name} — ${i.block.name}` : i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit),
               left: itemTasks(i.qtyM3, i.tasks).left,
               tasks: i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => ({ id: t.id, brigade: t.brigade.name, qty: qty(t.qty), status: t.status })),
             }))} />}

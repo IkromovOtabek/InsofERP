@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown, ArrowDownWideNarrow } from "lucide-react";
+import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ArrowDownWideNarrow } from "lucide-react";
 import { Card, CardHeader, Checkbox, Input, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
 import { date, fmtNum } from "@/lib/format";
 import { DateMove } from "./date-move";
+import { BlockTag } from "@/components/site-blocks";
 import { unitLabel } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 // Faqat tiplar: lib fayli Prisma (db) ni import qiladi — qiymat olinsa brauzer bundle'iga tushib qoladi
@@ -17,6 +18,9 @@ import type { UnitTotal } from "@/lib/unit";
  * Ustunlar tayyorlik bo'yicha guruhlangan (Tayyor emas / Qisman tayyor / Tayyor), sarlavhadagi sanani bosib zayavka boshqa kunga
  * ko'chiriladi; son rangi — brigada holati, son bosilsa shu zayavka qatori «Brigada tayinlash» formasida ochiladi
  * (`/production?order=…&item=…`), u yerda brigada va miqdor tanlanadi.
+ * Zayavka obyektning bir nechta blokiga bo'lingan bo'lsa — har blok alohida ustun (bir xil mijoz/obyekt, har xil blok).
+ * Excel'dagidek bitta varaq: ~110 qator × 25 zayavka ustuni ichki aylantirishsiz ko'rinadi — ustunlar ekran eniga teng bo'linadi,
+ * qator 25 px, uzun matn kesilmaydi (pastki qatorga o'raladi), sarlavha sahifa bo'ylab yopishib turadi.
  * Ostida «Zayavkalar doskasi»: holat bo'yicha ustunlar. Mahsulot tanlansa, doska shu mahsulotni olayotgan zayavkalarga toraytiriladi.
  * Ma'lumot `lib/production-matrix.ts` dan; bu yerda faqat filtr va ko'rinish.
  */
@@ -38,13 +42,12 @@ const signed = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "") + fmtNum(Math.a
 const short = (o: MatrixOrder) => (o.dateUnknown ? "sanasiz" : date(new Date(o.deliveryDate)).slice(0, 5));
 const isLate = (o: MatrixOrder, today: number) => !o.dateUnknown && o.status !== "ready" && new Date(o.deliveryDate).getTime() < today;
 
-// Qotib turadigan ustunlar: chapda №, mahsulot, qoldiq; o'ngda natija. Kengliklar qat'iy — `left` shu yig'indidan.
-const W_NO = "left-0 w-10 min-w-10 max-w-10";
-const W_NAME = "left-10 w-[180px] min-w-[180px] max-w-[180px] xl:w-[240px] xl:min-w-[240px] xl:max-w-[240px]";
-const W_ST = "left-[220px] xl:left-[280px] w-[84px] min-w-[84px] xl:w-[92px] xl:min-w-[92px] shadow-[inset_-2px_0_0_var(--color-slate-300)]";
-const W_TT = "right-0 w-[104px] min-w-[104px] xl:w-[124px] xl:min-w-[124px] shadow-[inset_2px_0_0_var(--color-slate-300)]";
-const C_NO = cn("sticky z-20", W_NO), C_NAME = cn("sticky z-20", W_NAME), C_ST = cn("sticky z-20", W_ST), C_TT = cn("sticky z-20", W_TT);
-const B_NO = cn("sticky z-[1]", W_NO), B_NAME = cn("sticky z-[1]", W_NAME), B_ST = cn("sticky z-[1]", W_ST), B_TT = cn("sticky z-[1]", W_TT);
+// Ustun kengliklari `<colgroup>` da (table-fixed): №, mahsulot, qoldiq va natija qat'iy, zayavka ustunlari qolgan enni teng bo'lishadi.
+// Qoldiq va natija ustunlari chegarasi qalinroq — zayavkalar bloki ko'zga ajralib tursin.
+const C_ST = "px-1.5 shadow-[inset_-2px_0_0_var(--color-slate-300)]";
+const C_TT = "px-1.5 shadow-[inset_2px_0_0_var(--color-slate-300)]";
+/** Matn kesilmaydi: so'z sig'masa ham bo'linib keyingi qatorga o'tadi */
+const WRAP = "whitespace-normal [overflow-wrap:anywhere]";
 
 /**
  * Matritsa qatorlari tartibi. Sukut — nomi bo'yicha (server tartibi). «O'lchami» — nomdagi raqamlar bo'yicha:
@@ -87,8 +90,6 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
   const [onlyDef, setOnlyDef] = useState(false);
   // Sukut bo'yicha hamma mahsulot ko'rinadi — matritsa o'z qutisida tepa-pastga aylanadi
   const [hideEmpty, setHideEmpty] = useState(false);
-  // Ixcham — qat'iy balandlik (~10 qator), jadval ichida tepa-pastga aylanadi; «To'liq ochish» — hamma qator birdaniga
-  const [full, setFull] = useState(false);
   const [sort, setSort] = useState<RowSort>("name");
   useEffect(() => {
     try {
@@ -103,11 +104,16 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
   const byId = useMemo(() => new Map(data.products.map((p) => [p.id, p])), [data.products]);
   // Matritsa ustunlari doskadagidek tayyorlik bo'yicha guruhlanadi (Tayyor emas / Qisman tayyor / Tayyor)
   const allById = useMemo(() => new Map(all.map((o) => [o.id, o])), [all]);
-  const readyOf = (o: MatrixOrder): ReadyCol => { const b = allById.get(o.id); return b ? readiness(b, o.alloc).col : "none"; };
+  // Ustun tayyorligi — faqat shu ustundagi (blokdagi) qatorlar bo'yicha
+  const readyMap = useMemo(() => new Map(data.orders.map((o) => {
+    const b = allById.get(o.id);
+    return [o.key, b ? readiness({ ...b, items: b.items.filter((i) => o.itemIds.includes(i.itemId)) }, o.alloc).col : "none"] as const;
+  })), [data.orders, allById]);
+  const readyOf = (o: MatrixOrder): ReadyCol => readyMap.get(o.key) ?? "none";
   const net = (p: MatrixProduct) => p.stock - p.band;
   const needle = q.trim().toLowerCase();
   const prodMatch = (p: MatrixProduct) => !needle || p.name.toLowerCase().includes(needle) || p.code.toLowerCase().includes(needle);
-  const ordMatch = (o: MatrixOrder) => !needle || o.customer.toLowerCase().includes(needle) || Object.keys(o.items).some((id) => { const p = byId.get(id); return !!p && prodMatch(p); });
+  const ordMatch = (o: MatrixOrder) => !needle || [o.customer, o.site ?? "", o.block ?? ""].some((x) => x.toLowerCase().includes(needle)) || Object.keys(o.items).some((id) => { const p = byId.get(id); return !!p && prodMatch(p); });
 
   const cols = data.orders.filter((o) => asf[readyOf(o)] && ordMatch(o))
     .sort((a, b) => FLOW.indexOf(readyOf(a)) - FLOW.indexOf(readyOf(b)) || a.deliveryDate.localeCompare(b.deliveryDate));
@@ -128,7 +134,8 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
     ? t.map((x, k) => <span key={x.unit} className={cn("block whitespace-nowrap", k > 0 && "text-base font-medium sm:text-lg")}>{n0(x.qty)} {unitLabel(x.unit)}</span>)
     : "0");
   const needAny = sm.need.length > 0;
-  const cnt = FLOW.reduce((a, s) => ({ ...a, [s]: data.orders.filter((o) => readyOf(o) === s).length }), {} as Record<ReadyCol, number>);
+  // Tugmadagi son — zayavkalar (bloklarga bo'lingani bitta zayavka)
+  const cnt = FLOW.reduce((a, s) => ({ ...a, [s]: new Set(data.orders.filter((o) => readyOf(o) === s).map((o) => o.id)).size }), {} as Record<ReadyCol, number>);
   const selP = sel ? byId.get(sel) : undefined;
   const pick = (id: string) => setSel((cur) => (cur === id ? null : id));
 
@@ -149,7 +156,7 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
         <div className="flex flex-wrap items-center gap-2 px-5 pt-4">
           <label className="relative w-full sm:w-64">
             <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mahsulot yoki mijoz…" aria-label="Qidirish" className="h-9 pl-9" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mahsulot, mijoz, obyekt, blok…" aria-label="Qidirish" className="h-9 pl-9" />
           </label>
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Tayyorlik">
             {FLOW.map((s) => (
@@ -170,28 +177,41 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
         </div>
 
         <div id="matritsa" className="scroll-mt-20 p-5 pt-3">
-          {/* Tepa-pastga aylantirish sahifaga o'tsin: matritsa ekranning katta qismini egallaydi, `contain` g'ildirakni yutib qo'yardi */}
-          <Sheet lang="uz" maxHeight={full ? "none" : "min(65vh, 560px)"} className="overscroll-auto overscroll-x-contain [&_table]:text-[15px] [&_tbody_td]:py-2.5 [&_tfoot_td]:py-2.5">
+          {/* Ichki aylantirish yo'q: hamma qator ochiq, sahifa o'zi aylanadi, sarlavha yuqori panel (h-14) ostida yopishadi.
+              Tor ekranda (< lg) 25 ustun sig'maydi — u yerda jadval gorizontal aylanadi */}
+          <Sheet lang="uz" maxHeight="none" className="lg:overflow-visible [&_table]:table-fixed [&_table]:text-[14px] max-lg:[&_table]:min-w-[960px] lg:[&_thead]:top-14 [&_tbody_tr]:h-[25px] [&_tbody_td]:py-0.5 [&_tbody_td]:leading-5 [&_tfoot_td]:py-1">
+            <colgroup>
+              <col className="w-9" />
+              <col className="w-[170px] 2xl:w-[230px]" />
+              <col className="w-[68px]" />
+              {cols.map((o) => <col key={o.key} />)}
+              <col className="w-[100px]" />
+            </colgroup>
             <SheetHead>
               <tr>
-                <SheetTh tone="plain" className={C_NO}><span className="sr-only">№</span></SheetTh>
-                <SheetTh tone="plain" className={cn(C_NAME, "text-left")}>Mahsulot</SheetTh>
+                <SheetTh tone="plain" className="px-1"><span className="sr-only">№</span></SheetTh>
+                <SheetTh tone="plain" className="text-left">Mahsulot</SheetTh>
                 <SheetTh tone="plain" className={C_ST}>Skladda</SheetTh>
-                {groups.map((g) => <SheetTh key={g.s} tone={READY_TONE[g.s]} colSpan={g.n} className={g.n === 1 ? "whitespace-normal" : undefined}>{READY_LABEL[g.s]}</SheetTh>)}
+                {groups.map((g) => <SheetTh key={g.s} tone={READY_TONE[g.s]} colSpan={g.n} className={cn(WRAP, "px-1")}>{READY_LABEL[g.s]}</SheetTh>)}
                 <SheetTh tone="plain" className={C_TT}>Natija</SheetTh>
               </tr>
               <tr>
-                <SheetTh tone="plain" className={C_NO}>№</SheetTh>
-                <SheetTh tone="plain" className={cn(C_NAME, "text-left font-medium whitespace-normal text-slate-500")}>
+                <SheetTh tone="plain" className="px-1">№</SheetTh>
+                <SheetTh tone="plain" className="text-left font-medium whitespace-normal text-slate-500">
                   {rows.length} / {data.products.length} qator
                   {hiddenEmpty > 0 && <button type="button" onClick={() => setHideEmpty(false)} className="block text-[11px] font-medium text-slate-900 underline-offset-2 hover:underline">{hiddenEmpty} ta bo&apos;sh qator yashirilgan — ko&apos;rsatish</button>}
                 </SheetTh>
                 <SheetTh tone="plain" className={cn(C_ST, "font-medium text-slate-500")}>qoldiq</SheetTh>
                 {cols.map((o) => {
-                  const r = readyOf(o), dateCls = cn("text-[12px] font-medium", isLate(o, today) ? "text-red-700" : "text-slate-600");
+                  const r = readyOf(o), dateCls = cn("text-[11px] font-medium", isLate(o, today) ? "text-red-700" : "text-slate-600");
                   return (
-                    <SheetTh key={o.id} tone={READY_TONE[r]} className="w-[104px] min-w-[104px] max-w-[104px] px-1.5 align-bottom whitespace-normal" title={`${o.customer} · ${o.dateUnknown ? "sana aniq emas" : date(new Date(o.deliveryDate))} · ${READY_LABEL[r]} · ${ASSIGN_LABEL[o.assign].toLowerCase()}`}>
-                      <Link href={`/orders/${o.id}`} className="line-clamp-2 text-[13px] leading-tight hover:underline">{o.customer}</Link>
+                    <SheetTh key={o.key} tone={READY_TONE[r]} className={cn(WRAP, "px-1 align-bottom")} title={`${[o.customer, o.block && o.site, o.block].filter(Boolean).join(" · ")} · ${o.dateUnknown ? "sana aniq emas" : date(new Date(o.deliveryDate))} · ${READY_LABEL[r]} · ${ASSIGN_LABEL[o.assign].toLowerCase()}`}>
+                      <Link href={`/orders/${o.id}`} className="block text-[12px] leading-tight hover:underline">{o.customer}</Link>
+                      {/* Blokli ustun: bir xil obyekt nomi, ostida o'z bloki */}
+                      {o.block && <>
+                        {o.site && <span className="mt-0.5 block text-[10.5px] leading-tight font-medium text-slate-600">{o.site}</span>}
+                        <BlockTag name={o.block} className="mt-1 gap-0.5 px-1 text-[10.5px]" />
+                      </>}
                       <span className="mt-1 block">
                         {canMove && (allById.get(o.id)?.movable ?? true)
                           ? <DateMove o={o} name={o.customer} label={`${short(o)}${o.isUrgent ? " · zarur" : ""}`} className={dateCls} />
@@ -210,29 +230,29 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
                 const bg = on ? "bg-brand-50" : "bg-white";
                 return (
                   <SheetTr key={p.id} className={cn("cursor-pointer", on && "[&>td]:bg-brand-50")}>
-                    <SheetTd center muted className={cn(B_NO, bg)}><button type="button" onClick={() => pick(p.id)} className="w-full">{i + 1}</button></SheetTd>
-                    <SheetTd strong className={cn(B_NAME, bg)}><button type="button" onClick={() => pick(p.id)} className="block w-full truncate text-left" title={p.name}>{p.name}</button></SheetTd>
-                    <SheetTd right strong className={cn(B_ST, bg)}>{n0(p.stock)}</SheetTd>
+                    <SheetTd center muted className={cn("px-1", bg)}><button type="button" onClick={() => pick(p.id)} className="w-full">{i + 1}</button></SheetTd>
+                    <SheetTd strong className={cn("px-2", bg)}><button type="button" onClick={() => pick(p.id)} className={cn("block w-full text-left", WRAP)} title={p.name}>{p.name}</button></SheetTd>
+                    <SheetTd right strong className={cn(C_ST, bg)}>{n0(p.stock)}</SheetTd>
                     {cols.map((o) => {
                       const v = o.items[p.id], c = o.cells[p.id];
-                      if (!v || !c) return <SheetTd key={o.id} tone={READY_TONE[readyOf(o)]} />;
+                      if (!v || !c) return <SheetTd key={o.key} tone={READY_TONE[readyOf(o)]} />;
                       const left = Math.max(0, c.qty - c.given), st: MatrixAssign = left <= 0.0005 ? "full" : c.given > 0 ? "part" : "none";
                       return (
-                        <SheetTd key={o.id} center className="p-1">
+                        <SheetTd key={o.key} center className="px-0.5">
                           <Link href={`/production?order=${o.id}&item=${c.itemId}`}
-                            title={`${o.customer} · ${p.name}\n${st === "full" ? "Tayinlangan" : st === "part" ? `Tayinlangan ${n0(c.given)} / ${n0(c.qty)}, qolgan ${n0(left)}` : "Brigada tayinlanmagan"}${c.brigades.length ? ` · ${c.brigades.join(", ")}` : ""}\nBosing — brigada tayinlash`}
-                            className={cn("inline-flex min-w-12 flex-col items-center rounded-md px-2 py-1 text-[15px] font-semibold tabular ring-1 ring-inset transition hover:ring-2",
+                            title={`${o.customer}${o.block ? ` · ${o.block}` : ""} · ${p.name}\n${st === "full" ? "Tayinlangan" : st === "part" ? `Tayinlangan ${n0(c.given)} / ${n0(c.qty)}, qolgan ${n0(left)}` : "Brigada tayinlanmagan"}${c.brigades.length ? ` · ${c.brigades.join(", ")}` : ""}\nBosing — brigada tayinlash`}
+                            className={cn("flex w-full flex-wrap items-center justify-center gap-x-1 rounded-sm px-0.5 text-[13px] leading-5 font-semibold tabular ring-1 ring-inset transition [overflow-wrap:anywhere] hover:ring-2",
                               st === "full" ? "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:ring-emerald-400" : st === "part" ? "bg-amber-50 text-amber-700 ring-amber-200 hover:ring-amber-400" : "bg-red-50 text-red-700 ring-red-200 hover:ring-red-400")}>
                             {n0(v)}
-                            {st === "part" && <span className="text-[11px] leading-none font-medium">−{n0(left)}</span>}
+                            {st === "part" && <span className="text-[10px] leading-4 font-medium">−{n0(left)}</span>}
                           </Link>
                         </SheetTd>
                       );
                     })}
-                    <SheetTd right className={cn(B_TT, bg)}>
-                      <span className="inline-flex items-center justify-end gap-2">
+                    <SheetTd right className={cn(C_TT, bg)}>
+                      <span className="inline-flex items-center justify-end gap-1.5">
                         <span className={cn("tabular", n < 0 ? "font-bold text-red-700" : n > 0 ? "font-semibold text-emerald-700" : "text-slate-400")}>{signed(n)}</span>
-                        <span aria-hidden className="flex h-1.5 w-9 justify-end overflow-hidden rounded-full bg-slate-100">{n < 0 && <span className="h-full bg-red-500" style={{ width: `${Math.max(8, (-n / maxDef) * 100)}%` }} />}</span>
+                        <span aria-hidden className="flex h-1.5 w-5 justify-end overflow-hidden rounded-full bg-slate-100">{n < 0 && <span className="h-full bg-red-500" style={{ width: `${Math.max(8, (-n / maxDef) * 100)}%` }} />}</span>
                       </span>
                     </SheetTd>
                   </SheetTr>
@@ -241,11 +261,11 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
             </tbody>
             <SheetFoot>
               <tr>
-                <SheetTd className={B_NO} />
-                <SheetTd className={B_NAME}>Jami</SheetTd>
-                <SheetTd right className={B_ST}>{n0(rows.reduce((s, p) => s + Math.max(0, p.stock), 0))}</SheetTd>
-                {cols.map((o) => <SheetTd key={o.id} center>{n0(rows.reduce((s, p) => s + (o.items[p.id] ?? 0), 0))}</SheetTd>)}
-                <SheetTd right className={cn(B_TT, "text-red-700")}>{signed(rows.reduce((s, p) => s + Math.min(0, net(p)), 0))}</SheetTd>
+                <SheetTd className="px-1" />
+                <SheetTd className="px-2">Jami</SheetTd>
+                <SheetTd right className={C_ST}>{n0(rows.reduce((s, p) => s + Math.max(0, p.stock), 0))}</SheetTd>
+                {cols.map((o) => <SheetTd key={o.key} center className={cn(WRAP, "px-0.5 text-[12px]")}>{n0(rows.reduce((s, p) => s + (o.items[p.id] ?? 0), 0))}</SheetTd>)}
+                <SheetTd right className={cn(C_TT, "text-red-700")}>{signed(rows.reduce((s, p) => s + Math.min(0, net(p)), 0))}</SheetTd>
               </tr>
             </SheetFoot>
           </Sheet>
@@ -255,11 +275,6 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
             <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-100 ring-1 ring-amber-200" /> qisman (−qolgani)</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-100 ring-1 ring-emerald-200" /> tayinlangan</span>
             <span>Sonni bosing — brigada va miqdor tanlanadi. Sanani bosing — boshqa kunga ko&apos;chirish.</span>
-            {rows.length > 10 && (
-              <button type="button" onClick={() => setFull((x) => !x)} className="ml-auto inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-900">
-                <ChevronsUpDown size={13} /> {full ? "Ixcham (aylantirib ko'rish)" : `To'liq ochish (${rows.length} qator)`}
-              </button>
-            )}
           </div>
         </div>
       </Card>
@@ -281,8 +296,10 @@ export type BoardOrder = {
   /** Sanasini doskadan o'zgartirsa bo'ladi (yetkazilmagan, bekor qilinmagan) */
   movable: boolean;
   assign: MatrixAssign; brigades: string[];
-  /** `done` — tayyor miqdor (brigada bajargani, quyilgani, jo'natilgani — kattasi), `shipped` — jo'natilgan ulushi */
-  items: { itemId: string; productId: string; name: string; unit: string; qty: number; left: number; done: number; shipped: number }[];
+  /** Obyekt nomi — qatorlar bloklarga bo'lingan bo'lsa kartada ko'rsatiladi */
+  site: string | null;
+  /** `done` — tayyor miqdor (brigada bajargani, quyilgani, jo'natilgani — kattasi), `shipped` — jo'natilgan ulushi; `block` — obyekt bloki */
+  items: { itemId: string; productId: string; name: string; unit: string; qty: number; left: number; done: number; shipped: number; block: string | null }[];
 };
 
 /**
@@ -305,8 +322,14 @@ function readiness(o: BoardOrder, alloc: Record<string, number> | undefined): { 
 function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, onPick }: {
   orders: BoardOrder[]; filters: React.ReactNode; tab: string; data: ProductionMatrix; sel?: MatrixProduct; net: number; today: number; canMove: boolean; onClear: () => void; onPick: (id: string) => void;
 }) {
-  // Skladdan qoplanishi — faqat matritsadagi (dona) qatorlar uchun
-  const mx = new Map(data.orders.map((o) => [o.id, o]));
+  // Skladdan qoplanishi — faqat matritsadagi (dona) qatorlar uchun; blok ustunlari zayavka bo'yicha qo'shiladi
+  const mx = new Map<string, { items: Record<string, number>; alloc: Record<string, number> }>();
+  for (const c of data.orders) {
+    const m = mx.get(c.id) ?? { items: {}, alloc: {} };
+    for (const [pid, q] of Object.entries(c.items)) m.items[pid] = (m.items[pid] ?? 0) + q;
+    for (const [pid, q] of Object.entries(c.alloc)) m.alloc[pid] = (m.alloc[pid] ?? 0) + q;
+    mx.set(c.id, m);
+  }
   const list = (sel ? orders.filter((o) => o.items.some((i) => i.productId === sel.id)) : orders)
     .map((o) => ({ o, r: readiness(o, mx.get(o.id)?.alloc) }));
   const sorted = (s: ReadyCol) => list.filter((x) => x.r.col === s);
@@ -346,6 +369,7 @@ function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, 
                     <div className="flex flex-col gap-1">
                       <div className="min-w-0">
                         <Link href={`/orders/${o.id}`} className="block truncate font-semibold text-slate-900 hover:underline" title={o.customer}>{o.customer}</Link>
+                        {o.site && o.items.some((it) => it.block) && <div className="truncate text-xs font-medium text-slate-600" title={o.site}>{o.site}</div>}
                         <div className={cn("flex flex-wrap gap-x-1.5 text-xs", o.soon && s !== "ready" ? "font-medium text-red-700" : "text-slate-500")}>
                           {canMove && o.movable ? <DateMove o={o} name={o.customer} label={when} /> : <span className="whitespace-nowrap">{when}</span>}
                           {o.due && s !== "ready" && <span className="whitespace-nowrap">· {o.due}</span>}
@@ -366,7 +390,7 @@ function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, 
                           <button key={it.itemId} type="button" onClick={() => dona && onPick(it.productId)} disabled={!dona}
                             title={v !== undefined ? `Skladdan ${n0(g)} / ${n0(v)}` : undefined}
                             className={cn("grid grid-cols-[minmax(0,1fr)_auto_44px] items-center gap-2 rounded px-1 py-0.5 text-left", dona && "hover:bg-slate-50", sel?.id === it.productId && "bg-brand-50")}>
-                            <span className="truncate text-slate-700">{it.name}</span>
+                            <span className="min-w-0 text-slate-700">{it.block && <BlockTag name={it.block} className="mr-1 align-[1px]" />}<span className="[overflow-wrap:anywhere]">{it.name}</span></span>
                             <span className="font-semibold whitespace-nowrap tabular text-slate-900">{n0(it.qty)} <span className="text-[11px] font-normal text-slate-400">{unitLabel(it.unit)}</span></span>
                             {v === undefined ? <span /> : g >= v ? <Check size={14} className="justify-self-end text-emerald-600" /> : <span className="justify-self-end text-[11px] font-semibold tabular text-red-700">−{n0(v - g)}</span>}
                           </button>

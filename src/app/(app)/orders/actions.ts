@@ -53,6 +53,8 @@ const schema = z.object({
   price: z.array(z.coerce.number({ message: "Narx raqam bo'lsin" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Narx juda katta")),
   // Qator narxiga "NDS 12%" tugmasi bilan soliq qo'shilganmi ("1" / "0")
   nds: z.array(z.string()).optional(),
+  // Qator qaysi obyekt blokiga (A blok…) — bo'sh bo'lishi mumkin
+  block: z.array(z.string()).optional(),
 });
 
 /**
@@ -100,7 +102,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         items: d.productId.map((productId, i) => {
           const nds = d.nds?.[i] === "1";
           const price = d.price[i]!;
-          return { productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds };
+          return { productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block?.[i] ?? null };
         }).filter((i) => i.productId),
         needsPump: d.needsPump,
         needsDelivery: d.needsDelivery,
@@ -164,6 +166,7 @@ const editSchema = z.object({
   // Sklad zayavkasida narx yo'q
   price: z.array(z.coerce.number({ message: "Narx raqam bo'lsin" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Narx juda katta")).optional(),
   nds: z.array(z.string()).optional(),
+  block: z.array(z.string()).optional(),
   deliveryDate: zOpt.refine((v) => !v || Number.isFinite(new Date(v).getTime()), "Yetkazish sanasi noto'g'ri"),
   dateUnknown: z.string().optional().transform((v) => v === "1"),
   isUrgent: z.string().optional().transform((v) => v === "on"),
@@ -195,7 +198,7 @@ export async function editOrder(id: string, _prev: ActionState, fd: FormData): P
       items: d.productId.map((productId, i) => {
         const nds = d.nds?.[i] === "1";
         const price = d.price?.[i] ?? 0;
-        return { id: d.itemId?.[i] || null, productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds };
+        return { id: d.itemId?.[i] || null, productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block ? d.block[i] ?? null : undefined };
       }),
       deliveryDate: d.deliveryDate ? new Date(d.deliveryDate) : new Date(),
       dateUnknown: d.dateUnknown,

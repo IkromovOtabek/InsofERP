@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { ensureSite } from "@/lib/logistics";
+import { blockKey, blockName, ensureBlocks } from "@/lib/site-blocks";
 import { audit } from "@/lib/audit";
 import { canDoByUserId } from "@/lib/auth";
 import { customerCredit, defaultCreditLimit } from "@/lib/finance";
@@ -329,7 +330,11 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
 // ───────────────────────── Yangi zayavka ─────────────────────────
 
 /** `price` — NDS qo'shilgan holdagi kelishilgan narx; `nds` — soliq qo'shilganini eslatib turadi. */
-export type NewOrderItem = { productId: string; qtyM3: number; price: number; nds?: boolean };
+export type NewOrderItem = {
+  productId: string; qtyM3: number; price: number; nds?: boolean;
+  /** Obyekt bloki nomi («A blok»): obyektda yo'q bo'lsa qo'shiladi (`lib/site-blocks.ts`) */
+  block?: string | null;
+};
 export type NewOrderInput = {
   /** Mavjud mijoz; `newCustomer` berilsa bo'sh qoldiriladi. */
   customerId?: string;
@@ -474,6 +479,9 @@ export async function createOrder(
     }
     // Obyekt kartasi (Logistika → Obyektlar): mijozning shu manzili — bor bo'lsa o'sha, yo'q bo'lsa yangisi
     const siteId = await ensureSite(tx, customerId, input.deliveryAddress, { lat: input.lat, lng: input.lng });
+    // Qator bloklari (A, B…) — shu obyekt ichida; yangi nom obyektga qo'shiladi
+    const blocks = siteId ? await ensureBlocks(tx, siteId, items.map((i) => i.block)) : new Map<string, string>();
+    const rows = items.map(({ block, ...i }) => ({ ...i, blockId: blocks.get(blockKey(block) ?? "") ?? null }));
     const o = await tx.order.create({
       data: {
         ...(opts?.id ? { id: opts.id } : {}),
@@ -497,7 +505,7 @@ export async function createOrder(
         payMethod,
         note: note ?? undefined,
         createdById: userId,
-        items: { create: items },
+        items: { create: rows },
         ...(contractAmount != null ? { contractAmount, contractAt: new Date(), contractNo: await nextNo(tx, "contract", "SH") } : {}),
         ...(opts?.contractFile ? { contractFile: opts.contractFile.stored, contractFileName: opts.contractFile.name, contractFileType: opts.contractFile.type, contractFileAt: new Date() } : {}),
       },
@@ -543,7 +551,8 @@ export const isEditable = (o: { status: string; batches: unknown[]; trips: unkno
 /** Tranzaksiya ichidagi xato: `throw` qilinadi — yozilgan hamma narsa orqaga qaytadi (oddiy `return` commit qilib yuborardi). */
 class EditError extends Error {}
 
-export type EditOrderItem = { id?: string | null; productId: string; qtyM3: number; price: number; nds: boolean };
+/** `block` — obyekt bloki nomi; `undefined` — forma yubormagan, qator bloki o'zgarmaydi */
+export type EditOrderItem = { id?: string | null; productId: string; qtyM3: number; price: number; nds: boolean; block?: string | null };
 export type EditOrderInput = {
   items: EditOrderItem[];
   deliveryDate: Date;
@@ -698,6 +707,10 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
           if (exposure > 0.005 && Math.max(0, base) + exposure > credit!.limit && base + exposure > credit!.limit) status = "BLOCKED";
         }
       }
+      // Obyekt: manzil yoki nuqta o'zgarsa — shu manzil kartasi; eski (obyektsiz) zayavkaga blok berilsa ham karta ochiladi
+      const needSite = !isStock && (deliveryAddress !== o.deliveryAddress || pointChanged || (!o.siteId && items.some((i) => blockName(i.block))));
+      const siteId = needSite ? await ensureSite(tx, o.customerId, deliveryAddress, { lat, lng }) : o.siteId;
+      const blocks = siteId && !isStock ? await ensureBlocks(tx, siteId, items.map((i) => i.block)) : new Map<string, string>();
       // Holat sharti bilan: shu orada qabul qilingan / bekor qilingan / zames-reys ochilgan zayavka yozilmaydi
       const r = await tx.order.updateMany({
         where: { id, status: o.status, batches: { none: { cancelledAt: null } }, trips: { none: {} } },
@@ -705,7 +718,7 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
           status, deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note,
           ...(isStock ? {} : {
             deliveryAddress, lat, lng, needsPump: !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod,
-            ...(deliveryAddress !== o.deliveryAddress || pointChanged ? { siteId: await ensureSite(tx, o.customerId, deliveryAddress, { lat, lng }) } : {}),
+            ...(siteId !== o.siteId ? { siteId } : {}),
             ...(pointChanged ? { distanceKm: dist?.km ?? null, distanceSource: dist?.source ?? null } : {}),
           }),
         },
@@ -720,7 +733,7 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
         if (d.count !== drop.length) throw new EditError("Qatorga shu payt brigada tayinlandi — sahifani yangilab qayta urining");
       }
       for (const i of items) {
-        const data = { productId: i.productId, qtyM3: i.qtyM3, price: i.price, nds: i.nds };
+        const data = { productId: i.productId, qtyM3: i.qtyM3, price: i.price, nds: i.nds, ...(i.block !== undefined ? { blockId: isStock ? null : blocks.get(blockKey(i.block) ?? "") ?? null } : {}) };
         if (!i.id) { await tx.orderItem.create({ data: { ...data, orderId: id } }); continue; }
         const prev = old.get(i.id)!;
         const u = await tx.orderItem.updateMany({ where: { id: i.id, orderId: id, ...(prev.productId !== i.productId ? { tasks: { none: {} } } : {}) }, data });
@@ -762,7 +775,7 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
         needsDelivery: x.needsDelivery, deliveryFee: Number(x.deliveryFee ?? 0), onCredit: x.onCredit, prepayAmount: x.prepayAmount == null ? null : Number(x.prepayAmount), payMethod: x.payMethod,
       });
       await audit(tx, userId, "UPDATE", "Order", id,
-        { status: o.status, total: oldTotal, ...pick(o), items: o.items.map((i) => ({ id: i.id, productId: i.productId, qtyM3: Number(i.qtyM3), price: Number(i.price), nds: i.nds })) },
+        { status: o.status, total: oldTotal, ...pick(o), items: o.items.map((i) => ({ id: i.id, productId: i.productId, qtyM3: Number(i.qtyM3), price: Number(i.price), nds: i.nds, blockId: i.blockId })) },
         { status, total, ...pick({ deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note, deliveryAddress, needsPump: isStock ? o.needsPump : !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod }), items, via: "order-edit" });
       return { status, notifyReq };
     });
