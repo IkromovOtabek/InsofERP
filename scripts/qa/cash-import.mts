@@ -47,8 +47,9 @@ check("C2 yangi sub manba Pitaniya ostida", n(`select count(*)::int c from "Cash
 check("C3 boshqa manbada band nom — «Nom (Manba)» bo'lib qo'shildi", n(`select count(*)::int c from "CashCategory" c join "CashCategory" p on p.id=c."parentId" where c.name='Remont xarajatlari (Ta''mirlash / ehtiyot qism)' and p.name='Ta''mirlash / ehtiyot qism'`) === 1);
 check("C4 sub manba alias'i o'z manbasida — mavjud sub manba ishlatildi", n(`select count(*)::int c from "CashTransaction" where note=${lit(`QA ${T} E`)} and category='Transport' and "subCategory"='Transport ta''miri va zapchast'`) === 1);
 check("C5 «Savdo tushumi» To'lovlarda yo'q — «Savdo» kirimi, kontragent bilan", n(`select count(*)::int c from "CashTransaction" where note=${lit(`QA ${T} B`)} and type='INCOME' and category='Savdo' and counterparty='QA xaridor'`) === 1);
-const tr = q1(`select "fromAccountId" f, "toAccountId" t, amount, to_char(date,'YYYY-MM-DD') d from "CashTransfer" order by "createdAt" desc limit 1`);
-check("C6 juft perekit (±1 kun) — bankdan kassaga o'tkazma, chiqim kuni bilan", n(`select count(*)::int c from "CashTransfer"`) === transfers0 + 1 && tr.f === B && tr.t === K && Number(tr.amount) === 7000 && tr.d === d1, tr);
+// Ustun nomlari `t` bo'lmasin — `q` so'rovni `(…) t` ichiga oladi va json_agg(t) qator o'rniga ustunni olib qo'yadi
+const tr = q1(`select "fromAccountId" src, "toAccountId" dst, amount, to_char(date,'YYYY-MM-DD') dt from "CashTransfer" order by "createdAt" desc limit 1`);
+check("C6 juft perekit (±1 kun) — bankdan kassaga o'tkazma, chiqim kuni bilan", n(`select count(*)::int c from "CashTransfer"`) === transfers0 + 1 && tr.src === B && tr.dst === K && Number(tr.amount) === 7000 && tr.dt === d1, tr);
 check("C7 perekit oddiy kirim/chiqim bo'lib yozilmadi", n(`select count(*)::int c from "CashTransaction" where note like ${lit(`QA ${T} naqd%`)} and type in ('INCOME','EXPENSE')`) === 0);
 
 r = await imp(kassa, rows);
