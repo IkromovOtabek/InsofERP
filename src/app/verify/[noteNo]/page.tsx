@@ -1,67 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Check, X, Truck, MapPin, Phone, RefreshCw, ShieldCheck, Info, UserRoundCheck, LogIn } from "lucide-react";
+import { Truck, MapPin, Phone, ShieldCheck, Info, UserRoundCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { qty, date, dateTime, time } from "@/lib/format";
 import { getCompany } from "@/lib/company";
 import { unitLabel, soleUnit } from "@/lib/unit";
 import { tripLine } from "@/lib/trips";
 import { VEHICLE_TYPE, capText } from "@/lib/logistics";
-import { LogoMark } from "@/components/logo";
+import { QrScreen, QrField as Field, QrFooter, qrCard as card, qrMuted as muted, qrCaption, telHref } from "@/components/qr-screen";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
-
-/**
- * Animatsiyalar — "QR ochilish ekrani" dizaynidan (Claude artifakti). Ranglar qat'iy hex: sahifa doim
- * ochiq rangda (telefon dark rejimida ham — qog'oz bilan solishtiriladigan hujjat), tokenlar `.dark` da teskari bo'ladi.
- */
-const CSS = `
-.vf-ring{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(255,255,255,.9);animation:vf-ring 2.4s cubic-bezier(.2,.7,.3,1) .5s infinite both}
-.vf-r2{animation-delay:1.3s}.vf-r3{animation-delay:2.1s}
-.vf-badge{animation:vf-pop .7s cubic-bezier(.3,1.6,.5,1) .15s both}
-.vf-tick path{stroke-dasharray:30;stroke-dashoffset:30;animation:vf-draw .45s ease-out .7s forwards}
-.vf-spark{position:absolute;width:8px;height:8px;border-radius:2px;left:50%;top:50%;margin:-4px;animation:vf-spark 1s ease-out .75s both}
-.vf-up{animation:vf-up .6s cubic-bezier(.2,.8,.2,1) both}
-.vf-d1{animation-delay:.55s}.vf-d2{animation-delay:.7s}.vf-d3{animation-delay:.85s}.vf-d4{animation-delay:1s}.vf-d5{animation-delay:1.15s}.vf-d6{animation-delay:1.3s}.vf-d7{animation-delay:1.45s}
-.vf-road{background-image:linear-gradient(90deg,#155dfc 50%,transparent 50%);background-size:14px 3px;background-repeat:repeat-x;background-position:0 50%;animation:vf-road .6s linear infinite}
-.vf-truck{position:absolute;top:50%;margin-top:-21px;left:4%;animation:vf-drive 1.8s cubic-bezier(.4,.1,.3,1) 1s both}
-.vf-arrived{left:calc(100% - 92px);animation:vf-arrive 1.6s cubic-bezier(.4,.1,.3,1) 1s both}
-.vf-bob{animation:vf-bob .5s ease-in-out 2.8s infinite}
-.vf-dot{animation:vf-pulse 1.6s ease-in-out infinite}
-.vf-vol{animation:vf-vol .9s cubic-bezier(.3,1.5,.5,1) 1.2s both}
-.vf-idle{animation:vf-bob .35s ease-in-out 1s infinite}
-.vf-puff{position:absolute;left:-10px;bottom:6px;width:10px;height:10px;border-radius:50%;background:#cad5e2;animation:vf-puff 1.4s ease-out 1s infinite}
-.vf-p2{animation-delay:1.7s}
-.vf-load{animation:vf-load 2.2s cubic-bezier(.4,0,.2,1) 1.2s infinite}
-.vf-trail{animation:vf-trail 1.6s cubic-bezier(.4,.1,.3,1) 1s both}
-.vf-pin{animation:vf-pin .55s cubic-bezier(.3,1.6,.5,1) 2.5s both}
-.vf-stop{animation:vf-stop 1.4s ease-in-out 1.4s infinite}
-@keyframes vf-ring{0%{transform:scale(.7);opacity:.85}100%{transform:scale(2.5);opacity:0}}
-@keyframes vf-pop{0%{transform:scale(0) rotate(-20deg)}60%{transform:scale(1.14) rotate(4deg)}100%{transform:scale(1) rotate(0)}}
-@keyframes vf-draw{to{stroke-dashoffset:0}}
-@keyframes vf-spark{0%{opacity:0;transform:translate(0,0) scale(.3)}30%{opacity:1}100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(1) rotate(90deg)}}
-@keyframes vf-up{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
-@keyframes vf-road{to{background-position:-14px 50%}}
-@keyframes vf-drive{from{left:4%}to{left:56%}}
-@keyframes vf-arrive{from{left:0}to{left:calc(100% - 92px)}}
-@keyframes vf-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
-@keyframes vf-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.8)}60%{box-shadow:0 0 0 8px rgba(255,255,255,0)}}
-@keyframes vf-vol{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
-@keyframes vf-puff{0%{opacity:.9;transform:translate(0,0) scale(.6)}100%{opacity:0;transform:translate(-26px,-18px) scale(2)}}
-@keyframes vf-load{0%{width:0}70%,100%{width:100%}}
-@keyframes vf-trail{from{width:0}}
-@keyframes vf-pin{0%{opacity:0;transform:translateY(-26px) scale(.6)}100%{opacity:1;transform:none}}
-@keyframes vf-stop{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-@media (prefers-reduced-motion:reduce){.vf *{animation:none!important}.vf-tick path{stroke-dashoffset:0}.vf-truck{left:56%}.vf-arrived{left:calc(100% - 92px)}}
-`;
-
-const SPARKS = [
-  { dx: -62, dy: -30, c: "#ffffff" }, { dx: 58, dy: -44, c: "#f59e0b" }, { dx: 66, dy: 26, c: "#ffffff" },
-  { dx: -54, dy: 40, c: "#34d399" }, { dx: 4, dy: -70, c: "#ffffff" },
-];
-
-const card = "rounded-[18px] bg-[#ffffff] p-[18px] shadow-[0_1px_3px_rgba(15,23,42,.08)]";
-const muted = "text-[12px] font-medium text-[#5f7088]";
 
 /** "Toshkent Qurilish MChJ" → "Tosh*** Q*** M***" — eski (kalitsiz) QR'da mijoz nomi to'liq ochilmaydi. */
 function maskName(name: string): string {
@@ -78,10 +26,6 @@ function plateParts(plate: string): { region: string; rest: string } | null {
 const minutes = (a: Date, b: Date) => Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
 const durText = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} soat ${m % 60} daqiqa` : `${m} daqiqa`);
 const addMin = (d: Date, m: number) => new Date(d.getTime() + m * 60000);
-
-function Field({ label, value }: { label: string; value: string }) {
-  return <div className="flex min-w-0 flex-col gap-0.5"><span className={muted}>{label}</span><span className="text-[15px] font-bold break-words">{value}</span></div>;
-}
 
 function Plate({ plate }: { plate: string }) {
   const p = plateParts(plate);
@@ -152,7 +96,7 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
   const delivered = S === "DELIVERED";
   const atPlant = S === "PLANNED" || S === "LOADED";
   const self = `/verify/${encodeURIComponent(t.deliveryNoteNo)}${k ? `?k=${encodeURIComponent(k)}` : ""}`;
-  const phone = company.phone ? company.phone.replace(/[^\d+]/g, "") : null;
+  const phone = company.phone;
   const mapUrl = company.lat != null && company.lng != null ? `https://maps.google.com/?q=${company.lat},${company.lng}` : null;
 
   const hero = cancelled
@@ -179,39 +123,13 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
   const pill = (text: string, cls: string) => <span className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold ${cls}`}>{text}</span>;
 
   return (
-    <main className="vf min-h-screen bg-[#f5f6f8] font-sans text-[#0f172b]">
-      <style>{CSS}</style>
-      <header className={`relative overflow-hidden px-5 pb-16 pt-[22px] text-[#ffffff] ${cancelled ? "bg-[#e7000b]" : "bg-[#155dfc]"}`}>
-        <div className="mx-auto flex w-full max-w-md flex-col gap-[22px]">
-          <div className="vf-up flex items-center gap-2.5">
-            <LogoMark className="h-[38px] w-[38px] shrink-0 [--logo-blue:#f59e0b]" />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[15px] font-extrabold tracking-[.02em]">{company.legalName ?? company.name}</span>
-              <span className="truncate text-[12px] font-medium opacity-85">{company.address ?? "Beton zavodi"}</span>
-            </div>
-            {onRoad && <span className="inline-flex shrink-0 items-center gap-[7px] rounded-full bg-[rgba(255,255,255,.18)] px-[11px] py-1.5 text-[12px] font-bold"><span className="vf-dot h-2 w-2 rounded-full bg-[#ffffff]" />Jonli</span>}
-          </div>
-          <div className="flex flex-col items-center gap-3.5 text-center">
-            <div className="relative h-[104px] w-[104px]">
-              <span className="vf-ring" /><span className="vf-ring vf-r2" />{!cancelled && <span className="vf-ring vf-r3" />}
-              {(onRoad || delivered) && SPARKS.map((s) => <span key={`${s.dx}${s.dy}`} className="vf-spark" style={{ "--dx": `${s.dx}px`, "--dy": `${s.dy}px`, background: s.c } as React.CSSProperties} />)}
-              <div className={`vf-badge absolute inset-0 grid place-items-center rounded-full bg-[#ffffff] ${cancelled ? "shadow-[0_14px_30px_-10px_rgba(80,0,0,.6)]" : "shadow-[0_14px_30px_-10px_rgba(10,30,90,.6)]"}`}>
-                {cancelled
-                  ? <X size={54} strokeWidth={2.6} color="#e7000b" className="vf-tick" role="img" aria-label="Bekor qilingan" />
-                  : <Check size={54} strokeWidth={2.6} color="#009966" className="vf-tick" role="img" aria-label={delivered ? "Yetkazildi" : "Tasdiqlandi"} />}
-              </div>
-            </div>
-            <div className="vf-up vf-d1 flex flex-col gap-1">
-              <span className="text-[11px] font-bold tracking-[.14em] opacity-90">TOVAR-TRANSPORT NAKLADNOYI</span>
-              <h1 className="m-0 text-[32px] leading-9 font-extrabold tracking-[-.02em]">{hero.title}</h1>
-              <p className="m-0 text-[14px] leading-5 font-medium">{hero.sub}</p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="relative -mt-[34px] rounded-t-[28px] bg-[#f5f6f8] px-4 pb-5 pt-[18px]">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-3">
+    <QrScreen head={{
+      tone: cancelled ? "red" : "blue", brand: company.legalName ?? company.name, brandSub: company.address ?? "Beton zavodi",
+      corner: onRoad ? <span className="inline-flex shrink-0 items-center gap-[7px] rounded-full bg-[rgba(255,255,255,.18)] px-[11px] py-1.5 text-[12px] font-bold"><span className="vf-dot h-2 w-2 rounded-full bg-[#ffffff]" />Jonli</span> : undefined,
+      eyebrow: "TOVAR-TRANSPORT NAKLADNOYI", title: hero.title, sub: hero.sub,
+      badge: cancelled ? "x" : "check", badgeLabel: cancelled ? "Bekor qilingan" : delivered ? "Yetkazildi" : "Tasdiqlandi",
+      effect: onRoad || delivered ? "sparks" : undefined,
+    }}>
           {cancelled && (
             <>
               <section className="vf-up vf-d2 flex items-center gap-3.5 rounded-[18px] bg-[#e7000b] p-[18px] text-[#ffffff]">
@@ -298,7 +216,7 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
                 </div>
               </section>
               <section className={`vf-up vf-d4 flex flex-col gap-3.5 ${card}`}>
-                <span className="text-[11px] font-bold tracking-[.12em] text-[#5f7088]">MASHINA</span>
+                <span className={qrCaption}>MASHINA</span>
                 <div className="flex flex-wrap items-center gap-3.5"><Plate plate={t.vehicle.plate} />{vehicleKind && <span className="text-[13px] text-[#5f7088]">{vehicleKind}</span>}</div>
                 <div className="grid grid-cols-2 gap-3"><Field label="Mijoz" value={customer} /><Field label="Sana" value={day} /></div>
               </section>
@@ -338,7 +256,7 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
                 </div>
               </section>
               <section className={`vf-up vf-d4 flex flex-col gap-2.5 ${card}`}>
-                <span className="text-[11px] font-bold tracking-[.12em] text-[#5f7088]">QABUL QILDI</span>
+                <span className={qrCaption}>QABUL QILDI</span>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 flex-col"><span className="text-[15px] font-bold">{t.receiverName ?? customer}</span><span className="text-[13px] text-[#5f7088]">{t.deliveredAt ? dateTime(t.deliveredAt) : day}</span></div>
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#ecfdf5] text-[#009966]"><UserRoundCheck size={22} aria-hidden /></span>
@@ -355,21 +273,12 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
 
           {(phone || mapUrl) && (
             <section className={`vf-up vf-d6 grid gap-2.5 ${phone && mapUrl && !cancelled ? "grid-cols-2" : "grid-cols-1"}`}>
-              {phone && <a href={`tel:${phone}`} className="flex min-h-[52px] items-center justify-center gap-2 rounded-[14px] bg-[#0f172b] text-[14px] font-extrabold text-[#ffffff] no-underline"><Phone size={18} aria-hidden />{cancelled ? "Zavodga qo'ng'iroq" : "Qo'ng'iroq"}</a>}
+              {phone && <a href={telHref(phone)} className="flex min-h-[52px] items-center justify-center gap-2 rounded-[14px] bg-[#0f172b] text-[14px] font-extrabold text-[#ffffff] no-underline"><Phone size={18} aria-hidden />{cancelled ? "Zavodga qo'ng'iroq" : "Qo'ng'iroq"}</a>}
               {mapUrl && !cancelled && <a href={mapUrl} target="_blank" rel="noopener" className="flex min-h-[52px] items-center justify-center gap-2 rounded-[14px] bg-[#ffffff] text-[14px] font-extrabold text-[#0f172b] no-underline shadow-[inset_0_0_0_1.5px_#e2e8f0]"><MapPin size={18} aria-hidden />Zavod xaritada</a>}
             </section>
           )}
 
-          <div className="vf-up vf-d7 flex flex-col items-center gap-1 text-[12px] text-[#5f7088]">
-            <div className="flex items-center justify-center gap-2">
-              <span>Tekshirildi {dateTime(now)}</span><span aria-hidden>·</span>
-              <a href={self} className={`inline-flex items-center gap-[5px] px-1 py-1.5 font-bold no-underline ${cancelled ? "text-[#c10007]" : "text-[#1447e6]"}`}><RefreshCw size={13} strokeWidth={2.4} aria-hidden />Qayta tekshirish</a>
-            </div>
-            {/* Xodim uchun — login talab qilinadi, ruxsat sahifa himoyasida tekshiriladi */}
-            <a href={`/trips/${t.id}`} className="inline-flex items-center gap-1 text-[11px] text-[#5f7088] underline"><LogIn size={12} aria-hidden /> Korxona xodimimisiz? ERP&apos;da ochish</a>
-          </div>
-        </div>
-      </div>
-    </main>
+          <QrFooter checked={`Tekshirildi ${dateTime(now)}`} refresh="Qayta tekshirish" href={self} color={cancelled ? "#c10007" : "#1447e6"} staff={{ href: `/trips/${t.id}`, label: "Korxona xodimimisiz? ERP'da ochish" }} />
+    </QrScreen>
   );
 }
