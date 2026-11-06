@@ -10,6 +10,7 @@ import { ISSUE_KIND, logisticsSettings, VEHICLE_ISSUE_KINDS } from "@/lib/logist
 import { lockStock } from "@/lib/stock-lock";
 import { driverPositionNames } from "@/lib/positions";
 import { defaultWarehouse, pickProductWarehouse } from "@/lib/warehouse";
+import { autoBatchForTrip } from "@/lib/production-batch";
 import { prepayShortError } from "@/lib/payments";
 import { decodePolyline, summarizeTrack } from "@/lib/trip-track";
 import { saveEcoTrackSummarySafe, saveTripSummarySafe, tripStats } from "@/lib/trip-summary";
@@ -103,9 +104,25 @@ class StockShort extends Error {}
 const fq = (n: number) => String(Math.round(n * 1000) / 1000);
 
 /**
+ * Beton (m³) ishlab chiqarishdan o'tmaydi — RBU uni mikserga yuklash paytida quyadi. Shuning uchun hech bir skladda
+ * yetarli tayyor beton bo'lmasa, asosiy skladda yetmagan hajmga zames avtomatik yoziladi (retsept bo'yicha xomashyo
+ * sarfi + tayyor beton kirimi) va jo'natish o'sha skladdan bo'ladi. Retsept yoki xomashyo yetmasa — yuklanmaydi.
+ */
+async function pourConcrete(tx: Prisma.TransactionClient, t: { id: string; orderId: string; deliveryNoteNo: string }, line: TripLine, qty: number, userId: string) {
+  const main = await defaultWarehouse(tx);
+  if (!main) throw new StockShort("Faol sklad yo'q — sklad ochilmagan");
+  const have = await tx.stockMove.aggregate({ where: { productId: line.productId, warehouseId: main.id }, _sum: { qty: true } });
+  const need = Math.round((qty - Math.max(0, Number(have._sum.qty ?? 0))) * 1000) / 1000;
+  const b = await autoBatchForTrip(tx, { orderId: t.orderId, productId: line.productId, warehouseId: main.id, qtyM3: need, note: `Avtomatik: reys ${t.deliveryNoteNo} yuklandi` }, userId);
+  if ("error" in b) throw new StockShort(`${line.name ?? "Beton"} ${fq(need)} m³ ga zames avtomatik yozilmadi: ${b.error}`);
+  return { ...main, balance: qty };
+}
+
+/**
  * PLANNED → LOADED: tayyor mahsulot skladdan chiqadi (SHIPMENT) — qoldiq sklad qulfi ostida tekshiriladi.
  * Qoldiq va chiqim BITTA skladda: avval asosiy sklad, unda yetmasa — qoldig'i yetadigan boshqa faol sklad
  * (`pickProductWarehouse`). Ilgari qoldiq barcha skladlar bo'yicha tekshirilib, chiqim tasodifiy skladdan yozilardi.
+ * Beton yetmasa — yuklash paytida zames yoziladi (`pourConcrete`).
  * Naqd to'lovli zayavkaning bosh to'lovi kelmagan bo'lsa — yuklanmaydi.
  */
 export async function tripLoaded(id: string, userId: string, note?: string): Promise<TripResult> {
@@ -120,7 +137,8 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
       await lockStock(tx);
       const unpaid = await prepayShortError(tx, t.orderId);
       if (unpaid) throw new StockShort(unpaid);
-      const wh = await pickProductWarehouse(tx, line.productId, qty);
+      let wh = await pickProductWarehouse(tx, line.productId, qty);
+      if ("short" in wh && !wh.none && line.unit === "m3") wh = await pourConcrete(tx, t, line, qty, userId);
       if ("short" in wh) {
         if (wh.none) throw new StockShort("Faol sklad yo'q — sklad ochilmagan");
         const u = unitLabel(line.unit);

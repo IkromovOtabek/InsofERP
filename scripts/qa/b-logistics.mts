@@ -1,4 +1,4 @@
-// QA (B) — logistika: zames → reys (tayyorlik), yuklash (SHIPMENT, sklad tanlash), yo'l, yetkazish, muammo, yopish,
+// QA (B) — logistika: zames → reys (tayyorlik), yuklash (SHIPMENT, sklad tanlash, betonga avto zames), yo'l, yetkazish, muammo, yopish,
 // dona mahsulot qaytishi (o'sha skladga), nakladnoy chop etish + /verify QR, yoqilg'i va xarajat, haydovchi sahifasi.
 // Ishga tushirish: npx tsx scripts/qa/b-logistics.mts
 import { as, check, summary, fd, q, q1, n1, idFrom, token, BASE } from "./b-client.mjs";
@@ -177,6 +177,39 @@ r = await logist.action(`${TA}#resolveIssue`, [issue, undefined, fd({ resolution
 check(r.ok, "muammo hal qilindi", r.error);
 r = await logist.action(`${TA}#closeTrip`, [t1, undefined, fd({ acceptedQty: "5,5", returnedQty: "0,5" })], `/trips/${t1}`);
 check(r.ok && !!q1(`select "closedAt" from "Trip" where id='${t1}'`), "reys yopildi", r.error);
+
+// Beton yuklashda avto zames: hech bir skladda yetarli M300 yo'q (ikkinchida 2 m³) — asosiy skladda yetmagani
+// retsept bo'yicha zames qilinadi va jo'natish o'sha skladdan bo'ladi. Retseptsiz yuklanmaydi.
+const qty4 = 3, main4 = pbal(M300, main), need4 = Math.round((qty4 - Math.max(0, main4)) * 1000) / 1000;
+r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: qty4 })], "/trips/new");
+const t4 = idFrom(r.redirect);
+const recIds = q(`select id from "Recipe" where "productId"='${M300}' and "isActive"`).map((x) => `'${x[0]}'`).join(",");
+if (t4 && recIds && need4 > 0 && pbal(M300, wh2) < qty4) {
+  const note4 = q1(`select "deliveryNoteNo" from "Trip" where id='${t4}'`)!;
+  const autoBatch = () => q(`select id, "qtyM3", "orderId" from "ProductionBatch" where note like '%${note4}%'`);
+  q(`update "Recipe" set "isActive"=false where id in (${recIds})`);
+  r = await ishlab.action(`${TA}#markLoaded`, [t4], `/trips/${t4}`);
+  q(`update "Recipe" set "isActive"=true where id in (${recIds})`);
+  check(/retsept/.test(r.error ?? "") && q1(`select status from "Trip" where id='${t4}'`) === "PLANNED" && autoBatch().length === 0, "retseptsiz beton yuklanmadi (aniq xabar, zames yozilmadi)", r.error);
+  r = await ishlab.action(`${TA}#markLoaded`, [t4], `/trips/${t4}`);
+  const ab = autoBatch();
+  check(r.ok && q1(`select status from "Trip" where id='${t4}'`) === "LOADED", "beton skladda yo'q — baribir yuklandi", r.error);
+  check(ab.length === 1 && Math.abs(Number(ab[0][1]) - need4) < 0.001 && ab[0][2] === oid, `avto zames ${need4} m³ zayavka hisobiga yozildi`, ab);
+  const bid = ab[0]?.[0] ?? "";
+  const items4 = n1(`select count(*) from "RecipeItem" where "recipeId" in (${recIds})`);
+  check(n1(`select count(*) from "StockMove" where "refId"='${bid}' and type='PRODUCTION_CONSUME' and "warehouseId"='${main}' and qty < 0`) === items4, "xomashyo retsept bo'yicha asosiy skladdan sarf bo'ldi", items4);
+  check(Math.abs(n1(`select sum(qty) from "StockMove" where "refId"='${bid}' and type='PRODUCTION_OUTPUT' and "warehouseId"='${main}'`) - need4) < 0.001, "tayyor beton asosiy skladga kirim bo'ldi");
+  const ship4 = q(`select "warehouseId", qty from "StockMove" where "refId"='${t4}' and type='SHIPMENT'`);
+  check(ship4.length === 1 && ship4[0][0] === main && Number(ship4[0][1]) === -qty4, "SHIPMENT −3 m³ asosiy skladdan", ship4);
+  check(Math.abs(pbal(M300, main) - (main4 + need4 - qty4)) < 0.001, "asosiy skladda beton qoldig'i minusga tushmadi", pbal(M300, main));
+  r = await ishlab.action(`${TA}#markLoaded`, [t4], `/trips/${t4}`);
+  check(autoBatch().length === 1, "qayta 'Yuklandi' ikkinchi zames yozmadi");
+  r = await dir.action("(app)/production/actions#stornoBatch", [bid, "QA: jo'natilgan betonni storno"], "/production");
+  check(!!r.error && n1(`select count(*) from "ProductionBatch" where id='${bid}' and "cancelledAt" is null`) === 1, "jo'natilgan beton zamesi storno qilinmaydi", r.error);
+  await logist.action(`${TA}#markOnRoad`, [t4], `/trips/${t4}`);
+  r = await logist.action(`${TA}#markDelivered`, [t4, undefined, fd({ receiverName: "QA avto zames" })], `/trips/${t4}`);
+  check(r.ok, "avto zamesli reys yetkazildi", r.error);
+} else check(false, "avto zames sinovi uchun sharoit yo'q (reys ochilmadi, M300 retsepti yo'q yoki skladda M300 yetarli)", r.error ?? [main4, pbal(M300, wh2)]);
 
 // Yoqilg'i va xarajat
 r = await logist.action(`${TA}#addTripCost`, [t1, undefined, fd({ what: "FUEL", fuelType: "DIESEL", liters: "60,5", pricePerL: "11 500" })], `/trips/${t1}`);

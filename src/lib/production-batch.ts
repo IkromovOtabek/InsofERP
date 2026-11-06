@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
@@ -25,6 +26,11 @@ export type BatchInput = z.infer<typeof batchSchema>;
 
 class ShortError extends Error {}
 
+// Faol retsept tanlash qoidasi brigada sarfi (`consumeForTask`) bilan bir xil: eng yangi faol versiya
+const activeRecipe = (client: Prisma.TransactionClient, productId: string) =>
+  client.recipe.findFirst({ where: { productId, isActive: true }, orderBy: { version: "desc" }, include: { items: { include: { material: true, product: true } } } });
+type ActiveRecipe = NonNullable<Awaited<ReturnType<typeof activeRecipe>>>;
+
 /**
  * Bitta tranzaksiyada:
  *  1) faol retsept bo'yicha har bir ingredient (xomashyo yoki boshqa mahsulot) uchun PRODUCTION_CONSUME (−)
@@ -33,8 +39,7 @@ class ShortError extends Error {}
  * Xomashyo yoki mahsulot yetmasa — xato, hech narsa yozilmaydi.
  */
 export async function createProductionBatch(d: BatchInput, userId: string): Promise<{ error: string } | { id: string; batchNo: string }> {
-  // Faol retsept tanlash qoidasi brigada sarfi (`consumeForTask`) bilan bir xil: eng yangi faol versiya
-  const recipe = await db.recipe.findFirst({ where: { productId: d.productId, isActive: true }, orderBy: { version: "desc" }, include: { items: { include: { material: true, product: true } } } });
+  const recipe = await activeRecipe(db, d.productId);
   if (!recipe) return { error: "Bu marka uchun faol retsept yo'q. Avval retsept kiriting." };
 
   if (d.orderId) {
@@ -67,52 +72,7 @@ export async function createProductionBatch(d: BatchInput, userId: string): Prom
           : "Bu zayavka bo'yicha shu marka to'liq ishlab chiqarilgan — ortig'ini zayavkasiz zames qiling");
       }
     }
-    // Qoldiq tekshiruvi (sklad bo'yicha) — retsept qatori xomashyo yoki boshqa mahsulot bo'lishi mumkin
-    // (masalan katta konstruksiyaga tayyor FBS blok kiradi), shuning uchun ikkalasining ham qoldig'i tekshiriladi
-    const materialIds = recipe.items.filter((i) => i.materialId).map((i) => i.materialId!);
-    const productIds = recipe.items.filter((i) => i.productId).map((i) => i.productId!);
-    const [matSums, prodSums] = await Promise.all([
-      materialIds.length ? tx.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: d.warehouseId, materialId: { in: materialIds } }, _sum: { qty: true } }) : [],
-      productIds.length ? tx.stockMove.groupBy({ by: ["productId"], where: { warehouseId: d.warehouseId, productId: { in: productIds } }, _sum: { qty: true } }) : [],
-    ]);
-    const matBal = new Map(matSums.map((x) => [x.materialId!, Number(x._sum.qty ?? 0)]));
-    const prodBal = new Map(prodSums.map((x) => [x.productId!, Number(x._sum.qty ?? 0)]));
-    const lacking = recipe.items
-      .map((i) => { const ing = ingredientOf(i); return { ing, need: ing.qtyPerM3 * d.qtyM3, have: balanceOf(ing, matBal, prodBal) }; })
-      .filter((x) => x.have < x.need - STOCK_EPS);
-    if (lacking.length) {
-      throw new ShortError("Yetarli emas: " + lacking.map((x) => `${x.ing.name} (kerak ${fq(x.need)}, bor ${fq(x.have)} ${x.ing.unit})`).join("; "));
-    }
-
-    // Xomashyo sarfi «Дона сўм» bilan baholanadi (snapshot) — Расход jurnalidagi zames qatorlari shu narxda.
-    // Mahsulot-ingredient (FBS blok) narxsiz qoladi — avvalgidek
-    const prices = await issuePrices(materialIds, tx);
-    const b = await tx.productionBatch.create({
-      data: {
-        batchNo: await nextNo(tx, "productionBatch", "ZM"),
-        orderId: d.orderId, productId: d.productId, recipeId: recipe.id,
-        qtyM3: d.qtyM3, shift: d.shift, note: d.note, createdById: userId,
-      },
-    });
-    await tx.stockMove.createMany({
-      data: [
-        // Ingredient xomashyo bo'lsa materialId, mahsulot bo'lsa productId to'ldiriladi (ikkalasi emas)
-        ...recipe.items.map((i) => {
-          const ing = ingredientOf(i);
-          return {
-            type: "PRODUCTION_CONSUME" as const, warehouseId: d.warehouseId,
-            materialId: ing.kind === "material" ? ing.key : null,
-            productId: ing.kind === "product" ? ing.key : null,
-            qty: -(ing.qtyPerM3 * d.qtyM3), unitCost: ing.kind === "material" ? prices.get(ing.key) ?? null : null,
-            refType: "ProductionBatch", refId: b.id, createdById: userId,
-          };
-        }),
-        { type: "PRODUCTION_OUTPUT" as const, warehouseId: d.warehouseId, productId: d.productId, qty: d.qtyM3, refType: "ProductionBatch", refId: b.id, createdById: userId },
-      ],
-    });
-    if (d.orderId) await tx.order.updateMany({ where: { id: d.orderId, status: "CONFIRMED" }, data: { status: "IN_PRODUCTION" } });
-    await audit(tx, userId, "CREATE", "ProductionBatch", b.id, undefined, b);
-    return { id: b.id, batchNo: b.batchNo };
+    return writeBatch(tx, d, recipe, userId);
   }).catch((e: Error) => { if (e instanceof ShortError) return { error: e.message }; throw e; });
   if ("error" in res) return res;
   // Zayavka uchun beton tayyor — reysni logistika ochadi (xabarsiz zames reyssiz turib qolardi)
@@ -130,4 +90,79 @@ export async function createProductionBatch(d: BatchInput, userId: string): Prom
     });
   }
   return res;
+}
+
+/**
+ * Zames yozuvi — tranzaksiya ichida, sklad qulfi (`lockStock`) chaqiruvchida olingan bo'ladi.
+ * Avval hamma ingredient qoldig'i tekshiriladi (yetmasa `ShortError`, hech narsa yozilmaydi), keyin
+ * sarf/kirim harakatlari, zayavka holati va audit.
+ */
+async function writeBatch(tx: Prisma.TransactionClient, d: BatchInput, recipe: ActiveRecipe, userId: string): Promise<{ id: string; batchNo: string }> {
+  // Qoldiq tekshiruvi (sklad bo'yicha) — retsept qatori xomashyo yoki boshqa mahsulot bo'lishi mumkin
+  // (masalan katta konstruksiyaga tayyor FBS blok kiradi), shuning uchun ikkalasining ham qoldig'i tekshiriladi
+  const materialIds = recipe.items.filter((i) => i.materialId).map((i) => i.materialId!);
+  const productIds = recipe.items.filter((i) => i.productId).map((i) => i.productId!);
+  const [matSums, prodSums] = await Promise.all([
+    materialIds.length ? tx.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: d.warehouseId, materialId: { in: materialIds } }, _sum: { qty: true } }) : [],
+    productIds.length ? tx.stockMove.groupBy({ by: ["productId"], where: { warehouseId: d.warehouseId, productId: { in: productIds } }, _sum: { qty: true } }) : [],
+  ]);
+  const matBal = new Map(matSums.map((x) => [x.materialId!, Number(x._sum.qty ?? 0)]));
+  const prodBal = new Map(prodSums.map((x) => [x.productId!, Number(x._sum.qty ?? 0)]));
+  const lacking = recipe.items
+    .map((i) => { const ing = ingredientOf(i); return { ing, need: ing.qtyPerM3 * d.qtyM3, have: balanceOf(ing, matBal, prodBal) }; })
+    .filter((x) => x.have < x.need - STOCK_EPS);
+  if (lacking.length) {
+    throw new ShortError("Yetarli emas: " + lacking.map((x) => `${x.ing.name} (kerak ${fq(x.need)}, bor ${fq(x.have)} ${x.ing.unit})`).join("; "));
+  }
+
+  // Xomashyo sarfi «Дона сўм» bilan baholanadi (snapshot) — Расход jurnalidagi zames qatorlari shu narxda.
+  // Mahsulot-ingredient (FBS blok) narxsiz qoladi — avvalgidek
+  const prices = await issuePrices(materialIds, tx);
+  const b = await tx.productionBatch.create({
+    data: {
+      batchNo: await nextNo(tx, "productionBatch", "ZM"),
+      orderId: d.orderId, productId: d.productId, recipeId: recipe.id,
+      qtyM3: d.qtyM3, shift: d.shift, note: d.note, createdById: userId,
+    },
+  });
+  await tx.stockMove.createMany({
+    data: [
+      // Ingredient xomashyo bo'lsa materialId, mahsulot bo'lsa productId to'ldiriladi (ikkalasi emas)
+      ...recipe.items.map((i) => {
+        const ing = ingredientOf(i);
+        return {
+          type: "PRODUCTION_CONSUME" as const, warehouseId: d.warehouseId,
+          materialId: ing.kind === "material" ? ing.key : null,
+          productId: ing.kind === "product" ? ing.key : null,
+          qty: -(ing.qtyPerM3 * d.qtyM3), unitCost: ing.kind === "material" ? prices.get(ing.key) ?? null : null,
+          refType: "ProductionBatch", refId: b.id, createdById: userId,
+        };
+      }),
+      { type: "PRODUCTION_OUTPUT" as const, warehouseId: d.warehouseId, productId: d.productId, qty: d.qtyM3, refType: "ProductionBatch", refId: b.id, createdById: userId },
+    ],
+  });
+  if (d.orderId) await tx.order.updateMany({ where: { id: d.orderId, status: "CONFIRMED" }, data: { status: "IN_PRODUCTION" } });
+  await audit(tx, userId, "CREATE", "ProductionBatch", b.id, undefined, b);
+  return { id: b.id, batchNo: b.batchNo };
+}
+
+/**
+ * Beton reysi yuklanganda skladda yetmagan hajmga zames avtomatik yoziladi. Beton ishlab chiqarish
+ * bo'limidan o'tmaydi (RBU mikserga yuklash paytida quyadi), lekin xomashyo sarfi va tannarx skladga tushishi
+ * kerak. Tranzaksiya ichida, `lockStock` chaqiruvchida olingan bo'ladi. Zayavka bo'yicha «qolgani»
+ * tekshirilmaydi: obyektdan qaytgan beton chiqindi, uning o'rniga quyilgani ham haqiqiy zames.
+ */
+export async function autoBatchForTrip(
+  tx: Prisma.TransactionClient,
+  d: { orderId: string; productId: string; warehouseId: string; qtyM3: number; note: string },
+  userId: string,
+): Promise<{ error: string } | { id: string; batchNo: string }> {
+  const recipe = await activeRecipe(tx, d.productId);
+  if (!recipe) return { error: "faol retsept yo'q — retsept kiritilsin yoki zames qo'lda yozilsin" };
+  try {
+    return await writeBatch(tx, { ...d, shift: 1 }, recipe, userId);
+  } catch (e) {
+    if (e instanceof ShortError) return { error: e.message };
+    throw e;
+  }
 }

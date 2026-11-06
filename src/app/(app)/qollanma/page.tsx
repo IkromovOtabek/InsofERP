@@ -346,7 +346,7 @@ export default function QollanmaPage() {
         steps={[
           { n: 1, text: "Yetkaziladigan zayavkani tanlang." },
           { n: 2, text: "Mikser va haydovchini belgilang — miqdor mikser sig'imi bo'yicha avtomatik taklif qilinadi." },
-          { n: 3, text: "\"Yuklandi\" bosilganda tayyor beton skladdan avtomatik chiqim bo'ladi; \"Yetkazildi\"da qabul qilgan shaxs F.I.O. si kiritiladi." },
+          { n: 3, text: "\"Yuklandi\" bosilganda tayyor beton skladdan avtomatik chiqim bo'ladi (skladda yetmasa — yetmagan hajmga retsept bo'yicha zames o'zi yoziladi); \"Yetkazildi\"da qabul qilgan shaxs F.I.O. si kiritiladi." },
         ]}
       />
 
