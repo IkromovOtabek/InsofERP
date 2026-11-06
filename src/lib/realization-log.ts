@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { Prisma, type RealizationEntry } from "@/generated/prisma";
+import { Prisma, type RealizationEntry, type RealizationLine, type RealizationNote } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit, auditMany } from "@/lib/audit";
 import { NDS_RATE } from "@/lib/nds";
 import { PRODUCT_UNITS, normalizeUnit, unitLabel } from "@/lib/unit";
-import { isoDate } from "@/lib/format";
+import { dateRu, fmtNum, isoDate } from "@/lib/format";
 import { matchKey, num, numMoney, parseDate, str, valueMapper, type ValueMaps } from "@/lib/excel";
 import { dayField, numIn } from "@/lib/logistics-admin";
 import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
@@ -14,11 +14,14 @@ import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-she
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
  * (sana, to'lov turi, sotuvchi, xaridor, mahsulot, TTN, mashina … ortilgan joy, boradigan manzil, izoh, spravka nomi).
  *
- *  · Reysdan (avtomatik): har TTN qatori `realizationRows` dan jonli — reys ochilishi bilan o'zi tushadi. Mijoz, mahsulot,
- *    miqdor, narx va to'lov turi zayavkadan, bu yerda o'zgarmaydi (tuzatish — zayavkada). Dispetcher faqat ortilgan joy,
+ *  · Reysdan (avtomatik): har TTN qatori `realizationRows` dan jonli — reys ochilishi bilan o'zi tushadi. Dispetcher ortilgan joy,
  *    boradigan manzil, izoh va spravka nomini to'ldiradi (`RealizationNote`: kalit — reys id, reyssiz zayavka — "o:<orderId>").
  *    To'ldirilmagani taklif bilan ko'rinadi: ortilgan joy — reys BRU'si (yoki yuk olingan manzil), manzil — obyekt,
  *    izoh — TTN, mashina, haydovchi va telefoni, spravka nomi — mijoz nomi.
+ *    Xaridordan boshqa ustunlarni ham tuzatadi — faqat reestrda (zayavka, mijoz qarzi, kassa, sklad o'zgarmaydi; xaridor — zayavkada):
+ *    sana, to'lov turi, sotuvchi, mashina (va reyssiz qatorda TTN) — reys bo'yicha (`RealizationNote`); mahsulot, guruh, o'lchov,
+ *    miqdor, narx, dastavka — zayavka qatori bo'yicha (`RealizationLine`). Bo'sh qoldirilgani yoki asliga teng qiymat — zayavkadagisi.
+ *    Miqdor, narx yoki dastavka tuzatilsa summa va QQS (zayavka qatoridagi «QQS 12%» belgisi bo'yicha) qayta hisoblanadi.
  *  · Qo'lda: tizimga reys bo'lib tushmagan jo'natma (`RealizationEntry`). Faqat reestr — mijoz qarzi, kassa va skladga
  *    ta'sir qilmaydi. Mijoz (yoki aliasi) va mahsulot nomi ro'yxatdagiga mos kelsa bog'lanadi, birlik va guruh mahsulotdan.
  *    QQS — perechisleniyeda 12% (miqdor × narx dan, dastavkasiz). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
@@ -43,6 +46,10 @@ export type LogRow = {
   loadPlace: string; destination: string; note: string; refName: string;
   /** Reysdan qatorda: dispetcher to'ldirgani (formada) va taklif (placeholder) */
   filled: LogFields | null; suggest: LogFields | null;
+  /** Reysdan qatorning mahsulot qatori kaliti (`RealizationLine.key`); qo'lda qatorda null */
+  line: string | null;
+  /** Reysdan qatorda dispetcher tuzatgan ustun → zayavka/reysdagi asl qiymat (ko'rinishi); tuzatilmagan ustun yo'q */
+  orig: Partial<Record<AutoCell, string>>;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -63,31 +70,72 @@ function suggestOf(r: RealizationRow): LogFields {
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 
+/** Reysdan qatorga dispetcher tuzatishlari: bo'sh maydon — zayavka/reysdagi qiymat; miqdor/narx/dastavka tuzatilsa summa va QQS qayta. */
+function autoEdits(r: RealizationRow, n: RealizationNote | undefined, l: RealizationLine | undefined) {
+  const orig: Partial<Record<AutoCell, string>> = {};
+  const pick = <T>(field: AutoCell, over: T | null | undefined, base: T, show: (v: T) => string): T => {
+    if (over == null) return base;
+    orig[field] = show(base);
+    return over;
+  };
+  const dec = (v: Prisma.Decimal | null | undefined) => (v == null ? null : Number(v));
+  const pay = pick("payGroup", n?.payGroup && (PAY_KEYS as string[]).includes(n.payGroup) ? (n.payGroup as PayGroupKey) : null, r.pay, (p) => PAY_LABEL[p]);
+  const unitKey = pick("unit", l?.unit, r.unitKey, unitLabel);
+  const qty = pick("qty", dec(l?.qty), r.qty, (v) => fmtNum(v, 3));
+  const price = pick("price", dec(l?.price), r.price, (v) => fmtNum(v, 0));
+  const delivery = pick("delivery", dec(l?.delivery), r.delivery, (v) => fmtNum(v, 0));
+  const money = "qty" in orig || "price" in orig || "delivery" in orig;
+  const line = r2(qty * price);
+  const vat = money ? (r.nds ? r2(line * NDS_RATE) : 0) : r.vat;
+  const net = money ? r2(line + delivery) : r.net;
+  return {
+    date: pick("date", n?.date, r.date, dateRu),
+    pay, payLabel: PAY_LABEL[pay],
+    seller: pick("seller", n?.seller, r.seller, (v) => v || "—"),
+    vehicle: pick("vehicle", n?.vehicle, r.vehicle, (v) => v ?? "—"),
+    // Reysda TTN — `Trip.ttn` (o'z katagi); reyssiz (o'zi olib ketgan) qatorda — shu yerda
+    ttn: r.tripId ? (r.ttn ? shortTtn(r.ttn) : null) : pick<string | null>("ttn", n?.ttn, null, () => "—"),
+    product: pick("productName", l?.productName, r.product, (v) => v),
+    group: pick("groupName", l?.groupName, r.group, (v) => v),
+    unitKey, unit: unitLabel(unitKey), qty, price, delivery, net, vat, total: money ? r2(net + vat) : r.total,
+    orig,
+  };
+}
+
 export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
   const a = new Date(from); a.setHours(0, 0, 0, 0);
   const b = new Date(to); b.setHours(0, 0, 0, 0); b.setDate(b.getDate() + 1);
+  // Dispetcher sanasini shu davrga ko'chirgan reys/zayavka — asl sanasi boshqa davrda bo'lsa ham shu yerda
+  const moved = (await db.realizationNote.findMany({ where: { date: { gte: a, lt: b } }, select: { key: true } })).map((n) => n.key);
   const [auto, entries] = await Promise.all([
-    realizationRows(from, to),
+    realizationRows(from, to, { tripIds: moved.filter((k) => !k.startsWith("o:")), orderIds: moved.filter((k) => k.startsWith("o:")).map((k) => k.slice(2)) }),
     db.realizationEntry.findMany({ where: { cancelledAt: null, date: { gte: a, lt: b } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }] }),
   ]);
   const keys = [...new Set(auto.map(autoKey))];
-  const notes = new Map((keys.length ? await db.realizationNote.findMany({ where: { key: { in: keys } } }) : []).map((n) => [n.key, n]));
+  const [noteList, lineList] = await Promise.all([
+    keys.length ? db.realizationNote.findMany({ where: { key: { in: keys } } }) : [],
+    auto.length ? db.realizationLine.findMany({ where: { key: { in: auto.map((r) => r.key) } } }) : [],
+  ]);
+  const notes = new Map(noteList.map((n) => [n.key, n]));
+  const lines = new Map(lineList.map((l) => [l.key, l]));
 
-  const rows: LogRow[] = auto.map((r) => {
+  const rows: LogRow[] = [];
+  for (const r of auto) {
     const ref = autoKey(r);
     const n = notes.get(ref);
+    const e = autoEdits(r, n, lines.get(r.key));
+    // Sanasi boshqa davrga ko'chirilgan qator — o'sha davrda
+    if (e.date < a || e.date >= b) continue;
     const filled: LogFields = { loadPlace: n?.loadPlace ?? null, destination: n?.destination ?? null, note: n?.note ?? null, refName: n?.refName ?? null };
     const suggest = suggestOf(r);
-    return {
-      key: `a-${r.key}`, source: "AUTO", ref, orderId: r.orderId, tripId: r.tripId, customerId: r.customerId,
-      date: r.date, pay: r.pay, payLabel: r.payLabel, seller: r.seller, customer: r.customer, product: r.product, group: r.group,
-      ttn: r.ttn ? shortTtn(r.ttn) : null, tripTtn: r.tripTtn, vehicle: r.vehicle, unitKey: r.unit, unit: r.unit, qty: r.qty, price: r.price, delivery: r.delivery,
-      net: r.net, vat: r.vat, total: r.total,
+    rows.push({
+      ...e, key: `a-${r.key}`, source: "AUTO", ref, line: r.key, orderId: r.orderId, tripId: r.tripId, customerId: r.customerId,
+      customer: r.customer, tripTtn: r.tripTtn,
       loadPlace: filled.loadPlace ?? suggest.loadPlace ?? "", destination: filled.destination ?? suggest.destination ?? "",
       note: filled.note ?? suggest.note ?? "", refName: filled.refName ?? suggest.refName ?? "",
       filled, suggest,
-    };
-  });
+    });
+  }
   for (const e of entries) {
     const qty = Number(e.qty), price = Number(e.price), delivery = Number(e.delivery), vat = Number(e.vat);
     const net = r2(qty * price + delivery);
@@ -97,7 +145,7 @@ export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
       date: e.date, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer: e.customerName, product: e.productName, group: e.groupName,
       ttn: e.ttn, tripTtn: null, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r2(net + vat),
       loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? e.customerName,
-      filled: null, suggest: null,
+      filled: null, suggest: null, line: null, orig: {},
     });
   }
   // Varaqdagidek: kun, keyin TTN raqami (reysdan va qo'lda aralash), TTN'sizlar kun oxirida
@@ -347,6 +395,107 @@ export async function saveRealizationNoteField(key: string, field: NoteCell, val
     const data = { [field]: p.data, updatedById: userId };
     await tx.realizationNote.upsert({ where: { key }, create: { key, ...data }, update: data });
     await audit(tx, userId, before ? "UPDATE" : "CREATE", "RealizationNote", key, before ? { [field]: before[field] } : undefined, data);
+  });
+  return { ok: true, id: key };
+}
+
+// ───────────────────────── Reysdan qatorni tuzatish (faqat reestr) ─────────────────────────
+
+/** Reys bo'yicha — shu reysning hamma qatoriga: sana, to'lov turi, sotuvchi, mashina; reyssiz qatorda TTN ham (reysda — `Trip.ttn`). */
+export const TRIP_CELLS = ["date", "payGroup", "seller", "vehicle", "ttn"] as const;
+export type TripCell = (typeof TRIP_CELLS)[number];
+/** Zayavka mahsulot qatori bo'yicha (`RealizationLine`). Xaridor tuzatilmaydi — u zayavkada. */
+export const LINE_CELLS = ["productName", "groupName", "unit", "qty", "price", "delivery"] as const;
+export type LineCell = (typeof LINE_CELLS)[number];
+export type AutoCell = TripCell | LineCell;
+
+const EPOCH = new Date(0);
+/** Bitta reys (yoki reyssiz zayavka) qatorlari asl qiymati bilan — tuzatishni asl qiymat bilan solishtirish uchun. */
+const autoRowsOf = (key: string) =>
+  realizationRows(EPOCH, EPOCH, key.startsWith("o:") ? { tripIds: [], orderIds: [key.slice(2)] } : { tripIds: [key], orderIds: [] });
+
+const issue = (e: z.ZodError, field: string): FieldResult => ({ error: e.issues[0]?.message ?? "Qiymat noto'g'ri", field });
+
+/** Reys bo'yicha bitta katak. Bo'sh qoldirilgani yoki asliga teng qiymat — tuzatish olib tashlanadi (zayavkadagisi ko'rinadi). */
+export async function saveRealizationTripField(key: string, field: TripCell, value: string, userId: string): Promise<FieldResult> {
+  const r = (await autoRowsOf(key))[0];
+  if (!r) return { error: "Reys topilmadi" };
+  if (field === "ttn" && r.tripId) return { error: "Reys TTN raqami reysning o'zida yoziladi", field };
+  let set: { date: Date | null } | { [k: string]: string | null };
+  if (field === "date") {
+    const p = dayField.safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    if (p.data && future(p.data)) return { error: "Sana kelajakda bo'lmasin", field };
+    set = { date: p.data && isoDate(p.data) !== isoDate(r.date) ? p.data : null };
+  } else if (field === "payGroup") {
+    const v = value.trim();
+    if (v && !(PAY_KEYS as string[]).includes(v)) return { error: "To'lov turini tanlang", field };
+    set = { payGroup: v && v !== r.pay ? v : null };
+  } else {
+    const p = text(field === "seller" ? 100 : 40).safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    const base = field === "seller" ? r.seller : field === "vehicle" ? r.vehicle : null;
+    set = { [field]: p.data && p.data !== base ? p.data : null };
+  }
+  await db.$transaction(async (tx) => {
+    const before = await tx.realizationNote.findUnique({ where: { key } });
+    const data = { ...set, updatedById: userId };
+    await tx.realizationNote.upsert({ where: { key }, create: { key, ...data }, update: data });
+    await audit(tx, userId, before ? "UPDATE" : "CREATE", "RealizationNote", key, before ? { [field]: before[field] } : undefined, data);
+  });
+  return { ok: true, id: key };
+}
+
+type LineSet = { productName?: string | null; groupName?: string | null; unit?: string | null; qty?: number | null; price?: number | null; delivery?: number | null };
+
+/**
+ * Mahsulot qatori bo'yicha bitta katak (`key` — `RealizationRow.key`). Ro'yxatdagi mahsulot tanlansa o'lchov va guruh ham
+ * undan (qo'lda qatordagidek); mahsulot bo'shatilsa — uchalasi zayavkadagiga qaytadi.
+ */
+export async function saveRealizationLineField(key: string, field: LineCell, value: string, userId: string): Promise<FieldResult> {
+  // Kalit «<reys yoki zayavka id>-<qator id | fee>» — cuid'da chiziqcha yo'q
+  const head = key.split("-")[0] ?? "";
+  const trip = head ? await db.trip.findUnique({ where: { id: head }, select: { id: true } }) : null;
+  const r = head ? (await autoRowsOf(trip ? head : `o:${head}`)).find((x) => x.key === key) : undefined;
+  if (!r) return { error: "Qator topilmadi — sahifani yangilang" };
+  const set: LineSet = {};
+  if (field === "productName") {
+    const p = text(200).safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    const lk = p.data ? await entryLookup([], [p.data]) : null;
+    const hit = p.data ? lk!.product(p.data) : null;
+    const name = hit?.name ?? p.data;
+    set.productName = name && name !== r.product ? name : null;
+    if (hit || !name) {
+      const group = hit ? lk!.group(hit.groupId) : null;
+      set.groupName = group && group !== r.group ? group : null;
+      set.unit = hit && hit.unit !== r.unitKey ? hit.unit : null;
+    }
+  } else if (field === "groupName") {
+    const p = text(60).safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    set.groupName = p.data && p.data !== r.group ? p.data : null;
+  } else if (field === "unit") {
+    const v = value.trim();
+    if (v && !PRODUCT_UNITS.some(([u]) => u === v)) return { error: "O'lchov birligini tanlang", field };
+    set.unit = v && v !== r.unitKey ? v : null;
+  } else {
+    const p = (field === "qty" ? numIn(0, 1_000_000) : numIn(0, 10_000_000_000)).safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    if (field === "qty") {
+      if (p.data !== null && p.data <= 0) return { error: "Miqdor 0 dan katta bo'lsin", field };
+      set.qty = p.data !== null && Math.abs(p.data - r.qty) >= 0.0005 ? p.data : null;
+    } else {
+      const v = p.data === null ? null : Math.round(p.data);
+      set[field] = v !== null && Math.abs(v - r[field]) >= 0.5 ? v : null;
+    }
+  }
+  await db.$transaction(async (tx) => {
+    const before = await tx.realizationLine.findUnique({ where: { key } });
+    const data = { ...set, updatedById: userId };
+    await tx.realizationLine.upsert({ where: { key }, create: { key, ...data }, update: data });
+    await audit(tx, userId, before ? "UPDATE" : "CREATE", "RealizationLine", key,
+      before ? Object.fromEntries(Object.keys(set).map((k) => [k, before[k as keyof LineSet]])) : undefined, data);
   });
   return { ok: true, id: key };
 }

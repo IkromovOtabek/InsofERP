@@ -23,6 +23,8 @@ export type RealizationRow = {
   customerId: string; customer: string; product: string; group: string;
   /** TTN: dispetcher yozgani (`Trip.ttn`), bo'lmasa nakladnoy raqami; `tripTtn` — faqat yozilgani (tahrir uchun) */
   ttn: string | null; tripTtn: string | null; vehicle: string | null; unit: string; qty: number;
+  /** Mahsulot birligi kaliti (m3, dona…) va zayavka qatorida «QQS 12%» belgisi — Logistika reestridagi tuzatish qayta hisobi uchun */
+  unitKey: string; nds: boolean;
   price: number; delivery: number; net: number; vat: number; total: number;
   address: string; phone: string | null; contractNo: string | null; invoiceNo: string | null; missing: string[];
   /** Reys ma'lumoti (Logistika → Realizatsiya): yuk olingan joy — BRU yoki manzil, haydovchi */
@@ -43,26 +45,29 @@ const ORDER_SELECT = {
   customerId: true, customer: { select: { name: true, phone: true } },
   site: { select: { name: true, contactPhone: true } },
   createdBy: { select: { fullName: true } },
-  items: { orderBy: { id: "asc" as const }, select: { qtyM3: true, price: true, nds: true, product: { select: { name: true, unit: true, groupId: true } } } },
+  items: { orderBy: { id: "asc" as const }, select: { id: true, qtyM3: true, price: true, nds: true, product: { select: { name: true, unit: true, groupId: true } } } },
   invoices: { where: { status: { not: "CANCELLED" as const }, isOpening: false }, orderBy: { date: "asc" as const }, select: { invoiceNo: true } },
   // Zayavkaning barcha reyslari tartib bilan: dastavka birinchisiga, qatorlar navbat bilan — davrdan oldingi reyslar ham kerak
   trips: { where: { status: { not: "CANCELLED" as const } }, orderBy: [{ loadedAt: "asc" as const }, { createdAt: "asc" as const }, { id: "asc" as const }], select: { id: true, qtyM3: true, acceptedQty: true } },
 };
 
-export async function realizationRows(from: Date, to: Date): Promise<RealizationRow[]> {
+/**
+ * `extra` — davrdan tashqaridagi reys/zayavka ham qo'shilsin (Logistika reestrida dispetcher sanasini shu davrga o'zgartirgan).
+ */
+export async function realizationRows(from: Date, to: Date, extra?: { tripIds: string[]; orderIds: string[] }): Promise<RealizationRow[]> {
   const a = new Date(from); a.setHours(0, 0, 0, 0);
   const b = new Date(to); b.setHours(0, 0, 0, 0); b.setDate(b.getDate() + 1);
   const live = { kind: "SALE" as const, status: { not: "CANCELLED" as const } };
   const [trips, pickups, groups] = await Promise.all([
     db.trip.findMany({
-      where: { status: { not: "CANCELLED" }, order: live, OR: [{ loadedAt: { gte: a, lt: b } }, { loadedAt: null, createdAt: { gte: a, lt: b } }] },
+      where: { status: { not: "CANCELLED" }, order: live, OR: [{ loadedAt: { gte: a, lt: b } }, { loadedAt: null, createdAt: { gte: a, lt: b } }, ...(extra?.tripIds.length ? [{ id: { in: extra.tripIds } }] : [])] },
       select: {
         id: true, deliveryNoteNo: true, ttn: true, qtyM3: true, acceptedQty: true, loadedAt: true, createdAt: true, bru: true, pickupAddress: true,
         vehicle: { select: { plate: true } }, driver: { select: { fullName: true, phone: true } }, order: { select: ORDER_SELECT },
       },
     }),
     db.order.findMany({
-      where: { ...live, status: { in: ["DELIVERED", "CLOSED"] }, deliveryDate: { gte: a, lt: b }, trips: { none: { status: { not: "CANCELLED" } } } },
+      where: { ...live, status: { in: ["DELIVERED", "CLOSED"] }, OR: [{ deliveryDate: { gte: a, lt: b } }, ...(extra?.orderIds.length ? [{ id: { in: extra.orderIds } }] : [])], trips: { none: { status: { not: "CANCELLED" } } } },
       select: ORDER_SELECT,
     }),
     db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
@@ -104,13 +109,14 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
       const vat = i.nds ? ndsPart(line) : 0;
       const delivery = n === 0 ? fee : 0;
       rows.push({
-        ...base, key: `${trip?.id ?? o.id}-${n}`, product: i.product.name, group: rootName(i.product.groupId), unit: unitLabel(i.product.unit),
-        qty, price: i.nds ? withoutNds(price) : price, delivery, net: r2(line - vat + delivery), vat, total: r2(line + delivery),
+        // Kalit zayavka qatori id si bilan — qator qo'shilsa/olinsa ham dispetcher tuzatishi (`RealizationLine`) o'z qatorida qoladi
+        ...base, key: `${trip?.id ?? o.id}-${i.id}`, product: i.product.name, group: rootName(i.product.groupId), unit: unitLabel(i.product.unit),
+        unitKey: i.product.unit, nds: i.nds, qty, price: i.nds ? withoutNds(price) : price, delivery, net: r2(line - vat + delivery), vat, total: r2(line + delivery),
       });
     });
     // Mahsulot qatorisiz zayavka (faqat dastavka)
     if (o.items.length === 0 && fee > 0) {
-      rows.push({ ...base, key: `${trip?.id ?? o.id}-fee`, product: "Dastavka", group: "Boshqa", unit: "", qty: 0, price: 0, delivery: fee, net: fee, vat: 0, total: fee });
+      rows.push({ ...base, key: `${trip?.id ?? o.id}-fee`, product: "Dastavka", group: "Boshqa", unit: "", unitKey: "", nds: false, qty: 0, price: 0, delivery: fee, net: fee, vat: 0, total: fee });
     }
   };
 

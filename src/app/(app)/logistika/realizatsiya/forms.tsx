@@ -185,8 +185,8 @@ function EntryFields({ entry, token, action, pending, error, onClose }: {
 }
 
 /**
- * Reysdan tushgan qator: dispetcher faqat ortilgan joy, boradigan manzil, izoh va spravka nomini to'ldiradi.
- * Bo'sh qoldirilgani taklifga (kulrang yozuv) qaytadi. Mijoz, mahsulot, miqdor, narx — zayavkada tuzatiladi.
+ * Reysdan tushgan qator: ortilgan joy, boradigan manzil, izoh va spravka nomi bitta oynada.
+ * Bo'sh qoldirilgani taklifga (kulrang yozuv) qaytadi. Qolgan ustunlar (xaridordan tashqari) — katakdagi qalamcha bilan.
  */
 export function NoteButton({ refKey, title, filled, suggest }: { refKey: string; title: string; filled: LogFields; suggest: LogFields }) {
   const [open, setOpen] = useState(false);
@@ -206,7 +206,7 @@ function NoteDialog({ refKey, title, filled, suggest, onClose }: { refKey: strin
   useEffect(() => { if (state?.ok) onClose(); }, [state, onClose]);
   return (
     <Dialog title={title} onClose={onClose}>
-      <p className="text-xs text-slate-500">Mijoz, mahsulot, miqdor va narx zayavkadan olinadi — ularni zayavkada tuzating. Bo&apos;sh qoldirilgan maydonda taklif (kulrang) ko&apos;rinadi.</p>
+      <p className="text-xs text-slate-500">Bo&apos;sh qoldirilgan maydonda taklif (kulrang) ko&apos;rinadi. Sana, mahsulot, miqdor, narx va boshqa ustunlar jadval katagidagi qalamcha bilan tuzatiladi (xaridor — zayavkada).</p>
       <form onSubmit={submitWith(action)} className="space-y-3">
         <Field label="Ortilgan joy (BSU / Sklad)"><Input name="loadPlace" list={`${uid}-l`} defaultValue={filled.loadPlace ?? ""} placeholder={suggest.loadPlace ?? "BSU-1, Sklad-2…"} maxLength={60} autoComplete="off" /></Field>
         <Field label="Boradigan manzil"><Input name="destination" list={`${uid}-d`} defaultValue={filled.destination ?? ""} placeholder={suggest.destination ?? ""} maxLength={200} autoComplete="off" /></Field>

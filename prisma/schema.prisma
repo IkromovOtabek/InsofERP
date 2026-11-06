@@ -2075,11 +2075,33 @@ model RealizationEntry {
 
 /// Reysdan tushgan realizatsiya qatoriga dispetcher to'ldiradigan maydonlar (reys ma'lumoti o'zgarmaydi).
 model RealizationNote {
-  key         String   @id // reys id; reyssiz (mijoz o'zi olib ketgan) zayavka — "o:<orderId>"
+  key         String    @id // reys id; reyssiz (mijoz o'zi olib ketgan) zayavka — "o:<orderId>"
   loadPlace   String?
   destination String?
   note        String?
   refName     String?
+  // Dispetcher tuzatishi — faqat reestrda (zayavka, qarz, kassa o'zgarmaydi); bo'sh — zayavka/reysdagi qiymat
+  date        DateTime?
+  payGroup    String? // BANK | CASH | DEBT
+  seller      String?
+  vehicle     String?
+  ttn         String? // faqat reyssiz qatorda — reysda TTN `Trip.ttn` da
+  updatedById String
+  updatedAt   DateTime  @updatedAt
+
+  @@index([date])
+}
+
+/// Reysdan tushgan realizatsiya qatorining (zayavka mahsulot qatori × reys) dispetcher tuzatishi — faqat reestr.
+/// Bo'sh maydon — zayavkadagi qiymat. Summa va QQS tuzatilgan miqdor × narxdan qayta hisoblanadi.
+model RealizationLine {
+  key         String   @id // `RealizationRow.key`: "<reys id>-<zayavka qatori id>", reyssiz — "<zayavka id>-<qator id>"
+  productName String?
+  groupName   String?
+  unit        String?
+  qty         Decimal? @db.Decimal(18, 3)
+  price       Decimal? @db.Decimal(18, 2) // QQSsiz
+  delivery    Decimal? @db.Decimal(18, 2)
   updatedById String
   updatedAt   DateTime @updatedAt
 }

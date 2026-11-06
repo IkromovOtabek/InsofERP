@@ -9,8 +9,9 @@ import { parseForm, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 import { setTripTtn } from "@/lib/trips";
 import {
-  ENTRY_CELLS, ENTRY_LABELS as LABEL, NOTE_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, noteSchema, saveRealizationNote,
-  saveRealizationNoteField, updateRealizationEntry, updateRealizationEntryField, type EntryCell, type ImportRow, type NoteCell,
+  ENTRY_CELLS, ENTRY_LABELS as LABEL, LINE_CELLS, NOTE_CELLS, TRIP_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, noteSchema,
+  saveRealizationLineField, saveRealizationNote, saveRealizationNoteField, saveRealizationTripField, updateRealizationEntry, updateRealizationEntryField,
+  type EntryCell, type ImportRow, type LineCell, type NoteCell, type TripCell,
 } from "@/lib/realization-log";
 
 /**
@@ -82,9 +83,10 @@ export async function saveRealizationNoteAction(key: string, _prev: ActionState,
 }
 
 /**
- * Jadval katagidan bitta qiymat (qalamcha): `target` — «m:<qo'lda qator id>», «a:<reys kaliti>» yoki «t:<reys id>» (TTN).
- * Qo'lda qatorda hamma ustun (`real_manual`); reysdan qatorda ortilgan joy, manzil, izoh, spravka nomi (`real_auto`),
- * TTN esa reysning o'zida (`trips.create` yoki `real_auto`). Mijoz, mahsulot, miqdor, narx — zayavkada.
+ * Jadval katagidan bitta qiymat (qalamcha): `target` — «m:<qo'lda qator id>», «a:<reys kaliti>», «l:<qator kaliti>» yoki «t:<reys id>» (TTN).
+ * Qo'lda qatorda hamma ustun (`real_manual`). Reysdan qatorda xaridordan boshqa hamma ustun (`real_auto`, faqat reestr):
+ * «a:» — ortilgan joy, manzil, izoh, spravka nomi va reys bo'yicha tuzatish (sana, to'lov turi, sotuvchi, mashina, reyssizda TTN),
+ * «l:» — mahsulot qatori (mahsulot, guruh, o'lchov, miqdor, narx, dastavka). Reys TTN'i reysning o'zida (`trips.create` yoki `real_auto`).
  */
 export async function saveRealizationCellAction(target: string, field: string, value: string): Promise<ActionState> {
   const v = String(value ?? "");
@@ -96,6 +98,14 @@ export async function saveRealizationCellAction(target: string, field: string, v
   } else if (target.startsWith("a:") && (NOTE_CELLS as readonly string[]).includes(field)) {
     const s = await requireAction("logistika", "real_auto");
     const res = await saveRealizationNoteField(id, field as NoteCell, v, s.userId);
+    if ("error" in res) return formError(res);
+  } else if (target.startsWith("a:") && (TRIP_CELLS as readonly string[]).includes(field)) {
+    const s = await requireAction("logistika", "real_auto");
+    const res = await saveRealizationTripField(id, field as TripCell, v, s.userId);
+    if ("error" in res) return formError(res);
+  } else if (target.startsWith("l:") && (LINE_CELLS as readonly string[]).includes(field)) {
+    const s = await requireAction("logistika", "real_auto");
+    const res = await saveRealizationLineField(id, field as LineCell, v, s.userId);
     if ("error" in res) return formError(res);
   } else if (target.startsWith("t:") && field === "ttn") {
     // Reys ochuvchi yoki reestrni yurituvchi dispetcher (qog'oz TTN raqamini shu yerda to'ldiradi)

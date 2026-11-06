@@ -5,7 +5,7 @@ import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { dateRu, fmtNum, isoDate } from "@/lib/format";
-import { realizationLog, realizationOptions, type LogRow, type LogSource } from "@/lib/realization-log";
+import { LINE_CELLS, realizationLog, realizationOptions, type AutoCell, type LogRow, type LogSource } from "@/lib/realization-log";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
 import { ExcelButton } from "../excel-button";
@@ -103,11 +103,19 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
           const auto = r.source === "AUTO";
           // Reysdan qatorda to'ldirilmagan maydon — taklif, kulrang
           const hint = (k: "loadPlace" | "destination" | "note" | "refName") => auto && !r.filled?.[k] && "text-slate-400";
-          // Har katakda qalamcha: qo'lda qatorda hamma ustun, reysdan qatorda — dispetcher maydonlari va TTN
+          // Har katakda qalamcha: qo'lda qatorda hamma ustun; reysdan qatorda xaridordan boshqasi — faqat reestrda tuzatiladi
+          // (reys bo'yicha «a:», mahsulot qatori bo'yicha «l:»), bo'shatilsa zayavkadagi qiymat qaytadi
           const manual = !auto && canManual ? `m:${r.ref}` : null;
+          const target = (field: string) => manual ?? (auto && canAuto && r.line ? ((LINE_CELLS as readonly string[]).includes(field) ? `l:${r.line}` : `a:${r.ref}`) : null);
           type Opt = { kind?: "text" | "number" | "date" | "pay" | "unit"; list?: CellList; placeholder?: string; right?: boolean };
-          const edit = (field: string, label: string, value: string, node: React.ReactNode, o: Opt = {}) =>
-            manual ? <CellEdit target={manual} field={field} label={label} value={value} {...o}>{node}</CellEdit> : node;
+          const edit = (field: string, label: string, value: string, node: React.ReactNode, o: Opt = {}) => {
+            const t = target(field);
+            if (!t) return node;
+            // Tuzatilgan qiymat — sariq nuqtali tagchiziq, ustida asl qiymat
+            const was = r.orig[field as AutoCell];
+            const shown = was === undefined ? node : <span title={`Tuzatilgan. Zayavkada: ${was}`} className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">{node}</span>;
+            return <CellEdit target={t} field={field} label={label} value={value} {...(was !== undefined && (!o.kind || o.kind === "number") ? { placeholder: was } : {})} {...o}>{shown}</CellEdit>;
+          };
           // Ortilgan joy, manzil, izoh, spravka nomi: reysdan — bo'sh qoldirilsa taklif qaytadi
           const extra = (field: "loadPlace" | "destination" | "note" | "refName", label: string, node: React.ReactNode, list?: CellList) =>
             auto
@@ -126,11 +134,14 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
               </SheetTd>
               <SheetTd className={cn("font-medium whitespace-nowrap", PAY_COLOR[r.pay])}>{edit("payGroup", "To'lov turi", r.pay, r.payLabel, { kind: "pay" })}</SheetTd>
               <SheetTd>{edit("seller", "Sotuvchi", r.seller, r.seller, { list: "sellers" })}</SheetTd>
-              <SheetTd>{auto && orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link> : edit("customerName", "Xaridor", r.customer, <span className="font-medium text-slate-900">{r.customer}</span>, { list: "customers" })}</SheetTd>
+              {/* Xaridor reysdan qatorda tuzatilmaydi — u zayavkada */}
+              <SheetTd>{auto
+                ? orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link> : <span className="font-medium text-slate-900">{r.customer}</span>
+                : edit("customerName", "Xaridor", r.customer, <span className="font-medium text-slate-900">{r.customer}</span>, { list: "customers" })}</SheetTd>
               <SheetTd>{edit("productName", "Mahsulot", r.product, r.product, { list: "products" })}</SheetTd>
               <SheetTd className="whitespace-nowrap tabular">
-                {auto
-                  ? r.tripId && canTtn
+                {auto && r.tripId
+                  ? canTtn
                     ? <CellEdit target={`t:${r.tripId}`} field="ttn" label="TTN" value={r.tripTtn ?? ""} placeholder={r.ttn ?? ""}>{ttnNode}</CellEdit>
                     : ttnNode
                   : edit("ttn", "TTN", r.ttn ?? "", r.ttn)}
@@ -246,6 +257,12 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
       </div>
 
       {sheet}
+      {canAuto && (
+        <p className="mt-2 text-xs text-slate-500">
+          Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi — faqat shu reestrda (zayavka, mijoz qarzi, kassa va sklad o&apos;zgarmaydi).
+          Tuzatilgan qiymat <span className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">sariq tagchiziqli</span>, ustiga olib borilsa zayavkadagi qiymat ko&apos;rinadi; katak bo&apos;shatilsa o&apos;shanga qaytadi.
+        </p>
+      )}
     </div>
   );
   return options ? <OptionsProvider options={options}>{body}</OptionsProvider> : body;
