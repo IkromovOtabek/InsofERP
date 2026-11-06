@@ -36,7 +36,8 @@ export const pct = (v: number, frac = 1) => `${fmtNum(v, frac)}%`;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const date = (d: Date) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-export const dateTime = (d: Date) => `${date(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+export const time = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+export const dateTime = (d: Date) => `${date(d)} ${time(d)}`;
 export const isoDate = (d: Date = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 /** Ruscha jadvallar (Sklad → Приход/Расход): «20.04.2026» — Excel'dagidek nuqta bilan. */
 export const dateRu = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
