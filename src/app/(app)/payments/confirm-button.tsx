@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  *
  * Moliya va sotuv sahifalari (zayavka, schyot, kassa, to'lov) shu bitta komponentni ishlatadi.
  */
-export function ConfirmButton({ action, label, question, reason, okText = "Bajarildi", className, icon, title }: {
+export function ConfirmButton({ action, label, question, reason, okText = "Bajarildi", className, icon, title, goTo }: {
   /** `reason` — foydalanuvchi yozgan sabab (so'ralmasa bo'sh satr). */
   action: (reason: string) => Promise<ActionState | void>;
   label: React.ReactNode;
@@ -25,6 +25,8 @@ export function ConfirmButton({ action, label, question, reason, okText = "Bajar
   icon?: React.ReactNode;
   /** Faqat ikonkali tugma uchun — sichqoncha ustida va ekran o'qigichda ko'rinadigan nom. */
   title?: string;
+  /** Muvaffaqiyatdan keyin o'tiladigan sahifa — yozuv o'chirilsa (bekor qilingan zayavka) joriy sahifa qolmaydi */
+  goTo?: string;
 }) {
   const router = useRouter();
   const [armed, setArmed] = useState(false);
@@ -36,6 +38,7 @@ export function ConfirmButton({ action, label, question, reason, okText = "Bajar
     try {
       const res = await action(why.trim());
       if (res?.error) { setState(res); return; }
+      if (goTo) { router.push(goTo); return; }
       setState({ ok: true, note: res?.note });
       setArmed(false); setWhy("");
       router.refresh();

@@ -29,7 +29,8 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
   const history = status === "tarix";
   const tabItems = [
     { key: "", label: "Hammasi", href: "/trips" },
-    ...Object.entries(TRIP_STATUS).map(([k, v]) => ({ key: k, label: v.label, href: `/trips?status=${k}` })),
+    // Bekor qilingan reys bazadan o'chiriladi (`lib/purge-cancelled.ts`) — uning tabi yo'q
+    ...Object.entries(TRIP_STATUS).filter(([k]) => k !== "CANCELLED").map(([k, v]) => ({ key: k, label: v.label, href: `/trips?status=${k}` })),
     { key: "tarix", label: "Tarix", href: "/trips?status=tarix", icon: History },
   ];
 

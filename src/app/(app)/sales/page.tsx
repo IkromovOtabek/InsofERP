@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Wallet, CheckCircle2, Clock, FileText, ScrollText } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
+import { lastEdits } from "@/lib/audit";
+import { EditedMark } from "@/components/edited-mark";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
 import { money, deliveryAt, isoDate } from "@/lib/format";
@@ -53,7 +55,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     // Schyot yozilmagan (yopilganidan tashqari) tasdiqlangan zayavkalar
     db.order.count({ where: { ...orderWhere, status: { in: statuses.filter((x) => x !== "CLOSED") }, invoices: { none: { status: { not: "CANCELLED" } } } } }),
   ]);
-  const marks = await customerMarks(orders.map((o) => o.customerId));
+  const [marks, edits] = await Promise.all([customerMarks(orders.map((o) => o.customerId)), lastEdits("Order", orders.map((o) => o.id))]);
   const rows = orders.map((o) => {
     // Hajm mahsulot birligida (beton m³, ustun dona) — zayavka kartochkasi bilan bir xil
     const vol = fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
@@ -106,7 +108,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
               <Td right className="whitespace-nowrap">{vol}</Td>
               <Td right className="whitespace-nowrap">{money(sum)}</Td>
               <Td right className={"whitespace-nowrap " + (paid >= sum && sum > 0 ? "text-emerald-700" : paid > 0 ? "text-amber-700" : "text-slate-400")}>{money(paid)}</Td>
-              <Td><OrderStatusBadge status={o.status} /></Td>
+              <Td><OrderStatusBadge status={o.status} />{edits.has(o.id) && <div className="mt-1"><EditedMark edit={edits.get(o.id)} /></div>}</Td>
             </Tr>
           ))}
         </tbody>

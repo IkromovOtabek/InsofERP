@@ -12,6 +12,7 @@ import { addTripCostRecord, dispatchDelivered, dispatchOnRoad } from "@/lib/trip
 import type { TripIssueKind } from "@/generated/prisma";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
+import { purgeCancelledTrip } from "@/lib/purge-cancelled";
 
 const schema = z.object({
   orderId: zStr("Zayavka tanlanmagan"),
@@ -168,8 +169,13 @@ export async function saveTripPickup(id: string, _prev: ActionState, fd: FormDat
 export async function cancelTrip(id: string) {
   const s = await requireAction("trips", "cancel");
   const r = await tripCancelled(id, s.userId);
-  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "CANCELLED"));
+  if (r.changed) {
+    // ECO o'z yetkazmasini yopsin (reysni bazadan o'qiydi), keyin reys butunlay o'chadi — hech qayerda qolmaydi
+    if (ecoEnabled()) await pushTripStatus(id, "CANCELLED").catch(() => undefined);
+    await purgeCancelledTrip(id, s.userId);
+  }
   refresh(id, r.orderId);
+  if (r.changed) redirect(`/orders/${r.orderId}`);
 }
 
 /** Reys sahifasidagi "ECO'ga yuborish / yangilash" tugmasi. */

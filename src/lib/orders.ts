@@ -5,7 +5,7 @@ import { audit } from "@/lib/audit";
 import { canDoByUserId } from "@/lib/auth";
 import { customerCredit, defaultCreditLimit } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
-import { date, fmtNum, money } from "@/lib/format";
+import { date, deliveryAt, fmtNum, isoDate, money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
 import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/notify";
 import { syncCustomerLater } from "@/lib/eco/customers";
@@ -16,6 +16,7 @@ import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
 import { linkOrderTx, syncDealLater } from "@/lib/amocrm/sync";
 import { orderTotal } from "@/lib/order-total";
+import { purgeOrderTx } from "@/lib/purge-cancelled";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -296,10 +297,17 @@ export async function orderUnblock(id: string, userId: string): Promise<OrderRes
   return { changed: true, status: "CONFIRMED" };
 }
 
-/** Bekor qilish. Zames yoki reys boshlangan bo'lsa — mumkin emas. */
+class PurgeFailed extends Error {}
+
+/**
+ * Bekor qilish. Zames, reys yoki brigada qaydi bo'lsa — mumkin emas.
+ * Bekor qilingan zayavka shu tranzaksiyada bazadan o'chiriladi (`lib/purge-cancelled.ts`) — hech qayerda qolmaydi.
+ */
 export async function orderCancel(id: string, userId: string): Promise<OrderResult> {
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { select: { product: { select: { unit: true } } } }, batches: { where: { cancelledAt: null } }, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, customer: { select: { name: true } } } });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { select: { product: { select: { unit: true } } } }, batches: { where: { cancelledAt: null } }, trips: { where: { status: { not: "CANCELLED" } } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, customer: { select: { name: true } } } });
   if (o.batches.length || o.trips.length) return { changed: false, error: "Zames yoki reys bor — bekor qilib bo'lmaydi" };
+  // Brigada qayd qilgan ish oyligiga kirgan — topshiriq bilan zayavka o'chirilsa oylik yo'qoladi
+  if (await db.taskProgress.count({ where: { task: { orderId: id } } })) return { changed: false, error: "Brigada ishlab chiqarishni boshlagan (qayd bor) — zayavkani bekor qilib bo'lmaydi" };
   if (!["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status)) return { changed: false, error: "Bu holatdagi zayavka bekor qilinmaydi" };
   // Schyot qolib ketsa mijoz yetkazilmagan mahsulot uchun qarzdor bo'lib turardi — avval schyot bekor qilinadi.
   // Avans esa yo'qolmaydi: bekor qilingan zayavkadagi to'lov mijozning ortiqcha to'lovi bo'lib qarz/limitni kamaytiradi.
@@ -307,18 +315,22 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
   // Bekor qilinadigan topshiriqlar brigadirlari — ular sexda ishni boshlab qo'ymasin
   const openTasks = await db.brigadeTask.findMany({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } }, select: { brigade: { select: { leaderId: true } } } });
   const done = await db.$transaction(async (tx) => {
-    const r = await tx.order.updateMany({ where: { id, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED"] }, batches: { none: { cancelledAt: null } }, trips: { none: {} } }, data: { status: "CANCELLED" } });
+    const r = await tx.order.updateMany({ where: { id, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED"] }, batches: { none: { cancelledAt: null } }, trips: { every: { status: "CANCELLED" } } }, data: { status: "CANCELLED" } });
     if (r.count !== 1) return false;
     await tx.brigadeTask.updateMany({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } }, data: { status: "CANCELLED" } });
     // Bosh to'lov so'rovi kassir/buxgalter ro'yxatidan tushadi (tushgan avans mijozda ortiqcha to'lov bo'lib qoladi)
     await cancelPaymentRequestTx(tx, id, userId);
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CANCELLED" });
+    // Bekor qilingan zayavka hech qayerda qolmaydi — shu yerning o'zida o'chadi (o'chmasa hammasi orqaga qaytadi)
+    if (!(await purgeOrderTx(tx, id, userId))) throw new PurgeFailed();
     return true;
-  });
+  }).catch((e) => { if (e instanceof PurgeFailed) return "purge" as const; throw e; });
+  if (done === "purge") return { changed: false, error: "Zayavkani o'chirib bo'lmadi — unga bog'langan hujjat bor" };
   if (!done) return { changed: false, error: "Zayavka shu payt o'zgardi — sahifani yangilang" };
-  // Tasdiqlangan zayavkani sex va logistika rejalashtirgan bo'lishi mumkin — bekor qilingani darhol bilinsin
+  // Tasdiqlangan zayavkani sex va logistika rejalashtirgan bo'lishi mumkin — bekor qilingani darhol bilinsin.
+  // Havolasiz: zayavka o'chirilgan, ochiladigan sahifa yo'q
   notifyAfter(async () => {
-    const n = { type: "ORDER_CANCELLED", title: `Zayavka bekor qilindi — ${o.customer.name}`, body: o.status === "CONFIRMED" ? "Ishlab chiqarish va reys rejalashtirmang" : "Qoralama bekor qilindi", link: { key: "orders", id } };
+    const n = { type: "ORDER_CANCELLED", title: `Zayavka bekor qilindi — ${o.customer.name}`, body: `${o.orderNo} · ${o.deliveryAddress} — ${o.status === "CONFIRMED" ? "ishlab chiqarish va reys rejalashtirmang" : "qoralama bekor qilindi"}` };
     if (o.status === "CONFIRMED") await notifyRoles(crewRoles(o.items.map((i) => i.product.unit)), n, { except: userId });
     await notifyUsers([o.createdById].filter((u) => u !== userId), n);
     const leaders = openTasks.map((t) => t.brigade.leaderId);
@@ -799,4 +811,102 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
     if (o.createdById !== userId) await notifyUsers([o.createdById], { type: "ORDER_CHANGED", title: `Zayavka o'zgartirildi — ${name}`, body: res.status === "BLOCKED" ? "Limit oshdi — zayavka bloklandi" : "Zayavka ma'lumotlari yangilandi", link });
   });
   return { changed: true, status: res.status };
+}
+
+// ───────────────────────── Logistika: yetkazish ma'lumotlari ─────────────────────────
+
+/** Yetkazish ma'lumotlari tahrirlanadigan holatlar — reys ochilgan, yetkazilgan zayavka ham (manzil hujjatlarda yangilanadi). */
+export const DELIVERY_EDIT_STATUSES = ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION", "DELIVERED"] as const;
+
+export type DeliveryEditInput = {
+  deliveryDate: Date;
+  /** "HH:MM" yoki bo'sh */
+  deliveryTime: string | null;
+  deliveryAddress: string;
+  lat: number | null;
+  lng: number | null;
+  needsPump: boolean;
+  isUrgent: boolean;
+  note: string | null;
+};
+
+/**
+ * Logistika «Buyurtmalar» oynasidan: sana, soat, obyekt manzili/nuqtasi, nasos, shoshilinch, izoh.
+ * Mahsulot, miqdor, narx va to'lov bu yerda o'zgarmaydi (ular — sotuvning to'liq tahriri, `orderEdit`).
+ * Reys ochilgan zayavkada ham ishlaydi: nakladnoy, kalendar, haydovchi ilovasi manzilni zayavkadan o'qiydi — hammasida yangisi.
+ */
+export async function orderDeliveryEdit(id: string, input: DeliveryEditInput, userId: string): Promise<OrderResult> {
+  if (!(await canDoByUserId(userId, "logistika", "order_edit"))) return { changed: false, error: "Zayavkani tahrirlashga ruxsatingiz yo'q — direktordan ruxsat so'rang" };
+  const o = await db.order.findUnique({
+    where: { id },
+    select: {
+      id: true, kind: true, status: true, customerId: true, siteId: true, createdById: true, deliveryDate: true, dateUnknown: true, deliveryTime: true,
+      deliveryAddress: true, lat: true, lng: true, needsPump: true, isUrgent: true, note: true,
+      customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } },
+    },
+  });
+  if (!o) return { changed: false, error: "Zayavka topilmadi" };
+  if (o.kind === "STOCK") return { changed: false, error: "Sklad zayavkasida yetkazish yo'q" };
+  if (!(DELIVERY_EDIT_STATUSES as readonly string[]).includes(o.status)) return { changed: false, error: "Yopilgan zayavka tahrirlanmaydi" };
+
+  const deliveryAddress = input.deliveryAddress.trim().slice(0, 300);
+  if (!deliveryAddress) return { changed: false, error: "Obyekt manzili kerak" };
+  const deliveryTime = input.deliveryTime?.trim() || null;
+  if (deliveryTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(deliveryTime)) return { changed: false, error: "Soat noto'g'ri — masalan 09:30" };
+  // Kun bo'yicha solishtiriladi (eski yozuvlarda vaqt qismi turlicha): o'zgarmagan sana bazadagidek qoladi,
+  // yangisi `orderEdit` dagidek saqlanadi (formadagi "YYYY-MM-DD" → Date)
+  if (!Number.isFinite(input.deliveryDate.getTime())) return { changed: false, error: "Yetkazish sanasini tanlang" };
+  const dateChanged = o.dateUnknown || isoDate(input.deliveryDate) !== isoDate(o.deliveryDate);
+  const deliveryDate = dateChanged ? input.deliveryDate : o.deliveryDate;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (dateChanged && deliveryDate.getTime() < today.getTime()) return { changed: false, error: "Yetkazish sanasi o'tib ketgan — bugungi yoki keyingi sanani tanlang" };
+  if (deliveryDate.getTime() > Date.now() + 366 * 86_400_000) return { changed: false, error: "Yetkazish sanasi bir yildan uzoq bo'lmasin" };
+  const note = input.note?.trim().slice(0, 1000) || null;
+  const { lat, lng } = input;
+  const pointChanged = lat !== o.lat || lng !== o.lng;
+  let dist: Distance | null = null;
+  if (pointChanged && lat != null && lng != null) {
+    const plant = await db.companySettings.findUnique({ where: { id: "main" }, select: { lat: true, lng: true } });
+    if (plant?.lat != null && plant?.lng != null) dist = await routeDistance({ lat: plant.lat, lng: plant.lng }, { lat, lng });
+  }
+  const next = { deliveryDate, dateUnknown: false, deliveryTime, deliveryAddress, lat, lng, needsPump: input.needsPump, isUrgent: input.isUrgent, note };
+  const prev = { deliveryDate: o.deliveryDate, dateUnknown: o.dateUnknown, deliveryTime: o.deliveryTime, deliveryAddress: o.deliveryAddress, lat: o.lat, lng: o.lng, needsPump: o.needsPump, isUrgent: o.isUrgent, note: o.note };
+  const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => {
+    const a = prev[k], b = next[k];
+    return a instanceof Date && b instanceof Date ? a.getTime() !== b.getTime() : a !== b;
+  });
+  if (!changed.length) return { changed: false, status: o.status };
+
+  try {
+    await db.$transaction(async (tx) => {
+      // Qabul qilingan zayavka boshqa kunga o'tsa — o'sha kunning limiti (qabul qilishdagi qoida)
+      if (dateChanged && o.status === "CONFIRMED") {
+        await lockCreditAndDay(tx, o.customerId, deliveryDate);
+        const limitErr = await dailyOrderLimitError(tx, id, deliveryDate, o.items, "Boshqa kunni tanlang yoki direktor limitni Sozlamalar → Limitlar'da oshirsin");
+        if (limitErr) throw new EditError(limitErr);
+      }
+      const siteId = deliveryAddress !== o.deliveryAddress || pointChanged ? await ensureSite(tx, o.customerId, deliveryAddress, { lat, lng }) : o.siteId;
+      const r = await tx.order.updateMany({
+        where: { id, status: o.status },
+        data: { ...next, ...(siteId !== o.siteId ? { siteId } : {}), ...(pointChanged ? { distanceKm: dist?.km ?? null, distanceSource: dist?.source ?? null } : {}) },
+      });
+      if (r.count !== 1) throw new EditError("Zayavka shu payt o'zgardi — sahifani yangilang");
+      if (dateChanged) await tx.brigadeTask.updateMany({ where: { orderId: id, status: { notIn: ["DONE", "CANCELLED"] } }, data: { dueDate: deliveryDate } });
+      const pick = <T extends Record<string, unknown>>(x: T) => Object.fromEntries(changed.map((k) => [k, x[k]]));
+      await audit(tx, userId, "UPDATE", "Order", id, pick(prev), { ...pick(next), via: "logistika" });
+    });
+  } catch (e) {
+    if (e instanceof EditError) return { changed: false, error: e.message };
+    throw e;
+  }
+
+  // Sex, logistika va zayavkani ochgan sotuvchi — yangi sana/manzil darhol bilinsin
+  const link = { key: "orders", id };
+  const what = changed.includes("deliveryDate") || changed.includes("deliveryTime") ? `yetkazish ${deliveryAt(deliveryDate, deliveryTime)}` : changed.includes("deliveryAddress") ? deliveryAddress : "yetkazish ma'lumotlari";
+  notifyAfter(async () => {
+    const n = { type: "ORDER_CHANGED", title: `Zayavka o'zgartirildi — ${o.customer.name}`, body: `Logistika: ${what}`, link };
+    if (o.status !== "DRAFT") await notifyRoles(crewRoles(o.items.map((i) => i.product.unit)), n, { except: userId });
+    if (o.createdById !== userId) await notifyUsers([o.createdById], n);
+  });
+  return { changed: true, status: o.status };
 }

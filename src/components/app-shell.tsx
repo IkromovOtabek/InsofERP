@@ -12,6 +12,7 @@ import { ScriptToggle } from "@/components/script-toggle";
 import { LogoMark } from "@/components/logo";
 import { AiPanel, AiTrigger } from "@/components/ai-panel";
 import { Tour, TourTrigger } from "@/components/tour";
+import { NotificationStack } from "@/components/notification-stack";
 import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -366,6 +367,8 @@ export function AppShell({ items, user, brand, product = "Insof ERP", ai = false
             <TourTrigger />
             {ai && <span data-tour="ai" className="inline-flex"><AiTrigger /></span>}
             <ScriptToggle className="hidden min-[360px]:inline-flex" />
+            {/* Bildirishnomalar: qo'ng'iroqcha + o'ng tepadagi kartochkalar oqimi */}
+            <NotificationStack />
             <span data-tour="theme" className="inline-flex"><ThemeToggle /></span>
             <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
             <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">

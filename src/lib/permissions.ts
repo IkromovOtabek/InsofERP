@@ -112,6 +112,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "fuel",     label: "Yoqilg'i yozuvlari, xarajat o'chirish", roles: ["LOGISTICS", "ACCOUNTING"] },
     { key: "expense",  label: "Transport xarajati kiritish",     roles: ["LOGISTICS", "ACCOUNTING", "MECHANIC", "DISPATCHER"], hint: "Dispetcher — Haydovchilar tabeli → «Qo'lda yozuvlar» dan" },
     { key: "sites",    label: "Obyektlar",                       roles: ["LOGISTICS", "SALES"] },
+    { key: "order_edit", label: "Buyurtmalar: yetkazish ma'lumotlarini tahrirlash (sana, soat, manzil, nasos, izoh)", roles: ["LOGISTICS"], hint: "Mahsulot, miqdor va narx o'zgarmaydi — ular sotuvning to'liq tahririda (Zayavkalar → edit)" },
     { key: "drivers",  label: "Haydovchi kartochkasi",           roles: ["LOGISTICS", "DISPATCHER"] },
     { key: "driver_login", label: "Haydovchiga kirish berish (vaqtinchalik parol)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Faqat haydovchi roli; parol 72 soat amal qiladi, haydovchi kirishda o'z parolini qo'yadi" },
     { key: "pay",      label: "Reys narxi, to'lov turi, haydovchi tarifi va usta puli (tabel)", roles: ["DISPATCHER"], hint: "Narx va usta puli ish boshqaruvchi tasdig'iga boradi" },

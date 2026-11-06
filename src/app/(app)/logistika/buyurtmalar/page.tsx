@@ -1,7 +1,11 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
+import { lastEdits } from "@/lib/audit";
+import { DELIVERY_EDIT_STATUSES } from "@/lib/orders";
+import { EditedMark } from "@/components/edited-mark";
 import { ORDER_LOGI, orderLogistics, type OrderLogiStatus } from "@/lib/logistics";
 import { deliveryAt, qty } from "@/lib/format";
 import { Card, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
@@ -16,7 +20,8 @@ type Filter = "open" | "waiting" | "onroad" | "late" | "problem" | "done" | "all
  * qanchasi transportga biriktirilgan va yetkazilgan. Holat reyslardan chiqadi (`orderLogistics`).
  */
 export default async function LogisticsOrdersPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string }> }) {
-  await requireRoles(["LOGISTICS"], { module: "logistika" });
+  const s = await requireRoles(["LOGISTICS"], { module: "logistika" });
+  const canEdit = canDo(s, "logistika", "order_edit");
   const sp = await searchParams;
   const filter = (["open", "waiting", "onroad", "late", "problem", "done", "all"].includes(sp.filter ?? "") ? sp.filter : "open") as Filter;
   const now = new Date();
@@ -43,6 +48,8 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
     take: 400,
   });
   const rows = orders.map((o) => ({ o, l: orderLogistics(o, now) }));
+  // Kim, qachon tahrirlagan — qatordagi «Tahrirlangan» belgisi (audit jurnalidan, bitta so'rov)
+  const edits = await lastEdits("Order", orders.map((o) => o.id));
   const OPEN: OrderLogiStatus[] = ["NEW", "CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"];
   const match: Record<Filter, (r: (typeof rows)[number]) => boolean> = {
     open: (r) => OPEN.includes(r.l.status),
@@ -72,7 +79,7 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
               return (
                 <Tr key={o.id}>
                   <Td>
-                    <Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link>{o.isUrgent && <span className="ml-1.5 text-xs font-semibold text-red-600">shoshilinch</span>}
+                    <Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link>{o.isUrgent && <span className="ml-1.5 text-xs font-semibold text-red-600">shoshilinch</span>}{edits.has(o.id) && <span className="ml-1.5"><EditedMark edit={edits.get(o.id)} /></span>}
                     {o.site ? <Link href={`/logistika/obyektlar/${o.site.id}`} className="block max-w-[16rem] truncate text-xs text-slate-500 hover:underline">{o.deliveryAddress}</Link> : <div className="max-w-[16rem] truncate text-xs text-slate-500">{o.deliveryAddress}</div>}
                     {o.lat == null && <div className="text-xs text-amber-700">xaritada nuqta yo'q</div>}
                   </Td>
@@ -83,7 +90,14 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
                   <Td className="text-sm tabular">{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
                   <Td><OrderLogiBadge status={l.status} late={l.late} problem={l.problem} /></Td>
                   <Td className="text-xs text-slate-500">{o.createdBy.fullName}</Td>
-                  <Td>{l.remaining > 0.001 && ["CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"].includes(l.status) && <Link href={`/trips/new?orderId=${o.id}`} className="whitespace-nowrap text-xs font-medium text-blue-700 hover:underline">+ Reys</Link>}</Td>
+                  <Td>
+                    <div className="flex items-center justify-end gap-2">
+                      {l.remaining > 0.001 && ["CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"].includes(l.status) && <Link href={`/trips/new?orderId=${o.id}`} className="whitespace-nowrap text-xs font-medium text-blue-700 hover:underline">+ Reys</Link>}
+                      {canEdit && (DELIVERY_EDIT_STATUSES as readonly string[]).includes(o.status) && (
+                        <Link href={`/logistika/buyurtmalar/${o.id}`} title="Tahrirlash" aria-label="Tahrirlash" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"><Pencil size={14} /></Link>
+                      )}
+                    </div>
+                  </Td>
                 </Tr>
               );
             })}

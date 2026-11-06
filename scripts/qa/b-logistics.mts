@@ -70,7 +70,8 @@ const t2 = idFrom(r.redirect)!;
 r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: Math.round((total - 8 + 1) * 1000) / 1000 })], "/trips/new");
 check(!!r.error, "zayavka hajmi tugadi — qoldiqdan ko'p uchinchi reys rad etildi", r.error);
 await logist.action(`${TA}#cancelTrip`, [t2], `/trips/${t2}`);
-check(q1(`select status from "Trip" where id='${t2}'`) === "CANCELLED", "ikkinchi reys bekor qilindi");
+// Bekor qilingan reys bazadan o'chiriladi (`lib/purge-cancelled.ts`), «kim o'chirdi» — AuditLog'da
+check(n1(`select count(*) from "Trip" where id='${t2}'`) === 0 && n1(`select count(*) from "AuditLog" where entity='Trip' and "entityId"='${t2}' and action='DELETE'`) === 1, "ikkinchi reys bekor qilindi va o'chirildi");
 
 // Ko'chadan chaqirilgan mashina (o'z parki band): mashina va haydovchi `external` + nofaol — park, kadr va ECO
 // ro'yxatlariga kirmaydi, raqam/telefon bo'yicha qayta ishlatiladi; BRU faqat betonda saqlanadi va nakladnoyda chiqadi
@@ -120,7 +121,7 @@ r = await logist.action(`${TA}#createTrip`, [undefined, extF({ qtyM3: 0.5 })], "
 const tx3 = idFrom(r.redirect)!;
 check(!!tx3 && extOf(tx3)[0] === xv && q1(`select ("hiddenAt" is null)::text from "Vehicle" where id='${xv}'`) === "true", "qayta chaqirilgan mashina ro'yxatga qaytdi (o'sha yozuv)", r.error ?? extOf(tx3));
 for (const t of [tx1, tx2, tx3]) await logist.action(`${TA}#cancelTrip`, [t], `/trips/${t}`);
-check(n1(`select count(*) from "Trip" where id in ('${tx1}','${tx2}','${tx3}') and status='CANCELLED'`) === 3, "ko'chadan mashina reyslari bekor qilindi");
+check(n1(`select count(*) from "Trip" where id in ('${tx1}','${tx2}','${tx3}')`) === 0, "ko'chadan mashina reyslari bekor qilindi (o'chirildi)");
 
 // O'z haydovchisi bor texnikaga boshqa haydovchi: sababsiz rad etiladi, sabab reysda va AuditLog'da qoladi;
 // texnikaning o'z haydovchisida sabab so'ralmaydi (yuborilsa ham yozilmaydi)

@@ -108,12 +108,14 @@ const overdue = await listPaymentRequests("overdue", ["CASH"]);
 check("Q21 «Muddati o'tgan» filtri: muddati 3 kun oldin bo'lgan ochiq so'rov chiqadi", overdue.some((q) => q.order.id === od.id && q.overdue) && counts.overdue >= 1, counts);
 const done = await listPaymentRequests("done", ["CASH"]);
 check("Q22 «Tugallanganlar»da yopilgan naqd so'rov bor, bank so'rovi kassirga ko'rinmaydi", done.some((q) => q.order.id === o.id) && !done.some((q) => q.order.id === ob.id));
+// Bekor qilingan zayavka bazadan o'chiriladi (`lib/purge-cancelled.ts`) — bosh to'lov so'rovi ham
+const odReq = (await req(od.id)).id;
 await orderCancel(od.id, sotuv.id);
-check("Q23 zayavka bekor — so'rov CANCELLED", (await req(od.id)).status === "CANCELLED");
-x = await receivePaymentRequest({ requestId: (await req(od.id)).id, cashAccountId: kassa.id, amount: 1000, date: new Date() }, S(kassir));
-check("Q24 bekor so'rovga pul qabul qilinmaydi", /bekor/.test(x.error ?? ""), x);
+check("Q23 zayavka bekor — zayavka va so'rov o'chirildi", !(await db.order.findUnique({ where: { id: od.id } })) && !(await db.paymentRequest.findUnique({ where: { id: odReq } })));
+x = await receivePaymentRequest({ requestId: odReq, cashAccountId: kassa.id, amount: 1000, date: new Date() }, S(kassir));
+check("Q24 o'chirilgan so'rovga pul qabul qilinmaydi", /topilmadi/.test(x.error ?? ""), x);
 const hist = await listPaymentRequests("history", ["CASH"]);
-check("Q25 «Tarix»da bekor va qabul qilinganlar", hist.some((q) => q.order.id === od.id) && hist.some((q) => q.order.id === o.id));
+check("Q25 «Tarix»da qabul qilinganlar bor, bekor qilingan (o'chirilgan) yo'q", !hist.some((q) => q.order.id === od.id) && hist.some((q) => q.order.id === o.id));
 
 await db.$disconnect();
 summary("pul-qabul:");

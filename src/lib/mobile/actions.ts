@@ -30,6 +30,7 @@ import {
 } from "@/lib/procurement";
 import { pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
+import { purgeCancelledTrip } from "@/lib/purge-cancelled";
 import type { MobileUser } from "./auth";
 import type { AttendanceStatus } from "@/generated/prisma";
 import { dayUtc, isAttendanceStatus, today } from "@/lib/davomat";
@@ -283,7 +284,9 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "trip.cancel": {
       const r = await tripCancelled(id, user.id);
       if (r.error) fail(r.error);
-      if (ecoEnabled()) after(() => pushTripStatus(id, "CANCELLED"));
+      // ECO'ga xabar (reysni bazadan o'qiydi), keyin reys butunlay o'chadi
+      if (ecoEnabled()) await pushTripStatus(id, "CANCELLED").catch(() => undefined);
+      await purgeCancelledTrip(id, user.id);
       return { ok: true, message: "Reys bekor qilindi" };
     }
     // ── Logistika TZ: obyekt bosqichlari, muammo, yoqilg'i, yopish ──

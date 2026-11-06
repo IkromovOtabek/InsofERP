@@ -498,7 +498,8 @@ export async function tripsList(user: MobileUser, title: string, q?: string, fil
     key: "trips", title, rows,
     filters: [
       { key: "all", label: "Hammasi", count: by(), active: !status && !history },
-      ...(Object.keys(TRIP_STATUS_LABEL) as TripStatus[]).map((s) => ({ key: s, label: TRIP_STATUS_LABEL[s], count: by(s), active: s === status })),
+      // Bekor qilingan reys bazadan o'chiriladi (`lib/purge-cancelled.ts`) — uning chipi yo'q
+      ...(Object.keys(TRIP_STATUS_LABEL) as TripStatus[]).filter((s) => s !== "CANCELLED").map((s) => ({ key: s, label: TRIP_STATUS_LABEL[s], count: by(s), active: s === status })),
       ...(HISTORY_ROLES.includes(user.role) ? [{ key: "tarix", label: "Tarix", active: history }] : []),
     ],
   };

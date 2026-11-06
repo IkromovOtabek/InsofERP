@@ -587,6 +587,8 @@ table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="numbe
 
 /* Yumshoq kirish animatsiyasi */
 @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* O'ng tepadagi bildirishnoma kartochkasi o'ngdan kirib keladi (components/notification-stack.tsx) */
+@keyframes notif-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 .animate-fade-up { animation: fade-up .35s ease-out both; }
 
 /* ───────── Sidebar: yozuvlar animatsiyasi ─────────

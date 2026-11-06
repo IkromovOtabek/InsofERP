@@ -3,6 +3,7 @@ import { eco, ecoEnabled, EcoError, normalizePhone, type EcoDelivery, type EcoSt
 import { ecoSystemUserId } from "./system-user";
 import { reportTripIssue, tripArrived, tripCancelled, tripDelivered, tripLoaded, tripOnRoad, tripUnloading } from "@/lib/trips";
 import type { TripIssueKind } from "@/generated/prisma";
+import { purgeCancelledTrip } from "@/lib/purge-cancelled";
 
 /**
  * ERP ↔ ECO sinxron. ERP — nakladnoy manbai (yaratadi, bekor qiladi, sklad chiqimi);
@@ -157,5 +158,7 @@ export async function applyEcoStatus(e: EcoEvent): Promise<{ applied: boolean; t
     : applyError ? `ECO'da «${e.to}», ERP qabul qilmadi: ${applyError}`
     : null;
   await db.trip.update({ where: { id: t.id }, data: { ecoDeliveryId: e.deliveryId, ecoStatus: e.to, ecoSyncedAt: new Date(), ecoError: problem } });
+  // ECO'da bekor qilingan reys ERP'da ham bekor bo'ldi — bazadan butunlay o'chadi (faqat CANCELLED bo'lsa o'chiradi)
+  if (e.to === "CANCELLED") await purgeCancelledTrip(t.id, userId);
   return { applied: true, trip: t.id };
 }

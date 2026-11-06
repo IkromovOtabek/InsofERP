@@ -14,6 +14,8 @@ import { canDo } from "@/lib/permissions";
 import { ORDER_STATUS, OrderStatusBadge, OPEN_STATUSES } from "./status";
 import type { OrderStatus } from "@/generated/prisma";
 import { orderTotal } from "@/lib/order-total";
+import { lastEdits } from "@/lib/audit";
+import { EditedMark } from "@/components/edited-mark";
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string; imported?: string; tur?: string }> }) {
   const { status, customer, kun, imported, tur } = await searchParams;
@@ -22,7 +24,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const can = (a: string) => canDo(s, "orders", a);
   // Ta'minot zayavkasini tasdiqlash shu oynada: narx qo'yilgach ma'sul (sotuv) xodim ko'radi
   const canApproveSupply = ["SALES", "DIRECTOR"].includes(s.role); // ta'minot tasdig'i — sotuv xodimi yoki direktor
-  // Har holat o'z tabida; sukut — «Ochiq» (yetkazilmaganlar, qabul qilinganlari ham). Bekor qilinganlar faqat «Bekor» tabida
+  // Har holat o'z tabida; sukut — «Ochiq» (yetkazilmaganlar, qabul qilinganlari ham)
   const ALL = Object.keys(ORDER_STATUS) as OrderStatus[];
   const st = status && ALL.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
   // Taqvimdan kun tanlansa — o'sha kunga yetkazilishi kerak bo'lgan barcha zayavkalar (bekor qilinganlardan tashqari)
@@ -41,7 +43,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     include: { customer: true, createdBy: true, items: { include: { product: true } } },
     take: 200,
   });
-  const marks = await customerMarks(orders.map((o) => o.customerId));
+  const [marks, edits] = await Promise.all([customerMarks(orders.map((o) => o.customerId)), lastEdits("Order", orders.map((o) => o.id))]);
   // Bir xil mijoz + obyekt bo'yicha zayavkalar jadvalda yonma-yon tursin: aks holda
   // bitta obyektning bir necha zayavkasi ro'yxat bo'ylab sochilib ketadi va xodim
   // "shu obyektga yana nima olingan" deb qidirib chiqadi. Guruh ichida — yetkazish
@@ -61,7 +63,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     for (const [k, v] of [...sp]) if (!v) sp.delete(k);
     return sp.toString() ? `/orders?${sp}` : "/orders";
   };
-  const tabs = [{ key: "", label: "Ochiq", href: q({ status: "" }) }, ...ALL.map((k) => ({ key: k, label: ORDER_STATUS[k].label, href: q({ status: k }) }))];
+  // Bekor qilingan zayavka bazadan o'chiriladi (`lib/purge-cancelled.ts`) — uning tabi yo'q
+  const tabs = [{ key: "", label: "Ochiq", href: q({ status: "" }) }, ...ALL.filter((k) => k !== "CANCELLED").map((k) => ({ key: k, label: ORDER_STATUS[k].label, href: q({ status: k }) }))];
   // Turi bo'yicha filtr: mijoz zayavkasi / sklad zaxirasi
   const kindTabs = [
     { key: "", label: "Hammasi" },
@@ -73,7 +76,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     <div>
       <PageHeader
         title="Zayavkalar"
-        subtitle="Zayavka ochilgandan yopilguncha shu yerda. «Ochiq» — hali yetkazilmaganlar: qoralama, tasdiqlangan, ishlab chiqarishdagi. Yetkazilgan, yopilgan va bekor qilinganlar — o'z tabida."
+        subtitle="Zayavka ochilgandan yopilguncha shu yerda. «Ochiq» — hali yetkazilmaganlar: qoralama, tasdiqlangan, ishlab chiqarishdagi. Yetkazilgan va yopilganlar — o'z tabida. Bekor qilingan zayavka tizimdan o'chiriladi."
         action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton>{pathAllowed("/sales/realizatsiya", s.role, s.perms) && <LinkButton href="/sales/realizatsiya" variant="secondary"><ScrollText size={16} /> Realizatsiya</LinkButton>}{pathAllowed("/sales", s.role, s.perms) && <LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton>}{can("import") && <LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>}{can("create") && <LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton>}</div>}
       />
       {/* Excel importidan keyin: nechta zayavka ochilgani — hammasi qoralama, quyidagi ro'yxatda turadi */}
@@ -149,7 +152,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <Td right className="whitespace-normal">{vol.split(" · ").map((v, i, a) => <span key={i}><span className="whitespace-nowrap">{v}{i < a.length - 1 && " ·"}</span>{i < a.length - 1 && " "}</span>)}</Td>
                 <Td right>{o.kind === "STOCK" ? <span className="text-slate-300">—</span> : fmtNum(sum)}</Td>
                 <Td className="text-slate-500">{o.createdBy.fullName}</Td>
-                <Td className="whitespace-nowrap"><OrderStatusBadge status={o.status} /></Td>
+                <Td className="whitespace-nowrap"><OrderStatusBadge status={o.status} />{edits.has(o.id) && <div className="mt-1"><EditedMark edit={edits.get(o.id)} /></div>}</Td>
               </Tr>
             );
           }))}

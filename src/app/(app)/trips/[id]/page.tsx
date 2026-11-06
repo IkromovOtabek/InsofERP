@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, History, Route, AlertTriangle, Coins } from "lucide-react";
+import { Printer, PackageCheck, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, Route, AlertTriangle, Coins } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -18,7 +18,9 @@ import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { money } from "@/lib/format";
 import { CloseTripForm, DispatchDeliverForm, LoadButton, OnRoadButton, ReportIssueForm, ResolveIssueForm, TripCostForm, TtnForm } from "./trip-extras";
 import { DelayText, PhaseBadge } from "../../logistika/ui";
-import { distanceLabel, tripLine, tripSteps, tripTrack, tripTrackStats } from "@/lib/trips";
+import { distanceLabel, tripLine, tripTrack, tripTrackStats } from "@/lib/trips";
+import { tripActivity } from "@/lib/activity";
+import { ActivityLog } from "@/components/activity-log";
 import { TripTrackMap } from "./track-map";
 import { unitLabel, soleUnit } from "@/lib/unit";
 import { PickupForm } from "./pickup-form";
@@ -47,7 +49,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   });
   if (!t || !s) notFound();
   const marks = await customerMarks([t.order.customerId]);
-  const steps = await tripSteps(id);
+  const activity = await tripActivity(id);
   // Haydovchi ilovasidan kelgan GPS izi — qaysi yo'ldan yurgani va necha km bosgani
   const track = await tripTrack(id);
   const trackStat = (await tripTrackStats([id])).get(id);
@@ -303,25 +305,9 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         ]} />
       </Card>
 
-      {/* Yuqoridagi StatusSteps qayerda turganini ko'rsatadi; bu yerda esa har bosqichni
-          KIM va QACHON belgilagani — haydovchi ilovadan bosgani ham shu ro'yxatga tushadi. */}
-      <Card className="mt-5">
-        <CardHeader title="Bosqichlar" description="Har bir holatni kim va qachon belgilagan" icon={History} />
-        {steps.length === 0 ? (
-          <p className="text-sm text-slate-500">Hali bosqich yozilmagan.</p>
-        ) : (
-          <ol className="space-y-3">
-            {steps.map((x) => (
-              <li key={x.id} className="flex items-baseline gap-3 text-sm">
-                <span className={`mt-1.5 size-2 shrink-0 rounded-full ${x.status === "DELIVERED" ? "bg-emerald-500" : x.status === "CANCELLED" ? "bg-red-500" : "bg-slate-300"}`} />
-                <span className="w-32 shrink-0 font-medium text-slate-900">{x.label}</span>
-                <span className="flex-1 text-slate-500">{x.by}</span>
-                <span className="tabular text-slate-500">{dateTime(x.at)}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </Card>
+      {/* Yuqoridagi StatusSteps qayerda turganini ko'rsatadi; bu yerda esa har amalni KIM va QACHON qilgani —
+          holat, bosqich (haydovchi ilovadan bosgani ham), TTN, reys haqi (`lib/activity.ts`). */}
+      <ActivityLog rows={activity} className="mt-5" />
     </div>
   );
 }

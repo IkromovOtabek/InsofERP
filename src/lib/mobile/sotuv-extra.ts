@@ -86,7 +86,7 @@ async function ordersList(user: MobileUser, title: string, q?: string, filter?: 
     { key: "all", label: "Hammasi", where: {} },
     { key: "DRAFT", label: "Qoralama", where: { status: "DRAFT" } },
     { key: "BLOCKED", label: "Bloklangan", where: { status: "BLOCKED" } },
-    { key: "CANCELLED", label: "Bekor", where: { status: "CANCELLED" } },
+    // «Bekor» chipi yo'q: bekor qilingan zayavka bazadan o'chiriladi (`lib/purge-cancelled.ts`)
     // Agent faqat mijoz zayavkasini ochadi — tur chiplari unga kerak emas
     ...(isAgent ? [] : [
       { key: "SALE", label: "Mijoz uchun", where: { kind: "SALE" as const } },

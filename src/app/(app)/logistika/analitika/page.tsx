@@ -69,12 +69,12 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       <PageHeader title="Logistika analitikasi" subtitle={r.label} />
       <PeriodTabs base="/logistika/analitika" current={r.period} />
       <RangeForm base="/logistika/analitika" from={r.from} to={r.to} />
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-6 [&>*]:min-w-0">
+      {/* Bekor qilingan reys bazadan o'chiriladi — uning kartasi yo'q */}
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
         <StatCard label="O'z vaqtida" value={onTimePct(t) != null ? `${onTimePct(t)}%` : "—"} hint={`${t.judged} ta baholandi`} icon={Clock} tone={(onTimePct(t) ?? 100) < 80 ? "warning" : "success"} href="#kechikish" />
         <StatCard label="O'rt. yetkazish" value={minutesLabel(avgMin(t))} hint="yuklash → topshirish" icon={Timer} href={`/logistika/hisobotlar?${qs}`} />
         <StatCard label="Transportdan foydalanish" value={avgUtil != null ? `${avgUtil}%` : "—"} hint="o'rtacha, nasossiz" icon={Gauge} href="#foydalanish" />
         <StatCard label="1 m³ tannarxi" value={t.m3 ? money(cost(t) / t.m3) : "—"} icon={Coins} href="#xarajat-m3" />
-        <StatCard label="Bekor qilingan" value={t.trips ? `${Math.round((t.cancelled / t.trips) * 100)}%` : "—"} hint={`${t.cancelled} reys`} icon={Truck} href={`/logistika/hisobotlar?${qs}`} />
         <StatCard label="Muammolar" value={t.issues} icon={AlertTriangle} tone={t.issues ? "warning" : "default"} href="#muammo-turlari" />
       </div>
 

@@ -31,6 +31,10 @@ import { ConfirmButton } from "../../payments/confirm-button";
 import { ActionButton } from "@/components/action-button";
 import { orderTotal } from "@/lib/order-total";
 import { isEditable } from "@/lib/orders";
+import { lastEdits } from "@/lib/audit";
+import { orderActivity } from "@/lib/activity";
+import { ActivityLog } from "@/components/activity-log";
+import { EditedMark } from "@/components/edited-mark";
 
 const STEPS = [
   { key: "DRAFT", label: "Qoralama" }, { key: "CONFIRMED", label: "Tasdiqlangan" }, { key: "IN_PRODUCTION", label: "Ishlab chiqarish" },
@@ -87,7 +91,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
   // Sotuvchi zayavka ochganda yozgan kutilayotgan avans — pulni kassir qabul qiladi
   const expected = expectedAdvance(o);
-  const [credit, contractedSet, snapshot, payReq] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot(), db.paymentRequest.findUnique({ where: { orderId: id } })]);
+  const [credit, contractedSet, snapshot, payReq, edits, activity] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot(), db.paymentRequest.findUnique({ where: { orderId: id } }), lastEdits("Order", [id]), orderActivity(id)]);
   // Bosh to'lov so'rovi (PS-…): naqd — Kassa xodimi, perechisleniye — Buxgalter qabul qiladi. Eski zayavkalarda so'rov yo'q — «Kutilayotgan avans»
   const payReqLeft = payReq ? Math.max(0, Number(payReq.amount) - Number(payReq.received)) : 0;
   const payReqHref = payReq && pathAllowed("/pul-qabul", s.role, s.perms) ? `/pul-qabul?tab=all&q=${encodeURIComponent(payReq.docNo)}` : null;
@@ -105,7 +109,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   // Zayavkani qabul qilish / bekor qilish / blokni ochish — amal ruxsati bo'yicha
   const canConfirm = isStock ? canStock : can("confirm");
   const canUnblock = can("unblock");
-  const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (isStock ? canStock : can("cancel")) && o.batches.length === 0 && o.trips.length === 0;
+  const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (isStock ? canStock : can("cancel")) && o.batches.length === 0 && o.trips.every((t) => t.status === "CANCELLED");
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
   const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
   const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !itemTasks(i.qtyM3, i.tasks).full);
@@ -123,7 +127,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       <PageHeader
         back={isStock ? { href: "/orders?tur=sklad", label: "Zayavkalar" } : accepted && pathAllowed("/sales", s.role, s.perms) ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
         title={isStock ? "Sklad zayavkasi" : "Zayavka"}
-        subtitle={<>{date(o.date)} · {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />}</>}
+        subtitle={<>{date(o.date)} · ochdi: {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />} <EditedMark edit={edits.get(id)} full /></>}
         action={
           <>
             {o.status === "DRAFT" && canConfirm && !noDate && <ActionButton action={confirmOrder.bind(null, id)} variant="success"><CheckCircle2 size={16} /> Qabul qilish</ActionButton>}
@@ -137,7 +141,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {!isStock && canDo(s, "offers", "create") && <LinkButton href={`/takliflar/new?order=${id}`} variant="secondary"><FileBadge2 size={16} /> Tijorat taklifi</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
-            {canCancel && <ConfirmButton action={cancelOrder.bind(null, id)} label="Bekor qilish" icon={<XCircle size={16} />} question={`${isStock ? "Sklad zayavkasi" : `Zayavka (${o.customer.name})`} bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-10 px-4" />}
+            {canCancel && <ConfirmButton action={cancelOrder.bind(null, id)} label="Bekor qilish" icon={<XCircle size={16} />} question={`${isStock ? "Sklad zayavkasi" : `Zayavka (${o.customer.name})`} bekor qilinsinmi? Zayavka tizimdan butunlay o'chiriladi.`} reason="required" okText="Bekor qilindi" goTo={isStock ? "/orders?tur=sklad" : "/orders"} className="h-10 px-4" />}
           </>
         }
       />
@@ -455,6 +459,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </Card>
         )}
       </div>
+      {/* Kim ochdi, qabul qildi, tahrirladi, reys, to'lov, schyot — audit jurnalidan */}
+      <ActivityLog rows={activity} className="mt-5" />
     </div>
   );
 }
