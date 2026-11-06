@@ -1,7 +1,13 @@
 /** Kirim-Chiqim kategoriyalari — veb forma va mobil kassa uchun yagona ro'yxat. */
 export const EXPENSE_CATEGORIES = ["Xomashyo", "Ish haqi", "Pitaniya", "Transport", "Ta'mirlash / ehtiyot qism", "Kommunal (elektr, suv, gaz)", "Ijara", "Soliq va to'lovlar", "Marketing", "Ofis / xo'jalik", "Bank xizmati", "Boshqa chiqim"];
 // "Bank xizmati" — o'tkazma komissiyasi ham shu toifaga yoziladi (lib/cash-tx.ts BANK_FEE_CATEGORY)
-export const INCOME_CATEGORIES = ["Boshqa tushum", "Xizmat (nasos, transport)", "Chiqindi / brak sotuvi", "Qaytarilgan avans", "Ta'sischi kiritmasi", "Kredit / qarz olindi"];
+export const INCOME_CATEGORIES = ["Savdo", "Boshqa tushum", "Xizmat (nasos, transport)", "Chiqindi / brak sotuvi", "Qaytarilgan avans", "Ta'sischi kiritmasi", "Kredit / qarz olindi"];
+/**
+ * «Savdo» — mahsulot sotuvidan tushgan pul, mijoz to'lovi (`Payment`) bo'lib yozilmagani (chakana, tizimdan tashqari sotuv).
+ * Mijoz qarzini kamaytirmaydi. Cash Flow'da «Savdo tushumi» qatoriga qo'shiladi, PNL daromadiga kirmaydi
+ * (daromad realizatsiyadan) — kategoriya tizimniki, migratsiya `savdo_manbasi` bilan har korxonaga qo'shiladi.
+ */
+export const SALES_CATEGORY = "Savdo";
 /**
  * «Perekit» — Chiqim formasidagi maxsus tanlov: o'z hisoblarimiz orasida pul o'tkazish (kassa ⇄ bank, bank ⇄ bank).
  * Chiqim bo'lib yozilmaydi: `lib/cash-transfer.ts` dagi o'tkazma hujjati (OT-…) ochiladi — manba hisobda (−),

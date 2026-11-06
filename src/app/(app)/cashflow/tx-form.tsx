@@ -7,7 +7,7 @@ import { createCashTx } from "./actions";
 import { Button, Callout, Field, FormError, FormSuccess, Input, Select, FormActions } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
-import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, type CashMethod } from "@/lib/cash-categories";
+import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, type CashMethod } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 
 type Opt = { id: string; name: string };
@@ -77,7 +77,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
         <Field label={perekit ? "Qayerdan (hisob) *" : "Kassa / hisob *"}><Select name="cashAccountId" value={accId} onChange={(e) => setFromId(e.target.value)} required>{shownAccounts.map((a) => <option key={a.id} value={a.id}>{perekit ? accLabel(a) : a.name}</option>)}</Select></Field>
         <Field label="Summa *"><MoneyInput name="amount" required /></Field>
-        <Field label="Manba (kategoriya) *"><Select name="category" value={cat} onChange={(e) => setCategory(e.target.value)}>{cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</Select></Field>
+        <Field label="Manba (kategoriya) *" hint={type === "INCOME" && cat === SALES_CATEGORY ? "Mijoz qarzini kamaytirmaydi — mijoz to'lovi Kassa / bank → To'lovlar orqali kiritiladi" : undefined}><Select name="category" value={cat} onChange={(e) => setCategory(e.target.value)}>{cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</Select></Field>
         {!perekit && cur && cur.subs.length > 0 && (
           <Field label="Sub manba" hint="tafsilot — hisobotda manba ichida ko'rinadi">
             <Select key={cat} name="subCategory" defaultValue=""><option value="">— umumiy —</option>{cur.subs.map((s) => <option key={s} value={s}>{s}</option>)}</Select>

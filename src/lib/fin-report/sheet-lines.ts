@@ -23,6 +23,7 @@ export const SHEET_LINE: Record<string, string> = {
   "HR (ishga olish, o'qitish)": "HR xarajati",
   "Xayriya va sovg'alar": "Xayriya",
   // Kirim manbalari
+  "Savdo": "Savdo tushumi",
   "Boshqa tushum": "Boshqa tushumlar",
   "Xizmat (nasos, transport)": "Boshqa tushumlar",
   "Chiqindi / brak sotuvi": "Boshqa tushumlar",
