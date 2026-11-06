@@ -10,6 +10,7 @@ import type { CatalogGroup, CatalogProduct } from "@/components/product-picker";
 import { Button, Field, FormActions, FormError, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { blockEnterSubmit, submitKeepingState } from "../../../orders/order-form";
 import { fmtNum } from "@/lib/format";
+import type { ProductCreate } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
 type Opt = { id: string; name: string };
@@ -26,7 +27,8 @@ const FORM_ID = "add-stock-form";
 export function AddForm({ products, groups, canCreateProduct, warehouses, clientToken, today, minDate }: {
   products: CatalogProduct[];
   groups: CatalogGroup[];
-  canCreateProduct: boolean;
+  /** true — to'liq spravochnik; "add" — tanlagichda faqat Yangi/Papka, pastdagi «Yangi mahsulot» va «Nomini tahrirlash» ikkalasida ham bor */
+  canCreateProduct: ProductCreate;
   warehouses: Opt[];
   /** Sahifa ochilganda server bergan bir martalik kalit — ikki marta bosish ikkinchi kirim yozmaydi */
   clientToken?: string;

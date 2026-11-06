@@ -3,14 +3,15 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireModuleWrite } from "@/lib/auth";
+import { getSession, requireModuleWrite, type Session } from "@/lib/auth";
+import { canDo } from "@/lib/permissions";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { flatName, num, str } from "@/lib/excel";
 import { normalizeUnit, PRODUCT_UNITS } from "@/lib/unit";
 import { PRODUCT_KINDS, PRODUCT_CATALOG_ROLES, PRODUCT_ADD_ROLES } from "@/lib/catalog";
 import { nextCatalogCode } from "@/lib/numbering";
-import type { Prisma } from "@/generated/prisma";
+import type { Prisma, Role } from "@/generated/prisma";
 
 /**
  * Mahsulot spravochnigi — zayavkada, skladda va ishlab chiqarishda "..." tugmasidan
@@ -20,6 +21,16 @@ import type { Prisma } from "@/generated/prisma";
  */
 const CATALOG_ROLES = PRODUCT_CATALOG_ROLES;
 
+/**
+ * Sklad → «Tayyor mahsulot qo'shish»: qator qo'shish ruxsati (`stock.products`) shu oynadagi «Yangi mahsulot», papka
+ * va «Nomini tahrirlash»ni ham beradi — direktor bitta belgi bilan beradi. Aks holda spravochnikning o'z qoidasi.
+ */
+async function requireCatalogWrite(allowed: readonly Role[]): Promise<Session> {
+  const s = await getSession();
+  if (s && canDo(s, "stock", "products")) return s;
+  return requireModuleWrite("production", allowed);
+}
+
 const groupSchema = z.object({
   name: zStr("Papka nomi kerak"),
   parentId: zOpt,
@@ -28,7 +39,7 @@ const groupSchema = z.object({
 
 /** Yangi papka (guruh). `parentId` — ochiq turgan papka. */
 export async function createProductGroup(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("production", PRODUCT_ADD_ROLES);
+  const s = await requireCatalogWrite(PRODUCT_ADD_ROLES);
   const r = parseForm(groupSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -71,7 +82,7 @@ const productSchema = z.object({
  * Shu nomli (yoki kodli) mahsulot allaqachon bo'lsa dublikat ochilmaydi — mavjudi yangilanadi.
  */
 export async function createCatalogProduct(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("production", PRODUCT_ADD_ROLES);
+  const s = await requireCatalogWrite(PRODUCT_ADD_ROLES);
   const r = parseForm(productSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -101,7 +112,7 @@ const renameSchema = z.object({ name: zStr("Mahsulot nomi kerak").pipe(z.string(
  * Hajm maydoni formada bo'lmasa (beton m³) — o'zgarmaydi.
  */
 export async function renameCatalogProduct(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("production", CATALOG_ROLES);
+  const s = await requireCatalogWrite(CATALOG_ROLES);
   const r = parseForm(renameSchema, fd);
   if ("error" in r) return { error: r.error };
   const name = r.data.name.replace(/\s+/g, " ");

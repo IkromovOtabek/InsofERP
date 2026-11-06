@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
+import { canDo } from "@/lib/permissions";
 import { requireRoles } from "@/lib/page-guard";
 import { PageHeader } from "@/components/ui";
 import { isoDate } from "@/lib/format";
@@ -30,7 +31,9 @@ export default async function AddStockPage() {
         clientToken={crypto.randomUUID()}
         products={catalog.products}
         groups={catalog.groups}
-        canCreateProduct={canEditProducts(s.role)}
+        // Qator qo'shish ruxsati (`stock.products`) «Yangi mahsulot» va «Nomini tahrirlash»ni ham beradi;
+        // tanlagichdagi o'chirish/Excel/birlashtirish — avvalgidek faqat spravochnik rollarida
+        canCreateProduct={canEditProducts(s.role) ? true : canDo(s, "stock", "products") ? "add" : false}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))}
         today={isoDate(today)}
         minDate={isoDate(min)}

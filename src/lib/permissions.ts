@@ -130,7 +130,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "issue_storno", label: "Chiqimni bekor qilish", roles: [], hint: "Berilgan xomashyo skladga teskari yoziladi — odatda faqat direktor" },
     { key: "adjust",    label: "Inventarizatsiya va spisanie",   roles: ["WAREHOUSE"] },
     { key: "brigade",   label: "Brigadaga berish / qaytarish",   roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR"] },
-    { key: "products",  label: "Tayyor mahsulot qoldig'ini kiritish", roles: ["WAREHOUSE", "PRODUCTION", "SUPERVISOR"] },
+    { key: "products",  label: "Tayyor mahsulot qo'shish (qatorlar, yangi mahsulot, nomini tahrirlash)", roles: ["WAREHOUSE", "PRODUCTION", "SUPERVISOR"] },
     { key: "import",    label: "Xomashyo import",                roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"] },
     { key: "suppliers", label: "Yetkazuvchilar",                 roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
   ],
