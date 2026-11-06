@@ -11,7 +11,7 @@ import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoo
 import { ExcelButton } from "../excel-button";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { cancelRealizationAction } from "./actions";
-import { EntryButton, NoteButton, OptionsProvider } from "./forms";
+import { CellEdit, EntryButton, NoteButton, OptionsProvider, type CellList } from "./forms";
 import { cn } from "@/lib/utils";
 
 /**
@@ -39,7 +39,9 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
 
   const canAuto = canDo(s, "logistika", "real_auto");
   const canManual = canDo(s, "logistika", "real_manual");
-  const [all, options] = await Promise.all([realizationLog(from, to), canAuto || canManual ? realizationOptions() : null]);
+  // TTN reysning o'zida — reys ochuvchi yoki reestrni yurituvchi dispetcher yozadi
+  const canTtn = canAuto || canDo(s, "trips", "create");
+  const [all, options] = await Promise.all([realizationLog(from, to), canAuto || canManual || canTtn ? realizationOptions() : null]);
   const orderLink = pathAllowed("/orders", s.role, s.perms);
   const tripLink = pathAllowed("/trips", s.role, s.perms);
 
@@ -101,29 +103,50 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
           const auto = r.source === "AUTO";
           // Reysdan qatorda to'ldirilmagan maydon — taklif, kulrang
           const hint = (k: "loadPlace" | "destination" | "note" | "refName") => auto && !r.filled?.[k] && "text-slate-400";
+          // Har katakda qalamcha: qo'lda qatorda hamma ustun, reysdan qatorda — dispetcher maydonlari va TTN
+          const manual = !auto && canManual ? `m:${r.ref}` : null;
+          type Opt = { kind?: "text" | "number" | "date" | "pay" | "unit"; list?: CellList; placeholder?: string; right?: boolean };
+          const edit = (field: string, label: string, value: string, node: React.ReactNode, o: Opt = {}) =>
+            manual ? <CellEdit target={manual} field={field} label={label} value={value} {...o}>{node}</CellEdit> : node;
+          // Ortilgan joy, manzil, izoh, spravka nomi: reysdan — bo'sh qoldirilsa taklif qaytadi
+          const extra = (field: "loadPlace" | "destination" | "note" | "refName", label: string, node: React.ReactNode, list?: CellList) =>
+            auto
+              ? canAuto && r.filled && r.suggest
+                ? <CellEdit target={`a:${r.ref}`} field={field} label={label} value={r.filled[field] ?? ""} placeholder={r.suggest[field] ?? ""} list={list}>{node}</CellEdit>
+                : node
+              : edit(field, label, field === "refName" && r.refName === r.customer ? "" : r[field], node, { list, placeholder: field === "refName" ? r.customer : undefined });
+          const ttnNode = r.tripId && tripLink ? <Link href={`/trips/${r.tripId}`} className="font-medium hover:underline">{r.ttn}</Link> : r.ttn;
           return (
             <SheetTr key={r.key} className={cn(!auto && "bg-amber-50/40")}>
               <SheetTd className="whitespace-nowrap tabular">
-                {dateRu(r.date)}
-                {!auto && <span className="block text-[10px] font-semibold text-amber-700" title="Qo'lda kiritilgan qator">qo&apos;lda</span>}
+                {edit("date", "Sana", isoDate(r.date), <>
+                  {dateRu(r.date)}
+                  {!auto && <span className="block text-[10px] font-semibold text-amber-700" title="Qo'lda kiritilgan qator">qo&apos;lda</span>}
+                </>, { kind: "date" })}
               </SheetTd>
-              <SheetTd className={cn("font-medium whitespace-nowrap", PAY_COLOR[r.pay])}>{r.payLabel}</SheetTd>
-              <SheetTd>{r.seller}</SheetTd>
-              <SheetTd>{auto && orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link> : <span className="font-medium text-slate-900">{r.customer}</span>}</SheetTd>
-              <SheetTd>{r.product}</SheetTd>
-              <SheetTd className="whitespace-nowrap tabular">{r.tripId && tripLink ? <Link href={`/trips/${r.tripId}`} className="font-medium hover:underline">{r.ttn}</Link> : r.ttn}</SheetTd>
-              <SheetTd className="whitespace-nowrap tabular">{r.vehicle}</SheetTd>
-              <SheetTd>{r.unit}</SheetTd>
-              <SheetTd right strong>{nq(r.qty)}</SheetTd>
-              <SheetTd right>{n0(r.price)}</SheetTd>
-              <SheetTd right tone="yellow">{n0(r.delivery)}</SheetTd>
+              <SheetTd className={cn("font-medium whitespace-nowrap", PAY_COLOR[r.pay])}>{edit("payGroup", "To'lov turi", r.pay, r.payLabel, { kind: "pay" })}</SheetTd>
+              <SheetTd>{edit("seller", "Sotuvchi", r.seller, r.seller, { list: "sellers" })}</SheetTd>
+              <SheetTd>{auto && orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link> : edit("customerName", "Xaridor", r.customer, <span className="font-medium text-slate-900">{r.customer}</span>, { list: "customers" })}</SheetTd>
+              <SheetTd>{edit("productName", "Mahsulot", r.product, r.product, { list: "products" })}</SheetTd>
+              <SheetTd className="whitespace-nowrap tabular">
+                {auto
+                  ? r.tripId && canTtn
+                    ? <CellEdit target={`t:${r.tripId}`} field="ttn" label="TTN" value={r.tripTtn ?? ""} placeholder={r.ttn ?? ""}>{ttnNode}</CellEdit>
+                    : ttnNode
+                  : edit("ttn", "TTN", r.ttn ?? "", r.ttn)}
+              </SheetTd>
+              <SheetTd className="whitespace-nowrap tabular">{edit("vehicle", "Mashina", r.vehicle ?? "", r.vehicle, { list: "vehicles" })}</SheetTd>
+              <SheetTd>{edit("unit", "O'lchov", r.unitKey, r.unit, { kind: "unit" })}</SheetTd>
+              <SheetTd right strong>{edit("qty", "Miqdor", String(r.qty), nq(r.qty), { kind: "number", right: true })}</SheetTd>
+              <SheetTd right>{edit("price", "Narx", r.price ? String(r.price) : "", n0(r.price), { kind: "number", right: true })}</SheetTd>
+              <SheetTd right tone="yellow">{edit("delivery", "Dostavka", r.delivery ? String(r.delivery) : "", n0(r.delivery), { kind: "number", right: true })}</SheetTd>
               <SheetTd right>{n0(r.net)}</SheetTd>
               <SheetTd right muted={!r.vat}>{r.vat ? n0(r.vat) : "—"}</SheetTd>
-              <SheetTd>{r.group}</SheetTd>
-              <SheetTd className={cn(hint("loadPlace"))}>{r.loadPlace}</SheetTd>
-              <SheetTd className={cn(hint("destination"))}><span className="line-clamp-2" title={r.destination}>{r.destination}</span></SheetTd>
-              <SheetTd className={cn(hint("note"))}><span className="line-clamp-2" title={r.note}>{r.note}</span></SheetTd>
-              <SheetTd className={cn(hint("refName"))}>{r.refName}</SheetTd>
+              <SheetTd>{edit("groupName", "Guruh", r.group, r.group, { list: "groups" })}</SheetTd>
+              <SheetTd className={cn(hint("loadPlace"))}>{extra("loadPlace", "Ortilgan joy", r.loadPlace, "loadPlaces")}</SheetTd>
+              <SheetTd className={cn(hint("destination"))}>{extra("destination", "Boradigan manzil", <span className="line-clamp-2" title={r.destination}>{r.destination}</span>, "destinations")}</SheetTd>
+              <SheetTd className={cn(hint("note"))}>{extra("note", "Izoh", <span className="line-clamp-2" title={r.note}>{r.note}</span>)}</SheetTd>
+              <SheetTd className={cn(hint("refName"))}>{extra("refName", "Spravka nomi", r.refName)}</SheetTd>
               {(canAuto || canManual) && (
                 <SheetTd className="whitespace-nowrap">
                   {auto && canAuto && r.filled && r.suggest && (

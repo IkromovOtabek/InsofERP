@@ -784,6 +784,7 @@ async function tripForm(): Promise<CreateForm> {
       { name: "qtyM3", label: "Hajmi (zayavka birligida)", type: "number", required: true, placeholder: "0" },
       // Reja vaqti (veb `plannedAt`) — zayavka tanlanganda uning sanasi/soati qo'yiladi; bo'sh — zayavkadagi vaqt
       ...plannedFields(),
+      { name: "ttn", label: "TTN raqami", type: "text", hint: "Nakladnoy blankasidagi raqam; bo'sh qolsa tizim raqami (N-…)" },
       { name: "note", label: "Izoh", type: "text" },
     ],
   };
@@ -827,6 +828,7 @@ const TripBody = z.object({
   qtyM3: z.coerce.number().positive("Hajm 0 dan katta bo'lsin"),
   note: z.string().trim().optional(),
   driverReason: z.string().trim().optional(),
+  ttn: z.string().trim().max(40, "TTN ko'pi bilan 40 belgi").optional(),
 });
 
 const SupplyBody = z.object({

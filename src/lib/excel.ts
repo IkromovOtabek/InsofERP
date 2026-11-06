@@ -346,7 +346,8 @@ export function parseDate(v: unknown, monthFirst = false, minYear = 1990): Date 
     const n = Number(s.replace(",", "."));
     const lo = Math.round((Date.UTC(minYear, 0, 1) - Date.UTC(1899, 11, 30)) / 864e5);
     if (n < lo || n > 73415) return null;
-    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000);
+    // Kasr qismi — soat (0,5 = 12:00): yaxlitlanmaydi, aks holda tushdan keyingi vaqt ertangi kunga o'tadi
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(n + 1e-6) * 86400000);
     return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   }
 

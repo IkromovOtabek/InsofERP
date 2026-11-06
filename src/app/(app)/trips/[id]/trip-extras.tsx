@@ -1,14 +1,39 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Coins, Lock, PackageCheck, Truck } from "lucide-react";
-import { addTripCost, closeTrip, markDelivered, markLoaded, markOnRoad, reportIssue, resolveIssue } from "../actions";
-import { Button, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { AlertTriangle, CheckCircle2, Coins, Lock, PackageCheck, Pencil, Truck } from "lucide-react";
+import { addTripCost, closeTrip, markDelivered, markLoaded, markOnRoad, reportIssue, resolveIssue, saveTripTtn } from "../actions";
+import { Button, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
 
 const ISSUE_OPTS: [string, string][] = [
   ["BREAKDOWN", "Mashina buzildi"], ["TRAFFIC", "Tirbandlik / yo'l yopiq"], ["SITE_NOT_READY", "Obyekt tayyor emas"],
   ["QUALITY", "Sifat / hajm e'tirozi"], ["ACCIDENT", "YTH (avariya)"], ["DECLINED", "Haydovchi rad etdi"], ["OTHER", "Boshqa"],
 ];
+
+/** TTN raqami: ko'rinadi, ruxsati borga qalam bilan yoziladi/tuzatiladi (bo'sh saqlansa — olib tashlanadi). */
+export function TtnForm({ tripId, ttn, canEdit }: { tripId: string; ttn: string | null; canEdit: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(saveTripTtn.bind(null, tripId), undefined);
+  useEffect(() => { if (state?.ok) setOpen(false); }, [state]);
+  if (!open) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        TTN: {ttn ? <b className="tabular text-slate-900">{ttn}</b> : <span className="text-slate-400">kiritilmagan</span>}
+        {canEdit && <IconButton icon={Pencil} label="TTN raqamini tahrirlash" onClick={() => setOpen(true)} className="h-6 w-6" />}
+      </span>
+    );
+  }
+  return (
+    <form action={action} className="inline-flex flex-wrap items-center gap-1.5">
+      <span>TTN:</span>
+      <Input name="ttn" defaultValue={ttn ?? ""} maxLength={40} autoFocus autoComplete="off" placeholder="Raqam" className="h-8 w-36 text-sm tabular"
+        onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }} />
+      <Button size="sm" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+      <Button size="sm" type="button" variant="ghost" onClick={() => setOpen(false)}>Bekor</Button>
+      {state?.error && <span className="w-full"><FormError error={state.error} /></span>}
+    </form>
+  );
+}
 
 /** Muammo qayd etish — dispetcher (haydovchi ilovadan yuboradi). */
 export function ReportIssueForm({ tripId }: { tripId: string }) {

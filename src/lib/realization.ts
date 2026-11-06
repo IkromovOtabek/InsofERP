@@ -21,7 +21,8 @@ export type RealizationRow = {
   key: string; orderId: string; tripId: string | null;
   date: Date; pay: PayGroupKey; payLabel: string; seller: string;
   customerId: string; customer: string; product: string; group: string;
-  ttn: string | null; vehicle: string | null; unit: string; qty: number;
+  /** TTN: dispetcher yozgani (`Trip.ttn`), bo'lmasa nakladnoy raqami; `tripTtn` — faqat yozilgani (tahrir uchun) */
+  ttn: string | null; tripTtn: string | null; vehicle: string | null; unit: string; qty: number;
   price: number; delivery: number; net: number; vat: number; total: number;
   address: string; phone: string | null; contractNo: string | null; invoiceNo: string | null; missing: string[];
   /** Reys ma'lumoti (Logistika → Realizatsiya): yuk olingan joy — BRU yoki manzil, haydovchi */
@@ -30,8 +31,11 @@ export type RealizationRow = {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
-/** «N-2026-00161» → «161» (varaqdagidek qisqa); to'liq raqam — sarlavhada va Excel'da */
-export const shortTtn = (v: string | null) => (v ? v.replace(/^.*-0*(?=\d)/, "") : "");
+/**
+ * Tizim nakladnoy raqami «N-2026-00161» → «161» (varaqdagidek qisqa); to'liq raqam — sarlavhada va Excel'da.
+ * Dispetcher yozgan TTN (`Trip.ttn`) o'zicha qoladi.
+ */
+export const shortTtn = (v: string | null) => (v ? v.replace(/^[A-Z]-\d{4}-0*(?=\d)/, "") : "");
 const PAY_LABEL = Object.fromEntries(PAY_GROUPS.map((g) => [g.key, g.label])) as Record<PayGroupKey, string>;
 
 const ORDER_SELECT = {
@@ -53,7 +57,7 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
     db.trip.findMany({
       where: { status: { not: "CANCELLED" }, order: live, OR: [{ loadedAt: { gte: a, lt: b } }, { loadedAt: null, createdAt: { gte: a, lt: b } }] },
       select: {
-        id: true, deliveryNoteNo: true, qtyM3: true, acceptedQty: true, loadedAt: true, createdAt: true, bru: true, pickupAddress: true,
+        id: true, deliveryNoteNo: true, ttn: true, qtyM3: true, acceptedQty: true, loadedAt: true, createdAt: true, bru: true, pickupAddress: true,
         vehicle: { select: { plate: true } }, driver: { select: { fullName: true, phone: true } }, order: { select: ORDER_SELECT },
       },
     }),
@@ -68,7 +72,7 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
   type O = (typeof pickups)[number];
   const rows: RealizationRow[] = [];
   const tripQty = (t: { qtyM3: unknown; acceptedQty: unknown }) => Number(t.acceptedQty ?? t.qtyM3);
-  type TripInfo = { id: string; no: string; plate: string; loadPlace: string | null; driver: string; driverPhone: string | null };
+  type TripInfo = { id: string; no: string; ttn: string | null; plate: string; loadPlace: string | null; driver: string; driverPhone: string | null };
   const push = (o: O, date: Date, trip: TripInfo | null) => {
     const pay = payGroupOf(o);
     // Shu reysning yuki zayavka qatorlari bo'yicha: [oldingi reyslar yig'indisi; + shu reys) oralig'i qatorlar oralig'iga solinadi
@@ -80,7 +84,7 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
     const missing = pay === "BANK" ? [!o.contractNo && "Shartnoma", !invoiceNo && "Sch-faktura"].filter((x): x is string => !!x) : [];
     const base = {
       orderId: o.id, tripId: trip?.id ?? null, date, pay, payLabel: PAY_LABEL[pay], seller: o.createdBy.fullName,
-      customerId: o.customerId, customer: o.customer.name, ttn: trip?.no ?? null, vehicle: trip ? trip.plate : "o'zi oldi",
+      customerId: o.customerId, customer: o.customer.name, ttn: trip?.no ?? null, tripTtn: trip?.ttn ?? null, vehicle: trip ? trip.plate : "o'zi oldi",
       address: o.site?.name || o.deliveryAddress, phone: o.site?.contactPhone || o.customer.phone || null,
       contractNo: o.contractNo, invoiceNo, missing,
       loadPlace: trip?.loadPlace ?? null, driver: trip?.driver ?? null, driverPhone: trip?.driverPhone ?? null,
@@ -112,7 +116,7 @@ export async function realizationRows(from: Date, to: Date): Promise<Realization
 
   for (const t of trips) {
     push(t.order, t.loadedAt ?? t.createdAt, {
-      id: t.id, no: t.deliveryNoteNo, plate: t.vehicle.plate, loadPlace: t.bru || t.pickupAddress || null,
+      id: t.id, no: t.ttn ?? t.deliveryNoteNo, ttn: t.ttn, plate: t.vehicle.plate, loadPlace: t.bru || t.pickupAddress || null,
       driver: t.driver.fullName, driverPhone: t.driver.phone,
     });
   }

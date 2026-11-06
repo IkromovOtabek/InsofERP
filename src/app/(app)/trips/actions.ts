@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { createTrip as createTripDomain, hideExternalCar, reportTripIssue, resolveTripIssue, tripCancelled, tripClosed, tripLoaded, tripPickup, type DeliveryQty } from "@/lib/trips";
+import { createTrip as createTripDomain, hideExternalCar, reportTripIssue, resolveTripIssue, setTripTtn, tripCancelled, tripClosed, tripLoaded, tripPickup, type DeliveryQty } from "@/lib/trips";
 import { addTripCostRecord, dispatchDelivered, dispatchOnRoad } from "@/lib/trip-dispatch";
 import type { TripIssueKind } from "@/generated/prisma";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
@@ -22,6 +22,7 @@ const schema = z.object({
   note: zOpt,
   plannedAt: zOpt,
   bru: zOpt,
+  ttn: zOpt,
   driverReason: zOpt,
   external: zOpt,
   extType: z.enum(["MIXER", "TRUCK"]).optional().catch(undefined),
@@ -65,7 +66,7 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   try {
     // Qoida `lib/trips.ts` da — mobil ilovadagi "Yangi reys" ham shuni chaqiradi
     created = await createTripDomain({
-      orderId: d.orderId, vehicleId: d.vehicleId ?? "", driverId: d.driverId ?? "", qtyM3: d.qtyM3, note: d.note, plannedAt: d.plannedAt ? new Date(d.plannedAt) : null, bru: d.bru, driverReason: d.driverReason,
+      orderId: d.orderId, vehicleId: d.vehicleId ?? "", driverId: d.driverId ?? "", qtyM3: d.qtyM3, note: d.note, plannedAt: d.plannedAt ? new Date(d.plannedAt) : null, bru: d.bru, driverReason: d.driverReason, ttn: d.ttn,
       external: ext ? { type: d.extType!, plate: d.extPlate ?? "", capacity: extCapacity, driverName: d.extDriverName ?? "", driverPhone: d.extDriverPhone ?? "" } : null,
     }, s.userId);
   } catch (e) {
@@ -78,6 +79,15 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   if (ecoEnabled()) await pushTripToEco(created.id);
   revalidatePath("/trips"); revalidatePath(`/orders/${d.orderId}`);
   redirect(`/trips/${created.id}`);
+}
+
+/** Reys TTN raqami — reysni ochgan kishi yozadi/tuzatadi (reys sahifasi va Logistika → Realizatsiya katagi). */
+export async function saveTripTtn(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("trips", "create");
+  const r = await setTripTtn(id, String(fd.get("ttn") ?? ""), s.userId);
+  if ("error" in r) return { error: r.error };
+  revalidatePath(`/trips/${id}`); revalidatePath("/trips"); revalidatePath("/logistika", "layout");
+  return { ok: true };
 }
 
 /** «Yangi reys»dagi saqlangan ko'chadan mashinalar ro'yxatidan olish (yozuv va reyslari qoladi). */

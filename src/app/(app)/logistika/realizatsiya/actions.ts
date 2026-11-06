@@ -2,12 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAction } from "@/lib/auth";
+import { getSession, requireAction } from "@/lib/auth";
+import { AccessDenied, notSignedIn } from "@/lib/access-denied";
+import { canDo } from "@/lib/permissions";
 import { parseForm, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
+import { setTripTtn } from "@/lib/trips";
 import {
-  ENTRY_LABELS as LABEL, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, noteSchema, saveRealizationNote,
-  updateRealizationEntry, type ImportRow,
+  ENTRY_CELLS, ENTRY_LABELS as LABEL, NOTE_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, noteSchema, saveRealizationNote,
+  saveRealizationNoteField, updateRealizationEntry, updateRealizationEntryField, type EntryCell, type ImportRow, type NoteCell,
 } from "@/lib/realization-log";
 
 /**
@@ -76,4 +79,33 @@ export async function saveRealizationNoteAction(key: string, _prev: ActionState,
   if ("error" in res) return { error: res.error };
   refresh();
   return { ok: true, note: "Saqlandi" };
+}
+
+/**
+ * Jadval katagidan bitta qiymat (qalamcha): `target` — «m:<qo'lda qator id>», «a:<reys kaliti>» yoki «t:<reys id>» (TTN).
+ * Qo'lda qatorda hamma ustun (`real_manual`); reysdan qatorda ortilgan joy, manzil, izoh, spravka nomi (`real_auto`),
+ * TTN esa reysning o'zida (`trips.create` yoki `real_auto`). Mijoz, mahsulot, miqdor, narx — zayavkada.
+ */
+export async function saveRealizationCellAction(target: string, field: string, value: string): Promise<ActionState> {
+  const v = String(value ?? "");
+  const id = target.slice(2);
+  if (target.startsWith("m:") && (ENTRY_CELLS as readonly string[]).includes(field)) {
+    const s = await requireAction("logistika", "real_manual");
+    const res = await updateRealizationEntryField(id, field as EntryCell, v, s.userId);
+    if ("error" in res) return formError(res);
+  } else if (target.startsWith("a:") && (NOTE_CELLS as readonly string[]).includes(field)) {
+    const s = await requireAction("logistika", "real_auto");
+    const res = await saveRealizationNoteField(id, field as NoteCell, v, s.userId);
+    if ("error" in res) return formError(res);
+  } else if (target.startsWith("t:") && field === "ttn") {
+    // Reys ochuvchi yoki reestrni yurituvchi dispetcher (qog'oz TTN raqamini shu yerda to'ldiradi)
+    const s = await getSession();
+    if (!s) throw notSignedIn();
+    if (!canDo(s, "trips", "create") && !canDo(s, "logistika", "real_auto")) throw new AccessDenied("Bu amal uchun sizda ruxsat yo'q — direktordan ruxsat so'rang");
+    const res = await setTripTtn(id, v, s.userId);
+    if ("error" in res) return { error: res.error };
+    revalidatePath(`/trips/${id}`); revalidatePath("/trips");
+  } else return { error: "Bu katak tahrirlanmaydi" };
+  refresh();
+  return { ok: true };
 }

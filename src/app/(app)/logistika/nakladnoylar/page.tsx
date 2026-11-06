@@ -24,7 +24,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
   const trips = await db.trip.findMany({
     where: {
       createdAt: { gte: r.from, lt: r.to },
-      ...(sp.q ? { OR: [{ deliveryNoteNo: { contains: sp.q, mode: "insensitive" } }, { order: { customer: { name: { contains: sp.q, mode: "insensitive" } } } }, { vehicle: { plate: { contains: sp.q, mode: "insensitive" } } }] } : {}),
+      ...(sp.q ? { OR: [{ deliveryNoteNo: { contains: sp.q, mode: "insensitive" } }, { ttn: { contains: sp.q, mode: "insensitive" } }, { order: { customer: { name: { contains: sp.q, mode: "insensitive" } } } }, { vehicle: { plate: { contains: sp.q, mode: "insensitive" } } }] } : {}),
     },
     include: {
       order: { select: { deliveryAddress: true, customer: { select: { name: true } }, items: { select: { product: { select: { name: true, code: true, unit: true } } } } } },
@@ -39,7 +39,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Nakladnoylar" subtitle={`${r.label}: ${trips.length} ta · har biri QR bilan tekshiriladi (mijoz telefonidan ham)`} />
       <PeriodTabs base="/logistika/nakladnoylar" current={r.period} />
       <RangeForm base="/logistika/nakladnoylar" from={r.from} to={r.to} />
-      <form className="mb-3"><input type="hidden" name="period" value={r.period} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Nakladnoy, mijoz yoki davlat raqami…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
+      <form className="mb-3"><input type="hidden" name="period" value={r.period} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Nakladnoy, TTN, mijoz yoki davlat raqami…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Card padded={false}>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Mijoz / obyekt</Th><Th>Transport / haydovchi</Th><Th>Marka</Th><Th right>Miqdor</Th><Th>Yuklandi</Th><Th>Jo'nadi</Th><Th>Yetib keldi</Th><Th>Qabul qiluvchi</Th><Th>Tasdiq</Th><Th /></tr></thead>
@@ -50,7 +50,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
               const phase = tripPhase(t);
               return (
                 <Tr key={t.id} className={t.status === "CANCELLED" ? "opacity-50" : ""}>
-                  <Td><Link href={`/trips/${t.id}`} className="font-medium tabular hover:underline">{t.deliveryNoteNo}</Link></Td>
+                  <Td><Link href={`/trips/${t.id}`} className="font-medium tabular hover:underline">{t.deliveryNoteNo}</Link>{t.ttn && <div className="text-xs text-slate-500 tabular">TTN {t.ttn}</div>}</Td>
                   <Td><div className="text-sm">{t.order.customer.name}</div><div className="max-w-[14rem] truncate text-xs text-slate-500">{t.order.deliveryAddress}</div></Td>
                   <Td className="text-sm"><span className="tabular">{t.vehicle.plate}</span><div className="text-xs text-slate-500">{t.driver.fullName}</div></Td>
                   <Td className="text-sm">{p?.name ?? "—"}</Td>

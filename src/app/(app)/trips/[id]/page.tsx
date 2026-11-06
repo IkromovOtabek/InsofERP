@@ -16,7 +16,7 @@ import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, VEHICLE_TYPE, DRUM_MAX_MIN, isConc
 import { lastFuelPrice } from "@/lib/logistics-costs";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { money } from "@/lib/format";
-import { CloseTripForm, DispatchDeliverForm, LoadButton, OnRoadButton, ReportIssueForm, ResolveIssueForm, TripCostForm } from "./trip-extras";
+import { CloseTripForm, DispatchDeliverForm, LoadButton, OnRoadButton, ReportIssueForm, ResolveIssueForm, TripCostForm, TtnForm } from "./trip-extras";
 import { DelayText, PhaseBadge } from "../../logistika/ui";
 import { distanceLabel, tripLine, tripSteps, tripTrack, tripTrackStats } from "@/lib/trips";
 import { TripTrackMap } from "./track-map";
@@ -119,7 +119,10 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       <Card className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <StatusSteps steps={STEPS} current={phase === "CANCELLED" ? "ASSIGNED" : phase} failed={phase === "CANCELLED"} />
-          <div className="flex items-center gap-2"><PhaseBadge phase={phase} />{openIssues.length > 0 && <span className="text-xs font-medium text-red-700">{openIssues.length} ochiq muammo</span>}</div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="text-sm text-slate-600"><TtnForm tripId={id} ttn={t.ttn} canEdit={t.status !== "CANCELLED" && canDo(s, "trips", "create")} /></div>
+            <div className="flex items-center gap-2"><PhaseBadge phase={phase} />{openIssues.length > 0 && <span className="text-xs font-medium text-red-700">{openIssues.length} ochiq muammo</span>}</div>
+          </div>
         </div>
       </Card>
 

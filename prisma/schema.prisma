@@ -1721,6 +1721,7 @@ enum TripStatus {
 model Trip {
   id             String     @id @default(cuid())
   deliveryNoteNo String     @unique // nakladnoy raqami (QR shu bo'yicha)
+  ttn            String? // TTN raqami (blanka / soliq nakladnoyi) — reys ochilganda dispetcher yozadi; nakladnoy va Realizatsiyada shu ko'rinadi, bo'sh bo'lsa deliveryNoteNo
   orderId        String
   vehicleId      String
   driverId       String

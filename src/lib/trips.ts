@@ -738,7 +738,35 @@ export type NewTripInput = {
   driverReason?: string | null;
   /** Berilsa — vehicleId/driverId e'tiborga olinmaydi, mashina va haydovchi shu ma'lumotdan yoziladi. */
   external?: ExternalCar | null;
+  /** TTN raqami (blanka / soliq nakladnoyi) — ixtiyoriy, bo'sh bo'lsa nakladnoy raqami ishlatiladi. */
+  ttn?: string | null;
 };
+
+/** TTN: bo'shliqlar bitta, «№» belgisisiz; bo'sh — null. */
+export const cleanTtn = (v: string | null | undefined) => v?.replace(/^\s*[№#]\s*/, "").replace(/\s+/g, " ").trim().slice(0, 40) || null;
+
+/** Shu TTN boshqa (bekor qilinmagan) reysda bormi — xato matni yoki null. */
+async function ttnTaken(tx: Prisma.TransactionClient, ttn: string, exceptId?: string): Promise<string | null> {
+  const t = await tx.trip.findFirst({ where: { ttn: { equals: ttn, mode: "insensitive" }, status: { not: "CANCELLED" }, ...(exceptId ? { id: { not: exceptId } } : {}) }, select: { deliveryNoteNo: true } });
+  return t ? `TTN № ${ttn} allaqachon ${t.deliveryNoteNo} reysida yozilgan` : null;
+}
+
+/** Reysning TTN raqamini yozish/tuzatish (bo'sh — olib tashlanadi). Bekor qilingan reysda o'zgarmaydi. */
+export async function setTripTtn(id: string, value: string, userId: string): Promise<{ ok: true } | { error: string }> {
+  if (value.trim().length > 40) return { error: "TTN ko'pi bilan 40 belgi" };
+  const ttn = cleanTtn(value);
+  return db.$transaction(async (tx) => {
+    const t = await tx.trip.findUnique({ where: { id }, select: { ttn: true, status: true } });
+    if (!t) return { error: "Reys topilmadi" };
+    if (t.status === "CANCELLED") return { error: "Reys bekor qilingan" };
+    if ((t.ttn ?? null) === ttn) return { ok: true } as const;
+    const taken = ttn ? await ttnTaken(tx, ttn, id) : null;
+    if (taken) return { error: taken };
+    await tx.trip.update({ where: { id }, data: { ttn } });
+    await audit(tx, userId, "UPDATE", "Trip", id, { ttn: t.ttn }, { ttn });
+    return { ok: true } as const;
+  });
+}
 
 /** Ko'chadan chaqirilgan haydovchining lavozimi — haydovchi lavozimlari ro'yxatiga kirmaydi (ECO, tabel, oylik). */
 export const EXTERNAL_DRIVER_POSITION = "Ko'chadan haydovchi";
@@ -792,6 +820,8 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   if (!(input.qtyM3 > 0)) throw new Error("Miqdor 0 dan katta bo'lsin");
   // Noto'g'ri sana (qo'lda yozilgan "2026-13-40") bazaga Invalid Date bo'lib borib, Prisma matni chiqardi
   if (input.plannedAt && !Number.isFinite(input.plannedAt.getTime())) throw new Error("Rejadagi vaqt noto'g'ri");
+  if ((input.ttn?.trim().length ?? 0) > 40) throw new Error("TTN ko'pi bilan 40 belgi");
+  const ttn = cleanTtn(input.ttn);
   const o = await db.order.findUnique({ where: { id: input.orderId }, include: READINESS_INCLUDE });
   if (!o || !["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Zayavka tasdiqlanmagan yoki yopilgan");
 
@@ -872,6 +902,8 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     if (again) throw new Error(again);
     const unpaidNow = await prepayShortError(tx, input.orderId);
     if (unpaidNow) throw new Error(unpaidNow);
+    const taken = ttn ? await ttnTaken(tx, ttn) : null;
+    if (taken) throw new Error(taken);
     if (mixed) {
       // Aralash zayavka: shu qatorga (beton yoki dona) yozilgan reyslar texnika turidan ajratiladi —
       // umumiy qoldiq yetsa ham bitta qatorning miqdoridan oshib ketmasin
@@ -882,7 +914,7 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     }
     const t = await tx.trip.create({
       data: {
-        deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru, driverReason,
+        deliveryNoteNo: await nextNo(tx, "trip", "N"), ttn, orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru, driverReason,
         // QR havolasidagi kalit: raqam ketma-ket, kalitsiz ochiq sahifadan mijozlar ro'yxatini yig'ib bo'lmasin
         verifyToken: randomBytes(18).toString("base64url"),
       },

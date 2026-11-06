@@ -5,9 +5,9 @@ import { flushSync } from "react-dom";
 import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List, ArrowRightLeft } from "lucide-react";
 import { Button, FormError, FormSuccess, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
-import { flatName, guessColumn, guessMatrix, headerRowIndex, matchKey, matrixColumns, maxLen, num, str, trimEmptyRows, unpivotMatrix, valueKey, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick, type ValueMaps } from "@/lib/excel";
+import { flatName, guessColumn, guessMatrix, headerRowIndex, matchKey, matrixColumns, maxLen, num, parseDate, str, trimEmptyRows, unpivotMatrix, valueKey, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick, type ValueMaps } from "@/lib/excel";
 import { normalizeUnit } from "@/lib/unit";
-import { fmtNum, money } from "@/lib/format";
+import { dateRu, fmtNum, isoDate, money } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
 import { cn } from "@/lib/utils";
 
@@ -58,8 +58,18 @@ type MatrixCols = { colKey: string; rowKey: string; qtyKey: string; unitKey?: st
 /** Matritsa qanday o'qilayotgani: qator/ustun tanlovi, ustunlar ro'yxati va ustun bo'yicha yetkazish sanasi. */
 type MxState = MatrixPick & { cols: MatrixCol[]; dates: Record<number, string> };
 
-/** Jadval oxiridagi jami qatori sana katagida shunday yoziladi. */
-const TOTAL_ROW = /^(jami|итого|итог|всего|жами)\b/i;
+/** Sana maydoni — kaliti `date` bilan tugaydi (date, birthDate, deliveryDate). */
+const isDateKey = (k: string) => /date$/i.test(k);
+/**
+ * Fayl `raw` o'qiladi, shuning uchun Excel'dagi sana katagi seriya soni bo'lib keladi (45967) — u ISO sanaga
+ * aylantiriladi: oynada sana ko'rinadi, server esa kun/oy tartibini adashtirmay o'qiydi. Matn sana o'zicha qoladi.
+ */
+const excelDate = (v: unknown) => {
+  if (!/^\d{5}([.,]\d+)?$/.test(str(v))) return v;
+  const d = parseDate(v, false, 1930);
+  return d ? isoDate(d) : v;
+};
+const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** "Qiymatlarni moslash" jadvalining bitta qatori: fayldagi qiymat, nechta qatorda, taxmin va yakuniy tanlov ("" — yangi). */
 type VmItem = { key: string; value: string; count: number; fromGroup: boolean; suggested: string; choice: string };
@@ -365,7 +375,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   // Moslangan qatorlar — server shu JSON ni oladi. Oynada tahrirlangan katak fayldagi qiymatdan ustun turadi.
   const mapped = useMemo(() => rows.map((r, i) => Object.fromEntries(allFields.map((f) => {
     const e = edits[`${i}:${f.key}`];
-    return [f.key, e !== undefined ? e : map[f.key] ? r[map[f.key]] : ""];
+    const v = map[f.key] ? r[map[f.key]] : "";
+    return [f.key, e !== undefined ? e : isDateKey(f.key) ? excelDate(v) : v];
   }))), [rows, map, allFields, edits]);
 
   // ── Qiymatlarni moslash: ustundagi (va guruh sarlavhasidagi) har xil qiymatlar → tizimdagi qiymat ──
@@ -420,10 +431,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const numericKeys = fields.filter((f) => /qty|price|amount|sum|nds/.test(f.key)).map((f) => f.key);
   const requiredKeys = fields.filter((f) => f.required).map((f) => f.key);
   // Majburiy maydonlari butunlay bo'sh qator — faylning ortiqcha satri (izoh, "jami", bo'sh qator):
-  // muammo emas, shunchaki import qilinmaydi — aks holda katta fayl bitta tugmani ham bloklab qo'yadi.
-  // Sana katagida «Jami» / «Итого» turgan qator ham (jadval eksporti oxiridagi jami) — ma'lumot emas
-  const isBlank = (r: Row) => requiredKeys.length > 0
-    && (requiredKeys.every((k) => str(r[k]) === "") || requiredKeys.some((k) => /date$/i.test(k) && TOTAL_ROW.test(str(r[k]))));
+  // muammo emas, shunchaki import qilinmaydi — aks holda katta fayl bitta tugmani ham bloklab qo'yadi
+  const isBlank = (r: Row) => requiredKeys.length > 0 && requiredKeys.every((k) => str(r[k]) === "");
   // Fayldagi tartib (`i`) saqlanadi — tahrirlar shu raqam bo'yicha yoziladi
   const dataRows = mapped.map((r, i) => ({ r, i })).filter((x) => !isBlank(x.r));
   const blankCount = mapped.length - dataRows.length;
@@ -588,7 +597,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
         {allFields.map((f) => {
           const v = str(x.r[f.key]);
           // Birlashtirilgan (qo'shilgan) raqam — mingliklar bilan ko'rsatiladi; serverga baribir to'liq qiymat ketadi
-          const shown = typeof x.r[f.key] === "number" ? fmtNum(x.r[f.key] as number, 3) : v;
+          const iso = isDateKey(f.key) ? ISO_DAY.exec(v) : null;
+          const shown = iso ? dateRu(new Date(+iso[1], +iso[2] - 1, +iso[3])) : typeof x.r[f.key] === "number" ? fmtNum(x.r[f.key] as number, 3) : v;
           const isBad = x.bad.includes(f.key);
           const edited = edits[`${x.i}:${f.key}`] !== undefined;
           const right = numericKeys.includes(f.key);
@@ -614,7 +624,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           }
           // Tizimdagi qiymatga moslangan katak — tizimdagi nomi ko'rinadi, fayldagisi sarlavhada
           const target = f.valueMap ? shownValue(f.key, v) : "";
-          if (target) return <Td key={f.key} className="font-medium text-sky-700"><span title={`Faylda: «${v}»`}>{target}</span></Td>;
+          // Tanlov qiymati kalit bo'lishi mumkin (BANK) — nomi ko'rinsin
+          if (target) return <Td key={f.key} className="font-medium text-sky-700"><span title={`Faylda: «${v}»`}>{f.valueMap?.options.find((o) => o.value === target)?.label ?? target}</span></Td>;
           return <Td key={f.key} right={right} className={edited ? "font-medium text-emerald-700" : undefined}>{shown || <span className="text-slate-300">—</span>}</Td>;
         })}
       </Tr>

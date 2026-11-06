@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Prisma } from "@/generated/prisma";
+import { Prisma, type RealizationEntry } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit, auditMany } from "@/lib/audit";
 import { NDS_RATE } from "@/lib/nds";
@@ -36,6 +36,8 @@ export type LogRow = {
   orderId: string | null; tripId: string | null; customerId: string | null;
   date: Date; pay: PayGroupKey; payLabel: string; seller: string;
   customer: string; product: string; group: string; ttn: string | null; vehicle: string | null;
+  /** Reysdan qatorda — dispetcher yozgan TTN (`Trip.ttn`, tahrir qiymati); bo'lmasa ko'rinadigani nakladnoy raqami */
+  tripTtn: string | null;
   unitKey: string; unit: string; qty: number; price: number; delivery: number; net: number; vat: number; total: number;
   /** Ko'rinadigan qiymat: to'ldirilgani, bo'lmasa taklif */
   loadPlace: string; destination: string; note: string; refName: string;
@@ -79,7 +81,7 @@ export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
     return {
       key: `a-${r.key}`, source: "AUTO", ref, orderId: r.orderId, tripId: r.tripId, customerId: r.customerId,
       date: r.date, pay: r.pay, payLabel: r.payLabel, seller: r.seller, customer: r.customer, product: r.product, group: r.group,
-      ttn: r.ttn ? shortTtn(r.ttn) : null, vehicle: r.vehicle, unitKey: r.unit, unit: r.unit, qty: r.qty, price: r.price, delivery: r.delivery,
+      ttn: r.ttn ? shortTtn(r.ttn) : null, tripTtn: r.tripTtn, vehicle: r.vehicle, unitKey: r.unit, unit: r.unit, qty: r.qty, price: r.price, delivery: r.delivery,
       net: r.net, vat: r.vat, total: r.total,
       loadPlace: filled.loadPlace ?? suggest.loadPlace ?? "", destination: filled.destination ?? suggest.destination ?? "",
       note: filled.note ?? suggest.note ?? "", refName: filled.refName ?? suggest.refName ?? "",
@@ -93,7 +95,7 @@ export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
     rows.push({
       key: `m-${e.id}`, source: "MANUAL", ref: e.id, orderId: null, tripId: null, customerId: e.customerId,
       date: e.date, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer: e.customerName, product: e.productName, group: e.groupName,
-      ttn: e.ttn, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r2(net + vat),
+      ttn: e.ttn, tripTtn: null, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r2(net + vat),
       loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? e.customerName,
       filled: null, suggest: null,
     });
@@ -255,7 +257,38 @@ export async function createRealizationEntry(d: EntryInput, userId: string): Pro
 
 /** Qo'lda qatorni tuzatish. Shartli `updateMany` — boshqa joyda o'zgargan yoki bekor qilingan bo'lsa yozilmaydi. */
 export async function updateRealizationEntry(id: string, d: EntryInput, userId: string): Promise<Result> {
-  const before = await db.realizationEntry.findUnique({ where: { id } });
+  return writeEntry(id, await db.realizationEntry.findUnique({ where: { id } }), d, userId);
+}
+
+/** Jadval katagidan tahrir qilinadigan maydonlar (Summa, QQS, Jami — hisoblanadi). */
+export const ENTRY_CELLS = ["date", "payGroup", "seller", "customerName", "productName", "groupName", "unit", "ttn", "vehicle", "qty", "price", "delivery", "loadPlace", "destination", "note", "refName"] as const;
+export type EntryCell = (typeof ENTRY_CELLS)[number];
+export type FieldResult = Result | { error: string; field?: string };
+
+/**
+ * Qo'lda qatorning bitta katagi: qolgan maydonlar bazadagicha, forma qoidalari bilan tekshiriladi.
+ * Mahsulot almashsa va u ro'yxatda bo'lsa — guruh mahsulotdan (formadagidek); o'qilgan holatga shartli yoziladi.
+ */
+export async function updateRealizationEntryField(id: string, field: EntryCell, value: string, userId: string): Promise<FieldResult> {
+  const e = await db.realizationEntry.findUnique({ where: { id } });
+  if (!e) return { error: "Qator topilmadi" };
+  if (field === "unit" && e.productId) return { error: "O'lchov mahsulotdan olinadi — mahsulot kartasida o'zgartiriladi", field };
+  const raw: Record<EntryCell, string> = {
+    date: isoDate(e.date), payGroup: e.payGroup, seller: e.seller ?? "", customerName: e.customerName, productName: e.productName, groupName: e.groupName,
+    unit: e.unit, ttn: e.ttn ?? "", vehicle: e.vehicle ?? "", qty: String(e.qty), price: String(e.price), delivery: String(e.delivery),
+    loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? "",
+  };
+  raw[field] = value;
+  if (field === "productName" && (await entryLookup([], [value])).product(value.trim())) raw.groupName = "";
+  const p = entrySchema.safeParse(raw);
+  if (!p.success) {
+    const is = p.error.issues[0];
+    return { error: is?.message ?? "Qiymat noto'g'ri", field: String(is?.path[0] ?? field) };
+  }
+  return writeEntry(id, e, p.data, userId);
+}
+
+async function writeEntry(id: string, before: RealizationEntry | null, d: EntryInput, userId: string): Promise<Result> {
   if (!before) return { error: "Qator topilmadi" };
   if (before.cancelledAt) return { error: "Qator bekor qilingan" };
   if (future(d.date!)) return { error: "Sana kelajakda bo'lmasin" };
@@ -286,16 +319,34 @@ export async function cancelRealizationEntry(id: string, reason: string, userId:
 // ───────────────────────── Reysdan qatorga to'ldirish ─────────────────────────
 
 /** Ortilgan joy, manzil, izoh, spravka nomi — bo'sh qoldirilgani taklifga qaytadi. Reys/zayavka ma'lumoti o'zgarmaydi. */
+const noteTarget = (key: string) => key.startsWith("o:")
+  ? db.order.findFirst({ where: { id: key.slice(2), kind: "SALE" }, select: { id: true } })
+  : db.trip.findUnique({ where: { id: key }, select: { id: true } });
+
 export async function saveRealizationNote(key: string, d: NoteInput, userId: string): Promise<Result> {
-  const exists = key.startsWith("o:")
-    ? await db.order.findFirst({ where: { id: key.slice(2), kind: "SALE" }, select: { id: true } })
-    : await db.trip.findUnique({ where: { id: key }, select: { id: true } });
-  if (!exists) return { error: "Reys topilmadi" };
+  if (!await noteTarget(key)) return { error: "Reys topilmadi" };
   await db.$transaction(async (tx) => {
     const before = await tx.realizationNote.findUnique({ where: { key } });
     const data = { loadPlace: d.loadPlace, destination: d.destination, note: d.note, refName: d.refName, updatedById: userId };
     await tx.realizationNote.upsert({ where: { key }, create: { key, ...data }, update: data });
     await audit(tx, userId, before ? "UPDATE" : "CREATE", "RealizationNote", key, before ?? undefined, data);
+  });
+  return { ok: true, id: key };
+}
+
+export const NOTE_CELLS = ["loadPlace", "destination", "note", "refName"] as const;
+export type NoteCell = (typeof NOTE_CELLS)[number];
+
+/** Jadval katagidan bitta maydon: faqat shu ustun yoziladi — boshqa katakni bir vaqtda tahrirlagan kishinikini bosib ketmaydi. */
+export async function saveRealizationNoteField(key: string, field: NoteCell, value: string, userId: string): Promise<FieldResult> {
+  const p = noteSchema.shape[field].safeParse(value);
+  if (!p.success) return { error: p.error.issues[0]?.message ?? "Qiymat noto'g'ri", field };
+  if (!await noteTarget(key)) return { error: "Reys topilmadi" };
+  await db.$transaction(async (tx) => {
+    const before = await tx.realizationNote.findUnique({ where: { key } });
+    const data = { [field]: p.data, updatedById: userId };
+    await tx.realizationNote.upsert({ where: { key }, create: { key, ...data }, update: data });
+    await audit(tx, userId, before ? "UPDATE" : "CREATE", "RealizationNote", key, before ? { [field]: before[field] } : undefined, data);
   });
   return { ok: true, id: key };
 }
@@ -315,12 +366,15 @@ const PAY_WORDS: [PayGroupKey, RegExp][] = [
   ["DEBT", /^(qarz|karz|dolg|nasiya|nasia|tekin|debt)/],
 ];
 export function payGroupOf(v: string): PayGroupKey | null {
+  // Oynadagi «Qiymatlarni moslash» tizim kalitini yuboradi (CASH…) — `matchKey` uni «casx» qilib qo'yadi
+  const key = v.trim().toUpperCase();
+  if ((PAY_KEYS as string[]).includes(key)) return key as PayGroupKey;
   const k = matchKey(v);
   return k ? PAY_WORDS.find(([, re]) => re.test(k))?.[0] ?? null : null;
 }
 
-/** TTN solishtirish kaliti: «N-2026-00161», «№161», «161» — bitta. */
-const ttnKey = (v: string | null) => matchKey(shortTtn(v)).replace(/^0+(?=\d)/, "");
+/** TTN solishtirish kaliti: «N-2026-00161», «ТТН-161», «№161», «161» — bitta. */
+const ttnKey = (v: string | null) => matchKey((v ?? "").replace(/^.*-0*(?=\d)/, "")).replace(/^0+(?=\d)/, "");
 const day0 = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
 /** Takrorni topish uchun qatorning solishtiriladigan qismi: nomlar `matchKey` bilan (kirill/lotin, katta-kichik farqi yo'q). */

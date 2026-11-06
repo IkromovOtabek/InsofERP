@@ -55,7 +55,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
   const trips = await db.trip.findMany({
     where: {
       ...(status && status in TRIP_STATUS ? { status: status as TripStatus } : {}),
-      ...(q ? { deliveryNoteNo: { contains: q, mode: "insensitive" } } : {}),
+      ...(q ? { OR: [{ deliveryNoteNo: { contains: q, mode: "insensitive" } }, { ttn: { contains: q, mode: "insensitive" } }] } : {}),
     },
     orderBy: { createdAt: "desc" }, take: 200,
     // Mahsulot birligi ham kerak: reys miqdori zayavkadagi birlikda ko'rsatiladi (m³ / dona)
@@ -74,7 +74,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
           {trips.length === 0 && <Empty text="Reyslar yo'q" />}
           {trips.map((t) => (
             <Tr key={t.id}>
-              <Td><Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link></Td>
+              <Td><Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link>{t.ttn && <div className="text-xs text-slate-500 tabular">TTN {t.ttn}</div>}</Td>
               <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} href={`/orders/${t.orderId}`} /></Td><Td className="whitespace-nowrap">{t.vehicle.plate}<div className="text-xs text-slate-500">{VEHICLE_TYPE[t.vehicle.type] ?? t.vehicle.type}</div></Td><Td>{t.driver.fullName}</Td><Td right className="whitespace-nowrap">{(() => { const l = tripLine(t.order.items, t.vehicle.type); const u = "error" in l ? soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) : l.unit; return u ? `${qty(t.qtyM3)} ${unitLabel(u)}` : qty(t.qtyM3); })()}</Td>
               {/* TZ bosqichi (obyektga keldi / tushirilmoqda / yopildi — vaqt belgilaridan) */}
               <Td><PhaseBadge phase={tripPhase(t)} />{t.issues.length > 0 && <div><Badge color="red">muammo</Badge></div>}</Td>

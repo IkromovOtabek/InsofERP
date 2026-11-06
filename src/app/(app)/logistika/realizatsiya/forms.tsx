@@ -1,15 +1,16 @@
 "use client";
 
-import { createContext, startTransition, useActionState, useCallback, useContext, useEffect, useId, useState } from "react";
+import { createContext, startTransition, useActionState, useCallback, useContext, useEffect, useId, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { Pencil, Plus, X } from "lucide-react";
-import { createRealizationAction, saveRealizationNoteAction, updateRealizationAction } from "./actions";
+import { createRealizationAction, saveRealizationCellAction, saveRealizationNoteAction, updateRealizationAction } from "./actions";
 import { today } from "@/lib/davomat";
 import { fmtNum } from "@/lib/format";
 import { NDS_RATE } from "@/lib/nds";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
+import { cn } from "@/lib/utils";
 import type { LogFields, LogOptions } from "@/lib/realization-log";
 
 /** Oyna: portal orqali, Escape yoki fon bosilsa yopiladi (`components/quick-add.tsx` uslubida). */
@@ -35,8 +36,22 @@ function Dialog({ title, onClose, children, wide }: { title: string; onClose: ()
 
 /** Forma ro'yxatlari sahifada bir marta beriladi — har qatordagi tugmaga takrorlanib ketmasin. */
 const Options = createContext<LogOptions | null>(null);
+/** Katak tahririning taklif ro'yxatlari — sahifada bir marta (`CellEdit` `list` bilan shularga ulanadi). */
+export type CellList = "sellers" | "customers" | "products" | "groups" | "vehicles" | "loadPlaces" | "destinations";
+const cellListId = (l: CellList) => `rz-cell-${l}`;
 export function OptionsProvider({ options, children }: { options: LogOptions; children: React.ReactNode }) {
-  return <Options.Provider value={options}>{children}</Options.Provider>;
+  return (
+    <Options.Provider value={options}>
+      {children}
+      <List id={cellListId("sellers")} items={options.sellers} />
+      <List id={cellListId("customers")} items={options.customers} />
+      <List id={cellListId("products")} items={options.products.map((p) => p.name)} />
+      <List id={cellListId("groups")} items={options.groups} />
+      <List id={cellListId("vehicles")} items={options.vehicles} />
+      <List id={cellListId("loadPlaces")} items={options.loadPlaces} />
+      <List id={cellListId("destinations")} items={options.destinations} />
+    </Options.Provider>
+  );
 }
 const useOptions = () => useContext(Options) ?? { pays: [], customers: [], products: [], groups: [], sellers: [], vehicles: [], loadPlaces: [], destinations: [] };
 
@@ -206,5 +221,70 @@ function NoteDialog({ refKey, title, filled, suggest, onClose }: { refKey: strin
         <List id={`${uid}-d`} items={options.destinations} />
       </form>
     </Dialog>
+  );
+}
+
+/**
+ * Jadval katagi + qalamcha: bosilsa katakning o'zida maydon ochiladi. Enter yoki katakdan chiqish — saqlash,
+ * Escape — bekor. Tanlov (to'lov turi, o'lchov) tanlanishi bilan saqlanadi. Xato bo'lsa maydon ochiq qoladi.
+ * `value` — tahrir qiymati (sana ISO, raqam to'liq), `children` — ko'rinishi; `right` — raqam ustuni (qalam chapda).
+ */
+export function CellEdit({ target, field, label, value, kind = "text", list, placeholder, right, children }: {
+  target: string; field: string; label: string; value: string; kind?: "text" | "number" | "date" | "pay" | "unit";
+  list?: CellList; placeholder?: string; right?: boolean; children?: React.ReactNode;
+}) {
+  const options = useOptions();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  const open = () => { setDraft(value); setError(undefined); setEditing(true); };
+  const close = () => { setEditing(false); setError(undefined); };
+  const save = (v: string) => {
+    if (pending) return;
+    if (v.trim() === value.trim()) { close(); return; }
+    start(async () => {
+      const r = await saveRealizationCellAction(target, field, v);
+      if (r?.error) setError(r.error);
+      else close();
+    });
+  };
+
+  if (!editing) {
+    return (
+      <span className={cn("group/cell flex items-start gap-1", right && "flex-row-reverse")}>
+        <span className="min-w-0 flex-1">{children}</span>
+        <button type="button" onClick={open} aria-label={`${label}: tahrirlash`} title={`${label} — tahrirlash`}
+          className="mt-px shrink-0 rounded p-0.5 text-slate-300 transition group-hover/cell:text-slate-500 hover:bg-slate-200 hover:!text-slate-900 print:hidden">
+          <Pencil size={11} />
+        </button>
+      </span>
+    );
+  }
+
+  const cls = cn("h-7 w-full min-w-24 rounded border bg-white px-1.5 text-[12px] text-slate-900 outline-none focus:border-slate-900", error ? "border-red-400" : "border-slate-300", right && "text-right tabular");
+  const keys = (e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement>) => {
+    if (e.key === "Escape") { e.preventDefault(); close(); }
+    if (e.key === "Enter") { e.preventDefault(); save(draft); }
+  };
+  const select = (items: { value: string; label: string }[]) => (
+    <select autoFocus aria-label={label} value={draft} className={cls} onKeyDown={keys} onBlur={() => { if (!pending) close(); }}
+      onChange={(e) => { setDraft(e.target.value); save(e.target.value); }}>
+      {items.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+    </select>
+  );
+  return (
+    <span className="block min-w-24">
+      {kind === "pay" ? select(options.pays.map((g) => ({ value: g.key, label: g.label })))
+        : kind === "unit" ? select(PRODUCT_UNITS.map(([u, l]) => ({ value: u, label: l })))
+        : (
+          <input autoFocus aria-label={label} value={draft} disabled={pending} placeholder={placeholder} className={cls}
+            type={kind === "date" ? "date" : "text"} inputMode={kind === "number" ? "decimal" : undefined} max={kind === "date" ? today() : undefined}
+            list={list ? cellListId(list) : undefined} autoComplete="off"
+            onChange={(e) => setDraft(e.target.value)} onKeyDown={keys} onBlur={() => save(draft)} />
+        )}
+      {pending && <span className="mt-0.5 block text-[10px] text-slate-500">Saqlanmoqda…</span>}
+      {error && <span role="alert" className="mt-0.5 block text-[10px] leading-tight font-medium whitespace-normal text-red-600">{error}</span>}
+    </span>
   );
 }

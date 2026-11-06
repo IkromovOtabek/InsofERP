@@ -56,9 +56,14 @@ r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehic
 check(!!r.error && !/prisma|Invalid/i.test(r.error), "noto'g'ri reja vaqti — o'zbekcha xato", r.error);
 r = await sklad.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 5 })], "/trips/new");
 check(!r.ok && !r.redirect, "sklad reys ocha olmaydi");
-r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: "6", note: "QA" })], "/trips/new");
+// TTN raqami reys ochilganda yoziladi («№» belgisi tashlanadi), takrori rad etiladi
+const ttn1 = `QA${Date.now() % 1000000}`;
+r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: "6", note: "QA", ttn: `№ ${ttn1}` })], "/trips/new");
 const t1 = idFrom(r.redirect)!;
 check(!!t1, "logistika reys ochdi (6 m³)", r.error ?? r.text.slice(0, 200));
+check(q1(`select ttn from "Trip" where id='${t1}'`) === ttn1, "reysga TTN yozildi («№» belgisisiz)", q1(`select ttn from "Trip" where id='${t1}'`));
+r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 1, ttn: ttn1.toLowerCase() })], "/trips/new");
+check(/allaqachon/.test(r.error ?? "") && !r.redirect, "takroriy TTN bilan reys ochilmadi", r.error);
 // ikkinchi reys 2 m³ — keyin bekor
 r = await logist.action(`${TA}#createTrip`, [undefined, fd({ orderId: oid, vehicleId: mixer, driverId: driver, qtyM3: 2 })], "/trips/new");
 const t2 = idFrom(r.redirect)!;
@@ -221,6 +226,25 @@ check(r.ok && n1(`select count(*) from "VehicleService" where id='${svc}' and "c
 // Nakladnoy: chop etish va QR /verify
 page = await logist.get(`/trips/${t1}/print`);
 check(page.status === 200 && page.text.includes(note1), "nakladnoy chop etish sahifasi", page.status);
+check(page.text.includes(ttn1) && page.text.includes("Zavod nusxasi") && page.text.includes("Yuk oluvchi nusxasi"), "nakladnoyda TTN va bitta A4 da 2 nusxa", page.status);
+
+// Logistika → Realizatsiya: katakdagi qalamcha — reys TTN, reysdan qatorda faqat dispetcher maydonlari, qo'lda qatorda hamma ustun
+const RA = "(app)/logistika/realizatsiya/actions";
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`t:${t1}`, "ttn", `${ttn1}A`], "/logistika/realizatsiya");
+check(r.ok && q1(`select ttn from "Trip" where id='${t1}'`) === `${ttn1}A`, "Realizatsiya katagidan reys TTN tuzatildi", r.error);
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "loadPlace", "QA BSU-9"], "/logistika/realizatsiya");
+check(r.ok && q1(`select "loadPlace" from "RealizationNote" where key='${t1}'`) === "QA BSU-9", "reysdan qatorda ortilgan joy katakdan yozildi", r.error);
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "qty", "99"], "/logistika/realizatsiya");
+check(!!r.error && !r.ok, "reysdan qatorda miqdor katakdan o'zgarmaydi (zayavkada)", r.error);
+r = await logist.action(`${RA}#createRealizationAction`, [undefined, fd({ clientToken: token(), date: today, payGroup: "CASH", customerName: "QA Katak Xaridor", productName: "QA katak mahsulot", unit: "m3", qty: "3", price: "100000" })], "/logistika/realizatsiya");
+const me = q1(`select id from "RealizationEntry" where "customerName"='QA Katak Xaridor' and "cancelledAt" is null order by "createdAt" desc limit 1`)!;
+check(r.ok && !!me, "qo'lda qator qo'shildi", r.error);
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "qty", "4,5"], "/logistika/realizatsiya");
+check(r.ok && n1(`select qty from "RealizationEntry" where id='${me}'`) === 4.5 && n1(`select price from "RealizationEntry" where id='${me}'`) === 100000, "qo'lda qator miqdori katakdan tuzatildi, narx joyida", r.error);
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "date", "2099-01-01"], "/logistika/realizatsiya");
+check(/kelajak/.test(r.error ?? ""), "katakdan kelajak sana rad etildi", r.error);
+r = await sklad.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "note", "x"], "/logistika/realizatsiya");
+check(!r.ok, "sklad Realizatsiya katagini tahrirlay olmaydi");
 const vt = q1(`select "verifyToken" from "Trip" where id='${t1}'`)!;
 const anon = async (p: string) => { const res = await fetch(BASE + p, { redirect: "manual" }); return { status: res.status, text: await res.text() }; };
 let v = await anon(`/verify/${encodeURIComponent(note1)}?k=${vt}`);

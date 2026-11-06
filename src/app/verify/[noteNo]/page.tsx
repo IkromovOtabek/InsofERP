@@ -44,6 +44,8 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
             <h1 className="mt-2 text-xl font-semibold">Nakladnoy {t.deliveryNoteNo}</h1>
             <div className={`mt-2 inline-block rounded-full px-3 py-1 text-sm font-medium ${TONE[t.status] ?? "bg-amber-50 text-amber-800"}`}>{LABEL[t.status] ?? t.status}</div>
             <dl className="mt-4 space-y-2 text-sm">
+              {/* Chop etilgan nakladnoy sarlavhasida TTN turadi — skanerlagan kishi shu raqam bilan solishtiradi */}
+              {t.ttn && <div className="flex justify-between gap-3"><dt className="text-slate-500">TTN №</dt><dd className="font-medium tabular">{t.ttn}</dd></div>}
               <div className="flex justify-between gap-3"><dt className="text-slate-500">Mijoz</dt><dd className="text-right font-medium">{customer}</dd></div>
               <div className="flex justify-between gap-3"><dt className="text-slate-500">Mahsulot</dt><dd className="text-right">{product?.name ?? "—"}</dd></div>
               <div className="flex justify-between gap-3"><dt className="text-slate-500">Yuklangan</dt><dd>{qty(t.qtyM3)} {unit}</dd></div>

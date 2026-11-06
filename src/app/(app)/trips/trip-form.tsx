@@ -83,6 +83,8 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   const driverList = [...drivers].sort((a, b) => Number(b.vehicleId === vehicleId) - Number(a.vehicleId === vehicleId));
   const [qty, setQty] = useState(firstOrder ? String(Math.min(vehicle?.capacityM3 ?? availOf(firstOrder, vehicle?.type), availOf(firstOrder, vehicle?.type))) : "");
   const [bru, setBru] = useState(bruNames.length === 1 ? bruNames[0]! : "");
+  // Boshqariladigan: xato bilan qaytganda (`<form action>` formani tozalaydi) yozilgan TTN yo'qolmasin
+  const [ttn, setTtn] = useState("");
   // Tayyor qoldiqdan ko'p yozilsa — serverdagi bilan bir xil sabab, yuborishdan oldin
   const qtyNum = Number(qty);
   const overReady = !order || qtyNum <= avail + 0.001
@@ -302,7 +304,10 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
                 )}
               </Field>
             )}
-            <Field label="Rejadagi yetkazish vaqti" hint="Zayavkadan olinadi. Dispetcher kalendari va kechikish hisobi shu vaqtga qaraydi" className={concrete ? "sm:col-span-2" : undefined}>
+            <Field label="TTN raqami" hint="Nakladnoy blankasidagi raqam — nakladnoyda va Realizatsiyada shu ko'rinadi. Bo'sh qolsa tizim raqami (N-…)">
+              <Input name="ttn" value={ttn} onChange={(e) => setTtn(e.target.value)} maxLength={40} autoComplete="off" placeholder="Masalan: 000161" className="tabular" />
+            </Field>
+            <Field label="Rejadagi yetkazish vaqti" hint="Zayavkadan olinadi. Dispetcher kalendari va kechikish hisobi shu vaqtga qaraydi" className={concrete ? undefined : "sm:col-span-2"}>
               <Input name="plannedAt" type="datetime-local" value={plannedAt} onChange={(e) => setPlannedAt(e.target.value)} />
             </Field>
             <Field label="Izoh" className="sm:col-span-2"><Textarea name="note" /></Field>
