@@ -155,10 +155,10 @@ async function cancelLinked(tx: Prisma.TransactionClient, entryId: string, docNo
   for (const c of costs) await audit(tx, userId, "STATUS_CHANGE", "TransportExpense", c.id, { cancelledAt: null }, data);
 }
 
-/** Bekor qilishni nima to'sadi: naqdi kassaga o'tgan, yoki oyi vedomostda yopilgan oylik haq. */
-async function cancelBlock(e: { date: Date; payType: DriverPayType | null; payApprovedAt: Date | null; payAmount: unknown }): Promise<string | null> {
-  if (e.payType === "CASH" && e.payApprovedAt) return "Naqd haq kassaga o'tgan — bekor qilib bo'lmaydi";
-  if (e.payType === "PAYROLL" && Number(e.payAmount ?? 0) > 0 && (await monthLocked(e.date))) return "Shu oyning ish haqi vedomosti tasdiqlangan — bekor qilib bo'lmaydi";
+/** Bekor qilish / tahrirni nima to'sadi: naqdi kassaga o'tgan, yoki oyi vedomostda yopilgan oylik haq. */
+async function cancelBlock(e: { date: Date; payType: DriverPayType | null; payApprovedAt: Date | null; payAmount: unknown }, what = "bekor qilib"): Promise<string | null> {
+  if (e.payType === "CASH" && e.payApprovedAt) return `Naqd haq kassaga o'tgan — ${what} bo'lmaydi`;
+  if (e.payType === "PAYROLL" && Number(e.payAmount ?? 0) > 0 && (await monthLocked(e.date))) return `Shu oyning ish haqi vedomosti tasdiqlangan — ${what} bo'lmaydi`;
   return null;
 }
 
@@ -180,6 +180,76 @@ export async function cancelLogisticsEntry(id: string, reason: string, userId: s
     return true;
   });
   return ok ? { ok: true, id, docNo: e.docNo } : { error: "Yozuv boshqa joyda o'zgartirildi — sahifani yangilang" };
+}
+
+/**
+ * Dispetcher qo'lda yozuvni tuzatadi («Qo'lda yozuvlar» → qalam): sana, haydovchi, transport, ish, haq, kirim, izoh.
+ * Bekor qilish bilan bir qoida: naqdi kassaga o'tgan yoki oyi vedomostda yopilgan haq tahrirlanmaydi. Tasdiqlangan oylik
+ * haqning summasi, turi, haydovchisi yoki oyi o'zgarsa — tasdiq qaytadan (ish boshqaruvchiga yana boradi).
+ * Qator bilan yozilgan zapravka va xarajat sana/haydovchi bilan birga ko'chadi; ular bor qatorda transport o'zgarmaydi.
+ */
+export async function updateLogisticsEntry(id: string, d: EntryInput, userId: string): Promise<{ ok: true; id: string; docNo: string; reapprove: boolean } | { error: string }> {
+  const e = await db.logisticsEntry.findUnique({
+    where: { id },
+    include: { _count: { select: { fuelLogs: { where: { cancelledAt: null } }, expenses: { where: { cancelledAt: null } } } } },
+  });
+  if (!e) return { error: "Yozuv topilmadi" };
+  if (e.cancelledAt) return { error: "Bekor qilingan yozuv tahrirlanmaydi" };
+  const block = await cancelBlock(e, "tahrirlab");
+  if (block) return { error: block };
+  const linked = e._count.fuelLogs + e._count.expenses > 0;
+  const pay = Math.round(d.payAmount ?? 0), revenue = Math.round(d.revenue ?? 0);
+  const work = (d.km ?? 0) > 0 || (d.trips ?? 0) > 0 || Number(e.drumHours ?? 0) > 0 || linked;
+  if (pay <= 0 && revenue <= 0 && !work) return { error: "Haydovchi haqi yoki kirim summasini kiriting (yoki km, reys soni)" };
+  if (pay > 0 && !d.driverId) return { error: "Haq kimga — haydovchini tanlang" };
+  if (pay > 0 && !d.payType) return { error: "To'lov turini tanlang: naqd yoki oylik" };
+  if (revenue > 0 && !d.vehicleId) return { error: "Kirim qaysi transportniki — transportni tanlang" };
+  if ((d.km ?? 0) > 0 && !d.vehicleId) return { error: "Transportni tanlang — km mashinaga yoziladi" };
+  if (linked && d.vehicleId !== e.vehicleId) return { error: "Qatorda zapravka yoki xarajat bor — transportni o'zgartirib bo'lmaydi. Bekor qilib qayta yozing" };
+  if (d.note.length < 3) return { error: "Izohni yozing (kamida 3 belgi)" };
+  const date = d.date ?? e.date;
+  if (date.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
+
+  const [driver, vehicle] = await Promise.all([
+    d.driverId ? db.employee.findUnique({ where: { id: d.driverId }, select: { id: true, fullName: true, external: true } }) : null,
+    d.vehicleId ? db.vehicle.findUnique({ where: { id: d.vehicleId }, select: { id: true, plate: true } }) : null,
+  ]);
+  if (d.driverId && !driver) return { error: "Haydovchi topilmadi" };
+  if (d.vehicleId && !vehicle) return { error: "Transport topilmadi" };
+  if (pay > 0 && driver?.external && d.payType === "PAYROLL") return { error: "Ko'chadan haydovchi oylikda yo'q — to'lov turi faqat naqd" };
+  if (pay > 0 && d.payType === "PAYROLL" && (await monthLocked(date))) return { error: "Shu oyning ish haqi vedomosti tasdiqlangan — oylikka yozib bo'lmaydi" };
+
+  const payType = pay > 0 ? (d.payType as DriverPayType) : null;
+  const monthOf = (x: Date) => x.getFullYear() * 12 + x.getMonth();
+  const payChanged = pay !== Math.round(Number(e.payAmount ?? 0)) || payType !== e.payType || (driver?.id ?? null) !== e.driverId || monthOf(date) !== monthOf(e.date);
+  const reapprove = !!e.payApprovedAt && payChanged;
+  const data = {
+    date, driverId: driver?.id ?? null, vehicleId: vehicle?.id ?? null, trips: Math.round(d.trips ?? 0), km: d.km ?? null,
+    payAmount: pay > 0 ? pay : null, payType, revenue: revenue > 0 ? revenue : null, revenueType: revenue > 0 ? e.revenueType : null, note: d.note,
+    ...(reapprove ? { payApprovedAt: null, payApprovedById: null } : {}),
+  };
+  const before = {
+    date: e.date, driverId: e.driverId, vehicleId: e.vehicleId, trips: e.trips, km: e.km, payAmount: e.payAmount, payType: e.payType,
+    revenue: e.revenue, revenueType: e.revenueType, note: e.note, payApprovedAt: e.payApprovedAt,
+  };
+  const ok = await db.$transaction(async (tx) => {
+    const u = await tx.logisticsEntry.updateMany({ where: { id, cancelledAt: null, payApprovedAt: e.payApprovedAt }, data });
+    if (u.count !== 1) return false;
+    await audit(tx, userId, "UPDATE", "LogisticsEntry", id, before, data);
+    // Qator bilan yozilgan zapravka va xarajat — yozuv sanasi va haydovchisi bilan bir xil tursin
+    if (linked && (date.getTime() !== e.date.getTime() || data.driverId !== e.driverId)) {
+      const move = { date, driverId: data.driverId };
+      await tx.fuelLog.updateMany({ where: { entryId: id, cancelledAt: null }, data: move });
+      await tx.transportExpense.updateMany({ where: { entryId: id, cancelledAt: null }, data: move });
+    }
+    return true;
+  });
+  if (!ok) return { error: "Yozuv boshqa joyda o'zgartirildi — sahifani yangilang" };
+  if (reapprove && pay > 0) notifyAfter(() => notifyRoles(PAY_APPROVER_ROLES, {
+    type: "TRIP_PAY_APPROVE", title: `Qo'lda haq tahrirlandi: ${e.docNo}`,
+    body: `${driver!.fullName}${vehicle ? ` · ${vehicle.plate}` : ""} · ${money(pay)} · ${PAY_TYPE_LABEL[payType!].toLowerCase()} — qayta tasdiqlang (Haydovchilar tabeli)`,
+  }, { except: userId }));
+  return { ok: true, id, docNo: e.docNo, reapprove };
 }
 
 /**

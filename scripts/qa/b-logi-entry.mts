@@ -135,8 +135,32 @@ check(r.ok && n1(`select count(*) from "TransportExpense" where note=${lit(`QA d
 a = await avtoRow();
 check(Math.round(a.other - base.other) === 25000, "chiqim avtotransportga tushdi (boshqa)", a.other - base.other);
 
+// ── Tahrirlash (qalam): kassaga o'tgan naqd / bekor qilingan rad; tasdiqlangan oylik haq summasi o'zgarsa — qayta tasdiq ──
+const upd = (o: Record<string, string | number> = {}) => fd({ date: today, driverId: DRV, vehicleId: veh, trips: 2, km: 80, payAmount: 300000, payType: "PAYROLL", note: "QA zavoddan tashqari ish", ...o });
+r = await disp.action(`${LA}#updateEntryAction`, [eCash, undefined, upd({ payAmount: 160000, payType: "CASH" })], P);
+check(/kassaga o'tgan/.test(r.error ?? ""), "kassaga o'tgan naqd haq tahrirlanmaydi", r.error);
+r = await disp.action(`${LA}#updateEntryAction`, [eRev, undefined, upd()], P);
+check(/Bekor qilingan/.test(r.error ?? ""), "bekor qilingan yozuv tahrirlanmaydi", r.error);
+r = await sklad.action(`${LA}#updateEntryAction`, [ePay, undefined, upd({ note: "QA sklad" })], P);
+check(!r.ok && q1(`select note from "LogisticsEntry" where id=${lit(ePay)}`) !== "QA sklad", "sklad qo'lda yozuvni tahrirlay olmaydi");
+r = await disp.action(`${LA}#updateEntryAction`, [ePay, undefined, upd({ payType: "" })], P);
+check(/To'lov turini/.test(r.error ?? ""), "tahrirda haq to'lov turisiz rad etildi", r.error);
+r = await disp.action(`${LA}#updateEntryAction`, [ePay, undefined, upd({ km: 95, note: `QA tuzatilgan izoh ${tag}` })], P);
+check(r.ok && q1(`select note from "LogisticsEntry" where id=${lit(ePay)}`) === `QA tuzatilgan izoh ${tag}` && n1(`select km::int from "LogisticsEntry" where id=${lit(ePay)}`) === 95
+  && !!q1(`select "payApprovedAt" from "LogisticsEntry" where id=${lit(ePay)}`), "izoh va km tahrirlandi — haq o'zgarmagani uchun tasdiq saqlandi", r.error);
+check(n1(`select count(*) from "AuditLog" where entity='LogisticsEntry' and "entityId"=${lit(ePay)} and action='UPDATE'`) === 1, "tahrir AuditLog'da (UPDATE)");
+r = await disp.action(`${LA}#updateEntryAction`, [ePay, undefined, upd({ km: 95, payAmount: 320000 })], P);
+check(r.ok && n1(`select "payAmount"::int from "LogisticsEntry" where id=${lit(ePay)}`) === 320000 && !q1(`select "payApprovedAt" from "LogisticsEntry" where id=${lit(ePay)}`),
+  "tasdiqlangan oylik haq summasi o'zgardi — qayta ish boshqaruvchi tasdig'iga qaytdi", r.error);
+tp = (await tripPayByDriver(from, to, [DRV])).get(DRV);
+check(!tp?.sum && tp?.unpriced === 1, "qayta tasdiqgacha vedomostga tushmaydi (1 ta kutmoqda)", tp);
+r = await prorab.action(`${LA}#approveEntriesAction`, [[ePay]], "/logistika/tabel?bolim=tasdiq");
+tp = (await tripPayByDriver(from, to, [DRV])).get(DRV);
+check(r.ok && tp?.sum === 320000, "qayta tasdiqdan keyin vedomost: 320 000", [r.error, tp]);
+
 // ── Sahifalar ──
 g = await disp.get(P);
+check(g.status === 200 && g.text.includes('aria-label="Tahrirlash"'), "«Qo'lda yozuvlar»: qatorda tahrirlash tugmasi", g.status);
 check(g.status === 200 && g.text.includes(q1(`select "docNo" from "LogisticsEntry" where id=${lit(ePay)}`)!) && g.text.includes("Bekor qilingan"), "«Qo'lda yozuvlar» sahifasi: yozuvlar va bekor qilingani", g.status);
 g = await disp.get(`/logistika/tabel?bolim=oylik&driver=${DRV}`);
 check(g.status === 200 && g.text.includes("Qo&#x27;lda yozilgan haq"), "haydovchi oyligi: qo'lda yozilgan haq ko'rinadi", g.status);

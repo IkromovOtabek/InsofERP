@@ -1,11 +1,12 @@
 "use client";
 
-import { createContext, useActionState, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { createContext, startTransition, useActionState, useCallback, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Check, ChevronDown, ChevronUp, Clock, HandCoins, Pencil, Plus, X } from "lucide-react";
-import { approveEntriesAction, approveTripPaysAction, createEntryAction, createMasterPayAction, priceSuggestedAction, priceTripAction, rejectEntryAction, rejectTripPayAction, saveDriverTariff } from "../actions";
+import { approveEntriesAction, approveTripPaysAction, createEntryAction, createMasterPayAction, priceSuggestedAction, priceTripAction, rejectEntryAction, rejectTripPayAction, saveDriverTariff, updateEntryAction } from "../actions";
 import { today } from "@/lib/davomat";
-import { Button, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { Button, Field, FormActions, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 
 /** To'lov turi tanlovi: naqd — kassa beradi, oylik — vedomostga tushadi (ikkalasi ham ish boshqaruvchi tasdig'idan keyin). */
@@ -183,6 +184,89 @@ export function EntryForm({ drivers, vehicles, clientToken }: { drivers: (Opt & 
       <div className="sm:col-span-2 lg:col-span-6"><Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Yozish"}</Button></div>
     </form>
   );
+}
+
+/** Tahrir oynasi ro'yxatlari — jadvalda bir marta beriladi (har qatorga takrorlanmasin). */
+type EntryEditOptions = { drivers: Opt[]; vehicles: Opt[] };
+const EntryEditCtx = createContext<EntryEditOptions | null>(null);
+export function EntryEditProvider({ options, children }: { options: EntryEditOptions; children: React.ReactNode }) {
+  return <EntryEditCtx.Provider value={options}>{children}</EntryEditCtx.Provider>;
+}
+
+export type EntryEditEntry = {
+  id: string; docNo: string; date: string; driverId: string | null; driver: string | null; vehicleId: string | null; plate: string | null;
+  trips: number; km: number | null; pay: number; payType: string | null; revenue: number; note: string; approved: boolean;
+};
+
+/**
+ * «Qo'lda yozuvlar» qatoridagi qalam: sana, haydovchi, transport, ish, haq, kirim va izohni tuzatish. Qoidalar —
+ * `lib/logistics-entry.ts` → `updateLogisticsEntry` (kassaga o'tgan naqd / yopilgan oy rad, tasdiqlangan haq o'zgarsa — qayta tasdiq).
+ */
+export function EntryEditButton({ entry }: { entry: EntryEditEntry }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  return (
+    <>
+      <IconButton type="button" icon={Pencil} label="Tahrirlash" onClick={() => setOpen(true)} className="h-7 w-7" />
+      {open && <EntryEditDialog entry={entry} onClose={close} />}
+    </>
+  );
+}
+
+function EntryEditDialog({ entry, onClose }: { entry: EntryEditEntry; onClose: () => void }) {
+  const o = useContext(EntryEditCtx) ?? { drivers: [], vehicles: [] };
+  const [state, action, pending] = useActionState(updateEntryAction.bind(null, entry.id), undefined);
+  const router = useRouter();
+  useEffect(() => { if (state?.ok) { router.refresh(); onClose(); } }, [state, onClose, router]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  // Ro'yxatda yo'q (ko'chadan, faol emas) haydovchi va transport ham tanlovda tursin
+  const drivers = entry.driverId && !o.drivers.some((d) => d.id === entry.driverId) ? [{ id: entry.driverId, label: entry.driver ?? "—" }, ...o.drivers] : o.drivers;
+  const vehicles = entry.vehicleId && !o.vehicles.some((v) => v.id === entry.vehicleId) ? [{ id: entry.vehicleId, label: entry.plate ?? "—" }, ...o.vehicles] : o.vehicles;
+
+  return createPortal((
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:items-center" onMouseDown={onClose}>
+      <form role="dialog" aria-label="Qo'lda yozuvni tahrirlash" onMouseDown={(e) => e.stopPropagation()}
+        // `<form action>` xato bilan qaytganda maydonlarni tozalaydi — onSubmit + startTransition
+        onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); startTransition(() => action(fd)); }}
+        className="w-full max-w-2xl space-y-4 rounded-(--radius-card) border border-slate-200 bg-white p-5 shadow-(--shadow-pop)">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold tracking-tight">{entry.docNo} — tahrirlash</h2>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 [&>*]:min-w-0">
+          <Field label="Sana *"><Input name="date" type="date" defaultValue={entry.date} max={today()} required /></Field>
+          <Field label="Haydovchi">
+            <Select name="driverId" defaultValue={entry.driverId ?? ""}><option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}</Select>
+          </Field>
+          <Field label="Transport">
+            <Select name="vehicleId" defaultValue={entry.vehicleId ?? ""}><option value="">—</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</Select>
+          </Field>
+          <Field label="Reys soni"><Input name="trips" type="number" min="0" max="1000" step="1" defaultValue={entry.trips || ""} className="text-right tabular" /></Field>
+          <Field label="Km"><Input name="km" type="number" min="0" step="1" defaultValue={entry.km ?? ""} className="text-right tabular" /></Field>
+          <div className="hidden sm:block" />
+          <Field label="Haydovchi haqi, so'm"><Input name="payAmount" type="number" min="0" step="1000" defaultValue={entry.pay || ""} className="text-right tabular" /></Field>
+          <Field label="To'lov turi">
+            <Select name="payType" defaultValue={entry.payType ?? ""}><option value="">—</option><option value="PAYROLL">Oylik</option><option value="CASH">Naqd</option></Select>
+          </Field>
+          <Field label="Kirim, so'm"><Input name="revenue" type="number" min="0" step="1000" defaultValue={entry.revenue || ""} className="text-right tabular" /></Field>
+          <Field label="Izoh *" className="sm:col-span-3"><Input name="note" defaultValue={entry.note} required minLength={3} maxLength={300} /></Field>
+        </div>
+        <p className="text-xs text-slate-500">
+          {entry.approved ? "Haq tasdiqlangan: summa, to'lov turi, haydovchi yoki oy o'zgarsa — ish boshqaruvchi qayta tasdiqlaydi. " : ""}
+          Avvalgi qiymatlar jurnalda (AuditLog) saqlanadi.
+        </p>
+        <FormError error={state?.error} />
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Yopish</Button>
+          <Button disabled={pending}><Pencil size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+        </div>
+      </form>
+    </div>
+  ), document.body);
 }
 
 /**

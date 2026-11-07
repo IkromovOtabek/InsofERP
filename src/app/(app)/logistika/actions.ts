@@ -14,7 +14,7 @@ import {
 } from "@/lib/logistics-admin";
 import { approveTripPays, fixTripKmHours, PAY_TYPES, priceTrip, priceTripsBySuggestion, rejectTripPay } from "@/lib/driver-trip-pay";
 import { createMechanicRequest, MASTER_PROBLEMS } from "@/lib/mechanic-requests";
-import { approveLogisticsEntries, cancelLogisticsEntry, createLogisticsEntry, entrySchema, rejectLogisticsEntry } from "@/lib/logistics-entry";
+import { approveLogisticsEntries, cancelLogisticsEntry, createLogisticsEntry, entrySchema, rejectLogisticsEntry, updateLogisticsEntry } from "@/lib/logistics-entry";
 import { driverTempLoginCore } from "@/lib/kadr-employee";
 
 /**
@@ -265,6 +265,17 @@ export async function createEntryAction(_prev: ActionState, fd: FormData): Promi
   if ("error" in res) return { error: res.error };
   refresh();
   return { ok: true, note: `${res.docNo} yozildi${r.data.payAmount ? " — haq ish boshqaruvchi tasdig'ini kutmoqda" : ""}` };
+}
+
+/** Dispetcher: qo'lda yozuvni tahrirlash («Qo'lda yozuvlar» → qalam) — `lib/logistics-entry.ts`. */
+export async function updateEntryAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay");
+  const r = parseForm(entrySchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await updateLogisticsEntry(id, r.data, s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true, note: `${res.docNo} saqlandi${res.reapprove ? " — haq ish boshqaruvchi tasdig'iga qaytdi" : ""}` };
 }
 
 /** Bekor qilish: «Qo'lda yozuvlar» (dispetcher, `pay`) yoki hisob varag'i qatori (logistika ham, `ledger`). */

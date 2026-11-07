@@ -15,7 +15,7 @@ import { avtoReport } from "@/lib/fin-report/avto";
 import { entryRows, pendingEntryWhere, type EntryRow } from "@/lib/logistics-entry";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { AllCheck, ApproveButton, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
+import { AllCheck, ApproveButton, EntryEditButton, EntryEditProvider, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
 import { LedgerRowForm, type LedgerOptions } from "./ledger-forms";
 import { ConfirmButton } from "../../payments/confirm-button";
@@ -51,11 +51,15 @@ function EntryStatus({ e }: { e: EntryRow }) {
   return <Badge color={color}>{text}</Badge>;
 }
 
-/** Qo'lda yozuvlar jadvali — «Qo'lda yozuvlar» bo'limi va haydovchi oyligi uchun. Naqdi kassaga o'tgani bekor qilinmaydi. */
-function EntryTable({ rows, canCancel }: { rows: EntryRow[]; canCancel: boolean }) {
-  return (
+/**
+ * Qo'lda yozuvlar jadvali — «Qo'lda yozuvlar» bo'limi va haydovchi oyligi uchun. Naqdi kassaga o'tgani bekor qilinmaydi
+ * va tahrirlanmaydi. `edit` — tahrir oynasining haydovchi/transport ro'yxatlari (berilsa har qatorda qalam).
+ */
+function EntryTable({ rows, canCancel, edit }: { rows: EntryRow[]; canCancel: boolean; edit?: { drivers: { id: string; label: string }[]; vehicles: { id: string; label: string }[] } | null }) {
+  const actions = canCancel || !!edit;
+  const table = (
     <Table>
-      <thead><tr><Th>Sana · №</Th><Th>Haydovchi</Th><Th>Transport</Th><Th>Ish</Th><Th right>Haydovchi haqi</Th><Th right>Kirim</Th><Th>Holat</Th>{canCancel && <Th className="w-10" />}</tr></thead>
+      <thead><tr><Th>Sana · №</Th><Th>Haydovchi</Th><Th>Transport</Th><Th>Ish</Th><Th right>Haydovchi haqi</Th><Th right>Kirim</Th><Th>Holat</Th>{actions && <Th className="w-20" />}</tr></thead>
       <tbody>
         {rows.map((e) => (
           <Tr key={e.id} className={e.cancelledAt ? "opacity-60" : undefined}>
@@ -66,15 +70,22 @@ function EntryTable({ rows, canCancel }: { rows: EntryRow[]; canCancel: boolean 
             <Td right className="tabular">{e.pay ? <><span className="font-semibold">{money(e.pay)}</span>{e.payType && <div className="text-[11px] text-slate-500">{PAY_TYPE_LABEL[e.payType]}</div>}</> : <span className="text-slate-300">—</span>}</Td>
             <Td right className="tabular">{e.revenue ? money(e.revenue) : <span className="text-slate-300">—</span>}</Td>
             <Td><EntryStatus e={e} /></Td>
-            {canCancel && <Td>{!e.cancelledAt && !(e.payType === "CASH" && e.approvedAt) && (
-              <ConfirmButton action={cancelEntryAction.bind(null, e.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />}
-                question={`${e.docNo} (${date(e.date)}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />
+            {actions && <Td>{!e.cancelledAt && !(e.payType === "CASH" && e.approvedAt) && (
+              <div className="flex items-center justify-end gap-0.5">
+                {edit && <EntryEditButton entry={{
+                  id: e.id, docNo: e.docNo, date: isoDate(e.date), driverId: e.driverId, driver: e.driver, vehicleId: e.vehicleId, plate: e.plate,
+                  trips: e.trips, km: e.km, pay: e.pay, payType: e.payType, revenue: e.revenue, note: e.note, approved: !!e.approvedAt,
+                }} />}
+                {canCancel && <ConfirmButton action={cancelEntryAction.bind(null, e.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />}
+                  question={`${e.docNo} (${date(e.date)}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}
+              </div>
             )}</Td>}
           </Tr>
         ))}
       </tbody>
     </Table>
   );
+  return edit ? <EntryEditProvider options={edit}>{table}</EntryEditProvider> : table;
 }
 
 /** Reys qatori — narxsizlar ro'yxati va haydovchi oyi uchun bir xil. */
@@ -697,7 +708,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             <CardHeader title={`${monthTitle(month)} — qo'lda yozuvlar`} icon={FileSpreadsheet}
               description={`Haq: ${money(liveEntries.reduce((a, e) => a + e.pay, 0))} · kirim: ${money(liveEntries.reduce((a, e) => a + e.revenue, 0))}. Yozuv o'chirilmaydi — bekor qilinadi (sababi bilan)`} />
           </div>
-          {monthEntries.length === 0 ? <Empty text="Bu oyda qo'lda yozuv yo'q" icon={PencilLine} /> : <EntryTable rows={monthEntries} canCancel={canPrice} />}
+          {monthEntries.length === 0 ? <Empty text="Bu oyda qo'lda yozuv yo'q" icon={PencilLine} /> : <EntryTable rows={monthEntries} canCancel={canPrice} edit={canPrice && opts ? { drivers: opts.drivers, vehicles: opts.vehicles.map((v) => ({ id: v.id, label: v.label })) } : null} />}
         </Card>
       </Section>}
 
