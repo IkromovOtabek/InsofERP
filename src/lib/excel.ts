@@ -326,6 +326,91 @@ export function unpivotMatrix(aoa: unknown[][], p: MatrixPick, dates?: Record<nu
   return out;
 }
 
+// ───────────────────────── Kunlik qarz jadvali ─────────────────────────
+
+/** Qarz jadvali oxiridagi yig'indi va xizmat qatorlari — mijoz/yetkazuvchi emas (klient ham, server ham chetlaydi). */
+export const DEBT_SKIP_ROW = /^(jami|жами|итого|итог|всего|total|inkassa|инкасса)\b/i;
+
+type DayKind = "kirim" | "chiqim" | "qoldiq";
+const DAY_KIND: [DayKind, RegExp][] = [
+  ["kirim", /^(kirim|приход|prixod|кирим)$/i],
+  ["chiqim", /^(chiqim|расход|rasxod|чиқим|чиким)$/i],
+  ["qoldiq", /^(qoldiq|остаток|сальдо|saldo|қолдиқ|колдик)$/i],
+];
+const dayKind = (v: unknown): DayKind | null => { const s = str(v).toLowerCase(); return DAY_KIND.find(([, re]) => re.test(s))?.[0] ?? null; };
+const PARTY_HDR = /^(nomi|номи|наимен|mijoz|мижоз|клиент|xaridor|ta'minotchi|taminotchi|yetkazuvchi|поставщик|kontragent|контрагент|name)/i;
+const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
+
+/**
+ * Kunlik qarz jadvali: qator — mijoz (yetkazuvchi), har sana ostida «Kirim · Chiqim · Qoldiq» ustunlari
+ * (sana katagi uch ustunga birlashtirilgan). Oddiy ro'yxatga yoyadi: Nomi · Sana · Kirim · Chiqim · Qoldiq.
+ * Har nom uchun birinchi va oxirgi kun hamda harakat bo'lgan (qoldiq o'zgargan) kunlar olinadi — o'zgarmagan
+ * kunlar takror qator bermaydi. Bugundan keyingi sanalar tashlanadi (`future` da qaytadi).
+ * Bunday jadval bo'lmasa — null (fayl oddiy ro'yxat sifatida o'qiladi).
+ */
+export function unpivotDayGroups(aoa: unknown[][], today = new Date()): { aoa: unknown[][]; parties: number; days: number; future: string[] } | null {
+  // «Kirim / Chiqim / Qoldiq» sarlavhalari qatori (kamida ikkitasi, Qoldiq albatta)
+  const sub = aoa.slice(0, 15).findIndex((r) => { const k = (r ?? []).map(dayKind); return k.filter(Boolean).length >= 2 && k.includes("qoldiq"); });
+  if (sub < 1) return null;
+  // Sanalar shu qatordan yuqorida — sanaga o'xshash kataklari eng ko'p qator
+  let dateRow = -1, hits = 0;
+  for (let i = sub - 1; i >= Math.max(0, sub - 4); i--) {
+    const n = (aoa[i] ?? []).filter((c) => parseDateCell(c, today) !== "").length;
+    if (n > hits) { hits = n; dateRow = i; }
+  }
+  if (dateRow < 0) return null;
+  const width = maxLen(aoa.slice(dateRow, sub + 1));
+  // Nom ustuni: sarlavhasi tanish («Nomi», «Mijoz»…) yoki kataklari asosan matn bo'lgan birinchi ustun
+  let nameCol = -1;
+  for (let i = 0; i < width && nameCol < 0; i++) if ([aoa[dateRow]?.[i], aoa[sub]?.[i]].some((c) => PARTY_HDR.test(str(c)))) nameCol = i;
+  if (nameCol < 0) {
+    const body = aoa.slice(sub + 1, sub + 40);
+    for (let i = 0; i < width && nameCol < 0; i++) {
+      const filled = body.filter((r) => str(r?.[i]) !== "");
+      if (filled.length >= 2 && filled.filter((r) => !isNum(r[i])).length / filled.length > 0.7) nameCol = i;
+    }
+  }
+  if (nameCol < 0) return null;
+  // Har sana guruhi: sana katagi guruhning birinchi ustunida, qolganlari birlashtirilgan (bo'sh)
+  const todayIso = `${today.getFullYear()}-${p2(today.getMonth() + 1)}-${p2(today.getDate())}`;
+  const groups = new Map<string, Partial<Record<DayKind, number>>>();
+  const future = new Set<string>();
+  let cur = "";
+  for (let c = 0; c < width; c++) {
+    const d = parseDateCell(aoa[dateRow]?.[c], today);
+    if (d) cur = d;
+    const k = dayKind(aoa[sub]?.[c]);
+    if (!k || !cur) continue;
+    if (cur > todayIso) { future.add(cur); continue; }
+    const g = groups.get(cur) ?? {};
+    if (g[k] == null) g[k] = c;
+    groups.set(cur, g);
+  }
+  const days = [...groups.entries()].filter(([, g]) => g.qoldiq != null).sort(([a], [b]) => a.localeCompare(b));
+  if (!days.length) return null;
+
+  const out: unknown[][] = [["Nomi", "Sana", "Kirim", "Chiqim", "Qoldiq"]];
+  let parties = 0;
+  const val = (row: unknown[], c: number | undefined) => { if (c == null || str(row[c]) === "") return ""; const n = num(row[c]); return Number.isFinite(n) ? r6(n) : str(row[c]); };
+  for (let r = sub + 1; r < aoa.length; r++) {
+    const row = aoa[r] ?? [];
+    const name = str(row[nameCol]).replace(/\s+/g, " ");
+    if (!name || DEBT_SKIP_ROW.test(name)) continue;
+    const filled = days.filter(([, g]) => str(row[g.qoldiq!]) !== "");
+    if (!filled.length) continue;
+    parties++;
+    let prev: number | null = null;
+    filled.forEach(([iso, g], i) => {
+      const q = val(row, g.qoldiq), ki = val(row, g.kirim), ch = val(row, g.chiqim);
+      const moved = [ki, ch].some((v) => typeof v === "number" && v !== 0);
+      const changed = typeof q !== "number" || prev == null || Math.abs(q - prev) > 1e-6;
+      if (i === 0 || i === filled.length - 1 || moved || changed) out.push([name, iso, ki, ch, q]);
+      prev = typeof q === "number" ? q : null;
+    });
+  }
+  return { aoa: out, parties, days: days.length, future: [...future].sort() };
+}
+
 /**
  * Excel katagidan sana. Uch xil ko'rinish tushunadi:
  *  - Excel seriya raqami (46023) — `raw: true` bilan o'qilganda sanalar shunday keladi;

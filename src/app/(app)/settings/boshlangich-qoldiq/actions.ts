@@ -6,7 +6,7 @@ import { requireAction, requireModuleWrite, requireSession } from "@/lib/auth";
 import { AccessDenied } from "@/lib/access-denied";
 import { parseForm, zOpt, zStr, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, reduceOpening, reverseSupplierOpeningPayment, updateOpening } from "@/lib/opening-balances";
-import { importOpenings, type OpeningRow } from "@/lib/import-openings";
+import { importDebtBalances, importOpenings, type OpeningRow } from "@/lib/import-openings";
 import type { OpeningKind } from "@/generated/prisma";
 
 /**
@@ -78,30 +78,62 @@ export async function createOpeningAction(_prev: ActionState, fd: FormData): Pro
 const importSchema = z.object({
   rows: z.string(),
   date: zStr("Qaysi sana holatiga — sanani kiriting").refine(validDate, "Sana noto'g'ri"),
-  createMissing: z.string().optional().transform((v) => v === "on"),
   warehouseId: zOpt,
 });
 
+/** Mijoz / yetkazuvchi qarzi: sana fayldagi «Sana» ustunidan (bo'lmasa formadan), birlik va ishora formada tanlanadi. */
+const debtImportSchema = z.object({
+  rows: z.string(),
+  date: zOpt.refine((v) => v == null || validDate(v), "Sana noto'g'ri"),
+  createMissing: z.string().optional().transform((v) => v === "on"),
+  unit: z.enum(["1", "1000", "1000000"]).optional().transform((v) => Number(v ?? "1")),
+  sign: zSign,
+});
+
+const list = (l: string[], n = 5) => `${l.slice(0, n).join(", ")}${l.length > n ? "…" : ""}`;
+const dm = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+
 export async function importOpeningsAction(kind: OpeningKind, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await writer();
-  const r = parseForm(importSchema, fd);
+  const debt = kind === "CUSTOMER" || kind === "SUPPLIER";
+  const r = debt ? parseForm(debtImportSchema, fd) : parseForm(importSchema, fd);
   if ("error" in r) return { error: r.error };
   let rows: OpeningRow[];
   try { rows = JSON.parse(r.data.rows); } catch { return { error: "Excel ma'lumotlari o'qilmadi" }; }
   if (!Array.isArray(rows) || !rows.length) return { error: "Faylda qator yo'q" };
+  if (debt) {
+    const d = r.data as z.infer<typeof debtImportSchema>;
+    let res;
+    try {
+      // sign: −1 — «Exceldagi minus — qarz» (tizimda qarz musbat)
+      res = await importDebtBalances(kind, rows, { date: d.date, createMissing: d.createMissing, scale: d.unit, flip: d.sign === -1 }, s.userId);
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+    refresh();
+    const who = kind === "CUSTOMER" ? "mijoz" : "yetkazuvchi";
+    return {
+      ok: true,
+      note: [
+        `${res.parties} ta ${who}: ${res.created} ta yozuv qo'shildi${res.updated ? `, ${res.updated} tasi yangilandi` : ""}${res.removed ? `, ${res.removed} tasi olib tashlandi` : ""}${res.same ? `, ${res.same} tasi o'zgarmadi` : ""}`,
+        res.createdEntities.length ? `bazada yo'q ${res.createdEntities.length} ta yangi karta ochildi: ${list(res.createdEntities)}` : "",
+        res.noDebt.length ? `qarzi yo'q ${res.noDebt.length} ta nom ochilmadi: ${list(res.noDebt)}` : "",
+        res.future.length ? `kelajak sana o'tkazib yuborildi: ${res.future.map(dm).join(", ")}` : "",
+      ].filter(Boolean).join(" · "),
+    };
+  }
+  const d = r.data as z.infer<typeof importSchema>;
   let res;
   try {
-    res = await importOpenings(kind, rows, { date: new Date(r.data.date), createMissing: r.data.createMissing, warehouseId: r.data.warehouseId }, s.userId);
+    res = await importOpenings(kind, rows, { date: new Date(d.date), warehouseId: d.warehouseId }, s.userId);
   } catch (e) {
     return { error: (e as Error).message };
   }
   refresh();
-  const list = (l: string[], n = 5) => `${l.slice(0, n).join(", ")}${l.length > n ? "…" : ""}`;
   return {
     ok: true,
     note: [
       `${res.created} ta boshlang'ich qoldiq yozildi`,
-      res.createdEntities.length ? `bazada yo'q ${res.createdEntities.length} ta yangi karta ochildi: ${list(res.createdEntities)}` : "",
       res.skipped.length ? `${res.skipped.length} tasiga qoldiq oldin kiritilgan — o'tkazib yuborildi (${list(res.skipped)})` : "",
     ].filter(Boolean).join(" · "),
   };

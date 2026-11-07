@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as XLSX from "xlsx";
-import { guessColumn, headerRowIndex, matchKey, str, trimEmptyRows, type ImportField } from "../../src/lib/excel";
+import { guessColumn, headerRowIndex, matchKey, str, trimEmptyRows, unpivotDayGroups, type ImportField } from "../../src/lib/excel";
 import { PARTY_FIELDS } from "../../src/lib/party-fields";
 // @ts-expect-error — .mjs yordamchilari (tipsiz)
 import { Client, fd, check, eq2, summary } from "./client.mjs";
@@ -40,6 +40,14 @@ const OPEN_FIELDS: Record<string, ImportField[]> = {
     { key: "inn", label: "INN", synonyms: ["инн", "inn", "стир"] },
     { key: "amount", label: "Summa", synonyms: ["qarz", "долг", "сальдо", "summa", "сумма"] },
     { key: "note", label: "Izoh", synonyms: ["izoh", "примеч"] },
+  ],
+  // Mijoz qarzi sana-sana (kunlik jadval yoyilgach): Nomi · Sana · Kirim · Chiqim · Qoldiq
+  DEBT: [
+    { key: "name", label: "Nomi", synonyms: ["mijoz", "nomi", "name"] },
+    { key: "date", label: "Sana", synonyms: ["sana", "дата"] },
+    { key: "amount", label: "Qoldiq", synonyms: ["qoldiq", "остаток", "summa"] },
+    { key: "kirim", label: "Kirim", synonyms: ["kirim"] },
+    { key: "chiqim", label: "Chiqim", synonyms: ["chiqim"] },
   ],
   CASH: [
     { key: "name", label: "Hisob", synonyms: ["hisob", "kassa", "касса", "bank", "nomi"] },
@@ -130,17 +138,78 @@ r = await importOpen("CUSTOMER", xlsxRows("qoldiq-mijoz", partyHeader, [
   [custName(2), "", "-300 000", "avans"],
   [`Бозорда йўқ ${T}`, "", "300000", ""],
 ], OPEN_FIELDS.PARTY), { createMissing: "on" });
-check("3.2 mijoz qoldig'i: 3 ta yozildi, yangi karta ochildi", /3 ta boshlang'ich qoldiq/.test(r.result?.note ?? "") && /1 ta yangi karta/.test(r.result?.note ?? ""), r.result);
+check("3.2 mijoz qoldig'i: 3 ta yozildi, yangi karta ochildi", /3 ta mijoz: 3 ta yozuv qo'shildi/.test(r.result?.note ?? "") && /1 ta yangi karta/.test(r.result?.note ?? ""), r.result);
 const inv1 = q1(`select i.amount, i.status, i."isOpening" from "OpeningBalance" o join "Invoice" i on i.id=o."invoiceId" join "Customer" c on c.id=o."customerId" where c.inn=${lit(inn(1))} and o."cancelledAt" is null`);
 check("3.3 qarz schyoti 1 250 000,50 OPEN; avans PAID", inv1 && eq2(inv1.amount, 1250000.5) && inv1.status === "OPEN" && inv1.isOpening, inv1);
-r = await importOpen("CUSTOMER", xlsxRows("qoldiq-mijoz-takror", partyHeader, [[custName(1), inn(1), "999", ""]], OPEN_FIELDS.PARTY));
-check("3.4 takror import — o'tkazib yuborildi (ikki marta yozilmadi)", /0 ta boshlang'ich/.test(r.result?.note ?? "") && /oldin kiritilgan/.test(r.result?.note ?? ""), r.result);
+r = await importOpen("CUSTOMER", xlsxRows("qoldiq-mijoz-takror", partyHeader, [[custName(1), inn(1), "1 250 000,50", ""]], OPEN_FIELDS.PARTY));
+check("3.4 takror import — o'zgarmadi (ikki marta yozilmadi)", /0 ta yozuv qo'shildi, 1 tasi o'zgarmadi/.test(r.result?.note ?? ""), r.result);
+
+// Sana-sana: kecha 1 000 000, bugun 1 300 000 → kechaga yangi yozuv, bugungisi farqqa (300 000) tushadi
+const c1 = q1(`select id from "Customer" where inn=${lit(inn(1))}`).id;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const localIso = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const dayAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
+// Bugun — formadagi sana bilan bir xil (UTC kuni; tunda Toshkentdan bir kun orqada bo'lishi mumkin — kelajak bo'lmaydi)
+const tIso = today, yIso = (() => { const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); })();
+const custEntries = (id: string) => q(`select to_char(date, 'YYYY-MM-DD') d, amount from "OpeningBalance" where "customerId"=${lit(id)} and "cancelledAt" is null order by date`);
+const custBal = (id: string) => Number(q1(`select coalesce((select sum(amount) from "Invoice" where "customerId"=${lit(id)} and status<>'CANCELLED'),0) - coalesce((select sum(amount) from "Payment" where "customerId"=${lit(id)}),0) b`).b);
+const sanaHeader = ["Контрагент", "ИНН", "Sana", "Сумма"];
+r = await importOpen("CUSTOMER", xlsxRows("qoldiq-mijoz-sana", sanaHeader, [[custName(1), inn(1), yIso.split("-").reverse().join("."), "1 000 000"], [custName(1), inn(1), tIso, "1 300 000"]], [...OPEN_FIELDS.PARTY, { key: "date", label: "Sana", synonyms: ["sana"] }]), { date: "" });
+let ce = custEntries(c1);
+check("3.4a «Sana» ustuni: kechaga 1 000 000 qo'shildi, bugungi yozuv 300 000 ga tenglandi (jami 1 300 000)",
+  /1 ta yozuv qo'shildi, 1 tasi yangilandi/.test(r.result?.note ?? "") && ce.length === 2 && ce[0].d === yIso && eq2(ce[0].amount, 1000000) && eq2(ce[1].amount, 300000) && eq2(custBal(c1), 1300000), { res: r.result, ce });
+// Tizimdagi boshqa hujjat (to'lov) hisobga olinadi: bugun 200 000 to'lov bor — qarz baribir Exceldagi 1 300 000 bo'ladi
+const cashAcc = q1(`select id from "CashAccount" where "isActive" and type='CASH' order by name limit 1`).id;
+r = await dir.action("payments/actions#createPayment", [undefined, fd({ customerId: c1, cashAccountId: cashAcc, amount: "200000", date: tIso })], "/payments");
+check("3.4b mijozdan 200 000 to'lov yozildi", r.result?.ok === true, r.result);
+r = await importOpen("CUSTOMER", xlsxRows("qoldiq-mijoz-sana2", sanaHeader, [[custName(1), inn(1), yIso, "1 000 000"], [custName(1), inn(1), tIso, "1 300 000"]], [...OPEN_FIELDS.PARTY, { key: "date", label: "Sana", synonyms: ["sana"] }]), { date: "" });
+check("3.4c qayta yuklash: kechagisi o'zgarmadi, bugungisi to'lov hisobiga 500 000 bo'ldi → qarz 1 300 000", /1 tasi yangilandi, 1 tasi o'zgarmadi/.test(r.result?.note ?? "") && eq2(custBal(c1), 1300000), { res: r.result, ce: custEntries(c1), bal: custBal(c1) });
+
+// Kunlik jadval (sana ostida Kirim · Chiqim · Qoldiq, mln so'm, minus — qarz): brauzerdagidek yoyiladi
+const serial = (d: Date) => Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(1899, 11, 30)) / 864e5);
+const [d1, d2, d3] = [dayAgo(3), dayAgo(2), dayAgo(1)];
+const kunName = `QA Kunlik mijoz ${T}`, zeroName = `QA Nol mijoz ${T}`;
+const grid = [
+  ["№", "Nomi", serial(d1), "", "", serial(d2), "", "", serial(d3), "", "", serial(dayAgo(-1)), "", ""],
+  ["", "", "Kirim", "Chiqim", "Qoldiq", "Kirim", "Chiqim", "Qoldiq", "Kirim", "Chiqim", "Qoldiq", "Kirim", "Chiqim", "Qoldiq"],
+  [1, kunName, "", 0, -1.5, "", 0.5, -2, 2, 0, 0, "", 0, 0],
+  [2, zeroName, "", 0, 0, "", 0, 0, "", 0, 0, "", 0, 0],
+  ["", "Jami", "", 0, -1.5, "", 0.5, -2, 2, 0, 0, "", 0, 0],
+];
+const gfile = path.join(DIR, "kunlik.xlsx");
+const gwb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(gwb, XLSX.utils.aoa_to_sheet([[], ...grid]), "Varaq1");
+fs.writeFileSync(gfile, XLSX.write(gwb, { type: "buffer", bookType: "xlsx" }));
+const gaoa = trimEmptyRows(XLSX.utils.sheet_to_json<unknown[]>(XLSX.read(fs.readFileSync(gfile), { type: "buffer", raw: true }).Sheets.Varaq1, { header: 1, defval: "", raw: true }));
+const flat = unpivotDayGroups(gaoa);
+check("3.4d kunlik jadval yoyildi: 2 nom, 3 kun (ertangi sana o'qilmadi), Jami chetlandi", !!flat && flat.parties === 2 && flat.days === 3 && flat.future.length === 1 && !flat.aoa.some((x) => x[0] === "Jami"), flat);
+const toRows = (aoa: unknown[][]) => { const hdr = aoa[0].map(String); const taken = new Set<string>(); const map: Record<string, string> = {}; for (const f of OPEN_FIELDS.DEBT) { const g = guessColumn(hdr, f.synonyms, taken); if (g) { map[f.key] = g; taken.add(g); } } return aoa.slice(1).map((r) => Object.fromEntries(OPEN_FIELDS.DEBT.map((f) => [f.key, map[f.key] ? r[hdr.indexOf(map[f.key])] : ""]))); };
+r = await importOpen("CUSTOMER", toRows(flat!.aoa), { date: "", unit: "1", sign: "-1", createMissing: "on" });
+check("3.4e birlik «so'm» qolgan bo'lsa (hamma summa 2 so'mdan kichik) — xato, hech narsa yozilmadi", /juda kichik/.test(r.result?.error ?? "") && !q1(`select id from "Customer" where name=${lit(kunName)}`), r.result);
+r = await importOpen("CUSTOMER", xlsxRows("qoldiq-mln-som", partyHeader, [[custName(1), inn(1), "45 000 000", ""]], OPEN_FIELDS.PARTY), { unit: "1000000" });
+check("3.4e2 so'mdagi fayl «mln so'm» bilan yuklansa (45 trln) — xato", /juda katta/.test(r.result?.error ?? ""), r.result);
+r = await importOpen("CUSTOMER", toRows(flat!.aoa), { date: "", unit: "1000000", sign: "-1", createMissing: "on" });
+const kun = q1(`select id from "Customer" where name=${lit(kunName)}`);
+ce = kun ? custEntries(kun.id) : [];
+check("3.4f kunlik jadval: yangi mijoz ochildi, 3 kunga +1 500 000 / +500 000 / −2 000 000, qarzi 0; nol mijoz ochilmadi",
+  /1 ta mijoz: 3 ta yozuv qo'shildi/.test(r.result?.note ?? "") && /qarzi yo'q 1 ta nom ochilmadi/.test(r.result?.note ?? "") && ce.length === 3
+  && eq2(ce[0].amount, 1500000) && eq2(ce[1].amount, 500000) && eq2(ce[2].amount, -2000000) && eq2(custBal(kun.id), 0) && !q1(`select id from "Customer" where name=${lit(zeroName)}`), { res: r.result, ce });
+check("3.4g izohda Exceldagi kun oxiri qoldig'i va kirim/chiqim", /kun oxiri qarz 2 000 000 so'm · chiqim 500 000 so'm/.test(q1(`select note from "OpeningBalance" where "customerId"=${lit(kun?.id ?? "")} and "cancelledAt" is null and to_char(date,'YYYY-MM-DD')=${lit(localIso(d2))}`)?.note ?? ""), null);
+r = await importOpen("CUSTOMER", toRows(flat!.aoa), { date: "", unit: "1000000", sign: "-1", createMissing: "on" });
+check("3.4h kunlik jadval qayta yuklandi — dublikat yo'q (3 tasi o'zgarmadi)", /0 ta yozuv qo'shildi, 3 tasi o'zgarmadi/.test(r.result?.note ?? "") && custEntries(kun.id).length === 3, r.result);
+// Fayl oralig'idagi eski yozuv (qo'lda 700 000, faylda bu kun yo'q — «harakatsiz») qayta hisoblanadi: oraliq kun ham Exceldagidek
+const c3 = q1(`select id, name from "Customer" where inn=${lit(inn(5))}`);
+r = await buh.action("settings/boshlangich-qoldiq/actions#createOpeningAction", [undefined, fd({ kind: "CUSTOMER", entityId: c3.id, date: localIso(d2), sign: "1", amount: "700000" })], "/settings/boshlangich-qoldiq");
+check("3.4i qo'lda kiritish: bir mijozga boshqa sanaga ham yozuv mumkin", r.result?.ok === true, r.result);
+r = await importOpen("CUSTOMER", xlsxRows("qoldiq-oraliq", sanaHeader, [[c3.name, inn(5), localIso(d1), "1 000 000"], [c3.name, inn(5), localIso(d3), "1 000 000"]], [...OPEN_FIELDS.PARTY, { key: "date", label: "Sana", synonyms: ["sana"] }]), { date: "" });
+ce = custEntries(c3.id);
+check("3.4j oraliqdagi eski yozuv olib tashlandi: faqat birinchi kunga 1 000 000, qarz 1 000 000",
+  /1 ta yozuv qo'shildi, 1 tasi olib tashlandi, 1 tasi o'zgarmadi/.test(r.result?.note ?? "") && ce.length === 1 && ce[0].d === localIso(d1) && eq2(custBal(c3.id), 1000000), { res: r.result, ce });
 
 const supName = q1(`select name from "Supplier" where name like ${lit(`QA Yetkazuvchi ${T} №1`)}`).name;
 r = await importOpen("SUPPLIER", xlsxRows("qoldiq-yetk", partyHeader, [[supName, "", "12 000 000", ""], [`ООО «Янги» ${T}`, "", "-1 500 000,25", ""], ["", "", "0", ""]], OPEN_FIELDS.PARTY), { createMissing: "on" });
 check("3.5 yetkazuvchi qoldig'i: bo'sh qator (nom yo'q, 0) — xato", /3-qator/.test(r.result?.error ?? ""), r.result);
 r = await importOpen("SUPPLIER", xlsxRows("qoldiq-yetk2", partyHeader, [[supName, "", "12 000 000", ""], [`ООО «Янги» ${T}`, "", "-1 500 000,25", ""]], OPEN_FIELDS.PARTY), { createMissing: "on" });
-check("3.6 yetkazuvchi qoldig'i: 2 ta yozildi (manfiy — avansimiz)", /2 ta boshlang'ich/.test(r.result?.note ?? ""), r.result);
+check("3.6 yetkazuvchi qoldig'i: 2 ta yozildi (manfiy — avansimiz)", /2 ta yetkazuvchi: 2 ta yozuv qo'shildi/.test(r.result?.note ?? "") && /1 ta yangi karta/.test(r.result?.note ?? ""), r.result);
 
 const accs = q(`select id, name, type from "CashAccount" where "isActive" and name not like 'QA %' order by name`);
 const cashName = accs.find((a: { type: string }) => a.type === "CASH").name, bankName = accs.find((a: { type: string }) => a.type === "BANK").name;

@@ -665,7 +665,8 @@ export async function moliyaAction(user: MobileUser, action: string, id: string,
     }
     case "supplier.opening.pay": {
       // Kartochka id'si — qoldiq (Boshlang'ich qoldiqlar) yoki yetkazuvchi (yetkazuvchi kartasi: uning faol qoldig'i)
-      const o = await db.openingBalance.findFirst({ where: { kind: "SUPPLIER", cancelledAt: null, OR: [{ id }, { supplierId: id }] }, select: { id: true } });
+      // Yetkazuvchida bir necha sanaga yozuv bo'lishi mumkin — eng eskisidan to'lanadi
+      const o = await db.openingBalance.findFirst({ where: { kind: "SUPPLIER", cancelledAt: null, OR: [{ id }, { supplierId: id }] }, orderBy: { date: "asc" }, select: { id: true } });
       if (!o) fail("Boshlang'ich qoldiq topilmadi", 404);
       const amount = numOrNull(payload, "amount");
       if (amount == null || !Number.isFinite(amount)) fail("Summani kiriting");

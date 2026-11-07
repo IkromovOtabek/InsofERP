@@ -31,13 +31,19 @@ const IMPORT_FIELDS: Record<OpeningKind, ImportField[]> = {
   CUSTOMER: [
     { key: "name", label: "Mijoz", required: true, synonyms: ["mijoz", "контрагент", "клиент", "покупател", "nomi", "наимен", "name"] },
     { key: "inn", label: "INN", hint: "bo'lsa shu bo'yicha topiladi", synonyms: ["инн", "inn", "стир", "stir"] },
-    { key: "amount", label: "Summa", required: true, hint: "+ qarz, − avans", synonyms: ["qarz", "долг", "сальдо", "остаток", "qoldiq", "summa", "сумма", "debet", "дебет"] },
+    { key: "date", label: "Sana", hint: "bo'lmasa — formadagi sana", synonyms: ["sana", "дата", "date", "kun"] },
+    { key: "amount", label: "Qoldiq", required: true, hint: "shu kun oxiridagi qarz / avans", synonyms: ["qoldiq", "остаток", "сальдо", "qarz", "долг", "summa", "сумма", "debet", "дебет"] },
+    { key: "kirim", label: "Kirim", hint: "izohga yoziladi", synonyms: ["kirim", "приход"] },
+    { key: "chiqim", label: "Chiqim", hint: "izohga yoziladi", synonyms: ["chiqim", "расход"] },
     { key: "note", label: "Izoh", synonyms: ["izoh", "примеч", "комментар", "note"] },
   ],
   SUPPLIER: [
-    { key: "name", label: "Yetkazuvchi", required: true, synonyms: ["yetkazuvchi", "поставщик", "контрагент", "nomi", "наимен", "name"] },
+    { key: "name", label: "Yetkazuvchi", required: true, synonyms: ["yetkazuvchi", "поставщик", "контрагент", "ta'minotchi", "taminotchi", "nomi", "наимен", "name"] },
     { key: "inn", label: "INN", hint: "bo'lsa shu bo'yicha topiladi", synonyms: ["инн", "inn", "стир", "stir"] },
-    { key: "amount", label: "Summa", required: true, hint: "+ qarzimiz, − avansimiz", synonyms: ["qarz", "долг", "сальдо", "остаток", "qoldiq", "summa", "сумма", "kredit", "кредит"] },
+    { key: "date", label: "Sana", hint: "bo'lmasa — formadagi sana", synonyms: ["sana", "дата", "date", "kun"] },
+    { key: "amount", label: "Qoldiq", required: true, hint: "shu kun oxiridagi qarz / avans", synonyms: ["qoldiq", "остаток", "сальдо", "qarz", "долг", "summa", "сумма", "kredit", "кредит"] },
+    { key: "kirim", label: "Kirim", hint: "izohga yoziladi", synonyms: ["kirim", "приход"] },
+    { key: "chiqim", label: "Chiqim", hint: "izohga yoziladi", synonyms: ["chiqim", "расход"] },
     { key: "note", label: "Izoh", synonyms: ["izoh", "примеч", "комментар", "note"] },
   ],
   CASH: [
@@ -55,8 +61,8 @@ const IMPORT_FIELDS: Record<OpeningKind, ImportField[]> = {
 };
 
 const EXAMPLE: Record<OpeningKind, Record<string, string | number>> = {
-  CUSTOMER: { name: "\"QURILISH INVEST\" MCHJ", inn: "305123456", amount: 45000000, note: "1C akt sverka 30.09" },
-  SUPPLIER: { name: "\"BODOMZOR SEMENT\" MCHJ", inn: "301987654", amount: 120000000, note: "" },
+  CUSTOMER: { name: "\"QURILISH INVEST\" MCHJ", inn: "305123456", date: "01.11.2026", amount: -45.5, kirim: "", chiqim: 6.888, note: "" },
+  SUPPLIER: { name: "\"BODOMZOR SEMENT\" MCHJ", inn: "301987654", date: "01.11.2026", amount: 120, kirim: 20, chiqim: "", note: "" },
   CASH: { name: "Asosiy kassa", amount: 15000000, note: "" },
   STOCK: { name: "M300", warehouse: "Asosiy sklad", qty: 120, unitCost: 650000, note: "" },
 };
@@ -91,7 +97,7 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
   const [rows, used, warehouses, accounts] = await Promise.all([
     db.openingBalance.findMany({
       where: { kind, ...(showCancelled ? {} : { cancelledAt: null }), ...(term ? searchWhere(kind, term) : {}) },
-      orderBy: [{ cancelledAt: "asc" }, { createdAt: "desc" }],
+      orderBy: [{ cancelledAt: "asc" }, { date: "desc" }, { createdAt: "desc" }],
       take: 1000,
       include: {
         customer: { select: { id: true, name: true, inn: true } }, supplier: { select: { id: true, name: true, inn: true } },
@@ -100,18 +106,19 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
       },
     }),
     // Kartalar va tanlov ro'yxati qidiruvdan qat'i nazar — barcha faol qoldiqlar bo'yicha
-    db.openingBalance.findMany({ where: { kind, cancelledAt: null }, orderBy: { createdAt: "desc" }, select: { amount: true, date: true, customerId: true, supplierId: true, cashAccountId: true } }),
+    db.openingBalance.findMany({ where: { kind, cancelledAt: null }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], select: { amount: true, date: true, customerId: true, supplierId: true, cashAccountId: true } }),
     db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, type: true } }),
   ]);
   const usedIds = new Set(used.map((r) => r.customerId ?? r.supplierId ?? r.cashAccountId ?? ""));
 
-  // Tanlov ro'yxati: qoldig'i hali kiritilmagan obyektlar (STOCK — mahsulot+sklad juftligi, shuning uchun hammasi)
+  // Tanlov ro'yxati: kassada — qoldig'i hali kiritilmagan hisoblar; mijoz/yetkazuvchida — hammasi (har sanaga bitta yozuv,
+  // takror sanani server rad etadi); STOCK — mahsulot+sklad juftligi, shuning uchun hammasi
   const entities = !canEdit ? []
     : kind === "CUSTOMER"
-      ? (await db.customer.findMany({ where: { isInternal: false, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, inn: true } })).filter((c) => !usedIds.has(c.id)).map((c) => ({ id: c.id, label: c.inn ? `${c.name} · ${c.inn}` : c.name }))
+      ? (await db.customer.findMany({ where: { isInternal: false, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, inn: true } })).map((c) => ({ id: c.id, label: c.inn ? `${c.name} · ${c.inn}` : c.name }))
       : kind === "SUPPLIER"
-        ? (await db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, inn: true } })).filter((c) => !usedIds.has(c.id)).map((c) => ({ id: c.id, label: c.inn ? `${c.name} · ${c.inn}` : c.name }))
+        ? (await db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, inn: true } })).map((c) => ({ id: c.id, label: c.inn ? `${c.name} · ${c.inn}` : c.name }))
         : kind === "CASH"
           ? accounts.filter((a) => !usedIds.has(a.id)).map((a) => ({ id: a.id, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"})` }))
           : (await db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true } })).map((p) => ({ id: p.id, label: p.name }));
@@ -120,8 +127,11 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
   // Yetkazuvchi qoldig'iga qilingan to'lovlar — xato yozilganini direktor storno qiladi
   const supPays = kind === "SUPPLIER" ? await supplierOpeningPayments(rows.map((r) => r.id)) : new Map();
   const total = used.reduce((x, r) => x + Number(r.amount), 0);
-  const plus = used.filter((r) => Number(r.amount) > 0).reduce((x, r) => x + Number(r.amount), 0);
-  const minus = total - plus;
+  // Qarz / avans — obyekt bo'yicha sof (mijozda bir necha sanaga yozuv bo'lishi mumkin: +qarz, −kamayish)
+  const net = new Map<string, number>();
+  for (const r of used) { const k = r.customerId ?? r.supplierId ?? r.cashAccountId ?? ""; net.set(k, (net.get(k) ?? 0) + Number(r.amount)); }
+  const plus = [...net.values()].filter((v) => v > 0).reduce((x, v) => x + v, 0);
+  const minus = [...net.values()].filter((v) => v < 0).reduce((x, v) => x + v, 0);
   const lastDate = used[0]?.date;
   const href = (o: { bekor?: boolean; q?: string }) => {
     const p = new URLSearchParams({ ...keep, ...(o.bekor ? { bekor: "1" } : {}), ...(o.q ? { q: o.q } : {}) }).toString();
@@ -135,39 +145,64 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
       {help && <Callout tone="info" title="Hisobotlarga qanday tushadi">{HELP[kind]}</Callout>}
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Kiritilgan yozuvlar" value={String(used.length)} icon={Icon} hint={lastDate ? `oxirgisi ${date(lastDate)} holatiga` : "hali yo'q"} href="#kiritilganlar" />
+        <StatCard label="Kiritilgan yozuvlar" value={String(used.length)} icon={Icon} hint={!lastDate ? "hali yo'q" : debtKind ? `${net.size} ta ${kind === "CUSTOMER" ? "mijoz" : "yetkazuvchi"} · oxirgi sana ${date(lastDate)}` : `oxirgisi ${date(lastDate)} holatiga`} href="#kiritilganlar" />
         <StatCard label={kind === "STOCK" ? "Ombor qiymati (tannarx)" : kind === "CASH" ? "Jami qoldiq" : kind === "CUSTOMER" ? "Mijozlar qarzi (+)" : "Qarzimiz (+)"} value={money(kind === "STOCK" || kind === "CASH" ? total : plus)} tone="info" href="#kiritilganlar" />
         {debtKind && <StatCard label={kind === "CUSTOMER" ? "Mijozlar avansi (−)" : "Bergan avansimiz (−)"} value={money(-minus)} tone={minus < 0 ? "warning" : "default"} href="#kiritilganlar" />}
       </div>
 
       {canEdit && <>
       <Card className="mt-6">
-        <CardHeader title="Excel orqali yuklash" description="Namunani yuklab oling, to'ldiring va qaytarib yuklang. Bitta qatorda xato bo'lsa ham hech narsa yozilmaydi; qoldig'i bor obyektlar o'tkazib yuboriladi (ularni ro'yxatdan tahrirlang)." />
+        <CardHeader title="Excel orqali yuklash" description={debtKind
+          ? "Kunlik jadval (har sana ostida Kirim · Chiqim · Qoldiq) yoki ro'yxat (Nomi · Sana · Qoldiq). Har sanadagi «Qoldiq» — shu kun oxiridagi qarz: tizim qarzni o'sha kunda Exceldagiga tenglaydi, farqi yozuv bo'lib tushadi. Fayl qayta yuklansa sanalar qayta hisoblanadi — ikki marta yozilmaydi. Bitta qatorda xato bo'lsa ham hech narsa yozilmaydi."
+          : "Namunani yuklab oling, to'ldiring va qaytarib yuklang. Bitta qatorda xato bo'lsa ham hech narsa yozilmaydi; qoldig'i bor obyektlar o'tkazib yuboriladi (ularni ro'yxatdan tahrirlang)."} />
         <ExcelImport
           action={importOpeningsAction.bind(null, kind)}
-          submitLabel="Qoldiqlarni yozish"
+          submitLabel={debtKind ? "Qarzlarni yozish" : "Qoldiqlarni yozish"}
           templateName={`boshlangich-qoldiq-${kind.toLowerCase()}`}
           example={EXAMPLE[kind]}
           fields={IMPORT_FIELDS[kind]}
+          dayGroups={debtKind}
         >
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Qaysi sana holatiga *" hint="tizimga o'tish sanasi — hamma qatorga"><Input name="date" type="date" defaultValue={isoDate(lastDate ?? new Date())} required /></Field>
-            {kind === "STOCK" && (
-              <Field label="Standart sklad" hint="«Sklad» ustuni bo'sh qatorlar uchun">
-                <Select name="warehouseId" defaultValue={warehouses[0]?.id ?? ""}>
-                  {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </Select>
-              </Field>
-            )}
-          </div>
-          {debtKind && (
-            <Checkbox name="createMissing" label={`Bazada yo'q ${kind === "CUSTOMER" ? "mijozlarni" : "yetkazuvchilarni"} nomi va INN bilan yangi karta qilib ochish (aks holda xato beriladi)`} />
+          {debtKind ? (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Summalar birligi" hint="Exceldagi raqam nimada">
+                  <Select name="unit" defaultValue="1000000">
+                    <option value="1000000">mln so&apos;m (131,06 → 131 060 000)</option>
+                    <option value="1000">ming so&apos;m</option>
+                    <option value="1">so&apos;m</option>
+                  </Select>
+                </Field>
+                <Field label="Exceldagi minus (−)" hint="qaysi tomon kimga qarz">
+                  <Select name="sign" defaultValue={kind === "CUSTOMER" ? "-1" : "1"}>
+                    {kind === "CUSTOMER" ? (
+                      <><option value="-1">mijoz bizga qarz (−131 = qarzi 131)</option><option value="1">mijoz avans bergan (+ — qarz)</option></>
+                    ) : (
+                      <><option value="1">biz avans berganmiz (+ — qarzimiz)</option><option value="-1">biz yetkazuvchiga qarzmiz</option></>
+                    )}
+                  </Select>
+                </Field>
+                <Field label="Sana" hint="faylda «Sana» bo'lmasa — hamma qatorga"><Input name="date" type="date" defaultValue={isoDate(new Date())} /></Field>
+              </div>
+              <Checkbox name="createMissing" defaultChecked label={`Bazada yo'q ${kind === "CUSTOMER" ? "mijozlarni" : "yetkazuvchilarni"} yangi karta qilib ochish (nomi va INN bilan; qarzi 0 bo'lsa ochilmaydi)`} />
+            </>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Qaysi sana holatiga *" hint="tizimga o'tish sanasi — hamma qatorga"><Input name="date" type="date" defaultValue={isoDate(lastDate ?? new Date())} required /></Field>
+              {kind === "STOCK" && (
+                <Field label="Standart sklad" hint="«Sklad» ustuni bo'sh qatorlar uchun">
+                  <Select name="warehouseId" defaultValue={warehouses[0]?.id ?? ""}>
+                    {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </Select>
+                </Field>
+              )}
+            </div>
           )}
         </ExcelImport>
       </Card>
 
       <Card className="mt-6">
-        <CardHeader title="Qo'lda kiritish" description="Bitta obyektga bitta boshlang'ich qoldiq — kiritilganlari tanlov ro'yxatida chiqmaydi" />
+        <CardHeader title="Qo'lda kiritish" description={debtKind ? "Bitta sanaga bitta yozuv: summa — shu kungi qarz (+) yoki avans (−) qo'shimchasi" : "Bitta obyektga bitta boshlang'ich qoldiq — kiritilganlari tanlov ro'yxatida chiqmaydi"} />
         <OpeningCreateForm kind={kind} entities={entities} warehouses={warehouses.map((w) => ({ id: w.id, label: w.name }))} defaultDate={isoDate(lastDate ?? new Date())} />
       </Card>
       </>}

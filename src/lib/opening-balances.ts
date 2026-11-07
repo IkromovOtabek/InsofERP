@@ -23,7 +23,8 @@ import type { OpeningKind, Prisma } from "@/generated/prisma";
  *   CASH     → `CashTransaction` type = OPENING: hisob qoldig'iga kiradi, kirim/chiqim hisobotlariga emas.
  *   STOCK    → `StockMove` ADJUSTMENT (refType = "OpeningBalance") tannarx bilan, sklad bo'yicha.
  *
- * Bitta obyektga bitta faol qoldiq: `activeKey` unique (bekor qilinganda bo'shaydi).
+ * Faol yozuv kaliti `activeKey` unique (bekor qilinganda bo'shaydi): kassa, mahsulot+skladga — bitta qoldiq;
+ * mijoz va yetkazuvchiga — har sanaga bitta yozuv (kunlik qarz jadvali Excel'dan sana-sana tushadi, `import-openings.ts`).
  * Kiritish, tahrir, kamaytirish va bekor qilish — direktor va buxgalteriya (`OPENING_WRITERS`, action'da tekshiriladi).
  */
 
@@ -59,14 +60,43 @@ export type OpeningInput = {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Faol yozuv kaliti: bitta obyektga (mijoz, hisob, mahsulot+sklad) bitta boshlang'ich qoldiq. */
-export function activeKeyOf(i: Pick<OpeningInput, "kind" | "customerId" | "supplierId" | "cashAccountId" | "productId" | "warehouseId">): string {
+type KeyPart = Pick<OpeningInput, "kind" | "customerId" | "supplierId" | "cashAccountId" | "productId" | "warehouseId">;
+
+/** Obyekt kaliti (mijoz, yetkazuvchi, hisob, mahsulot+sklad) — qulf shu bo'yicha; eski mijoz/yetkazuvchi yozuvlarining `activeKey` i ham shunday. */
+export function entityKeyOf(i: KeyPart): string {
   switch (i.kind) {
     case "CUSTOMER": return `CUSTOMER:${i.customerId}`;
     case "SUPPLIER": return `SUPPLIER:${i.supplierId}`;
     case "CASH": return `CASH:${i.cashAccountId}`;
     case "STOCK": return `STOCK:${i.productId}:${i.warehouseId}`;
   }
+}
+
+export const isDebtKind = (k: OpeningKind): k is "CUSTOMER" | "SUPPLIER" => k === "CUSTOMER" || k === "SUPPLIER";
+/** Yozuv sanasining kuni (UTC — formalar sanani UTC yarim tunda saqlaydi). */
+export const openingDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Faol yozuv kaliti: mijoz/yetkazuvchida obyekt + kun (har sanaga bitta yozuv), qolganlarida — obyektning o'zi. */
+export function activeKeyOf(i: KeyPart & { date?: Date }): string {
+  const k = entityKeyOf(i);
+  return isDebtKind(i.kind) && i.date ? `${k}:${openingDay(i.date)}` : k;
+}
+
+/** Obyekt qulfi — kiritish, tahrir, bekor va to'lov bir obyekt bo'yicha navbatda (`pg_advisory_xact_lock`, qayta olinsa ham bo'ladi). */
+export async function lockOpening(tx: Tx, i: KeyPart) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + entityKeyOf(i)}))`;
+}
+
+/** Shu mijoz/yetkazuvchining shu kundagi faol yozuvi (eski kalitli yozuvlar ham sanasi bo'yicha topiladi). */
+function sameDayDebt(tx: Tx, i: KeyPart & { date: Date }, exceptId?: string) {
+  const day = new Date(openingDay(i.date));
+  return tx.openingBalance.findFirst({
+    where: {
+      kind: i.kind, cancelledAt: null, ...(i.kind === "CUSTOMER" ? { customerId: i.customerId } : { supplierId: i.supplierId }),
+      date: { gte: day, lt: new Date(day.getTime() + 86_400_000) }, ...(exceptId ? { id: { not: exceptId } } : {}),
+    },
+    select: { amount: true, qty: true, date: true },
+  });
 }
 
 /** Mahsulotning shu skladdagi joriy qoldig'i (barcha harakatlar yig'indisi). */
@@ -96,11 +126,13 @@ function invoiceStatusFor(amount: number, paid: number): "OPEN" | "PARTIAL" | "P
  */
 export async function createOpeningTx(tx: Tx, input: OpeningInput, userId: string): Promise<{ id: string }> {
   const key = activeKeyOf(input);
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + key}))`;
-  const exists = await tx.openingBalance.findUnique({ where: { activeKey: key }, select: { amount: true, qty: true, date: true } });
+  await lockOpening(tx, input);
+  const exists = isDebtKind(input.kind) ? await sameDayDebt(tx, input) : await tx.openingBalance.findUnique({ where: { activeKey: key }, select: { amount: true, qty: true, date: true } });
   if (exists) {
     const what = input.kind === "STOCK" ? `${Number(exists.qty ?? 0)} birlik` : money(Number(exists.amount));
-    throw new OpeningError(`Bu obyektga boshlang'ich qoldiq allaqachon kiritilgan (${what}, ${exists.date.toLocaleDateString("ru-RU")} holatiga). O'zgartirish kerak bo'lsa — ro'yxatdan tahrirlang yoki kamaytiring`);
+    throw new OpeningError(isDebtKind(input.kind)
+      ? `Shu sanaga (${exists.date.toLocaleDateString("ru-RU")}) yozuv allaqachon kiritilgan (${what}). O'zgartirish kerak bo'lsa — ro'yxatdan tahrirlang yoki kamaytiring`
+      : `Bu obyektga boshlang'ich qoldiq allaqachon kiritilgan (${what}, ${exists.date.toLocaleDateString("ru-RU")} holatiga). O'zgartirish kerak bo'lsa — ro'yxatdan tahrirlang yoki kamaytiring`);
   }
   const note = input.note?.trim() || null;
   const base = { kind: input.kind, date: input.date, note, activeKey: key, createdById: userId };
@@ -185,15 +217,21 @@ export async function updateOpening(id: string, patchOf: OpeningPatch | ((o: Ope
 }
 
 /** `updateOpening` tranzaksiya ichida (xato — `OpeningError` otiladi). */
-async function updateOpeningTx(tx: Tx, id: string, patchOf: OpeningPatch | ((o: OpeningRecord) => OpeningPatch), userId: string): Promise<{ error?: string }> {
-  const head = await tx.openingBalance.findUnique({ where: { id }, select: { activeKey: true, cancelledAt: true } });
+export async function updateOpeningTx(tx: Tx, id: string, patchOf: OpeningPatch | ((o: OpeningRecord) => OpeningPatch), userId: string): Promise<{ error?: string }> {
+  const head = await tx.openingBalance.findUnique({ where: { id }, select: { kind: true, customerId: true, supplierId: true, cashAccountId: true, productId: true, warehouseId: true, cancelledAt: true } });
   if (!head || head.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki bekor qilingan");
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + head.activeKey}))`;
+  await lockOpening(tx, head);
   const o = await tx.openingBalance.findUniqueOrThrow({ where: { id } });
   if (o.cancelledAt) throw new OpeningError("Yozuv shu payt bekor qilindi");
   const patch = typeof patchOf === "function" ? patchOf(o) : patchOf;
   const note = patch.note?.trim() || null;
   let data: Prisma.OpeningBalanceUpdateInput = { date: patch.date, note };
+  if (isDebtKind(o.kind)) {
+    // Mijoz/yetkazuvchida kalit sanani ham o'z ichiga oladi: sana o'zgarsa — o'sha kunda boshqa yozuv bo'lmasin
+    const clash = await sameDayDebt(tx, { ...o, date: patch.date }, o.id);
+    if (clash) throw new OpeningError(`${clash.date.toLocaleDateString("ru-RU")} sanasiga shu ${o.kind === "CUSTOMER" ? "mijozning" : "yetkazuvchining"} boshqa yozuvi bor (${money(Number(clash.amount))}) — o'shani tahrirlang`);
+    data = { ...data, activeKey: activeKeyOf({ ...o, date: patch.date }) };
+  }
 
   switch (o.kind) {
     case "CUSTOMER": {
@@ -281,10 +319,13 @@ export async function cancelOpening(id: string, reason: string, userId: string):
 }
 
 /** `cancelOpening` tranzaksiya ichida (xato — `OpeningError` otiladi). */
-async function cancelOpeningTx(tx: Tx, id: string, reason: string, userId: string): Promise<{ error?: string }> {
-  const o = await tx.openingBalance.findUnique({ where: { id } });
-  if (!o || o.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki allaqachon bekor qilingan");
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
+export async function cancelOpeningTx(tx: Tx, id: string, reason: string, userId: string): Promise<{ error?: string }> {
+  const head = await tx.openingBalance.findUnique({ where: { id }, select: { kind: true, customerId: true, supplierId: true, cashAccountId: true, productId: true, warehouseId: true } });
+  if (!head) throw new OpeningError("Yozuv topilmadi yoki allaqachon bekor qilingan");
+  await lockOpening(tx, head);
+  // Qulfdan keyin qayta o'qiladi — shu payt boshqa so'rov bekor qilgan bo'lishi mumkin
+  const o = await tx.openingBalance.findUniqueOrThrow({ where: { id } });
+  if (o.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki allaqachon bekor qilingan");
   switch (o.kind) {
     case "CUSTOMER": {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${o.customerId!}))`; // to'lov bilan navbat
@@ -334,7 +375,7 @@ export async function setCashBalanceAt(cashAccountId: string, date: Date, balanc
   const key = activeKeyOf({ kind: "CASH", cashAccountId });
   return db.$transaction(async (tx) => {
     // Qoldiq qulfi, keyin hisob qulfi (`updateOpening` → `cashOutflowError` tartibi): hisob va yozish orasida yozuv qo'shilmasin
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + key}))`;
+    await lockOpening(tx, { kind: "CASH", cashAccountId });
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cash:" + cashAccountId}))`;
     const acc = await tx.cashAccount.findUnique({ where: { id: cashAccountId }, select: { isActive: true } });
     if (!acc?.isActive) throw new OpeningError("Kassa/hisob topilmadi");
@@ -398,7 +439,7 @@ export async function paySupplierOpening(id: string, cashAccountId: string, amou
   return db.$transaction(async (tx) => {
     const o = await tx.openingBalance.findUnique({ where: { id }, include: { supplier: { select: { name: true } } } });
     if (!o || o.kind !== "SUPPLIER" || o.cancelledAt) throw new OpeningError("Qoldiq topilmadi");
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
+    await lockOpening(tx, o);
     const acc = await tx.cashAccount.findFirst({ where: { id: cashAccountId, isActive: true }, select: { id: true } });
     if (!acc) throw new OpeningError("Kassa/hisob tanlanmagan");
     const left = Number(o.amount) - ((await supplierOpeningPaid(tx, [o.id])).get(o.id) ?? 0);
@@ -428,10 +469,10 @@ export async function reverseSupplierOpeningPayment(cashTxId: string, reason: st
   return db.$transaction(async (tx) => {
     const t = await tx.cashTransaction.findUnique({ where: { id: cashTxId } });
     if (!t || t.refType !== OPENING_REF || t.type !== "EXPENSE" || !t.refId) throw new OpeningError("To'lov topilmadi (allaqachon bekor qilingan bo'lishi mumkin)");
-    const o = await tx.openingBalance.findUnique({ where: { id: t.refId }, select: { kind: true, activeKey: true } });
+    const o = await tx.openingBalance.findUnique({ where: { id: t.refId }, select: { kind: true, supplierId: true } });
     if (!o || o.kind !== "SUPPLIER") throw new OpeningError("Bu yozuv yetkazuvchi qoldig'iga to'lov emas");
     // To'lov bilan navbat (`paySupplierOpening` ham shu qulfni oladi)
-    if (o.activeKey) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
+    await lockOpening(tx, o);
     const r = await tx.cashTransaction.deleteMany({ where: { id: t.id } });
     if (!r.count) throw new OpeningError("To'lov shu payt bekor qilindi");
     await audit(tx, userId, "DELETE", "CashTransaction", t.id, t, { reversed: true, by: "opening-supplier-payment", reason: why.slice(0, 300) });

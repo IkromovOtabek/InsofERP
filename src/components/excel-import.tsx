@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List, ArrowRightLeft } from "lucide-react";
 import { Button, FormError, FormSuccess, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
-import { flatName, guessColumn, guessMatrix, headerRowIndex, matchKey, matrixColumns, maxLen, num, parseDate, str, trimEmptyRows, unpivotMatrix, valueKey, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick, type ValueMaps } from "@/lib/excel";
+import { flatName, guessColumn, guessMatrix, headerRowIndex, matchKey, matrixColumns, maxLen, num, parseDate, str, trimEmptyRows, unpivotDayGroups, unpivotMatrix, valueKey, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick, type ValueMaps } from "@/lib/excel";
 import { normalizeUnit } from "@/lib/unit";
 import { dateRu, fmtNum, isoDate, money } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -128,7 +128,7 @@ function mergeRows(rows: { r: Row; i: number }[], keys: string[], { sum: sumKeys
  * Server action `rows` (JSON, maydon kalitlari bo'yicha) va `children` ichidagi qo'shimcha maydonlarni oladi.
  * Ko'p qator bir vaqtda yuboriladi — bitta hujjat / bitta import.
  */
-export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan, matrix, allowExtra, onSuccess, pickSheet, onSheet }: {
+export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan, matrix, dayGroups, allowExtra, onSuccess, pickSheet, onSheet }: {
   fields: ImportField[];
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   children?: React.ReactNode;
@@ -140,6 +140,11 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   scan?: ScanCols;
   /** Kesishma jadvalni ham qabul qilish (ustunlar — mijoz, qatorlar — mahsulot). */
   matrix?: MatrixCols;
+  /**
+   * Kunlik qarz jadvalini ham qabul qilish (qator — mijoz, har sana ostida Kirim / Chiqim / Qoldiq):
+   * o'qilganda Nomi · Sana · Kirim · Chiqim · Qoldiq ro'yxatiga yoyiladi (`unpivotDayGroups`).
+   */
+  dayGroups?: boolean;
   /** «+ Ustun qo'shish» tugmasi: foydalanuvchi o'zi nom beradigan qo'shimcha ustunlar (jadvalda ko'rinadi, namuna faylga tushadi). */
   allowExtra?: boolean;
   /** Server action sahifani almashtirmay `ok` qaytarsa chaqiriladi (oyna ichidagi import — ro'yxatni yangilash uchun). */
@@ -162,6 +167,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [skipBad, setSkipBad] = useState(false); // muammoli qatorlarni o'tkazib yuborib import qilish
   const [mergeOn, setMergeOn] = useState(true); // takroriy qatorlarni birlashtirib, miqdorlarni qo'shish
   const [scanNote, setScanNote] = useState(""); // skanerdan nima o'qilgani haqida qisqa xabar
+  const [shapeNote, setShapeNote] = useState(""); // kunlik jadval qatorlarga yoyilgani haqida
   const [extra, setExtra] = useState<{ key: string; label: string }[]>([]); // «+» bilan qo'shilgan ustunlar
   const [hidden, setHidden] = useState<Set<string>>(new Set()); // «×» bilan olib tashlangan tayyor ustunlar
   const [sheet, setSheet] = useState<unknown[][] | null>(null); // xom varaq — matritsani qayta yoyish uchun saqlanadi
@@ -241,7 +247,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   };
 
   const onFile = async (f: File | undefined) => {
-    setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote(""); setSheet(null); setMx(null); setSheetNames([]); bookRef.current = null;
+    setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote(""); setShapeNote(""); setSheet(null); setMx(null); setSheetNames([]); bookRef.current = null;
     setModal(false); setEditing(false); setEdits({}); setOnlyBad(false); setSkipBad(false); setVmChoice({});
     if (!f) return;
     setFileName(f.name);
@@ -266,10 +272,14 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     const book = bookRef.current;
     if (!book) return;
     setSheetIdx(i); setParseErr(""); setEdits({}); setVmChoice({}); setOnlyBad(false); setSkipBad(false); setModal(false); setEditing(false);
-    const aoa = book.read(names[i]);
-    if (!aoa.length) { setSheet(null); setRows([]); setHeaders([]); setMap({}); setParseErr(names.length > 1 ? `«${names[i]}» varag'i bo'sh` : "Fayl bo'sh"); return; }
-    setSheet(aoa);
+    let aoa = book.read(names[i]);
+    if (!aoa.length) { setSheet(null); setRows([]); setHeaders([]); setMap({}); setShapeNote(""); setParseErr(names.length > 1 ? `«${names[i]}» varag'i bo'sh` : "Fayl bo'sh"); return; }
     onSheet?.(names[i], aoa);
+    // Kunlik qarz jadvali — oddiy ro'yxatga yoyiladi, keyingi qadamlar (moslash, tekshirish) o'zgarmaydi
+    const days = dayGroups ? unpivotDayGroups(aoa) : null;
+    if (days) aoa = days.aoa;
+    setShapeNote(days ? `kunlik jadval: ${days.parties} ta nom, ${days.days} kun → ${days.aoa.length - 1} ta qator (harakatsiz kunlar tashlab ketildi${days.future.length ? `; kelajak sana o'qilmadi: ${days.future.map((d) => d.slice(8, 10) + "." + d.slice(5, 7)).join(", ")}` : ""})` : "");
+    setSheet(aoa);
     // Kesishma jadval bo'lsa o'zi matritsa rejimida ochiladi; aks holda oddiy ro'yxat
     const g = matrix ? guessMatrix(aoa) : null;
     if (g?.ok) applyMatrix(aoa, mxFromGuess(g));
@@ -865,6 +875,11 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
         {scanNote && (
           <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1.5 text-xs text-sky-800">
             <ScanLine size={13} /> Skanerdan: {scanNote}. Saqlashdan oldin qatorlarni tekshiring.
+          </p>
+        )}
+        {shapeNote && headers.length > 0 && (
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1.5 text-xs text-sky-800">
+            <Grid3x3 size={13} /> Fayldan {shapeNote}.
           </p>
         )}
         {parseErr && <p className="mt-2 text-sm text-red-600">{parseErr}</p>}
