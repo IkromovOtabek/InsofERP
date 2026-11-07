@@ -1,7 +1,7 @@
 import type { HrDocKind } from "@/generated/prisma";
 
 /**
- * Otdel kadr shakllari — qog'ozda yuritiladigan yetti hujjat tizimda to'ldiriladi,
+ * Otdel kadr shakllari — qog'ozda yuritiladigan yetti hujjat (bo'shatish buyrug'i bilan) tizimda to'ldiriladi,
  * chop etiladi va imzolangandan keyin nusxasi shu yozuvga qaytib yuklanadi.
  *
  * Hujjat matni chop etish sahifasida (`employees/[id]/hujjat/chop/[slug]`), bu yerda —
@@ -23,7 +23,10 @@ export type HrDocSpec = {
   fields: HrDocField[];
 };
 
-/** Qog'ozdagi papka tartibi: ariza → anketa → shartnoma → tilxat → javobgarlik → buyruq → bo'shatish. */
+/**
+ * Qog'ozdagi papka tartibi: ariza → shartnoma → tilxat → javobgarlik → buyruq → bo'shatish.
+ * «Insof anketasi» (ANKETA) olib tashlangan — enum qiymati eski yozuvlar uchun qoldi, ro'yxatda chiqmaydi.
+ */
 export const HR_DOCS: HrDocSpec[] = [
   {
     kind: "ARIZA",
@@ -32,14 +35,6 @@ export const HR_DOCS: HrDocSpec[] = [
     hint: "Xodim direktor nomiga yozadigan ishga qabul qilish arizasi",
     hiring: true,
     fields: ["effectiveAt", "position"],
-  },
-  {
-    kind: "ANKETA",
-    slug: "anketa",
-    label: "Insof anketasi (shaxsiy varaqa)",
-    hint: "Shaxsiy varaqa — kartadagi ma'lumotlar bilan to'ldirilib chiqadi",
-    hiring: true,
-    fields: [],
   },
   {
     kind: "SHARTNOMA",
@@ -100,8 +95,12 @@ export const isDismissalDoc = (kind: string) => kind === "BOSHATISH" || kind ===
 /** Bo'shatish buyrug'idagi Mehnat kodeksi moddasi — odatiy holat (xodimning o'z arizasi). */
 export const DEFAULT_DISMISS_ARTICLE = "160";
 
-/** Bo'shatish buyrug'idagi «Асос» qatori — odatda xodimning arizasi. */
-export const dismissBasis = (fullName: string) => `Ходим ${shortName(fullName)} нинг аризаси`;
+/**
+ * Bo'shatish buyrug'idagi «Асос» qatori — odatda xodimning arizasi. Ism katta harfda yozilgan bo'lsa ham
+ * familiya bosh harf bilan chiqadi: «G'OPIRJONOV ANVAR …» → «Ходим G'opirjonov A.O. нинг аризаси».
+ */
+export const dismissBasis = (fullName: string) =>
+  `Ходим ${shortName(fullName).replace(/^\S+/, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())} нинг аризаси`;
 
 export const HR_DOC_BY_SLUG = new Map(HR_DOCS.map((d) => [d.slug, d]));
 export const HR_DOC_BY_KIND = new Map(HR_DOCS.map((d) => [d.kind, d]));
@@ -134,9 +133,11 @@ const pad = (n: number) => String(n).padStart(2, "0");
 /** «10.09.2026» — shakllardagi qisqa sana. */
 export const docDate = (d?: Date | null) => (d ? `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}` : "____.____.________");
 
-/** «10» СЕНТЯБРЬ 2026 й. — buyruq blankasi uchun. */
-export const docDateCyr = (d?: Date | null) =>
-  d ? `«${pad(d.getDate())}» ${MONTHS_CYR[d.getMonth()].toUpperCase()} ${d.getFullYear()} й.` : "«___» ____________ 20___ й.";
+/** «10» СЕНТЯБРЬ 2026 й. — buyruq blankasi uchun (bo'shatish buyrug'ida «й.» yo'q: `yearMark = false`). */
+export const docDateCyr = (d?: Date | null, yearMark = true) => {
+  const y = yearMark ? " й." : "";
+  return d ? `«${pad(d.getDate())}» ${MONTHS_CYR[d.getMonth()].toUpperCase()} ${d.getFullYear()}${y}` : `«___» ____________ 20___${y}`;
+};
 
 /** «10» sentabr 2026 yil — lotin shakllari uchun. */
 export const docDateLat = (d?: Date | null) =>

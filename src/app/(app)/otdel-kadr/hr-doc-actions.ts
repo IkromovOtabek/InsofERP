@@ -12,8 +12,8 @@ import { parseForm, zOpt, type ActionState } from "@/lib/action";
 import type { HrDocKind, Prisma } from "@/generated/prisma";
 
 /**
- * Otdel kadr hujjatlari (ariza, anketa, mehnat shartnomasi, tilxat, moddiy javobgarlik,
- * buyruq, bo'shatish arizasi): tayyorlash, imzolangan nusxani yuklash, o'chirish.
+ * Otdel kadr hujjatlari (ariza, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq,
+ * bo'shatish arizasi va buyrug'i): tayyorlash, imzolangan nusxani yuklash, o'chirish.
  * Matn va ro'yxat — `lib/hr-docs.ts`.
  */
 
@@ -114,7 +114,7 @@ const bundleSchema = z.object({
 });
 
 /**
- * Ishga qabul to'plami — bitta bosishda oltala hujjat (ariza, anketa, shartnoma, tilxat,
+ * Ishga qabul to'plami — bitta bosishda beshala hujjat (ariza, shartnoma, tilxat,
  * moddiy javobgarlik, buyruq) bir xil sana va lavozim bilan tayyorlanadi.
  * Allaqachon tayyorlangan turlar qayta yaratilmaydi — tegilmay qoladi.
  */

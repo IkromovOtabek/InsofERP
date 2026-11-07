@@ -205,7 +205,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
           <div className="border-b border-slate-100 px-5 pt-5">
             <CardHeader
               title="Kadr hujjatlari"
-              description="Ariza, anketa, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq, bo'shatish arizasi va bo'shatish buyrug'i — tizimda to'ldiriladi, chop etiladi, imzolangan nusxasi qaytib yuklanadi."
+              description="Ariza, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq, bo'shatish arizasi va bo'shatish buyrug'i — tizimda to'ldiriladi, chop etiladi, imzolangan nusxasi qaytib yuklanadi."
               icon={FileSignature}
             />
           </div>

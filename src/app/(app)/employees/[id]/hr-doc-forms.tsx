@@ -54,7 +54,7 @@ const fileCls =
 const uzDate = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "—");
 
 /**
- * Xodim kartasidagi «Kadr hujjatlari» bo'limi: yettita shakl tayyorlanadi, chop etiladi
+ * Xodim kartasidagi «Kadr hujjatlari» bo'limi: yettita shakl (`HR_DOCS`) tayyorlanadi, chop etiladi
  * va imzolangandan keyin nusxasi shu yerga qaytib yuklanadi.
  */
 export function HrDocsPanel({ employeeId, rows, defaults, positions, accept }: {

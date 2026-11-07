@@ -5,7 +5,7 @@ import { toCyrillic } from "@/lib/translit";
 
 /**
  * Otdel kadr shakllarining matni — qog'ozdagi blankalar bilan bir xil.
- * Har bir hujjat o'z asl tilida (ariza, buyruq, shartnoma — kirill; anketa, tilxat,
+ * Har bir hujjat o'z asl tilida (ariza, buyruq, shartnoma — kirill; tilxat,
  * moddiy javobgarlik — lotin), chunki korxona shu ko'rinishda yuritadi.
  *
  * Matn o'zgarmas; tizim faqat bo'sh joylarni to'ldiradi. To'ldirilmagan maydon
@@ -94,55 +94,6 @@ export function Ariza({ e, c, d }: DocProps) {
         <Sign label="(сана)" value={docDate(d?.docDate)} w={160} />
         <Sign label="(имзо)" w={150} />
         <Sign label="(ф.и.ш)" value={e.fullName} w={240} />
-      </div>
-    </Sheet>
-  );
-}
-
-/* ───────── 2. Insof anketasi (shaxsiy varaqa) ───────── */
-
-export function Anketa({ e, c, d }: DocProps) {
-  const rows: [string, string | null][] = [
-    ["1. F.I.SH.", e.fullName],
-    ["2. Tug'ilgan yili", e.birthDate ? docDate(e.birthDate) : null],
-    ["3. Tug'ilgan joyi", null],
-    ["4. Millati", null],
-    ["5. Ma'lumoti", e.education],
-    ["A) ta'lim muassasasining nomi va bitirgan yili", null],
-    ["6. Diplom bo'yicha mutaxassisligi", null],
-    ["7. Oilaviy ahvoli", e.maritalStatus],
-    ["8. Pasport seriyasi", [e.passportSeries, e.passportIssuedAt ? docDate(e.passportIssuedAt) : null].filter(Boolean).join("  ") || null],
-    ["9. Kim tomonidan berilgan", e.passportIssuedBy],
-    ["10. Manzili", e.address],
-    ["11. Telefon", e.phone],
-  ];
-
-  return (
-    <Sheet>
-      <h1 className="text-center text-3xl font-bold">“{c.legalName || c.name}”</h1>
-      <div className="mt-5 text-[13px] font-semibold">
-        Shaxsiy varaqa №<F v={d?.no ?? e.tabelNo} w={80} />
-      </div>
-      <h2 className="mt-3 text-center text-[13px] font-bold">SHAXSIY VARAQA UMUMIY MA`LUMOT.</h2>
-
-      <div className="mt-5 space-y-3">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex items-end gap-2">
-            <span className="shrink-0">{k}</span>
-            <span className="flex-1 border-b border-black pb-0.5 pl-2">{v || " "}</span>
-          </div>
-        ))}
-        {/* Qo'lda davom ettirish uchun bo'sh qatorlar */}
-        {[0, 1].map((i) => <div key={i} className="h-5 border-b border-black" />)}
-        <div className="flex items-end gap-2">
-          <span className="shrink-0">12. Imzo</span>
-          <span className="flex-1 border-b border-black pb-0.5" />
-        </div>
-      </div>
-
-      <div className="mt-10 flex items-start justify-between">
-        <Sign label="(to'ldirilgan sana)" value={docDate(d?.docDate)} w={180} />
-        <Sign label="Otdel kadr (imzo)" w={200} />
       </div>
     </Sheet>
   );
@@ -591,7 +542,7 @@ const REKVIZIT_FONT = { fontFamily: '"Arial Narrow", "Helvetica Neue", Arial, sa
 const V = ({ v, w = 120 }: { v?: string | null; w?: number }) => (v ? <>{v}</> : <F w={w} />);
 
 /** Buyruq varag'i: firma blankasi, joy va sana, «БУЙРУҚ №…» sarlavhasi, keyin bandlar. */
-function OrderSheet({ c, d, children }: Pick<DocProps, "c" | "d"> & { children: React.ReactNode }) {
+function OrderSheet({ c, d, yearMark = true, children }: Pick<DocProps, "c" | "d"> & { yearMark?: boolean; children: React.ReactNode }) {
   const rekvizit = [c.address, c.phone ? `Tel ${c.phone}` : null].filter(Boolean).join("  ") + (c.inn ? `. INN ${c.inn}.` : "");
 
   return (
@@ -619,7 +570,7 @@ function OrderSheet({ c, d, children }: Pick<DocProps, "c" | "d"> & { children: 
 
         <div className="mt-8 flex items-end justify-between">
           <span>{toCyrillic(regionLine(c.address).split(" ").slice(0, 2).join(" "))}</span>
-          <span className="font-bold">{docDateCyr(d?.docDate)}</span>
+          <span className="font-bold">{docDateCyr(d?.docDate, yearMark)}</span>
         </div>
 
         <h1 className="mt-14 text-center text-[18px] font-bold">БУЙРУҚ&nbsp; №<V v={d?.no} w={90} /></h1>
@@ -715,36 +666,55 @@ export function Boshatish({ e, c, d }: DocProps) {
 
 /* ───────── 8. Buyruq (ishdan bo'shatish) ───────── */
 
+/**
+ * Lavozimga egalik qo'shimchasi — «…билан тузилган» oldidan: «Сварщик» → «Сварщиги»,
+ * «Ҳайдовчи» → «Ҳайдовчиси», «Қоровул» → «Қоровули». Qo'shimchasi allaqachon bor
+ * ko'p so'zli nomlar («Сотув агенти», «Цех бошлиғи») o'zgarmaydi.
+ */
+function possessive(pos: string): string {
+  const w = pos.trim();
+  if (/\s/.test(w) && /[^ч]и$/i.test(w)) return w;
+  if (/[аеёиоуэюяў]$/i.test(w)) return w + "си";
+  if (/к$/i.test(w)) return w.slice(0, -1) + "ги";
+  if (/қ$/i.test(w)) return w.slice(0, -1) + "ғи";
+  return w + "и";
+}
+
+/**
+ * Qog'ozdagi nusxa bilan bir xil: sarlavha ostida bitta band — chapda xodimning F.I.Sh.,
+ * o'ngda «02.11.2026 йилдан Сварщиги билан тузилган мехнат шартномаси … бекор килинсин»,
+ * pastroqda «Асос» va direktor imzosi. Lavozim va asos lotin yozuvida kiritilsa ham kirillda chiqadi.
+ */
 export function BoshatishBuyruq({ e, c, d }: DocProps) {
-  const firm = firmParts(c.legalName || c.name).base;
-  const name = e.fullName.toUpperCase();
+  const position = (d?.position ?? e.position)?.trim();
+  const basis = toCyrillic(d?.reason ?? dismissBasis(e.fullName)).trim().replace(/\.+$/, "");
 
   return (
-    <OrderSheet c={c} d={d}>
-      <h2 className="text-center font-bold leading-[1.5]">
-        Ходим билан тузилган меҳнат шартномасини бекор қилиш тўғрисида
+    <OrderSheet c={c} d={d} yearMark={false}>
+      <h2 className="mt-6 text-center font-bold leading-[1.5]">
+        « Ходим билан тузилган меҳнат шартномасини бекор қилиш тўғрисида.»
       </h2>
 
-      <div className="mt-6">
-        <Item>
-          <b>1.&nbsp; {name}</b> – <V v={docDate(d?.effectiveAt ?? e.firedAt)} w={130} /> йилдан&nbsp; бошлаб
-          «{firm}» маъсулияти чекланган жамиятининг <V v={d?.position ?? e.position} w={220} /> вазифасидан
-          ишдан бўшатилсин, у билан тузилган меҳнат шартномаси Ўзбекистон Республикаси Меҳнат кодексининг{" "}
-          <span className="whitespace-nowrap"><V v={d?.article ?? DEFAULT_DISMISS_ARTICLE} w={40} />-моддасига</span>{" "}
-          асосан бекор қилинсин.
-        </Item>
-        <Item>
-          <b>2.</b> Бухгалтерияга <b>{name}</b> билан белгиланган тартибда якуний ҳисоб-китоб қилиш
-          топширилсин.
-        </Item>
+      <div className="mt-12 flex items-start text-[18px] leading-[1.4]">
+        <div className="flex w-[50%] shrink-0 gap-4 pl-[5mm] text-[15px] font-bold">
+          <span>1.</span>
+          <span className="max-w-[52mm]">{e.fullName.toUpperCase()}</span>
+        </div>
+        <div className="flex-1">
+          <V v={docDate(d?.effectiveAt ?? e.firedAt)} w={130} /> йилдан{" "}
+          {position ? possessive(toCyrillic(position)) : <F w={150} />} билан тузилган мехнат шартномаси
+          Узб Рес МК нинг <span className="whitespace-nowrap"><V v={d?.article ?? DEFAULT_DISMISS_ARTICLE} w={40} />-моддасига</span>{" "}
+          асосан бекор килинсин.
+        </div>
       </div>
 
-      <p className="mt-6 pl-[9mm]">
-        <b>Асос:</b> <V v={d?.reason ?? dismissBasis(e.fullName)} w={300} />.
+      <p className="mt-24 pl-[24%] text-[17px]">
+        <b>Асос:</b> <V v={basis} w={300} />.
       </p>
 
-      <Acquainted e={e} />
-      <DirectorSign c={c} />
+      <div className="pt-[4mm]">
+        <DirectorSign c={c} />
+      </div>
     </OrderSheet>
   );
 }
@@ -753,7 +723,6 @@ export function BoshatishBuyruq({ e, c, d }: DocProps) {
 
 export const DOC_COMPONENTS: Record<string, (p: DocProps) => React.ReactNode> = {
   ariza: Ariza,
-  anketa: Anketa,
   shartnoma: Shartnoma,
   tilxat: Tilxat,
   javobgarlik: Javobgarlik,
