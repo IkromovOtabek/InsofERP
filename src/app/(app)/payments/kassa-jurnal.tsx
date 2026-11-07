@@ -203,7 +203,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
   ];
 
   // Excel importidan qaytganda: «yozildi-o'tkazildi»
-  const [imported, dupes, transfers, newSubs] = (sp.import ?? "").split("-").map((n) => Number(n) || 0);
+  const [imported, dupes, transfers, newSubs, newTops] = (sp.import ?? "").split("-").map((n) => Number(n) || 0);
 
   const table = (
     <Table maxHeight="75vh">
@@ -246,7 +246,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
     <>
       {sp.import && (
         <Callout tone="success" title="Excel importi">
-          {imported} ta qator Kassa jurnaliga yozildi.{transfers > 0 && ` ${transfers} ta perekit o'tkazma hujjati bo'lib yozildi.`}{newSubs > 0 && ` ${newSubs} ta yangi sub manba kategoriyalarga qo'shildi.`}{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
+          {imported} ta qator Kassa jurnaliga yozildi.{transfers > 0 && ` ${transfers} ta perekit o'tkazma hujjati bo'lib yozildi.`}{newTops > 0 && ` ${newTops} ta yangi manba qo'shildi — PNL qatorini Moliya → Kategoriyalarda tekshiring.`}{newSubs > 0 && ` ${newSubs} ta yangi sub manba kategoriyalarga qo'shildi.`}{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
         </Callout>
       )}
       <form className="mb-4 flex flex-wrap items-center gap-2 text-sm">

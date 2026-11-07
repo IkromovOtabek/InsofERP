@@ -1,4 +1,4 @@
-// Kassa / bank → Excel import (`lib/cash-import.ts`): tizimda yo'q sub manba manbaga qo'shiladi, «Savdo tushumi» To'lovlarda
+// Kassa / bank → Excel import (`lib/cash-import.ts`): tizimda yo'q manba / sub manba qo'shiladi, «Savdo tushumi» To'lovlarda
 // bo'lmasa «Savdo» kirimi, «99999-Xisob raqam almashinuvi» juft qatorlari (±1 kun) o'tkazma hujjati, qayta yuklash — takrorsiz,
 // juftsiz perekit — hech narsa yozilmaydi. Kassa jurnalida tahrirlash (`updateCashEntry`) va Kirim-Chiqim formasidagi «+».
 // Ishga tushirish (server ishlab turgan, .next build bor papkada):
@@ -57,6 +57,12 @@ check("C8 shu faylni qayta yuklash — yangi qator yo'q (takrorsiz)", /Yangi qat
 const before = n(`select count(*)::int c from "CashTransaction"`);
 r = await imp(kassa, [{ date: d1, account: "Kassa", exp: "9999", manba: "99999-Xisob raqam almashinuvi" }, { date: d1, account: "Kassa", exp: "1111", manba: "Pitaniya" }]);
 check("C9 juftsiz perekit — xato, hech narsa yozilmadi", /jufti yo'q/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction"`) === before, r.result);
+const yangi = `QA yangi manba ${T}`;
+r = await imp(kassa, [{ date: d1, account: "Kassa", exp: "4000", manba: yangi, sub: `QA yangi sub ${T}`, note: `QA ${T} G` }, { date: d1, account: "Kassa", exp: "1000", manba: yangi, note: `QA ${T} H` }]);
+check("C9a tizimda yo'q manba — chiqim manbasi bo'lib qo'shildi (sub manbasi bilan), qatorlar yozildi", /import=2-0-0-1-1/.test(r.redirect ?? "")
+  && n(`select count(*)::int c from "CashCategory" where name=${lit(yangi)} and type='EXPENSE' and "parentId" is null and flow='OPERATING' and "pnlLine"='PRODUCTION'`) === 1
+  && n(`select count(*)::int c from "CashCategory" c join "CashCategory" p on p.id=c."parentId" where c.name=${lit(`QA yangi sub ${T}`)} and p.name=${lit(yangi)}`) === 1
+  && n(`select count(*)::int c from "CashTransaction" where note like ${lit(`QA ${T} _`)} and category=${lit(yangi)}`) === 2, r.redirect ?? r.result);
 r = await imp(sotuv, rows);
 check("C10 sotuv importni ishlata olmaydi", !r.redirect && !r.result?.ok);
 

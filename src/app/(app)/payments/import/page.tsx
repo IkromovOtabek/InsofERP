@@ -74,7 +74,7 @@ export default async function CashJournalImport() {
                     ...expenseCats.map((c) => ({ value: c.name, label: c.name, group: "Chiqim manbalari" })),
                   ],
                   newLabel: "Nomidan aniqlanadi",
-                  note: `Manba tizimdagi kategoriyaga moslanadi. Tizimda yo'q sub manba o'sha manba ostiga yangi bo'lib qo'shiladi. «${SALES_MANBA}» — To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «${SALES_CATEGORY}» kirimi bo'lib yoziladi (mijoz qarziga tegmaydi). «${PEREKIT_CATEGORY}» / «99999-Xisob raqam almashinuvi» — bir xil summali juft qator (bir hisobdan chiqim, boshqasiga kirim; o'sha kuni yoki ±1 kun) o'tkazma hujjati bo'ladi.`,
+                  note: `Manba tizimdagi kategoriyaga moslanadi, tizimda yo'q manba yangi bo'lib qo'shiladi. Tizimda yo'q sub manba o'sha manba ostiga yangi bo'lib qo'shiladi. «${SALES_MANBA}» — To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «${SALES_CATEGORY}» kirimi bo'lib yoziladi (mijoz qarziga tegmaydi). «${PEREKIT_CATEGORY}» / «99999-Xisob raqam almashinuvi» — bir xil summali juft qator (bir hisobdan chiqim, boshqasiga kirim; o'sha kuni yoki ±1 kun) o'tkazma hujjati bo'ladi.`,
                 },
               },
               { key: "sub", label: "Sub manba", hint: "yo'q bo'lsa manbaga qo'shiladi", synonyms: ["sub manba", "sub", "подкатег", "подстат"] },
@@ -90,6 +90,7 @@ export default async function CashJournalImport() {
             <p className="text-xs text-slate-500">
               Har qatorda Kirim yoki Chiqim summasidan bittasi to&apos;ldiriladi. Kassa jurnalida bor qator (kun, hisob, summa, manba bir xil) qayta yozilmaydi —
               jurnalning o&apos;zidan yuklab olingan faylni ham yuklash mumkin. Kredit va loyiha manbalari Kirim-Chiqim formasida kiritiladi.
+              Tizimda yo&apos;q manba qator turi bilan yangi manba bo&apos;lib qo&apos;shiladi (PNL qatorini keyin Moliya → Kategoriyalarda tuzating).
               Tizimda yo&apos;q sub manba o&apos;sha manba ostiga yangi bo&apos;lib qo&apos;shiladi (nomi boshqa manbada band bo&apos;lsa — «Nom (Manba)»).
               Naqd kassa minusga tushsa yoki biror qatorda xato bo&apos;lsa hech narsa yozilmaydi. Noto&apos;g&apos;ri yozuv Kirim-Chiqim jadvalida sabab bilan bekor qilinadi.
             </p>

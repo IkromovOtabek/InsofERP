@@ -8,13 +8,15 @@ import { insertTransfer } from "@/lib/cash-transfer";
 import { DDS_FIXED } from "@/lib/fin-report/sheet-lines";
 import { MAX_AMOUNT } from "@/lib/action";
 import { matchKey, numMoney, parseDate, str, valueMapper, type ValueMaps } from "@/lib/excel";
-import { loadCategories, makeResolver, normCat, resetCategoryCache } from "@/lib/fin-report/categories";
+import { loadCategories, makeResolver, normCat, resetCategoryCache, type CatNode } from "@/lib/fin-report/categories";
 
 /**
  * Kassa / bank → «Excel orqali qo'shish»: Kassa jurnali ustunlaridagi fayl (Sana, Hisob, Kirim, Chiqim, Manba,
  * Sub manba, Kontragent, Izoh) → qo'lda kirim/chiqim yozuvlari (`CashTransaction`), Kirim-Chiqim formasidagi qoidalar bilan:
- *  · Manba — kategoriya daraxtidagi nom (yoki aliasi), yozuv turiga mos. Sub manba shu manbaniki bo'lmasa — o'sha manba
- *    ostiga yangi sub manba bo'lib qo'shiladi (nomi boshqa manbada band bo'lsa — «Nom (Manba)»);
+ *  · Manba — kategoriya daraxtidagi nom (yoki aliasi), yozuv turiga mos; daraxtda yo'q bo'lsa — qator turi bilan yangi
+ *    manba bo'lib qo'shiladi (joriy faoliyat, PNL'da «Boshqa tushum» / «Boshqa chiqim»dagidek — keyin Kategoriyalarda
+ *    tuzatiladi). Sub manba shu manbaniki bo'lmasa — o'sha manba ostiga yangi sub manba bo'lib qo'shiladi (nomi boshqa
+ *    manbada band bo'lsa — «Nom (Manba)»);
  *  · kredit / loyiha so'raydigan manba importda yozilmaydi (formada kredit yoki loyiha tanlanadi);
  *  · «Savdo tushumi» — mijoz to'lovi jurnalda (To'lovlar) bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi bo'lib yoziladi
  *    (mijoz qarzini kamaytirmaydi);
@@ -32,7 +34,7 @@ export const CASH_IMPORT_MAX = 2000;
 
 /** Fayldagi bitta qator — kalitlar import sahifasidagi maydonlar bilan bir xil. */
 export type CashImportRow = Record<string, unknown>;
-export type CashImportResult = { error: string } | { ok: true; added: number; skipped: number; transfers: number; newSubs: string[]; from: Date; to: Date };
+export type CashImportResult = { error: string } | { ok: true; added: number; skipped: number; transfers: number; newSubs: string[]; newTops: string[]; from: Date; to: Date };
 
 type Fresh = {
   date: Date; type: "INCOME" | "EXPENSE"; cashAccountId: string; amount: number;
@@ -88,6 +90,22 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
     taken.add(normCat(name));
     newSubs.set(k, { parentId: top.id, name });
     return name;
+  };
+  // Daraxtda yo'q manba — birinchi qatorining turi bilan yangi manba (id vaqtincha, yozishda haqiqiysi bilan almashadi)
+  const newTops = new Map<string, CatNode>();
+  const topFor = (raw: string, type: "INCOME" | "EXPENSE"): CatNode => {
+    const name = raw.replace(/\s+/g, " ").trim().slice(0, 80);
+    const k = normCat(name);
+    let t = newTops.get(k);
+    if (!t) {
+      t = {
+        id: `new:${k}`, name, type, parentId: null, flow: "OPERATING", pnlLine: type === "INCOME" ? "OTHER_INCOME" : "PRODUCTION",
+        needs: null, loanPart: null, aliases: [], isSystem: false, isActive: true, sort: 500, inCost: false,
+      };
+      newTops.set(k, t);
+      taken.add(k);
+    }
+    return t;
   };
   const accOf = valueMapper(opts.maps, "account");
   const manbaOf = valueMapper(opts.maps, "manba");
@@ -149,8 +167,7 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
     }
 
     const sub = cell("sub");
-    const base = resolve(manba);
-    if (!base) return fail(`«${manba}» — bunday manba yo'q (moslang yoki Moliya → Kategoriyalarda qo'shing)`);
+    const base = resolve(manba) ?? { top: topFor(manba, type), sub: null };
     const top = base.top;
     if (top.type !== type) return fail(`«${top.name}» — ${top.type === "INCOME" ? "kirim" : "chiqim"} manbasi, summa esa ${type === "INCOME" ? "Kirim" : "Chiqim"} ustunida`);
     if (!top.isActive) return fail(`«${top.name}» manbasi o'chirilgan`);
@@ -215,7 +232,7 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
       if (lonely.length) {
         throw new CashImportError(`${lonely.slice(0, 5).map((l) => `${l.no}-qator`).join(", ")}${lonely.length > 5 ? ` va yana ${lonely.length - 5} ta` : ""}: perekitning jufti yo'q — shu summa bilan (o'sha kuni yoki ±1 kun) boshqa hisobga kirim (yoki boshqa hisobdan chiqim) qatori bo'lishi kerak. Faylni tuzating yoki o'tkazmani Kirim-Chiqim → «Kassa ⇄ bank» orqali kiriting. Hech narsa yozilmadi`);
       }
-      if (!fresh.length && !pairs.length) return { added: 0, skipped, transfers: 0, newSubs: [] };
+      if (!fresh.length && !pairs.length) return { added: 0, skipped, transfers: 0, newSubs: [], newTops: [] };
 
       // Import tugagach hisob minusga tushmasin (naqd kassa — har doim, bank — overdraft ruxsati bo'lmasa)
       const balances = await accountBalances(tx, accIds);
@@ -230,11 +247,18 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
         }
       }
 
-      // Yangi sub manbalar — faqat yoziladigan qatorlarda ishlatilgani (ota-onaning turi, oqimi va PNL qatori bilan)
+      // Yangi manbalar va sub manbalar — faqat yoziladigan qatorlarda ishlatilgani (sub — ota-onaning turi, oqimi va PNL qatori bilan)
+      const tops = [...newTops.values()].filter((t) => fresh.some((f) => f.category === t.name));
+      const realId = new Map<string, string>();
+      for (const t of tops) {
+        const c = await tx.cashCategory.create({ data: { name: t.name, type: t.type, flow: t.flow, pnlLine: t.pnlLine, sort: t.sort } });
+        realId.set(t.id, c.id);
+        await audit(tx, userId, "CREATE", "CashCategory", c.id, undefined, { ...c, via: "kassa-import" });
+      }
       const subs = [...newSubs.values()].filter((n) => fresh.some((f) => f.subCategory === n.name));
       for (const n of subs) {
-        const parent = cats.find((c) => c.id === n.parentId)!;
-        const c = await tx.cashCategory.create({ data: { name: n.name, type: parent.type, parentId: parent.id, flow: parent.flow, pnlLine: parent.pnlLine } });
+        const parent = cats.find((c) => c.id === n.parentId) ?? tops.find((t) => t.id === n.parentId)!;
+        const c = await tx.cashCategory.create({ data: { name: n.name, type: parent.type, parentId: realId.get(parent.id) ?? parent.id, flow: parent.flow, pnlLine: parent.pnlLine } });
         await audit(tx, userId, "CREATE", "CashCategory", c.id, undefined, { ...c, via: "kassa-import" });
       }
 
@@ -246,9 +270,9 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
         const { t, outTx, inTx } = await insertTransfer(tx, { date: p.out.date, from, to, amount: p.out.leg!.amount, note }, userId);
         await audit(tx, userId, "CREATE", "CashTransfer", t.id, undefined, { ...t, legs: [outTx.id, inTx.id], via: "kassa-import" });
       }
-      return { added: created.length, skipped, transfers: pairs.length, newSubs: subs.map((n) => n.name) };
+      return { added: created.length, skipped, transfers: pairs.length, newSubs: subs.map((n) => n.name), newTops: tops.map((t) => t.name) };
     }, { timeout: 60_000, maxWait: 15_000 });
-    if (res.newSubs.length) resetCategoryCache();
+    if (res.newSubs.length || res.newTops.length) resetCategoryCache();
     return { ok: true, ...res, from, to };
   } catch (e) {
     if (e instanceof CashImportError) return { error: e.message };
