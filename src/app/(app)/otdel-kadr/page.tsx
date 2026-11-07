@@ -1,12 +1,13 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, BarChart3, ClipboardList, GraduationCap, Handshake, MessageSquare, Inbox, ListChecks, Scale, Target, UserPlus, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, BarChart3, ClipboardList, GraduationCap, Handshake, MessageSquare, Inbox, ListChecks, Scale, Target, UserPlus, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, Search, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
 import { parsePerms } from "@/lib/auth";
 import { TEMPLATE_ROLE_OPTIONS } from "@/lib/perm-template";
 import { date } from "@/lib/format";
-import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, PageHeader, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { toCyrillic } from "@/lib/translit";
 import {
   DEFAULT_SHIFT, dayUtc, isoDay, monthDays, monthOf, today, validDay, validMonth, workedMinutes,
 } from "@/lib/davomat";
@@ -55,13 +56,28 @@ function daysToAnniversary(d: Date) {
 }
 const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} kundan keyin`);
 
+/**
+ * Qidiruv uchun: kichik harf, tutuq belgisining barcha shakli (ʻ ‘ ’ `) bitta ' ga, ortiqcha bo'shliqsiz;
+ * kirillda o'zbekcha harflar ruscha yozilishiga tenglanadi (Шохруҳ = Шохрух, Йўлдош = Йулдош).
+ */
+const CYR_RU: Record<string, string> = { ҳ: "х", қ: "к", ғ: "г", ў: "у", ё: "е" };
+const fold = (v: string) => v.toLowerCase().replace(/[ʻʼ‘’`´]/g, "'").replace(/[ҳқғўё]/g, (c) => CYR_RU[c]).replace(/\s+/g, " ").trim();
+
+/** Xodimlar ro'yxatidagi holat filtri: bo'shatilgan — firedAt bor, nofaol — bo'shatilmay o'chirilgan. */
+const EMP_HOLAT = [
+  ["faol", "Ishlayotganlar"],
+  ["boshatilgan", "Bo'shatilganlar"],
+  ["nofaol", "Nofaol (bo'shatilmagan)"],
+] as const;
+const empHolat = (e: { isActive: boolean; firedAt: Date | null }) => (e.firedAt ? "boshatilgan" : e.isActive ? "faol" : "nofaol");
+
 export default async function OtdelKadrPage({ searchParams }: {
-  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; hafta?: string; holat?: string; vakansiya?: string }>;
+  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; hafta?: string; holat?: string; vakansiya?: string; q?: string; lavozim?: string }>;
 }) {
   // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
   await requirePage("/otdel-kadr");
   const s = await requireRoles(["HR"], { module: "employees" });
-  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy, hafta, holat, vakansiya } = await searchParams;
+  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy, hafta, holat, vakansiya, q = "", lavozim = "" } = await searchParams;
 
   // Davomat tabi: `oy` berilsa oylik tabel, aks holda kunlik belgilash oynasi
   const oyParam = validMonth(oy);
@@ -87,6 +103,26 @@ export default async function OtdelKadrPage({ searchParams }: {
   // Lavozimdagi faol login egalari — login shabloni shularga qo'llanadi
   const loginsByPosition = new Map<string, number>();
   for (const e of employees) if (e.isActive && e.user?.isActive) loginsByPosition.set(e.position, (loginsByPosition.get(e.position) ?? 0) + 1);
+
+  // ── Xodimlar ro'yxati: qidiruv (F.I.O., telefon, tabel №, JSHSHIR, bo'linma) va filtrlar ──
+  // Har so'z alohida qidiriladi ("Aliyev Sardor" = "Sardor Aliyev"); lotincha yozilsa kirillda kiritilgan ism ham topiladi
+  // Sukut — faqat ishlayotganlar; bo'shatilganlar «Holat» filtridan ochiladi, "hammasi" — barchasi
+  const holatF = holat === "hammasi" ? "" : EMP_HOLAT.some(([k]) => k === holat) ? holat! : "faol";
+  const lavozimF = fold(lavozim);
+  const words = fold(q).split(" ").filter(Boolean).map((w) => ({ w, cyr: fold(toCyrillic(w)), d: w.replace(/\D/g, "") }));
+  const holatCount = new Map<string, number>();
+  for (const e of employees) holatCount.set(empHolat(e), (holatCount.get(empHolat(e)) ?? 0) + 1);
+  const listed = employees.filter((e) => {
+    if (holatF && empHolat(e) !== holatF) return false;
+    if (lavozimF && fold(e.position) !== lavozimF) return false;
+    if (!words.length) return true;
+    const hay = fold([e.fullName, e.position, e.subdivision, e.tabelNo, e.pinfl, e.phone].filter(Boolean).join(" "));
+    const phone = (e.phone ?? "").replace(/\D/g, ""); // "90-123" ham "+998901234567" ni topsin
+    return words.every(({ w, cyr, d }) => hay.includes(w) || hay.includes(cyr) || (d.length >= 3 && phone.includes(d)));
+  });
+  const filtering = !!(words.length || lavozimF || holatF !== "faol");
+  const hiddenCount = employees.length - (holatCount.get("faol") ?? 0);
+  const showAllHref = `/otdel-kadr?${new URLSearchParams({ tab: "xodimlar", holat: "hammasi", ...(q && { q }), ...(lavozim && { lavozim }) })}`;
 
   // ── Bo'limlar tabi: tuzilma diagrammasi uchun sodda ma'lumot + etaplardagi jonli sanoq ──
   const orgEmployees: OrgEmployee[] = employees.map((e) => ({
@@ -208,11 +244,45 @@ export default async function OtdelKadrPage({ searchParams }: {
               <LinkButton href="/otdel-kadr/yangi"><Plus size={16} /> Xodim qo&apos;shish</LinkButton>
             </div>
           </div>
+          <form action="/otdel-kadr" className="grid grid-cols-1 items-end gap-2 border-b border-slate-100 px-4 py-3 sm:grid-cols-[1fr_220px_220px_auto]">
+            <input type="hidden" name="tab" value="xodimlar" />
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">Qidiruv</span>
+              <Input name="q" type="search" aria-label="Xodimni qidirish" defaultValue={q} placeholder="F.I.O., telefon, tabel № yoki JSHSHIR" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">Lavozim</span>
+              <Select name="lavozim" defaultValue={lavozim}>
+                <option value="">Hammasi</option>
+                {[...countByPosition].sort(([a], [b]) => a.localeCompare(b)).map(([p, n]) => <option key={p} value={p}>{p} ({n})</option>)}
+              </Select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">Holat</span>
+              <Select name="holat" defaultValue={holatF || "hammasi"}>
+                <option value="hammasi">Hammasi ({employees.length})</option>
+                {EMP_HOLAT.map(([k, label]) => <option key={k} value={k}>{label} ({holatCount.get(k) ?? 0})</option>)}
+              </Select>
+            </label>
+            <div className="flex items-center gap-3">
+              <Button variant="secondary"><Search size={16} /> Qidirish</Button>
+              {filtering && <Link href="/otdel-kadr?tab=xodimlar" className="text-sm text-slate-500 hover:text-slate-900">Tozalash</Link>}
+            </div>
+            {(filtering || (holatF === "faol" && hiddenCount > 0)) && (
+              <p className="text-xs text-slate-500 sm:col-span-4">
+                {filtering && <>Topildi: {listed.length} ta xodim ({employees.length} tadan). </>}
+                {holatF === "faol" && hiddenCount > 0 && (
+                  <>Ishdan bo&apos;shatilgan va nofaol {hiddenCount} ta xodim ko&apos;rsatilmayapti — <Link href={showAllHref} className="font-medium text-slate-700 underline">hammasini ko&apos;rsatish</Link></>
+                )}
+              </p>
+            )}
+          </form>
           <Table>
             <thead><tr><Th>Surat</Th><Th>F.I.O.</Th><Th>Lavozim</Th><Th>Telefon</Th><Th>Ishga kirgan</Th><Th right>Hujjat</Th><Th>Holat</Th><Th></Th></tr></thead>
             <tbody>
               {employees.length === 0 && <Empty text="Xodim yo'q — 'Xodim qo'shish' tugmasi bilan boshlang" />}
-              {employees.map((e) => (
+              {employees.length > 0 && listed.length === 0 && <Empty icon={Search} text="Bu qidiruv va filtr bo'yicha xodim topilmadi" />}
+              {listed.map((e) => (
                 <Tr key={e.id}>
                   <Td>
                     <span className="flex h-10 w-8 items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-50 text-slate-400">
