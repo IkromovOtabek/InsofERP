@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * «INSOF MCHJ — BOSHQARUV PANELI» bloklari («Insof 2026» → Dashboard) — atamalar va ustunlar jadvaldagidek.
- * Ma'lumot — `lib/fin-report/panel.ts`. Server komponenti; «Bugun» tabida ishlatiladi.
+ * Ma'lumot — `lib/fin-report/panel.ts`. Server komponenti; direktor «Bugun» tabi va ish boshqaruvchi bosh sahifasi.
  */
 const n0 = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.005 ? "–" : fmtNum(v));
 const n1 = (v: number) => (Math.abs(v) < 0.0005 ? "–" : fmtNum(v, 1));
@@ -13,7 +13,8 @@ const neg = (v: number) => (v < 0 ? "text-red-600" : undefined);
 
 function Block({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className={cn("min-w-0", className)}>
+    // Ustun sarlavhalari jadvaldagidek ikki qatorga o'tadi — 8 ustunli bloklar sahifa eniga sig'adi
+    <section className={cn("min-w-0 [&_th]:whitespace-normal [&_th]:align-bottom", className)}>
       <h3 className="mb-2 rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-white">{title}</h3>
       {children}
     </section>
@@ -144,12 +145,15 @@ export function FoydaZararBlock({ p }: { p: Panel }) {
   );
 }
 
-/** «Kunlik sotuv va tushum (oy)» — jadval va ikki ustunli grafik (sotuv QQS bilan / kassaga savdo tushumi). */
-export function KunlikBlock({ p }: { p: Panel }) {
+/**
+ * «Kunlik sotuv va tushum (oy)» — jadval va ikki ustunli grafik (sotuv QQS bilan / kassaga savdo tushumi).
+ * `fill` — o'ng ustunda (≥1760px) butun oy ko'rinadi, torroq ekranda 28rem dan keyin aylantiriladi.
+ */
+export function KunlikBlock({ p, fill }: { p: Panel; fill?: boolean }) {
   const dd = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
   return (
     <Block title="Kunlik sotuv va tushum (oy)">
-      <Table maxHeight="28rem">
+      <Table maxHeight={fill ? undefined : "28rem"} className={fill ? "max-h-[28rem] overflow-y-auto min-[1760px]:max-h-none" : undefined}>
         <thead><tr><Th>Sana</Th><Th right>Sotuv (QQS bilan)</Th><Th right>Kassaga savdo tushumi</Th></tr></thead>
         <tbody>
           {p.daily.map((d) => <Tr key={d.date.toISOString()}><Td>{dd(d.date)}</Td><Td right>{n0(d.sales)}</Td><Td right>{n0(d.cashIn)}</Td></Tr>)}

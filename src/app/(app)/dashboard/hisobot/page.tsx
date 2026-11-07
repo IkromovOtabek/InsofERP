@@ -32,7 +32,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav, header, .no-print { display: none !important } body { background: #fff } }`}</style>
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
-          <BackLink href="/dashboard" label="Bosh sahifa" />
+          <BackLink href="/dashboard?view=production" label="Bosh sahifa" />
           <div className="flex items-center gap-1 text-sm">
             <Link href={`?kun=${shiftDay(iso, -1)}`} className="rounded-md p-1.5 hover:bg-slate-100" aria-label="Oldingi kun"><ChevronLeft size={16} /></Link>
             <span className="px-2 font-medium">{dayTitle(iso)}</span>

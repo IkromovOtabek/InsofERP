@@ -25,7 +25,7 @@ export default async function BrakPage() {
   return (
     <div>
       <PageHeader
-        back={{ href: isDirector ? "/dashboard?view=production" : "/dashboard", label: "Bosh sahifa" }}
+        back={{ href: "/dashboard?view=production", label: "Bosh sahifa" }}
         eyebrow="Ishlab chiqarish"
         title="Brak"
         subtitle={`Bugun: ${todayText} · oyda ${d.defects.month.length} ta yozuv · ${fmtNum(d.defects.month.reduce((x, r) => x + r.amount, 0))} so'm`}

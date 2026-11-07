@@ -30,21 +30,45 @@ const time = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
  * bugungi yuklash, plan, brak va direktorga kunlik hisobot — bir ekranda.
  * Yuqorida sex xodimlari kartasi o'rniga «Ishlab chiqarish kerak» (m³ / dona); ish boshqaruvchida davomat bo'limi ham yo'q — uni sex boshlig'i yuritadi.
  */
-export async function ProductionHome({ s }: { s: Session }) {
-  const iso = todayIso();
-  // Ish boshqaruvchi: tasdiq kutayotgan reys haqi va mexanik / usta puli so'rovlari — vebda bildirishnoma markazi yo'q,
-  // xabar faqat ilovaga boradi; bosh sahifada ko'rinib tursin
-  const approver = canDo(s, "logistika", "pay_approve");
-  const isSupervisor = s.role === "SUPERVISOR";
-  const [d, reports, payWait, mechWait, matrix, brigadeWork] = await Promise.all([
-    productionDay(iso),
-    reportHistory(5),
+/**
+ * Ish boshqaruvchi: tasdiq kutayotgan reys haqi va mexanik / usta puli so'rovlari — xabar ilovaga boradi;
+ * bosh sahifaning ikkala ko'rinishida (boshqaruv paneli va ishlab chiqarish) ko'rinib tursin.
+ */
+export async function ApprovalBanners({ s }: { s: Session }) {
+  if (!canDo(s, "logistika", "pay_approve")) return null;
+  const [payWait, mechWait] = await Promise.all([
     // Reys haqi va dispetcherning qo'lda yozgan haqi — bitta «tasdiq kutmoqda» banneri
-    approver ? Promise.all([
+    Promise.all([
       db.trip.aggregate({ where: pendingApprovalWhere(), _count: true, _sum: { payAmount: true } }),
       db.logisticsEntry.aggregate({ where: pendingEntryWhere(), _count: true, _sum: { payAmount: true } }),
-    ]).then(([t, e]) => ({ _count: t._count + e._count, _sum: { payAmount: Number(t._sum.payAmount ?? 0) + Number(e._sum.payAmount ?? 0) } })) : null,
-    approver ? db.mechanicRequest.aggregate({ where: { status: "NEW" }, _count: true, _sum: { amount: true } }) : null,
+    ]).then(([t, e]) => ({ _count: t._count + e._count, _sum: { payAmount: Number(t._sum.payAmount ?? 0) + Number(e._sum.payAmount ?? 0) } })),
+    db.mechanicRequest.aggregate({ where: { status: "NEW" }, _count: true, _sum: { amount: true } }),
+  ]);
+  if (!payWait._count && !mechWait._count) return null;
+  return (
+    <div className="space-y-2">
+      {payWait._count ? (
+        <Link href="/logistika/tabel?bolim=tasdiq" className="flex items-center justify-between gap-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900 hover:bg-blue-100">
+          <span className="flex items-center gap-2 font-medium"><ShieldCheck size={16} /> Reys haqi tasdig&apos;i kutmoqda: {payWait._count} ta · {fmtNum(payWait._sum.payAmount)} so&apos;m</span>
+          <span className="inline-flex items-center gap-1">Tasdiqlash <ArrowRight size={14} /></span>
+        </Link>
+      ) : null}
+      {mechWait._count ? (
+        <Link href="/mexanik-sorovlar?tab=NEW" className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100">
+          <span className="flex items-center gap-2 font-medium"><ShieldCheck size={16} /> Mexanik va usta puli so&apos;rovlari: {mechWait._count} ta · {fmtNum(Number(mechWait._sum.amount ?? 0))} so&apos;m</span>
+          <span className="inline-flex items-center gap-1">Tasdiqlash <ArrowRight size={14} /></span>
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+export async function ProductionHome({ s }: { s: Session }) {
+  const iso = todayIso();
+  const isSupervisor = s.role === "SUPERVISOR";
+  const [d, reports, matrix, brigadeWork] = await Promise.all([
+    productionDay(iso),
+    reportHistory(5),
     productionMatrix(),
     brigadeProducts({ activeOnly: true }),
   ]);
@@ -63,22 +87,7 @@ export async function ProductionHome({ s }: { s: Session }) {
 
   return (
     <div className="min-w-0 space-y-8">
-      {(payWait?._count || mechWait?._count) ? (
-        <div className="space-y-2">
-          {payWait?._count ? (
-            <Link href="/logistika/tabel?bolim=tasdiq" className="flex items-center justify-between gap-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900 hover:bg-blue-100">
-              <span className="flex items-center gap-2 font-medium"><ShieldCheck size={16} /> Reys haqi tasdig&apos;i kutmoqda: {payWait._count} ta · {fmtNum(Number(payWait._sum.payAmount ?? 0))} so&apos;m</span>
-              <span className="inline-flex items-center gap-1">Tasdiqlash <ArrowRight size={14} /></span>
-            </Link>
-          ) : null}
-          {mechWait?._count ? (
-            <Link href="/mexanik-sorovlar?tab=NEW" className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100">
-              <span className="flex items-center gap-2 font-medium"><ShieldCheck size={16} /> Mexanik va usta puli so&apos;rovlari: {mechWait._count} ta · {fmtNum(Number(mechWait._sum.amount ?? 0))} so&apos;m</span>
-              <span className="inline-flex items-center gap-1">Tasdiqlash <ArrowRight size={14} /></span>
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
+      <ApprovalBanners s={s} />
       <div data-tour="stats" className={`grid grid-cols-2 gap-3 ${isSupervisor ? "xl:grid-cols-4" : "xl:grid-cols-5"} [&>*]:min-w-0`}>
         {/* Sex xodimlari kartasi o'rniga — ishlab chiqarish kerak (davomat sex boshlig'ida «Ishga keldi» bilan qoladi) */}
         <StatCard label="Ishlab chiqarish kerak — dona" value={needDona.length ? fmtUnitTotals(needDona) : "—"} hint={`${matrix.needList.length} xil mahsulot · ${matrix.summary.orders} zayavka`} icon={Boxes} tone={needDona.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />

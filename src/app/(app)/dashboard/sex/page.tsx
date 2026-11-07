@@ -19,7 +19,7 @@ export default async function SexAttendancePage() {
   return (
     <div>
       <PageHeader
-        back={{ href: isDirector ? "/dashboard?view=production" : "/dashboard", label: "Bosh sahifa" }}
+        back={{ href: "/dashboard?view=production", label: "Bosh sahifa" }}
         eyebrow="Davomat"
         title="Sex xodimlari va davomat"
         subtitle={`${dayTitle(iso)} · keldi ${d.attendance.present.length} / ${d.staff.total}${d.attendance.notMarked.length ? ` · ${d.attendance.notMarked.length} kishi belgilanmagan` : ""}`}

@@ -1,13 +1,58 @@
 import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, CircleAlert, CircleCheck, HandCoins, Landmark, Receipt, Scale, ShoppingCart, TrendingUp, Wallet } from "lucide-react";
-import { todayData } from "@/lib/fin-report/today";
-import { boshqaruvPaneli } from "@/lib/fin-report/panel";
+import { todayData, type TodayData } from "@/lib/fin-report/today";
+import { boshqaruvPaneli, type Panel } from "@/lib/fin-report/panel";
 import { CAL_KIND_LABEL } from "@/lib/fin-report/calendar";
 import { getCompany } from "@/lib/company";
 import { date, dateTime, fmtNum, moneyShort, pct } from "@/lib/format";
 import { Badge, Card, CardHeader, Input, StatCard } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { FoydaZararBlock, IshlabChiqarishBlock, KunlikBlock, KunlikChart, PulQoldiqlari, QarzlarBlock, SotuvBlock, XomAshyoBlock } from "./boshqaruv-paneli";
+
+const pickDay = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : undefined);
+
+/** Sarlavha: «<KORXONA> — BOSHQARUV PANELI», sana / oy boshi / oxirgi yozuv va boshqa kunni tanlash (`?date=`). */
+function PanelHeader({ p, company }: { p: Panel; company: string }) {
+  const ymd = `${p.day.getFullYear()}-${String(p.day.getMonth() + 1).padStart(2, "0")}-${String(p.day.getDate()).padStart(2, "0")}`;
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3 rounded-(--radius-card) border border-slate-200/80 bg-white px-4 py-3 shadow-(--shadow-card)">
+      <div className="min-w-0">
+        <div className="text-[15px] font-extrabold uppercase tracking-[0.06em] text-slate-900">{company.toUpperCase()} — BOSHQARUV PANELI</div>
+        <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-slate-500">
+          <span>Sana: <b className="text-slate-800">{date(p.day)}</b></span>
+          <span>Oy boshi: <b className="text-slate-800">{date(p.monthStart)}</b></span>
+          <span>Oxirgi yozuv: <b className="text-slate-800">{p.lastEntry ? dateTime(p.lastEntry) : "—"}</b></span>
+        </div>
+      </div>
+      <form method="get" className="flex items-center gap-2">
+        <Input type="date" name="date" defaultValue={ymd} className="h-9 w-44" aria-label="Boshqa kunni ko'rish" />
+        <button className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
+        {!p.isToday && <Link href="/dashboard" className="h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Bugun</Link>}
+      </form>
+    </div>
+  );
+}
+
+/**
+ * 8 ta asosiy raqam. `allow` berilsa karta havolasi — ro'yxatdagi birinchi ochiq sahifa, ochig'i bo'lmasa havolasiz
+ * (ish boshqaruvchida Tahlil'dan faqat «Moliya» sahifalari ochiq). `d` — faqat direktorning bugungi ko'rinishida.
+ */
+function PanelKpis({ p, d, allow }: { p: Panel; d: TodayData | null; allow?: (href: string) => boolean }) {
+  const k = p.kpi;
+  const to = (...hrefs: string[]) => (allow ? hrefs.find(allow) : hrefs[0]);
+  return (
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <StatCard label={p.isToday ? "Jami pul (hozir)" : "Jami pul (kun oxiri)"} value={moneyShort(k.cash)} hint={fmtNum(k.cash)} icon={Wallet} href={to("/bi-tahlil/moliya/dds")} />
+      <StatCard label="Bugun kirim" value={moneyShort(k.inToday)} hint={fmtNum(k.inToday)} icon={ArrowDownLeft} tone="success" href={to("/cashflow", "/payments")} />
+      <StatCard label="Bugun chiqim" value={moneyShort(k.outToday)} hint={fmtNum(k.outToday)} icon={ArrowUpRight} tone="danger" href={to("/cashflow", "/payments")} />
+      <StatCard label="Bugun sotuv" value={moneyShort(k.salesToday)} hint={fmtNum(k.salesToday)} icon={ShoppingCart} href={to("/bi-tahlil/sotuvlar", "/sales/realizatsiya")} />
+      <StatCard label="Oy sotuvi" value={moneyShort(k.salesMonth)} hint={d?.sales.plan ? `reja ${moneyShort(d.sales.plan)} · ${pct(d.sales.pct ?? 0, 0)}` : fmtNum(k.salesMonth)} icon={TrendingUp} tone={d?.sales.pct != null && d.sales.pct < 50 ? "warning" : "success"} href={to("/bi-tahlil/sotuvlar", "/sales/realizatsiya")} />
+      <StatCard label="Oy zavod sof foydasi" value={moneyShort(k.netMonth)} hint={p.isToday ? "hisoblangan PNL" : "butun oy, hisoblangan PNL"} icon={Scale} tone={k.netMonth < 0 ? "danger" : "brand"} href={to("/bi-tahlil/moliya/pnl")} />
+      <StatCard label="Bizga qarzlar (haqdorlik)" value={moneyShort(k.receivable)} hint={d?.receivable.over60 ? `60+ kun: ${moneyShort(d.receivable.over60)}` : fmtNum(k.receivable)} icon={HandCoins} tone={d?.receivable.over60 ? "warning" : "default"} href={to("/bi-tahlil/mijozlar", "/bi-tahlil/mijozlar/xaridorlar")} />
+      <StatCard label="Bizning qarzimiz" value={moneyShort(k.payable)} hint={`shundan bank kreditlari ${moneyShort(p.debts.bankLoans)}`} icon={Landmark} tone={k.payable > k.cash ? "danger" : "default"} href={to("/moliya/kreditlar", "/bi-tahlil/mijozlar/taminotchilar")} />
+    </div>
+  );
+}
 
 /**
  * Direktor «Bugun» ekrani — bosh sahifada direktor uchun sukut («Insof 2026» → «INSOF MCHJ — BOSHQARUV PANELI»):
@@ -16,41 +61,14 @@ import { FoydaZararBlock, IshlabChiqarishBlock, KunlikBlock, KunlikChart, PulQol
  * Bugun ko'rilganda yana: kunlik sotuv diagrammasi, «E'tibor bering» (Nazorat bilan) va yaqin to'lovlar — `today.ts`.
  */
 export async function TodayHome({ date: dayParam }: { date?: string }) {
-  const picked = dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? new Date(`${dayParam}T00:00:00`) : undefined;
-  const p = await boshqaruvPaneli(picked);
+  const p = await boshqaruvPaneli(pickDay(dayParam));
   const [d, company] = await Promise.all([p.isToday ? todayData() : Promise.resolve(null), getCompany()]);
-  const k = p.kpi;
-  const ymd = `${p.day.getFullYear()}-${String(p.day.getMonth() + 1).padStart(2, "0")}-${String(p.day.getDate()).padStart(2, "0")}`;
   const levelCls = { crit: "border-red-200 bg-red-50", warn: "border-amber-200 bg-amber-50/70", ok: "border-emerald-200 bg-emerald-50/70" } as const;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-(--radius-card) border border-slate-200/80 bg-white px-4 py-3 shadow-(--shadow-card)">
-        <div className="min-w-0">
-          <div className="text-[15px] font-extrabold uppercase tracking-[0.06em] text-slate-900">{(company.legalName ?? company.name).toUpperCase()} — BOSHQARUV PANELI</div>
-          <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-slate-500">
-            <span>Sana: <b className="text-slate-800">{date(p.day)}</b></span>
-            <span>Oy boshi: <b className="text-slate-800">{date(p.monthStart)}</b></span>
-            <span>Oxirgi yozuv: <b className="text-slate-800">{p.lastEntry ? dateTime(p.lastEntry) : "—"}</b></span>
-          </div>
-        </div>
-        <form method="get" className="flex items-center gap-2">
-          <Input type="date" name="date" defaultValue={ymd} className="h-9 w-44" aria-label="Boshqa kunni ko'rish" />
-          <button className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
-          {!p.isToday && <Link href="/dashboard" className="h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Bugun</Link>}
-        </form>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label={p.isToday ? "Jami pul (hozir)" : "Jami pul (kun oxiri)"} value={moneyShort(k.cash)} hint={fmtNum(k.cash)} icon={Wallet} href="/bi-tahlil/moliya/dds" />
-        <StatCard label="Bugun kirim" value={moneyShort(k.inToday)} hint={fmtNum(k.inToday)} icon={ArrowDownLeft} tone="success" href="/cashflow" />
-        <StatCard label="Bugun chiqim" value={moneyShort(k.outToday)} hint={fmtNum(k.outToday)} icon={ArrowUpRight} tone="danger" href="/cashflow" />
-        <StatCard label="Bugun sotuv" value={moneyShort(k.salesToday)} hint={fmtNum(k.salesToday)} icon={ShoppingCart} href="/bi-tahlil/sotuvlar" />
-        <StatCard label="Oy sotuvi" value={moneyShort(k.salesMonth)} hint={d?.sales.plan ? `reja ${moneyShort(d.sales.plan)} · ${pct(d.sales.pct ?? 0, 0)}` : fmtNum(k.salesMonth)} icon={TrendingUp} tone={d?.sales.pct != null && d.sales.pct < 50 ? "warning" : "success"} href="/bi-tahlil/sotuvlar" />
-        <StatCard label="Oy zavod sof foydasi" value={moneyShort(k.netMonth)} hint={p.isToday ? "hisoblangan PNL" : "butun oy, hisoblangan PNL"} icon={Scale} tone={k.netMonth < 0 ? "danger" : "brand"} href="/bi-tahlil/moliya/pnl" />
-        <StatCard label="Bizga qarzlar (haqdorlik)" value={moneyShort(k.receivable)} hint={d?.receivable.over60 ? `60+ kun: ${moneyShort(d.receivable.over60)}` : fmtNum(k.receivable)} icon={HandCoins} tone={d?.receivable.over60 ? "warning" : "default"} href="/bi-tahlil/mijozlar" />
-        <StatCard label="Bizning qarzimiz" value={moneyShort(k.payable)} hint={`shundan bank kreditlari ${moneyShort(p.debts.bankLoans)}`} icon={Landmark} tone={k.payable > k.cash ? "danger" : "default"} href="/moliya/kreditlar" />
-      </div>
+      <PanelHeader p={p} company={company.legalName ?? company.name} />
+      <PanelKpis p={p} d={d} />
 
       {/* Kassa prognozi o'rniga — kunlik sotuv va tushum diagrammasi (prognoz: Moliya → To'lov kalendari) */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -106,6 +124,38 @@ export async function TodayHome({ date: dayParam }: { date?: string }) {
         <div className="2xl:col-span-2"><FoydaZararBlock p={p} /></div>
       </div>
       <KunlikBlock p={p} />
+    </div>
+  );
+}
+
+/**
+ * Ish boshqaruvchi bosh sahifasi — o'sha «BOSHQARUV PANELI», jadvaldagi joylashuvda: chapda pul, sotuv, ishlab chiqarish va
+ * xom-ashyo bloklari, o'ngda «Kunlik sotuv va tushum (oy)»; pastda qarzlar, foyda-zarar va kunlik grafik.
+ * Direktorning «Bugun»idagi Nazorat va yaqin to'lovlar bu yerda yo'q. Sahifa eni cheklanmaydi (`data-wide`); o'ng ustun
+ * 8 ustunli jadvallar chapda sig'adigan kenglikdan (1760px) boshlab, undan torroqda bloklar ketma-ket.
+ */
+export async function PanelHome({ date: dayParam, allow }: { date?: string; allow: (href: string) => boolean }) {
+  const [p, company] = await Promise.all([boshqaruvPaneli(pickDay(dayParam)), getCompany()]);
+  return (
+    <div data-wide className="space-y-6">
+      <PanelHeader p={p} company={company.legalName ?? company.name} />
+      <PanelKpis p={p} d={null} allow={allow} />
+      <div className="grid grid-cols-1 gap-6 min-[1760px]:grid-cols-[minmax(0,1fr)_26rem]">
+        <div className="min-w-0 space-y-6">
+          <PulQoldiqlari p={p} />
+          <SotuvBlock p={p} />
+          <IshlabChiqarishBlock p={p} />
+          <XomAshyoBlock p={p} />
+        </div>
+        <KunlikBlock p={p} fill />
+      </div>
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
+        <div className="min-w-0 space-y-6">
+          <QarzlarBlock p={p} />
+          <FoydaZararBlock p={p} />
+        </div>
+        <div className="min-w-0"><KunlikChart p={p} /></div>
+      </div>
     </div>
   );
 }
