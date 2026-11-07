@@ -69,8 +69,8 @@ export function CloseTripForm({ tripId, loaded, accepted, returned }: { tripId: 
   const [state, action, pending] = useActionState(closeTrip.bind(null, tripId), undefined);
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
-      <label className="flex flex-col text-xs text-slate-500">Qabul qilindi<Input name="acceptedQty" inputMode="decimal" defaultValue={accepted ?? loaded} className="mt-1 h-9 w-28 text-sm" /></label>
-      <label className="flex flex-col text-xs text-slate-500">Qaytarildi<Input name="returnedQty" inputMode="decimal" defaultValue={returned ?? ""} placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qabul qilindi<Input name="acceptedQty" type="number" step="0.001" min="0" defaultValue={accepted ?? loaded} className="mt-1 h-9 w-28 text-sm" /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qaytarildi<Input name="returnedQty" type="number" step="0.001" min="0" defaultValue={returned ?? ""} placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
       <label className="flex min-w-[12rem] flex-1 flex-col text-xs text-slate-500">Izoh<Input name="comment" className="mt-1 h-9 text-sm" /></label>
       <Button size="sm" disabled={pending}><Lock size={14} /> Reysni yopish</Button>
       <div className="w-full"><FormError error={state?.error} /><FormSuccess text={state?.note} /></div>
@@ -96,11 +96,11 @@ export function TripCostForm({ tripId, lastPrice, dualFuel = false }: { tripId: 
               <option value="">— turi —</option><option value="DIESEL">Dizel</option><option value="METHANE">Metan</option>
             </Select>
           )}
-          <Input name="liters" inputMode="decimal" placeholder="litr" className="h-9 w-20 text-sm" required />
-          <Input name="pricePerL" inputMode="decimal" placeholder="narx/l" defaultValue={lastPrice ?? ""} className="h-9 w-24 text-sm" required />
-          <Input name="odometerKm" inputMode="numeric" placeholder="probeg" className="h-9 w-24 text-sm" />
+          <Input name="liters" type="number" step="0.01" min="0" placeholder="litr" className="h-9 w-20 text-sm" required />
+          <Input name="pricePerL" type="number" step="0.01" min="0" placeholder="narx/l" defaultValue={lastPrice ?? ""} className="h-9 w-24 text-sm" required />
+          <Input name="odometerKm" type="number" min="0" placeholder="probeg" className="h-9 w-24 text-sm" />
         </>
-      ) : <Input name="amount" inputMode="numeric" placeholder="summa, so'm" className="h-9 w-32 text-sm" required />}
+      ) : <Input name="amount" type="number" step="0.01" min="0" placeholder="summa, so'm" className="h-9 w-32 text-sm" required />}
       <Input name="note" placeholder="izoh" className="h-9 min-w-[8rem] flex-1 text-sm" />
       <Button size="sm" variant="secondary" disabled={pending}><Coins size={14} /> Qo'shish</Button>
       <div className="w-full"><FormError error={state?.error} /></div>
@@ -136,8 +136,8 @@ export function DispatchDeliverForm({ tripId, loaded, unit }: { tripId: string; 
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <label className="flex min-w-[12rem] flex-1 flex-col text-xs text-slate-500">Qabul qildi (F.I.O.) *<Input name="receiverName" className="mt-1 h-9 text-sm" required /></label>
-      <label className="flex flex-col text-xs text-slate-500">Qabul, {unit}<Input name="acceptedQty" inputMode="decimal" defaultValue={loaded} className="mt-1 h-9 w-28 text-sm" /></label>
-      <label className="flex flex-col text-xs text-slate-500">Qaytdi, {unit}<Input name="returnedQty" inputMode="decimal" placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qabul, {unit}<Input name="acceptedQty" type="number" step="0.001" min="0" defaultValue={loaded} className="mt-1 h-9 w-28 text-sm" /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qaytdi, {unit}<Input name="returnedQty" type="number" step="0.001" min="0" placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
       <label className="flex min-w-[10rem] flex-1 flex-col text-xs text-slate-500">Izoh<Input name="comment" className="mt-1 h-9 text-sm" /></label>
       <Button size="sm" variant="success" disabled={pending}><PackageCheck size={14} /> Yetkazildi (dispetcher)</Button>
       <div className="w-full"><FormError error={state?.error} /></div>

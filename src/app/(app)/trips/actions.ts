@@ -166,16 +166,22 @@ export async function saveTripPickup(id: string, _prev: ActionState, fd: FormDat
 
 
 
-export async function cancelTrip(id: string) {
+/**
+ * Reysni o'chirish (Reyslar ro'yxati va reys sahifasidagi «O'chirish»): faqat rejalashtirilgan — hali
+ * yuklanmagan reys. Yuklangandan keyin skladdan chiqim yozilgan, uni o'chirib bo'lmaydi.
+ * `reason` haydovchiga boradigan xabarga va auditga yoziladi.
+ */
+export async function cancelTrip(id: string, reason = ""): Promise<ActionState> {
   const s = await requireAction("trips", "cancel");
-  const r = await tripCancelled(id, s.userId);
+  const r = await tripCancelled(id, s.userId, reason.trim() || undefined);
+  if (r.error) return { error: `${r.error}: yuklangan reysda skladdan chiqim yozilgan, uni o'chirib bo'lmaydi` };
   if (r.changed) {
     // ECO o'z yetkazmasini yopsin (reysni bazadan o'qiydi), keyin reys butunlay o'chadi — hech qayerda qolmaydi
     if (ecoEnabled()) await pushTripStatus(id, "CANCELLED").catch(() => undefined);
     await purgeCancelledTrip(id, s.userId);
   }
   refresh(id, r.orderId);
-  if (r.changed) redirect(`/orders/${r.orderId}`);
+  return { ok: true };
 }
 
 /** Reys sahifasidagi "ECO'ga yuborish / yangilash" tugmasi. */

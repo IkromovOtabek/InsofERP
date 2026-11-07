@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { History, Plus } from "lucide-react";
+import { History, Plus, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -16,6 +16,9 @@ import { LiveDrivers } from "./live-drivers";
 import { DriverList, DriverTrips } from "./driver-history";
 import type { TripStatus } from "@/generated/prisma";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
+import { cancelTrip } from "./actions";
+import { ConfirmButton } from "../payments/confirm-button";
 import { SectionTabs } from "@/components/section-tabs";
 
 export default async function TripsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; driver?: string }> }) {
@@ -23,6 +26,8 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
   const { status, q, driver } = await searchParams;
   // Reysni dispetcher va ishlab chiqarish ochadi; mexanik/ish boshqaruvchi faqat ko'radi (/trips/new ularga yopiq)
   const canCreate = ["LOGISTICS", "PRODUCTION", "DIRECTOR"].includes(s.role);
+  // Rejalashtirilgan (yuklanmagan) reysni ro'yxatdan o'chirish — ruxsatlar daraxti bo'yicha (trips → cancel)
+  const canCancel = canDo(s, "trips", "cancel");
   const newBtn = canCreate ? <LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton> : undefined;
   const eco = ecoEnabled();
   // "Tarix" — holat emas, alohida ko'rinish: haydovchilar ro'yxati va ularning butun tarixi
@@ -70,7 +75,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
       {eco && <LiveDrivers />}
       <Tabs current={status ?? ""} items={tabItems} />
       <Table>
-        <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Texnika</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Bosqich</Th>{eco && <Th>ECO</Th>}</tr></thead>
+        <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Texnika</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Bosqich</Th>{eco && <Th>ECO</Th>}{canCancel && <Th />}</tr></thead>
         <tbody>
           {trips.length === 0 && <Empty text="Reyslar yo'q" />}
           {trips.map((t) => (
@@ -80,6 +85,10 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
               {/* TZ bosqichi (obyektga keldi / tushirilmoqda / yopildi — vaqt belgilaridan) */}
               <Td><PhaseBadge phase={tripPhase(t)} />{t.issues.length > 0 && <div><Badge color="red">muammo</Badge></div>}</Td>
               {eco && <Td>{(() => { const st = ecoLabel(t.ecoStatus); return st ? <Badge color={st.color}>{st.label}</Badge> : t.ecoError ? <Badge color="red">xato</Badge> : <span className="text-xs text-slate-400">—</span>; })()}</Td>}
+              {canCancel && <Td>{t.status === "PLANNED" && (
+                <ConfirmButton action={cancelTrip.bind(null, t.id)} label="" title="O'chirish" icon={<Trash2 size={14} />} reason="optional" okText="O'chirildi"
+                  question={`${t.deliveryNoteNo} reysi o'chirilsinmi? Haydovchiga xabar boradi`} className="h-7 px-1.5" />
+              )}</Td>}
             </Tr>
           ))}
         </tbody>

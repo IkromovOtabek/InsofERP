@@ -21,6 +21,24 @@ export function fmtFixed(v: number | string | { toString(): string }, frac = 2):
   return (n < 0 && Number(Math.abs(n).toFixed(frac)) !== 0 ? "-" : "") + int.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + (f ? "," + f : "");
 }
 
+/**
+ * Kiritilgan raqam matni → JS o'qiydigan satr: «1 000 000,50» → «1000000.50», «1,4» → «1.4».
+ * Bo'shliq va apostrof (minglik ajratgich) tashlanadi; nuqta ham, vergul ham kasr ajratgichi:
+ * ikkala turi bo'lsa — oxirgisi kasr, qolganlari minglik («1,000,000.50», «1.000.000,50»);
+ * bir turdagi bir nechtasi 3 xonali guruhlar bilan — minglik («1.000.000»).
+ * Boshqa belgilarga tegilmaydi — «12a» raqam bo'lmaganicha qoladi (jim 0 emas, xato chiqsin).
+ */
+export function numText(v: string): string {
+  const s = v.replace(/[\s'’ʼ_]/g, "");
+  const seps = s.match(/[.,]/g);
+  if (!seps) return s;
+  if (seps.length === 1) return s.replace(",", ".");
+  const last = Math.max(s.lastIndexOf("."), s.lastIndexOf(","));
+  const head = s.slice(0, last);
+  if (seps.some((c) => c !== seps[0])) return head.includes(s[last]) ? s : `${head.replace(/[.,]/g, "")}.${s.slice(last + 1)}`;
+  return /^-?\d{1,3}([.,]\d{3})+$/.test(s) ? s.replace(/[.,]/g, "") : s;
+}
+
 export const money = (v: number | string | { toString(): string }) => fmtNum(v, 0) + " so'm";
 export const qty = (v: number | string | { toString(): string }) => fmtNum(v, 3);
 

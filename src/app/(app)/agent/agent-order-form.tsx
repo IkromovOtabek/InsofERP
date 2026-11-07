@@ -63,7 +63,7 @@ export function AgentOrderForm({ customers, products }: { customers: Customer[];
               {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.unit}</option>)}
             </Select>
             <Input name="qtyM3[]" type="number" step="0.01" min="0" required placeholder="Hajm" value={r.qty} onChange={(e) => setRow(i, { qty: e.target.value })} aria-label="Hajm" />
-            <Input name="price[]" type="number" step="1" min="0" required placeholder="Narx" value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} aria-label="Narx (1 birlik)" />
+            <Input name="price[]" type="number" step="0.01" min="0" required placeholder="Narx" value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} aria-label="Narx (1 birlik)" />
             {rows.length > 1
               ? <Button type="button" variant="secondary" className="px-2" onClick={() => setRows((rs) => rs.filter((_, n) => n !== i))} aria-label="Qatorni o'chirish"><Trash2 size={16} /></Button>
               : <span />}

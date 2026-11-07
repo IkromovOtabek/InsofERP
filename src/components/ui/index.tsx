@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { Inbox, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NumberInput } from "@/components/money-input";
 
 import { EmptySlot } from "./empty-slot";
 
@@ -153,6 +154,8 @@ export function Field({ label, children, hint, error, className, help }: { label
 export const inputCls = "h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 hover:border-slate-400 focus:border-brand-500 focus:outline-none focus:ring-3 focus:ring-brand-500/25 aria-invalid:border-red-500 aria-invalid:focus:ring-red-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 read-only:bg-slate-50 pointer-coarse:h-11 pointer-coarse:text-base";
 
 export function Input({ className, ...p }: React.InputHTMLAttributes<HTMLInputElement>) {
+  // Raqam maydoni — vergul/nuqta kasr, bo'shliqli summa «1 000 000.50» (brauzerning type="number" i bularni olmaydi)
+  if (p.type === "number") return <NumberInput className={className} {...p} />;
   return <input className={cn(inputCls, className)} {...p} />;
 }
 export function Select({ className, ...p }: React.SelectHTMLAttributes<HTMLSelectElement>) {

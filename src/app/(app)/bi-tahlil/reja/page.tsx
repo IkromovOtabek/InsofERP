@@ -105,7 +105,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
               { name: "year", label: "Yil *", type: "number", defaultValue: year, required: true },
               { name: "month", label: "Oy *", type: "select", defaultValue: String(month), options: MONTHS_UZ.map((m, i) => [String(i + 1), m]) },
               { name: "sellerId", label: "Sotuvchi", type: "select", defaultValue: "", options: [["", "Zavod (umumiy)"], ...d.users.map((u) => [u.id, u.fullName] as [string, string])] },
-              { name: "amount", label: "Reja summasi (so'm) *", type: "number", step: "1", required: true },
+              { name: "amount", label: "Reja summasi (so'm) *", type: "number", step: "0.01", required: true },
               { name: "volumeM3", label: "Hajm (m³)", type: "number", step: "0.1" },
               { name: "note", label: "Izoh" },
             ]} />

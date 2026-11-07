@@ -37,10 +37,10 @@ export function FuelForm({ vehicles, drivers, trips, lastPrice, vehicleId }: {
       <Field label="Yoqilg'i turi">
         <Select name="fuelType" key={`f${vid}`} defaultValue={v ? v.fuelType ?? "" : "DIESEL"} required><option value="">— tanlang (dizel yoki metan) —</option><option value="DIESEL">Dizel</option><option value="PETROL">Benzin</option><option value="METHANE">Metan</option><option value="PROPANE">Propan</option></Select>
       </Field>
-      <Field label="Miqdor, litr *"><Input name="liters" inputMode="decimal" value={liters} onChange={(e) => setLiters(e.target.value)} required /></Field>
-      <Field label="1 litr narxi *"><Input name="pricePerL" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required /></Field>
+      <Field label="Miqdor, litr *"><Input name="liters" type="number" step="0.01" min="0" value={liters} onChange={(e) => setLiters(e.target.value)} required /></Field>
+      <Field label="1 litr narxi *"><Input name="pricePerL" type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} required /></Field>
       <Field label="Jami"><div className="flex h-10 items-center text-sm font-semibold tabular">{Number.isFinite(total) && total > 0 ? money(total) : "—"}</div></Field>
-      <Field label="Probeg, km" hint="Sarf (l/100 km) shundan"><Input name="odometerKm" inputMode="numeric" /></Field>
+      <Field label="Probeg, km" hint="Sarf (l/100 km) shundan"><Input name="odometerKm" type="number" min="0" /></Field>
       <Field label="Zapravka"><Input name="station" placeholder="UzGazOil, Mustang…" /></Field>
       <Field label="Izoh" className="sm:col-span-2"><Input name="note" /></Field>
       <div className="sm:col-span-4"><Button disabled={pending || vehicles.length === 0}>{pending ? "Saqlanmoqda…" : "Zapravkani yozish"}</Button></div>
@@ -60,7 +60,7 @@ export function ExpenseForm({ vehicles, drivers, trips, vehicleId }: { vehicles:
     <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-4 [&>*]:min-w-0">
       <div className="sm:col-span-4"><FormError error={state?.error} />{state?.ok && <FormSuccess text="Xarajat yozildi" />}</div>
       <Field label="Turi *"><Select name="kind" defaultValue="REPAIR">{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></Field>
-      <Field label="Summa, so'm *"><Input name="amount" inputMode="numeric" required /></Field>
+      <Field label="Summa, so'm *"><Input name="amount" type="number" step="0.01" min="0" required /></Field>
       <Field label="Sana"><Input name="date" type="date" defaultValue={today()} /></Field>
       <Field label="Transport">
         <Select name="vehicleId" value={vid} onChange={(e) => setVid(e.target.value)}><option value="">—</option>{vehicles.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select>

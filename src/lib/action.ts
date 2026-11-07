@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { numText } from "@/lib/format";
 
 /** `note` — amal bajarildi, lekin yonidagi ish haqida aytadigan gap bor
  *  (masalan: parol almashdi — uni xodimga kadr o'zi yetkazadi).
@@ -33,8 +34,10 @@ export function parseForm<T extends z.ZodTypeAny>(schema: T, fd: FormData): { da
 /** Bazadagi Decimal(18,2) ustunlariga sig'adigan eng katta qiymat — undan kattasi 500 xato bermasin, forma xatosi bo'lsin. */
 export const MAX_AMOUNT = 1e15;
 
+/** Raqam maydoni: «1 000 000,50», «1,4» ham o'qiladi (`numText`) — qo'lda terilgan matnli maydonlar uchun ham. */
 export const zDec = (min = 0) =>
-  z.coerce.number({ message: "raqam bo'lishi kerak" }).min(min, `kamida ${min}`).max(MAX_AMOUNT, "qiymat juda katta");
+  z.preprocess((v) => (typeof v === "string" ? numText(v) : v),
+    z.coerce.number({ message: "raqam bo'lishi kerak" }).min(min, `kamida ${min}`).max(MAX_AMOUNT, "qiymat juda katta"));
 export const zStr = (msg = "to'ldirilishi shart") => z.string().trim().min(1, msg);
 export const zOpt = z.string().trim().optional().transform((v) => (v ? v : null));
 

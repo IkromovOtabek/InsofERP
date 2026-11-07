@@ -106,7 +106,7 @@ function RowFields({ options, v, vid, setVid, date, setDate, token, action, pend
         <Field label="Baraban, soat"><Input name="drumHours" type="number" min="0" max="24" step="0.1" value={hours} onChange={(e) => setHours(e.target.value)} className="text-right tabular" /></Field>
 
         <Field label={`Zapravka, ${v?.unit ?? "m³ / l"}`}><Input name="refuel" type="number" min="0" max="1000" step="0.1" className="text-right tabular" /></Field>
-        <Field label="Zapravka narxi" hint={v?.lastPrice ? `bo'sh — ${fmtNum(v.lastPrice, 0)}` : undefined}><Input name="fuelPrice" type="number" min="0" step="1" placeholder={v?.lastPrice ? String(v.lastPrice) : ""} className="text-right tabular" /></Field>
+        <Field label="Zapravka narxi" hint={v?.lastPrice ? `bo'sh — ${fmtNum(v.lastPrice, 0)}` : undefined}><Input name="fuelPrice" type="number" min="0" step="0.01" placeholder={v?.lastPrice ? String(v.lastPrice) : ""} className="text-right tabular" /></Field>
         <Field label="Ta'mir (usta)"><Input name="repair" type="number" min="0" step="1000" className="text-right tabular" /></Field>
         <Field label="Zapchast"><Input name="parts" type="number" min="0" step="1000" className="text-right tabular" /></Field>
         <Field label="Vulkanizator"><Input name="vulc" type="number" min="0" step="1000" className="text-right tabular" /></Field>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, Route, AlertTriangle, Coins } from "lucide-react";
+import { Printer, PackageCheck, Trash2, Truck, Package, Clock, MapPin, MapPinned, Smartphone, Route, AlertTriangle, Coins } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -10,8 +10,9 @@ import { pathAllowed } from "@/lib/nav";
 import { fuelNormText, PAY_TYPE_LABEL, payTrips } from "@/lib/driver-trip-pay";
 import { PriceForm } from "../../logistika/tabel/tabel-forms";
 import { qty, date, dateTime } from "@/lib/format";
-import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
 import { cancelTrip } from "../actions";
+import { ConfirmButton } from "../../payments/confirm-button";
 import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, VEHICLE_TYPE, DRUM_MAX_MIN, isConcreteTrip, PHASE_STEPS, TRIP_PHASE, tripPhase, tripPlannedAt, tripDelayMin, delayLevel, logisticsSettings, minutesLabel } from "@/lib/logistics";
 import { lastFuelPrice } from "@/lib/logistics-costs";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -66,6 +67,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const canLoad = ["PRODUCTION", "DIRECTOR"].includes(s.role);
   const canPlan = canLog || canLoad;
   const canResolve = canDo(s, "trips", "resolve");
+  // O'chirish — ruxsatlar daraxti bo'yicha (trips → cancel), yuklanmagan reysgina
+  const canCancel = canDo(s, "trips", "cancel");
   const pay = t.status === "DELIVERED" ? (await payTrips({ id, status: "DELIVERED" }, 1))[0] ?? null : null;
   const driverPhase = ["LOADED", "ON_ROAD"].includes(t.status) || (t.status === "DELIVERED" && !t.returnedAt);
   // Reys miqdori zayavkadagi mahsulot birligida ko'rsatiladi (beton m³, dona mahsulot dona)
@@ -100,7 +103,10 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             {t.status === "PLANNED" && canLoad && <LoadButton tripId={id} />}
             {t.status === "LOADED" && canLog && <OnRoadButton tripId={id} />}
             {driverPhase && canPlan && !t.vehicle.external && <span className="self-center text-xs text-slate-500">Yo&apos;l bosqichlarini haydovchi o&apos;z ilovasidan belgilaydi</span>}
-            {t.status === "PLANNED" && canLog && <form action={cancelTrip.bind(null, id)}><Button variant="ghost" className="text-red-600 hover:bg-red-50"><XCircle size={16} /> Bekor</Button></form>}
+            {t.status === "PLANNED" && canCancel && (
+              <ConfirmButton action={cancelTrip.bind(null, id)} label="O'chirish" icon={<Trash2 size={16} />} reason="optional" okText="O'chirildi"
+                question={`${t.deliveryNoteNo} reysi o'chirilsinmi? Haydovchiga xabar boradi`} goTo={`/orders/${t.orderId}`} className="h-10 px-3" />
+            )}
           </>
         }
       />
