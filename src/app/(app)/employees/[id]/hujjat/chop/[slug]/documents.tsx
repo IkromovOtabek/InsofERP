@@ -1,6 +1,7 @@
 import type { CompanySettings, Employee, HrDocument } from "@/generated/prisma";
-import { money } from "@/lib/format";
-import { DEFAULT_DISMISS_ARTICLE, dismissBasis, docDate, docDateCyr, docDateLat, regionLine, shortName } from "@/lib/hr-docs";
+import { fmtNum, money } from "@/lib/format";
+import { DEFAULT_DISMISS_ARTICLE, dismissBasis, docDate, docDateCyr, docDateLat, firmParts, regionLine, shortName } from "@/lib/hr-docs";
+import { toCyrillic } from "@/lib/translit";
 
 /**
  * Otdel kadr shakllarining matni — qog'ozdagi blankalar bilan bir xil.
@@ -44,11 +45,13 @@ function Sign({ label, value, w = 220 }: { label: string; value?: string | null;
 /**
  * Bitta A4 varaq. Chop etishda har biri alohida sahifaga tushadi — oxirgisidan keyin
  * bo'sh sahifa chiqmasligi uchun uzilish `doc-sheet:last-of-type` da bekor qilinadi
- * (qoida chop etish sahifasining `<style>` ida).
+ * (qoida chop etish sahifasining `<style>` ida). Hujjat o'z yozuvida qoladi —
+ * interfeys kirill/rus rejimida bo'lsa ham o'girilmaydi (`data-no-translit`).
  */
 export function Sheet({ children, last }: { children: React.ReactNode; last?: boolean }) {
   return (
     <section
+      data-no-translit
       className={`doc-sheet${last ? " doc-last" : ""} paper mx-auto mb-6 w-full max-w-[210mm] rounded-sm bg-white px-[18mm] py-[16mm] text-[12.5px] leading-[1.45] text-black shadow-sm print:mb-0 print:max-w-none print:rounded-none print:p-0 print:shadow-none`}
     >
       {children}
@@ -576,74 +579,108 @@ export function Javobgarlik({ e, c, d }: DocProps) {
 
 /* ───────── 6. Buyruq (ishga qabul qilish) ───────── */
 
-/** Buyruq blankasi: korxona shapkasi, rekvizitlar, joy va sana, «БУЙРУҚ №…» sarlavhasi. */
-function OrderBlank({ c, d }: Pick<DocProps, "c" | "d">) {
-  const rekvizit = [c.address, c.phone ? `Tel: ${c.phone}` : null, c.inn ? `INN ${c.inn}` : null]
-    .filter(Boolean)
-    .join(". ");
+/*
+ * Ikkala buyruq (ishga qabul va bo'shatish) korxonaning firma blankasida — qog'ozdagi
+ * nusxa bilan bir xil: Times shrifti, ikki tilli shapka, o'rtada katta «INSOF», ingichka
+ * chiziq ostida rekvizitlar, keng qator oralig'idagi raqamlangan bandlar.
+ */
+const ORDER_FONT = { fontFamily: '"Times New Roman", Times, serif' };
+const REKVIZIT_FONT = { fontFamily: '"Arial Narrow", "Helvetica Neue", Arial, sans-serif', fontStretch: "condensed" };
+
+/** Buyruqdagi qiymat: to'ldirilgan bo'lsa oddiy matn (qog'ozdagidek), bo'lmasa qo'lda yozish uchun chiziq. */
+const V = ({ v, w = 120 }: { v?: string | null; w?: number }) => (v ? <>{v}</> : <F w={w} />);
+
+/** Buyruq varag'i: firma blankasi, joy va sana, «БУЙРУҚ №…» sarlavhasi, keyin bandlar. */
+function OrderSheet({ c, d, children }: Pick<DocProps, "c" | "d"> & { children: React.ReactNode }) {
+  const rekvizit = [c.address, c.phone ? `Tel ${c.phone}` : null].filter(Boolean).join("  ") + (c.inn ? `. INN ${c.inn}.` : "");
 
   return (
-    <>
-      {/* Korxona blankasi */}
-      <div className="flex items-start justify-between gap-4 text-center text-[11px] font-semibold leading-tight">
-        <div className="w-1/3">
-          O`ZBEKISTON<br />RESPUBLIKASI<br />***<br />TOSHKENT VILOYATI<br />YANGIYO`L TUMANI<br />MASULIYATI CHEKLANGAN<br />JAMIYAT
+    <Sheet>
+      <div style={ORDER_FONT} className="text-[16.5px] leading-[1.9]">
+        {/* Korxona blankasi */}
+        <div className="flex items-center justify-between gap-2 text-center text-[14.5px] uppercase leading-[1.3]">
+          <div className="w-[37%]">
+            <div className="tracking-wide text-black/80">O`zbekiston<br />respublikasi<br />***</div>
+            <div className="font-bold">Toshkent viloyati<br />Yangiyo`l tumani</div>
+            <div>Masuliyati cheklangan</div>
+            <div className="font-bold">Jamiyat</div>
+          </div>
+          <div className="w-[26%] text-[46px] font-bold leading-none tracking-wide">INSOF</div>
+          <div className="w-[37%]">
+            <div className="tracking-wide text-black/80">Ўзбекистон<br />республикаси<br />***</div>
+            <div className="font-bold">Тошкент вилояти<br />Янгийўл тумани</div>
+            <div>Масулияти чекланган</div>
+            <div className="font-bold">Жамият</div>
+          </div>
         </div>
-        <div className="w-1/3 self-center text-3xl font-bold tracking-wide">INSOF</div>
-        <div className="w-1/3">
-          ЎЗБЕКИСТОН<br />РЕСПУБЛИКАСИ<br />***<br />ТОШКЕНТ ВИЛОЯТИ<br />ЯНГИЙЎЛ ТУМАНИ<br />МАСУЛИЯТИ ЧЕКЛАНГАН<br />ЖАМИЯТ
+        <div className="mt-2 border-t border-black pt-1 text-center text-[12px] font-bold leading-tight" style={REKVIZIT_FONT}>
+          {rekvizit}
         </div>
-      </div>
-      <div className="mt-1 border-t-2 border-black pt-1 text-center text-[9px]">{rekvizit}</div>
 
-      <div className="mt-6 flex items-end justify-between">
-        <span>{regionLine(c.address).split(" ").slice(0, 2).join(" ")}</span>
-        <span className="font-bold">{docDateCyr(d?.docDate)}</span>
-      </div>
+        <div className="mt-8 flex items-end justify-between">
+          <span>{toCyrillic(regionLine(c.address).split(" ").slice(0, 2).join(" "))}</span>
+          <span className="font-bold">{docDateCyr(d?.docDate)}</span>
+        </div>
 
-      <h1 className="mt-10 text-center text-base font-bold">БУЙРУҚ №<F v={d?.no} w={90} /></h1>
-    </>
+        <h1 className="mt-14 text-center text-[18px] font-bold">БУЙРУҚ&nbsp; №<V v={d?.no} w={90} /></h1>
+
+        {children}
+      </div>
+    </Sheet>
   );
 }
 
-/** Buyruq oxiridagi direktor imzosi. */
-function DirectorSign({ c }: Pick<DocProps, "c">) {
+/** Raqamlangan band: qog'ozdagidek keng qator oralig'i, ikki tomonga tekislangan, chapdan surilgan. */
+const Item = ({ children }: { children: React.ReactNode }) => (
+  <p className="mt-1 pl-[9mm] text-justify leading-[2.2]">{children}</p>
+);
+
+/** «Буйрук билан танишдим ______ IKROMOV B.B.» — xodim imzosi uchun. */
+function Acquainted({ e }: Pick<DocProps, "e">) {
   return (
-    <div className="mt-24 flex items-start justify-between">
-      <div className="font-bold">
-        «{c.legalName || c.name}»
-        <br />Директори
+    <div className="mt-16 flex items-end justify-center gap-3">
+      <span>Буйрук билан танишдим</span>
+      <span className="inline-block w-44 border-b border-black" />
+      <span className="font-bold">{shortName(e.fullName).toUpperCase()}</span>
+    </div>
+  );
+}
+
+/** Buyruq oxiridagi direktor imzosi: «INSOF» MChJ / Директори ··· Мирзакаримов С.А. */
+function DirectorSign({ c }: Pick<DocProps, "c">) {
+  const { base, form } = firmParts(c.legalName || c.name);
+  return (
+    <div className="mt-36 flex items-end justify-between font-bold leading-[1.5]">
+      <div>
+        « {base} » {form}
+        <br /><span className="pl-4">Директори</span>
       </div>
-      <div className="font-bold">{shortName(c.directorName)}</div>
+      <div>{shortName(c.directorName)}</div>
     </div>
   );
 }
 
 export function Buyruq({ e, c, d }: DocProps) {
-  const firm = c.legalName || c.name;
+  const firm = firmParts(c.legalName || c.name).base;
+  const name = e.fullName.toUpperCase();
 
   return (
-    <Sheet>
-      <OrderBlank c={c} d={d} />
-
-      <P className="indent-0">
-        <b>1. {e.fullName.toUpperCase()}</b> – <F v={docDate(d?.effectiveAt ?? e.hiredAt)} w={130} /> йилдан
-        бошлаб «{firm}» маъсулияти чекланган жамиятининг{" "}
-        <F v={d?.position ?? e.position} w={260} /> вазифасига ишга кабул килинсин.
-      </P>
-      <P className="indent-0">
-        <b>2. {e.fullName.toUpperCase()}</b> белгиланган тартибда мехнат шартномаси тузилсин хамда ойлик
-        иш хакки {d?.salary ? <><F v={money(d.salary)} w={170} /> миқдорида</> : "штат жадвалига мувофиқ"} белгилансин.
-      </P>
-
-      <div className="mt-14 flex items-end justify-center gap-4">
-        <span>Буйрук билан танишдим</span>
-        <span className="inline-block w-40 border-b border-black" />
-        <span className="font-bold">{shortName(e.fullName).toUpperCase()}</span>
+    <OrderSheet c={c} d={d}>
+      <div className="mt-8">
+        <Item>
+          <b>1.&nbsp; {name}</b> – <V v={docDate(d?.effectiveAt ?? e.hiredAt)} w={130} /> йилдан&nbsp; бошлаб
+          «{firm}» маъсулияти чекланган жамиятининг <V v={d?.position ?? e.position} w={220} /> вазифасига
+          ишга кабул килинсин.
+        </Item>
+        <Item>
+          <b>2. {name}</b> белгиланган тартибда мехнат шартномаси тузилсин хамда ойлик иш хакки{" "}
+          {d?.salary ? <>{fmtNum(d.salary)} сўм миқдорида</> : "штат жадвалига мувофиқ"} белгилансин.
+        </Item>
       </div>
 
+      <Acquainted e={e} />
       <DirectorSign c={c} />
-    </Sheet>
+    </OrderSheet>
   );
 }
 
@@ -679,29 +716,36 @@ export function Boshatish({ e, c, d }: DocProps) {
 /* ───────── 8. Buyruq (ishdan bo'shatish) ───────── */
 
 export function BoshatishBuyruq({ e, c, d }: DocProps) {
-  return (
-    <Sheet>
-      <OrderBlank c={c} d={d} />
+  const firm = firmParts(c.legalName || c.name).base;
+  const name = e.fullName.toUpperCase();
 
-      <h2 className="mt-6 text-center text-[13.5px] font-bold">
-        «Ходим билан тузилган меҳнат шартномасини бекор қилиш тўғрисида.»
+  return (
+    <OrderSheet c={c} d={d}>
+      <h2 className="text-center font-bold leading-[1.5]">
+        Ходим билан тузилган меҳнат шартномасини бекор қилиш тўғрисида
       </h2>
 
-      <div className="mt-10 grid grid-cols-[42%_1fr] gap-6">
-        <div className="font-bold">1. {e.fullName.toUpperCase()}</div>
-        <p className="text-justify">
-          <F v={docDate(d?.effectiveAt ?? e.firedAt)} w={110} /> йилдан{" "}
-          <F v={d?.position ?? e.position} w={200} /> билан тузилган меҳнат шартномаси Ўзб Рес МК нинг{" "}
-          <span className="whitespace-nowrap"><F v={d?.article ?? DEFAULT_DISMISS_ARTICLE} w={40} />-моддасига</span> асосан бекор қилинсин.
-        </p>
+      <div className="mt-6">
+        <Item>
+          <b>1.&nbsp; {name}</b> – <V v={docDate(d?.effectiveAt ?? e.firedAt)} w={130} /> йилдан&nbsp; бошлаб
+          «{firm}» маъсулияти чекланган жамиятининг <V v={d?.position ?? e.position} w={220} /> вазифасидан
+          ишдан бўшатилсин, у билан тузилган меҳнат шартномаси Ўзбекистон Республикаси Меҳнат кодексининг{" "}
+          <span className="whitespace-nowrap"><V v={d?.article ?? DEFAULT_DISMISS_ARTICLE} w={40} />-моддасига</span>{" "}
+          асосан бекор қилинсин.
+        </Item>
+        <Item>
+          <b>2.</b> Бухгалтерияга <b>{name}</b> билан белгиланган тартибда якуний ҳисоб-китоб қилиш
+          топширилсин.
+        </Item>
       </div>
 
-      <p className="mt-16 text-center">
-        <b>Асос:</b> <F v={d?.reason ?? dismissBasis(e.fullName)} w={300} />.
+      <p className="mt-6 pl-[9mm]">
+        <b>Асос:</b> <V v={d?.reason ?? dismissBasis(e.fullName)} w={300} />.
       </p>
 
-      <div className="mt-28"><DirectorSign c={c} /></div>
-    </Sheet>
+      <Acquainted e={e} />
+      <DirectorSign c={c} />
+    </OrderSheet>
   );
 }
 

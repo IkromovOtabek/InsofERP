@@ -149,7 +149,7 @@ export const docDateLat = (d?: Date | null) =>
 export function regionLine(address?: string | null): string {
   const parts = (address ?? "")
     .split(",")
-    .map((p) => p.trim())
+    .map((p) => p.trim().replace(/^\d+[.\s]+/, "")) // «702842. Toshkent viloyati» — indeks oldida nuqta bo'lsa ham
     .filter((p) => p && !/^\d+$/.test(p));
   const viloyat = parts.find((p) => /viloyat|shahri|shahar/i.test(p));
   const tuman = parts.find((p) => /tuman/i.test(p));
@@ -159,14 +159,32 @@ export function regionLine(address?: string | null): string {
 /**
  * «Ruzibayev A.A» — familiya va ikkita bosh harf. Otasining ismiga qo'shiladigan
  * «o'g'li» / «qizi» alohida bosh harf bo'lib chiqmaydi.
+ *
+ * Ism allaqachon qisqa yozilgan bo'lsa ham («Мирзакаримов С.А.») ikkala bosh harf
+ * saqlanadi — «С.А.» nuqtalar bo'yicha bo'linadi, bitta so'z deb olinmaydi.
  */
 export function shortName(full?: string | null): string {
   const parts = (full ?? "")
     .trim()
     .split(/\s+/)
-    .filter((w) => w && !/^(o[`'’]?g[`'’]?li|qizi|ugli|o[`'’]?gli)$/i.test(w));
+    .filter((w) => w && !/^(o[`'’]?g[`'’]?li|qizi|ugli|o[`'’]?gli|ўғли|угли|қизи)$/i.test(w));
   if (parts.length === 0) return "____________";
   const [family, ...rest] = parts;
-  if (rest.length === 0) return family;
-  return `${family} ${rest.slice(0, 2).map((x) => x[0].toUpperCase() + ".").join("")}`;
+  const initials = rest.flatMap((w) => w.split(".")).filter(Boolean);
+  if (initials.length === 0) return family;
+  return `${family} ${initials.slice(0, 2).map((x) => x[0].toUpperCase() + ".").join("")}`;
+}
+
+/**
+ * Yuridik nomni nom va tashkiliy shaklga ajratadi: «INSOF MChJ» → { base: "INSOF", form: "MChJ" }.
+ * Buyruqlarda nom qo'shtirnoqda, shakl undan tashqarida yoziladi: «INSOF» MChJ.
+ */
+export function firmParts(name?: string | null): { base: string; form: string | null } {
+  const clean = (name ?? "").replace(/[«»"“”„]/g, " ").replace(/\s+/g, " ").trim();
+  const FORM = "MChJ|MCHJ|МЧЖ|XK|ХК|AJ|АЖ|QK|ҚК|OOO|ООО|YaTT|ЯТТ";
+  const tail = new RegExp(`^(.+?)[\\s,]+(${FORM})\\.?$`, "i").exec(clean);
+  if (tail) return { base: tail[1], form: tail[2] };
+  const head = new RegExp(`^(${FORM})\\.?\\s+(.+)$`, "i").exec(clean);
+  if (head) return { base: head[2], form: head[1] };
+  return { base: clean, form: null };
 }
