@@ -35,7 +35,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   ]);
   const aged = recv.byCustomer.get(id);
   const canOrder = canDo(s, "orders", "create") && c.isActive && !blacklisted;
-  const canEditSites = ["SALES", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
+  // Server amali (`saveSite`) bilan bir xil ruxsat — ruxsatlar daraxtida berilgan xodimga ham tugma chiqadi
+  const canEditSites = canDo(s, "customers", "sites");
 
   return (
     <div>
