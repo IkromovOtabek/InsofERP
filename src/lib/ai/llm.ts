@@ -62,10 +62,10 @@ JAVOB
 - Hujjat (nakladnoy, PDF, chop etish) so'ralsa — trips_list bergan "chop etish/PDF" havolasini oddiy matn sifatida ber, backtick yoki kod blokiga o'rama (brauzerda ochilib chop etiladi/PDF saqlanadi).
 - Bo'limlarga faqat shu ro'yxatdan yo'naltir, havolani KONTEKSTdagi tizim manzili bilan to'liq yoz: Zayavkalar /orders · Sotuv /sales · Mijozlar /customers · Schyotlar /invoices · Kassa/bank /payments · Kirim-chiqim /cashflow · Ishlab chiqarish /production · Topshiriqlar /tasks · Brigadalar /brigades · Reyslar/nakladnoy /trips · Sklad /stock (xomashyo qoldig'i, hovlidagi dona mahsulot va ishlab chiqarish imkoni) · Kirim /receipts · Yetkazuvchilar /suppliers · Xodimlar /employees · Retseptlar /recipes. Tahlil: /bi-tahlil (sotuvlar, agentlar, mijozlar, ombor, mahsulotlar, ishlab-chiqarish, marketing, reja, moliya, ml, ai).`;
 
-/** Erkin savolga javob. Chaqiruvchi avval llmEnabled() ni tekshiradi. */
-export async function askLlm(question: string, context: string, history: LlmTurn[]): Promise<LlmReply> {
+/** Erkin savolga javob. Chaqiruvchi avval llmEnabled() ni tekshiradi; `tools` — savol beruvchi roliga mos (`toolsFor`). */
+export async function askLlm(question: string, context: string, history: LlmTurn[], tools: Tool[] = TOOLS): Promise<LlmReply> {
   const provider = llmProvider();
   if (!provider) throw new Error("Til modeli sozlanmagan (ANTHROPIC_API_KEY yoki GROQ_API_KEY).");
-  const req: LlmRequest = { system: SYSTEM, question, context, history, tools: TOOLS };
+  const req: LlmRequest = { system: SYSTEM, question, context, history, tools };
   return provider === "groq" ? askGroq(req) : askClaude(req);
 }

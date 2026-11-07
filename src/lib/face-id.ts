@@ -91,6 +91,17 @@ export function faceScope(s: Pick<Session, "role" | "perms">): FaceScope | null 
 }
 
 /**
+ * Bugungi skaner jurnali va kadrlari kimga qaysi ko'lamda: hamma xodim — faqat otdel kadr darajasi (direktor, otdel kadr);
+ * hammani skanerdan o'tkazadigan Ish boshqaruvchi — o'z sexi; skaner berilgan boshqa xodim — jurnalsiz (ekranda faqat
+ * hozir kameraga qaragan odam natijasi). Boshqa xodimlar davomati qoidasi — `lib/permissions.ts` → `canSeeStaffAttendance`.
+ */
+export function faceLogScope(s: Pick<Session, "role" | "perms">): FaceScope | null {
+  const scope = faceScope(s);
+  if (scope !== "all" || canEnrollFaces(s)) return scope;
+  return canDo(s, "production", "report") ? "sex" : null;
+}
+
+/**
  * Yuzni ro'yxatga olish / o'chirish — biometrik ma'lumot, faqat otdel kadr darajasi. Hamma xodimni davomatdan
  * o'tkazadigan Ish boshqaruvchi ham yuz olmaydi (skaner ko'lami bilan bog'liq emas).
  */
@@ -618,11 +629,11 @@ export async function todayFaceLog(scope: FaceScope): Promise<FaceLogRow[]> {
 }
 
 /**
- * Kadr faylini berishdan oldin: kim ko'ra oladi. Davomat kadri — skaner egasi (sex boshlig'i faqat sex xodiminikini),
- * ro'yxatga olish kadri — faqat otdel kadr darajasi.
+ * Kadr faylini berishdan oldin: kim ko'ra oladi. Davomat kadri — jurnal ko'lami bilan bir xil (`faceLogScope`: sex boshlig'i
+ * va Ish boshqaruvchi faqat sex xodiminikini), ro'yxatga olish kadri — faqat otdel kadr darajasi.
  */
 export async function facePhotoFor(s: Pick<Session, "role" | "perms">, q: { a?: string | null; k?: string | null; t?: string | null }): Promise<string | null> {
-  const scope = faceScope(s);
+  const scope = faceLogScope(s);
   if (!scope) return null;
   if (q.t) {
     if (!canEnrollFaces(s)) return null; // ro'yxatga olish kadri — faqat yuz oluvchi (otdel kadr)

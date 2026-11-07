@@ -6,7 +6,7 @@ import { qty, money } from "@/lib/format";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { unitLabel } from "@/lib/unit";
 import { canTask } from "@/lib/tasks";
-import { canDo } from "@/lib/permissions";
+import { canDo, canSeeStaffAttendance } from "@/lib/permissions";
 import { brigadeDefectsMonth, brigadePayMonth, brigadeProducts } from "@/lib/brigade-pay";
 import { MonthBar, parseMonth } from "../bi-tahlil/month-bar";
 import { BrigadeProductsView } from "./brigade-products";
@@ -49,7 +49,8 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
         productionStaff(),
         db.employee.findMany({ where: { isActive: true, firedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, brigadeId: true } }),
       ]);
-      return <div>{title}{tabs}<BrigadeStaffView staff={staff} employees={emps} canEdit={canDo(s, "production", "staff")} /></div>;
+      const showAtt = canSeeStaffAttendance(s.role) || canDo(s, "production", "report");
+      return <div>{title}{tabs}<BrigadeStaffView staff={staff} employees={emps} canEdit={canDo(s, "production", "staff")} showAtt={showAtt} /></div>;
     }
     if (tab === "mahsulotlar") return <div>{title}{tabs}<BrigadeProductsView data={await brigadeProducts()} /></div>;
     const brigadaId = sp.brigada || null;

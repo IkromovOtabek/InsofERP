@@ -247,6 +247,14 @@ export function roleDefaultActions(role: Role, module: string): string[] {
   return delegableActions(module).filter((a) => role === "DIRECTOR" || a.roles.includes(role)).map((a) => a.key);
 }
 
+/**
+ * Boshqa xodimlarning davomati (kim keldi / kechikdi, skaner jurnali va kadrlari, AI javobi) — faqat direktor va otdel kadr.
+ * Istisnolar o'z joyida: sex boshlig'i va ish boshqaruvchi — o'z sexi, brigadir — o'z brigadasi, dispetcher va logistika —
+ * haydovchilar. Qolganlar faqat o'z davomatini ko'radi (`lib/self-attendance.ts`).
+ */
+export const STAFF_ATTENDANCE_ROLES: readonly Role[] = ["DIRECTOR", "HR"];
+export const canSeeStaffAttendance = (role: Role) => STAFF_ATTENDANCE_ROLES.includes(role);
+
 /** Xodimning shu moduldagi amallari, direktor bergani hisobga olingan holda (sozlamalarda xulosa uchun). */
 export function effectiveActions(who: Who, module: string): string[] {
   return delegableActions(module).filter((a) => canDo(who, module, a.key)).map((a) => a.key);

@@ -54,7 +54,7 @@ async function nonceAs(token: string, task: "TURN_LEFT" | "TURN_RIGHT" | null) {
 async function main() {
   const saved = await db.faceTemplate.findMany();
   await db.faceTemplate.deleteMany({ where: { id: { in: saved.map((t) => t.id) } } });
-  const [dir, kadr, ishlab, drv] = await Promise.all(["test.direktor", "test.kadr", "test.ishlab", "test.haydovchi"].map(tok));
+  const [dir, kadr, ishlab, drv, prorab] = await Promise.all(["test.direktor", "test.kadr", "test.ishlab", "test.haydovchi", "test.prorab"].map(tok));
   const e = await db.employee.create({ data: { fullName: `QA-K Kiosk ${stamp}`, position: "QA ofis xodimi" } });
   const date = dayUtc(today());
 
@@ -179,6 +179,12 @@ async function main() {
     check("jurnal kadri → data-URL (JPEG)", r.status === 200 && String(r.json?.data ?? "").startsWith("data:image/jpeg;base64,"), { s: r.status });
     r = await api("GET", `/api/mobile/face/photo?a=${cur?.id}&k=in`, { token: drv });
     check("haydovchi kadrni ko'ra olmaydi → 403", r.status === 403, { s: r.status });
+    // Boshqa xodimlar davomati — faqat direktor va otdel kadr: Ish boshqaruvchi hammani skanerdan o'tkazadi, jurnalda — faqat sex
+    r = await api("GET", "/api/mobile/face", { token: prorab });
+    check("ish boshqaruvchi → skaner «all», jurnalda sexdan tashqari xodim yo'q",
+      r.status === 200 && r.json?.scope === "all" && !(r.json?.log ?? []).some((x: { employee: { id: string } }) => x.employee.id === e.id), { s: r.status, n: r.json?.log?.length });
+    r = await api("GET", `/api/mobile/face/photo?a=${cur?.id}&k=in`, { token: prorab });
+    check("ish boshqaruvchi sexdan tashqari xodim kadrini ko'rmaydi → 404", r.status === 404, { s: r.status });
     const tId = tpl.find((t) => t.photo)?.id;
     r = await api("GET", `/api/mobile/face/photo?t=${tId}`, { token: dir });
     check("ro'yxatga olish kadri → direktor ko'radi", r.status === 200 && !!r.json?.data, { s: r.status });

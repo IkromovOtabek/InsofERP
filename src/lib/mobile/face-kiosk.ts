@@ -4,7 +4,7 @@ import { FaceImageError } from "@/lib/ai/face";
 import { FaceBusyError, faceAnalyses, faceVariants, type FaceAnalysis } from "@/lib/face-descriptor";
 import {
   type FaceActor, type Match, type Probe, canEnrollFaces, checkEnrollment, deleteFace, distance, faceRoster, facePhotoFor,
-  faceScope, learnFaceSample, matchFace, rank, recordScan, saveEnrollment, scanGate, similarity, todayFaceLog, enrollGate,
+  faceLogScope, faceScope, learnFaceSample, matchFace, rank, recordScan, saveEnrollment, scanGate, similarity, todayFaceLog, enrollGate,
 } from "@/lib/face-id";
 import { ENROLL_MAX_SAMPLES, ENROLL_MIN_SAMPLES, type FaceMode, type FaceScanFail, type FaceScanResult } from "@/lib/face-id-const";
 import { checkLiveness, frontalFrames, livenessRequired, LIVENESS_FRAMES, SEQ_MAX_DISTANCE, type LivenessTask } from "@/lib/face-liveness";
@@ -47,7 +47,9 @@ export async function faceKioskData(u: MobileUser) {
   const scope = faceScope(a);
   if (!scope) throw forbidden();
   const canEnroll = canEnrollFaces(a);
-  const [log, roster] = await Promise.all([todayFaceLog(scope), canEnroll ? faceRoster() : Promise.resolve(null)]);
+  // Jurnal — `faceLogScope`: hammaniki faqat otdel kadr va direktorga, Ish boshqaruvchiga — o'z sexi, boshqaga — bo'sh
+  const logScope = faceLogScope(a);
+  const [log, roster] = await Promise.all([logScope ? todayFaceLog(logScope) : Promise.resolve([]), canEnroll ? faceRoster() : Promise.resolve(null)]);
   return {
     scope,
     canEnroll,

@@ -17,8 +17,11 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const isoOk = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
 const monthOk = (v: string) => (/^\d{4}-\d{2}$/.test(v) ? v : undefined);
 
+/** Kim keldi / kechikdi — ismlar bilan: faqat direktor va otdel kadrga beriladi (`tools.ts` → `toolsFor`). */
+export const ATTENDANCE_TOOL = "hr_attendance_day";
+
 const attendanceDay: Tool = {
-  name: "hr_attendance_day",
+  name: ATTENDANCE_TOOL,
   description: "Kunlik davomat: nechta keldi, kelmadi, kechikdi (kim va necha daqiqa), belgilanmagan, ta'til/kasal. «Bugun kim kelmadi», «kim kechikdi» savollari uchun.",
   parameters: { type: "object", properties: { date: { type: "string", description: "YYYY-MM-DD (bo'sh — bugun)" } } },
   run: async (a) => {

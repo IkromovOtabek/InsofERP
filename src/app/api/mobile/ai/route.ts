@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     const history = (Array.isArray(body.history) ? body.history : []).slice(-6)
       .filter((t) => t && (t.role === "user" || t.role === "assistant"))
       .map((t) => ({ role: t.role, text: String(t.text ?? "").slice(0, 2000) }));
-    const r = await askInsofAi(question, { sp, history });
+    const r = await askInsofAi(question, { sp, history, role: user.role });
     return { answer: r.answer, level: r.level, model: r.model, period: r.period };
   });
 }

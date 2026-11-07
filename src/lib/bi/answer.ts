@@ -1,7 +1,8 @@
 import { parseRange, startOfDay, addDays, WEEKDAYS_FULL } from "./core";
 import { aiAnswer, questionScope, type Answer } from "./ai";
 import { askLlm, llmEnabled, type LlmTurn } from "@/lib/ai/llm";
-import { appUrl } from "@/lib/ai/tools";
+import { appUrl, toolsFor } from "@/lib/ai/tools";
+import type { Role } from "@/generated/prisma";
 import { isoDate } from "@/lib/format";
 
 /**
@@ -29,7 +30,8 @@ function contextFor(range: ReturnType<typeof parseRange>, rule: Answer, key: str
 
 export async function askInsofAi(
   question: string,
-  opts: { sp?: Record<string, string | undefined>; history?: LlmTurn[] } = {},
+  /** `role` — savol beruvchi: boshqa xodimlar davomati asbobi faqat direktor va otdel kadrga (`toolsFor`) */
+  opts: { sp?: Record<string, string | undefined>; history?: LlmTurn[]; role?: Role } = {},
 ): Promise<AskResult> {
   const sp = opts.sp ?? {};
   // «o'tgan oy» — davr o'tgan oyga o'tadi (aiAnswer ichida ham shu qoida)
@@ -42,7 +44,7 @@ export async function askInsofAi(
   if (!llmEnabled()) return { answer: rule, level: 0, period: range.label };
 
   try {
-    const llm = await askLlm(question, contextFor(range, rule, key), opts.history ?? []);
+    const llm = await askLlm(question, contextFor(range, rule, key), opts.history ?? [], toolsFor(opts.role));
     // Havola: tayyor hisob-kitob mos kelgan bo'lsa uning sahifasi; aks holda model matn ichida beradi.
     return { answer: { key: rule.key, text: llm.text, href: key ? rule.href : undefined }, level: 2, model: llm.model, tools: llm.tools, period: range.label };
   } catch (e) {

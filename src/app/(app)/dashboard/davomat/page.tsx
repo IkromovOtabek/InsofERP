@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { ScanFace, UserPlus } from "lucide-react";
 import { getSession } from "@/lib/auth";
-import { canEnrollFaces, faceRoster, faceScope, todayFaceLog } from "@/lib/face-id";
+import { canEnrollFaces, faceLogScope, faceRoster, faceScope, todayFaceLog } from "@/lib/face-id";
 import { productionStaff } from "@/lib/production-staff";
 import { PageHeader, Tabs } from "@/components/ui";
 import { FaceScanner } from "./scanner";
@@ -10,6 +10,7 @@ import { FaceRosterPanel } from "./enroll";
 /**
  * Bosh sahifa → «Davomat»: ERP'ning o'z Face ID skaneri (telefonning Face ID'si emas) va yuzlarni ro'yxatga olish.
  * Otdel kadr, direktor va Ish boshqaruvchi — hamma xodim; sex boshliqlari — faqat sex xodimlari (`lib/face-id.ts` → faceScope).
+ * Bugungi jurnal — `faceLogScope`: hammaniki faqat otdel kadr va direktorga, Ish boshqaruvchiga — o'z sexi.
  */
 export default async function FaceAttendancePage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const s = await getSession();
@@ -18,10 +19,11 @@ export default async function FaceAttendancePage({ searchParams }: { searchParam
   if (!scope) redirect("/dashboard?denied=1");
   const canEnroll = canEnrollFaces(s);
   const tab = canEnroll && (await searchParams).tab === "yuzlar" ? "yuzlar" : "skaner";
+  const logScope = faceLogScope(s);
 
   const [roster, log, sex] = await Promise.all([
     faceRoster(),
-    tab === "skaner" ? todayFaceLog(scope) : [],
+    tab === "skaner" && logScope ? todayFaceLog(logScope) : [],
     scope === "sex" ? productionStaff() : null,
   ]);
   // Sex boshlig'iga — faqat o'z sexi bo'yicha sanoq

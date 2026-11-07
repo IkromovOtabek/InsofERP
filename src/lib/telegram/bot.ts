@@ -208,7 +208,7 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   const t0 = Date.now();
   try {
     const history = await historyFor(account.id);
-    const r = await askInsofAi(question.slice(0, 1000), { history });
+    const r = await askInsofAi(question.slice(0, 1000), { history, role: effectiveRole(user.role) });
     console.log(`[telegram] ${r.level ? r.model : "qoida"} · asboblar: ${r.tools?.length ? r.tools.join(", ") : "—"} · ${Date.now() - t0} ms`);
     const out = render(r.answer, transcript);
     await sendMessage(chatId, out, { replyTo: msg.message_id });

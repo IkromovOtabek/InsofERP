@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { canSeeStaffAttendance } from "@/lib/permissions";
 import { employeeMonth, staffDay } from "@/lib/attendance-report";
 import { driverMonth, driversMonth } from "@/lib/driver-pay";
 import type { MobileUser } from "./auth";
@@ -11,7 +12,7 @@ import { ListError, moduleClosed } from "./list";
  *   · GET /api/mobile/attendance/employee?id=&month=      — bitta xodim, oy (`id=me` — o'zi);
  *   · GET /api/mobile/driver-trips?month=                 — barcha haydovchilar, oy;
  *   · GET /api/mobile/driver-trips?id=<employeeId|me>&month= — bitta haydovchi, kunlar.
- * Xodimlar davomati (umumiy jadval, boshqa xodimning oyi) — FAQAT direktor va otdel kadr (`ATTENDANCE_FULL_ROLES`),
+ * Xodimlar davomati (umumiy jadval, boshqa xodimning oyi) — FAQAT direktor va otdel kadr (`canSeeStaffAttendance`),
  * barcha ustunlar bilan (manba — kim belgilagani, izoh, telefon, hududdan tashqaridagi nuqta). Qolgan xodimlar ilovada
  * faqat O'Z davomatini ko'radi: bosh sahifadagi "Keldim / Ketdim" kartasi va "Men" tabi (`/attendance/self`,
  * `lib/self-attendance.ts`); `/attendance/employee?id=me` ham o'zinikini qaytaradi, boshqa id — 403.
@@ -20,16 +21,13 @@ import { ListError, moduleClosed } from "./list";
  * Direktor xodimga modulni ("employees" / "trips") yopgan bo'lsa — ochilmaydi.
  */
 
-/** Umumiy davomat jadvali (hamma xodim bo'yicha, to'liq ustunlar). */
-export const ATTENDANCE_FULL_ROLES = ["DIRECTOR", "HR"] as const;
-
 export const DRIVER_PAY_ROLES = ["DIRECTOR", "HR", "LOGISTICS", "DISPATCHER"] as const;
 
 const deny = (): never => { throw new ListError("FORBIDDEN", "Bu bo'lim sizning lavozimingiz uchun ochilmagan", 403); };
 
 /** Umumiy jadvalni ko'ra oladimi — faqat otdel kadr va direktor (direktor "Xodimlar / kadr" modulini yopmagan bo'lsa). */
 export function canViewAttendanceTable(user: Pick<MobileUser, "role" | "perms">) {
-  return (ATTENDANCE_FULL_ROLES as readonly string[]).includes(user.role) && !moduleClosed(user, "employees");
+  return canSeeStaffAttendance(user.role) && !moduleClosed(user, "employees");
 }
 
 /**

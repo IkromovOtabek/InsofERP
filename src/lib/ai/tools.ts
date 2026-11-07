@@ -10,7 +10,7 @@
 
 import { db } from "@/lib/db";
 import { balanceFromGroups } from "@/lib/cash-tx";
-import type { Prisma } from "@/generated/prisma";
+import type { Prisma, Role } from "@/generated/prisma";
 import { loadSales, sum, safeDiv, startOfDay, addDays, type SaleRow } from "@/lib/bi/core";
 import { customerBase } from "@/lib/bi/customers";
 import { customersCredit } from "@/lib/finance";
@@ -19,7 +19,8 @@ import { plansTab } from "@/lib/bi/plans";
 import { aiSnapshot } from "@/lib/bi/ai";
 import { moneyShort, fmtNum, date as fmtDate, dateTime as fmtDateTime } from "@/lib/format";
 import { lineTotal } from "@/lib/receipt-vat";
-import { HR_TOOLS } from "./hr-tools";
+import { ATTENDANCE_TOOL, HR_TOOLS } from "./hr-tools";
+import { canSeeStaffAttendance } from "@/lib/permissions";
 import { orderTotal } from "@/lib/order-total";
 
 export type JsonSchema = {
@@ -543,6 +544,10 @@ const dashboardSnapshot: Tool = {
 };
 
 export const TOOLS: Tool[] = [salesSummary, ordersList, customerFind, customersList, invoicesList, cashSummary, stockStatus, productionSummary, tripsList, receiptsList, planStatus, employeesList, vehiclesList, logisticsStatus, dashboardSnapshot, ...HR_TOOLS];
+
+/** Savol beruvchiga ochiq asboblar: boshqa xodimlar davomati (kim keldi / kechikdi) — faqat direktor va otdel kadrga. */
+export const toolsFor = (role: Role | undefined): Tool[] =>
+  role && canSeeStaffAttendance(role) ? TOOLS : TOOLS.filter((t) => t.name !== ATTENDANCE_TOOL);
 
 /** Asbob natijasi juda uzun bo'lsa — kontekstni to'ldirmaslik uchun kesiladi. */
 const MAX_RESULT = 12000;

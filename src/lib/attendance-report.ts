@@ -5,7 +5,7 @@ import {
 } from "@/lib/davomat";
 import { dayTimes, shiftOf, sourceLabel, type Shift } from "@/lib/attendance-time";
 import { plansFor } from "@/lib/hr/shifts";
-import { faceScope } from "@/lib/face-id";
+import { faceLogScope } from "@/lib/face-id";
 import { productionStaff } from "@/lib/production-staff";
 import type { Session } from "@/lib/auth";
 import type { AttendanceStatus, Prisma, Role } from "@/generated/prisma";
@@ -92,12 +92,12 @@ function outsideOf(a: AttRow | undefined, kind: "in" | "out"): OutsideMark | nul
 const outsideBoth = (a: AttRow | undefined) => ({ outsideIn: outsideOf(a, "in"), outsideOut: outsideOf(a, "out") });
 
 /**
- * Joy rasmi (hududdan tashqaridagi belgi) fayli — kirish qoidasi yuz kadri bilan bir xil (`facePhotoFor`, `faceScope`):
- * otdel kadr / direktor — hammaniki, sex boshliqlari — faqat sex tarkibiniki, boshqalar — yo'q (null).
+ * Joy rasmi (hududdan tashqaridagi belgi) fayli — kirish qoidasi yuz kadri bilan bir xil (`facePhotoFor`, `faceLogScope`):
+ * otdel kadr / direktor — hammaniki, sex boshliqlari va Ish boshqaruvchi — faqat sex tarkibiniki, boshqalar — yo'q (null).
  * Veb (`/otdel-kadr/joy-rasmi`) va mobil (`/api/mobile/attendance/place-photo`) shu yerdan o'qiydi.
  */
 export async function placePhotoFor(s: Pick<Session, "role" | "perms">, id: string | null, kind: string | null): Promise<string | null> {
-  const scope = faceScope(s);
+  const scope = faceLogScope(s);
   if (!scope || !id || (kind !== "in" && kind !== "out")) return null;
   const a = await db.attendance.findUnique({ where: { id }, select: { employeeId: true, checkInPlacePhoto: true, checkOutPlacePhoto: true } });
   if (!a) return null;
