@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, Boxes, Check, ChevronRight, Factory, Layers, Lock, Megaphone, Minus, RotateCcw, Search, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Boxes, Check, ChevronRight, Factory, Languages, Layers, Lock, Megaphone, Minus, RotateCcw, Search, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from "lucide-react";
 import type { PermModule } from "@/lib/perm-modules";
+import { SCRIPT_PERM, WRITE_SCRIPTS } from "@/lib/permissions";
 
 /**
  * Ruxsatlar daraxti (1-variant): bo'lim (menyu guruhi) → tugma (oyna) → amal, uch holatli belgilar bilan.
@@ -76,6 +77,9 @@ export function PermsTree({ modules, current, onChange, footer }: {
   const [openG, setOpenG] = useState<Set<string>>(() => new Set(modules.filter((m) => current[m.key] !== undefined).map((m) => m.group)));
   const [openB, setOpenB] = useState<Set<string>>(new Set());
   const hasRole = modules.some((m) => m.role);
+  // Yozish tili (`perms.til`): lotin doim, qo'shimcha yozuvlar shu yerda — modul emas, daraxtdan tashqarida
+  const [til, setTil] = useState<string[]>(() => { const v = current[SCRIPT_PERM]; return Array.isArray(v) ? v : []; });
+  const toggleTil = (k: string) => { setTil((t) => (t.includes(k) ? t.filter((x) => x !== k) : [...t, k])); onChange?.(); };
 
   const stOfMod = (m: PermModule): ModState => states[m.key] ?? { kind: "orig" };
   const roleMode = (m: PermModule) => { const k = stOfMod(m).kind; return k === "role" || (k === "orig" && current[m.key] === undefined); };
@@ -87,7 +91,7 @@ export function PermsTree({ modules, current, onChange, footer }: {
     setStates((p) => ({ ...p, [m.key]: { kind: "set", set: [...new Set(fn(display(m)))] } }));
     onChange?.();
   };
-  const reset = () => { setStates(Object.fromEntries(modules.map((m) => [m.key, { kind: "role" } as ModState]))); onChange?.(); };
+  const reset = () => { setStates(Object.fromEntries(modules.map((m) => [m.key, { kind: "role" } as ModState]))); setTil([]); onChange?.(); };
   const resetModule = (m: PermModule) => { setStates((p) => ({ ...p, [m.key]: { kind: "role" } })); onChange?.(); };
 
   // Daraxt: bo'lim → modul → tugma → amal, joriy belgilar va roldan farqi bilan
@@ -254,6 +258,29 @@ export function PermsTree({ modules, current, onChange, footer }: {
         );
       })}
       {!tree.some((g) => g.shown) && <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">Mos tugma yoki amal topilmadi</p>}
+
+      <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><Languages size={17} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Yozish tili</span>
+            <span className="block text-xs text-slate-500">Maydonlarga faqat lotin yozuvida yoziladi. Boshqa yozuvda yozishi kerak bo&apos;lsa — belgilang</span>
+          </span>
+        </div>
+        <div className="mt-2 grid gap-1.5 sm:grid-cols-3">
+          <div className="flex min-h-11 items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-500"><Tri st="all" small /> Lotin <Tag tone="slate">doim</Tag></div>
+          {WRITE_SCRIPTS.map((sc) => {
+            const on = til.includes(sc.key);
+            return (
+              <button key={sc.key} type="button" role="checkbox" aria-checked={on} onClick={() => toggleTil(sc.key)}
+                className={`flex min-h-11 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left text-sm font-medium transition ${on ? "border-slate-300 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                <Tri st={on ? "all" : "none"} small />{sc.label}
+              </button>
+            );
+          })}
+        </div>
+        {til.map((k) => <input key={k} type="hidden" name={SCRIPT_PERM} value={k} />)}
+      </section>
 
       {modules.map((m) => {
         const s = stOfMod(m);

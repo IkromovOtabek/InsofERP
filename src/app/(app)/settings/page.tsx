@@ -5,6 +5,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { ROLE_LABELS, MODULES } from "@/lib/nav";
 import { describeModuleValue } from "@/lib/perm-buttons";
+import { describeWriteScripts, SCRIPT_PERM } from "@/lib/permissions";
 import { BULK_FORM_ID, permModules } from "@/lib/perm-modules";
 import { describePerms, positionTemplates, templateRoleLabel } from "@/lib/perm-template";
 import type { Role } from "@/generated/prisma";
@@ -345,7 +346,7 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
         const perms = parsePerms(u.perms) ?? {};
         const chips = Object.entries(perms).map(([m, v]) => ({
           key: m, color: v === "none" ? ("red" as const) : v === "view" ? ("blue" as const) : v === "write" ? ("green" as const) : ("amber" as const),
-          text: `${MODULES.find((x) => x.key === m)?.label ?? m}: ${describeModuleValue(m, v)}`.slice(0, 90),
+          text: (m === SCRIPT_PERM ? `Yozish tili: ${describeWriteScripts(v)}` : `${MODULES.find((x) => x.key === m)?.label ?? m}: ${describeModuleValue(m, v)}`).slice(0, 90),
         }));
         return (
           <Card key={u.id}>

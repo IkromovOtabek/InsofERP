@@ -2,7 +2,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { parsePerms, revokeSessions, type Perms } from "./auth";
 import { MODULES } from "./nav";
-import { delegableActions } from "./permissions";
+import { delegableActions, describeWriteScripts, SCRIPT_PERM, writeScriptsFromForm } from "./permissions";
 import { btnKey, buttonsOf, describeModuleValue, hasWindow } from "./perm-buttons";
 import { notifyAfter, notifyUsers } from "./notify";
 import { LOGIN_ROLE_OPTIONS, POSITIONS, roleForPosition } from "./positions";
@@ -27,7 +27,7 @@ const MODULE_KEYS = new Set(MODULES.map((m) => m.key));
 
 /** Ruxsatlarni o'qiladigan matnga — audit va bildirishnoma uchun ("Sklad: Kirim (Kirim qabul qilish); Chiqim"). */
 export function describePerms(p: Perms): string[] {
-  return Object.entries(p).map(([m, v]) => `${MODULES.find((x) => x.key === m)?.label ?? m}: ${describeModuleValue(m, v)}`);
+  return Object.entries(p).map(([m, v]) => m === SCRIPT_PERM ? `Yozish tili: ${describeWriteScripts(v)}` : `${MODULES.find((x) => x.key === m)?.label ?? m}: ${describeModuleValue(m, v)}`);
 }
 
 /**
@@ -47,6 +47,9 @@ export function permsFromForm(fd: FormData): Perms {
       perms[m.key] = acts.length ? acts : "view";
     }
   }
+  // «Yozish tili» (daraxt ostidagi band): belgilanmagan — faqat lotin, kalit yozilmaydi
+  const til = writeScriptsFromForm(fd.getAll(SCRIPT_PERM));
+  if (til.length) perms[SCRIPT_PERM] = til;
   return perms;
 }
 

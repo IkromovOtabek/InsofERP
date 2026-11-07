@@ -9,12 +9,13 @@ import { navFor, ROLE_LABELS } from "@/lib/nav";
 import { AppShell } from "@/components/app-shell";
 import { LiveRefresh } from "@/components/live-refresh";
 import { InputMemory } from "@/components/input-memory";
+import { ScriptGuard } from "@/components/script-guard";
 import { tourFor, TOUR_COOKIE, TOUR_DONE } from "@/lib/tour";
 import { billingNotice, isControlMode } from "@/lib/tenant";
 import { date } from "@/lib/format";
 import { Callout } from "@/components/ui";
 import { AvtoPartsBanner } from "@/components/avto-parts-banner";
-import { canDo } from "@/lib/permissions";
+import { canDo, writeScripts } from "@/lib/permissions";
 import { pendingShipments } from "@/lib/shipments";
 import { ShipmentBanner } from "@/components/shipment-banner";
 import { ARENDA_PATH, arendaHost, isArendaHost } from "@/lib/arenda-host";
@@ -56,6 +57,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <LiveRefresh />
       {/* Qo'lda yozilgan qiymatlar eslab qolinadi va keyingi safar taklif qilinadi */}
       <InputMemory />
+      {/* Faqat lotin yozuvi; qo'shimcha yozuvni direktor Ruxsatlar → «Yozish tili» da beradi */}
+      <ScriptGuard allow={writeScripts(s)} />
       {s.superadmin && (
         <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-800">
           IT superadmin rejimi — direktor huquqi bilan ishlayapsiz. Har amal korxonaning audit jurnaliga yoziladi.

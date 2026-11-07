@@ -242,6 +242,31 @@ export function canDo(who: Who, module: string, action: string, fallbackRoles?: 
   return (def?.roles ?? fallbackRoles ?? []).includes(who.role);
 }
 
+/**
+ * Yozish tillari: ERP maydonlariga hamma faqat lotinda yozadi (`components/script-guard.tsx`), qo'shimcha yozuvni
+ * direktor Ruxsatlar → «Yozish tili» da beradi. `perms.til` da saqlanadi — modul emas, menyu va sahifalarga ta'sir qilmaydi.
+ */
+export const SCRIPT_PERM = "til";
+export const WRITE_SCRIPTS = [
+  { key: "kirill", label: "Kirill (rus, o'zbek kirill)" },
+  { key: "boshqa", label: "Boshqa yozuvlar (arab, xitoy, koreys…)" },
+] as const;
+const isWriteScript = (k: string) => WRITE_SCRIPTS.some((s) => s.key === k);
+
+/** Xodimga lotindan tashqari ruxsat berilgan yozuvlar (`kirill`, `boshqa`). Direktor — cheklovsiz. */
+export function writeScripts(who: Who): string[] {
+  if (who.role === "DIRECTOR") return WRITE_SCRIPTS.map((s) => s.key);
+  const v = who.perms?.[SCRIPT_PERM];
+  return Array.isArray(v) ? v.filter(isWriteScript) : [];
+}
+
+/** Formadagi `til` belgilari → saqlanadigan qiymat (bo'sh — faqat lotin). */
+export const writeScriptsFromForm = (vals: unknown[]): string[] => [...new Set(vals.map(String))].filter(isWriteScript);
+
+/** Ruxsatlar ro'yxatidagi qisqa yozuv: «lotin + kirill». */
+export const describeWriteScripts = (v: unknown) =>
+  ["lotin", ...(Array.isArray(v) ? v : []).flatMap((k) => WRITE_SCRIPTS.find((s) => s.key === k)?.label.split(" (")[0].toLowerCase() ?? [])].join(" + ");
+
 /** Rol bo'yicha (perms yo'q) bajariladigan amallar — formada "Tanlangan amallar" ga o'tganda boshlang'ich belgilar. */
 export function roleDefaultActions(role: Role, module: string): string[] {
   return delegableActions(module).filter((a) => role === "DIRECTOR" || a.roles.includes(role)).map((a) => a.key);

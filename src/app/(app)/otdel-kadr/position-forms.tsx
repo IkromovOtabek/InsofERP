@@ -5,6 +5,7 @@ import { Check, KeyRound, Plus, Trash2, Wand2 } from "lucide-react";
 import { deleteWorkPosition, savePositionTemplate, saveWorkPosition, syncEmployeePositions, toggleWorkPosition } from "./actions";
 import { PermsTree } from "../settings/perms-tree";
 import { permModules } from "@/lib/perm-modules";
+import { describeWriteScripts, SCRIPT_PERM } from "@/lib/permissions";
 import type { Role } from "@/generated/prisma";
 import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { useTransition } from "react";
@@ -94,6 +95,8 @@ export function PositionRow({ p, used, logins, roles, canTemplate }: { p: Pos; u
   const [open, setOpen] = useState(false);
   useEffect(() => { if (state?.ok) setDirty(false); }, [state]);
   const roleLabel = p.loginRole ? roles.find((r) => r.value === p.loginRole)?.label ?? p.loginRole : null;
+  // «Yozish tili» (`perms.til`) bo'lim emas — sanalmaydi, alohida yoziladi
+  const modCount = Object.keys(p.perms).filter((k) => k !== SCRIPT_PERM).length;
   return (
     <div className="border-b border-slate-100 last:border-0">
       <form action={action} onChange={() => setDirty(true)} className="grid grid-cols-1 items-center gap-2 px-3 py-2 sm:grid-cols-2 xl:grid-cols-[1fr_1.1fr_160px_72px_150px_66px_auto]">
@@ -120,7 +123,7 @@ export function PositionRow({ p, used, logins, roles, canTemplate }: { p: Pos; u
         {roleLabel && (
           <div className="text-xs text-sky-800 sm:col-span-full">
             <KeyRound size={12} className="mr-1 inline" />
-            Tizimga kiradi (ERP va ECO): asosiy bo&apos;lim «{roleLabel}»{Object.keys(p.perms).length ? `, ${Object.keys(p.perms).length} ta bo'lim bo'yicha qo'shimcha ruxsat` : ", ruxsatlar rol bo'yicha"} · {logins} ta login
+            Tizimga kiradi (ERP va ECO): asosiy bo&apos;lim «{roleLabel}»{modCount ? `, ${modCount} ta bo'lim bo'yicha qo'shimcha ruxsat` : ", ruxsatlar rol bo'yicha"}{p.perms[SCRIPT_PERM] ? ` · yozish: ${describeWriteScripts(p.perms[SCRIPT_PERM])}` : ""} · {logins} ta login
           </div>
         )}
         {state?.error && <div className="sm:col-span-full"><FormError error={state.error} /></div>}
