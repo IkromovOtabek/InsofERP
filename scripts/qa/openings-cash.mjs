@@ -76,6 +76,33 @@ check("C13e bekor qilingandan keyin xuddi shu chiqim qayta yoziladi (dublikat em
 r = await saveAcc(KASSA, { name: `QA Kassa ${T}`, type: "CASH", allowOverdraft: "on" });
 check("C14 naqd kassaga overdraft belgisi saqlanmaydi", q1(`select "allowOverdraft" from "CashAccount" where id=${lit(KASSA)}`).allowOverdraft === false);
 
+// Kassa / bank → «Oy oxiri qoldiqlari» (Exceldan o'tish): o'tgan oy oxiriga qoldiq = hisobning boshlang'ich qoldig'i
+console.log("\nOY OXIRI QOLDIQLARI: Exceldan o'tish");
+await saveAcc(null, { name: `QA Oy ${T}`, type: "BANK" });
+const OYB = q1(`select id from "CashAccount" where name=${lit(`QA Oy ${T}`)}`).id;
+const pm = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+const PM = `${pm.getFullYear()}-${String(pm.getMonth() + 1).padStart(2, "0")}`;
+const PM_END = new Date(Date.UTC(pm.getFullYear(), pm.getMonth() + 1, 0)).toISOString().slice(0, 10);
+const CUR = new Date().toISOString().slice(0, 7);
+const monthEnd = (c, oy, val) => c.action("payments/actions#saveMonthEndBalances", [undefined, fd({ oy, [`bal_${OYB}`]: val })], "/payments/qoldiq");
+const oyOpening = () => q1(`select o.amount, to_char(o.date, 'YYYY-MM-DD HH24:MI') d, to_char(t.date, 'YYYY-MM-DD HH24:MI') td, t.amount ta from "OpeningBalance" o join "CashTransaction" t on t.id = o."cashTxId" where o."cashAccountId"=${lit(OYB)} and o."activeKey" is not null`);
+r = await monthEnd(kassa, PM, "3000000");
+check("M1 kassir (ruxsatsiz) oy oxiri qoldig'ini yozolmaydi (403)", r.status === 403 && !oyOpening(), `${r.status}`);
+r = await monthEnd(buh, CUR, "3000000");
+check("M2 tugamagan oy — rad", /hali tugamagan/.test(r.result?.error ?? "") && !oyOpening(), r.result);
+r = await monthEnd(buh, PM, "3000000");
+let mo = oyOpening();
+check("M3 buxgalter: o'tgan oy oxiriga 3 000 000 → boshlang'ich qoldiq (sana — oy oxiri), qoldiq 3 000 000", r.result?.ok === true && eq2(mo?.amount, 3000000) && mo?.d === `${PM_END} 00:00` && mo?.td === `${PM_END} 00:00` && eq2(balance(OYB), 3000000), { r: r.result, mo });
+r = await cashTx({ type: "EXPENSE", cashAccountId: OYB, amount: "1000000" });
+check("M4 o'tishdan keyin bankdan chiqim 1 000 000 o'tdi", r.result?.ok === true && eq2(balance(OYB), 2000000), r.result);
+r = await cashTx({ type: "INCOME", cashAccountId: OYB, amount: "500000", date: `${PM}-10` });
+r = await monthEnd(buh, PM, "3 000 000");
+mo = oyOpening();
+check("M5 oy ichida 500 000 kirim bor — qayta kiritilsa qoldiq 2 500 000 ga tahrirlanadi (oy oxirida jami 3 000 000)", r.result?.ok === true && eq2(mo?.amount, 2500000) && eq2(balance(OYB), 2000000), { r: r.result, mo });
+check("M6 hisobda bitta faol boshlang'ich qoldiq", Number(q1(`select count(*) n from "OpeningBalance" where "cashAccountId"=${lit(OYB)} and "activeKey" is not null`).n) === 1);
+r = await monthEnd(buh, PM, "500000");
+check("M7 qoldiq olib tashlansa bank minusga tushadi — rad, o'zgarmadi", /minusga tushadi/.test(r.result?.error ?? "") && eq2(oyOpening()?.amount, 2500000), r.result);
+
 // ───────── CUSTOMER ─────────
 console.log("\nCUSTOMER: qarz qoldig'i, to'lov, tahrir, bekor");
 await buh.action("customers/actions#saveCustomer", [null, undefined, fd({ name: `QA Qoldiq mijoz ${T}`, creditLimit: 0, isActive: "on" })], "/customers/new");

@@ -106,7 +106,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "sorovlar", label: "Mexanik so'rovlari", paths: ["/mexanik-sorovlar"], actions: ["write"] },
   ],
   payments: [
-    { key: "kassa", label: "Kassa / bank", paths: ["/payments"], actions: ["create", "storno", "import"] },
+    { key: "kassa", label: "Kassa / bank", paths: ["/payments"], actions: ["create", "storno", "import", "balance"] },
     { key: "pulqabul", label: "Pul qabul qilish", paths: ["/pul-qabul"], actions: ["receive_cash", "receive_bank"] },
     { key: "schyotlar", label: "Schyotlar", paths: ["/invoices"], actions: [] },
   ],

@@ -4,6 +4,7 @@ import { nextNo } from "./numbering";
 import { money } from "./format";
 import { cashOutflowError } from "./payments";
 import { lockStock } from "./stock-lock";
+import { txSign } from "./cash-tx";
 import type { OpeningKind, Prisma } from "@/generated/prisma";
 
 /**
@@ -179,76 +180,80 @@ type OpeningRecord = NonNullable<Awaited<ReturnType<typeof db.openingBalance.fin
  * `patch` funksiya bo'lsa — qulf ostida qayta o'qilgan yozuvdan hisoblanadi (kamaytirish ikki marta bosilsa ham to'g'ri).
  */
 export async function updateOpening(id: string, patchOf: OpeningPatch | ((o: OpeningRecord) => OpeningPatch), userId: string): Promise<{ error?: string }> {
-  return db.$transaction(async (tx) => {
-    const head = await tx.openingBalance.findUnique({ where: { id }, select: { activeKey: true, cancelledAt: true } });
-    if (!head || head.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki bekor qilingan");
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + head.activeKey}))`;
-    const o = await tx.openingBalance.findUniqueOrThrow({ where: { id } });
-    if (o.cancelledAt) throw new OpeningError("Yozuv shu payt bekor qilindi");
-    const patch = typeof patchOf === "function" ? patchOf(o) : patchOf;
-    const note = patch.note?.trim() || null;
-    let data: Prisma.OpeningBalanceUpdateInput = { date: patch.date, note };
+  return db.$transaction((tx) => updateOpeningTx(tx, id, patchOf, userId))
+    .catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
+}
 
-    switch (o.kind) {
-      case "CUSTOMER": {
-        const amount = r2(patch.amount ?? 0);
-        if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
-        // Mijoz qulfi (`addPayment` bilan bir xil): shu payt yozilayotgan to'lov tekshiruvdan o'tib ketmasin
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${o.customerId!}))`;
-        const inv = await tx.invoice.findUniqueOrThrow({ where: { id: o.invoiceId! }, include: { payments: { select: { amount: true } } } });
-        const paid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
-        if (paid > 0.005 && amount < paid - 0.005) throw new OpeningError(`Bu qoldiqqa ${money(paid)} to'lov yozilgan — summa undan kam bo'lolmaydi`);
-        const after = await tx.invoice.update({ where: { id: inv.id }, data: { amount, date: patch.date, status: invoiceStatusFor(amount, paid) } });
-        await audit(tx, userId, "UPDATE", "Invoice", inv.id, { amount: inv.amount, date: inv.date, status: inv.status }, { amount: after.amount, date: after.date, status: after.status, by: "opening" });
-        data = { ...data, amount };
-        break;
-      }
-      case "SUPPLIER": {
-        const amount = r2(patch.amount ?? 0);
-        if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
-        const paid = (await supplierOpeningPaid(tx, [o.id])).get(o.id) ?? 0;
-        if (paid > 0.005 && amount < paid - 0.005) throw new OpeningError(`Bu qarzga ${money(paid)} to'langan — summa undan kam bo'lolmaydi`);
-        data = { ...data, amount };
-        break;
-      }
-      case "CASH": {
-        const amount = r2(patch.amount ?? 0);
-        if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
-        const t = await tx.cashTransaction.findUniqueOrThrow({ where: { id: o.cashTxId! } });
-        const acc = await tx.cashAccount.findUniqueOrThrow({ where: { id: t.cashAccountId }, select: { type: true, name: true, allowOverdraft: true } });
-        if (amount < 0 && !(acc.type === "BANK" && acc.allowOverdraft)) throw new OpeningError(`${acc.name}: qoldiq manfiy bo'lolmaydi — manfiy qoldiq faqat overdraft ruxsat etilgan bank hisobida`);
-        // Qoldiq kamaysa — naqd kassa minusga tushmasin (shu orada pul chiqib ketgan bo'lishi mumkin)
-        const drop = Number(t.amount) - amount;
-        if (drop > 0.005) { const err = await cashOutflowError(tx, t.cashAccountId, drop); if (err) throw new OpeningError(err); }
-        const after = await tx.cashTransaction.update({ where: { id: t.id }, data: { amount, date: patch.date, note: note ?? t.note } });
-        await audit(tx, userId, "UPDATE", "CashTransaction", t.id, t, after);
-        data = { ...data, amount };
-        break;
-      }
-      case "STOCK": {
-        const qty = Number(patch.qty ?? 0);
-        const unitCost = patch.unitCost == null ? null : r2(patch.unitCost);
-        if (!(qty > 0)) throw new OpeningError("Miqdor 0 dan katta bo'lsin — qoldiq kerak bo'lmasa bekor qiling");
-        const oldQty = Number(o.qty ?? 0);
-        // Sklad qulfi (reys yuklash, brak, storno bilan navbat): qoldiq tekshiruvi va yozuv orasida mahsulot chiqib ketmasin
-        await lockStock(tx);
-        if (qty < oldQty) {
-          const left = await productStock(tx, o.productId!, o.warehouseId!);
-          if (left - (oldQty - qty) < -0.0005) throw new OpeningError(`Skladda hozir ${left} qoldi — boshlang'ich qoldiqni ${qty} gacha kamaytirib bo'lmaydi (mahsulot sotilgan/jo'natilgan)`);
-        }
-        // Sklad harakati o'zgarmas: eskisi teskari harakat bilan yopiladi, yangisi yoziladi (tannarx ham yangilanadi)
-        const rev = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date: patch.date, warehouseId: o.warehouseId!, productId: o.productId!, qty: -oldQty, unitCost: o.unitCost, refType: OPENING_REF, refId: o.id, note: `${OPENING_CATEGORY} — tahrir (eskisi qaytarildi)`, createdById: userId } });
-        const m = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date: patch.date, warehouseId: o.warehouseId!, productId: o.productId!, qty, unitCost, refType: OPENING_REF, refId: o.id, note: `${OPENING_CATEGORY}${note ? ` · ${note}` : ""}`, createdById: userId } });
-        await audit(tx, userId, "CREATE", "StockMove", rev.id, undefined, rev);
-        await audit(tx, userId, "CREATE", "StockMove", m.id, undefined, m);
-        data = { ...data, qty, unitCost, amount: r2(qty * (unitCost ?? 0)), stockMove: { connect: { id: m.id } } };
-        break;
-      }
+/** `updateOpening` tranzaksiya ichida (xato — `OpeningError` otiladi). */
+async function updateOpeningTx(tx: Tx, id: string, patchOf: OpeningPatch | ((o: OpeningRecord) => OpeningPatch), userId: string): Promise<{ error?: string }> {
+  const head = await tx.openingBalance.findUnique({ where: { id }, select: { activeKey: true, cancelledAt: true } });
+  if (!head || head.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki bekor qilingan");
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + head.activeKey}))`;
+  const o = await tx.openingBalance.findUniqueOrThrow({ where: { id } });
+  if (o.cancelledAt) throw new OpeningError("Yozuv shu payt bekor qilindi");
+  const patch = typeof patchOf === "function" ? patchOf(o) : patchOf;
+  const note = patch.note?.trim() || null;
+  let data: Prisma.OpeningBalanceUpdateInput = { date: patch.date, note };
+
+  switch (o.kind) {
+    case "CUSTOMER": {
+      const amount = r2(patch.amount ?? 0);
+      if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
+      // Mijoz qulfi (`addPayment` bilan bir xil): shu payt yozilayotgan to'lov tekshiruvdan o'tib ketmasin
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${o.customerId!}))`;
+      const inv = await tx.invoice.findUniqueOrThrow({ where: { id: o.invoiceId! }, include: { payments: { select: { amount: true } } } });
+      const paid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
+      if (paid > 0.005 && amount < paid - 0.005) throw new OpeningError(`Bu qoldiqqa ${money(paid)} to'lov yozilgan — summa undan kam bo'lolmaydi`);
+      const after = await tx.invoice.update({ where: { id: inv.id }, data: { amount, date: patch.date, status: invoiceStatusFor(amount, paid) } });
+      await audit(tx, userId, "UPDATE", "Invoice", inv.id, { amount: inv.amount, date: inv.date, status: inv.status }, { amount: after.amount, date: after.date, status: after.status, by: "opening" });
+      data = { ...data, amount };
+      break;
     }
-    const after = await tx.openingBalance.update({ where: { id }, data });
-    await audit(tx, userId, "UPDATE", "OpeningBalance", id, o, patch.reason ? { ...after, reason: patch.reason } : after);
-    return {};
-  }).catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
+    case "SUPPLIER": {
+      const amount = r2(patch.amount ?? 0);
+      if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
+      const paid = (await supplierOpeningPaid(tx, [o.id])).get(o.id) ?? 0;
+      if (paid > 0.005 && amount < paid - 0.005) throw new OpeningError(`Bu qarzga ${money(paid)} to'langan — summa undan kam bo'lolmaydi`);
+      data = { ...data, amount };
+      break;
+    }
+    case "CASH": {
+      const amount = r2(patch.amount ?? 0);
+      if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
+      const t = await tx.cashTransaction.findUniqueOrThrow({ where: { id: o.cashTxId! } });
+      const acc = await tx.cashAccount.findUniqueOrThrow({ where: { id: t.cashAccountId }, select: { type: true, name: true, allowOverdraft: true } });
+      if (amount < 0 && !(acc.type === "BANK" && acc.allowOverdraft)) throw new OpeningError(`${acc.name}: qoldiq manfiy bo'lolmaydi — manfiy qoldiq faqat overdraft ruxsat etilgan bank hisobida`);
+      // Qoldiq kamaysa — naqd kassa minusga tushmasin (shu orada pul chiqib ketgan bo'lishi mumkin)
+      const drop = Number(t.amount) - amount;
+      if (drop > 0.005) { const err = await cashOutflowError(tx, t.cashAccountId, drop); if (err) throw new OpeningError(err); }
+      const after = await tx.cashTransaction.update({ where: { id: t.id }, data: { amount, date: patch.date, note: note ?? t.note } });
+      await audit(tx, userId, "UPDATE", "CashTransaction", t.id, t, after);
+      data = { ...data, amount };
+      break;
+    }
+    case "STOCK": {
+      const qty = Number(patch.qty ?? 0);
+      const unitCost = patch.unitCost == null ? null : r2(patch.unitCost);
+      if (!(qty > 0)) throw new OpeningError("Miqdor 0 dan katta bo'lsin — qoldiq kerak bo'lmasa bekor qiling");
+      const oldQty = Number(o.qty ?? 0);
+      // Sklad qulfi (reys yuklash, brak, storno bilan navbat): qoldiq tekshiruvi va yozuv orasida mahsulot chiqib ketmasin
+      await lockStock(tx);
+      if (qty < oldQty) {
+        const left = await productStock(tx, o.productId!, o.warehouseId!);
+        if (left - (oldQty - qty) < -0.0005) throw new OpeningError(`Skladda hozir ${left} qoldi — boshlang'ich qoldiqni ${qty} gacha kamaytirib bo'lmaydi (mahsulot sotilgan/jo'natilgan)`);
+      }
+      // Sklad harakati o'zgarmas: eskisi teskari harakat bilan yopiladi, yangisi yoziladi (tannarx ham yangilanadi)
+      const rev = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date: patch.date, warehouseId: o.warehouseId!, productId: o.productId!, qty: -oldQty, unitCost: o.unitCost, refType: OPENING_REF, refId: o.id, note: `${OPENING_CATEGORY} — tahrir (eskisi qaytarildi)`, createdById: userId } });
+      const m = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date: patch.date, warehouseId: o.warehouseId!, productId: o.productId!, qty, unitCost, refType: OPENING_REF, refId: o.id, note: `${OPENING_CATEGORY}${note ? ` · ${note}` : ""}`, createdById: userId } });
+      await audit(tx, userId, "CREATE", "StockMove", rev.id, undefined, rev);
+      await audit(tx, userId, "CREATE", "StockMove", m.id, undefined, m);
+      data = { ...data, qty, unitCost, amount: r2(qty * (unitCost ?? 0)), stockMove: { connect: { id: m.id } } };
+      break;
+    }
+  }
+  const after = await tx.openingBalance.update({ where: { id }, data });
+  await audit(tx, userId, "UPDATE", "OpeningBalance", id, o, patch.reason ? { ...after, reason: patch.reason } : after);
+  return {};
 }
 
 /**
@@ -271,46 +276,100 @@ export async function reduceOpening(id: string, by: number, reason: string | nul
  * (keyin to'g'ri qoldiqni qayta kiritish mumkin). Bog'langan hujjat ham qaytariladi.
  */
 export async function cancelOpening(id: string, reason: string, userId: string): Promise<{ error?: string }> {
-  return db.$transaction(async (tx) => {
-    const o = await tx.openingBalance.findUnique({ where: { id } });
-    if (!o || o.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki allaqachon bekor qilingan");
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
-    switch (o.kind) {
-      case "CUSTOMER": {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${o.customerId!}))`; // to'lov bilan navbat
-        const inv = await tx.invoice.findUniqueOrThrow({ where: { id: o.invoiceId! }, include: { payments: { select: { id: true } } } });
-        if (inv.payments.length) throw new OpeningError(`Bu qoldiqqa ${inv.payments.length} ta to'lov yozilgan — avval to'lovlarni bekor qiling (Kassa / bank)`);
-        await tx.invoice.update({ where: { id: inv.id }, data: { status: "CANCELLED" } });
-        await audit(tx, userId, "STATUS_CHANGE", "Invoice", inv.id, { status: inv.status }, { status: "CANCELLED", by: "opening", reason });
-        break;
-      }
-      case "SUPPLIER": {
-        const paid = (await supplierOpeningPaid(tx, [o.id])).get(o.id) ?? 0;
-        if (Math.abs(paid) > 0.005) throw new OpeningError(`Bu qarzga ${money(paid)} to'langan — bekor qilib bo'lmaydi (summani tahrirlang)`);
-        break;
-      }
-      case "CASH": {
-        const t = await tx.cashTransaction.findUniqueOrThrow({ where: { id: o.cashTxId! } });
-        if (Number(t.amount) > 0) { const err = await cashOutflowError(tx, t.cashAccountId, Number(t.amount)); if (err) throw new OpeningError(`Qoldiq olib tashlansa kassa minusga tushadi. ${err}`); }
-        await tx.openingBalance.update({ where: { id }, data: { cashTx: { disconnect: true } } });
-        await tx.cashTransaction.delete({ where: { id: t.id } });
-        await audit(tx, userId, "DELETE", "CashTransaction", t.id, t, { by: "opening-cancel", reason });
-        break;
-      }
-      case "STOCK": {
-        const q = Number(o.qty ?? 0);
-        await lockStock(tx); // sklad qulfi — qoldiq tekshiruvi bilan chiqim navbatda
-        const left = await productStock(tx, o.productId!, o.warehouseId!);
-        if (left - q < -0.0005) throw new OpeningError(`Skladda hozir ${left} qoldi — ${q} ni qaytarib bo'lmaydi (mahsulot sotilgan/jo'natilgan)`);
-        const rev = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date: new Date(), warehouseId: o.warehouseId!, productId: o.productId!, qty: -q, unitCost: o.unitCost, refType: OPENING_REF, refId: o.id, note: `${OPENING_CATEGORY} bekor qilindi${reason ? `: ${reason}` : ""}`, createdById: userId } });
-        await audit(tx, userId, "CREATE", "StockMove", rev.id, undefined, rev);
-        break;
-      }
+  return db.$transaction((tx) => cancelOpeningTx(tx, id, reason, userId))
+    .catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
+}
+
+/** `cancelOpening` tranzaksiya ichida (xato — `OpeningError` otiladi). */
+async function cancelOpeningTx(tx: Tx, id: string, reason: string, userId: string): Promise<{ error?: string }> {
+  const o = await tx.openingBalance.findUnique({ where: { id } });
+  if (!o || o.cancelledAt) throw new OpeningError("Yozuv topilmadi yoki allaqachon bekor qilingan");
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
+  switch (o.kind) {
+    case "CUSTOMER": {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${o.customerId!}))`; // to'lov bilan navbat
+      const inv = await tx.invoice.findUniqueOrThrow({ where: { id: o.invoiceId! }, include: { payments: { select: { id: true } } } });
+      if (inv.payments.length) throw new OpeningError(`Bu qoldiqqa ${inv.payments.length} ta to'lov yozilgan — avval to'lovlarni bekor qiling (Kassa / bank)`);
+      await tx.invoice.update({ where: { id: inv.id }, data: { status: "CANCELLED" } });
+      await audit(tx, userId, "STATUS_CHANGE", "Invoice", inv.id, { status: inv.status }, { status: "CANCELLED", by: "opening", reason });
+      break;
     }
-    const after = await tx.openingBalance.update({ where: { id }, data: { activeKey: null, cancelledAt: new Date(), cancelledById: userId, cancelReason: reason.slice(0, 300) || null } });
-    await audit(tx, userId, "STATUS_CHANGE", "OpeningBalance", id, { activeKey: o.activeKey }, { cancelled: true, reason, after });
-    return {};
+    case "SUPPLIER": {
+      const paid = (await supplierOpeningPaid(tx, [o.id])).get(o.id) ?? 0;
+      if (Math.abs(paid) > 0.005) throw new OpeningError(`Bu qarzga ${money(paid)} to'langan — bekor qilib bo'lmaydi (summani tahrirlang)`);
+      break;
+    }
+    case "CASH": {
+      const t = await tx.cashTransaction.findUniqueOrThrow({ where: { id: o.cashTxId! } });
+      if (Number(t.amount) > 0) { const err = await cashOutflowError(tx, t.cashAccountId, Number(t.amount)); if (err) throw new OpeningError(`Qoldiq olib tashlansa kassa minusga tushadi. ${err}`); }
+      await tx.openingBalance.update({ where: { id }, data: { cashTx: { disconnect: true } } });
+      await tx.cashTransaction.delete({ where: { id: t.id } });
+      await audit(tx, userId, "DELETE", "CashTransaction", t.id, t, { by: "opening-cancel", reason });
+      break;
+    }
+    case "STOCK": {
+      const q = Number(o.qty ?? 0);
+      await lockStock(tx); // sklad qulfi — qoldiq tekshiruvi bilan chiqim navbatda
+      const left = await productStock(tx, o.productId!, o.warehouseId!);
+      if (left - q < -0.0005) throw new OpeningError(`Skladda hozir ${left} qoldi — ${q} ni qaytarib bo'lmaydi (mahsulot sotilgan/jo'natilgan)`);
+      const rev = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date: new Date(), warehouseId: o.warehouseId!, productId: o.productId!, qty: -q, unitCost: o.unitCost, refType: OPENING_REF, refId: o.id, note: `${OPENING_CATEGORY} bekor qilindi${reason ? `: ${reason}` : ""}`, createdById: userId } });
+      await audit(tx, userId, "CREATE", "StockMove", rev.id, undefined, rev);
+      break;
+    }
+  }
+  const after = await tx.openingBalance.update({ where: { id }, data: { activeKey: null, cancelledAt: new Date(), cancelledById: userId, cancelReason: reason.slice(0, 300) || null } });
+  await audit(tx, userId, "STATUS_CHANGE", "OpeningBalance", id, { activeKey: o.activeKey }, { cancelled: true, reason, after });
+  return {};
+}
+
+/**
+ * Kassa / bank → «Oy oxiri qoldiqlari» (Exceldan tizimga o'tish): hisob qoldig'i `date` kuni oxirida `balance` bo'lsin.
+ *
+ * Hisobning yagona boshlang'ich qoldig'i (`CASH:<id>`) shu sanaga yoziladi yoki ko'chiriladi. Uning summasi —
+ * `balance` minus shu sanagacha tizimdagi boshqa yozuvlar (to'lovlar, kirim-chiqim, perekit). Odatda o'tish sanasigacha
+ * yozuv yo'q — summa Exceldagi qoldiqning o'zi; Excel jurnali keyin import qilinsa ham hisob minusga tushmaydi.
+ * Boshqa yozuvlar qoldiqqa teng bo'lib qolsa — boshlang'ich qoldiq kerak emas (bo'lsa bekor qilinadi).
+ */
+export async function setCashBalanceAt(cashAccountId: string, date: Date, balance: number, userId: string): Promise<{ error?: string; amount?: number }> {
+  const key = activeKeyOf({ kind: "CASH", cashAccountId });
+  return db.$transaction(async (tx) => {
+    // Qoldiq qulfi, keyin hisob qulfi (`updateOpening` → `cashOutflowError` tartibi): hisob va yozish orasida yozuv qo'shilmasin
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + key}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cash:" + cashAccountId}))`;
+    const acc = await tx.cashAccount.findUnique({ where: { id: cashAccountId }, select: { isActive: true } });
+    if (!acc?.isActive) throw new OpeningError("Kassa/hisob topilmadi");
+    const o = await tx.openingBalance.findUnique({ where: { activeKey: key }, select: { id: true, cashTxId: true, note: true } });
+    const upTo = { lt: new Date(date.getTime() + 86_400_000) };
+    const [p, t] = await Promise.all([
+      tx.payment.aggregate({ where: { cashAccountId, date: upTo }, _sum: { amount: true } }),
+      tx.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId, date: upTo, cancelledAt: null, ...(o?.cashTxId ? { id: { not: o.cashTxId } } : {}) }, _sum: { amount: true } }),
+    ]);
+    const other = Number(p._sum.amount ?? 0) + t.reduce((x, g) => x + txSign(g.type) * Number(g._sum.amount ?? 0), 0);
+    const amount = r2(balance - other);
+    if (Math.abs(amount) < 0.005) {
+      if (o) await cancelOpeningTx(tx, o.id, "Oy oxiri qoldig'i: shu sanagacha yozuvlar qoldiqqa teng", userId);
+      return { amount: 0 };
+    }
+    const note = o?.note ?? MONTH_END_NOTE;
+    if (o) await updateOpeningTx(tx, o.id, { date, amount, note }, userId);
+    else await createOpeningTx(tx, { kind: "CASH", date, cashAccountId, amount, note }, userId);
+    return { amount };
   }).catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
+}
+
+export const MONTH_END_NOTE = "Oy oxiri qoldig'i (Exceldan o'tish)";
+
+/**
+ * «2026-10» → 31.10.2026 (UTC yarim tun — kassa formalari sanani shunday saqlaydi). Faqat tugagan oy:
+ * kelajakdagi oy oxiriga qoldiq qo'yilsa, oy ichidagi yozuvlar undan oldin qolib ketadi. Noto'g'ri bo'lsa — null.
+ */
+export function monthEndDate(ym: string, now = new Date()): Date | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  if (!m) return null;
+  const y = Number(m[1]), mon = Number(m[2]);
+  if (y < 2000 || mon < 1 || mon > 12) return null;
+  const end = new Date(Date.UTC(y, mon, 0));
+  return end.getTime() < Date.UTC(now.getFullYear(), now.getMonth(), 1) ? end : null;
 }
 
 // ───────────────────────── Yetkazuvchi qoldig'i (kreditorka) ─────────────────────────

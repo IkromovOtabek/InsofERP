@@ -9,6 +9,7 @@ import { addPayment, linkPaymentToInvoice, reversePayment } from "@/lib/payments
 import type { ValueMaps } from "@/lib/excel";
 import { isoDate } from "@/lib/format";
 import { importCashEntries, type CashImportRow } from "@/lib/cash-import";
+import { monthEndDate, setCashBalanceAt } from "@/lib/opening-balances";
 import { deleteRegisterBatch } from "@/lib/sales-register";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 
@@ -83,6 +84,41 @@ export async function importCashJournalFromExcel(_prev: ActionState, fd: FormDat
 
   revalidatePath("/payments"); revalidatePath("/cashflow"); revalidatePath("/"); revalidatePath("/moliya", "layout");
   redirect(`/payments?tab=kassa&from=${isoDate(res.from)}&to=${isoDate(res.to)}&import=${res.added}-${res.skipped}-${res.transfers}-${res.newSubs.length}-${res.newTops.length}`);
+}
+
+/**
+ * «Oy oxiri qoldiqlari» (Exceldan o'tish): `oy` (YYYY-MM) oxiriga har hisob uchun kiritilgan qoldiq hisobning
+ * boshlang'ich qoldig'i bo'lib yoziladi yoki tahrirlanadi (`setCashBalanceAt`). Bo'sh maydon — hisobga tegilmaydi.
+ * Hisoblar bir-biridan mustaqil: biri xato bersa, qolganlari saqlanadi va xabarda ikkalasi aytiladi.
+ */
+export async function saveMonthEndBalances(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("payments", "balance");
+  const day = monthEndDate(String(fd.get("oy") ?? ""));
+  if (!day) return { error: "Oy tanlanmagan yoki hali tugamagan — faqat o'tgan oy oxiriga qoldiq kiritiladi" };
+  const accounts = await db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true } });
+  const entries: { id: string; name: string; value: number }[] = [];
+  for (const a of accounts) {
+    const raw = String(fd.get(`bal_${a.id}`) ?? "").replace(/\s/g, "").replace(",", ".");
+    if (!raw) continue;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) return { error: `${a.name}: qoldiq raqam bo'lsin (0 yoki musbat)` };
+    if (value > MAX_AMOUNT) return { error: `${a.name}: summa juda katta` };
+    entries.push({ id: a.id, name: a.name, value });
+  }
+  if (!entries.length) return { error: "Hech bir hisobga qoldiq yozilmadi" };
+
+  const saved: string[] = [], failed: string[] = [];
+  for (const e of entries) {
+    const r = await setCashBalanceAt(e.id, day, e.value, s.userId);
+    if (r.error) failed.push(`${e.name}: ${r.error}`);
+    else saved.push(e.name);
+  }
+  if (saved.length) {
+    revalidatePath("/payments"); revalidatePath("/cashflow"); revalidatePath("/settings/boshlangich-qoldiq"); revalidatePath("/");
+  }
+  const when = `${String(day.getUTCDate()).padStart(2, "0")}.${String(day.getUTCMonth() + 1).padStart(2, "0")}.${day.getUTCFullYear()}`;
+  if (failed.length) return { error: `${failed.join(". ")}${saved.length ? `. Saqlandi: ${saved.join(", ")}` : ""}` };
+  return { ok: true, note: `${when} holatiga qoldiq saqlandi: ${saved.join(", ")}` };
 }
 
 /**

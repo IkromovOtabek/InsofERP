@@ -243,7 +243,7 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
           + pairs.reduce((s, p) => s + (p.in.accountId === id ? p.in.leg!.amount : 0) - (p.out.accountId === id ? p.out.leg!.amount : 0), 0);
         const left = (balances.get(id) ?? 0) + delta;
         if (delta < 0 && left < -0.005) {
-          throw new CashImportError(`${a.name} ${a.type === "CASH" ? "kassasi" : "hisobi"} minusga tushadi: hozirgi qoldiq ${money(balances.get(id) ?? 0)}, import bilan ${money(left)}. Hech narsa yozilmadi`);
+          throw new CashImportError(`${a.name} ${a.type === "CASH" ? "kassasi" : "hisobi"} minusga tushadi: hozirgi qoldiq ${money(balances.get(id) ?? 0)}, import bilan ${money(left)}. Hech narsa yozilmadi. Exceldan o'tayotgan bo'lsangiz — avval «Oy oxiri qoldiqlari»da jurnal boshlanishidan oldingi oy oxiridagi qoldiqni kiriting`);
         }
       }
 

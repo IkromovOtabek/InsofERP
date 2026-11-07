@@ -170,6 +170,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "receive_bank", label: "Perechisleniyeni tasdiqlash (bank)", roles: ["ACCOUNTING"] },
     { key: "storno", label: "To'lovni bekor qilish",           roles: ["ACCOUNTING"] },
     { key: "import", label: "Kassa jurnaliga Excel import",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
+    { key: "balance", label: "Oy oxiri qoldiqlarini kiritish",    roles: ["ACCOUNTING"], hint: "Exceldan o'tish: naqd va bank hisoblarining tanlangan oy oxiridagi qoldig'i — boshlang'ich qoldiq bo'lib yoziladi" },
   ],
   cashflow: [
     { key: "create", label: "Kirim-chiqim yozish",              roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileSpreadsheet, Trash2, Users, Receipt, Wallet, BookOpen } from "lucide-react";
+import { CalendarCheck, FileSpreadsheet, Trash2, Users, Receipt, Wallet, BookOpen } from "lucide-react";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { customerMarks, markedName } from "@/lib/finance";
@@ -30,6 +30,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   // Ruxsatlar server action'lariga mos: kim nima qila olmasa, tugmasi ham ko'rinmaydi
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
   const canImport = ["CASHIER", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
+  const canBalance = !!s && canDo(s, "payments", "balance");
   // Excel importidan qaytganda (batch) — realizatsiya jurnali; aks holda sukut bo'yicha kassa jurnali
   const tab = sp.tab === "jurnal" || (!sp.tab && sp.batch) ? "jurnal" : sp.tab === "tolovlar" ? "tolovlar" : "kassa";
   const batch = sp.batch || undefined;
@@ -54,7 +55,12 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader
         title="Kassa / bank"
-        action={canImport ? <LinkButton href="/payments/import" variant="secondary"><FileSpreadsheet size={15} /> Excel orqali qo&apos;shish</LinkButton> : undefined}
+        action={canImport || canBalance ? (
+          <div className="flex flex-wrap gap-2">
+            {canBalance && <LinkButton href="/payments/qoldiq" variant="secondary"><CalendarCheck size={15} /> Oy oxiri qoldiqlari</LinkButton>}
+            {canImport && <LinkButton href="/payments/import" variant="secondary"><FileSpreadsheet size={15} /> Excel orqali qo&apos;shish</LinkButton>}
+          </div>
+        ) : undefined}
       />
 
       {/* Hisob ustuni nomi bosilsa — kassa jurnali shu hisob bo'yicha; to'liq hisob ko'chirmasi (davr boshi-oxiri qoldig'i) — Kirim-Chiqimda */}
