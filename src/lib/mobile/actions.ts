@@ -197,9 +197,9 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (action.startsWith("task.")) await assertOwnTask(user, id);
   if (["att.present", "att.face", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
 
-  // ── Otdel kadr: ariza qarori / qaytarib olish, ish haqi vedomosti (`./hr.ts`) ──
-  if (action.startsWith("hrreq.") || action.startsWith("payroll.") || action.startsWith("wtask.") || ["checklist.save", "course.take", "onb.steps", "interview.result", "cand.move", "survey.answer", "fb.reply", "fb.hrreply", "fb.resolve"].includes(action)) return { ok: true, message: await runHrAction(user, action, id, payload) };
-  // ── Otdel kadr kabineti: xodim kartasi, lavozim, grafik, KPI, yollash, moslashuv, kurs, so'rovnoma (`./kadr-extra.ts`) ──
+  // ── Otdel kadr: ish haqi vedomosti, vazifalar (`./hr.ts`) ──
+  if (action.startsWith("payroll.") || action.startsWith("wtask.")) return { ok: true, message: await runHrAction(user, action, id, payload) };
+  // ── Otdel kadr kabineti: xodim kartasi, jarima/bonus (`./kadr-extra.ts`) ──
   if (isKadrAction(action)) return { ok: true, message: await runKadrAction(user, action, id, payload) };
   // ── Direktor kabineti: kirish arizasi, hisobni o'chirish, ilova foydalanuvchisi ERP ruxsati, Telegram kodi (`./direktor-extra.ts`) ──
   if (Object.hasOwn(DIREKTOR_ACTION_ROLES, action)) return direktorAction(user, action, id, payload);

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, BarChart3, ClipboardList, GraduationCap, Handshake, MessageSquare, Inbox, ListChecks, Scale, Target, UserPlus, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, Search, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, Scale, FileSpreadsheet, IdCard, Paperclip, Plus, Search, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -23,28 +23,20 @@ import { faceScope } from "@/lib/face-id";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { plansFor } from "@/lib/hr/shifts";
 import { getLateFine } from "@/lib/hr/late-fine";
-import { ArizalarTab, CheklistTab, GrafikTab, JarimaTab, KpiTab } from "./hr-tabs";
-import { MoslashuvTab, OqitishTab, YollashTab } from "./hr3-tabs";
-import { HisobotTab, MurojaatTab, SorovnomaTab } from "./hr4-tabs";
+import { JarimaTab } from "./hr-tabs";
 
+/**
+ * Kabinet tablari. Smena grafigi, arizalar, cheklist, KPI, yollash, moslashuv, o'qitish, so'rovnoma, murojaatlar va
+ * kadr hisobotlari olib tashlangan (ma'lumot va `lib/hr/*` qoidalari bazada qoladi). Ishchi lavozimlar (login shablonlari
+ * bilan) tablarda yo'q — direktor menyuning Boshqaruv bo'limidan ochadi.
+ */
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
-  ["lavozimlar", "Ishchi lavozimlar", BriefcaseBusiness],
   ["bolimlar", "Bo'limlar", Building2],
   ["davomat", "Davomat", CalendarCheck],
   ["ish-vaqti", "Ish vaqti", Clock],
   ["taqvim", "Kadr taqvimi", CakeSlice],
-  ["grafik", "Smena grafigi", CalendarRange],
-  ["arizalar", "Arizalar", Inbox],
   ["jarima-bonus", "Jarima va bonuslar", Scale],
-  ["cheklistlar", "Cheklistlar", ListChecks],
-  ["kpi", "KPI", Target],
-  ["yollash", "Yollash", UserPlus],
-  ["moslashuv", "Moslashuv", Handshake],
-  ["oqitish", "O'qitish", GraduationCap],
-  ["sorovnoma", "So'rovnoma", ClipboardList],
-  ["murojaatlar", "Murojaatlar", MessageSquare],
-  ["hisobotlar", "Hisobotlar", BarChart3],
 ] as const;
 
 /** Tug'ilgan kunigacha necha kun qolgani (yilni hisobga olmay). */
@@ -72,12 +64,15 @@ const EMP_HOLAT = [
 const empHolat = (e: { isActive: boolean; firedAt: Date | null }) => (e.firedAt ? "boshatilgan" : e.isActive ? "faol" : "nofaol");
 
 export default async function OtdelKadrPage({ searchParams }: {
-  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; hafta?: string; holat?: string; vakansiya?: string; q?: string; lavozim?: string }>;
+  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; holat?: string; q?: string; lavozim?: string }>;
 }) {
   // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
   await requirePage("/otdel-kadr");
   const s = await requireRoles(["HR"], { module: "employees" });
-  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy, hafta, holat, vakansiya, q = "", lavozim = "" } = await searchParams;
+  const sp = await searchParams;
+  const { qoshildi, yangilandi, kun, oy, holat, q = "", lavozim = "" } = sp;
+  // Olib tashlangan tab (eski havola, bildirishnoma) — xodimlar ro'yxati; lavozimlar faqat direktorga
+  const tab = TABS.some(([k]) => k === sp.tab) || (sp.tab === "lavozimlar" && s.role === "DIRECTOR") ? sp.tab! : "xodimlar";
 
   // Davomat tabi: `oy` berilsa oylik tabel, aks holda kunlik belgilash oynasi
   const oyParam = validMonth(oy);
@@ -215,7 +210,9 @@ export default async function OtdelKadrPage({ searchParams }: {
 
   return (
     <div>
-      <PageHeader title="Otdel kadr" subtitle="Lavozimlar ro'yxati, bo'limlar va kadr taqvimi shu yerda. Xodim kartasi — Xodimlar sahifasida." />
+      {tab === "lavozimlar"
+        ? <PageHeader title="Lavozimlar va login shablonlari" subtitle="Ishchi lavozimlar ro'yxati, bo'lim va lavozim bo'yicha tizimga kirish ruxsatlari." />
+        : <PageHeader title="Otdel kadr" subtitle="Xodimlar ro'yxati, bo'limlar, davomat va kadr taqvimi shu yerda. Xodim kartasi — Xodimlar sahifasida." />}
 
       {(qoshildi || yangilandi) && (
         <Callout tone="success" title="Excel import bajarildi">
@@ -223,21 +220,25 @@ export default async function OtdelKadrPage({ searchParams }: {
         </Callout>
       )}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Jami xodim" value={employees.length} hint={`${active.length} faol`} icon={Users} tone="brand" href="/otdel-kadr?tab=xodimlar" />
-        <StatCard label="Tizimga kiradi" value={withLogin} hint="login berilgan" icon={IdCard} tone="info" href="/employees" />
-        <StatCard label="Ishchi lavozim" value={positions.filter((p) => p.isActive).length} hint={`${positions.length} tadan faol`} icon={BriefcaseBusiness} href="/otdel-kadr?tab=lavozimlar" />
-        <StatCard label="Oxirgi oyda qabul" value={newHires} hint="ishga kirgan" icon={UserCheck} tone="success" href="/otdel-kadr?tab=hisobotlar#hisobot-12oy" />
-      </div>
+      {tab !== "lavozimlar" && (
+        <>
+          <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatCard label="Jami xodim" value={employees.length} hint={`${active.length} faol`} icon={Users} tone="brand" href="/otdel-kadr?tab=xodimlar" />
+            <StatCard label="Tizimga kiradi" value={withLogin} hint="login berilgan" icon={IdCard} tone="info" href="/employees" />
+            <StatCard label="Ishchi lavozim" value={positions.filter((p) => p.isActive).length} hint={`${positions.length} tadan faol`} icon={BriefcaseBusiness} href="/otdel-kadr?tab=bolimlar" />
+            <StatCard label="Oxirgi oyda qabul" value={newHires} hint="ishga kirgan" icon={UserCheck} tone="success" href="/otdel-kadr?tab=xodimlar" />
+          </div>
 
-      <Tabs current={tab} items={TABS.map(([k, label, icon]) => ({ key: k, label, href: `/otdel-kadr?tab=${k}`, icon }))} />
+          <Tabs current={tab} items={TABS.map(([k, label, icon]) => ({ key: k, label, href: `/otdel-kadr?tab=${k}`, icon }))} />
+        </>
+      )}
 
       {tab === "xodimlar" && (
         <Card padded={false}>
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold">Xodimlar ro&apos;yxati</h2>
-              <p className="text-xs text-slate-500">Yangi xodim ma&apos;lumotlari va hujjat nusxalari bilan kiritiladi; saqlangach shaxsiy varaqa chop etiladi.</p>
+              <p className="text-xs text-slate-500">Yangi xodim ma&apos;lumotlari va hujjat nusxalari bilan kiritiladi.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <LinkButton href="/otdel-kadr/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali qo&apos;shish</LinkButton>
@@ -308,7 +309,6 @@ export default async function OtdelKadrPage({ searchParams }: {
                   </Td>
                   <Td>
                     <span className="flex items-center justify-end gap-2">
-                      <Link href={`/employees/${e.id}/varaqa`} className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"><FileText size={14} /> Varaqa</Link>
                       {e.userId !== s.userId && (e.firedAt
                         ? <RestoreButton employeeId={e.id} compact />
                         : <DismissButton employeeId={e.id} fullName={e.fullName} compact />)}
@@ -357,7 +357,7 @@ export default async function OtdelKadrPage({ searchParams }: {
           <OrgChart employees={orgEmployees} positions={orgPositions} stageCounts={stageCounts} />
           <p className="px-1 text-xs text-slate-500">
             Bo&apos;limlar tizim rollariga bog&apos;langan — qo&apos;shish yoki olib tashlash uchun dasturchi kerak.
-            Ishchi lavozimni boshqa bo&apos;lim tagiga ko&apos;chirish uchun <span className="font-medium text-slate-700">Ishchi lavozimlar</span> bo&apos;limidagi <span className="font-medium text-slate-700">Bo&apos;lim</span> ustunidan tanlang.
+            Ishchi lavozimni boshqa bo&apos;lim tagiga direktor ko&apos;chiradi: <span className="font-medium text-slate-700">Boshqaruv → Lavozimlar va login shablonlari</span>, <span className="font-medium text-slate-700">Bo&apos;lim</span> ustuni.
           </p>
         </div>
       )}
@@ -369,16 +369,6 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "ish-vaqti" && <IshVaqti rows={ishVaqtiRows} std={{ start: DEFAULT_SHIFT.checkIn, end: DEFAULT_SHIFT.checkOut }} />}
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
-      {tab === "grafik" && <GrafikTab employees={active} hafta={hafta} />}
-      {tab === "arizalar" && <ArizalarTab s={s} employees={active} holat={holat} />}
-      {tab === "cheklistlar" && <CheklistTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} kun={kun} />}
-      {tab === "sorovnoma" && <SorovnomaTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} />}
-      {tab === "murojaatlar" && <MurojaatTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} holat={holat} />}
-      {tab === "hisobotlar" && <HisobotTab oy={oy} />}
-      {tab === "yollash" && <YollashTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} vakansiya={vakansiya} />}
-      {tab === "moslashuv" && <MoslashuvTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} holat={holat} />}
-      {tab === "oqitish" && <OqitishTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} />}
-      {tab === "kpi" && <KpiTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} employees={active} oy={oy} />}
       {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} oy={oy} />}
     </div>
   );

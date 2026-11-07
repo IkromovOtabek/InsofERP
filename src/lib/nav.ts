@@ -143,22 +143,11 @@ export const NAV: NavItem[] = [
   // Otdel kadr bo'limi: sahifaning tablari bevosita menyuda turadi — ichida yana "Otdel kadr" bandi bo'lmaydi.
   // Birinchisi sahifaning o'zi (`?tab` siz ochilganda xodimlar ro'yxati chiqadi) — middleware ruxsatni shu yo'ldan tekshiradi.
   { href: "/otdel-kadr",                label: "Xodimlar ro'yxati", roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=lavozimlar", label: "Ishchi lavozimlar", roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=bolimlar",   label: "Bo'limlar",         roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=davomat",    label: "Davomat",           roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=ish-vaqti",  label: "Ish vaqti",         roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=taqvim",     label: "Kadr taqvimi",      roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=grafik",     label: "Smena grafigi",     roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=arizalar",   label: "Arizalar",          roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=jarima-bonus", label: "Jarima va bonuslar", roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=cheklistlar", label: "Cheklistlar",      roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=kpi",        label: "KPI",               roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=yollash",    label: "Yollash",           roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=moslashuv",  label: "Moslashuv",         roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=oqitish",    label: "O'qitish",          roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=sorovnoma",  label: "So'rovnoma",        roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=murojaatlar", label: "Murojaatlar va xabar", roles: ["HR"], group: "Otdel kadr" },
-  { href: "/otdel-kadr?tab=hisobotlar", label: "Kadr hisobotlari",  roles: ["HR"], group: "Otdel kadr" },
   // Ish haqi: kadr hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`)
   { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER"], group: "Moliya" },
   // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)
@@ -166,6 +155,8 @@ export const NAV: NavItem[] = [
   { href: "/settings/ish-tartibi",      label: "Ish tartibi va bayramlar", roles: ["HR"], group: "Otdel kadr" },
   // Logistika haydovchiga kirishni Haydovchilar kartasida beradi (`logistika` → `driver_login`), Xodimlar unga kerak emas
   { href: "/employees",   label: "Xodimlar",           roles: ["HR"], group: "Boshqaruv" },
+  // Ishchi lavozimlar va ularning login shablonlari kadr kabinetidan olingan — faqat direktor menyusida (Boshqaruv)
+  { href: "/otdel-kadr?tab=lavozimlar", label: "Lavozimlar va login shablonlari", roles: ["HR"], group: "Boshqaruv", menuFor: ["DIRECTOR"] },
   // Haydovchi ERP'ga kirsa faqat shu sahifani ko'radi — o'zining reyslari (qolgan bo'limlar yopiq)
   { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika", menuFor: ["DRIVER"] },
   // Brigadir ham xuddi shunday: vebda faqat o'z brigadasiga tayinlangan topshiriqlar

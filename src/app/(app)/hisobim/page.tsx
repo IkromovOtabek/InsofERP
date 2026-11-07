@@ -13,7 +13,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
       <PageHeader title="Mening hisobim" subtitle="Login va parolingizni o'zingiz o'zgartirasiz; pastda — o'z davomatingiz" />
       <SelfAccountPanel s={s} />
       <div className="mt-5 max-w-3xl"><MyAttendanceCard userId={s.userId} month={oy ?? null} /></div>
-      {/* Smena grafigi, arizalar va ish haqi (`lib/hr/*`) */}
+      {/* Vazifalar va ish haqi (`lib/hr/*`) */}
       <MyHrSection userId={s.userId} />
     </div>
   );

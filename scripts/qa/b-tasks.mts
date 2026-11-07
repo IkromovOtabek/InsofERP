@@ -110,6 +110,7 @@ for (const [nm, c] of [["sklad", sklad], ["direktor", dir]] as const) {
   for (const p of ["/vazifalar", "/hisobim"]) { const x = await c.get(p); check(x.status === 200, `${nm} ${p} → ${x.status}`); }
 }
 const hs = await sklad.get("/hisobim");
-check(hs.text.includes(CL) && hs.text.includes(KP), "«Mening hisobim»: bugungi cheklist va KPI ko'rinadi");
+// Cheklist va KPI «Mening hisobim»dan olib tashlangan (otdel kadr soddalashtirildi) — qoidalar bazada qoladi, sahifada yo'q
+check(!hs.text.includes(CL) && !hs.text.includes(KP) && hs.text.includes("Vazifalarim"), "«Mening hisobim»: cheklist va KPI yo'q, vazifalar bor");
 summary("b-tasks");
 process.exit();

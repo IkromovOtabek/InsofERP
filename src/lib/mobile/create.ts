@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { ALL_STAFF } from "./hr-access";
 import { KADR_CREATE, KADR_CREATE_PERM } from "./kadr-access";
-import { kadrAriza, kadrCreate, kadrForm, kadrRequestForm } from "./kadr-extra";
-import { createRequestMobile, requestForm } from "./hr";
+import { kadrCreate, kadrForm } from "./kadr-extra";
 import { createTaskMobile, taskForm } from "./hr-work";
-import { createFeedbackMobile, feedbackForm } from "./hr-voice";
 import { driverPositionNames } from "@/lib/positions";
 import { db } from "@/lib/db";
 import { productCatalog, groupPath } from "@/lib/product-catalog";
@@ -153,15 +151,11 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   "arenda-shop": { roles: ["SECRETARY"], title: "Yangi do'kon", label: "Do'kon qo'shish" },
   // Logistika: transport, zapravka, xarajat, obyekt (`./logistika-extra.ts`, qoida `lib/logistics-admin.ts`)
   ...Object.fromEntries(Object.entries(LOGI_CREATE).map(([k, v]) => [k, { roles: v.roles, title: v.title, label: v.label }])),
-  // Xodim arizasi (ta'til, kasallik, avans…) — har bir xodim o'zi uchun (`./hr.ts`). Oxirida: rolning "+" tugmasi o'zgarmasin
-  ariza: { roles: ALL_STAFF, title: "Ariza yuborish", label: "Ariza yuborish" },
   // Vazifa — o'ziga yoki (huquqi bo'lsa) boshqa xodimga (`lib/hr/tasks.ts`)
   vazifa: { roles: ALL_STAFF, title: "Yangi vazifa", label: "Vazifa yozish" },
-  // Otdel kadrga murojaat (HR chat) — anonim bo'lishi mumkin (`lib/hr/voice.ts`)
-  murojaat: { roles: ALL_STAFF.filter((r) => r !== "BRIGADIER"), title: "Otdel kadrga murojaat", label: "Murojaat yozish" },
   // Ish haqi vedomosti — oy + tur bo'yicha hisoblash (veb «Ish haqi» → «Hisoblash», `lib/hr/payroll.ts` → `calculateRun`); `./moliya-extra.ts`
   "ish-haqi": { roles: ["HR", "ACCOUNTING"], title: "Ish haqini hisoblash", label: "Ish haqini hisoblash" },
-  // Otdel kadr kabineti: xodim qo'shish, jarima/bonus, vakansiya, nomzod, ommaviy xabar, kechikish jarimasi (`./kadr-extra.ts`)
+  // Otdel kadr kabineti: xodim qo'shish, jarima/bonus, kechikish jarimasi (`./kadr-extra.ts`)
   ...KADR_CREATE,
   // Sklad: tayyor mahsulot qo'shish, inventarizatsiya, hisobdan chiqarish, «Kimga» oluvchisi (`./sklad-extra.ts`)
   ...SKLAD_CREATE_ROLES,
@@ -260,17 +254,14 @@ async function formOf(user: MobileUser, key: string, defaults: Record<string, st
     case "kirim-transport": return kirimTransportForm();
     case "kirim-zavod": return kirimZavodForm();
     case "kirim-boshqa": return kirimBoshqaForm();
-    // Otdel kadr — boshida «Kim uchun» (xodim nomidan ariza, veb `createRequestForEmployee`)
-    case "ariza": return kadrRequestForm(user, requestForm(user.role));
     case "vazifa": return taskForm(user);
-    case "murojaat": return feedbackForm();
     case "arenda-kirim": return arendaKirimForm();
     case "arenda-chiqim": return arendaChiqimForm();
     case "arenda-shop": return arendaShopForm();
     case "vehicles": case "fuel": case "expenses": case "sites": return logiForm(user, key);
     case "ish-haqi": return payrollForm();
     case "products": case "inventory": case "writeoff": case "recipient": return skladForm(user, key);
-    case "employees": case "jarima-bonus": case "vakansiyalar": case "nomzodlar": case "xabar": case "davomat-sozlama": return kadrForm(user, key);
+    case "employees": case "jarima-bonus": case "davomat-sozlama": return kadrForm(user, key);
     default: return brigadeForm();
   }
 }
@@ -1055,10 +1046,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
 
   try {
-    // ── Xodim arizasi — `createHrRequest` (veb "Mening hisobim" bilan bitta qoida) ──
-    if (key === "ariza") return await kadrAriza(user, payload, () => createRequestMobile(user, payload));
     if (key === "vazifa") return await createTaskMobile(user, payload);
-    if (key === "murojaat") return await createFeedbackMobile(user, payload);
     if (key === "ish-haqi") return await payrollCreate(user, payload);
     if (Object.hasOwn(KADR_CREATE, key)) return await kadrCreate(user, key, payload);
     // ── Arenda (sekretar): kirim / chiqim / do'kon — `./arenda.ts` (qoida `lib/rent.ts`) ──

@@ -613,9 +613,9 @@ const ROLE_OPTS = (user: MobileUser) => LOGIN_ROLE_OPTIONS.filter((o) => o.value
  * va amallar. Har tugma — vebdagi kartadagi tugma, o'sha ruxsat bilan (`may`). Ruxsati bo'lmaganga — hech narsa.
  */
 export async function kadrEmployeeExtras(user: MobileUser, employeeId: string): Promise<{ actions: DetailAction[]; sections: HomeSection[]; photo?: MobileDetail["photo"] }> {
-  const edit = may(user, "edit"), login = may(user, "login"), onb = may(user, "onboarding");
-  if (!edit && !login && !onb) return { actions: [], sections: [] };
-  const e = await db.employee.findUnique({ where: { id: employeeId }, include: { user: { select: { id: true, login: true, role: true, isActive: true } }, documents: { orderBy: { createdAt: "desc" } }, onboarding: { select: { id: true } } } });
+  const edit = may(user, "edit"), login = may(user, "login");
+  if (!edit && !login) return { actions: [], sections: [] };
+  const e = await db.employee.findUnique({ where: { id: employeeId }, include: { user: { select: { id: true, login: true, role: true, isActive: true } }, documents: { orderBy: { createdAt: "desc" } } } });
   if (!e) return { actions: [], sections: [] };
   const actions: DetailAction[] = [];
   const self = e.userId === user.id;
@@ -660,16 +660,6 @@ export async function kadrEmployeeExtras(user: MobileUser, employeeId: string): 
       actions.push({ id: "employee.rename", label: "Login nomini almashtirish", form: [{ name: "login", label: "Login", type: "text", required: true, value: e.user.login }] });
       if (e.isActive) actions.push({ id: "employee.block", label: e.user.isActive ? "Kirishni bloklash" : "Kirishni ochish", tone: e.user.isActive ? "danger" : "success", confirm: e.user.isActive ? `${e.fullName} tizimga kira olmasin? Xodimning o'zi faol qoladi` : `${e.fullName} yana tizimga kira olsinmi?` });
     }
-  }
-  if (onb && e.isActive && !e.onboarding) {
-    actions.push({
-      id: "onb.start", label: "Moslashuv rejasini ochish",
-      form: [
-        { name: "mentorId", label: "Murabbiy", type: "select", options: await employeeOptions({ excludeId: e.id }) },
-        { name: "startDate", label: "Boshlanishi (kk.oo.yyyy)", type: "text", required: true, value: d2(e.hiredAt ?? dayUtc(today())) },
-        { name: "probationMonths", label: "Sinov muddati, oy", type: "number", value: "3" },
-      ],
-    });
   }
   if (edit && !self && !dirLocked) {
     if (e.firedAt) actions.push({ id: "employee.restore", label: "Ishga qaytarish", tone: "success", confirm: `${e.fullName} ishga qaytarilsinmi? Logini ham ochiladi` });

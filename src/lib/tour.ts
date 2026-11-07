@@ -200,8 +200,7 @@ const CASHIER_STEPS: TourStep[] = [
 
 const HR_STEPS: TourStep[] = [
   openGroup("Otdel kadr"),
-  openPage("/otdel-kadr", "Xodimlar ro'yxati", "Kadr bo'limining asosiy oynasi: yangi xodim hujjatlari bilan kiritiladi, shaxsiy varaqa chop etiladi."),
-  openPage("/otdel-kadr?tab=lavozimlar", "Ishchi lavozimlar", "Tizimga login bermaydigan lavozimlar shu yerda ochiladi va darhol xodimlar ro'yxatiga tushadi."),
+  openPage("/otdel-kadr", "Xodimlar ro'yxati", "Kadr bo'limining asosiy oynasi: yangi xodim hujjatlari bilan kiritiladi."),
   openPage("/otdel-kadr?tab=bolimlar", "Bo'limlar", "Korxona tuzilmasi — qaysi xodim qaysi bo'limga tegishli."),
   openPage("/otdel-kadr?tab=davomat", "Davomat", "Kunlik tabel: har xodimga belgi va kelgan/ketgan vaqt qo'yiladi, soat o'zi hisoblanadi. Oylik tabel shu yerdan ochiladi."),
   openPage("/otdel-kadr?tab=ish-vaqti", "Ish vaqti", "Xodimlar nechidan nechigacha ishlashi: lavozim bo'yicha birdan yoki har xodimga alohida. Davomatda kechikish va erta ketish shu vaqtdan hisoblanadi."),
