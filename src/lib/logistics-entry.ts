@@ -50,6 +50,7 @@ export const entrySchema = z.object({
   repair: numIn(0, 100_000_000),
   parts: numIn(0, 100_000_000),
   vulc: numIn(0, 100_000_000),
+  other: numIn(0, 100_000_000),
   note: z.string().trim().max(300).optional().transform((v) => v ?? ""),
   clientToken: z.string().trim().max(64).optional().transform((v) => v || null),
 });
@@ -70,7 +71,7 @@ export async function createLogisticsEntry(d: EntryInput, userId: string): Promi
   }
   const pay = Math.round(d.payAmount ?? 0), revenue = Math.round(d.revenue ?? 0);
   const refuel = Math.round((d.refuel ?? 0) * 100) / 100;
-  const costs: [TransportExpenseKind, number, string][] = ([["REPAIR", d.repair, "Ta'mir"], ["PARTS", d.parts, "Zapchast"], ["OTHER", d.vulc, "Vulkanizatsiya"]] as const)
+  const costs: [TransportExpenseKind, number, string][] = ([["REPAIR", d.repair, "Ta'mir"], ["PARTS", d.parts, "Zapchast"], ["OTHER", d.vulc, "Vulkanizatsiya"], ["OTHER", d.other, "Boshqa xarajat"]] as const)
     .map(([k, a, t]): [TransportExpenseKind, number, string] => [k, Math.round(a ?? 0), t]).filter(([, a]) => a > 0);
   const work = (d.km ?? 0) > 0 || (d.drumHours ?? 0) > 0 || (d.trips ?? 0) > 0;
   if (pay <= 0 && revenue <= 0 && refuel <= 0 && !costs.length && !work) return { error: "Haydovchi haqi yoki kirim summasini kiriting (yoki km, zapravka, xarajat)" };
@@ -183,30 +184,44 @@ export async function cancelLogisticsEntry(id: string, reason: string, userId: s
 }
 
 /**
+ * Hisob varag'idan to'liq tahrir (`lib/ledger-edit.ts`): qator maydonlari ham yoziladi, qatorning zapravka/xarajati
+ * shu tranzaksiyada moslanadi (`apply`). `costs` — tahrirdan keyin qatorda zapravka yoki xarajat qoladimi.
+ */
+export type EntrySheetEdit = {
+  costs: boolean;
+  apply: (tx: Prisma.TransactionClient, ctx: { date: Date; driverId: string | null; vehicleId: string | null; docNo: string }) => Promise<void>;
+};
+
+/**
  * Dispetcher qo'lda yozuvni tuzatadi («Qo'lda yozuvlar» → qalam): sana, haydovchi, transport, ish, haq, kirim, izoh.
- * Bekor qilish bilan bir qoida: naqdi kassaga o'tgan yoki oyi vedomostda yopilgan haq tahrirlanmaydi. Tasdiqlangan oylik
- * haqning summasi, turi, haydovchisi yoki oyi o'zgarsa — tasdiq qaytadan (ish boshqaruvchiga yana boradi).
+ * Hisob varag'idan (`sheet`) — qator maydonlari ham: yuklash/tushirish joyi, yuk, baraban soati, kirim turi, zapravka, xarajat.
+ * Naqdi kassaga o'tgan yoki oyi vedomostda yopilgan haqning summasi, turi, haydovchisi va oyi o'zgarmaydi (bekor qilish
+ * bilan bir qoida), qolgan maydonlar tuzatiladi. Tasdiqlangan oylik haqning shulari o'zgarsa — tasdiq qaytadan.
  * Qator bilan yozilgan zapravka va xarajat sana/haydovchi bilan birga ko'chadi; ular bor qatorda transport o'zgarmaydi.
  */
-export async function updateLogisticsEntry(id: string, d: EntryInput, userId: string): Promise<{ ok: true; id: string; docNo: string; reapprove: boolean } | { error: string }> {
+export async function updateLogisticsEntry(id: string, d: EntryInput, userId: string, sheet?: EntrySheetEdit): Promise<{ ok: true; id: string; docNo: string; reapprove: boolean } | { error: string }> {
   const e = await db.logisticsEntry.findUnique({
     where: { id },
     include: { _count: { select: { fuelLogs: { where: { cancelledAt: null } }, expenses: { where: { cancelledAt: null } } } } },
   });
   if (!e) return { error: "Yozuv topilmadi" };
   if (e.cancelledAt) return { error: "Bekor qilingan yozuv tahrirlanmaydi" };
-  const block = await cancelBlock(e, "tahrirlab");
-  if (block) return { error: block };
   const linked = e._count.fuelLogs + e._count.expenses > 0;
   const pay = Math.round(d.payAmount ?? 0), revenue = Math.round(d.revenue ?? 0);
-  const work = (d.km ?? 0) > 0 || (d.trips ?? 0) > 0 || Number(e.drumHours ?? 0) > 0 || linked;
+  const drum = sheet ? d.drumHours ?? 0 : Number(e.drumHours ?? 0);
+  const work = (d.km ?? 0) > 0 || (d.trips ?? 0) > 0 || drum > 0 || (sheet ? sheet.costs : linked);
   if (pay <= 0 && revenue <= 0 && !work) return { error: "Haydovchi haqi yoki kirim summasini kiriting (yoki km, reys soni)" };
   if (pay > 0 && !d.driverId) return { error: "Haq kimga — haydovchini tanlang" };
   if (pay > 0 && !d.payType) return { error: "To'lov turini tanlang: naqd yoki oylik" };
   if (revenue > 0 && !d.vehicleId) return { error: "Kirim qaysi transportniki — transportni tanlang" };
+  if (sheet && revenue > 0 && !d.revenueType) return { error: "Kirim turini tanlang: P/R, N/L yoki obyekt" };
+  if (sheet && ((d.km ?? 0) > 0 || drum > 0 || sheet.costs) && !d.vehicleId) return { error: "Transportni tanlang — km, zapravka va xarajat mashinaga yoziladi" };
   if ((d.km ?? 0) > 0 && !d.vehicleId) return { error: "Transportni tanlang — km mashinaga yoziladi" };
-  if (linked && d.vehicleId !== e.vehicleId) return { error: "Qatorda zapravka yoki xarajat bor — transportni o'zgartirib bo'lmaydi. Bekor qilib qayta yozing" };
-  if (d.note.length < 3) return { error: "Izohni yozing (kamida 3 belgi)" };
+  if (linked && d.vehicleId !== e.vehicleId) return { error: sheet
+    ? "Qatorda o'z zapravka/xarajati bor — transportni o'zgartirib bo'lmaydi. Avval ularni 0 qilib saqlang yoki qatorni bekor qilib qayta yozing"
+    : "Qatorda zapravka yoki xarajat bor — transportni o'zgartirib bo'lmaydi. Bekor qilib qayta yozing" };
+  const note = sheet ? d.note || [d.pickup, d.dropoff].filter(Boolean).join(" → ") : d.note;
+  if (note.length < 3) return { error: sheet ? "Izoh yoki tushirish joyini yozing (kamida 3 belgi)" : "Izohni yozing (kamida 3 belgi)" };
   const date = d.date ?? e.date;
   if (date.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
 
@@ -216,21 +231,28 @@ export async function updateLogisticsEntry(id: string, d: EntryInput, userId: st
   ]);
   if (d.driverId && !driver) return { error: "Haydovchi topilmadi" };
   if (d.vehicleId && !vehicle) return { error: "Transport topilmadi" };
-  if (pay > 0 && driver?.external && d.payType === "PAYROLL") return { error: "Ko'chadan haydovchi oylikda yo'q — to'lov turi faqat naqd" };
-  if (pay > 0 && d.payType === "PAYROLL" && (await monthLocked(date))) return { error: "Shu oyning ish haqi vedomosti tasdiqlangan — oylikka yozib bo'lmaydi" };
 
   const payType = pay > 0 ? (d.payType as DriverPayType) : null;
   const monthOf = (x: Date) => x.getFullYear() * 12 + x.getMonth();
   const payChanged = pay !== Math.round(Number(e.payAmount ?? 0)) || payType !== e.payType || (driver?.id ?? null) !== e.driverId || monthOf(date) !== monthOf(e.date);
+  // Kassaga o'tgan naqd / yopilgan oy: haq qismi qotgan, qolgan maydonlar (km, joy, izoh…) tuzatiladi
+  if (payChanged) {
+    const block = await cancelBlock(e, "tahrirlab");
+    if (block) return { error: block };
+    if (pay > 0 && driver?.external && d.payType === "PAYROLL") return { error: "Ko'chadan haydovchi oylikda yo'q — to'lov turi faqat naqd" };
+    if (pay > 0 && d.payType === "PAYROLL" && (await monthLocked(date))) return { error: "Shu oyning ish haqi vedomosti tasdiqlangan — oylikka yozib bo'lmaydi" };
+  }
   const reapprove = !!e.payApprovedAt && payChanged;
   const data = {
     date, driverId: driver?.id ?? null, vehicleId: vehicle?.id ?? null, trips: Math.round(d.trips ?? 0), km: d.km ?? null,
-    payAmount: pay > 0 ? pay : null, payType, revenue: revenue > 0 ? revenue : null, revenueType: revenue > 0 ? e.revenueType : null, note: d.note,
+    payAmount: pay > 0 ? pay : null, payType, revenue: revenue > 0 ? revenue : null, revenueType: revenue > 0 ? (sheet ? d.revenueType ?? null : e.revenueType) : null, note,
+    ...(sheet ? { pickup: d.pickup, dropoff: d.dropoff, cargo: d.cargo, drumHours: d.drumHours ?? null } : {}),
     ...(reapprove ? { payApprovedAt: null, payApprovedById: null } : {}),
   };
   const before = {
     date: e.date, driverId: e.driverId, vehicleId: e.vehicleId, trips: e.trips, km: e.km, payAmount: e.payAmount, payType: e.payType,
     revenue: e.revenue, revenueType: e.revenueType, note: e.note, payApprovedAt: e.payApprovedAt,
+    ...(sheet ? { pickup: e.pickup, dropoff: e.dropoff, cargo: e.cargo, drumHours: e.drumHours } : {}),
   };
   const ok = await db.$transaction(async (tx) => {
     const u = await tx.logisticsEntry.updateMany({ where: { id, cancelledAt: null, payApprovedAt: e.payApprovedAt }, data });
@@ -242,6 +264,7 @@ export async function updateLogisticsEntry(id: string, d: EntryInput, userId: st
       await tx.fuelLog.updateMany({ where: { entryId: id, cancelledAt: null }, data: move });
       await tx.transportExpense.updateMany({ where: { entryId: id, cancelledAt: null }, data: move });
     }
+    if (sheet) await sheet.apply(tx, { date, driverId: data.driverId, vehicleId: data.vehicleId, docNo: e.docNo });
     return true;
   });
   if (!ok) return { error: "Yozuv boshqa joyda o'zgartirildi — sahifani yangilang" };

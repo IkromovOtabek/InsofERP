@@ -84,6 +84,38 @@ check(g.status === 200 && g.text.includes(docNo) && g.text.includes(PLATE) && g.
 g = await prorab.get(P);
 check(g.status === 200 && !g.text.includes("Qator qo&#x27;shish"), "ish boshqaruvchi varaqni ko'radi, qator qo'shmaydi", g.status);
 
+// ── Qatorni tahrirlash (qalam, hamma ustun): bitta yozuv — joyida, 0 — bekor, yangisi qatorga bog'lanadi; AuditLog'da ──
+const LE = `${LA}#updateLedgerRowAction`;
+const edit = (o: Record<string, string | number> = {}) => fd({
+  date: today, vehicleId: VEH, driverId: DRV, pickup: "Zavod", dropoff: `QA Obyekt ${tag}`, cargo: "M-250 10 m³", trips: 1, km: 30, drumHours: 4.5,
+  refuel: 50, fuelPrice: 5200, payAmount: 120000, payType: "CASH", repair: 100000, parts: "", vulc: 30000, other: "", revenue: 500000, revenueType: "OBJECT", note: "Tun 22:30", ...o,
+});
+const fuelId = q1(`select id from "FuelLog" where "entryId"=${lit(E)} and "cancelledAt" is null`)!;
+r = await sklad.action(LE, ["entry", E, undefined, edit({ km: 31 })], P);
+check(!r.ok && n1(`select km::int from "LogisticsEntry" where id=${lit(E)}`) === 30, "sklad varaq qatorini tahrirlay olmaydi");
+const changed = { km: 40, pickup: "Sklad-2", cargo: "M-300 8 m³", refuel: 60, repair: 0, parts: 70000, other: 15000 };
+r = await disp.action(LE, ["entry", E, undefined, edit(changed)], P);
+check(r.ok, "dispetcher qo'lda qatorni tahrirladi (km, joy, yuk, zapravka, xarajatlar)", r.error ?? r.text.slice(0, 200));
+const e2 = q(`select km::int, pickup, cargo from "LogisticsEntry" where id=${lit(E)}`)[0];
+check(e2?.[0] === "40" && e2[1] === "Sklad-2" && e2[2] === "M-300 8 m³", "qator: km, yuklash joyi va yuk yangilandi", e2);
+const f2 = q(`select id, liters::float, amount::int from "FuelLog" where "entryId"=${lit(E)} and "cancelledAt" is null`);
+check(f2.length === 1 && f2[0]![0] === fuelId && f2[0]![1] === "60" && f2[0]![2] === "312000", "zapravka o'sha yozuvda 60 ga o'zgardi (summa 312 000)", f2);
+const c2 = q(`select kind, amount::int, note from "TransportExpense" where "entryId"=${lit(E)} and "cancelledAt" is null order by kind::text, amount`);
+check(c2.length === 3 && c2[0]![1] === "15000" && /Boshqa/.test(c2[0]![2]!) && c2[1]![1] === "30000" && /Vulkaniz/.test(c2[1]![2]!) && c2[2]![0] === "PARTS" && c2[2]![1] === "70000",
+  "xarajat: ta'mir bekor, zapchast va boshqa xarajat yangi, vulkanizator o'zgarmadi", c2);
+check(/Hisob varag'ida tahrirlandi/.test(q1(`select "cancelReason" from "TransportExpense" where "entryId"=${lit(E)} and kind='REPAIR'`) ?? ""), "bekor qilingan ta'mir sababi — varaqdagi tahrir");
+check(n1(`select count(*) from "AuditLog" where entity='FuelLog' and "entityId"=${lit(fuelId)} and action='UPDATE'`) === 1, "zapravka o'zgarishi AuditLog'da");
+rows = await sheet();
+const me2 = rows.find((x) => x.kind === "entry" && x.id === E);
+check(!!me2 && me2.km === 40 && me2.refuel === 60 && me2.repair === 0 && me2.parts === 70000 && me2.vulc === 30000 && me2.other === 15000 && me2.pickup === "Sklad-2",
+  "varaq yangi qiymatlarni ko'rsatadi", me2 && [me2.km, me2.refuel, me2.repair, me2.parts, me2.vulc, me2.other, me2.pickup]);
+const expN = n1(`select count(*) from "TransportExpense" where "entryId"=${lit(E)}`);
+r = await disp.action(LE, ["entry", E, undefined, edit(changed)], P);
+check(r.ok && n1(`select count(*) from "TransportExpense" where "entryId"=${lit(E)}`) === expN && n1(`select count(*) from "AuditLog" where entity='FuelLog' and "entityId"=${lit(fuelId)} and action='UPDATE'`) === 1,
+  "o'zgarishsiz qayta saqlash — zapravka va xarajat yozuvlariga tegilmadi", r.error);
+r = await disp.action(LE, ["entry", E, undefined, edit({ ...changed, revenueType: "" })], P);
+check(/Kirim turini/.test(r.error ?? ""), "tahrirda kirim turisiz rad etildi", r.error);
+
 // ── Bekor qilish: zapravka va xarajat ham bekor bo'ladi ──
 r = await logist.action(`${LA}#cancelEntryAction`, [E2, "QA xato yozildi"], P);
 check(r.ok && !!q1(`select "cancelledAt" from "LogisticsEntry" where id=${lit(E2)}`), "logistika o'z qatorini bekor qildi", r.error);
@@ -100,6 +132,15 @@ check(r.ok, "reysi yo'q mashinaga ta'mir yozildi", r.error);
 rows = await sheet();
 const cost = rows.find((x) => x.kind === "cost");
 check(!!cost && cost.repair === 45000 && cost.remarks.some((t) => t.includes(`QA reyssiz ta'mir ${tag}`)), "reyssiz kun qatori: ta'mir va izohi", rows.map((x) => [x.kind, x.repair]));
+// Reyssiz kunni tahrirlash: ta'mir summasi o'sha yozuvda, zapravka — mashinaga yangi yozuv
+r = await disp.action(LE, ["cost", cost!.id, undefined, fd({ refuel: 20, fuelPrice: 5000, repair: 50000 })], P);
+check(r.ok, "reyssiz kun qatori tahrirlandi", r.error);
+rows = await sheet();
+const cost2 = rows.find((x) => x.kind === "cost");
+check(!!cost2 && cost2.repair === 50000 && cost2.refuel === 20, "reyssiz kun: ta'mir 50 000, zapravka 20", cost2 && [cost2.repair, cost2.refuel]);
+check(n1(`select count(*) from "TransportExpense" where "vehicleId"=${lit(VEH)} and note=${lit(`QA reyssiz ta'mir ${tag}`)} and "cancelledAt" is null and amount=50000`) === 1
+  && n1(`select count(*) from "FuelLog" where "vehicleId"=${lit(VEH)} and "cancelledAt" is null and "entryId" is null and "tripId" is null and liters=20 and amount=100000`) === 1,
+  "ta'mir yozuvi joyida o'zgardi, zapravka mashinaga yozildi");
 
 // ── Reys qatorida km / baraban soatini qo'lda yozish ──
 const trip = q1(`select id from "Trip" where status='DELIVERED' order by "deliveredAt" desc limit 1`);
@@ -113,11 +154,30 @@ if (trip) {
   const after = q(`select "payKm"::float, "workHours"::float from "Trip" where id=${lit(trip)}`)[0];
   check(r.ok && after?.[0] === "77" && after[1] === "3", "dispetcher reysga km 77 va baraban 3 soat yozdi", [r.error, after]);
   check(n1(`select count(*) from "AuditLog" where entity='Trip' and "entityId"=${lit(trip)} and action='UPDATE' and after::text like '%Hisob varag%'`) >= 1, "km tuzatish AuditLog'da (oldingi qiymat bilan)", before);
+
+  // Reys qatorini tahrirlash: yuklash joyi, km, izoh; zapravka/xarajat va haq o'zgarmasa — tegilmaydi
+  const [tv, td] = q(`select "vehicleId", "deliveredAt" from "Trip" where id=${lit(trip)}`)[0]!;
+  const at = new Date(td!);
+  const tr = (await driverLedger(new Date(at.getFullYear(), at.getMonth(), 1), new Date(at.getFullYear(), at.getMonth() + 1, 1), { vehicleId: tv! })).rows.find((x) => x.kind === "trip" && x.id === trip)!;
+  const costN = n1(`select (select count(*) from "FuelLog" where "vehicleId"=${lit(tv!)}) + (select count(*) from "TransportExpense" where "vehicleId"=${lit(tv!)} or "tripId"=${lit(trip)})`);
+  const tripEdit = fd({
+    pickup: `QA BRU ${tag}`, km: "78", drumHours: "3", note: `QA reys izohi ${tag}`, payAmount: "",
+    refuel: tr.refuel, fuelPrice: tr.refuelPrice ?? "", repair: tr.repair, parts: tr.parts, vulc: tr.vulc, other: tr.other,
+  });
+  r = await sklad.action(LE, ["trip", trip, undefined, tripEdit], P);
+  check(!r.ok, "sklad reys qatorini tahrirlay olmaydi");
+  r = await disp.action(LE, ["trip", trip, undefined, tripEdit], P);
+  const t2 = q(`select "pickupAddress", "payKm"::float, "deliveryComment" from "Trip" where id=${lit(trip)}`)[0];
+  check(r.ok && t2?.[0] === `QA BRU ${tag}` && t2[1] === "78" && t2[2] === `QA reys izohi ${tag}`, "reys qatori: yuklash joyi, km 78 va izoh yozildi", [r.error, t2]);
+  check(n1(`select (select count(*) from "FuelLog" where "vehicleId"=${lit(tv!)}) + (select count(*) from "TransportExpense" where "vehicleId"=${lit(tv!)} or "tripId"=${lit(trip)})`) === costN,
+    "reys tahririda o'zgarmagan zapravka/xarajatga yangi yozuv qo'shilmadi");
 } else check(true, "yetkazilgan reys yo'q — km tuzatish o'tkazib yuborildi");
 const notDelivered = q1(`select id from "Trip" where status<>'DELIVERED' limit 1`);
 if (notDelivered) {
   r = await disp.action(`${LA}#fixTripKmAction`, [notDelivered, undefined, fd({ km: "10" })], P);
   check(/yetkazilgan reys/.test(r.error ?? ""), "yetkazilmagan reys km'i tuzatilmaydi", r.error);
+  r = await disp.action(LE, ["trip", notDelivered, undefined, fd({ km: "10" })], P);
+  check(/yetkazilgan reys/.test(r.error ?? ""), "yetkazilmagan reys qatori tahrirlanmaydi", r.error);
 }
 
 summary("b-logi-ledger");

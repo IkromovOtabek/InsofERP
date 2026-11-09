@@ -139,6 +139,8 @@ check(Math.round(a.other - base.other) === 25000, "chiqim avtotransportga tushdi
 const upd = (o: Record<string, string | number> = {}) => fd({ date: today, driverId: DRV, vehicleId: veh, trips: 2, km: 80, payAmount: 300000, payType: "PAYROLL", note: "QA zavoddan tashqari ish", ...o });
 r = await disp.action(`${LA}#updateEntryAction`, [eCash, undefined, upd({ payAmount: 160000, payType: "CASH" })], P);
 check(/kassaga o'tgan/.test(r.error ?? ""), "kassaga o'tgan naqd haq tahrirlanmaydi", r.error);
+r = await disp.action(`${LA}#updateEntryAction`, [eCash, undefined, upd({ trips: "", km: "", payAmount: 150000, payType: "CASH", revenue: 500000, note: `QA naqd izoh ${tag}` })], P);
+check(r.ok && q1(`select note from "LogisticsEntry" where id=${lit(eCash)}`) === `QA naqd izoh ${tag}`, "kassaga o'tgan naqd: haq o'zgarmasa izoh tuzatiladi", r.error);
 r = await disp.action(`${LA}#updateEntryAction`, [eRev, undefined, upd()], P);
 check(/Bekor qilingan/.test(r.error ?? ""), "bekor qilingan yozuv tahrirlanmaydi", r.error);
 r = await sklad.action(`${LA}#updateEntryAction`, [ePay, undefined, upd({ note: "QA sklad" })], P);

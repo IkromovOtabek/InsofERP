@@ -7,7 +7,7 @@ import { Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/compon
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { cancelEntryAction } from "../actions";
-import { KmFix } from "./ledger-forms";
+import { KmFix, LedgerEditButton } from "./ledger-forms";
 
 /** Bo'sh / nol — «—», aks holda son (pul — butun so'm). */
 const N = ({ v, frac = 0, neg }: { v: number | null; frac?: number; neg?: boolean }) =>
@@ -39,6 +39,7 @@ const excelRow = (r: LedgerRow) => ({
  * Haydovchi tabelining hisob varag'i (dispetcher Excel'i ko'rinishida) — `lib/driver-ledger.ts`.
  * Reys qatori o'zi tushadi (ECO bermagan km / baraban soati qalam bilan yoziladi), qo'lda qator — «Qator qo'shish» dan,
  * reyssiz kun — mashinaning shu kungi zapravka/xarajati. Naqd haqli qator sariq (Excel'dagi «НАХТ»).
+ * Har qator oxiridagi qalam — hamma ustunni bitta oynada tahrirlash (`LedgerEditButton`, `lib/ledger-edit.ts`).
  * Excel: bitta mashina — bitta varaq; «Hammasi» da har mashina alohida varaq + jamlanma.
  */
 export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, canEdit }: {
@@ -59,7 +60,7 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="max-w-3xl text-xs text-slate-500">
           Reys yetkazilganda o&apos;zi tushadi: km — ECO/GPS izi (bo&apos;lmasa zayavka masofasi × 2), baraban soati — haydovchi yoki reys vaqti.
-          ECO bermagan bo&apos;lsa — km katagidagi qalam bilan yozing. Sarf — transport normasi, qoldiq — mashina bo&apos;yicha zapravkalar minus sarf.
+          ECO bermagan bo&apos;lsa — km katagidagi qalam bilan yozing{canEdit ? ", butun qatorni — oxiridagi qalam bilan" : ""}. Sarf — transport normasi, qoldiq — mashina bo&apos;yicha zapravkalar minus sarf.
           <span className="ml-1 rounded bg-amber-100 px-1 text-amber-800">Sariq</span> — naqd haq.
         </p>
         <ExcelButton file={file} sheets={sheets} />
@@ -134,11 +135,14 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
                   <span title={r.remarks.join(" · ")}>{r.remarks.join(" · ")}</span>
                 </SheetTd>
                 {canEdit && (
-                  <SheetTd>
-                    {r.kind === "entry" && !(r.payType === "CASH" && r.approvedAt) && (
-                      <ConfirmButton action={cancelEntryAction.bind(null, r.id)} reason="required" label="" title="Qatorni bekor qilish" icon={<Undo2 size={14} />}
-                        question={`${r.no} (${date(r.at)} · ${r.plate}) bekor qilinsinmi? Zapravka va xarajati ham bekor bo'ladi.`} okText="Bekor qilindi" className="h-7 px-1.5" />
-                    )}
+                  <SheetTd className="whitespace-nowrap">
+                    <span className="inline-flex items-center gap-0.5">
+                      <LedgerEditButton kind={r.kind} id={r.id} />
+                      {r.kind === "entry" && !(r.payType === "CASH" && r.approvedAt) && (
+                        <ConfirmButton action={cancelEntryAction.bind(null, r.id)} reason="required" label="" title="Qatorni bekor qilish" icon={<Undo2 size={14} />}
+                          question={`${r.no} (${date(r.at)} · ${r.plate}) bekor qilinsinmi? Zapravka va xarajati ham bekor bo'ladi.`} okText="Bekor qilindi" className="h-7 px-1.5" />
+                      )}
+                    </span>
                   </SheetTd>
                 )}
               </SheetTr>

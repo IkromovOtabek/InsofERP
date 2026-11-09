@@ -17,7 +17,7 @@ import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { AllCheck, ApproveButton, EntryEditButton, EntryEditProvider, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
-import { LedgerRowForm, type LedgerOptions } from "./ledger-forms";
+import { LedgerFormsProvider, LedgerRowForm, type LedgerOptions } from "./ledger-forms";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { ExpenseForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
@@ -476,9 +476,12 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           { key: "all", label: "Hammasi", href: qs({ transport: null }), count: [...sheetCount.values()].reduce((a, n) => a + n, 0) },
           ...sheetTabs.map(([id, plate]) => ({ key: id, label: plate, href: qs({ transport: id }), ...(sheetCount.get(id) ? { count: sheetCount.get(id) } : {}) })),
         ]} />
-        <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger}
-          file={`Hisob varag'i ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
-        {canLedger && <div className="mt-3"><LedgerRowForm options={ledgerOpts} vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
+        {/* Qator qo'shish va qatorni tahrirlash oynasi ro'yxatlarni bitta joydan oladi */}
+        <LedgerFormsProvider options={ledgerOpts} canPay={canPrice}>
+          <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger}
+            file={`Hisob varag'i ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
+          {canLedger && <div className="mt-3"><LedgerRowForm vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
+        </LedgerFormsProvider>
       </Section>}
 
       {/* ── Reyslar va narx: haydovchilar bo'yicha oy, haydovchi tanlansa — uning reyslari ── */}

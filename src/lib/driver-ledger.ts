@@ -30,6 +30,9 @@ const isVulc = (note: string | null) => !!note && /vulkaniz/i.test(note);
 
 export type LedgerKind = "trip" | "entry" | "cost";
 
+/** Qatorga tushgan zapravka va xarajat yozuvlari (id) — tahrirda shular o'zgaradi (`lib/ledger-edit.ts`). */
+export type LedgerRefs = { fuel: string[]; repair: string[]; parts: string[]; vulc: string[]; other: string[] };
+
 export type LedgerRow = {
   kind: LedgerKind;
   /** Reys yoki qo'lda yozuv id; `cost` — `<mashina>:<kun>` */
@@ -55,6 +58,13 @@ export type LedgerRow = {
   repair: number; parts: number; vulc: number; other: number; total: number;
   revBank: number; revCash: number; revOther: number; revenue: number; profit: number;
   remarks: string[];
+  /** Tahrir oynasi uchun xom qiymatlar (ko'rinishdagi «—» va yig'ma izohsiz) */
+  src: { pickup: string | null; dropoff: string | null; cargo: string | null; note: string | null; revenueType: "BANK" | "CASH" | "OBJECT" | null; priced: boolean; suggested: number | null };
+  refs: LedgerRefs;
+  /** Zapravka narxi (qatordagi zapravkalar o'rtachasi) */
+  refuelPrice: number | null;
+  /** Qo'lda qatorning o'zi bilan yozilgan zapravka/xarajat bor — transporti o'zgarmaydi */
+  ownCosts: boolean;
 };
 
 export type LedgerTotals = Pick<LedgerRow, "km" | "refuel" | "fuelSum" | "pay" | "repair" | "parts" | "vulc" | "other" | "total" | "revBank" | "revCash" | "revOther" | "revenue" | "profit"> & {
@@ -96,10 +106,10 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         revenue: true, revenueType: true, pickup: true, dropoff: true, cargo: true, note: true, driver: { select: { fullName: true } },
       },
     }),
-    db.fuelLog.findMany({ where: { cancelledAt: null, date: period, ...vf }, orderBy: { date: "asc" }, select: { vehicleId: true, tripId: true, entryId: true, date: true, fuelType: true, liters: true } }),
+    db.fuelLog.findMany({ where: { cancelledAt: null, date: period, ...vf }, orderBy: { date: "asc" }, select: { id: true, vehicleId: true, tripId: true, entryId: true, date: true, fuelType: true, liters: true, amount: true } }),
     db.transportExpense.findMany({
       where: { cancelledAt: null, kind: { not: "DRIVER_PAY" }, date: period, ...(opts.vehicleId ? { OR: [{ vehicleId: opts.vehicleId }, { trip: { vehicleId: opts.vehicleId } }] } : {}) },
-      orderBy: { date: "asc" }, select: { vehicleId: true, tripId: true, entryId: true, date: true, kind: true, amount: true, note: true, trip: { select: { vehicleId: true } } },
+      orderBy: { date: "asc" }, select: { id: true, vehicleId: true, tripId: true, entryId: true, date: true, kind: true, amount: true, note: true, trip: { select: { vehicleId: true } } },
     }),
   ]);
   const tripIds = base.map((r) => r.id);
@@ -186,17 +196,28 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     return (list.find((s) => s.sortAt >= at.getTime()) ?? list[list.length - 1]!).id;
   };
   const refuelOf = new Map<string, number>();
+  const refuelSumOf = new Map<string, number>();
+  const refsOf = new Map<string, LedgerRefs>();
+  const refs = (id: string) => { let x = refsOf.get(id); if (!x) refsOf.set(id, (x = { fuel: [], repair: [], parts: [], vulc: [], other: [] })); return x; };
+  // Qo'lda qatorning o'z zapravka/xarajati (entryId bilan) — tahrirda transporti o'zgarmaydi
+  const ownCosts = new Set<string>();
   for (const f of fuelLogs) {
     const v = vById.get(f.vehicleId); if (!v || kindOfLog(f.fuelType) !== trackedOf(v.fuelType)) continue;
     const id = target(f.vehicleId, f.tripId, f.entryId, f.date); if (!id) continue;
     refuelOf.set(id, (refuelOf.get(id) ?? 0) + Number(f.liters));
+    refuelSumOf.set(id, (refuelSumOf.get(id) ?? 0) + Number(f.amount));
+    refs(id).fuel.push(f.id);
+    if (f.entryId === id) ownCosts.add(id);
   }
   const expOf = new Map<string, { repair: number; parts: number; vulc: number; other: number; notes: string[] }>();
   for (const e of expenses) {
     const id = target(expVehicle(e), e.tripId, e.entryId, e.date); if (!id) continue;
     const x = expOf.get(id) ?? { repair: 0, parts: 0, vulc: 0, other: 0, notes: [] };
     const a = Number(e.amount);
-    if (isVulc(e.note)) x.vulc += a; else if (e.kind === "REPAIR") x.repair += a; else if (e.kind === "PARTS") x.parts += a; else x.other += a;
+    const cat = isVulc(e.note) ? "vulc" : e.kind === "REPAIR" ? "repair" : e.kind === "PARTS" ? "parts" : "other";
+    x[cat] += a;
+    refs(id)[cat].push(e.id);
+    if (e.entryId === id) ownCosts.add(id);
     // Qo'lda qatorning o'z xarajati izohi qatorning o'zida bor — takrorlanmasin
     if (e.note && !e.entryId) x.notes.push(e.note);
     expOf.set(id, x);
@@ -212,7 +233,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     const e = expOf.get(s.id) ?? { repair: 0, parts: 0, vulc: 0, other: 0, notes: [] };
 
     // Qator turiga qarab: km, soat, haq, daromad va matnlar
-    let row: Omit<LedgerRow, "unit" | "balBefore" | "refuel" | "use" | "drumUse" | "balAfter" | "useExtra" | "fuelSum" | "fuelPriceMissing" | "repair" | "parts" | "vulc" | "other" | "total" | "profit">;
+    let row: Omit<LedgerRow, "unit" | "balBefore" | "refuel" | "use" | "drumUse" | "balAfter" | "useExtra" | "fuelSum" | "fuelPriceMissing" | "repair" | "parts" | "vulc" | "other" | "total" | "profit" | "refs" | "refuelPrice" | "ownCosts">;
     let use: number | null, useExtra: number | null;
     if (s.kind === "trip") {
       const r = tripRow.get(s.id)!, t = ex.get(s.id)!;
@@ -234,6 +255,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         pay: r.amount ?? r.suggested, amount: r.amount, suggestText: r.suggestText, payType: r.payType, approvedAt: r.approvedAt,
         revBank: pm === "BANK" ? revenue : 0, revCash: pm === "CASH" ? revenue : 0, revOther: pm ? 0 : revenue, revenue: r2(revenue),
         remarks: [hr >= 20 || hr < 6 ? `Tun ${String(hr).padStart(2, "0")}:${String(r.deliveredAt.getMinutes()).padStart(2, "0")}` : null, r.note, t.deliveryComment, ...e.notes].filter((x): x is string => !!x),
+        src: { pickup: t.pickupAddress?.trim() || null, dropoff: null, cargo: null, note: t.deliveryComment, revenueType: null, priced: !!r.pricedAt, suggested: r.suggested },
       };
     } else if (s.kind === "entry") {
       const q = entryRow.get(s.id)!;
@@ -249,6 +271,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         revBank: q.revenueType === "BANK" ? rev : 0, revCash: q.revenueType === "CASH" ? rev : 0, revOther: q.revenueType === "BANK" || q.revenueType === "CASH" ? 0 : rev, revenue: rev,
         // Izoh yozilmagan qatorda `note` = «yuklash → tushirish» (logistics-entry) — takrorlanmasin
         remarks: [q.dropoff && q.note !== [q.pickup, q.dropoff].filter(Boolean).join(" → ") ? q.note : null, ...e.notes].filter((x): x is string => !!x),
+        src: { pickup: q.pickup, dropoff: q.dropoff, cargo: q.cargo, note: q.note, revenueType: q.revenueType, priced: pay > 0, suggested: null },
       };
     } else {
       const at = new Date(s.sortAt - DAY + 1000);
@@ -258,6 +281,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         pickup: "—", dropoff: "Reyssiz kun", address: null, cargo: "—", trips: 0, km: 0, workHours: null,
         pay: 0, amount: null, suggestText: null, payType: null, approvedAt: null,
         revBank: 0, revCash: 0, revOther: 0, revenue: 0, remarks: e.notes,
+        src: { pickup: null, dropoff: null, cargo: null, note: null, revenueType: null, priced: false, suggested: null },
       };
     }
 
@@ -279,6 +303,8 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       useExtra: useExtra != null ? r1(useExtra) : null,
       fuelSum: r2(fuelSum), fuelPriceMissing: (use != null && pMain == null) || (useExtra != null && pDt == null),
       repair: e.repair, parts: e.parts, vulc: e.vulc, other: e.other, total: r2(total), profit: r2(row.revenue - total),
+      refs: refsOf.get(s.id) ?? { fuel: [], repair: [], parts: [], vulc: [], other: [] },
+      refuelPrice: refuel > 0 ? r2((refuelSumOf.get(s.id) ?? 0) / refuel) : null, ownCosts: ownCosts.has(s.id),
     });
   }
 

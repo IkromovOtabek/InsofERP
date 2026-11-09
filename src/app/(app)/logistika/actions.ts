@@ -15,6 +15,7 @@ import {
 import { approveTripPays, fixTripKmHours, PAY_TYPES, priceTrip, priceTripsBySuggestion, rejectTripPay } from "@/lib/driver-trip-pay";
 import { createMechanicRequest, MASTER_PROBLEMS } from "@/lib/mechanic-requests";
 import { approveLogisticsEntries, cancelLogisticsEntry, createLogisticsEntry, entrySchema, rejectLogisticsEntry, updateLogisticsEntry } from "@/lib/logistics-entry";
+import { isLedgerKind, ledgerEditData, ledgerEditSchema, updateLedgerRow, type LedgerEditData } from "@/lib/ledger-edit";
 import { driverTempLoginCore } from "@/lib/kadr-employee";
 
 /**
@@ -320,6 +321,26 @@ export async function fixTripKmAction(tripId: string, _prev: ActionState, fd: Fo
   if (res.error) return { error: res.error };
   refresh();
   return { ok: true };
+}
+
+/** Varaq qatoridagi qalam: oyna ochilganda qatorning hozirgi qiymatlari (jadvalda har qatorga yuborilmaydi). */
+export async function ledgerRowAction(kind: string, id: string): Promise<{ row?: LedgerEditData; error?: string }> {
+  await requireAction("logistika", "ledger");
+  if (!isLedgerKind(kind)) return { error: "Qator turi noto'g'ri" };
+  const r = await ledgerEditData(kind, id);
+  return "error" in r ? { error: r.error } : { row: r };
+}
+
+/** Hisob varag'i qatorini tahrirlash — hamma ustun (`lib/ledger-edit.ts`); reys haqi faqat `logistika.pay` bilan. */
+export async function updateLedgerRowAction(kind: string, id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "ledger");
+  if (!isLedgerKind(kind)) return { error: "Qator turi noto'g'ri" };
+  const r = parseForm(ledgerEditSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await updateLedgerRow(kind, id, r.data, s.userId, canDo(s, "logistika", "pay"));
+  if ("error" in res) return { error: res.error };
+  refresh(); revalidatePath("/trips", "layout");
+  return { ok: true, note: res.note };
 }
 
 /** Ish boshqaruvchi: qo'lda yozilgan haqni tasdiqlash (naqd — kassaga, oylik — vedomostga). */

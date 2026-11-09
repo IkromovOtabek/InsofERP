@@ -1,12 +1,16 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useState } from "react";
+import { createContext, startTransition, useActionState, useCallback, useContext, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Pencil, Plus, X } from "lucide-react";
-import { createLedgerRowAction, fixTripKmAction } from "../actions";
+import { createLedgerRowAction, fixTripKmAction, ledgerRowAction, updateLedgerRowAction } from "../actions";
+import type { LedgerKind } from "@/lib/driver-ledger";
+import type { LedgerEditData } from "@/lib/ledger-edit";
 import { today } from "@/lib/davomat";
 import { fmtNum } from "@/lib/format";
-import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
 
 /**
  * Yuborish — `onSubmit` + `startTransition`: `<form action>` bo'lsa React 19 xato bilan qaytgan amaldan keyin ham formani
@@ -30,13 +34,21 @@ export type LedgerOptions = {
 
 const num = (v: string) => Number(v.replace(",", ".")) || 0;
 
+/** Varaq ro'yxatlari (transport, haydovchi, joy/yuk nomlari) — qator qo'shish va tahrir oynasi uchun bir marta beriladi. */
+const LedgerCtx = createContext<{ options: LedgerOptions; canPay: boolean } | null>(null);
+export function LedgerFormsProvider({ options, canPay, children }: { options: LedgerOptions; canPay: boolean; children: React.ReactNode }) {
+  return <LedgerCtx.Provider value={{ options, canPay }}>{children}</LedgerCtx.Provider>;
+}
+const EMPTY: LedgerOptions = { vehicles: [], drivers: [], pickups: [], dropoffs: [], cargos: [] };
+
 /**
  * Hisob varag'iga qo'lda qator — ECO'ga tushmagan reys (Excel'dagi ustunlar tartibida). Transport — ochiq varaqniki,
  * haydovchi — transportning asosiy haydovchisi (o'zgartirish mumkin). Zapravka va xarajatlar shu qator bilan birga
  * yoziladi; haq ish boshqaruvchi tasdig'iga boradi. Saqlangach forma ochiq qoladi — keyingi qatorni darhol yozish uchun.
  */
-export function LedgerRowForm({ options, vehicleId, clientToken }: { options: LedgerOptions; vehicleId: string | null; clientToken: string }) {
+export function LedgerRowForm({ vehicleId, clientToken }: { vehicleId: string | null; clientToken: string }) {
   const [open, setOpen] = useState(false);
+  const options = useContext(LedgerCtx)?.options ?? EMPTY;
   if (!open) return <Button onClick={() => setOpen(true)}><Plus size={16} /> Qator qo&apos;shish</Button>;
   return <RowForm options={options} vehicleId={vehicleId} clientToken={clientToken} onClose={() => setOpen(false)} />;
 }
@@ -110,7 +122,7 @@ function RowFields({ options, v, vid, setVid, date, setDate, token, action, pend
         <Field label="Ta'mir (usta)"><Input name="repair" type="number" min="0" step="1000" className="text-right tabular" /></Field>
         <Field label="Zapchast"><Input name="parts" type="number" min="0" step="1000" className="text-right tabular" /></Field>
         <Field label="Vulkanizator"><Input name="vulc" type="number" min="0" step="1000" className="text-right tabular" /></Field>
-        <div className="flex items-end pb-2 text-xs text-slate-500">{use != null ? <>Sarf (norma): <b className="ml-1 tabular text-slate-800">{fmtNum(use, 1)} {v?.unit}</b></> : null}</div>
+        <Field label="Boshqa xarajat"><Input name="other" type="number" min="0" step="1000" className="text-right tabular" /></Field>
 
         <Field label="Haydovchi haqi"><Input name="payAmount" type="number" min="0" step="1000" value={pay} onChange={(e) => setPay(e.target.value)} className="text-right tabular" /></Field>
         <Field label={`To'lov turi${num(pay) > 0 ? " *" : ""}`}>
@@ -122,7 +134,10 @@ function RowFields({ options, v, vid, setVid, date, setDate, token, action, pend
         </Field>
         <Field label="Izoh" className="col-span-2"><Input name="note" placeholder="Tun 22:30, 3 soat kutdi…" maxLength={300} /></Field>
       </div>
-      <Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Qatorni qo'shish"}</Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Qatorni qo'shish"}</Button>
+        {use != null && <span className="text-xs text-slate-500">Sarf (norma): <b className="tabular text-slate-800">{fmtNum(use, 1)} {v?.unit}</b></span>}
+      </div>
     </form>
   );
 }
@@ -150,6 +165,162 @@ export function KmFix({ tripId, km, hours, children }: { tripId: string; km: num
       <Button size="sm" variant="success" disabled={pending} className="h-7 px-1.5" title="Saqlash"><Check size={13} /></Button>
       <button type="button" onClick={() => setEdit(false)} className="p-1 text-slate-400 hover:text-slate-900" aria-label="Bekor"><X size={13} /></button>
       {state?.error && <span className="basis-full text-right text-[11px] text-red-700">{state.error}</span>}
+    </form>
+  );
+}
+
+const KIND_LABEL: Record<LedgerKind, string> = { trip: "ECO reys", entry: "Qo'lda qator", cost: "Reyssiz kun" };
+
+/**
+ * Varaq qatoridagi qalam: Excel'dagidek hamma ustun bitta oynada (`lib/ledger-edit.ts`). Qiymatlar oyna ochilganda
+ * serverdan olinadi — jadvalda har qatorga yuborilmaydi va tahrir eng so'nggi holatdan boshlanadi.
+ */
+export function LedgerEditButton({ kind, id }: { kind: LedgerKind; id: string }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  return (
+    <>
+      <IconButton type="button" icon={Pencil} label="Qatorni tahrirlash" onClick={() => setOpen(true)} className="h-7 w-7" />
+      {open && <LedgerEditDialog kind={kind} id={id} onClose={close} />}
+    </>
+  );
+}
+
+function LedgerEditDialog({ kind, id, onClose }: { kind: LedgerKind; id: string; onClose: () => void }) {
+  const [data, setData] = useState<LedgerEditData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    ledgerRowAction(kind, id)
+      .then((r) => { if (live) { if (r.row) setData(r.row); else setLoadError(r.error ?? "Qatorni ochib bo'lmadi"); } })
+      .catch(() => { if (live) setLoadError("Qatorni ochib bo'lmadi — sahifani yangilang"); });
+    return () => { live = false; };
+  }, [kind, id]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal((
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:items-center" onMouseDown={onClose}>
+      <div role="dialog" aria-label="Hisob varag'i qatorini tahrirlash" onMouseDown={(e) => e.stopPropagation()}
+        className="w-full max-w-4xl space-y-4 rounded-(--radius-card) border border-slate-200 bg-white p-5 shadow-(--shadow-pop)">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">{data?.no || KIND_LABEL[kind]} — tahrirlash</h2>
+            {data && <p className="text-xs text-slate-500">{KIND_LABEL[kind]} · {data.dateText} · {data.plate}</p>}
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
+        </div>
+        {data ? <LedgerEditForm x={data} onClose={onClose} />
+          : loadError ? <FormError error={loadError} />
+          : <p className="py-10 text-center text-sm text-slate-500">Yuklanmoqda…</p>}
+      </div>
+    </div>
+  ), document.body);
+}
+
+/** Reys / zayavkadan keladigan ustun — oynada ko'rinadi, lekin bu yerda o'zgarmaydi. */
+function ReadOnly({ label, value, className, hint }: { label: string; value: string; className?: string; hint?: string }) {
+  return <Field label={label} className={className} hint={hint}><Input value={value} readOnly disabled title={value} /></Field>;
+}
+
+function LedgerEditForm({ x, onClose }: { x: LedgerEditData; onClose: () => void }) {
+  const ctx = useContext(LedgerCtx);
+  const o = ctx?.options ?? EMPTY;
+  const [state, action, pending] = useActionState(updateLedgerRowAction.bind(null, x.kind, x.id), undefined);
+  const router = useRouter();
+  useEffect(() => { if (state?.ok) { router.refresh(); onClose(); } }, [state, onClose, router]);
+  const entry = x.kind === "entry", trip = x.kind === "trip", cost = x.kind === "cost";
+  // Ro'yxatda yo'q (ko'chadan, faol emas) haydovchi va transport ham tanlovda tursin
+  const drivers = x.driverId && !o.drivers.some((d) => d.id === x.driverId) ? [{ id: x.driverId, name: x.driver ?? "—" }, ...o.drivers] : o.drivers;
+  const vehicles = [...(o.vehicles.some((v) => v.id === x.vehicleId) ? [] : [{ id: x.vehicleId, plate: x.plate }]), ...o.vehicles];
+  // Reys haqi — dispetcher (`pay`), qotgan haq (kassaga o'tgan naqd / yopilgan oy) o'zgarmaydi
+  const payEditable = entry || (trip && !!ctx?.canPay && !x.payLock);
+  const val = (n: number | null) => (n ? String(n) : "");
+  // Summa maydoni: step="any" — oldingi qiymat 1000 ga karrali bo'lmasa ham brauzer rad etmasin
+  const money = (name: string, n: number) => <Input name={name} type="number" min="0" step="any" defaultValue={val(n)} className="text-right tabular" />;
+  const fromTrip = "reys / zayavkadan";
+  const revText = [x.revBank ? `P/R ${fmtNum(x.revBank, 0)}` : null, x.revCash ? `N/L ${fmtNum(x.revCash, 0)}` : null, x.revOther ? `Obyekt ${fmtNum(x.revOther, 0)}` : null].filter(Boolean).join(" · ") || "—";
+
+  return (
+    <form onSubmit={submitWith(action)} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6 [&>*]:min-w-0">
+        {entry ? <Field label="Sana *"><Input name="date" type="date" defaultValue={x.date} max={today()} required /></Field> : <ReadOnly label="Sana" value={x.dateText} />}
+        {entry ? (
+          <Field label="Transport *" hint={x.ownCosts ? "zapravka/xarajati bor" : undefined}>
+            {/* Qatorning o'z zapravka/xarajati bor — transport o'zgarmaydi (qiymat baribir yuboriladi) */}
+            {x.ownCosts && <input type="hidden" name="vehicleId" value={x.vehicleId} />}
+            <Select name={x.ownCosts ? undefined : "vehicleId"} defaultValue={x.vehicleId} disabled={x.ownCosts} required>
+              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate}</option>)}
+            </Select>
+          </Field>
+        ) : <ReadOnly label="Transport" value={x.plate} />}
+        {!cost && (entry ? (
+          <Field label="Haydovchi" className="col-span-2">
+            <Select name="driverId" defaultValue={x.driverId ?? ""}><option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>
+          </Field>
+        ) : <ReadOnly label="Haydovchi" value={x.driver ?? "—"} className="col-span-2" hint={fromTrip} />)}
+        {!cost && <>
+          <Field label="Yuklash joyi"><Input name="pickup" list="ledger-edit-pickups" defaultValue={x.pickup} placeholder="Zavod" maxLength={120} /></Field>
+          {entry ? <Field label="Reys soni"><Input name="trips" type="number" min="0" max="1000" step="1" defaultValue={x.trips} className="text-right tabular" /></Field> : <ReadOnly label="Reys" value="1" />}
+
+          {entry ? <Field label="Tushirish joyi" className="col-span-2"><Input name="dropoff" list="ledger-edit-dropoffs" defaultValue={x.dropoff} placeholder="Obyekt yoki mijoz" maxLength={160} /></Field>
+            : <ReadOnly label="Tushirish joyi" value={x.dropoff} className="col-span-2" hint={x.address ?? fromTrip} />}
+          {entry ? <Field label="Yuk" className="col-span-2"><Input name="cargo" list="ledger-edit-cargos" defaultValue={x.cargo} placeholder="M-250 10 m³" maxLength={120} /></Field>
+            : <ReadOnly label="Yuk" value={x.cargo} className="col-span-2" hint={fromTrip} />}
+          <Field label="Probeg, km"><Input name="km" type="number" min="0" step="any" defaultValue={val(x.km)} className="text-right tabular" /></Field>
+          <Field label="Baraban, soat"><Input name="drumHours" type="number" min="0" max="24" step="any" defaultValue={x.hours ?? ""} className="text-right tabular" /></Field>
+        </>}
+
+        <Field label={`Zapravka, ${x.unit}`}><Input name="refuel" type="number" min="0" max="1000" step="any" defaultValue={val(x.refuel)} className="text-right tabular" /></Field>
+        <Field label="Zapravka narxi" hint={!x.fuelPrice && x.lastPrice ? `bo'sh — ${fmtNum(x.lastPrice, 0)}` : undefined}>
+          <Input name="fuelPrice" type="number" min="0" step="any" defaultValue={x.fuelPrice ?? ""} placeholder={x.lastPrice ? String(x.lastPrice) : ""} className="text-right tabular" />
+        </Field>
+        <Field label="Ta'mir (usta)">{money("repair", x.repair)}</Field>
+        <Field label="Zapchast">{money("parts", x.parts)}</Field>
+        <Field label="Vulkanizator">{money("vulc", x.vulc)}</Field>
+        <Field label="Boshqa xarajat">{money("other", x.other)}</Field>
+
+        {!cost && <>
+          <Field label="Haydovchi haqi" hint={trip && !x.priced && x.suggested ? `taklif — ${fmtNum(x.suggested, 0)}` : undefined}>
+            <Input name="payAmount" type="number" min="0" step="any" defaultValue={x.pay ?? ""} readOnly={!payEditable}
+              placeholder={trip && !x.priced && x.suggested ? String(x.suggested) : ""} className="text-right tabular" />
+          </Field>
+          <Field label="To'lov turi">
+            <Select name="payType" defaultValue={x.payType ?? ""} disabled={!payEditable}><option value="">—</option><option value="PAYROLL">Oylik</option><option value="CASH">Naqd</option></Select>
+          </Field>
+          {entry ? <>
+            <Field label="Kirim (bajarilgan)">{money("revenue", x.revenue)}</Field>
+            <Field label="Kirim turi">
+              <Select name="revenueType" defaultValue={x.revenueType ?? ""}><option value="">—</option><option value="BANK">P/R</option><option value="CASH">N/L</option><option value="OBJECT">Obyekt</option></Select>
+            </Field>
+          </> : <ReadOnly label="Kirim (bajarilgan)" value={revText} className="col-span-2" hint="zayavka dastavka haqidan" />}
+          <Field label={trip ? "Izoh (yetkazishdagi)" : "Izoh"} className="col-span-2">
+            <Input name="note" defaultValue={x.note} maxLength={300} placeholder={entry ? "bo'sh — yuklash → tushirish" : ""} />
+          </Field>
+          {trip && x.priced && payEditable && (
+            <Field label="Haq o'zgarsa — sababi" className="col-span-2"><Input name="payReason" maxLength={300} placeholder="Nega o'zgartirildi" /></Field>
+          )}
+        </>}
+      </div>
+
+      <div className="space-y-1 text-xs text-slate-500">
+        {x.payLock && <p className="font-medium text-amber-700">{x.payLock} — haq summasi, to&apos;lov turi{entry ? ", haydovchi va oy" : ""} o&apos;zgarmaydi; qolgan ustunlar tuzatiladi.</p>}
+        {trip && !ctx?.canPay && <p>Reys haqini dispetcher qo&apos;yadi.</p>}
+        {entry && x.approved && !x.payLock && <p>Haq tasdiqlangan: summa, to&apos;lov turi, haydovchi yoki oy o&apos;zgarsa — ish boshqaruvchi qayta tasdiqlaydi.</p>}
+        {trip && <p>Sana, haydovchi, tushirish joyi, yuk va kirim — reys va zayavkadan keladi. <Link href={`/trips/${x.id}`} className="font-medium text-slate-700 hover:underline">Reys kartasi</Link></p>}
+        <p>Baraban sarfi, sarf, qoldiq, yoqilg&apos;i summasi, jami xarajat va foyda saqlagach o&apos;zi qayta hisoblanadi. Avvalgi qiymatlar jurnalda (AuditLog) qoladi.</p>
+      </div>
+      <FormError error={state?.error} />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={onClose}>Yopish</Button>
+        <Button disabled={pending}><Pencil size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+      </div>
+      <datalist id="ledger-edit-pickups">{o.pickups.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="ledger-edit-dropoffs">{o.dropoffs.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="ledger-edit-cargos">{o.cargos.map((v) => <option key={v} value={v} />)}</datalist>
     </form>
   );
 }
