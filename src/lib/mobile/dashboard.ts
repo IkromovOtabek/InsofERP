@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { FLOW_ONLY, balanceFromGroups } from "@/lib/cash-tx";
+import { FLOW_ONLY, SALES_INCOME, isSalesIncome, balanceFromGroups } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
 import { loadSales } from "@/lib/bi/core";
 import { myBrigades } from "@/lib/brigades";
@@ -231,13 +231,18 @@ const pick = (...s: (HomeSection | null)[]) => s.filter((x): x is HomeSection =>
 
 /** Kirim (mijoz to'lovlari + boshqa tushum) va chiqim — davr bo'yicha; buxgalteriya, moliya, kassa uchun. */
 async function moneyFlow(r: DashRange) {
-  const [pay, tx, prevPay, prevTx] = await Promise.all([
+  const [pay, tx, prevPay, prevTx, prevSale] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, cashAccountId: true, customerId: true } }),
     // Boshlang'ich qoldiq va hisoblararo o'tkazma — oqim emas
     db.cashTransaction.findMany({ where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccountId: true } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
+    db.cashTransaction.aggregate({ where: { ...SALES_INCOME, date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
+  // Savdo tushumi (kassir «Tushum» kartasi) = mijoz to'lovlari + kassaga «Savdo» kirimi (`SALES_INCOME`)
+  const saleTx = tx.filter(isSalesIncome);
+  const saleIn = [...pay, ...saleTx].reduce((s, p) => s + sum(p.amount), 0);
+  const prevSaleIn = sum(prevPay._sum.amount) + sum(prevSale._sum.amount);
   type Flow = { date: Date; amount: number; dir: "in" | "out"; category: string; accountId: string };
   const flows: Flow[] = [
     ...pay.map((p) => ({ date: p.date, amount: sum(p.amount), dir: "in" as const, category: "Mijoz to'lovi", accountId: p.cashAccountId })),
@@ -255,7 +260,7 @@ async function moneyFlow(r: DashRange) {
     { label: "Chiqim", value: (f) => (f.dir === "out" ? f.amount : 0), fmt: short },
   ], `Kirim ${short(inSum)} · chiqim ${short(outSum)}`);
   const expenseDonut = donutChart(groupSum(flows.filter((f) => f.dir === "out"), (f) => f.category, (f) => f.amount), short, "chiqim");
-  return { flows, pay, inSum, outSum, prevIn, prevPayIn, prevOut, bars, expenseDonut };
+  return { flows, pay, saleTx, saleIn, prevSaleIn, inSum, outSum, prevIn, prevPayIn, prevOut, bars, expenseDonut };
 }
 
 /**
@@ -820,9 +825,8 @@ async function finance(r: DashRange): Promise<RoleDashboard> {
 
 async function cashier(r: DashRange): Promise<RoleDashboard> {
   const [flow, accounts] = await Promise.all([moneyFlow(r), accountBalances(asOf(r))]);
-  const paySum = flow.pay.reduce((s, p) => s + sum(p.amount), 0);
   return {
-    hero: { key: "payments", label: `Tushum (${r.label})`, value: short(paySum), hint: joinHint(cnt(flow.pay.length, "to'lov"), deltaText(paySum, flow.prevPayIn, r)), tone: "success", icon: "banknote" },
+    hero: { key: "payments", label: `Tushum (${r.label})`, value: short(flow.saleIn), hint: joinHint(cnt(flow.pay.length, "to'lov"), flow.saleTx.length ? cnt(flow.saleTx.length, "savdo kirimi") : null, deltaText(flow.saleIn, flow.prevSaleIn, r)), tone: "success", icon: "banknote" },
     tiles: [
       { key: "out", label: "Chiqim", value: short(flow.outSum), tone: "warning", icon: "arrow-up-circle" },
       { key: "balance", label: asOf(r) ? `Kassa qoldig'i (${r.label} oxirida)` : "Kassa qoldig'i", value: shortSigned(accounts.reduce((s, a) => s + a.value, 0)), hint: cnt(accounts.length, "hisob"), tone: "info", icon: "wallet" },

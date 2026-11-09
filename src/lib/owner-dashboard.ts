@@ -16,7 +16,7 @@ import { totalPlanned } from "@/lib/supply";
 import { needsDirector } from "@/lib/procurement";
 import { moneyShort, qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
-import { txSign, FLOW_ONLY } from "@/lib/cash-tx";
+import { txSign, FLOW_ONLY, SALES_INCOME } from "@/lib/cash-tx";
 import { orderTotal } from "@/lib/order-total";
 
 /**
@@ -129,7 +129,11 @@ export async function ownerDashboard() {
     db.cashTransaction.findMany({ where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: monthStart, lt: tomorrow } }, include: { cashAccount: { select: { name: true, type: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true, role: true } } }, orderBy: { amount: "desc" } }),
     db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: new Date(y, m - 3, 1), lt: monthStart } }, select: { category: true, subCategory: true, amount: true, date: true } }),
     db.payment.findMany({ where: { date: { gte: monthStart, lt: tomorrow } }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true, type: true } } }, orderBy: { amount: "desc" } }),
-    db.payment.findMany({ where: { date: { gte: addDays(today, -30), lt: tomorrow } }, select: { amount: true } }),
+    // O'rtacha kunlik tushum (30 kun): mijoz to'lovlari + kassaga «Savdo» kirimi (`SALES_INCOME`)
+    Promise.all([
+      db.payment.findMany({ where: { date: { gte: addDays(today, -30), lt: tomorrow } }, select: { amount: true } }),
+      db.cashTransaction.findMany({ where: { ...SALES_INCOME, date: { gte: addDays(today, -30), lt: tomorrow } }, select: { amount: true } }),
+    ]).then(([p, t]) => [...p, ...t]),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null }, _sum: { amount: true } }),
     // Nofaol hisob ham olinadi: qoldig'i bor hisob yopilsa pul jami summadan "yo'qolmasin" (pastda faqat qoldig'i borlari ko'rsatiladi)

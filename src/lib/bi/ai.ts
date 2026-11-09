@@ -10,6 +10,7 @@ import { forecastTab, anomaliesTab } from "./forecast";
 import { salesTab } from "./sales";
 import { lossChannels } from "./finance";
 import { marketingTab } from "./marketing";
+import { SALES_INCOME } from "@/lib/cash-tx";
 
 const M = (v: number) => `${moneyShort(v)} so'm`;
 const pct = (v: number | null | undefined, f = 0) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${fmtNum(v, f)}%`);
@@ -86,7 +87,11 @@ export async function aiReport(type: ReportType): Promise<Report> {
       loadSales(yesterday, today), loadSales(today, tomorrow),
       db.trip.findMany({ where: { OR: [{ createdAt: { gte: today } }, { order: { deliveryDate: { gte: today, lt: tomorrow } } }], status: { not: "CANCELLED" } }, include: { order: { select: { customer: { select: { name: true } } } } } }),
       materialOverview(), customerBase(),
-      db.payment.aggregate({ where: { date: { gte: today } }, _sum: { amount: true } }),
+      // Kassaga tushum: mijoz to'lovlari + «Savdo» kirimi (`SALES_INCOME`)
+      Promise.all([
+        db.payment.aggregate({ where: { date: { gte: today } }, _sum: { amount: true } }),
+        db.cashTransaction.aggregate({ where: { ...SALES_INCOME, date: { gte: today } }, _sum: { amount: true } }),
+      ]).then(([p, t]) => ({ _sum: { amount: Number(p._sum.amount ?? 0) + Number(t._sum.amount ?? 0) } })),
     ]);
     const crit = mats.filter((m) => m.zone === "Kritik" || m.short), debtors = cs.filter((c) => c.overdueDebt > 0).sort((a, b) => b.overdueDebt - a.overdueDebt);
     const delivered = trips.filter((x) => x.status === "DELIVERED");

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { loadRevenue, finishedUnitCosts } from "@/lib/bi/core";
-import { txSign } from "@/lib/cash-tx";
+import { txSign, isSalesIncome } from "@/lib/cash-tx";
 import { customerBalances } from "@/lib/receivables";
 import { materialTurnover } from "@/lib/stock-turnover";
 import { loanBalances } from "./loans";
@@ -57,7 +57,7 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
     db.cashAccount.findMany({ orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, isActive: true } }),
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null, date: { lt: monthStart } }, _sum: { amount: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], where: { date: { lt: monthStart } }, _sum: { amount: true } }),
-    db.cashTransaction.findMany({ where: { cancelledAt: null, date: { gte: monthStart, lt: next } }, select: { date: true, type: true, amount: true, cashAccountId: true } }),
+    db.cashTransaction.findMany({ where: { cancelledAt: null, date: { gte: monthStart, lt: next } }, select: { date: true, type: true, amount: true, cashAccountId: true, category: true, cashAccount: { select: { type: true } } } }),
     db.payment.findMany({ where: { date: { gte: monthStart, lt: next } }, select: { date: true, amount: true, cashAccountId: true, cashAccount: { select: { type: true } } } }),
     loadRevenue(monthStart, next),
     pnlReport([monthKeyOf(day)], "accrual"),
@@ -119,7 +119,9 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
   const salesTotal = { qtyToday: r2(sales.reduce((s, x) => s + x.qtyToday, 0)), sumToday: r2(sales.reduce((s, x) => s + x.sumToday, 0)), qtyMonth: r2(sales.reduce((s, x) => s + x.qtyMonth, 0)), sumMonth: salesMonth, share: salesMonth ? 100 : 0 };
   const cashOrders = new Set((await db.order.findMany({ where: { id: { in: [...new Set(revenueMonth.map((r) => r.orderId))] }, payMethod: "CASH" }, select: { id: true } })).map((o) => o.id));
   const cashSalesSum = r2(revenueMonth.filter((r) => cashOrders.has(r.orderId)).reduce((s, r) => s + r.revenue, 0));
-  const cashIn = r2(payMonth.filter((p) => p.cashAccount.type === "CASH").reduce((s, p) => s + Number(p.amount), 0));
+  // Kassaga savdo tushumi: naqd hisobga mijoz to'lovlari + «Savdo» kirimi (to'lov bo'lib yozilmagan sotuv puli)
+  const saleTxMonth = txMonth.filter(isSalesIncome);
+  const cashIn = r2([...payMonth, ...saleTxMonth].filter((p) => p.cashAccount.type === "CASH").reduce((s, p) => s + Number(p.amount), 0));
 
   // ── Ishlab chiqarish va tayyor mahsulot ombori (dona; beton — alohida qator) ──
   const pg = new Map<string, PanelProdRow>();
@@ -182,7 +184,7 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
   const daily = Array.from({ length: days }, (_, i) => ({ date: new Date(monthStart.getTime() + i * DAY), sales: 0, cashIn: 0 }));
   const dIdx = (d: Date) => Math.floor((new Date(d).setHours(0, 0, 0, 0) - monthStart.getTime()) / DAY);
   for (const r of revenueMonth) { const i = dIdx(r.date); if (daily[i]) daily[i]!.sales += r.revenue; }
-  for (const p of payMonth) { const i = dIdx(p.date); if (daily[i]) daily[i]!.cashIn += Number(p.amount); }
+  for (const p of [...payMonth, ...saleTxMonth]) { const i = dIdx(p.date); if (daily[i]) daily[i]!.cashIn += Number(p.amount); }
 
   return {
     day, monthStart, isToday,

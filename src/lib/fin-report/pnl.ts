@@ -3,7 +3,7 @@ import { loadRevenue } from "@/lib/bi/core";
 import { avgUnitCosts } from "@/lib/stock";
 import { moneyShort } from "@/lib/format";
 import { PAYROLL_REF } from "@/lib/hr/payroll";
-import { FLOW_ONLY } from "@/lib/cash-tx";
+import { FLOW_ONLY, isSalesIncome } from "@/lib/cash-tx";
 import type { PnlLine } from "@/generated/prisma";
 import { loadCategories, makeResolver, UNKNOWN_CATEGORY } from "./categories";
 import { activeAssets, depreciationIn } from "./assets";
@@ -143,8 +143,10 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
     else addInto(uncosted, i, r.net);
   }
   if (mode === "cash") {
+    // Savdo tushumi (kassa usuli) = mijoz to'lovlari + kassaga «Savdo» kirimi — DDS bilan bir xil. «Savdo» manbasi
+    // PNL qatori NONE, pastdagi kassa siklida o'tkazib yuboriladi — ikki marta kirmaydi.
     const s = zeros(n);
-    for (const p of payments) { const i = at(p.date); if (i !== undefined) addInto(s, i, Number(p.amount)); }
+    for (const p of [...payments, ...txs.filter(isSalesIncome)]) { const i = at(p.date); if (i !== undefined) addInto(s, i, Number(p.amount)); }
     sales.set("Savdo tushumi", s);
   }
 

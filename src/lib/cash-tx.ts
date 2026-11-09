@@ -1,4 +1,5 @@
 import type { CashTxType } from "@/generated/prisma";
+import { SALES_CATEGORY } from "@/lib/cash-categories";
 
 /**
  * Kirim-Chiqim yozuvining hisob qoldig'iga ta'siri — barcha qoldiq hisoblari shu bitta qoidadan:
@@ -27,6 +28,16 @@ export const FLOW_TYPES = ["INCOME", "EXPENSE"] as const satisfies readonly Cash
  * qo'shilsa ham u jimgina kirim yoki chiqim bo'lib qolmaydi. `where: { ...FLOW_ONLY, date: ... }` ko'rinishida.
  */
 export const FLOW_ONLY = { type: { in: [...FLOW_TYPES] } };
+
+/**
+ * Savdo tushumi (pul) = mijoz to'lovlari (`Payment`) + kassaga «Savdo» kirimi — to'lov bo'lib yozilmagan sotuv puli
+ * (chakana, kassa/bank Excel importi). DDS «Savdo tushumi» qatori bilan bir xil: «Kassa tushumi», panel va Egasi
+ * kartalari ikkalasini qo'shadi, aks holda pul kassa jurnali orqali kiritilganda ular 0 ko'rsatardi.
+ * `db.cashTransaction.*({ where: { ...SALES_INCOME, date: ... } })`.
+ */
+export const SALES_INCOME = { type: "INCOME" as const, category: SALES_CATEGORY, cancelledAt: null };
+/** Yuklangan (bekor qilinmagan) yozuvlar ichidan «Savdo» kirimi — `SALES_INCOME` filtrining JS ko'rinishi. */
+export const isSalesIncome = (t: { type: CashTxType | string; category: string }) => t.type === "INCOME" && t.category === SALES_CATEGORY;
 
 /**
  * Bekor qilingan yozuv (`cancelledAt`) — jurnalda «Bekor qilingan» bo'lib ko'rinadi, lekin qoldiq, jami, hisobot,

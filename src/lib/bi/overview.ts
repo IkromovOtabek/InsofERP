@@ -5,6 +5,7 @@ import { customerBase } from "./customers";
 import { materialOverview } from "./stock";
 import { workCalendar } from "@/lib/work-calendar";
 import { orderTotal } from "@/lib/order-total";
+import { SALES_INCOME } from "@/lib/cash-tx";
 
 export type Task = { n: number; money: number; title: string; text: string; href: string; tone: "danger" | "warning" | "info" };
 
@@ -12,7 +13,7 @@ export async function overviewTab(r: Range) {
   const today = startOfDay(new Date()), tomorrow = addDays(today, 1), yesterday = addDays(today, -1);
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1), prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  const [todayS, yestS, monthS, prevMonthS, cur, prev, loss, customers, materials, mixers, overdueOrders, blockedCount, last30, cashAgg, prevCashAgg, tripsToday] = await Promise.all([
+  const [todayS, yestS, monthS, prevMonthS, cur, prev, loss, customers, materials, mixers, overdueOrders, blockedCount, last30, cashAgg, prevCashAgg, tripsToday, saleTxAgg, prevSaleTxAgg] = await Promise.all([
     loadSales(today, tomorrow), loadSales(yesterday, today), loadSales(monthStart, tomorrow), loadSales(prevMonthStart, monthStart), loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
     lossChannels(r), customerBase(), materialOverview(),
     db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
@@ -22,6 +23,9 @@ export async function overviewTab(r: Range) {
     db.payment.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
     db.trip.findMany({ where: { createdAt: { gte: today } }, select: { status: true, qtyM3: true } }),
+    // Kassa tushumi = mijoz to'lovlari + kassaga «Savdo» kirimi (DDS «Savdo tushumi» bilan bir xil)
+    db.cashTransaction.aggregate({ where: { ...SALES_INCOME, date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
+    db.cashTransaction.aggregate({ where: { ...SALES_INCOME, date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
 
   const rev = (rows: { revenue: number }[]) => sum(rows.map((x) => x.revenue));
@@ -41,7 +45,8 @@ export async function overviewTab(r: Range) {
   const gross = grossOf(cur), prevGross = grossOf(prev);
   const margin = marginOf(cur), prevMargin = marginOf(prev);
   const uncosted = uncostedRevenue(cur);
-  const cashIn = Number(cashAgg._sum.amount ?? 0), prevCashIn = Number(prevCashAgg._sum.amount ?? 0);
+  const cashIn = Number(cashAgg._sum.amount ?? 0) + Number(saleTxAgg._sum.amount ?? 0);
+  const prevCashIn = Number(prevCashAgg._sum.amount ?? 0) + Number(prevSaleTxAgg._sum.amount ?? 0);
   const receivable = sum(customers.map((c) => c.debt));
   const active = customers.filter((c) => c.recency !== null && c.recency < 30).length;
   const lostCount = customers.filter((c) => c.segment === "Lost").length;
