@@ -107,8 +107,9 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
   ],
   payments: [
     { key: "kassa", label: "Kassa / bank", paths: ["/payments"], actions: ["create", "storno", "import", "balance"] },
-    { key: "pulqabul", label: "Pul qabul qilish", paths: ["/pul-qabul"], actions: ["receive_cash", "receive_bank"] },
+    // Schyotlar menyuda yo'q — daraxtda oldingi tugma (Kassa / bank) ostida turadi
     { key: "schyotlar", label: "Schyotlar", paths: ["/invoices"], actions: [] },
+    { key: "pulqabul", label: "Pul qabul qilish", paths: ["/pul-qabul"], actions: ["receive_cash", "receive_bank"] },
   ],
   cashflow: [
     { key: "kirimchiqim", label: "Kirim-chiqim", paths: ["/cashflow"], actions: ["create", "edit", "delete", "transfer", "transfer_storno", "close"] },

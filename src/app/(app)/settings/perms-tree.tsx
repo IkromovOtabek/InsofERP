@@ -7,6 +7,7 @@ import { SCRIPT_PERM, WRITE_SCRIPTS } from "@/lib/permissions";
 
 /**
  * Ruxsatlar daraxti (1-variant): bo'lim (menyu guruhi) → tugma (oyna) → amal, uch holatli belgilar bilan.
+ * Bo'limlar va tugmalar direktor sidebar'idagi tartibda (`lib/perm-modules.ts`): bitta modul oynalari turli bo'limlarga tushishi mumkin.
  * Formaga avvalgidek `perm.<modul>` va `act.<modul>` bo'lib ketadi (`permsFromForm` o'qiydi): oyna — `@kalit`.
  * Tegilmagan modul o'z qiymatini saqlaydi; o'zgargani rolning odatiy holatiga teng bo'lsa — "rol bo'yicha" ga qaytadi.
  * Bitta xodim, lavozim login shabloni va bir nechta xodimga birdan tahrirlash shu bittasidan foydalanadi.
@@ -74,7 +75,7 @@ export function PermsTree({ modules, current, onChange, footer }: {
   const [states, setStates] = useState<Record<string, ModState>>({});
   const [q, setQ] = useState("");
   const [mode, setMode] = useState<Mode>("all");
-  const [openG, setOpenG] = useState<Set<string>>(() => new Set(modules.filter((m) => current[m.key] !== undefined).map((m) => m.group)));
+  const [openG, setOpenG] = useState<Set<string>>(() => new Set(modules.filter((m) => current[m.key] !== undefined).flatMap((m) => m.buttons.map((b) => b.group))));
   const [openB, setOpenB] = useState<Set<string>>(new Set());
   const hasRole = modules.some((m) => m.role);
   // Yozish tili (`perms.til`): lotin doim, qo'shimcha yozuvlar shu yerda — modul emas, daraxtdan tashqarida
@@ -94,16 +95,14 @@ export function PermsTree({ modules, current, onChange, footer }: {
   const reset = () => { setStates(Object.fromEntries(modules.map((m) => [m.key, { kind: "role" } as ModState]))); setTil([]); onChange?.(); };
   const resetModule = (m: PermModule) => { setStates((p) => ({ ...p, [m.key]: { kind: "role" } })); onChange?.(); };
 
-  // Daraxt: bo'lim → modul → tugma → amal, joriy belgilar va roldan farqi bilan
+  // Daraxt: bo'lim → tugma → amal (sidebar tartibida), joriy belgilar va roldan farqi bilan. Belgilar modul bo'yicha saqlanadi
   const tree = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const groups = [...new Set(modules.map((m) => m.group))];
-    return groups.map((g) => {
-      const mods = modules.filter((m) => m.group === g).map((m) => {
+    const rows = modules.flatMap((m) => {
         // Belgilar rolning odatiy holatiga qaytgan bo'lsa ham "rol bo'yicha" (saqlanganda ham shunday ketadi)
         const set = display(m), base = m.role ? roleSet(m) ?? [] : null, rm = roleMode(m) || (!!base && sameSet(set, base));
         const label = (k: string) => m.actions.find((a) => a.key === k);
-        const buttons = m.buttons.map((b) => {
+        return m.buttons.map((b) => {
           const items = [
             ...(b.window ? [{ key: W(b.key), label: "Ko'rish — oyna ochiladi", hint: undefined as string | undefined, explicit: false, view: true }] : []),
             ...b.actions.flatMap((k) => { const a = label(k); return a ? [{ key: k, label: a.label, hint: a.hint, explicit: !!a.explicit, view: false }] : []; }),
@@ -112,23 +111,23 @@ export function PermsTree({ modules, current, onChange, footer }: {
             return { ...i, on, role: inRole, added: !!base && !rm && on && !inRole, removed: !!base && !rm && !on && inRole };
           });
           const locked = m.locked.filter((a) => b.actions.includes(a.key));
-          const text = `${g} ${m.label} ${b.label} ${items.map((i) => i.label).join(" ")}`.toLowerCase();
+          const text = `${b.group} ${m.label} ${b.label} ${items.map((i) => i.label).join(" ")}`.toLowerCase();
           return {
-            ...b, id: `${m.key}.${b.key}`, items, locked, st: stOf(items), n: items.filter((i) => i.on).length,
+            ...b, m, rm, id: `${m.key}.${b.key}`, items, locked, st: stOf(items), n: items.filter((i) => i.on).length,
             visible: !b.window || set.includes(W(b.key)), added: items.filter((i) => i.added).length, removed: items.filter((i) => i.removed).length,
             match: !needle || text.includes(needle),
           };
         });
-        const all = buttons.flatMap((b) => b.items);
-        const shown = buttons.filter((b) => b.match && (mode === "all" || (mode === "granted" && b.n > 0) || (mode === "diff" && (b.added || b.removed)) || (mode === "explicit" && (b.items.some((i) => i.explicit) || b.locked.length > 0))));
-        return { m, set, rm, buttons, shown, st: stOf(all), n: all.filter((i) => i.on).length, total: all.length, added: all.filter((i) => i.added).length, removed: all.filter((i) => i.removed).length };
-      });
-      const all = mods.flatMap((x) => x.buttons.flatMap((b) => b.items));
-      const wins = mods.flatMap((x) => x.buttons.filter((b) => b.window));
+    }).sort((a, b) => a.order - b.order);
+    return [...new Set(rows.map((r) => r.group))].map((g) => {
+      const buttons = rows.filter((r) => r.group === g);
+      const shown = buttons.filter((b) => b.match && (mode === "all" || (mode === "granted" && b.n > 0) || (mode === "diff" && (b.added || b.removed)) || (mode === "explicit" && (b.items.some((i) => i.explicit) || b.locked.length > 0))));
+      const all = buttons.flatMap((b) => b.items);
+      const wins = buttons.filter((b) => b.window);
       return {
-        g, mods, shown: mods.some((x) => x.shown.length > 0), st: stOf(all), n: all.filter((i) => i.on).length, total: all.length,
+        g, buttons, shown, st: stOf(all), n: all.filter((i) => i.on).length, total: all.length,
         winOpen: wins.filter((b) => b.visible).length, winTotal: wins.length,
-        added: mods.reduce((s, x) => s + x.added, 0), removed: mods.reduce((s, x) => s + x.removed, 0),
+        added: buttons.reduce((s, b) => s + b.added, 0), removed: buttons.reduce((s, b) => s + b.removed, 0),
       };
     });
     // display/roleMode `states` va `current` dan hisoblanadi
@@ -136,14 +135,25 @@ export function PermsTree({ modules, current, onChange, footer }: {
   }, [modules, current, states, q, mode]);
 
   type T = (typeof tree)[number];
-  type TB = T["mods"][number]["buttons"][number];
+  type TB = T["buttons"][number];
 
   /** Tugmani to'liq berish (alohida amallar o'zgarmaydi) yoki butunlay olish */
   const fill = (set: string[], b: TB, on: boolean) => on
     ? [...set, ...b.items.filter((i) => !i.explicit).map((i) => i.key)]
     : set.filter((k) => !b.items.some((i) => i.key === k));
-  const toggleGroup = (g: T) => g.mods.forEach((x) => update(x.m, (set) => x.buttons.reduce((s, b) => fill(s, b, g.st !== "all"), set)));
+  // Bo'limdagi tugmalar modul bo'yicha bitta yangilanishga yig'iladi (bir modulning bir nechta oynasi bo'lishi mumkin)
+  const toggleGroup = (g: T) => modules.forEach((m) => {
+    const bs = g.buttons.filter((b) => b.m.key === m.key);
+    if (bs.length) update(m, (set) => bs.reduce((s, b) => fill(s, b, g.st !== "all"), set));
+  });
   const toggleButton = (m: PermModule, b: TB) => update(m, (set) => fill(set, b, b.st !== "all"));
+  /** Tugmani rolning odatiy holatiga qaytarish; rol noma'lum (bir nechta xodim) — modul butunlay rol bo'yicha */
+  const resetButton = (m: PermModule, b: TB) => {
+    const base = roleSet(m);
+    if (!base) return resetModule(m);
+    const keys = b.items.map((i) => i.key);
+    update(m, (set) => [...set.filter((k) => !keys.includes(k)), ...base.filter((k) => keys.includes(k))]);
+  };
   const toggleItem = (m: PermModule, b: TB, key: string) => update(m, (set) => {
     if (set.includes(key)) return key.startsWith("@") ? set.filter((k) => k !== key && !b.actions.includes(k)) : set.filter((k) => k !== key);
     return b.window ? [...set, key, W(b.key)] : [...set, key];
@@ -174,7 +184,7 @@ export function PermsTree({ modules, current, onChange, footer }: {
         <span className="inline-flex items-center gap-1.5"><Lock size={12} /> faqat direktor</span>
       </div>
 
-      {tree.filter((g) => g.shown).map((g) => {
+      {tree.filter((g) => g.shown.length > 0).map((g) => {
         const open = forced || openG.has(g.g);
         const Icon = GROUP_ICON[g.g] ?? Layers;
         return (
@@ -196,36 +206,37 @@ export function PermsTree({ modules, current, onChange, footer }: {
               </button>
             </div>
 
-            {open && g.mods.filter((x) => x.shown.length > 0).map((x) => (
-              <div key={x.m.key} className="border-t border-slate-100 pb-1">
-                <div className="flex flex-wrap items-center gap-2 px-4 pb-1 pt-2.5 text-xs">
-                  <span className="font-semibold uppercase tracking-wide text-slate-500">{x.m.label}</span>
-                  {x.rm ? <Tag tone="slate">{x.m.role ? "rol bo'yicha" : "har kim o'z roli bo'yicha"}</Tag> : x.n === 0 ? <Tag tone="red">yopiq</Tag> : <Tag tone="amber">o&apos;zgartirilgan</Tag>}
-                  <span className="text-slate-500 tabular">{x.n} / {x.total}</span>
-                  {!x.rm && <button type="button" onClick={() => resetModule(x.m)} className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 font-medium text-slate-600 hover:bg-slate-100"><RotateCcw size={12} /> Rol bo&apos;yicha</button>}
-                </div>
-                {x.shown.map((b) => {
+            {open && (
+              <div className="border-t border-slate-100 pb-1">
+                {g.shown.map((b) => {
                   const bOpen = forced || openB.has(b.id);
+                  // Rol ma'lum — shu tugma roldan farq qilsa; bir nechta xodim — modul o'zgartirilgan bo'lsa (butun modul qaytadi)
+                  const canReset = b.m.role ? b.added > 0 || b.removed > 0 : !b.rm;
                   return (
                     <div key={b.id} className="px-3 sm:pl-6">
                       <div className="flex items-center gap-1 border-t border-slate-50">
-                        <button type="button" role="checkbox" aria-checked={aria(b.st)} aria-label={`${b.label} — tugma va barcha amallari`} onClick={() => toggleButton(x.m, b)} className="flex h-11 w-11 shrink-0 items-center justify-center"><Tri st={b.st} small /></button>
+                        <button type="button" role="checkbox" aria-checked={aria(b.st)} aria-label={`${b.label} — tugma va barcha amallari`} onClick={() => toggleButton(b.m, b)} className="flex h-11 w-11 shrink-0 items-center justify-center"><Tri st={b.st} small /></button>
                         <button type="button" aria-expanded={bOpen} onClick={() => setOpenB((s) => flip(s, b.id))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-1.5 text-left">
                           <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                             <span className={`text-sm font-medium ${b.visible ? "text-slate-900" : "text-slate-500"}`}>{b.label}</span>
                             <Pill tone="slate">{b.n} / {b.items.length}</Pill>
                             {b.window && !b.visible && <span className="text-xs text-slate-500">oyna yopiq</span>}
                             {!b.window && <span className="text-xs text-slate-500">boshqa oynada</span>}
+                            {!b.m.role && b.rm && <Tag tone="slate">har kim o&apos;z roli bo&apos;yicha</Tag>}
                             {b.added > 0 && <Pill tone="green">+{b.added}</Pill>}
                             {b.removed > 0 && <Pill tone="red">−{b.removed}</Pill>}
                           </span>
                           <ChevronRight size={15} aria-hidden className={`shrink-0 text-slate-500 transition ${bOpen ? "rotate-90" : ""}`} />
                         </button>
+                        {canReset && (
+                          <button type="button" onClick={() => resetButton(b.m, b)} title={b.m.role ? undefined : `«${b.m.label}» bo'limining barcha oynalari har kimda o'z roli bo'yicha qoladi`}
+                            className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded px-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"><RotateCcw size={12} /> Rol bo&apos;yicha</button>
+                        )}
                       </div>
                       {bOpen && (
                         <div className="grid gap-1.5 pb-3 pl-2 sm:grid-cols-2 sm:pl-11">
                           {b.items.map((i) => (
-                            <button key={i.key} type="button" role="checkbox" aria-checked={i.on} onClick={() => toggleItem(x.m, b, i.key)}
+                            <button key={i.key} type="button" role="checkbox" aria-checked={i.on} onClick={() => toggleItem(b.m, b, i.key)}
                               className={`flex min-h-11 items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition ${i.on ? "border-slate-300 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300"}`}>
                               <span className="mt-0.5"><Tri st={i.on ? "all" : "none"} small /></span>
                               <span className="min-w-0 flex-1">
@@ -253,11 +264,11 @@ export function PermsTree({ modules, current, onChange, footer }: {
                   );
                 })}
               </div>
-            ))}
+            )}
           </section>
         );
       })}
-      {!tree.some((g) => g.shown) && <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">Mos tugma yoki amal topilmadi</p>}
+      {!tree.some((g) => g.shown.length > 0) && <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">Mos tugma yoki amal topilmadi</p>}
 
       <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 sm:px-4">
         <div className="flex items-center gap-3">

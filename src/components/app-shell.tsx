@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { LayoutDashboard, CalendarDays, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, LayoutGrid, Forklift, Sheet, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
+import { NAV_GROUPS } from "@/lib/nav-groups";
 import { Avatar, NavHistoryTracker } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ScriptToggle } from "@/components/script-toggle";
@@ -38,7 +39,6 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
   "Tahlil": ChartLine, "Sotuv": BadgeDollarSign, "Marketing": Megaphone, "Ishlab chiqarish": Factory, "Logistika": Truck,
   "Sklad": Warehouse, "Moliya": Landmark, "Otdel kadr": Users, "Boshqaruv": ShieldCheck,
 };
-const GROUP_ORDER = ["Asosiy", "Tahlil", "Sotuv", "Marketing", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Otdel kadr", "Boshqaruv"];
 
 type User = { fullName: string; roleLabel: string };
 
@@ -68,7 +68,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [tahlilOpen, setTahlilOpen] = useState(true);
   const [moreOpenState, setMoreOpen] = useState<boolean | null>(null);
-  let groups = GROUP_ORDER.map((g) => ({ g, items: items.filter((i) => i.group === g) })).filter((x) => x.items.length);
+  let groups = NAV_GROUPS.map((g) => ({ g, items: items.filter((i) => i.group === g) })).filter((x) => x.items.length);
   // Tahlil ko'radigan rollarda menyuda faqat Tahlil turadi: «Bosh sahifa» uning boshiga o'tadi,
   // qolgan guruhlar bitta «Boshqa bo'limlar» tugmasi ichida (sukut bo'yicha yopiq, joriy sahifa o'sha yerda bo'lsa ochiq).
   const tahlilMode = groups.some((x) => x.g === "Tahlil");
