@@ -896,12 +896,14 @@ async function balances({ r }: Ctx): Promise<Part> {
 
 async function invoicesIssued({ r }: Ctx): Promise<Part> {
   const rows = await db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, invoiceNo: true, date: true, createdAt: true, amount: true, status: true, customer: { select: { id: true, name: true } }, payments: { select: { amount: true } } } });
-  const total = sumBy(rows, (i) => sum(i.amount));
-  const paid = sumBy(rows, (i) => sumBy(i.payments, (p) => sum(p.amount)));
+  // Bekor qilingan schyot ro'yxatda «Bekor» bo'lib ko'rinadi, lekin jami va qoldiqqa kirmaydi (debitorka bilan bir xil)
+  const live = rows.filter((i) => i.status !== "CANCELLED");
+  const total = sumBy(live, (i) => sum(i.amount));
+  const paid = sumBy(live, (i) => sumBy(i.payments, (p) => sum(p.amount)));
   const TONE: Record<string, Tone> = { OPEN: "warning", PARTIAL: "warning", PAID: "success", CANCELLED: "danger" };
   return {
     title: "Yozilgan schyotlar", subtitle: period(r),
-    fields: [f("Jami summa", money(total)), f("Schyotlar", cnt(rows.length, "ta")), f("To'langan", `${money(paid)} · ${share(paid, total)}`, "success"), f("Qoldiq", money(Math.max(0, total - paid)), total - paid > 0 ? "warning" : undefined)],
+    fields: [f("Jami summa", money(total)), f("Schyotlar", cnt(live.length, "ta")), f("To'langan", `${money(paid)} · ${share(paid, total)}`, "success"), f("Qoldiq", money(Math.max(0, total - paid)), total - paid > 0 ? "warning" : undefined)],
     sections: pick(
       breakdown("Holat bo'yicha", rows, (i) => INVOICE_LABEL[i.status] ?? i.status, (i) => sum(i.amount), short, { icon: "receipt", unitWord: "schyot" }),
       breakdown("Mijozlar bo'yicha", rows, (i) => i.customer.name, (i) => sum(i.amount), short, { icon: "users", unitWord: "schyot", target: "customers", id: (l) => l[0]!.customer.id, limit: 10 }),

@@ -245,14 +245,17 @@ async function moneyFlow(r: DashRange) {
   ];
   const inSum = flows.filter((f) => f.dir === "in").reduce((s, f) => s + f.amount, 0);
   const outSum = flows.filter((f) => f.dir === "out").reduce((s, f) => s + f.amount, 0);
-  const prevIn = sum(prevPay._sum.amount) + sum(prevTx.find((t) => t.type === "INCOME")?._sum.amount);
+  // `prevPayIn` — faqat mijoz to'lovlari: «To'lovlar» kartasi joriy davrdagi to'lovni shu bilan solishtiradi
+  // (barcha kirim bilan solishtirilsa, boshqa tushum bor davrda o'sish noto'g'ri pasayib chiqardi)
+  const prevPayIn = sum(prevPay._sum.amount);
+  const prevIn = prevPayIn + sum(prevTx.find((t) => t.type === "INCOME")?._sum.amount);
   const prevOut = sum(prevTx.find((t) => t.type === "EXPENSE")?._sum.amount);
   const bars = barsChart(r, flows, (f) => f.date, [
     { label: "Kirim", value: (f) => (f.dir === "in" ? f.amount : 0), fmt: short },
     { label: "Chiqim", value: (f) => (f.dir === "out" ? f.amount : 0), fmt: short },
   ], `Kirim ${short(inSum)} · chiqim ${short(outSum)}`);
   const expenseDonut = donutChart(groupSum(flows.filter((f) => f.dir === "out"), (f) => f.category, (f) => f.amount), short, "chiqim");
-  return { flows, pay, inSum, outSum, prevIn, prevOut, bars, expenseDonut };
+  return { flows, pay, inSum, outSum, prevIn, prevPayIn, prevOut, bars, expenseDonut };
 }
 
 /**
@@ -754,7 +757,8 @@ async function mechanic(r: DashRange): Promise<RoleDashboard> {
 async function accounting(r: DashRange): Promise<RoleDashboard> {
   const [flow, invoices, recv, pay] = await Promise.all([
     moneyFlow(r),
-    db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, select: { amount: true, status: true } }), // boshlang'ich qoldiq — sotuv emas
+    // Boshlang'ich qoldiq — sotuv emas; bekor qilingan schyot — yozilmagan hisoblanadi
+    db.invoice.findMany({ where: { isOpening: false, status: { not: "CANCELLED" }, date: { gte: r.from, lt: r.to } }, select: { amount: true, status: true } }),
     // Debitorka — davr oxiridagi qarz (joriy davrda — hozirgi)
     receivables(asOf(r)), payables(),
   ]);
@@ -762,7 +766,7 @@ async function accounting(r: DashRange): Promise<RoleDashboard> {
   const invSum = invoices.reduce((s, i) => s + sum(i.amount), 0);
   const debtors: HomeRow[] = recv.list.slice(0, 5).map((c) => ({ id: c.id, title: c.name, subtitle: cnt(c.n, "ochiq schyot"), right: short(c.debt), tone: "danger" }));
   return {
-    hero: { key: "payments", label: `To'lovlar (${r.label})`, value: short(paySum), hint: joinHint(cnt(flow.pay.length, "to'lov"), deltaText(paySum, flow.prevIn, r)), tone: "success", icon: "banknote" },
+    hero: { key: "payments", label: `To'lovlar (${r.label})`, value: short(paySum), hint: joinHint(cnt(flow.pay.length, "to'lov"), deltaText(paySum, flow.prevPayIn, r)), tone: "success", icon: "banknote" },
     tiles: [
       { key: "invoiced", label: "Schyot yozildi", value: short(invSum), hint: cnt(invoices.length, "schyot"), tone: "info", icon: "receipt" },
       { key: "receivable", label: asOf(r) ? `Debitorka (${r.label} oxirida)` : "Debitorka", value: short(recv.total), hint: joinHint(cnt(recv.count, "ochiq schyot"), `davrda +${short(invSum)} yozildi · −${short(paySum)} to'landi`), tone: recv.total > 0 ? "danger" : "success", icon: "warning" },
@@ -818,7 +822,7 @@ async function cashier(r: DashRange): Promise<RoleDashboard> {
   const [flow, accounts] = await Promise.all([moneyFlow(r), accountBalances(asOf(r))]);
   const paySum = flow.pay.reduce((s, p) => s + sum(p.amount), 0);
   return {
-    hero: { key: "payments", label: `Tushum (${r.label})`, value: short(paySum), hint: joinHint(cnt(flow.pay.length, "to'lov"), deltaText(paySum, flow.prevIn, r)), tone: "success", icon: "banknote" },
+    hero: { key: "payments", label: `Tushum (${r.label})`, value: short(paySum), hint: joinHint(cnt(flow.pay.length, "to'lov"), deltaText(paySum, flow.prevPayIn, r)), tone: "success", icon: "banknote" },
     tiles: [
       { key: "out", label: "Chiqim", value: short(flow.outSum), tone: "warning", icon: "arrow-up-circle" },
       { key: "balance", label: asOf(r) ? `Kassa qoldig'i (${r.label} oxirida)` : "Kassa qoldig'i", value: shortSigned(accounts.reduce((s, a) => s + a.value, 0)), hint: cnt(accounts.length, "hisob"), tone: "info", icon: "wallet" },
