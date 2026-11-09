@@ -2,6 +2,7 @@ import { db } from "./db";
 import { createOrder } from "./orders";
 import { flatName, nameIndex } from "./excel";
 import { withNds, ndsOf } from "./nds";
+import { blockKey, blockName } from "./site-blocks";
 import { notifyAfter, notifyRoles } from "./notify";
 
 /**
@@ -12,6 +13,9 @@ import { notifyAfter, notifyRoles } from "./notify";
  * Bo'lim + mijoz + obyekt + soat — bitta qoralama zayavka: qatorlar shu bo'yicha guruhlanadi, qator dastavkalari
  * zayavka dastavkasiga qo'shiladi. Zayavka `lib/orders.ts` → `createOrder` orqali ochiladi (qora ro'yxat, raqamlash,
  * obyekt kartasi, audit — tizim formasidagi kabi). Ro'yxatda yo'q mijoz — yangi mijoz (telefoni qatordagi raqam).
+ *
+ * Qator sanasi bo'sh bo'lsa — varaq sanasi; «aniq emas» — sana keyin belgilanadi (`dateUnknown`). «Reys»: 0 — dastavka yo'q,
+ * 1+ — dastavka bor (soni izohga yoziladi). «Blok» — obyekt ichidagi bino (A blok…), yangi nom obyektga qo'shiladi.
  *
  * «Bosh to'lov» ustuni — qatorlar bo'yicha yig'ilib zayavka bosh to'lovi bo'ladi (bo'lim usuli bilan: naqd — kassaga,
  * perechisleniye — buxgalterga so'rov). Qora ro'yxatdagi mijozga zayavka faqat to'liq bosh to'lov bilan ochiladi.
@@ -24,17 +28,25 @@ export type GridRow = {
   customerId?: string | null;
   product: string;
   productId?: string | null;
+  /** Obyekt bloki nomi (A blok…) — bo'sh bo'lishi mumkin */
+  block?: string | null;
   qty: number;
   /** QQS'siz narx — perechisleniyeda QQS ustiga qo'shiladi */
   price: number;
   /** Shu qatorning dastavka summasi (QQS'siz) */
   fee: number;
+  /** Reys soni: 0 — dastavka yo'q (mijoz o'zi olib ketadi), 1+ — dastavka bor; null — dastavka bor, soni noma'lum */
+  trips?: number | null;
   /** Kutilayotgan bosh to'lov (QQS bilan, so'm); 0 — yo'q */
   prepay?: number;
   receiver?: string | null;
   phone?: string | null;
   site?: string | null;
   time?: string | null;
+  /** Yetkazish sanasi «YYYY-MM-DD»; bo'sh — varaq sanasi */
+  date?: string | null;
+  /** Sana aniq emas — qoralamada keyin belgilanadi */
+  dateUnknown?: boolean;
   /** «Obyekt joyi» oynasida xaritadan belgilangan nuqta */
   lat?: number | null;
   lng?: number | null;
@@ -58,11 +70,20 @@ export function gridTime(v?: string | null): string | null | undefined {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
+/** «Yangi mijoz» oynasida kiritilgan ma'lumot — shu nomdagi yangi mijoz ochilganda ishlatiladi */
+export type GridNewCustomer = { name: string; phone?: string | null; inn?: string | null; address?: string | null };
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
 export async function createGridOrders(
-  input: { date: string; rows: GridRow[]; /** Qarzga bo'limida QQS 12% */ creditVat?: boolean; /** Qarzga bo'limida bosh to'lov qanday keladi */ creditPay?: "CASH" | "BANK" },
+  input: {
+    date: string; rows: GridRow[]; newCustomers?: GridNewCustomer[];
+    /** Qarzga bo'limida QQS 12% */ creditVat?: boolean; /** Qarzga bo'limida bosh to'lov qanday keladi */ creditPay?: "CASH" | "BANK";
+  },
   userId: string,
 ): Promise<GridResult> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error("Sana noto'g'ri");
+  if (!ISO.test(input.date)) throw new Error("Sana noto'g'ri");
+  const details = new Map((input.newCustomers ?? []).map((c) => [flatName(c.name), c]));
   const rows = input.rows.filter((r) => r.customer.trim() || r.product.trim());
   if (rows.length === 0) throw new Error("Jadvalda to'ldirilgan qator yo'q");
 
@@ -79,14 +100,15 @@ export async function createGridOrders(
   const customerById = new Map(customers.map((c) => [c.id, c]));
   const customerByName = nameIndex(customers);
 
-  // ── Guruhlash: bo'lim + mijoz + obyekt + soat. Qator xatosi butun guruhni to'xtatadi (qisman zayavka ochilmasin)
-  type Group = { section: GridSection; customer: string; customerId: string | null; site: string; time: string | null; rows: GridRow[]; error?: string };
+  // ── Guruhlash: bo'lim + mijoz + obyekt + sana + soat. Qator xatosi butun guruhni to'xtatadi (qisman zayavka ochilmasin)
+  type Group = { section: GridSection; customer: string; customerId: string | null; site: string; time: string | null; date: string; dateUnknown: boolean; rows: GridRow[]; error?: string };
   const groups = new Map<string, Group>();
   for (const r of rows) {
     const known = (r.customerId && customerById.get(r.customerId)) || customerByName.get(flatName(r.customer)) || null;
     const time = gridTime(r.time);
-    const key = [r.section, known?.id ?? `new:${flatName(r.customer)}`, norm(r.site ?? ""), time ?? ""].join("|");
-    const g = groups.get(key) ?? { section: r.section, customer: known?.name ?? r.customer.trim(), customerId: known?.id ?? null, site: (r.site ?? "").trim(), time: time ?? null, rows: [] };
+    const day = r.date?.trim() || input.date;
+    const key = [r.section, known?.id ?? `new:${flatName(r.customer)}`, norm(r.site ?? ""), time ?? "", r.dateUnknown ? "?" : day].join("|");
+    const g = groups.get(key) ?? { section: r.section, customer: known?.name ?? r.customer.trim(), customerId: known?.id ?? null, site: (r.site ?? "").trim(), time: time ?? null, date: day, dateUnknown: !!r.dateUnknown, rows: [] };
     g.rows.push(r);
     if (!g.error) {
       if (!r.customer.trim()) g.error = "«Kimga» (mijoz) yozilmagan";
@@ -95,6 +117,7 @@ export async function createGridOrders(
       else if (!(r.qty > 0)) g.error = `${r.product}: soni 0 dan katta bo'lsin`;
       else if (!(r.price >= 0) || !(r.fee >= 0) || !((r.prepay ?? 0) >= 0)) g.error = `${r.product}: narx, dastavka yoki bosh to'lov manfiy bo'lmasin`;
       else if (time === undefined) g.error = `Vaqt noto'g'ri: «${r.time}» — masalan 9:00`;
+      else if (!r.dateUnknown && !ISO.test(day)) g.error = `Sana noto'g'ri: «${r.date}»`;
     }
     groups.set(key, g);
   }
@@ -111,31 +134,36 @@ export async function createGridOrders(
     const vat = g.section === "bank" || (credit && !!input.creditVat);
     const customerId = g.customerId ?? newCustomers.get(flatName(g.customer)) ?? null;
     const c = customerId ? customerById.get(customerId) : null;
-    // Obyekt: qatordagi joy → mijozning oxirgi obyekti → mijoz manzili. Nuqta — mijozning shu manzildagi obyektidan
-    const address = g.site || c?.sites[0]?.address || c?.address?.trim() || "";
+    const fresh = customerId ? null : details.get(flatName(g.customer)) ?? null; // «Yangi mijoz» oynasidagi ma'lumot
+    // Obyekt: qatordagi joy → mijozning oxirgi obyekti → mijoz (yoki yangi mijoz) manzili. Nuqta — mijozning shu manzildagi obyektidan
+    const address = g.site || c?.sites[0]?.address || c?.address?.trim() || fresh?.address?.trim() || "";
     if (!address) { failed.push({ customer: g.customer, error: "«Obyekt joyi» yozilmagan", keys }); continue; }
     // Nuqta: xaritada belgilangani → mijozning shu manzildagi obyektiniki
     const marked = g.rows.find((r) => r.lat != null && r.lng != null);
     const place = marked ? { lat: marked.lat!, lng: marked.lng! } : c?.sites.find((s) => norm(s.address) === norm(address));
 
-    // Bir mahsulot takrorlansa — bir qator (narx birinchisidan); QQS narx va dastavka ustiga qo'shiladi
-    const items = new Map<string, { qty: number; price: number }>();
-    let fee = 0, prepay = 0;
+    // Bir blokda bir mahsulot takrorlansa — bir qator (narx birinchisidan); QQS narx va dastavka ustiga qo'shiladi
+    const items = new Map<string, { productId: string; block: string | null; qty: number; price: number }>();
+    let fee = 0, prepay = 0, trips = 0;
     for (const r of g.rows) {
       const p = (r.productId && productById.get(r.productId)) || productByName.get(flatName(r.product))!;
-      const prev = items.get(p.id);
-      items.set(p.id, { qty: (prev?.qty ?? 0) + r.qty, price: prev?.price ?? r.price });
-      fee += r.fee;
+      const block = blockName(r.block);
+      const k = `${p.id}|${blockKey(block) ?? ""}`, prev = items.get(k);
+      items.set(k, { productId: p.id, block, qty: (prev?.qty ?? 0) + r.qty, price: prev?.price ?? r.price });
+      if (r.trips !== 0) fee += r.fee; // reys 0 — dastavka yo'q
       prepay += r.prepay ?? 0;
+      trips += r.trips ?? 0;
     }
-    const lines = [...items].map(([productId, v]) => ({ productId, qtyM3: v.qty, price: vat ? withNds(v.price) : v.price, nds: vat }));
-    const deliveryFee = r2(fee + (vat ? ndsOf(fee) : 0));
+    // Dastavka: hamma qatorda reys 0 — mijoz o'zi olib ketadi; biror qatorda reys bor yoki bo'sh (soni noma'lum) — dastavka bor
+    const needsDelivery = !g.rows.every((r) => r.trips === 0);
+    const lines = [...items.values()].map((v) => ({ productId: v.productId, qtyM3: v.qty, price: vat ? withNds(v.price) : v.price, nds: vat, block: v.block }));
+    const deliveryFee = needsDelivery ? r2(fee + (vat ? ndsOf(fee) : 0)) : 0;
 
     // Saqlash ikki marta bosilsa (javob kelmay qolgan) — shu xodim yaqinda ochgan aynan shu zayavka takrorlanmaydi
     if (customerId) {
       const sig = (l: { productId: string; qtyM3: unknown }[]) => l.map((i) => `${i.productId}:${Number(i.qtyM3)}`).sort().join("|");
       const same = await db.order.findFirst({
-        where: { customerId, createdById: userId, createdAt: { gte: since }, deliveryDate: new Date(input.date), deliveryTime: g.time, deliveryAddress: address, status: "DRAFT" },
+        where: { customerId, createdById: userId, createdAt: { gte: since }, ...(g.dateUnknown ? { dateUnknown: true } : { deliveryDate: new Date(g.date) }), deliveryTime: g.time, deliveryAddress: address, status: "DRAFT" },
         select: { orderNo: true, items: { select: { productId: true, qtyM3: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -147,21 +175,22 @@ export async function createGridOrders(
     try {
       const res = await createOrder(
         {
-          ...(customerId ? { customerId } : { newCustomer: { name: g.customer, phone } }),
+          ...(customerId ? { customerId } : { newCustomer: { name: g.customer, phone: fresh?.phone?.trim() || phone, inn: fresh?.inn ?? null, address: fresh?.address?.trim() || null } }),
           // Tizim formasidagi kabi: «YYYY-MM-DD» → UTC yarim kechasi (taqvim va hisobotlar shu bilan ishlaydi)
-          deliveryDate: new Date(input.date),
+          deliveryDate: new Date(g.date),
+          dateUnknown: g.dateUnknown,
           deliveryTime: g.time,
           deliveryAddress: address,
           lat: place?.lat ?? null,
           lng: place?.lng ?? null,
           items: lines,
-          needsDelivery: true,
+          needsDelivery,
           deliveryFee,
           // Tizim formasidagi «Naqd» / «Perechisleniye» / «Qarzga»: qarzga usul faqat bosh to'lov bo'lsa beriladi
           onCredit: credit,
           prepay: prepay > 0 ? { amount: r2(prepay) } : undefined,
           payMethod: g.section === "bank" ? "BANK" : g.section === "cash" ? "CASH" : prepay > 0 ? (input.creditPay ?? "CASH") : null,
-          note: [receivers.length ? `Qabul qiluvchi: ${receivers.join("; ")}` : null, "Excel ko'rinishdan"].filter(Boolean).join("\n"),
+          note: [receivers.length ? `Qabul qiluvchi: ${receivers.join("; ")}` : null, trips > 0 ? `Dastavka: ${trips} reys` : null, "Excel ko'rinishdan"].filter(Boolean).join("\n"),
         },
         userId,
         { viaImport: true }, // «create» va «excel» ruxsati chaqiruvchida tekshirilgan; sotuvga bitta umumiy xabar boradi

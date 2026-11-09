@@ -86,11 +86,17 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       db.product.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true, unit: true, price: true } }),
       db.customer.findMany({
         where: { isActive: true, isInternal: false }, orderBy: { name: "asc" },
-        select: { id: true, name: true, aliases: true, sites: { where: { isActive: true }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, address: true, lat: true, lng: true } } },
+        select: {
+          id: true, name: true, aliases: true, phone: true,
+          sites: { where: { isActive: true }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, address: true, lat: true, lng: true, blocks: { where: { isActive: true }, orderBy: BLOCK_ORDER, select: { name: true } } } },
+        },
       }),
       blacklistedIds(), // «limit yo'q» belgisi — bunday mijozga faqat to'liq bosh to'lov bilan
     ]);
-    const opts: GridCustomer[] = customers.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases, sites: c.sites, blacklisted: black.has(c.id) }));
+    const opts: GridCustomer[] = customers.map((c) => ({
+      id: c.id, name: c.name, aliases: c.aliases, phone: c.phone, blacklisted: black.has(c.id),
+      sites: c.sites.map(({ blocks, ...x }) => ({ ...x, blocks: blocks.map((b) => b.name) })),
+    }));
     return (
       <div>
         <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />
