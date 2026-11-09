@@ -85,6 +85,23 @@ export default async function OluvchiPage({ params, searchParams }: {
 
       {b && (
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          <Card className="lg:col-span-2">
+            <div id="ombor" className="scroll-mt-20" />
+            <CardHeader title="Omboridagi tayyor mahsulot" description="Brigada chiqargan yoki unga biriktirilgan, hali jo'natilmagan dona mahsulot. Reysga yuklanganda va brak yozilganda shu ombordan yechiladi." />
+            {b.products.length === 0 ? <p className="text-sm text-slate-500">Brigada omborida tayyor mahsulot yo&apos;q.</p> : (
+              <Table>
+                <thead><tr><Th>Mahsulot</Th><Th right>Qoldiq</Th></tr></thead>
+                <tbody>
+                  {b.products.map((p) => (
+                    <Tr key={p.productId}>
+                      <Td className="font-medium"><Link href={`/stock/products/${p.productId}#ombor`} className="hover:underline">{p.name}</Link></Td>
+                      <Td right className={cn("font-semibold tabular", p.qty < 0 && "text-red-600")}>{`${fmtNum(p.qty, 3)} ${unitLabel(p.unit)}`}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
           <Card>
             <div id="qolida" className="scroll-mt-20" />
             <CardHeader title="Qo'lidagi xomashyo" description="Brigadaga berilgan, hali sarflanmagan yoki qaytarilmagan xomashyo (o'rtacha tannarxda)." />

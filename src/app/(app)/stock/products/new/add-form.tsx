@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Pencil, Plus, X } from "lucide-react";
+import { CalendarDays, Pencil, Plus, Split, X } from "lucide-react";
 import { addStock } from "../actions";
 import { ProductSelect } from "@/components/product-select";
 import { NewProductForm, RenameProductForm } from "@/components/catalog-tools";
@@ -14,7 +14,10 @@ import type { ProductCreate } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
 type Opt = { id: string; name: string };
-type Row = { key: number; productId: string; qty: string };
+/** `brigadeId`: brigada id, «umumiy» — umumiy hovli (brigadasiz), bo'sh — hali tanlanmagan */
+type Row = { key: number; productId: string; brigadeId: string; qty: string };
+/** Umumiy hovli qiymati (server `null` qiladi) */
+const COMMON = "umumiy";
 
 /** Tugmalar formaga `form` atributi bilan bog'lanadi: spravochnik kartalari (o'z formasi bor) orada turadi, forma ichida forma bo'lmaydi */
 const FORM_ID = "add-stock-form";
@@ -24,12 +27,14 @@ const FORM_ID = "add-stock-form";
  * Qatorlar ostida — zayavkadagi spravochnik kartasi bilan bir xil «Yangi mahsulot» va faol qator mahsulotining
  * «Nomini tahrirlash». Yangi mahsulot yozilgach darrov faol qatorga tanlanadi.
  */
-export function AddForm({ products, groups, canCreateProduct, warehouses, clientToken, today, minDate }: {
+export function AddForm({ products, groups, canCreateProduct, warehouses, brigades, clientToken, today, minDate }: {
   products: CatalogProduct[];
   groups: CatalogGroup[];
   /** true — to'liq spravochnik; "add" — tanlagichda faqat Yangi/Papka, pastdagi «Yangi mahsulot» va «Nomini tahrirlash» ikkalasida ham bor */
   canCreateProduct: ProductCreate;
   warehouses: Opt[];
+  /** Faol brigadalar (brigadir bilan) — har qator qaysi brigada omboriga tushishi */
+  brigades: Opt[];
   /** Sahifa ochilganda server bergan bir martalik kalit — ikki marta bosish ikkinchi kirim yozmaydi */
   clientToken?: string;
   /** Server sanasi (YYYY-MM-DD): bugun va eng eski ruxsat etilgan kun */
@@ -39,7 +44,7 @@ export function AddForm({ products, groups, canCreateProduct, warehouses, client
   const router = useRouter();
   const [state, action, pending] = useActionState(addStock, undefined);
   const nextKey = useRef(2);
-  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: products[0]?.id ?? "", qty: "" }]);
+  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: products[0]?.id ?? "", brigadeId: "", qty: "" }]);
   // Faol qator — «Nomini tahrirlash» shu qator mahsulotiga, yangi mahsulot shu qatorga tushadi
   const [active, setActive] = useState(1);
   const [card, setCard] = useState<"new" | "rename" | null>(null);
@@ -51,9 +56,22 @@ export function AddForm({ products, groups, canCreateProduct, warehouses, client
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const addRow = () => {
     const key = nextKey.current++;
-    // Yangi qator oldingi qatordagi mahsulot papkasidan boshlanmaydi — bo'sh tanlov xato bermasin, birinchi mahsulot turadi
-    setRows((rs) => [...rs, { key, productId: products[0]?.id ?? "", qty: "" }]);
+    // Yangi qator oldingi qatordagi mahsulot papkasidan boshlanmaydi — bo'sh tanlov xato bermasin, birinchi mahsulot turadi;
+    // brigada — oxirgi qatordagidek (bir brigada chiqargan bir nechta mahsulot ketma-ket kiritiladi)
+    setRows((rs) => [...rs, { key, productId: products[0]?.id ?? "", brigadeId: rs[rs.length - 1]?.brigadeId ?? "", qty: "" }]);
     setActive(key);
+  };
+  /** Shu mahsulotni yana bir brigadaga — qator ostida xuddi shu mahsulot bilan yangi qator (brigadasi keyingisi) */
+  const splitRow = (key: number) => {
+    const nk = nextKey.current++;
+    setRows((rs) => {
+      const i = rs.findIndex((r) => r.key === key);
+      const src = rs[i]!;
+      const used = new Set(rs.filter((r) => r.productId === src.productId).map((r) => r.brigadeId));
+      const next = brigades.find((b) => !used.has(b.id))?.id ?? "";
+      return [...rs.slice(0, i + 1), { key: nk, productId: src.productId, brigadeId: next, qty: "" }, ...rs.slice(i + 1)];
+    });
+    setActive(nk);
   };
   const removeRow = (key: number) => {
     setRows((rs) => rs.filter((r) => r.key !== key));
@@ -84,10 +102,14 @@ export function AddForm({ products, groups, canCreateProduct, warehouses, client
   // Jami — faqat bir xil birlikdagi qatorlar bo'lsa (dona va m² qo'shilmaydi)
   const units = new Set(rows.map((r) => byId.get(r.productId)?.unit ?? "dona"));
   const totalQty = rows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
-  const ready = rows.every((r) => r.productId);
+  const ready = rows.every((r) => r.productId && r.brigadeId);
+  // Brigadalar bo'yicha jami (bir xil birlikda) — qaysi omborga qancha tushayotgani
+  const brigadeName = new Map([...brigades.map((b) => [b.id, b.name] as const), [COMMON, "Umumiy hovli"] as const]);
+  const byBrigade = new Map<string, number>();
+  for (const r of rows) if (r.brigadeId && Number(r.qty) > 0) byBrigade.set(r.brigadeId, (byBrigade.get(r.brigadeId) ?? 0) + Number(r.qty));
 
   return (
-    <div className="max-w-3xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
+    <div className="max-w-4xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
       {/* Xato qaytsa ham kiritilgani o'chmasin — yuborish onSubmit orqali (React 19 `<form action>` formani tozalaydi) */}
       <form id={FORM_ID} onSubmit={submitKeepingState(action)} onKeyDown={blockEnterSubmit} className="space-y-5">
@@ -108,27 +130,37 @@ export function AddForm({ products, groups, canCreateProduct, warehouses, client
             <span className="text-xs text-slate-500">Nomini yozing yoki «…» tugmasidan ro&apos;yxatdan tanlang</span>
           </div>
           <div className="overflow-hidden rounded-lg border border-slate-200">
-            <div className="hidden grid-cols-[32px_minmax(0,1fr)_132px_40px] gap-2 border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-medium text-slate-500 sm:grid">
-              <span className="text-center">№</span><span>Mahsulot</span><span>Miqdor</span><span />
+            <div className="hidden grid-cols-[32px_minmax(0,1fr)_200px_120px_76px] gap-2 border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-medium text-slate-500 sm:grid">
+              <span className="text-center">№</span><span>Mahsulot</span><span>Qaysi brigadaga</span><span>Miqdor</span><span />
             </div>
             {rows.map((r, i) => {
               const unit = byId.get(r.productId)?.unit ?? "dona";
               return (
                 <div key={r.key} onFocusCapture={() => setActive(r.key)}
-                  className={cn("grid grid-cols-[32px_minmax(0,1fr)_40px] items-center gap-2 border-b border-slate-100 px-2 py-2 last:border-b-0 sm:grid-cols-[32px_minmax(0,1fr)_132px_40px]", r.key === activeRow.key && rows.length > 1 && "bg-brand-50/40")}>
+                  className={cn("grid grid-cols-[32px_minmax(0,1fr)_76px] items-center gap-2 border-b border-slate-100 px-2 py-2 last:border-b-0 sm:grid-cols-[32px_minmax(0,1fr)_200px_120px_76px]", r.key === activeRow.key && rows.length > 1 && "bg-brand-50/40")}>
                   <span className="text-center text-sm text-slate-400 tabular">{i + 1}</span>
                   <div className="min-w-0">
                     <input type="hidden" name="productId[]" value={r.productId} />
                     <ProductSelect products={products} groups={groups} canCreate={canCreateProduct} value={r.productId}
                       onChange={(id) => { update(r.key, { productId: id }); setActive(r.key); if (card === "rename") setCard(null); }} />
                   </div>
-                  <div className="relative col-start-2 sm:col-start-3">
+                  <div className="col-start-2 sm:col-start-3">
+                    <Select name="brigadeId[]" value={r.brigadeId} required aria-label={`${i + 1}-qator brigadasi`}
+                      onChange={(e) => update(r.key, { brigadeId: e.target.value })} className={cn(!r.brigadeId && "text-slate-400")}>
+                      <option value="" disabled>Brigadani tanlang</option>
+                      {brigades.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      <option value={COMMON}>Umumiy hovli (brigadasiz)</option>
+                    </Select>
+                  </div>
+                  <div className="relative col-start-2 sm:col-start-4">
                     <Input name="qty[]" type="number" step="1" min="1" placeholder="0" required aria-label={`${i + 1}-qator miqdori`} value={r.qty} autoFocus={i === 0}
                       onChange={(e) => update(r.key, { qty: e.target.value })}
                       className="pr-14 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                     <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-400">{unit}</span>
                   </div>
-                  <div className="col-start-3 row-start-1 flex justify-center sm:col-start-4 sm:row-start-auto">
+                  <div className="col-start-3 row-start-1 flex justify-end sm:col-start-5 sm:row-start-auto">
+                    <button type="button" onClick={() => splitRow(r.key)} aria-label={`${i + 1}-qatordagi mahsulotni yana bir brigadaga bo'lish`} title="Shu mahsulotni yana bir brigadaga bo'lish"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-brand-50 hover:text-brand-700"><Split size={16} /></button>
                     {rows.length > 1 && (
                       <button type="button" onClick={() => removeRow(r.key)} aria-label={`${i + 1}-qatorni o'chirish`}
                         className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
@@ -142,6 +174,11 @@ export function AddForm({ products, groups, canCreateProduct, warehouses, client
             <Button type="button" size="sm" variant="secondary" onClick={addRow}><Plus size={15} /> Qator qo&apos;shish</Button>
             <span className="text-sm text-slate-500">{rows.length} qator{units.size === 1 && totalQty > 0 && <> · jami <b className="tabular text-slate-900">{fmtNum(totalQty)}</b> {[...units][0]}</>}</span>
           </div>
+          {byBrigade.size > 1 && units.size === 1 && (
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+              {[...byBrigade.entries()].map(([id, q]) => <span key={id}>{brigadeName.get(id) ?? "Brigada"}: <b className="tabular text-slate-900">{fmtNum(q)}</b> {[...units][0]}</span>)}
+            </div>
+          )}
         </div>
       </form>
 

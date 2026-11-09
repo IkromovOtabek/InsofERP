@@ -398,6 +398,7 @@ export async function brigStockDetail(user: MobileUser, brigadeId: string): Prom
   const q = (n: number, unit: string) => `${num(n)} ${unitLabel(unit)}`;
   const fields: DetailField[] = [
     f("Brigadir", b.leader ?? "—"),
+    f("Omboridagi tayyor mahsulot", b.products.length ? b.products.map((p) => q(p.qty, p.unit)).join(" · ") : "0", b.products.length ? "info" : undefined),
     f("Qo'lidagi xomashyo", money(b.handValue), b.handValue > 0 ? "info" : undefined),
     f(`Berilgan (${period.label})`, `${money(c.totals.sum)} · ${c.totals.count} qator`),
     f("Berilgan (barcha vaqt)", `${money(c.allTime.sum)} · ${c.allTime.docs} chiqim`),
@@ -407,6 +408,7 @@ export async function brigStockDetail(user: MobileUser, brigadeId: string): Prom
     f("Topshiriqlar", `${b.doneTasks} yopildi · ${b.openTasks} ochiq`),
   ];
   const sections: HomeSection[] = [
+    section("Omborimdagi tayyor mahsulot", b.products.map((p) => ({ id: p.productId, title: p.name, right: q(p.qty, p.unit), tone: p.qty < 0 ? "danger" as Tone : undefined })), { empty: "Omborda tayyor mahsulot yo'q", icon: "cube" }),
     section("Qo'limdagi xomashyo", b.hand.map((m) => ({ id: m.materialId, title: m.name, subtitle: money(m.cost), right: q(m.qty, m.unit), tone: m.qty < 0 ? "danger" as Tone : undefined })), { empty: "Qo'lda xomashyo yo'q", icon: "cube" }),
     section("Shu xomashyo bilan chiqara olaman", b.makes.map((m) => ({ id: m.productId, title: m.product, subtitle: m.limiting ? `avval tugaydi: ${m.limiting.name} (${q(m.limiting.balance, m.limiting.unit)})` : undefined, right: q(m.canMake, m.unit), tone: "success" as Tone })), { empty: "Hozirgi qoldiq bilan retseptli mahsulot chiqmaydi", icon: "construct" }),
     section(`Davrda olingan tovarlar (${period.label})`, c.byMaterial.map((m) => ({ id: m.materialId, title: m.name, subtitle: `${m.docs} chiqim · oxirgisi ${day(m.lastAt)}`, right: `${q(m.qty, m.unit)} · ${money(m.sum)}` })), { empty: "Bu davrda skladdan olinmagan", icon: "download" }),

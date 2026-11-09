@@ -32,6 +32,7 @@ import { avtoPartsFeed } from "@/lib/avto-parts";
 import { ForYouParts } from "./for-you-parts";
 import { RawStockStatus } from "@/components/raw-stock-status";
 import { YardStatus } from "@/components/yard-status";
+import { BrigadeWarehouses } from "@/components/brigade-warehouses";
 
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
@@ -47,7 +48,7 @@ const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string; q?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; ombor?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string; q?: string }> }) {
   const s = await requirePage("/stock");
   const sp = await searchParams;
   const { added, updated, moved, guessed, ref, material } = sp;
@@ -372,6 +373,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             <p className="mt-2 text-xs text-slate-500">Hovlida tayyor turgan dona mahsulotlar (ustun, blok, bordyur…). Qatorni bosib, kimga band qilinganini ko&apos;rasiz. Qo&apos;lda kirim qilish — yuqoridagi «Tayyor mahsulot qo&apos;shish».</p>
           </div>
 
+          <BrigadeWarehouses />
+
           <div>
             <h2 className="mb-2 font-semibold">Tayyor beton (ishlab chiqarilgan − jo&apos;natilgan)</h2>
             <Table>
@@ -415,7 +418,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {holdings && !bolim && <div className="mb-4"><HoldingsPanel holdings={holdings} collapsible /></div>}
       {/* Xomashyo holati (yetadi / zayavkalarga kerak) va hovli — har biri o'z oynasida (tepadagi tugmalar); asosiy oynada — xomashyo qoldiqlari */}
       {tab === "balance" && bolim === "holat" && <RawStockStatus />}
-      {tab === "balance" && bolim === "hovli" && <YardStatus />}
+      {tab === "balance" && bolim === "hovli" && <YardStatus ombor={sp.ombor} canDistribute={canDo(s, "stock", "products")} />}
       {tab === "balance" && (!bolim || bolim === "xomashyo") && (
         <div id="xomashyo" className="scroll-mt-20 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">

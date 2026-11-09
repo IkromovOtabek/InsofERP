@@ -10,6 +10,7 @@ import { ISSUE_KIND, logisticsSettings, VEHICLE_ISSUE_KINDS } from "@/lib/logist
 import { lockStock } from "@/lib/stock-lock";
 import { driverPositionNames } from "@/lib/positions";
 import { defaultWarehouse, pickProductWarehouse } from "@/lib/warehouse";
+import { brigadeNames, ownerLabel, takeFromOwners, type Owner } from "@/lib/brigade-products";
 import { autoBatchForTrip } from "@/lib/production-batch";
 import { prepayShortError } from "@/lib/payments";
 import { decodePolyline, summarizeTrack } from "@/lib/trip-track";
@@ -145,7 +146,7 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
         throw new StockShort(`Skladda ${line.name ?? "mahsulot"} faqat ${fq(Math.max(0, wh.total))} ${u}${wh.detail ? ` (${wh.detail})` : ""} — ${fq(qty)} ${u} bitta skladdan yuklab bo'lmaydi. Avval ishlab chiqarilgani (zames / brigada) qayd qilinsin`);
       }
       claimed(await tx.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "LOADED", loadedAt: new Date() } }));
-      await tx.stockMove.create({ data: { type: "SHIPMENT", warehouseId: wh.id, productId: line.productId, qty: -qty, refType: "Trip", refId: id, note, createdById: userId } });
+      await writeShipment(tx, { tripId: id, orderId: t.orderId, warehouseId: wh.id, line, qty, note, userId });
       await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED", note });
       return true;
     }));
@@ -153,6 +154,31 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
   } catch (e) {
     if (e instanceof StockShort) return { changed: false, orderId: t.orderId, error: e.message };
     throw e;
+  }
+}
+
+/**
+ * Jo'natish (SHIPMENT) yozuvi. Beton — bitta qator. Dona mahsulot brigada omborlaridan yechiladi (`lib/brigade-products.ts`):
+ * avval shu zayavka qatorini ishlagan brigadalar, keyin umumiy hovli, keyin qoldig'i ko'p brigada — har ombor alohida qator.
+ */
+async function writeShipment(
+  tx: Prisma.TransactionClient,
+  p: { tripId: string; orderId: string; warehouseId: string; line: TripLine; qty: number; note?: string; userId: string },
+) {
+  const base = { type: "SHIPMENT" as const, warehouseId: p.warehouseId, productId: p.line.productId, refType: "Trip", refId: p.tripId, createdById: p.userId };
+  if (p.line.unit === "m3") {
+    await tx.stockMove.create({ data: { ...base, qty: -p.qty, note: p.note } });
+    return;
+  }
+  const tasks = await tx.brigadeTask.findMany({
+    where: { orderId: p.orderId, orderItem: { productId: p.line.productId }, status: { not: "CANCELLED" } },
+    orderBy: { createdAt: "asc" }, select: { brigadeId: true },
+  });
+  const parts = await takeFromOwners(tx, { warehouseId: p.warehouseId, productId: p.line.productId, qty: p.qty, prefer: tasks.map((x) => x.brigadeId) });
+  const names = parts.some((x) => x.owner) ? await brigadeNames(tx) : new Map<string, string>();
+  for (const part of parts) {
+    const from = `${ownerLabel(names, part.owner)}dan`;
+    await tx.stockMove.create({ data: { ...base, ownerBrigadeId: part.owner, qty: -part.qty, note: p.note ? `${p.note} · ${from}` : from } });
   }
 }
 
@@ -204,7 +230,43 @@ async function returnToStock(tx: Prisma.TransactionClient, tripId: string, line:
   const shipped = await tx.stockMove.findFirst({ where: { refType: "Trip", refId: tripId, type: "SHIPMENT" }, select: { warehouseId: true } });
   const whId = shipped?.warehouseId ?? (await defaultWarehouse(tx))?.id;
   if (!whId) throw new Error("Faol sklad yo'q — qaytgan mahsulotni kirim qilib bo'lmaydi");
-  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: whId, productId: line.productId, qty: returned, refType: "Trip", refId: tripId, note: returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)", createdById: userId } });
+  const note = returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)";
+  for (const part of await returnOwners(tx, tripId, returned)) {
+    await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: whId, productId: line.productId, ownerBrigadeId: part.owner, qty: part.qty, refType: "Trip", refId: tripId, note, createdById: userId } });
+  }
+}
+
+/**
+ * Qaytgan mahsulot qaysi brigada omboriga: reys qaysi omborlardan yuklangan bo'lsa — o'shalarga, yuklash tartibida
+ * (har biriga ko'pi bilan undan sof chiqqan miqdor). Manfiy (qaytgan kamaytirildi) — avval qaytarilgan omborlardan, oxiridan.
+ * Reys omborlarsiz yuklangan bo'lsa (eski reys) — umumiy hovli.
+ */
+async function returnOwners(tx: Prisma.TransactionClient, tripId: string, returned: number): Promise<{ owner: Owner; qty: number }[]> {
+  const moves = await tx.stockMove.findMany({ where: { refType: "Trip", refId: tripId, productId: { not: null } }, orderBy: { createdAt: "asc" }, select: { type: true, ownerBrigadeId: true, qty: true } });
+  const order: Owner[] = [];
+  const net = new Map<Owner, number>(); // ombordan sof chiqqani (yuklangan − qaytgan)
+  const back = new Map<Owner, number>(); // shu reys bo'yicha omborga qaytgani
+  for (const m of moves) {
+    const o = m.ownerBrigadeId, q = Number(m.qty);
+    if (m.type === "SHIPMENT" && !order.includes(o)) order.push(o);
+    net.set(o, (net.get(o) ?? 0) - q);
+    if (m.type === "ADJUSTMENT") back.set(o, (back.get(o) ?? 0) + q);
+  }
+  if (!order.length) return [{ owner: null, qty: returned }];
+  const parts: { owner: Owner; qty: number }[] = [];
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  let left = Math.abs(returned);
+  const list = returned > 0 ? order : [...order].reverse();
+  for (const o of list) {
+    if (left < 0.0005) break;
+    const room = returned > 0 ? net.get(o) ?? 0 : back.get(o) ?? 0;
+    if (room < 0.0005) continue;
+    const q = r3(Math.min(left, room));
+    parts.push({ owner: o, qty: returned > 0 ? q : -q });
+    left = r3(left - q);
+  }
+  if (left >= 0.0005) parts.push({ owner: order[0]!, qty: returned > 0 ? left : -left });
+  return parts;
 }
 
 /** Tizim o'zi yozadigan shubha belgisi — dispetcher ko'rib hal qilmaguncha reys yopilmaydi. */

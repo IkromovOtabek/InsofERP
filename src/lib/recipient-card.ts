@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { rasxodJournal, rasxodTotals, type RasxodRow } from "./stock-issue";
 import { brigadeStocks, type BrigadeMake, type BrigadeMaterial } from "./brigade-stock";
+import { brigadeProducts, type BrigadeProduct } from "./brigade-products";
 
 /**
  * «Kimga» kartasi — skladdan olgan har bir oluvchining o'z sahifasi (veb `/oluvchi/<kind>/<id>`, ECO «Mening skladim»):
@@ -32,6 +33,8 @@ export type BrigadeBlock = {
   hand: BrigadeMaterial[]; handValue: number;
   /** Shu xomashyo bilan qancha mahsulot chiqara oladi */
   makes: BrigadeMake[];
+  /** Omboridagi tayyor dona mahsulot (brigada chiqargan / unga biriktirilgan, hali jo'natilmagan) — `lib/brigade-products.ts` */
+  products: BrigadeProduct[];
   /** Davrda ishlab chiqarilgani (topshiriq fakti) va braki — mahsulot bo'yicha */
   produced: ProducedRow[]; defects: ProducedRow[];
   /** Davrda retsept bo'yicha sarflangan xomashyo qiymati (BrigadeMove CONSUME) */
@@ -106,8 +109,9 @@ export async function recipientCard(kind: CardKind, id: string, period: { from: 
   let brigade: BrigadeBlock | null = null;
   if (brig) {
     const bw = { brigadeId: id };
-    const [stocks, progress, defects, consumed, done, open] = await Promise.all([
+    const [stocks, products, progress, defects, consumed, done, open] = await Promise.all([
       brigadeStocks({ includeInactive: true }),
+      brigadeProducts(id),
       db.taskProgress.findMany({ where: { date: { gte: period.from, lt: period.to }, task: bw }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { name: true, unit: true } } } } } } } }),
       db.productDefect.findMany({ where: { ...bw, date: { gte: period.from, lt: period.to } }, select: { qty: true, product: { select: { name: true, unit: true } } } }),
       db.brigadeMove.findMany({ where: { ...bw, type: "CONSUME", date: { gte: period.from, lt: period.to } }, select: { qty: true, unitCost: true } }),
@@ -125,6 +129,7 @@ export async function recipientCard(kind: CardKind, id: string, period: { from: 
     brigade = {
       leader: brig.leader?.fullName ?? null, phone: brig.phone ?? null, members: brig._count.members,
       hand: st?.materials ?? [], handValue: r2(st?.value ?? 0), makes: (st?.makes ?? []).filter((m) => m.canMake > 0).sort((a, b) => b.canMake - a.canMake),
+      products,
       produced, defects: groupProduced(defects), consumedValue,
       perUnit: mainUnit && producedQty > 0 && numer > 0 ? { unit: mainUnit, value: r2(numer / producedQty), producedQty: r3(producedQty), basis } : null,
       doneTasks: done, openTasks: open,

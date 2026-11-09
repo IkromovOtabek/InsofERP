@@ -90,7 +90,8 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     if (toYard && wh) {
       await tx.stockMove.create({
         data: {
-          type: "PRODUCTION_OUTPUT", warehouseId: wh.id, productId: product.id, brigadeId: t.brigadeId, qty,
+          // Brigada chiqargani o'z omborida turadi (javobgarligida) — reys yuklanganda shu ombordan yechiladi
+          type: "PRODUCTION_OUTPUT", warehouseId: wh.id, productId: product.id, brigadeId: t.brigadeId, ownerBrigadeId: t.brigadeId, qty,
           refType: "BrigadeTask", refId: taskId, note: `Brigada chiqardi · ${t.brigade.name}`, createdById: userId,
         },
       });
@@ -114,7 +115,7 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
   if (!res) return { changed: false, orderId: t.orderId, error: TASK_STALE };
 
   const hints = [
-    toYard && wh ? `${fq(qty)} ${unitLabel(product.unit)} hovliga kirim qilindi (${wh.name}, erkin qoldiq)` : null,
+    toYard && wh ? `${fq(qty)} ${unitLabel(product.unit)} ${t.brigade.name} omboriga kirim qilindi (${wh.name})` : null,
     res.closed ? "Zaxira to'liq tayyor — zayavka yopildi" : null,
     res.used.issued.length ? `Brigadada yetmagani skladdan avtomatik berildi: ${res.used.issued.join(", ")}` : null,
     res.used.deficit.length ? `DIQQAT: skladda ham yetmadi — brigada qoldig'i minusda: ${res.used.deficit.join(", ")}. Sklad va ishlab chiqarishga xabar ketdi` : null,

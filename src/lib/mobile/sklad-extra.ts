@@ -18,6 +18,7 @@ import { canRemoveSupplyDoc, deleteSupplyQuote, removeSupplyDocument } from "@/l
 import { INCIDENT_LABEL } from "@/lib/procurement-const";
 import { procurementReport } from "@/lib/procurement-report";
 import { addProductStock } from "@/lib/product-stock";
+import { brigadeLabel } from "@/lib/issue-target";
 import { saveInventoryCount, saveStockWriteOff } from "@/lib/stock-adjust";
 import { DIRECTOR_NOTIFY_SUM, WRITE_OFF_REASONS } from "@/lib/stock-adjust-const";
 import { issuePrices } from "@/lib/stock-price";
@@ -238,8 +239,8 @@ async function productCard(productId: string): Promise<MobileDetail> {
     ...(d.shortage > STOCK_EPS ? { status: "Yetishmaydi" } : {}),
     fields: [
       f("Jami tayyor", pq(d.total, u)),
-      f("Egasi bor (band)", `${pq(d.owned, u)} · ${d.owners.length} ta zayavka`, d.owned > 0 ? "info" : undefined),
-      f("Egasi yo'q (erkin)", pq(d.free, u), d.free > 0 ? "success" : undefined),
+      f("Erkin", pq(d.free, u), d.free > 0 ? "success" : d.free < 0 ? "danger" : undefined),
+      f("Band", `${pq(d.owned, u)} · ${d.owners.length} ta zayavkaga`, d.owned > 0 ? "info" : undefined),
       f("Yetishmaydi", pq(d.shortage, u), d.shortage > STOCK_EPS ? "danger" : "success"),
       ...(d.shortage > STOCK_EPS ? [f("Diqqat", `Band qilingan miqdor qoldiqdan ${pq(d.shortage, u)} ko'p — ishlab chiqarish rejalashtiring`, "danger")] : []),
     ],
@@ -744,10 +745,11 @@ const warehouseField = async (): Promise<FormField> => {
 
 /** «Tayyor mahsulot qo'shish» — veb `/stock/products/new`: dona mahsulot, sklad, miqdor (butun son), izoh. */
 async function productsForm(user: MobileUser): Promise<CreateForm> {
-  const [products, moved, warehouse] = await Promise.all([
+  const [products, moved, warehouse, brigades] = await Promise.all([
     db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, orderBy: { code: "asc" }, select: { id: true, code: true, name: true, unit: true } }),
     db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _count: { _all: true } }),
     warehouseField(),
+    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
   ]);
   const hasMoves = new Set(moved.map((m) => m.productId));
   const director = user.role === "DIRECTOR";
@@ -760,6 +762,11 @@ async function productsForm(user: MobileUser): Promise<CreateForm> {
         hint: "Faqat hali harakati yo'q dona mahsulotga boshlang'ich qoldiq; ishlab chiqarilgani topshiriq orqali kirim bo'ladi",
       },
       warehouse,
+      {
+        name: "brigadeId", label: "Qaysi brigadaga", type: "select", required: true,
+        options: [...brigades.map((x) => ({ value: x.id, label: brigadeLabel({ name: x.name, leader: x.leader?.fullName ?? null }) })), { value: "umumiy", label: "Umumiy hovli (brigadasiz)" }],
+        hint: "Mahsulot shu brigada omboriga tushadi — reys va brak shu ombordan yechiladi",
+      },
       { name: "qty", label: "Miqdor (dona)", type: "number", required: true, placeholder: "0" },
       { name: "note", label: "Izoh", type: "text", placeholder: "Qo'lda qo'shildi" },
     ],
@@ -855,13 +862,16 @@ export async function skladCreate(user: MobileUser, key: string, raw: unknown): 
       const qty = numOf(p, "qty");
       if (!Number.isFinite(qty)) throw new Error("Miqdorni kiriting");
       const note = textOf(p, "note") || null;
+      // Brigada omboriga (bo'sh / «umumiy» — umumiy hovli); eski ilova maydonni yubormaydi — umumiy hovliga tushadi
+      const bRaw = textOf(p, "brigadeId");
+      const brigadeId = bRaw && bRaw !== "umumiy" ? bRaw : null;
       // Ilova bu formada bir martalik kalit yubormaydi — tarmoq qayta yuborsa (3 daqiqa ichida aynan shunday yozuv) ikkinchisi yozilmaydi
       const dup = await db.stockMove.findFirst({
-        where: { createdById: user.id, createdAt: { gte: new Date(Date.now() - DUP_WINDOW_MS) }, type: "ADJUSTMENT", refType: "Manual", productId, warehouseId, qty, note: note ?? "Qo'lda qo'shildi" },
+        where: { createdById: user.id, createdAt: { gte: new Date(Date.now() - DUP_WINDOW_MS) }, type: "ADJUSTMENT", refType: "Manual", productId, warehouseId, ownerBrigadeId: brigadeId, qty, note: note ?? "Qo'lda qo'shildi" },
         select: { id: true },
       });
       if (dup) return { key: "products", id: productId, message: "Xuddi shunday qo'shish hozirgina saqlangan — qayta yozilmadi" };
-      const r = await addProductStock({ productId, warehouseId, qty, note }, actor);
+      const r = await addProductStock({ productId, warehouseId, qty, note, brigadeId }, actor);
       if ("error" in r) throw new Error(r.error);
       return { key: "products", id: r.productId, message: "Tayyor mahsulot qoldig'i qo'shildi" };
     }

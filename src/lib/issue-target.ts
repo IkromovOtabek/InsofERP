@@ -16,8 +16,9 @@ export type TargetGroups = {
 /** Select'dagi eng pastki band — «Qo'lda kiritish»: yangi oluvchi oynasini ochadi, qiymat sifatida yuborilmaydi. */
 export const NEW_RECIPIENT = "__new__";
 
-/** Brigada yorlig'i «Kimga» ro'yxatida: «1-brigada — Ilxom» (brigadir bo'lsa). */
-export const brigadeLabel = (b: { name: string; leader: string | null }) => (b.leader ? `${b.name} — ${b.leader}` : b.name);
+/** Brigada yorlig'i «Kimga» ro'yxatida: «1-brigada — Ilxom» (brigadir bo'lsa; nomida ismi bo'lsa — takrorlanmaydi). */
+export const brigadeLabel = (b: { name: string; leader: string | null }) =>
+  (b.leader && !normTargetName(b.name).includes(normTargetName(b.leader)) ? `${b.name} — ${b.leader}` : b.name);
 
 /** Kalit bo'yicha ko'rinadigan nom; ro'yxatda yo'q (nofaol) bo'lsa null. */
 export function targetName(g: TargetGroups, key: string): string | null {

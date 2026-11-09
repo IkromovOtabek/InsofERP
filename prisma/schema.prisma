@@ -907,6 +907,9 @@ enum StockMoveType {
   BRIGADE_ISSUE // brigadaga berildi (skladdan chiqdi, brigada qoldig'iga o'tdi)
   BRIGADE_RETURN // brigadadan qaytdi
   ISSUE // «Расход»: oluvchiga berildi (StockRecipient — shafyorlar, svarchiklar…) va sarf deb hisoblanadi
+  /// Tayyor dona mahsulot bir brigada omboridan boshqasiga (yoki umumiy hovliga) ko'chdi — juft yozuv (−/+),
+  /// sklad jami o'zgarmaydi (`lib/brigade-products.ts`)
+  OWNER_TRANSFER
 }
 
 /// Har bir qator o'zgarmas. qty ishorali: kirim (+), chiqim (−).
@@ -919,6 +922,10 @@ model StockMove {
   materialId  String?
   productId   String?
   brigadeId   String? // BRIGADE_ISSUE / BRIGADE_RETURN — qaysi brigada bilan harakat
+  /// Tayyor dona mahsulot qaysi brigada omborida (javobgarligida) — faqat mahsulot harakatlarida.
+  /// Bo'sh = «Umumiy hovli» (hech bir brigadaga biriktirilmagan). Sklad qoldig'i = barcha omborlar yig'indisi,
+  /// brigada ombori = shu brigada belgisi bilan yozilgan harakatlar yig'indisi (`lib/brigade-products.ts`)
+  ownerBrigadeId String?
   /// ISSUE («Расход») — kimga berildi (Кому)
   recipientId String?
   /// ISSUE — xodimga berildi (Xodimlar ro'yxatidan: brigadir, ustoz, haydovchi…) — recipientId bilan birga emas
@@ -937,6 +944,7 @@ model StockMove {
   material  Material?       @relation(fields: [materialId], references: [id])
   product   Product?        @relation(fields: [productId], references: [id])
   brigade   Brigade?        @relation(fields: [brigadeId], references: [id])
+  ownerBrigade Brigade?     @relation("ProductOwnerBrigade", fields: [ownerBrigadeId], references: [id])
   recipient StockRecipient? @relation(fields: [recipientId], references: [id])
   employee  Employee?       @relation("MoveEmployee", fields: [employeeId], references: [id])
   createdBy User            @relation("MoveCreatedBy", fields: [createdById], references: [id])
@@ -945,6 +953,7 @@ model StockMove {
   @@index([employeeId, date])
   @@index([warehouseId, materialId, date])
   @@index([warehouseId, productId, date])
+  @@index([ownerBrigadeId, productId])
   @@index([refType, refId])
   @@index([materialId, date])
 }
@@ -1483,6 +1492,8 @@ model Brigade {
   tasks        BrigadeTask[]
   moves        BrigadeMove[]
   stockMoves   StockMove[]
+  /// Brigada omboridagi tayyor mahsulot harakatlari (StockMove.ownerBrigadeId)
+  ownedMoves   StockMove[]     @relation("ProductOwnerBrigade")
   defects      ProductDefect[]
   shifts       BrigadeShift[]
   issues       BrigadeIssue[]

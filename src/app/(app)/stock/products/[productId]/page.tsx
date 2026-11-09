@@ -1,21 +1,41 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Boxes, UserCheck, PackageOpen, AlertTriangle, Factory, History } from "lucide-react";
+import { Boxes, UserCheck, PackageOpen, AlertTriangle, Factory, History, HardHat } from "lucide-react";
 import { ostatkaDetail } from "@/lib/ostatka";
 import { qty, date, dateTime, opAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Td, Th, Tr } from "@/components/ui";
 import { OrderStatusBadge } from "../../../orders/status";
 import { requirePage } from "@/lib/page-guard";
+import { db } from "@/lib/db";
+import { canDo } from "@/lib/permissions";
+import { brigadeNames, COMMON_YARD } from "@/lib/brigade-products";
+import { OwnerTransferForm } from "./owner-transfer";
 
-const MOVE: Record<string, string> = { PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Jo'natildi", ADJUSTMENT: "Qo'lda qo'shildi", WRITE_OFF: "Hisobdan chiqarildi" };
+const MOVE: Record<string, string> = { PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Jo'natildi", ADJUSTMENT: "Qo'lda qo'shildi", WRITE_OFF: "Hisobdan chiqarildi", OWNER_TRANSFER: "Ombordan omborga" };
 
 export default async function StockProductDetail({ params }: { params: Promise<{ productId: string }> }) {
-  await requirePage("/stock/products");
+  const s = await requirePage("/stock/products");
   const { productId } = await params;
   const d = await ostatkaDetail(productId);
   if (!d) notFound();
   const u = unitLabel(d.product.unit);
+  // Brigada omborlari: qaysi brigada javobgarligida qancha (`lib/brigade-products.ts`); beton omborga bo'linmaydi
+  const piece = d.product.unit !== "m3";
+  const [ownerSums, names, brigades, warehouses] = piece
+    ? await Promise.all([
+        db.stockMove.groupBy({ by: ["warehouseId", "ownerBrigadeId"], where: { productId }, _sum: { qty: true } }),
+        brigadeNames(),
+        db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true } }),
+        db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
+      ])
+    : [[], new Map<string, string>(), [], []];
+  const balances = ownerSums.map((x) => ({ warehouseId: x.warehouseId, owner: x.ownerBrigadeId ?? "umumiy", qty: Math.round(Number(x._sum.qty ?? 0) * 1000) / 1000 })).filter((x) => Math.abs(x.qty) > 0.0005);
+  const byOwner = new Map<string, number>();
+  for (const b of balances) byOwner.set(b.owner, (byOwner.get(b.owner) ?? 0) + b.qty);
+  const ownerRows = [...byOwner.entries()].map(([k, q]) => ({ key: k, name: k === "umumiy" ? COMMON_YARD : names.get(k) ?? "Brigada", qty: q }))
+    .sort((a, b) => (a.key === "umumiy" ? 1 : b.key === "umumiy" ? -1 : a.name.localeCompare(b.name, "uz", { numeric: true })));
+  const canMove = canDo(s, "stock", "products");
 
   return (
     <div>
@@ -24,15 +44,16 @@ export default async function StockProductDetail({ params }: { params: Promise<{
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Jami tayyor" value={`${qty(d.total)} ${u}`} icon={Boxes} tone="brand" href="#kimniki" />
-        <StatCard label="Egasi bor" value={`${qty(d.owned)} ${u}`} hint={`${d.owners.length} ta zayavka`} icon={UserCheck} tone="info" href="#kimniki" />
-        <StatCard label="Egasi yo'q" value={`${qty(d.free)} ${u}`} hint="sotuvga tayyor" icon={PackageOpen} tone="success" href="#kimniki" />
+        {/* Hovli kartalaridagidek: erkin — hech bir zayavkaga band qilinmagan, band — zayavkalarga ajratilgan */}
+        <StatCard label="Erkin" value={`${qty(d.free)} ${u}`} hint="zayavkaga band emas — sotuvga tayyor" icon={PackageOpen} tone={d.free < 0 ? "danger" : "success"} href="#kimniki" />
+        <StatCard label="Band" value={`${qty(d.owned)} ${u}`} hint={`${d.owners.length} ta zayavkaga`} icon={UserCheck} tone="info" href="#kimniki" />
         <StatCard label="Yetishmaydi" value={`${qty(d.shortage)} ${u}`} icon={AlertTriangle} tone={d.shortage ? "danger" : "default"} href="#kimniki" />
       </div>
 
       <Card padded={false} className="mt-5">
-        <div id="kimniki" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Kimniki" description="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — egasi yo'q (erkin) qoldiq." icon={UserCheck} /></div>
+        <div id="kimniki" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Erkin va band" description="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — erkin (hech kimga band qilinmagan) qoldiq." icon={UserCheck} /></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-sm">
-          <thead><tr><Th>Egasi</Th><Th>Telefon</Th><Th>Yetkazish</Th><Th right>Buyurtma</Th><Th right>Jo'natildi</Th><Th right>Band</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Kimga band</Th><Th>Telefon</Th><Th>Yetkazish</Th><Th right>Buyurtma</Th><Th right>Jo'natildi</Th><Th right>Band</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {d.owners.map((o) => (
               <Tr key={o.orderId}>
@@ -44,7 +65,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
               </Tr>
             ))}
             <tr className="bg-emerald-50/60">
-              <Td className="font-semibold text-emerald-800">Egasi yo'q</Td><Td colSpan={4} className="text-emerald-700">Erkin — istalgan mijozga sotish mumkin</Td>
+              <Td className="font-semibold text-emerald-800">Erkin</Td><Td colSpan={4} className="text-emerald-700">Hech kimga band qilinmagan — istalgan mijozga sotish mumkin</Td>
               <Td right className="font-semibold text-emerald-700">{qty(d.free)}</Td><Td><Badge color="green">Erkin</Badge></Td>
             </tr>
             <tr className="bg-slate-50/70">
@@ -54,6 +75,33 @@ export default async function StockProductDetail({ params }: { params: Promise<{
           </tbody>
         </table></div>
       </Card>
+
+      {piece && (
+        <Card padded={false} className="mt-5">
+          <div id="ombor" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Brigada omborlari" description="Mahsulot qaysi brigada javobgarligida turibdi. Brigada bajargani o'z omboriga tushadi; reys va brak o'sha ombordan yechiladi." icon={HardHat} /></div>
+          <div className={canMove ? "grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]" : undefined}>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead><tr><Th>Ombor</Th><Th right>Qoldiq</Th></tr></thead>
+              <tbody>
+                {ownerRows.length === 0 && <Empty text="Qoldiq yo'q" icon={HardHat} />}
+                {ownerRows.map((o) => (
+                  <Tr key={o.key}>
+                    <Td className={o.key === "umumiy" ? "text-slate-500" : "font-medium"}>{o.key === "umumiy" ? o.name : <Link href={`/oluvchi/b/${o.key}`} className="hover:underline">{o.name}</Link>}</Td>
+                    <Td right className={o.qty < 0 ? "font-semibold text-red-600" : "font-semibold"}>{qty(o.qty)} {u}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </table></div>
+            {canMove && (
+              <div className="border-t border-slate-100 px-5 py-4 lg:border-t-0 lg:border-l">
+                <h3 className="mb-3 text-sm font-semibold text-slate-900">Ombordan omborga ko&apos;chirish</h3>
+                <OwnerTransferForm productId={productId} unit={u} balances={balances} warehouses={warehouses}
+                  brigades={brigades.map((b) => ({ id: b.id, name: names.get(b.id) ?? "Brigada" }))} />
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card padded={false}>

@@ -4,6 +4,7 @@ import { qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
 import { pickProductWarehouse } from "@/lib/warehouse";
+import { takeFromOwners } from "@/lib/brigade-products";
 
 /**
  * Brak yozuvi — yagona joy (veb sex sahifasi ham, brigadir ilovasi ham).
@@ -54,12 +55,16 @@ export async function addProductDefect(d: DefectInput, userId: string): Promise<
     const def = await tx.productDefect.create({
       data: { productId: product.id, qty: d.qty, amount: Math.round(d.qty * Number(product.price) * 100) / 100, reason: d.reason, brigadeId, taskId: d.taskId || null, note: d.note || null, createdById: userId },
     });
-    await tx.stockMove.create({
-      data: {
-        type: "WRITE_OFF", warehouseId: wh.id, productId: product.id, brigadeId, qty: -d.qty,
-        refType: "ProductDefect", refId: def.id, note: `Brak: ${d.reason}${d.note ? ` · ${d.note}` : ""}`, createdById: userId,
-      },
-    });
+    // Brak avval shu brigada omboridan yechiladi (u chiqargan), yetmasa — umumiy hovli va boshqa omborlardan
+    const parts = await takeFromOwners(tx, { warehouseId: wh.id, productId: product.id, qty: d.qty, prefer: brigadeId ? [brigadeId] : [] });
+    for (const part of parts) {
+      await tx.stockMove.create({
+        data: {
+          type: "WRITE_OFF", warehouseId: wh.id, productId: product.id, brigadeId, ownerBrigadeId: part.owner, qty: -part.qty,
+          refType: "ProductDefect", refId: def.id, note: `Brak: ${d.reason}${d.note ? ` · ${d.note}` : ""}`, createdById: userId,
+        },
+      });
+    }
     await audit(tx, userId, "CREATE", "ProductDefect", def.id, undefined, def);
     return { id: def.id };
   });
@@ -91,7 +96,7 @@ export async function deleteProductDefect(id: string, who: { userId: string; rol
     for (const m of moves) {
       await tx.stockMove.create({
         data: {
-          type: "ADJUSTMENT", warehouseId: m.warehouseId, productId: m.productId, brigadeId: m.brigadeId, qty: m.qty.negated(),
+          type: "ADJUSTMENT", warehouseId: m.warehouseId, productId: m.productId, brigadeId: m.brigadeId, ownerBrigadeId: m.ownerBrigadeId, qty: m.qty.negated(),
           refType: "ProductDefect", refId: id, note: "Brak yozuvi bekor qilindi", createdById: who.userId,
         },
       });

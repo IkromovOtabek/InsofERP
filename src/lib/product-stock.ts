@@ -40,20 +40,21 @@ function stockDay(s: string | null | undefined, now = new Date()): Date | { erro
  * ikkinchi so'rov hech narsa yozmaydi (`dup`). Kalitsiz so'rov uchun — "harakati yo'q" tekshiruvi qulf ichida.
  */
 export async function addProductStock(
-  input: { productId: string; warehouseId: string; qty: number; note?: string | null; clientToken?: string | null; date?: string | null },
+  input: { productId: string; warehouseId: string; qty: number; brigadeId?: string | null; note?: string | null; clientToken?: string | null; date?: string | null },
   actor: { userId: string; role: Role },
 ): Promise<{ ok: true; dup: boolean; productId: string } | { error: string }> {
-  const r = await addProductStockLines({ ...input, lines: [{ productId: input.productId, qty: input.qty }] }, actor);
+  const r = await addProductStockLines({ ...input, lines: [{ productId: input.productId, qty: input.qty, brigadeId: input.brigadeId }] }, actor);
   return "error" in r ? r : { ok: true, dup: r.dup, productId: input.productId };
 }
 
 /**
  * Bir nechta mahsulotni bitta formada (Sklad → Tayyor mahsulot qo'shish): bir sklad, bir sana, bir izoh; hammasi bitta
- * tranzaksiyada — biror qator xato bo'lsa hech biri yozilmaydi. Bir mahsulot ikki qatorda bo'lsa — miqdori qo'shiladi.
- * Bir martalik kalit birinchi harakatga yoziladi — takror yuborilgan forma butunlay `dup` bo'ladi.
+ * tranzaksiyada — biror qator xato bo'lsa hech biri yozilmaydi. Har qator — qaysi brigada omboriga (bo'sh — umumiy hovli,
+ * `lib/brigade-products.ts`); bitta mahsulot bir necha brigadaga bo'linadi. Bir mahsulot bir brigadaga ikki qatorda
+ * bo'lsa — miqdori qo'shiladi. Bir martalik kalit birinchi harakatga yoziladi — takror yuborilgan forma butunlay `dup` bo'ladi.
  */
 export async function addProductStockLines(
-  input: { lines: { productId: string; qty: number }[]; warehouseId: string; note?: string | null; clientToken?: string | null; date?: string | null },
+  input: { lines: { productId: string; qty: number; brigadeId?: string | null }[]; warehouseId: string; note?: string | null; clientToken?: string | null; date?: string | null },
   actor: { userId: string; role: Role },
 ): Promise<{ ok: true; dup: boolean; count: number } | { error: string }> {
   if (!input.warehouseId) return { error: "Sklad tanlanmagan" };
@@ -66,18 +67,31 @@ export async function addProductStockLines(
     if (!(l.qty > 0)) return { error: `${at}Miqdor 0 dan katta bo'lsin` };
     if (l.qty > MAX_AMOUNT) return { error: `${at}Qiymat juda katta` };
   }
-  const merged = new Map<string, number>();
-  for (const l of input.lines) merged.set(l.productId, (merged.get(l.productId) ?? 0) + l.qty);
-  if ([...merged.values()].some((q) => q > MAX_AMOUNT)) return { error: "Qiymat juda katta" };
+  // Kalit: mahsulot|brigada (bo'sh — umumiy hovli)
+  const merged = new Map<string, { productId: string; brigadeId: string | null; qty: number }>();
+  for (const l of input.lines) {
+    const brigadeId = l.brigadeId || null;
+    const k = `${l.productId}|${brigadeId ?? ""}`;
+    const cur = merged.get(k) ?? { productId: l.productId, brigadeId, qty: 0 };
+    cur.qty += l.qty;
+    merged.set(k, cur);
+  }
+  const perProduct = new Map<string, number>();
+  for (const m of merged.values()) perProduct.set(m.productId, (perProduct.get(m.productId) ?? 0) + m.qty);
+  if ([...perProduct.values()].some((q) => q > MAX_AMOUNT)) return { error: "Qiymat juda katta" };
   const date = stockDay(input.date);
   if ("error" in date) return date;
-  const [products, wh] = await Promise.all([
-    db.product.findMany({ where: { id: { in: [...merged.keys()] } }, select: { id: true, code: true, name: true, unit: true } }),
+  const brigadeIds = [...new Set([...merged.values()].map((m) => m.brigadeId).filter((x): x is string => !!x))];
+  const [products, wh, brigades] = await Promise.all([
+    db.product.findMany({ where: { id: { in: [...perProduct.keys()] } }, select: { id: true, code: true, name: true, unit: true } }),
     db.warehouse.findFirst({ where: { id: input.warehouseId, isActive: true }, select: { id: true } }),
+    brigadeIds.length ? db.brigade.findMany({ where: { id: { in: brigadeIds }, isActive: true }, select: { id: true, name: true } }) : [],
   ]);
   const byId = new Map(products.map((p) => [p.id, p]));
-  if ([...merged.keys()].some((id) => { const p = byId.get(id); return !p || p.unit === "m3"; })) return { error: "Faqat dona mahsulot qo'shiladi" };
+  if ([...perProduct.keys()].some((id) => { const p = byId.get(id); return !p || p.unit === "m3"; })) return { error: "Faqat dona mahsulot qo'shiladi" };
   if (!wh) return { error: "Sklad topilmadi" };
+  const brigadeName = new Map(brigades.map((b) => [b.id, b.name]));
+  if (brigadeIds.some((id) => !brigadeName.has(id))) return { error: "Brigada topilmadi yoki nofaol — ro'yxatdan qayta tanlang" };
   const raw = input.clientToken;
   const clientToken = typeof raw === "string" && /^[A-Za-z0-9-]{16,64}$/.test(raw.trim()) ? raw.trim() : null;
   const note = input.note?.trim() || null;
@@ -85,17 +99,17 @@ export async function addProductStockLines(
     await lockStock(tx);
     if (clientToken && (await tx.stockMove.findUnique({ where: { clientToken }, select: { id: true } }))) return "dup" as const;
     if (actor.role !== "DIRECTOR") {
-      const moved = await tx.stockMove.groupBy({ by: ["productId"], where: { productId: { in: [...merged.keys()] } } });
+      const moved = await tx.stockMove.groupBy({ by: ["productId"], where: { productId: { in: [...perProduct.keys()] } } });
       if (moved.length) {
         const names = moved.map((m) => `"${byId.get(m.productId!)?.name}"`).join(", ");
         throw new AddStockError(`${names} skladda harakati bor — qo'lda qoldiq qo'shib bo'lmaydi. Ishlab chiqarilgani topshiriq (brigada) orqali kirim bo'ladi; sanoq farqini direktor tuzatadi`);
       }
     }
     let first = true;
-    for (const [productId, qty] of merged) {
+    for (const { productId, brigadeId, qty } of merged.values()) {
       const p = byId.get(productId)!;
-      const m = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date, warehouseId: wh.id, productId, qty, note: note ?? "Qo'lda qo'shildi", refType: "Manual", clientToken: first ? clientToken : null, createdById: actor.userId } });
-      await audit(tx, actor.userId, "CREATE", "StockMove", m.id, undefined, { product: p.code, qty, note, date });
+      const m = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date, warehouseId: wh.id, productId, ownerBrigadeId: brigadeId, qty, note: note ?? "Qo'lda qo'shildi", refType: "Manual", clientToken: first ? clientToken : null, createdById: actor.userId } });
+      await audit(tx, actor.userId, "CREATE", "StockMove", m.id, undefined, { product: p.code, qty, brigade: brigadeId ? brigadeName.get(brigadeId) : null, note, date });
       first = false;
     }
     return "ok" as const;

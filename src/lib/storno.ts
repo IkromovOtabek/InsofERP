@@ -25,6 +25,8 @@ class StornoError extends Error {}
 type Move = {
   warehouseId: string; materialId: string | null; productId: string | null; qty: Prisma.Decimal | number; type: Prisma.StockMoveCreateManyInput["type"];
   unitCost: Prisma.Decimal | number | null; brigadeId: string | null; recipientId?: string | null; employeeId?: string | null;
+  /** Tayyor mahsulot qaysi brigada omborida — teskari yozuv ham o'sha omborga (`lib/brigade-products.ts`) */
+  ownerBrigadeId?: string | null;
 };
 
 /**
@@ -62,7 +64,7 @@ async function reverseMoves(tx: Prisma.TransactionClient, moves: Move[], refType
     await tx.stockMove.createMany({
       data: rest.map((m) => ({
         type: m.type, warehouseId: m.warehouseId, materialId: m.materialId, productId: m.productId, brigadeId: m.brigadeId,
-        recipientId: m.recipientId ?? null, employeeId: m.employeeId ?? null,
+        recipientId: m.recipientId ?? null, employeeId: m.employeeId ?? null, ownerBrigadeId: m.ownerBrigadeId ?? null,
         qty: -Number(m.qty), unitCost: m.unitCost, refType, refId, note, createdById: userId,
       })),
     });
