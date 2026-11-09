@@ -357,7 +357,7 @@ export default async function OtdelKadrPage({ searchParams }: {
           <OrgChart employees={orgEmployees} positions={orgPositions} stageCounts={stageCounts} />
           <p className="px-1 text-xs text-slate-500">
             Bo&apos;limlar tizim rollariga bog&apos;langan — qo&apos;shish yoki olib tashlash uchun dasturchi kerak.
-            Ishchi lavozimni boshqa bo&apos;lim tagiga direktor ko&apos;chiradi: <span className="font-medium text-slate-700">Boshqaruv → Lavozimlar va login shablonlari</span>, <span className="font-medium text-slate-700">Bo&apos;lim</span> ustuni.
+            Ishchi lavozimni boshqa bo&apos;lim tagiga direktor ko&apos;chiradi: <Link href="/otdel-kadr?tab=lavozimlar" className="font-medium text-slate-700 underline-offset-2 hover:underline">Lavozimlar va login shablonlari</Link>, <span className="font-medium text-slate-700">Bo&apos;lim</span> ustuni.
           </p>
         </div>
       )}

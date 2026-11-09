@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Check, Copy, KeyRound, RotateCcw, Save, ShieldCheck, UserPlus } from "lucide-react";
 import { createUser, resetPassword, saveSupplyDirectorLimit, savePayablesSince, saveVatPayer, saveProductionChannel, saveUserPerms, copyUserPerms, toggleUser, updateUser, applyPermTemplate, bulkSaveUserPerms } from "./actions";
 import { MoneyInput } from "@/components/money-input";
@@ -248,7 +249,7 @@ export function BulkPermsBar({ templates, modules, total }: { templates: PermTem
             </label>
           )}
           {tpl && <p className="basis-full text-xs text-slate-500">{tpl.summary}</p>}
-          {templates.length === 0 && <p className="basis-full text-xs text-slate-500">Lavozim shablonlari hali yo&apos;q — ularni Otdel kadr → Ishchi lavozimlar da «Login shabloni» orqali yarating.</p>}
+          {templates.length === 0 && <p className="basis-full text-xs text-slate-500">Lavozim shablonlari hali yo&apos;q — ularni <Link href="/otdel-kadr?tab=lavozimlar" className="font-medium text-slate-700 underline-offset-2 hover:underline">Lavozimlar va login shablonlari</Link> sahifasida «Login shabloni» orqali yarating.</p>}
         </div>
       )}
 

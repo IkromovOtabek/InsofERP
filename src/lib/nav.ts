@@ -155,8 +155,9 @@ export const NAV: NavItem[] = [
   { href: "/settings/ish-tartibi",      label: "Ish tartibi va bayramlar", roles: ["HR"], group: "Otdel kadr" },
   // Logistika haydovchiga kirishni Haydovchilar kartasida beradi (`logistika` → `driver_login`), Xodimlar unga kerak emas
   { href: "/employees",   label: "Xodimlar",           roles: ["HR"], group: "Boshqaruv" },
-  // Ishchi lavozimlar va ularning login shablonlari kadr kabinetidan olingan — faqat direktor menyusida (Boshqaruv)
-  { href: "/otdel-kadr?tab=lavozimlar", label: "Lavozimlar va login shablonlari", roles: ["HR"], group: "Boshqaruv", menuFor: ["DIRECTOR"] },
+  // Ishchi lavozimlar va ularning login shablonlari — menyuda yo'q, faqat direktor havola orqali ochadi
+  // (Otdel kadr → Bo'limlar va Sozlamalar → foydalanuvchi formasidagi havolalar)
+  { href: "/otdel-kadr?tab=lavozimlar", label: "Lavozimlar va login shablonlari", roles: ["HR"], group: "Boshqaruv", hidden: true },
   // Haydovchi ERP'ga kirsa faqat shu sahifani ko'radi — o'zining reyslari (qolgan bo'limlar yopiq)
   { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika", menuFor: ["DRIVER"] },
   // Brigadir ham xuddi shunday: vebda faqat o'z brigadasiga tayinlangan topshiriqlar
