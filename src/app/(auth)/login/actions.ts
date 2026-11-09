@@ -8,6 +8,7 @@ import { TOUR_COOKIE } from "@/lib/tour";
 import { ARENDA_DENIED, ARENDA_PATH, arendaHost, isArendaHost } from "@/lib/arenda-host";
 import { OWN_PAGE_ONLY, moduleForPath, pathAllowed } from "@/lib/nav";
 import { pathOff } from "@/lib/platform-modules";
+import { startPage } from "@/lib/menu-prefs";
 import { looksLikePhone, loginWithAppPhone } from "@/lib/eco/app-login";
 import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
 import { confirmLoginCode, requestLoginCode } from "@/lib/code-login";
@@ -29,9 +30,10 @@ import { recordLogin } from "@/lib/visits";
 async function homeAfterLogin(): Promise<{ to: string } | { error: string }> {
   if (!isArendaHost(await headers())) {
     const host = arendaHost();
-    const s = host ? await getSession() : null;
+    const s = await getSession();
     if (host && s && OWN_PAGE_ONLY[s.role] === ARENDA_PATH) { await logout(); return { to: `https://${host}/login` }; }
-    return { to: "/dashboard" };
+    // Xodim o'zi tanlagan kirish sahifasi (Mening hisobim → «Kabinetim»), bo'lmasa — Bosh sahifa
+    return { to: (s && (await startPage(s))) || "/dashboard" };
   }
   const s = await getSession();
   const own = s ? OWN_PAGE_ONLY[s.role] : undefined;

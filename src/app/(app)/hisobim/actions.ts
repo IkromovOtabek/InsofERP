@@ -7,6 +7,7 @@ import { issueSession, requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, type ActionState } from "@/lib/action";
 import { confirmSelfChange, requestSelfChangeCode } from "@/lib/self-account";
+import { menuBase, type MenuPrefs } from "@/lib/menu-prefs";
 
 export type CodeState = { ok?: boolean; error?: string; devCode?: string } | undefined;
 
@@ -45,4 +46,29 @@ export async function saveMyProfile(_prev: ActionState, fd: FormData): Promise<A
   await issueSession(u);
   revalidatePath("/", "layout");
   return { ok: true };
+}
+
+/**
+ * «Kabinetim» — o'z menyusi (`lib/menu-prefs.ts`). Har qanday rol, faqat o'zi uchun. Qabul qilinadigan bandlar —
+ * xodim menyusidagilar (`menuBase`): begona yo'l yozib qo'yib bo'lmaydi. Ruxsatga ta'sir qilmaydi, faqat ko'rinish.
+ */
+export async function saveMenuPrefs(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession();
+  const base = menuBase(s).map((i) => i.href);
+  const allowed = new Set(base);
+  const pick = (k: string) => [...new Set(fd.getAll(k).map(String))].filter((h) => allowed.has(h));
+  const hidden = pick("hidden");
+  if (hidden.length >= base.length) return { error: "Menyuda kamida bitta band qolishi kerak" };
+  const order = pick("order");
+  const homeRaw = String(fd.get("home") ?? "");
+  const prefs: MenuPrefs = {
+    flat: fd.get("view") === "flat",
+    hidden,
+    // Sukut tartibi saqlanmaydi — keyin qo'shilgan bo'limlar ham o'z joyida chiqsin
+    order: order.join("|") === base.filter((h) => order.includes(h)).join("|") ? [] : order,
+    home: allowed.has(homeRaw) ? homeRaw : null,
+  };
+  await db.user.update({ where: { id: s.userId }, data: { menuPrefs: prefs } });
+  revalidatePath("/", "layout");
+  return { ok: true, note: "Saqlandi — menyu yangilandi" };
 }

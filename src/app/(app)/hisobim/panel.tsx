@@ -1,19 +1,24 @@
-import { KeyRound, Palette, UserRound } from "lucide-react";
+import { KeyRound, Palette, SlidersHorizontal, UserRound } from "lucide-react";
 import type { Session } from "@/lib/auth";
-import { ROLE_LABELS } from "@/lib/nav";
+import { OWN_PAGE_ONLY, ROLE_LABELS } from "@/lib/nav";
+import { db } from "@/lib/db";
+import { menuBase, menuPrefs, sortByOrder } from "@/lib/menu-prefs";
 import { selfAccount } from "@/lib/self-account";
 import { Badge, Card, CardHeader } from "@/components/ui";
 import { PalettePicker } from "@/components/palette-picker";
 import { CredentialsForm, ProfileForm } from "./forms";
+import { MenuPrefsForm } from "./menu-form";
 
 /**
  * "Mening hisobim" — `/hisobim` sahifasi va direktorning Sozlamalar → "Mening hisobim" tabi bir xil.
- * Har qanday xodim: login va parol (Telegram kodi bilan), fon (palitra). Direktor qo'shimcha: o'z F.I.O. si.
+ * Har qanday xodim: login va parol (Telegram kodi bilan), fon (palitra), «Kabinetim» — o'z menyusi. Direktor qo'shimcha: o'z F.I.O. si.
  */
 export async function SelfAccountPanel({ s }: { s: Session }) {
   const acc = await selfAccount(s.userId);
   if (!acc) return null;
   const director = s.role === "DIRECTOR";
+  const base = menuBase(s);
+  const prefs = menuPrefs((await db.user.findUnique({ where: { id: s.userId }, select: { menuPrefs: true } }))?.menuPrefs, s.role);
 
   return (
     <div className="grid max-w-3xl gap-5">
@@ -38,6 +43,18 @@ export async function SelfAccountPanel({ s }: { s: Session }) {
         <CardHeader icon={Palette} title="Fon" description="ERP ranglari — faqat sizda va shu qurilmada o'zgaradi" />
         <PalettePicker />
       </Card>
+
+      {/* Sidebar pastidagi «Menyuni sozlash» tugmasi shu yerga (#kabinet) olib keladi */}
+      <div id="kabinet" className="scroll-mt-20">
+        <Card>
+          <CardHeader icon={SlidersHorizontal} title="Kabinetim — menyu" description="Chap menyuni o'zingizga moslang: bo'limlarsiz ko'rinish, keraksiz bandlarni yashirish, tartib va kirish sahifasi" />
+          <MenuPrefsForm
+            items={sortByOrder(base, prefs.order).map((i) => ({ href: i.href, label: i.label, group: i.group }))}
+            hidden={prefs.hidden.filter((h) => base.some((i) => i.href === h))}
+            flat={prefs.flat} home={prefs.home} showHome={!OWN_PAGE_ONLY[s.role]}
+            defaultOrder={base.map((i) => i.href)} flatDefault={menuPrefs(null, s.role).flat} />
+        </Card>
+      </div>
     </div>
   );
 }

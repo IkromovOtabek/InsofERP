@@ -53,6 +53,9 @@ model User {
   /// Parol vaqtinchalik (dispetcher haydovchiga bergan): shu vaqtgacha amal qiladi, kirishda xodim o'z parolini
   /// o'rnatmaguncha sessiya berilmaydi (`lib/temp-password.ts`). null — oddiy parol.
   tempPasswordUntil DateTime?
+  /// Xodimning o'z menyusi (Mening hisobim → «Kabinetim»): bo'limlarsiz ko'rinish, yashirilgan/tartiblangan bandlar,
+  /// kirgandan keyingi sahifa (`lib/menu-prefs.ts`). null — rol bo'yicha sukut.
+  menuPrefs      Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

@@ -18,12 +18,12 @@ import { NavProgress } from "@/components/nav-progress";
 import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
-  "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/customers": Users, "/leads": Inbox, "/amocrm": SquareKanban, "/takliflar": FileBadge2, "/e-commerce": Store, "/production": Factory, "/recipes": FlaskConical,
+  "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/sales/realizatsiya": Sheet, "/customers": Users, "/leads": Inbox, "/amocrm": SquareKanban, "/takliflar": FileBadge2, "/e-commerce": Store, "/production": Factory, "/recipes": FlaskConical,
   "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/mexanik-sorovlar": Wrench, "/receipts": PackagePlus, "/jonatma": Forklift, "/oluvchi": PackageOpen, "/taminot/": FileText, "/suppliers": Handshake, "/invoices": Receipt,
   "/marketing": Gauge, "/marketing/kontent": CalendarRange, "/marketing/studiya": Sparkles, "/marketing/media": Images, "/marketing/target": Crosshair, "/marketing/sozlamalar": SlidersHorizontal, "/marketing/agent": Bot,
   "/payments": Landmark, "/pul-qabul": HandCoins, "/cashflow": ArrowLeftRight, "/arenda": Store, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
   "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=ish-vaqti": Clock, "/otdel-kadr?tab=taqvim": CakeSlice, "/otdel-kadr?tab=jarima-bonus": Scale, "/vazifalar": ListTodo, "/ish-haqi": Wallet,
-  "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/settings/boshlangich-qoldiq": Scale, "/settings/davomat": SlidersHorizontal, "/settings/ish-tartibi": CalendarDays,
+  "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/moliya": BadgeDollarSign, "/settings/boshlangich-qoldiq": Scale, "/settings/davomat": SlidersHorizontal, "/settings/ish-tartibi": CalendarDays,
   "/logistika/buyurtmalar": PackageCheck, "/logistika/kalendar": CalendarClock, "/logistika/transport": Container, "/logistika/haydovchilar": IdCard, "/logistika/tabel": TableProperties, "/logistika/realizatsiya": Sheet,
   "/logistika/obyektlar": MapPin, "/logistika/monitoring": Radar, "/logistika/nakladnoylar": FileText, "/logistika/yetkazish": PackageCheck,
   "/logistika/yoqilgi": Fuel, "/logistika/xarajatlar": Wallet, "/logistika/hisobotlar": FileChartColumn, "/logistika/analitika": ChartPie, "/logistika/sozlamalar": SlidersHorizontal,
@@ -56,7 +56,8 @@ function bestMatch(path: string, items: NavItem[]) {
   return best;
 }
 
-function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean }) {
+/** `flat` — bo'limlarsiz menyu (Mening hisobim → «Kabinetim»): guruh sarlavhalari yo'q, bandlar bitta ro'yxatda ikonkasi bilan. */
+function NavList({ items, onNavigate, collapsed, flat }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean; flat?: boolean }) {
   const path = usePathname();
   // Ba'zi bandlar bitta sahifaning tablari (`/otdel-kadr?tab=…`) — avval so'rov satri bilan qidiriladi,
   // topilmasa oddiy yo'l bo'yicha (masalan /tasks?brigade=… da "Topshiriqlar" yonib tursin).
@@ -84,6 +85,49 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
   // Har bir yozuv (guruh sarlavhasi, band, ichki band) ketma-ket paydo bo'ladi — --i tartib raqami CSS'da kechikishga aylanadi
   let seq = 0;
   const stagger = (j: number) => ({ "--i": seq++, "--j": j } as React.CSSProperties);
+  // Bitta band (ichki bandlari bilan). `hasHeader` — bo'lim ichida: ikonka o'rniga nuqta (ikonka faqat yig'ilgan menyuda)
+  const renderItem = (i: NavItem, j: number, hasHeader: boolean) => {
+    const Icon = ICONS[i.href] ?? LayoutGrid;
+    const isActive = active === i.href;
+    const childActive = (i.children ?? []).some((c) => active === c.href);
+    const expanded = open[i.href] ?? (isActive || childActive);
+    return (
+      <div key={i.href} style={stagger(j)} className="sb-item">
+        <div className="relative flex items-center">
+          {/* Yig'ilganda yozuv ko'rinmaydi, shuning uchun nomni sichqoncha ostida ko'rsatamiz */}
+          <Link href={i.href} onClick={onNavigate} title={collapsed ? i.label : undefined} data-tour={`nav:${i.href}`}
+            className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[17px] pointer-coarse:py-3 pointer-coarse:text-[18px]",
+              isActive ? "bg-slate-100 font-medium text-slate-900" : childActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900")}>
+            {isActive && <span className="sb-active absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-brand-500" />}
+            {/* Bo'lim ichidagi bandlarda ikonka o'rniga nuqta (faol — brend rangi, kattaroq); ikonka faqat yig'ilgan menyuda — u yerda nom ko'rinmaydi */}
+            {hasHeader && <span aria-hidden className={cn("sb-dot shrink-0 rounded-full transition-all [.sb-collapsed_&]:hidden", isActive || childActive ? "h-2 w-2 bg-brand-500" : "h-1.5 w-1.5 bg-slate-300 group-hover:bg-brand-400")} />}
+            <Icon size={19} className={cn("sb-icon shrink-0", hasHeader && "hidden [.sb-collapsed_&]:block", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />
+            <span className="sb-fade truncate">{i.label}</span>
+          </Link>
+          {i.children && (
+            <button type="button" aria-label={expanded ? "Yopish" : "Ochish"} onClick={() => setOpen((o) => ({ ...o, [i.href]: !expanded }))}
+              className="sb-caret absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900 pointer-coarse:h-10 pointer-coarse:w-10">
+              <ChevronDown size={15} className={cn("transition-transform", expanded ? "rotate-180" : "")} />
+            </button>
+          )}
+        </div>
+        {i.children && expanded && (
+          <div className="sb-sub animate-fade-up ml-[22px] mt-0.5 space-y-0.5 border-l border-slate-200 pl-3">
+            {i.children.map((c, ci) => {
+              const ca = active === c.href;
+              return (
+                <Link key={c.href} href={c.href} onClick={onNavigate} style={{ "--i": ci, "--j": j + ci + 1 } as React.CSSProperties}
+                  className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[16px] pointer-coarse:py-2.5 pointer-coarse:text-[17px]", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
+                  <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />
+                  <span className="truncate">{c.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
   const renderGroup = ({ g, items }: { g: string; items: NavItem[] }) => {
         const hasHeader = g !== "Asosiy";
         const groupActive = isGroupActive(items);
@@ -108,54 +152,20 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
               <div className="min-h-0 overflow-hidden">
                 {/* Guruh ichidagi bandlar sarlavhadan chekinib, chap chiziq bilan ajraladi (sarlavha bilan bir qatorda turmasin) */}
                 <div className={cn("space-y-0.5", hasHeader && "sb-gitems ml-[18px] mt-0.5 border-l border-slate-200 pl-2")}>
-            {items.map((i, j) => {
-              const Icon = ICONS[i.href];
-              const isActive = active === i.href;
-              const childActive = (i.children ?? []).some((c) => active === c.href);
-              const expanded = open[i.href] ?? (isActive || childActive);
-              return (
-                <div key={i.href} style={stagger(j)} className="sb-item">
-                  <div className="relative flex items-center">
-                    {/* Yig'ilganda yozuv ko'rinmaydi, shuning uchun nomni sichqoncha ostida ko'rsatamiz */}
-                    <Link href={i.href} onClick={onNavigate} title={collapsed ? i.label : undefined} data-tour={`nav:${i.href}`}
-                      className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[17px] pointer-coarse:py-3 pointer-coarse:text-[18px]",
-                        isActive ? "bg-slate-100 font-medium text-slate-900" : childActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900")}>
-                      {isActive && <span className="sb-active absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-brand-500" />}
-                      {/* Bo'lim ichidagi bandlarda ikonka o'rniga nuqta (faol — brend rangi, kattaroq); ikonka faqat yig'ilgan menyuda — u yerda nom ko'rinmaydi */}
-                      {hasHeader && <span aria-hidden className={cn("sb-dot shrink-0 rounded-full transition-all [.sb-collapsed_&]:hidden", isActive || childActive ? "h-2 w-2 bg-brand-500" : "h-1.5 w-1.5 bg-slate-300 group-hover:bg-brand-400")} />}
-                      {Icon && <Icon size={19} className={cn("sb-icon shrink-0", hasHeader && "hidden [.sb-collapsed_&]:block", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />}
-                      <span className="sb-fade truncate">{i.label}</span>
-                    </Link>
-                    {i.children && (
-                      <button type="button" aria-label={expanded ? "Yopish" : "Ochish"} onClick={() => setOpen((o) => ({ ...o, [i.href]: !expanded }))}
-                        className="sb-caret absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900 pointer-coarse:h-10 pointer-coarse:w-10">
-                        <ChevronDown size={15} className={cn("transition-transform", expanded ? "rotate-180" : "")} />
-                      </button>
-                    )}
-                  </div>
-                  {i.children && expanded && (
-                    <div className="sb-sub animate-fade-up ml-[22px] mt-0.5 space-y-0.5 border-l border-slate-200 pl-3">
-                      {i.children.map((c, ci) => {
-                        const ca = active === c.href;
-                        return (
-                          <Link key={c.href} href={c.href} onClick={onNavigate} style={{ "--i": ci, "--j": j + ci + 1 } as React.CSSProperties}
-                            className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[16px] pointer-coarse:py-2.5 pointer-coarse:text-[17px]", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
-                            <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />
-                            <span className="truncate">{c.label}</span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {items.map((i, j) => renderItem(i, j, hasHeader))}
                 </div>
               </div>
             </div>
           </div>
         );
   };
+  if (flat) {
+    return (
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
+        {items.map((i, j) => renderItem(i, j, false))}
+      </nav>
+    );
+  }
   return (
     <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-2">
       {mainGroups.map(renderGroup)}
@@ -182,8 +192,8 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
   );
 }
 
-function SidebarInner({ items, user, brand, product, apk, ios, onNavigate, collapsed, onToggle }:
-  { items: NavItem[]; user: User; brand: string; product: string; apk?: string | null; ios?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
+function SidebarInner({ items, flat, user, brand, product, apk, ios, onNavigate, collapsed, onToggle }:
+  { items: NavItem[]; flat?: boolean; user: User; brand: string; product: string; apk?: string | null; ios?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
     <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-(--sidebar) text-slate-700">
       {/* Yig'ish/yoyish strelkasi — chekkaga osilgan dumaloq tugma. Strelka yo'nalishini CSS buradi. */}
@@ -202,7 +212,7 @@ function SidebarInner({ items, user, brand, product, apk, ios, onNavigate, colla
           <div data-no-translit className="truncate text-[11px] text-slate-500">{brand}</div>
         </div>
       </div>
-      <NavList items={items} onNavigate={onNavigate} collapsed={collapsed} />
+      <NavList items={items} onNavigate={onNavigate} collapsed={collapsed} flat={flat} />
       <div className="border-t border-slate-200/80 p-3">
         {/* Mobil ilova — hamma rol uchun, haydovchi ham shu yerdan yuklab oladi.
             Android — serverdagi APK, iPhone — TestFlight / App Store havolasi. Fayl yoki havola
@@ -248,6 +258,8 @@ function SidebarInner({ items, user, brand, product, apk, ios, onNavigate, colla
               <div className="truncate text-[11px] text-slate-500">{user.roleLabel} · Mening hisobim</div>
             </div>
           </Link>
+          {/* O'z kabinetini sozlash: bo'limlarsiz menyu, bandlarni yashirish/tartiblash, kirish sahifasi */}
+          <Link href="/hisobim#kabinet" onClick={onNavigate} title="Menyuni sozlash" aria-label="Menyuni sozlash" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 pointer-coarse:h-11 pointer-coarse:w-11"><SlidersHorizontal size={15} /></Link>
           <form action="/api/logout" method="post">
             <button title="Chiqish" aria-label="Chiqish" data-tour="logout" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-50 hover:text-red-600 pointer-coarse:h-11 pointer-coarse:w-11"><LogOut size={15} /></button>
           </form>
@@ -298,8 +310,8 @@ function currentLabel(path: string, items: NavItem[]) {
 /** Ochilganda chap menyu yig'iladigan sahifalar — jadval ekranning butun eniga yoyilsin (saqlangan tanlov o'zgarmaydi). */
 const WIDE_PAGES = [/^\/orders\/kun\//];
 
-export function AppShell({ items, user, brand, product = "Insof ERP", ai = false, apk = null, ios = null, tour, children }:
-  { items: NavItem[]; user: User; brand: string; product?: string; ai?: boolean; apk?: string | null; ios?: string | null; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
+export function AppShell({ items, flat = false, user, brand, product = "Insof ERP", ai = false, apk = null, ios = null, tour, children }:
+  { items: NavItem[]; flat?: boolean; user: User; brand: string; product?: string; ai?: boolean; apk?: string | null; ios?: string | null; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
@@ -340,7 +352,7 @@ export function AppShell({ items, user, brand, product = "Insof ERP", ai = false
       <NavHistoryTracker />
       {/* Desktop sidebar */}
       <aside data-tour="sidebar" className="fixed inset-y-0 left-0 z-30 hidden w-[var(--sb-w)] transition-[width] duration-200 lg:block">
-        <SidebarInner items={items} user={user} brand={brand} product={product} apk={apk} ios={ios} collapsed={collapsed} onToggle={toggleSidebar} />
+        <SidebarInner items={items} flat={flat} user={user} brand={brand} product={product} apk={apk} ios={ios} collapsed={collapsed} onToggle={toggleSidebar} />
       </aside>
 
       {/* Mobile drawer */}
@@ -348,7 +360,7 @@ export function AppShell({ items, user, brand, product = "Insof ERP", ai = false
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menyu">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
           <aside className="absolute inset-y-0 left-0 w-[min(20rem,86vw)] shadow-(--shadow-pop) animate-fade-up">
-            <SidebarInner items={items} user={user} brand={brand} product={product} apk={apk} ios={ios} onNavigate={() => setOpen(false)} />
+            <SidebarInner items={items} flat={flat} user={user} brand={brand} product={product} apk={apk} ios={ios} onNavigate={() => setOpen(false)} />
             <button onClick={() => setOpen(false)} aria-label="Menyuni yopish" className="absolute right-2 top-3 flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={20} /></button>
           </aside>
         </div>
