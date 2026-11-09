@@ -28,6 +28,7 @@ import type { DetailField, MobileDetail } from "./detail";
 import type { HomeRow, HomeSection, Tone } from "./home";
 import type { BrigadeIssueKind, Role } from "@/generated/prisma";
 import { procReportDetail } from "./sklad-extra";
+import { opAt } from "@/lib/format";
 
 /**
  * Dashboard kartasi bosilganda ochiladigan "batafsil" kartochka — barcha rollar uchun.
@@ -481,7 +482,7 @@ async function lateTrips({ r }: Ctx): Promise<Part> {
 async function fuelLogs(r: DashRange, driverId: string | null): Promise<Part> {
   const rows = await db.fuelLog.findMany({
     where: { date: { gte: r.from, lt: r.to }, cancelledAt: null, ...(driverId ? { driverId } : {}) }, orderBy: { date: "desc" },
-    select: { id: true, date: true, liters: true, amount: true, pricePerL: true, fuelType: true, station: true, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
+    select: { id: true, date: true, createdAt: true, liters: true, amount: true, pricePerL: true, fuelType: true, station: true, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
   });
   const amount = sumBy(rows, (x) => sum(x.amount)), liters = sumBy(rows, (x) => sum(x.liters));
   return {
@@ -492,7 +493,7 @@ async function fuelLogs(r: DashRange, driverId: string | null): Promise<Part> {
       !driverId && breakdown("Haydovchilar bo'yicha", rows, (x) => x.driver?.fullName ?? "—", (x) => sum(x.amount), short, { icon: "id-card", unitWord: "yozuv" }),
       breakdown("Yoqilg'i turi", rows, (x) => FUEL_TYPE[x.fuelType], (x) => sum(x.liters), (v) => `${num(v)} l`, { icon: "droplets", unitWord: "yozuv" }),
       byDays(r, rows, (x) => x.date, (l) => short(sumBy(l, (x) => sum(x.amount))), (l) => `${num(sumBy(l, (x) => sum(x.liters)))} l`),
-      sec("Yozuvlar", rows.slice(0, 50).map((x) => ({ id: x.id, title: `${x.vehicle.plate} · ${num(sum(x.liters))} l ${FUEL_TYPE[x.fuelType]}`, subtitle: [day(x.date), x.driver?.fullName, x.station, x.trip?.deliveryNoteNo].filter(Boolean).join(" · "), right: short(sum(x.amount)) })), { icon: "droplets", empty: "Bu davrda yoqilg'i quyilmagan" }),
+      sec("Yozuvlar", rows.slice(0, 50).map((x) => ({ id: x.id, title: `${x.vehicle.plate} · ${num(sum(x.liters))} l ${FUEL_TYPE[x.fuelType]}`, subtitle: [opAt(x.date, x.createdAt, day), x.driver?.fullName, x.station, x.trip?.deliveryNoteNo].filter(Boolean).join(" · "), right: short(sum(x.amount)) })), { icon: "droplets", empty: "Bu davrda yoqilg'i quyilmagan" }),
     ),
   };
 }
@@ -500,7 +501,7 @@ async function fuelLogs(r: DashRange, driverId: string | null): Promise<Part> {
 async function transportCosts({ r }: Ctx): Promise<Part> {
   const rows = await db.transportExpense.findMany({
     where: { date: { gte: r.from, lt: r.to }, cancelledAt: null }, orderBy: { date: "desc" },
-    select: { id: true, date: true, kind: true, amount: true, note: true, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
+    select: { id: true, date: true, createdAt: true, kind: true, amount: true, note: true, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
   });
   const total = sumBy(rows, (x) => sum(x.amount));
   return {
@@ -510,7 +511,7 @@ async function transportCosts({ r }: Ctx): Promise<Part> {
       breakdown("Tur bo'yicha", rows, (x) => EXPENSE_KIND[x.kind], (x) => sum(x.amount), short, { icon: "wallet", unitWord: "yozuv" }),
       breakdown("Transport bo'yicha", rows, (x) => x.vehicle?.plate ?? "Umumiy", (x) => sum(x.amount), short, { icon: "truck", unitWord: "yozuv" }),
       byDays(r, rows, (x) => x.date, (l) => short(sumBy(l, (x) => sum(x.amount)))),
-      sec("Yozuvlar", rows.slice(0, 50).map((x) => ({ id: x.id, title: `${EXPENSE_KIND[x.kind]}${x.vehicle ? ` · ${x.vehicle.plate}` : ""}`, subtitle: [day(x.date), x.driver?.fullName, x.trip?.deliveryNoteNo, x.note].filter(Boolean).join(" · "), right: short(sum(x.amount)) })), { icon: "wallet", empty: "Bu davrda xarajat yo'q" }),
+      sec("Yozuvlar", rows.slice(0, 50).map((x) => ({ id: x.id, title: `${EXPENSE_KIND[x.kind]}${x.vehicle ? ` · ${x.vehicle.plate}` : ""}`, subtitle: [opAt(x.date, x.createdAt, day), x.driver?.fullName, x.trip?.deliveryNoteNo, x.note].filter(Boolean).join(" · "), right: short(sum(x.amount)) })), { icon: "wallet", empty: "Bu davrda xarajat yo'q" }),
     ),
   };
 }
@@ -559,7 +560,7 @@ async function driverKm({ user, r }: Ctx): Promise<Part> {
 
 async function goodsReceipts(r: DashRange, title: string): Promise<Part> {
   const [rows, prev] = await Promise.all([
-    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true, material: { select: { id: true, name: true, unit: true } } } } } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, createdAt: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true, material: { select: { id: true, name: true, unit: true } } } } } }),
     db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }),
   ]);
   const amt = (x: (typeof rows)[number]) => sumBy(x.items, (i) => lineTotal(i));
@@ -573,7 +574,7 @@ async function goodsReceipts(r: DashRange, title: string): Promise<Part> {
       sec("Materiallar bo'yicha", groupBy(items, (i) => i.material.id).map(([id, list]) => ({ id, list, v: sumBy(list, (i) => lineTotal(i)) })).sort((a, b) => b.v - a.v).slice(0, 15)
         .map((g) => ({ id: g.id, title: g.list[0]!.material.name, subtitle: `${inUnit(sumBy(g.list, (i) => sum(i.qty)), g.list[0]!.material.unit)} · ${share(g.v, amount)}`, right: short(g.v) })), { icon: "layers", target: "stock" }),
       byDays(r, rows, (x) => x.date, (l) => short(sumBy(l, amt)), (l) => cnt(l.length, "hujjat")),
-      sec("Hujjatlar", rows.slice(0, 50).map((x) => ({ id: x.id, title: `${x.docNo} · ${x.supplier.name}`, subtitle: `${day(x.date)} · ${x.items.slice(0, 3).map((i) => i.material.name).join(", ")}${x.items.length > 3 ? ` +${x.items.length - 3}` : ""}`, right: short(amt(x)) })), { target: "receipts", empty: "Bu davrda kirim yo'q" }),
+      sec("Hujjatlar", rows.slice(0, 50).map((x) => ({ id: x.id, title: `${x.docNo} · ${x.supplier.name}`, subtitle: `${opAt(x.date, x.createdAt, day)} · ${x.items.slice(0, 3).map((i) => i.material.name).join(", ")}${x.items.length > 3 ? ` +${x.items.length - 3}` : ""}`, right: short(amt(x)) })), { target: "receipts", empty: "Bu davrda kirim yo'q" }),
     ),
   };
 }
@@ -599,11 +600,11 @@ async function lowStock(r?: DashRange): Promise<Part> {
   };
 }
 
-const MOVE_SELECT = { id: true, date: true, type: true, qty: true, note: true, createdBy: { select: { fullName: true } }, material: { select: { id: true, name: true, unit: true } }, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } } } as const;
-type MoveRow = { id: string; date: Date; type: string; qty: unknown; note: string | null; createdBy: { fullName: string }; material: { id: string; name: string; unit: string } | null; product: { name: string; unit: string } | null; brigade: { name: string } | null };
+const MOVE_SELECT = { id: true, date: true, createdAt: true, type: true, qty: true, note: true, createdBy: { select: { fullName: true } }, material: { select: { id: true, name: true, unit: true } }, product: { select: { name: true, unit: true } }, brigade: { select: { name: true } } } as const;
+type MoveRow = { id: string; date: Date; createdAt: Date; type: string; qty: unknown; note: string | null; createdBy: { fullName: string }; material: { id: string; name: string; unit: string } | null; product: { name: string; unit: string } | null; brigade: { name: string } | null };
 const moveName = (m: MoveRow) => m.material?.name ?? m.product?.name ?? "—";
 const moveUnit = (m: MoveRow) => m.material?.unit ?? m.product?.unit ?? "";
-const moveRow = (m: MoveRow): HomeRow => ({ id: m.id, title: `${MOVE_LABEL[m.type] ?? m.type} · ${moveName(m)}`, subtitle: [dt(m.date), m.brigade?.name, m.createdBy.fullName, m.note].filter(Boolean).join(" · "), right: `${sum(m.qty) > 0 ? "+" : ""}${inUnit(sum(m.qty), moveUnit(m))}`, tone: sum(m.qty) < 0 ? "warning" : "success" });
+const moveRow = (m: MoveRow): HomeRow => ({ id: m.id, title: `${MOVE_LABEL[m.type] ?? m.type} · ${moveName(m)}`, subtitle: [opAt(m.date, m.createdAt, day), m.brigade?.name, m.createdBy.fullName, m.note].filter(Boolean).join(" · "), right: `${sum(m.qty) > 0 ? "+" : ""}${inUnit(sum(m.qty), moveUnit(m))}`, tone: sum(m.qty) < 0 ? "warning" : "success" });
 /** Materiallar bo'yicha bo'lim — qator bosilsa xomashyo kartochkasi. */
 const movesByMaterial = (title: string, moves: MoveRow[], abs = true) =>
   sec(title, groupBy(moves.filter((m) => m.material), (m) => m.material!.id).map(([id, list]) => ({ id, list, v: sumBy(list, (m) => (abs ? Math.abs(sum(m.qty)) : sum(m.qty))) })).sort((a, b) => b.v - a.v).slice(0, 20)
@@ -771,9 +772,9 @@ async function mechTomorrow(kind: "orders" | "trucks", r?: DashRange): Promise<P
 
 // ───────────────────────── Pul: buxgalteriya, moliya, kassa ─────────────────────────
 
-const PAY_SELECT = { id: true, date: true, amount: true, note: true, customer: { select: { id: true, name: true } }, cashAccount: { select: { name: true } }, invoice: { select: { invoiceNo: true } } } as const;
-type PayRow = { id: string; date: Date; amount: unknown; note: string | null; customer: { id: string; name: string }; cashAccount: { name: string }; invoice: { invoiceNo: string } | null };
-const payRow = (p: PayRow): HomeRow => ({ id: p.id, title: p.customer.name, subtitle: [dt(p.date), p.cashAccount.name, p.invoice?.invoiceNo, p.note].filter(Boolean).join(" · "), right: short(sum(p.amount)), tone: "success" });
+const PAY_SELECT = { id: true, date: true, createdAt: true, amount: true, note: true, customer: { select: { id: true, name: true } }, cashAccount: { select: { name: true } }, invoice: { select: { invoiceNo: true } } } as const;
+type PayRow = { id: string; date: Date; createdAt: Date; amount: unknown; note: string | null; customer: { id: string; name: string }; cashAccount: { name: string }; invoice: { invoiceNo: string } | null };
+const payRow = (p: PayRow): HomeRow => ({ id: p.id, title: p.customer.name, subtitle: [opAt(p.date, p.createdAt, day), p.cashAccount.name, p.invoice?.invoiceNo, p.note].filter(Boolean).join(" · "), right: short(sum(p.amount)), tone: "success" });
 const paySum = (list: PayRow[]) => sumBy(list, (p) => sum(p.amount));
 
 async function payments(r: DashRange, title: string): Promise<Part> {
@@ -794,9 +795,9 @@ async function payments(r: DashRange, title: string): Promise<Part> {
   };
 }
 
-const TX_SELECT = { id: true, date: true, amount: true, type: true, category: true, counterparty: true, note: true, cashAccount: { select: { name: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } } as const;
-type TxRow = { id: string; date: Date; amount: unknown; type: string; category: string; counterparty: string | null; note: string | null; cashAccount: { name: string }; supplier: { name: string } | null; createdBy: { fullName: string } };
-const txRow = (t: TxRow): HomeRow => ({ id: t.id, title: `${t.category}${t.supplier || t.counterparty ? ` · ${t.supplier?.name ?? t.counterparty}` : ""}`, subtitle: [dt(t.date), t.cashAccount.name, t.createdBy.fullName, t.note].filter(Boolean).join(" · "), right: short(sum(t.amount)), tone: t.type === "EXPENSE" ? "warning" : "success" });
+const TX_SELECT = { id: true, date: true, createdAt: true, amount: true, type: true, category: true, counterparty: true, note: true, cashAccount: { select: { name: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } } as const;
+type TxRow = { id: string; date: Date; createdAt: Date; amount: unknown; type: string; category: string; counterparty: string | null; note: string | null; cashAccount: { name: string }; supplier: { name: string } | null; createdBy: { fullName: string } };
+const txRow = (t: TxRow): HomeRow => ({ id: t.id, title: `${t.category}${t.supplier || t.counterparty ? ` · ${t.supplier?.name ?? t.counterparty}` : ""}`, subtitle: [opAt(t.date, t.createdAt, day), t.cashAccount.name, t.createdBy.fullName, t.note].filter(Boolean).join(" · "), right: short(sum(t.amount)), tone: t.type === "EXPENSE" ? "warning" : "success" });
 const txSum = (list: TxRow[]) => sumBy(list, (t) => sum(t.amount));
 
 async function expenses(r: DashRange): Promise<Part> {
@@ -894,7 +895,7 @@ async function balances({ r }: Ctx): Promise<Part> {
 }
 
 async function invoicesIssued({ r }: Ctx): Promise<Part> {
-  const rows = await db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, invoiceNo: true, date: true, amount: true, status: true, customer: { select: { id: true, name: true } }, payments: { select: { amount: true } } } });
+  const rows = await db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, invoiceNo: true, date: true, createdAt: true, amount: true, status: true, customer: { select: { id: true, name: true } }, payments: { select: { amount: true } } } });
   const total = sumBy(rows, (i) => sum(i.amount));
   const paid = sumBy(rows, (i) => sumBy(i.payments, (p) => sum(p.amount)));
   const TONE: Record<string, Tone> = { OPEN: "warning", PARTIAL: "warning", PAID: "success", CANCELLED: "danger" };
@@ -905,7 +906,7 @@ async function invoicesIssued({ r }: Ctx): Promise<Part> {
       breakdown("Holat bo'yicha", rows, (i) => INVOICE_LABEL[i.status] ?? i.status, (i) => sum(i.amount), short, { icon: "receipt", unitWord: "schyot" }),
       breakdown("Mijozlar bo'yicha", rows, (i) => i.customer.name, (i) => sum(i.amount), short, { icon: "users", unitWord: "schyot", target: "customers", id: (l) => l[0]!.customer.id, limit: 10 }),
       byDays(r, rows, (i) => i.date, (l) => short(sumBy(l, (i) => sum(i.amount))), (l) => cnt(l.length, "schyot")),
-      sec("Schyotlar", rows.slice(0, 60).map((i) => ({ id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: [day(i.date), `to'landi ${short(sumBy(i.payments, (p) => sum(p.amount)))}`].filter(Boolean).join(" · "), right: short(sum(i.amount)), status: INVOICE_LABEL[i.status], tone: TONE[i.status] })), { target: "invoices", empty: "Bu davrda schyot yozilmagan" }),
+      sec("Schyotlar", rows.slice(0, 60).map((i) => ({ id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: [opAt(i.date, i.createdAt, day), `to'landi ${short(sumBy(i.payments, (p) => sum(p.amount)))}`].filter(Boolean).join(" · "), right: short(sum(i.amount)), status: INVOICE_LABEL[i.status], tone: TONE[i.status] })), { target: "invoices", empty: "Bu davrda schyot yozilmagan" }),
     ),
   };
 }

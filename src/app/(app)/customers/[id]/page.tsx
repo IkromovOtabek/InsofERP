@@ -7,7 +7,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { customerCredit, contractedIds } from "@/lib/finance";
 import { siteDebts } from "@/lib/customer-sites";
 import { SitesPanel } from "./sites-panel";
-import { money, date } from "@/lib/format";
+import { money, date, opAt } from "@/lib/format";
 import { Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Td, Th, Tr } from "@/components/ui";
 import { InvoiceStatusBadge } from "../../invoices/status";
 import { CustomerForm } from "../customer-form";
@@ -113,7 +113,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
                   return (
                     <Tr key={i.id}>
                       <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{i.invoiceNo}</Link> : i.invoiceNo}</Td>
-                      <Td className="whitespace-nowrap">{date(i.date)}</Td>
+                      <Td className="whitespace-nowrap">{opAt(i.date, i.createdAt)}</Td>
                       <Td right className="whitespace-nowrap">{money(i.amount)}</Td>
                       <Td right className={`whitespace-nowrap ${left > 0.005 && i.status !== "CANCELLED" ? "text-red-600" : "text-slate-400"}`}>{i.status === "CANCELLED" ? "—" : money(left)}</Td>
                       <Td><InvoiceStatusBadge status={i.status} /></Td>
@@ -133,7 +133,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
                 {payments.length === 0 && <Empty text="To'lov yo'q" icon={Wallet} />}
                 {payments.map((p) => (
                   <Tr key={p.id}>
-                    <Td className="whitespace-nowrap">{date(p.date)}</Td>
+                    <Td className="whitespace-nowrap">{opAt(p.date, p.createdAt)}</Td>
                     <Td className="text-slate-600">{p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.register ? "realizatsiya" : p.order ? `avans · zayavka ${date(p.order.deliveryDate)}` : "taqsimlanmagan"}</Td>
                     <Td className="text-slate-500">{p.cashAccount.name}</Td>
                     <Td right className="whitespace-nowrap font-medium text-emerald-700">+{money(p.amount)}</Td>

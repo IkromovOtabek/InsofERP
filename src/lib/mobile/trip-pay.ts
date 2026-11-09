@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { approveTripPays, fuelNormText, PAY_TYPE_LABEL, PAY_TYPES, payTrips, pendingApprovalWhere, priceTrip, rejectTripPay, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
-import { dateTime, fmtNum, money } from "@/lib/format";
+import { dateRu, dateTime, fmtNum, money, time } from "@/lib/format";
 import type { MobileUser } from "./auth";
 import type { MobileDetail } from "./detail";
 import { can } from "./detail";
@@ -27,7 +27,7 @@ function payState(r: PayTripRow): { status: string; tone: HomeRow["tone"] } {
 const row = (r: PayTripRow): HomeRow => ({
   id: r.id,
   title: `${r.no} · ${r.driver}`,
-  subtitle: `${dateTime(r.deliveredAt)} · ${r.plate} · ${fmtNum(r.km, 0)} km${wait(r)}${r.workHours != null ? ` · ${fmtNum(r.workHours, 1)} soat` : ""}`,
+  subtitle: `${dateRu(r.deliveredAt)} ${time(r.deliveredAt)} · ${r.plate} · ${fmtNum(r.km, 0)} km${wait(r)}${r.workHours != null ? ` · ${fmtNum(r.workHours, 1)} soat` : ""}`,
   right: money(r.amount ?? r.suggested),
   ...payState(r),
 });

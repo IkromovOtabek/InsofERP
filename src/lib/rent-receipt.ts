@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { fmtNum, date } from "./format";
+import { fmtNum, opAt } from "./format";
 import { qrKey, qrKeyValid } from "./qr-key";
 import { RENT_ELEC_CATEGORY, RENT_METHOD_LABEL, monthLabel, rentFor } from "./rent";
 import { shopLedger } from "./rent-tenant";
@@ -72,7 +72,7 @@ export async function notifyRentPayment(txId: string): Promise<void> {
     `Do'kon: ${r.shop.name} (${r.shop.location})`,
     `Summa: ${fmtNum(r.amount)} so'm (${RENT_METHOD_LABEL[r.tx.method].toLowerCase()})`,
     ...(r.forLabel ? [`${r.forLabel.label}: ${r.forLabel.value}`] : []),
-    `Sana: ${date(r.tx.date)} · kvitansiya ${r.no}`,
+    `Sana: ${opAt(r.tx.date, r.tx.createdAt)} · kvitansiya ${r.no}`,
     "",
     r.debt > 1 ? `Qolgan ${r.elec ? "svet " : ""}qarz: ${fmtNum(r.debt)} so'm` : r.debt < -1 ? `Avans (ortiqcha to'lov): ${fmtNum(-r.debt)} so'm` : "Qarzingiz yo'q. Rahmat!",
     ...(origin ? ["", `Kvitansiya: ${origin}${rentReceiptPath(r.tx.id)}`] : []),

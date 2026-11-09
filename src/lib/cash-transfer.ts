@@ -175,7 +175,7 @@ export async function listTransfers(where: { from: Date; to: Date; accountId?: s
     include: { fromAccount: { select: { name: true, type: true } }, toAccount: { select: { name: true, type: true } }, createdBy: { select: { fullName: true } }, cancelledBy: { select: { fullName: true } } },
   });
   return rows.map((t) => ({
-    id: t.id, docNo: t.docNo, date: t.date, amount: Number(t.amount), fee: Number(t.fee ?? 0), note: t.note,
+    id: t.id, docNo: t.docNo, date: t.date, createdAt: t.createdAt, amount: Number(t.amount), fee: Number(t.fee ?? 0), note: t.note,
     from: t.fromAccount.name, fromType: t.fromAccount.type, to: t.toAccount.name, toType: t.toAccount.type,
     by: t.createdBy.fullName, cancelledAt: t.cancelledAt, cancelReason: t.cancelReason, cancelledBy: t.cancelledBy?.fullName ?? null,
   }));

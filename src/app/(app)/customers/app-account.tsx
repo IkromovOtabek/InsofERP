@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Smartphone, Search, Link2, CheckCircle2, Clock, WifiOff } from "lucide-react";
 import { Badge, Button, Input } from "@/components/ui";
-import { date } from "@/lib/format";
+import { dateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { EcoUnlinkedCustomer } from "@/lib/eco/client";
 import type { AppStatus } from "@/lib/eco/customers";
@@ -66,7 +66,7 @@ export function AppAccount({ customerId, phone, initial, canLink }: { customerId
             {registered.map((m) => (
               <li key={m.userId} className="flex flex-wrap items-center justify-between gap-2">
                 <span><span className="font-medium text-slate-900">{m.fullName ?? "Ism kiritilmagan"}</span> <span className="text-slate-500">{m.phone}</span></span>
-                <span className="text-xs text-slate-500">{m.lastLoginAt ? `oxirgi kirish ${date(new Date(m.lastLoginAt))}` : "hali kirmagan"}{!m.isActive && " · bloklangan"}</span>
+                <span className="text-xs text-slate-500">{m.lastLoginAt ? `oxirgi kirish ${dateTime(new Date(m.lastLoginAt))}` : "hali kirmagan"}{!m.isActive && " · bloklangan"}</span>
               </li>
             ))}
           </ul>
@@ -104,7 +104,7 @@ export function AppAccount({ customerId, phone, initial, canLink }: { customerId
                     <div className="font-medium text-slate-900">{o.name}{o.inn && <span className="ml-2 text-xs text-slate-500">INN {o.inn}</span>}</div>
                     <div className="text-xs text-slate-500">
                       {o.members.map((m) => `${m.fullName ?? "Ism yo'q"} ${m.phone}${m.registered ? "" : " (parolsiz)"}`).join(" · ")}
-                      {" · "}ro&apos;yxatdan {date(new Date(o.createdAt))}
+                      {" · "}ro&apos;yxatdan {dateTime(new Date(o.createdAt))}
                       {o.ordersHere > 0 && <> · <Badge color="blue" dot={false}>{o.ordersHere} buyurtma bergan</Badge></>}
                     </div>
                   </div>

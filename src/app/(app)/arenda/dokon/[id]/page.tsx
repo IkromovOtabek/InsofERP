@@ -5,7 +5,7 @@ import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileSigna
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { date, dateTime, fmtNum, money } from "@/lib/format";
+import { date, dateTime, fmtNum, money, opAt } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { RENT_ELEC_CATEGORY, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, leaseDebts, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
 import { elecLedger } from "@/lib/rent-elec";
@@ -157,7 +157,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                 <tbody>
                   {txs.map((t) => (
                     <Tr key={t.id} className={t.cancelledAt ? "opacity-50 line-through" : undefined}>
-                      <Td>{date(t.date)}</Td>
+                      <Td className="whitespace-nowrap">{opAt(t.date, t.createdAt)}</Td>
                       <Td>{t.day ? `${date(t.day)} kun` : t.month ? monthLabel(t.month) : "—"}{t.type === "EXPENSE" ? <span className="ml-1 text-xs text-slate-500">(chiqim: {t.category})</span> : t.category === RENT_ELEC_CATEGORY && <span className="ml-1"><Badge color="amber">svet</Badge></span>}</Td>
                       <Td>{RENT_METHOD_LABEL[t.method]}</Td>
                       <Td right className={t.type === "INCOME" ? "font-semibold text-emerald-700" : "font-semibold text-red-600"}>{t.type === "INCOME" ? "+" : "−"}{fmtNum(t.amount)}</Td>
@@ -283,7 +283,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                       <div className="flex items-start justify-between gap-1 p-2">
                         <div className="min-w-0">
                           <div className="truncate text-xs font-medium text-slate-800">{f.kind}</div>
-                          <div className="truncate text-[11px] text-slate-500" title={f.fileName}>{date(f.createdAt)}{f.lease?.tenantName ? ` · ${f.lease.tenantName}` : ""}</div>
+                          <div className="truncate text-[11px] text-slate-500" title={f.fileName}>{dateTime(f.createdAt)}{f.lease?.tenantName ? ` · ${f.lease.tenantName}` : ""}</div>
                         </div>
                         {canShops && <ConfirmButton action={removeRentFileAction.bind(null, f.id)} label={<Trash2 size={13} />} title="Olib tashlash" question={`«${f.fileName}» ro'yxatdan olib tashlansinmi?`} okText="Olib tashlandi" className="shrink-0 text-slate-400 hover:text-red-600" />}
                       </div>

@@ -9,7 +9,7 @@ import { driverPositionNames } from "@/lib/positions";
 import { ingredientOf } from "@/lib/recipe";
 import { SUPPLY_LABEL, SUPPLY_TABS, totalPlanned } from "@/lib/supply";
 import { unitLabel, unitShort } from "@/lib/unit";
-import { dateRu, fmtNum, moneyShort } from "@/lib/format";
+import { dateRu, fmtNum, moneyShort, opAt, time } from "@/lib/format";
 import { prixodJournal, prixodTotals } from "@/lib/receipts";
 import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
 import { materialTurnover, type TurnoverRow } from "@/lib/stock-turnover";
@@ -232,6 +232,7 @@ const sum = (n: unknown) => Number(n ?? 0);
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
 const m3 = (n: number) => `${n.toFixed(n % 1 ? 1 : 0)} m³`;
 const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+const dt = (d: Date) => `${day(d)} ${time(d)}`;
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 
 const TAKE = 60;
@@ -338,7 +339,7 @@ async function productionOrders(title: string, q?: string, filter?: string): Pro
 
 const supplyInclude = { items: true, warehouse: true, supplier: true, createdBy: { select: { fullName: true } } } as const;
 type SupplyRow = {
-  id: string; docNo: string; status: SupplyStatus; date: Date; needBy: Date | null; recheck: number; deliveryCost: unknown;
+  id: string; docNo: string; status: SupplyStatus; date: Date; createdAt: Date; needBy: Date | null; recheck: number; deliveryCost: unknown;
   warehouse: { name: string }; supplier: { name: string } | null; items: { qty: unknown; price: unknown; factQty?: unknown; factPrice?: unknown }[];
   department?: string | null; priority?: SupplyPriority; deliveryStatus?: SupplyDelivery | null; eta?: Date | null;
 };
@@ -351,7 +352,7 @@ const supplyRow = (r: SupplyRow): HomeRow => {
   return {
     id: r.id,
     title: `${r.docNo} · ${r.department ?? r.warehouse.name}${r.priority && r.priority !== "NORMAL" ? ` · ${PRIORITY_LABEL[r.priority].toLowerCase()}` : ""}${r.recheck ? " · qayta tasdiq" : ""}`,
-    subtitle: `${day(r.date)} · ${r.items.length} qator${r.supplier ? ` · ${r.supplier.name}` : ""}${due ? ` · ${r.status === "FUNDED" && r.eta ? "ETA" : "kerak"} ${day(due)}` : ""}${late ? " · kechikdi" : ""}`,
+    subtitle: `${opAt(r.date, r.createdAt, day)} · ${r.items.length} qator${r.supplier ? ` · ${r.supplier.name}` : ""}${due ? ` · ${r.status === "FUNDED" && r.eta ? "ETA" : "kerak"} ${day(due)}` : ""}${late ? " · kechikdi" : ""}`,
     right: r.status === "NEW" ? `${r.items.length} nom` : money(totalPlanned({ items: r.items as { qty: number; price: number }[], deliveryCost: r.deliveryCost as number })),
     status: delivery ? DELIVERY_LABEL[delivery] : SUPPLY_LABEL[r.status],
     tone: late || delivery === "PROBLEM" ? "danger" : r.priority === "CRITICAL" ? "danger" : SUPPLY_TONE[r.status],
@@ -391,7 +392,7 @@ async function kirimList(user: MobileUser, q?: string, filter?: string): Promise
     rows: rows.map((r) => ({
       id: r.id,
       title: `${mechSubject(r)}${r.urgent ? " · shoshilinch" : ""}`,
-      subtitle: `${r.problem} · ${r.docNo} · ${day(r.createdAt)}${own ? "" : ` · ${r.createdBy.fullName}`}`,
+      subtitle: `${r.problem} · ${r.docNo} · ${dt(r.createdAt)}${own ? "" : ` · ${r.createdBy.fullName}`}`,
       right: money(sum(r.amount)),
       status: MECH_STATUS_SHORT[r.status],
       tone: r.urgent && r.status === "NEW" ? "danger" : MECH_STATUS_TONE[r.status],
@@ -484,7 +485,7 @@ async function leads(title: string, q?: string, filter?: string): Promise<Mobile
     key: "leads", title,
     rows: rows.map((l) => ({
       id: l.id, title: `${l.name} · ${l.phone}`,
-      subtitle: `${day(l.createdAt)}${l.product ? ` · ${l.product.name}` : ""}${l.address ? ` · ${l.address}` : ""}`,
+      subtitle: `${dt(l.createdAt)}${l.product ? ` · ${l.product.name}` : ""}${l.address ? ` · ${l.address}` : ""}`,
       right: l.qty && l.product ? `${sum(l.qty)} ${unitLabel(l.product.unit)}` : undefined,
       status: LEAD_LABEL[l.status], tone: LEAD_TONE[l.status],
     })),
@@ -547,7 +548,7 @@ async function prixodList(title: string, q?: string, filter?: string): Promise<M
   const rows = all.slice(-TAKE).reverse().map((r): HomeRow => ({
     id: `${r.receiptId}~${r.id}`,
     title: `${r.material} · ${qtyUnit(r.qty, r.unit)}`,
-    subtitle: [dateRu(r.date), r.supplier, r.waybillNo ? `TTN ${r.waybillNo}` : null, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
+    subtitle: [opAt(r.date, r.createdAt, dateRu), r.supplier, r.waybillNo ? `TTN ${r.waybillNo}` : null, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
     // Storno qilingan kirim o'z sanasida «Bekor qilindi», storno sanasida manfiy qator (jurnal = «Qoldiqlar» Kirim)
     right: r.storno ? `−${fmtNum(Math.abs(r.total))}` : `+${fmtNum(r.total)}`,
     tone: r.storno ? "danger" : "success",
@@ -578,7 +579,7 @@ async function rasxodList(user: MobileUser, title: string, q?: string, filter?: 
         : /^b:/.test(r.toKey) && oluvchiOk ? `oluvchi:b~${r.toKey.slice(2)}~${i}`
         : `stock:${r.materialId}~${i}`,
       title: `${r.material} · ${qtyUnit(Math.abs(r.qty), r.unit)}`,
-      subtitle: [dateRu(r.date), r.to, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
+      subtitle: [opAt(r.date, r.createdAt, dateRu), r.to, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
       right: noPrice ? "narxsiz" : `${r.priceApprox ? "≈" : ""}${back ? "+" : "−"}${fmtNum(Math.abs(r.total))}`,
       tone: back ? "success" : r.kind === "prod" ? "info" : "danger",
       ...(r.kind === "storno" ? { status: "Bekor qilish" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
@@ -693,7 +694,7 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
       // Storno qilingan zames tarixda qoladi, lekin aniq belgilanadi — hajmi qoldiqda yo'q
       return list.map((b) => ({
         id: b.id, title: `${b.batchNo} · ${b.product.name}`,
-        subtitle: `${day(b.date)} · ${b.order ? b.order.customer.name : "Omborga"}${b.cancelledAt ? " · bekor qilingan" : ""}`,
+        subtitle: `${opAt(b.date, b.createdAt, day)} · ${b.order ? b.order.customer.name : "Omborga"}${b.cancelledAt ? " · bekor qilingan" : ""}`,
         right: b.cancelledAt ? "bekor qilingan" : m3(sum(b.qtyM3)),
         status: b.cancelledAt ? "Bekor qilingan" : `${b.shift}-smena`,
         ...(b.cancelledAt ? { tone: "danger" as Tone } : {}),
@@ -719,7 +720,7 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
       // Storno qilingan kirim — summasi qoldiq va qarzga kirmaydi, ro'yxatda "Bekor qilingan" belgisi bilan
       return list.map((r) => ({
         id: r.id, title: `${r.docNo} · ${r.supplier.name}`,
-        subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`,
+        subtitle: `${opAt(r.date, r.createdAt, day)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`,
         right: r.cancelledAt ? "bekor qilingan" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)),
         ...(r.cancelledAt ? { status: "Bekor qilingan", tone: "danger" as Tone } : {}),
       }));
@@ -732,14 +733,14 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
       });
       // Hisoblararo o'tkazma ham o'z qatori bilan ko'rinadi (ishora — txSign, rang — "info")
       // Bekor qilingan yozuv ro'yxatda qoladi — «Bekor qilingan» holati bilan
-      return list.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}${t.cancelReason ? ` · ${t.cancelReason}` : ""}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: t.cancelledAt ? "danger" : isTransfer(t.type) ? "info" : txSign(t.type) < 0 ? "danger" : "success", ...(t.cancelledAt ? { status: "Bekor qilingan" } : {}) }));
+      return list.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${opAt(t.date, t.createdAt, day)} · ${t.cashAccount.name}${t.cancelReason ? ` · ${t.cancelReason}` : ""}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: t.cancelledAt ? "danger" : isTransfer(t.type) ? "info" : txSign(t.type) < 0 ? "danger" : "success", ...(t.cancelledAt ? { status: "Bekor qilingan" } : {}) }));
     }
     case "payments": {
       const list = await db.payment.findMany({
         where: q ? { customer: { name: { contains: q, mode: "insensitive" } } } : undefined,
         orderBy: { date: "desc" }, take: TAKE, include: { customer: true, cashAccount: true, invoice: true },
       });
-      return list.map((p) => ({ id: p.id, title: p.customer.name, subtitle: `${day(p.date)} · ${p.cashAccount.name}${p.invoice ? ` · ${p.invoice.invoiceNo}` : ""}`, right: `+${money(sum(p.amount))}`, tone: "success" }));
+      return list.map((p) => ({ id: p.id, title: p.customer.name, subtitle: `${opAt(p.date, p.createdAt, day)} · ${p.cashAccount.name}${p.invoice ? ` · ${p.invoice.invoiceNo}` : ""}`, right: `+${money(sum(p.amount))}`, tone: "success" }));
     }
     case "employees": {
       const list = await db.employee.findMany({

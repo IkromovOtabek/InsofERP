@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { fuelConsumption, lastFuelPrice } from "@/lib/logistics-costs";
 import { FUEL_TYPE } from "@/lib/logistics";
-import { date, fmtNum, money, moneyShort } from "@/lib/format";
+import { date, fmtNum, money, moneyShort, opAt } from "@/lib/format";
 import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -91,7 +91,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
               {logs.length === 0 && <Empty text="Zapravka yo'q" />}
               {logs.map((f) => (
                 <Tr key={f.id} className={f.cancelledAt ? "bg-slate-50/60 text-slate-400" : undefined}>
-                  <Td className="text-sm tabular">{date(f.date)}<div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.station ? ` · ${f.station}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td>
+                  <Td className="text-sm tabular"><span className="whitespace-nowrap">{opAt(f.date, f.createdAt)}</span><div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.station ? ` · ${f.station}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td>
                   <Td className="text-sm"><span className="tabular">{f.vehicle.plate}</span><div className="text-xs text-slate-500">{f.driver?.fullName ?? ""}{f.trip ? <> · <Link href={`/trips/${f.trip.id}`} className="hover:underline">{f.trip.deliveryNoteNo}</Link></> : null}</div></Td>
                   <Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td>
                   <Td right className="tabular">{fmtNum(Number(f.pricePerL), 0)}</Td>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
-import { date, dateTime, money } from "@/lib/format";
+import { dateTime, money } from "@/lib/format";
 import { hoursShort, monthTitle } from "@/lib/davomat";
 import { breakdownOf, canPayroll, runWithLines } from "@/lib/hr/payroll";
 import { payAccounts } from "@/lib/mechanic-requests";
@@ -96,7 +96,7 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
                     </>
                   )}
                   <Td right className={`font-semibold ${n(l.net) < 0 ? "text-red-700" : ""}`}>{money(n(l.net))}</Td>
-                  <Td>{l.paidAt ? <Badge color="green">{date(l.paidAt)}</Badge> : n(l.net) > 0 ? <Badge color="amber">kutmoqda</Badge> : <span className="text-xs text-slate-400">—</span>}</Td>
+                  <Td>{l.paidAt ? <Badge color="green">{dateTime(l.paidAt)}</Badge> : n(l.net) > 0 ? <Badge color="amber">kutmoqda</Badge> : <span className="text-xs text-slate-400">—</span>}</Td>
                 </Tr>
               );
             })}

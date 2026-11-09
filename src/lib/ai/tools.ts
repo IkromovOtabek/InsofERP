@@ -17,7 +17,7 @@ import { customersCredit } from "@/lib/finance";
 import { materialOverview } from "@/lib/bi/stock";
 import { plansTab } from "@/lib/bi/plans";
 import { aiSnapshot } from "@/lib/bi/ai";
-import { moneyShort, fmtNum, date as fmtDate, dateTime as fmtDateTime } from "@/lib/format";
+import { moneyShort, fmtNum, date as fmtDate, dateTime as fmtDateTime, opAt } from "@/lib/format";
 import { lineTotal } from "@/lib/receipt-vat";
 import { ATTENDANCE_TOOL, HR_TOOLS } from "./hr-tools";
 import { canSeeStaffAttendance } from "@/lib/permissions";
@@ -180,7 +180,7 @@ const ordersList: Tool = {
       const vol = sum(o.items.map((i) => Number(i.qtyM3)));
       const items = o.items.map((i) => `${i.product.name} ${fmtNum(Number(i.qtyM3), 1)}`).join(", ");
       const delivered = sum(o.trips.filter((t) => t.status === "DELIVERED").map((t) => Number(t.qtyM3)));
-      return `${o.orderNo} · ${fmtDate(o.date)} · ${o.customer.name} · ${items} (${m3(vol)}) · ${M(total)} · ${ORDER_STATUS[o.status] ?? o.status} · yetkazish ${fmtDate(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${o.deliveryAddress} · sotuvchi ${o.createdBy.fullName} · ${o.trips.length} reys (yetkazildi ${m3(delivered)})${o.isUrgent ? " · SHOSHILINCH" : ""}${o.onCredit ? " · qarzga" : ""} · ${link(`/orders/${o.id}`)}`;
+      return `${o.orderNo} · ${opAt(o.date, o.createdAt)} · ${o.customer.name} · ${items} (${m3(vol)}) · ${M(total)} · ${ORDER_STATUS[o.status] ?? o.status} · yetkazish ${fmtDate(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${o.deliveryAddress} · sotuvchi ${o.createdBy.fullName} · ${o.trips.length} reys (yetkazildi ${m3(delivered)})${o.isUrgent ? " · SHOSHILINCH" : ""}${o.onCredit ? " · qarzga" : ""} · ${link(`/orders/${o.id}`)}`;
     });
     const all = sum(orders.flatMap((o) => o.items.map((i) => Number(i.qtyM3) * Number(i.price))));
     return [`Jami ${total} zayavka${p ? ` (${p.label})` : ""}, ko'rsatildi ${orders.length}: summa ${M(all)}`, ...lines].join("\n");
@@ -211,7 +211,7 @@ const customerFind: Tool = {
     return found.map((c) => {
       const b = rows.get(c.id), cr = credit.get(c.id);
       return [
-        `${c.name}${c.isActive ? "" : " (nofaol)"} · INN ${c.inn ?? "—"} · tel ${c.phone ?? "—"} · manzil ${c.address ?? "—"} · ro'yxatga olingan ${fmtDate(c.createdAt)}`,
+        `${c.name}${c.isActive ? "" : " (nofaol)"} · INN ${c.inn ?? "—"} · tel ${c.phone ?? "—"} · manzil ${c.address ?? "—"} · ro'yxatga olingan ${fmtDateTime(c.createdAt)}`,
         b ? `  Holat: ${b.segment} · xavf ${b.risk} · ${b.orders} ta buyurtma · oxirgisi ${b.lastOrder ? `${fmtDate(b.lastOrder)} (${b.recency} kun oldin)` : "hali yo'q"} · jami xarid ${M(b.lifetime)} · oyiga o'rtacha ${M(b.avgMonthly)}` : "",
         cr ? `  ${cr.advance > 0.005 ? `Avans (mijoz oldindan to'lagan): ${M(cr.advance)}` : `Qarz: ${M(cr.debt)}`}${b?.overdueDebt ? ` (muddati o'tgan ${M(b.overdueDebt)}, eng eskisi ${b.oldestDebtDays} kun)` : ""} · schyotsiz ochiq zayavkalar ${M(cr.open)} · limit ${M(cr.limit)}, ishlatilgan ${M(cr.used)}, bo'sh ${M(cr.free)}${cr.blacklisted ? " · QORA RO'YXAT (limit to'liq ishlatilgan)" : ""}` : "",
         b ? `  Tavsiya: ${b.action}` : "",
@@ -274,7 +274,7 @@ const invoicesList: Tool = {
     const lines = rows.map((inv) => {
       const pd = sum(inv.payments.map((x) => Number(x.amount))), am = Number(inv.amount); amount += am; paid += pd;
       const age = Math.floor((today.getTime() - startOfDay(inv.date).getTime()) / DAY);
-      return `${inv.invoiceNo} · ${fmtDate(inv.date)} (${age} kun) · ${inv.customer.name} · ${M(am)} · to'langan ${M(pd)} · qoldiq ${M(Math.max(0, am - pd))} · ${INVOICE_STATUS[inv.status] ?? inv.status}${inv.order ? ` · zayavka ${inv.order.orderNo}` : ""}`;
+      return `${inv.invoiceNo} · ${opAt(inv.date, inv.createdAt)} (${age} kun) · ${inv.customer.name} · ${M(am)} · to'langan ${M(pd)} · qoldiq ${M(Math.max(0, am - pd))} · ${INVOICE_STATUS[inv.status] ?? inv.status}${inv.order ? ` · zayavka ${inv.order.orderNo}` : ""}`;
     });
     return [`${rows.length} ta schyot: summa ${M(amount)}, to'langan ${M(paid)}, qoldiq ${M(Math.max(0, amount - paid))}`, ...lines].join("\n");
   },
@@ -420,7 +420,7 @@ const tripsList: Tool = {
     const byDriver = [...groupBy(trips, (t) => t.driver.fullName).entries()].map(([k, rs]) => `  ${k}: ${rs.length} reys · ${m3(sum(rs.map((t) => Number(t.qtyM3))))}`);
     return [
       `Jami ${total} reys${p ? ` (${p.label})` : ""}, ko'rsatildi ${trips.length}: ${m3(sum(trips.map((t) => Number(t.qtyM3))))}, yetkazilgan ${trips.filter((t) => t.status === "DELIVERED").length}`,
-      ...trips.map((t) => `Nakladnoy ${t.deliveryNoteNo} · ${fmtDate(t.createdAt)} · ${t.order.customer.name} · ${t.order.orderNo} · ${m3(Number(t.qtyM3))} · ${t.vehicle.plate} · haydovchi ${t.driver.fullName} · ${TRIP_STATUS[t.status] ?? t.status}${t.deliveredAt ? ` (${fmtDateTime(t.deliveredAt)}${t.receiverName ? `, qabul qildi ${t.receiverName}` : ""})` : ""} · ${t.order.deliveryAddress} · chop etish/PDF: ${link(`/trips/${t.id}/print`)}`),
+      ...trips.map((t) => `Nakladnoy ${t.deliveryNoteNo} · ${fmtDateTime(t.createdAt)} · ${t.order.customer.name} · ${t.order.orderNo} · ${m3(Number(t.qtyM3))} · ${t.vehicle.plate} · haydovchi ${t.driver.fullName} · ${TRIP_STATUS[t.status] ?? t.status}${t.deliveredAt ? ` (${fmtDateTime(t.deliveredAt)}${t.receiverName ? `, qabul qildi ${t.receiverName}` : ""})` : ""} · ${t.order.deliveryAddress} · chop etish/PDF: ${link(`/trips/${t.id}/print`)}`),
       "Haydovchi bo'yicha:", ...byDriver,
     ].join("\n");
   },
@@ -442,7 +442,7 @@ const receiptsList: Tool = {
     const p = period(a)!;
     const rows = await db.goodsReceiptItem.findMany({
       where: { receipt: { cancelledAt: null, date: { gte: p.from, lt: p.to }, ...(str(a.supplier) ? { supplier: { name: like(str(a.supplier)) } } : {}) }, ...(str(a.material) ? { material: { name: like(str(a.material)) } } : {}) },
-      include: { receipt: { select: { docNo: true, date: true, supplier: { select: { name: true } } } }, material: { select: { name: true, unit: true } } },
+      include: { receipt: { select: { docNo: true, date: true, createdAt: true, supplier: { select: { name: true } } } }, material: { select: { name: true, unit: true } } },
       orderBy: { receipt: { date: "desc" } }, take: 200,
     });
     if (!rows.length) return `Davrda (${p.label}) kirim yo'q.`;
@@ -452,7 +452,7 @@ const receiptsList: Tool = {
       `Davr: ${p.label} · ${rows.length} pozitsiya · jami ${M(total)} (QQS bilan)`,
       "Yetkazuvchi bo'yicha:", ...agg((r) => r.receipt.supplier.name),
       "Xomashyo bo'yicha:", ...agg((r) => r.material.name),
-      "Oxirgi kirimlar:", ...rows.slice(0, 20).map((r) => `  ${r.receipt.docNo} · ${fmtDate(r.receipt.date)} · ${r.receipt.supplier.name} · ${r.material.name} ${fmtNum(Number(r.qty), 1)} ${r.material.unit} × ${M(Number(r.price))} + QQS ${M(Number(r.vatAmount))} = ${M(lineTotal(r))}`),
+      "Oxirgi kirimlar:", ...rows.slice(0, 20).map((r) => `  ${r.receipt.docNo} · ${opAt(r.receipt.date, r.receipt.createdAt)} · ${r.receipt.supplier.name} · ${r.material.name} ${fmtNum(Number(r.qty), 1)} ${r.material.unit} × ${M(Number(r.price))} + QQS ${M(Number(r.vatAmount))} = ${M(lineTotal(r))}`),
     ].join("\n");
   },
 };

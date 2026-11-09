@@ -34,7 +34,7 @@ import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
 import { DETAIL_KEY, OSTATKI_SUM, PAY_LABEL, driverEmployeeId, journalGranted, listAllowed, moduleClosed, myBrigadeIds, payreqMethods, qtyUnit, shortSum, skladPeriod, turnoverLow, turnoverSums, ListError } from "./list";
 import { unitLabel, unitShort, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
-import { dateRu, fmtNum } from "@/lib/format";
+import { dateRu, fmtNum, opAt, time } from "@/lib/format";
 import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
 import { materialTurnover } from "@/lib/stock-turnover";
 import { ISSUE_STORNO, STORNO_NOTE_RE } from "@/lib/stock-issue";
@@ -758,18 +758,18 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       { label: "Mijoz limiti", value: `${money(credit.used)} / ${money(credit.limit)}`, tone: credit.used >= credit.limit ? "danger" : "success" },
       ...(o.needsPump ? [{ label: "Nasos", value: "Kerak", tone: "warning" as Tone }] : []),
       ...(o.isUrgent ? [{ label: "Shoshilinch", value: "Ha", tone: "danger" as Tone }] : []),
-      ...(o.onCredit ? [{ label: "Qarzga", value: o.guaranteeAt ? `Kafolat xati bor (${day(o.guaranteeAt)})` : "Kafolat xati yo'q", tone: o.guaranteeAt ? "success" as Tone : "danger" as Tone }] : []),
+      ...(o.onCredit ? [{ label: "Qarzga", value: o.guaranteeAt ? `Kafolat xati bor (${dt(o.guaranteeAt)})` : "Kafolat xati yo'q", tone: o.guaranteeAt ? "success" as Tone : "danger" as Tone }] : []),
       ...(o.contractNo ? [{ label: "Shartnoma", value: `${o.contractNo}${o.contractAmount ? ` · ${money(sum(o.contractAmount))}` : ""}` }] : []),
       ...extra.fields,
-      { label: "Kim kiritdi", value: `${o.createdBy.fullName} · ${day(o.date)}` },
+      { label: "Kim kiritdi", value: `${o.createdBy.fullName} · ${opAt(o.date, o.createdAt, day)}` },
       ...(o.note ? [{ label: "Izoh", value: o.note }] : []),
     ],
     ...(extra.photo ? { photo: extra.photo } : {}),
     sections: ([
       { title: "Mahsulotlar", empty: "Qator yo'q", icon: "package", rows: o.items.map((i) => ({ id: i.id, title: i.product.name, subtitle: `${money(sum(i.price))} / ${unitLabel(i.product.unit)}`, right: inUnit(sum(i.qtyM3), i.product.unit) })) },
       { title: "Reyslar", empty: "Reys yo'q", target: "trips", rows: o.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: t.driver.fullName, right: inUnit(sum(t.qtyM3), orderUnit), status: t.status, tone: TRIP_TONE[t.status] })) },
-      { title: "Zameslar", empty: "Zames yo'q", target: "production", rows: o.batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: day(b.date), right: inUnit(sum(b.qtyM3), b.product.unit) })) },
-      { title: "Schyotlar", empty: "Schyot yo'q", target: "invoices", rows: o.invoices.map((i) => ({ id: i.id, title: i.invoiceNo, subtitle: day(i.date), right: money(sum(i.amount)), status: i.status })) },
+      { title: "Zameslar", empty: "Zames yo'q", target: "production", rows: o.batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: opAt(b.date, b.createdAt, day), right: inUnit(sum(b.qtyM3), b.product.unit) })) },
+      { title: "Schyotlar", empty: "Schyot yo'q", target: "invoices", rows: o.invoices.map((i) => ({ id: i.id, title: i.invoiceNo, subtitle: opAt(i.date, i.createdAt, day), right: money(sum(i.amount)), status: i.status })) },
     ] as HomeSection[])
       // Schyot kartasi faqat moliya va sotuvga ochiq (DETAIL_ROLES) — boshqalarga ochilmaydigan havola ko'rsatilmaydi
       .filter((s) => s.target !== "invoices" || user.role === "DIRECTOR" || (DETAIL_ROLES.invoices ?? []).includes(user.role))
@@ -936,7 +936,7 @@ async function invoiceDetail(user: MobileUser, id: string): Promise<MobileDetail
 
   const fields: DetailField[] = [
     { label: "Schyot", value: inv.invoiceNo },
-    { label: "Sana", value: day(inv.date) },
+    { label: "Sana", value: opAt(inv.date, inv.createdAt, day) },
     { label: "Jami", value: money(sum(inv.amount)) },
     { label: "To'landi", value: money(paid), tone: "success" },
     { label: "Qoldiq", value: money(left), tone: left > 0 ? "danger" : "success" },
@@ -950,7 +950,7 @@ async function invoiceDetail(user: MobileUser, id: string): Promise<MobileDetail
   return {
     key: "invoices", id: inv.id, title: inv.invoiceNo, subtitle: inv.customer.name, status: inv.status,
     fields: fields.slice(1),
-    sections: [{ title: "To'lovlar", empty: "To'lov yo'q", target: "payments", rows: inv.payments.map((p) => ({ id: p.id, title: `+${money(sum(p.amount))}`, subtitle: `${day(p.date)} · ${p.cashAccount.name}`, right: `+${money(sum(p.amount))}`, tone: "success" as Tone })) }],
+    sections: [{ title: "To'lovlar", empty: "To'lov yo'q", target: "payments", rows: inv.payments.map((p) => ({ id: p.id, title: `+${money(sum(p.amount))}`, subtitle: `${opAt(p.date, p.createdAt, day)} · ${p.cashAccount.name}`, right: `+${money(sum(p.amount))}`, tone: "success" as Tone })) }],
     actions,
     receipt: {
       headline: money(sum(inv.amount)), caption: inv.customer.name,
@@ -966,7 +966,7 @@ async function paymentDetail(user: MobileUser, id: string): Promise<MobileDetail
   const p = await db.payment.findUnique({ where: { id }, include: { customer: true, cashAccount: true, invoice: true, order: true, createdBy: { select: { fullName: true } } } });
   if (!p) throw new ListError("NOT_FOUND", "To'lov topilmadi", 404);
   const fields: DetailField[] = [
-    { label: "Sana", value: dt(p.date) },
+    { label: "Sana", value: opAt(p.date, p.createdAt, day) },
     { label: "Mijoz", value: p.customer.name },
     { label: "Hisob", value: p.cashAccount.name },
     ...(p.invoice ? [{ label: "Schyot", value: p.invoice.invoiceNo }] : []),
@@ -999,7 +999,7 @@ async function receiptDetail(user: MobileUser, id: string): Promise<MobileDetail
   const waybill = r.waybillNo ?? waybillFromNote(r.note);
   const fields: DetailField[] = [
     { label: "Hujjat", value: r.docNo },
-    { label: "Sana", value: day(r.date) },
+    { label: "Sana", value: opAt(r.date, r.createdAt, day) },
     { label: "Yetkazuvchi", value: r.supplier.name },
     { label: "Ombor", value: r.warehouse.name },
     ...(waybill ? [{ label: "TTN", value: waybill }] : []),
@@ -1016,7 +1016,7 @@ async function receiptDetail(user: MobileUser, id: string): Promise<MobileDetail
     ...(r.createdBy ? [{ label: "Kim kiritdi", value: r.createdBy.fullName }] : []),
     ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
     // Storno: sklad harakatlari teskari yozilgan — qoldiq va qarzga kirmaydi
-    ...(r.cancelledAt ? [{ label: "Holat", value: `Bekor qilingan · ${day(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
+    ...(r.cancelledAt ? [{ label: "Holat", value: `Bekor qilingan · ${dt(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
   ];
   // Moliya: to'lanmagan kirim bo'lsa — qolgan summa va «To'lash» (`./moliya-extra.ts`, veb Kirim-Chiqim → «To'lanmagan kirimlar»)
   const moliya = r.cancelledAt ? null : await receiptPayActions(user, r.id);
@@ -1116,7 +1116,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     sections: [
       {
         title: "Bajarilganlik qaydlari", empty: "Hali qayd yo'q", icon: "square-check",
-        rows: t.progress.map((p) => ({ id: p.id, title: inUnit(sum(p.qty), t.orderItem.product.unit), subtitle: `${day(p.date)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
+        rows: t.progress.map((p) => ({ id: p.id, title: inUnit(sum(p.qty), t.orderItem.product.unit), subtitle: `${opAt(p.date, p.createdAt, day)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
       },
       ...(t.defects.length ? [{
         title: `Brak — ${inUnit(defQty, pu)}`, empty: "Brak yo'q", icon: "triangle-alert",
@@ -1124,7 +1124,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       }] : []),
       ...(t.issues.length ? [{
         title: "Muammolar", empty: "Muammo yo'q", target: "brig-issue",
-        rows: t.issues.map((i) => ({ id: i.id, title: BRIGADE_ISSUE[i.kind].label, subtitle: [i.equipment, i.note].filter(Boolean).join(" · "), right: day(i.createdAt), status: i.resolvedAt ? "Hal qilindi" : "Ochiq", tone: (i.resolvedAt ? "success" : "danger") as Tone })),
+        rows: t.issues.map((i) => ({ id: i.id, title: BRIGADE_ISSUE[i.kind].label, subtitle: [i.equipment, i.note].filter(Boolean).join(" · "), right: shortDt(i.createdAt), status: i.resolvedAt ? "Hal qilindi" : "Ochiq", tone: (i.resolvedAt ? "success" : "danger") as Tone })),
       }] : []),
     ],
     actions,
@@ -1199,7 +1199,7 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
       value: own != null ? `${fmtNum(own, 2)} so'm / ${u}` : avg != null ? `narx belgilanmagan · ≈ ${fmtNum(avg, 2)} (o'rtacha tannarx)` : "narx belgilanmagan",
       ...(own == null ? { tone: "warning" as Tone } : {}),
     },
-    ...(own != null && (m.unitPriceBy || m.unitPriceAt) ? [{ label: "Narxni belgilagan", value: [m.unitPriceBy?.fullName, m.unitPriceAt ? dateRu(m.unitPriceAt) : null].filter(Boolean).join(" · ") }] : []),
+    ...(own != null && (m.unitPriceBy || m.unitPriceAt) ? [{ label: "Narxni belgilagan", value: [m.unitPriceBy?.fullName, m.unitPriceAt ? `${dateRu(m.unitPriceAt)} ${time(m.unitPriceAt)}` : null].filter(Boolean).join(" · ") }] : []),
   ];
   const sumText = (s: number) => `Summa ${tr?.approx ? "≈" : ""}${fmtNum(s)} so'm`;
   const turnoverSection: HomeSection[] = tr ? [{
@@ -1253,7 +1253,7 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
       })(),
     }] : []), {
       title: "So'nggi harakatlar", empty: "Harakat yo'q",
-      rows: moves.map((mv) => ({ id: mv.id, title: moveLabel(mv), subtitle: `${day(mv.date)}${mv.createdBy ? ` · ${mv.createdBy.fullName}` : ""}${mv.type === "ISSUE" && mv.note ? ` · ${mv.note}` : ""}`, right: `${sum(mv.qty) > 0 ? "+" : ""}${sum(mv.qty).toFixed(1)} ${m.unit}`, tone: sum(mv.qty) > 0 ? ("success" as Tone) : ("danger" as Tone) })),
+      rows: moves.map((mv) => ({ id: mv.id, title: moveLabel(mv), subtitle: `${opAt(mv.date, mv.createdAt, day)}${mv.createdBy ? ` · ${mv.createdBy.fullName}` : ""}${mv.type === "ISSUE" && mv.note ? ` · ${mv.note}` : ""}`, right: `${sum(mv.qty) > 0 ? "+" : ""}${sum(mv.qty).toFixed(1)} ${m.unit}`, tone: sum(mv.qty) > 0 ? ("success" as Tone) : ("danger" as Tone) })),
     }],
     actions,
   };
@@ -1268,7 +1268,7 @@ async function issueDetail(user: MobileUser, ref: string): Promise<MobileDetail>
     where: { refType: "Issue", refId: ref },
     orderBy: { createdAt: "asc" },
     select: {
-      id: true, date: true, qty: true, unitCost: true, note: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true,
+      id: true, date: true, createdAt: true, qty: true, unitCost: true, note: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true,
       material: { select: { name: true, unit: true } }, warehouse: { select: { name: true } },
       recipient: { select: { name: true } }, employee: { select: { fullName: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
     },
@@ -1285,14 +1285,15 @@ async function issueDetail(user: MobileUser, ref: string): Promise<MobileDetail>
   const total = Math.round(lines.reduce((a, l) => a + l.total, 0) * 100) / 100;
   const noPrice = lines.some((l) => l.cost == null);
   const fields: DetailField[] = [
-    { label: "Sana", value: `${dateRu(first.date)} ${String(first.date.getHours()).padStart(2, "0")}:${String(first.date.getMinutes()).padStart(2, "0")}` },
+    // Orqa sana bilan chiqim soati 12:00 bo'lib yoziladi (`issueDate`) — soat yozilgan vaqtdan
+    { label: "Sana", value: opAt(first.date, first.createdAt, dateRu) },
     { label: "Kimdan", value: first.warehouse.name },
     { label: "Kimga", value: to },
     { label: "Xomashyolar soni", value: String(lines.length) },
     { label: "Umumiy summa", value: `${fmtNum(total)} so'm${noPrice ? " (ba'zi qatorlar narxsiz)" : ""}`, ...(noPrice ? { tone: "warning" as Tone } : {}) },
     { label: "Bergan xodim", value: first.createdBy.fullName },
     ...(first.note ? [{ label: "Izoh", value: first.note }] : []),
-    ...(storno ? [{ label: "Bekor qilindi", value: [storno.note?.replace(STORNO_NOTE_RE, ""), storno.createdBy.fullName, dateRu(storno.createdAt)].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
+    ...(storno ? [{ label: "Bekor qilindi", value: [storno.note?.replace(STORNO_NOTE_RE, ""), storno.createdBy.fullName, `${dateRu(storno.createdAt)} ${time(storno.createdAt)}`].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
   ];
   // Storno tugmasi va oluvchi kartasiga havola (`./sklad-extra.ts`)
   const sklad = rasxodExtra(user, ref, !!storno, { recipientId: first.recipientId, employeeId: first.employeeId, brigadeId: first.brigadeId, name: to });
@@ -1437,7 +1438,7 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
           }]
         : []),
       ...(e.trips.length
-        ? [{ title: "So'nggi reyslar", empty: "Reys yo'q", target: "trips", rows: e.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: day(t.createdAt), right: inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))), status: t.status, tone: TRIP_TONE[t.status] })) }]
+        ? [{ title: "So'nggi reyslar", empty: "Reys yo'q", target: "trips", rows: e.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: dt(t.createdAt), right: inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))), status: t.status, tone: TRIP_TONE[t.status] })) }]
         : []),
       ...kadr.sections,
     ],
@@ -1454,7 +1455,7 @@ async function cashflowDetail(user: MobileUser, id: string): Promise<MobileDetai
   const cancel = cancelNote(t, await cancellerNames([t]));
   const fields: DetailField[] = [
     ...(cancel ? [{ label: CANCELLED_LABEL, value: cancel, tone: "danger" as const }] : []),
-    { label: "Sana", value: dt(t.date) },
+    { label: "Sana", value: opAt(t.date, t.createdAt, day) },
     { label: "Turi", value: TX_TYPE_LABEL[t.type], tone: t.type === "OPENING" || isTransfer(t.type) ? "info" : out ? "danger" : "success" },
     { label: "Kategoriya", value: t.category },
     { label: "Hisob", value: t.cashAccount.name },
@@ -1700,12 +1701,12 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
     key: "supply", id: r.id, title: r.docNo, subtitle: r.warehouse.name, status: SUPPLY_LABEL[st],
     fields: [
       { label: "Bosqich", value: waitDirector ? "Katta xarid — avval direktor tasdiqlaydi" : SUPPLY_OWNER[st], tone: SUPPLY_TONE[st] },
-      { label: "Sana", value: day(r.date) },
+      { label: "Sana", value: opAt(r.date, r.createdAt, day) },
       ...(r.department ? [{ label: "Bo'lim", value: r.department }] : []),
       { label: "Ustuvorlik", value: PRIORITY_LABEL[r.priority], tone: (r.priority === "CRITICAL" ? "danger" : r.priority === "HIGH" ? "warning" : undefined) as Tone | undefined },
       ...(r.responsible ? [{ label: "Mas'ul", value: r.responsible.fullName }] : []),
       ...(r.contractNo ? [{ label: "Shartnoma", value: r.contractNo }] : []),
-      ...(big && (st === "PRICED" || r.directorOkAt) ? [{ label: "Direktor tasdig'i", value: r.directorOkAt ? `Tasdiqlangan · ${day(r.directorOkAt)}` : "Kutilmoqda", tone: (r.directorOkAt ? "success" : "warning") as Tone }] : []),
+      ...(big && (st === "PRICED" || r.directorOkAt) ? [{ label: "Direktor tasdig'i", value: r.directorOkAt ? `Tasdiqlangan · ${dt(r.directorOkAt)}` : "Kutilmoqda", tone: (r.directorOkAt ? "success" : "warning") as Tone }] : []),
       ...(r.deliveryStatus ? [{ label: "Yetkazish", value: `${DELIVERY_LABEL[r.deliveryStatus]}${r.shippedAt ? ` · jo'natildi ${day(r.shippedAt)}` : ""}`, tone: (r.deliveryStatus === "PROBLEM" ? "danger" : r.deliveryStatus === "RECEIVED" ? "success" : "brand") as Tone }] : []),
       ...(r.eta ? [{ label: "Kutilayotgan sana (ETA)", value: day(r.eta), tone: (isOpenSupply(st) && r.eta < new Date(new Date().setHours(0, 0, 0, 0)) ? "danger" : undefined) as Tone | undefined }] : []),
       ...(openInc.length ? [{ label: "Ochiq muammo", value: `${openInc.length} ta`, tone: "danger" as Tone }] : []),
@@ -1719,7 +1720,7 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
       ...(r.recheck ? [{ label: "Qayta tasdiq", value: `${r.recheck}-marta — qabulda narx o'zgargan`, tone: "warning" as Tone }] : []),
       ...(r.cashAccount ? [{ label: "To'lov hisobi", value: r.cashAccount.name }] : []),
       ...(r.receipt ? [{ label: "Kirim hujjati", value: r.receipt.docNo, tone: "success" as Tone }] : []),
-      { label: "Kim so'radi", value: `${r.createdBy.fullName} · ${day(r.createdAt)}` },
+      { label: "Kim so'radi", value: `${r.createdBy.fullName} · ${dt(r.createdAt)}` },
       ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
     ],
     sections: [
@@ -1934,7 +1935,7 @@ async function customerDetail(user: MobileUser, id: string): Promise<MobileDetai
     ],
     sections: [
       ...extra.sections.filter((x) => x.target === "new"),
-      { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: c.invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: i.invoiceNo, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: (i.status === "PARTIAL" ? "warning" : "danger") as Tone }; }) },
+      { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: c.invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: i.invoiceNo, subtitle: `${opAt(i.date, i.createdAt, day)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: (i.status === "PARTIAL" ? "warning" : "danger") as Tone }; }) },
       { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: c.orders.map((o) => ({ id: o.id, title: day(o.deliveryDate), subtitle: o.deliveryAddress, right: money(o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0)), status: o.status, tone: ORDER_TONE[o.status] })) },
       ...extra.sections.filter((x) => x.target !== "new"),
     ],
@@ -2020,7 +2021,7 @@ async function brigadeDetail(user: MobileUser, id: string): Promise<MobileDetail
     ],
     sections: [
       { title: "Ochiq topshiriqlar", empty: "Ochiq topshiriq yo'q", target: "tasks", rows: open.map((t) => ({ id: t.id, title: `${b.name} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: (t.dueDate < today ? "danger" : t.status === "NEW" ? "info" : "warning") as Tone })) },
-      { title: "Yaqinda bajarilganlar", empty: "Hali bajarilgan topshiriq yo'q", target: "tasks", rows: done.map((t) => ({ id: t.id, title: `${b.name} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · ${day(t.updatedAt)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), tone: "success" as Tone })) },
+      { title: "Yaqinda bajarilganlar", empty: "Hali bajarilgan topshiriq yo'q", target: "tasks", rows: done.map((t) => ({ id: t.id, title: `${b.name} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · ${dt(t.updatedAt)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), tone: "success" as Tone })) },
       ...(b.leader ? [{ title: "Brigadir", empty: "", target: "employees", rows: [{ id: b.leader.id, title: b.leader.fullName, subtitle: b.leader.phone ?? undefined, tone: "success" as Tone }] }] : []),
       // Brigada skladi — qo'lidagi xomashyo, berish / qaytarish (`./sklad-extra.ts`)
       ...brigadeStockLink(user, b.id),
@@ -2068,8 +2069,8 @@ async function supplierDetail(user: MobileUser, id: string): Promise<MobileDetai
     ],
     sections: [
       ...sklad.sections,
-      { title: "Ochiq ta'minot zayavkalari", empty: "Ochiq zayavka yo'q", target: "supply", rows: s.supplyRequests.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.warehouse.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator`, right: money(totalPlanned(r)), status: SUPPLY_LABEL[r.status], tone: SUPPLY_TONE[r.status] })) },
-      { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: s.receipts.map((r) => ({ id: r.id, title: r.docNo, subtitle: `${day(r.date)} · ${r.items.length} qator`, right: money(plannedSum(r.items)) })) },
+      { title: "Ochiq ta'minot zayavkalari", empty: "Ochiq zayavka yo'q", target: "supply", rows: s.supplyRequests.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.warehouse.name}`, subtitle: `${opAt(r.date, r.createdAt, day)} · ${r.items.length} qator`, right: money(totalPlanned(r)), status: SUPPLY_LABEL[r.status], tone: SUPPLY_TONE[r.status] })) },
+      { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: s.receipts.map((r) => ({ id: r.id, title: r.docNo, subtitle: `${opAt(r.date, r.createdAt, day)} · ${r.items.length} qator`, right: money(plannedSum(r.items)) })) },
       ...opening.sections,
     ],
     actions,
@@ -2095,7 +2096,7 @@ async function recipeDetail(id: string): Promise<MobileDetail> {
     ],
     sections: [
       { title: `Tarkib — 1 ${unit} uchun`, empty: "Retsept bo'sh", icon: "layers", rows: (active?.items ?? []).map((i) => { const ing = ingredientOf(i); return { id: i.id, title: ing.name, subtitle: ing.kind === "product" ? "yarim tayyor mahsulot" : "xomashyo", right: `${ing.qtyPerM3} ${ing.unit}` }; }) },
-      ...(p.recipes.length > 1 ? [{ title: "Versiyalar tarixi", empty: "", icon: "clock", rows: p.recipes.map((r) => ({ id: r.id, title: `v${r.version}`, subtitle: `${day(r.createdAt)} · ${r.items.length} tarkib · ${r._count.batches} zames`, status: r.isActive ? "Amalda" : "Eski", tone: (r.isActive ? "success" : "info") as Tone })) }] : []),
+      ...(p.recipes.length > 1 ? [{ title: "Versiyalar tarixi", empty: "", icon: "clock", rows: p.recipes.map((r) => ({ id: r.id, title: `v${r.version}`, subtitle: `${dt(r.createdAt)} · ${r.items.length} tarkib · ${r._count.batches} zames`, status: r.isActive ? "Amalda" : "Eski", tone: (r.isActive ? "success" : "info") as Tone })) }] : []),
     ],
     actions: [],
   };

@@ -7,7 +7,7 @@ import { canDo } from "@/lib/permissions";
 import { pathAllowed } from "@/lib/nav";
 import { ACTIVE_TRIP, mainDriverOf, vehicleFormDrivers, EXPENSE_KIND, FUEL_TYPE, SERVICE_KINDS, serviceDueLevel, tripPhase, VEHICLE_TYPE, vehicleLive, vehicleServiceDue } from "@/lib/logistics";
 import { fuelConsumption } from "@/lib/logistics-costs";
-import { date, dateTime, fmtNum, isoDate, money, moneyShort, qty } from "@/lib/format";
+import { date, dateTime, fmtNum, isoDate, money, moneyShort, opAt, qty } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { vehicleReport } from "@/lib/vehicle-report";
 import { parseDayRange } from "@/app/(app)/bi-tahlil/month-bar";
@@ -129,7 +129,7 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
               <tbody>
                 {v.fuelLogs.length === 0 && <Empty text="Zapravka yozilmagan" />}
                 {v.fuelLogs.slice(0, 10).map((f) => (
-                  <Tr key={f.id} className={f.cancelledAt ? "text-slate-400" : undefined}><Td className="text-sm">{date(f.date)}<div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.driver ? ` · ${f.driver.fullName}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td><Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td><Td right className={`tabular ${f.cancelledAt ? "line-through" : ""}`}>{moneyShort(Number(f.amount))}</Td><Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td></Tr>
+                  <Tr key={f.id} className={f.cancelledAt ? "text-slate-400" : undefined}><Td className="text-sm"><span className="whitespace-nowrap">{opAt(f.date, f.createdAt)}</span><div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.driver ? ` · ${f.driver.fullName}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td><Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td><Td right className={`tabular ${f.cancelledAt ? "line-through" : ""}`}>{moneyShort(Number(f.amount))}</Td><Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td></Tr>
                 ))}
               </tbody>
             </Table>
@@ -141,7 +141,7 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
               <thead><tr><Th>Sana</Th><Th>Turi</Th><Th right>Summa</Th></tr></thead>
               <tbody>
                 {v.expenses.length === 0 && <Empty text="Xarajat yozilmagan" />}
-                {v.expenses.slice(0, 10).map((e) => <Tr key={e.id} className={e.cancelledAt ? "text-slate-400" : undefined}><Td className="text-sm">{date(e.date)}</Td><Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note ? <div className="text-xs text-slate-500">{e.note}</div> : null}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td><Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td></Tr>)}
+                {v.expenses.slice(0, 10).map((e) => <Tr key={e.id} className={e.cancelledAt ? "text-slate-400" : undefined}><Td className="whitespace-nowrap text-sm">{opAt(e.date, e.createdAt)}</Td><Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note ? <div className="text-xs text-slate-500">{e.note}</div> : null}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td><Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td></Tr>)}
               </tbody>
             </Table>
           </Card>
@@ -159,7 +159,7 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
               const lv = x.cancelledAt ? null : serviceDueLevel(x, v.odometerKm);
               return (
                 <Tr key={x.id} className={x.cancelledAt ? "bg-slate-50/60 text-slate-400" : undefined}>
-                  <Td className="text-sm tabular">{date(x.date)}</Td>
+                  <Td className="whitespace-nowrap text-sm tabular">{opAt(x.date, x.createdAt)}</Td>
                   <Td className="text-sm">{x.kind}{x.note ? <div className="max-w-xs text-xs text-slate-500">{x.note}</div> : null}{x.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 max-w-xs text-xs text-slate-500">{cancelNote(x, names)}</div></div>}</Td>
                   <Td right className="tabular">{x.odometerKm != null ? fmtNum(x.odometerKm) : "—"}</Td>
                   <Td right className="tabular">{x.cost != null ? money(Number(x.cost)) : "—"}</Td>

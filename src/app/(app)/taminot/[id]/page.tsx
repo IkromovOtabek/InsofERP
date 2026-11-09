@@ -4,7 +4,7 @@ import { AlertTriangle, BadgeCheck, ClipboardList, Clock, FileText, HardHat, Lay
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { supplyRequest, SUPPLY_LABEL, SUPPLY_COLOR, SUPPLY_OWNER, SUPPLY_STEPS, plannedSum, hasFact, totalPlanned, totalFact, canRejectSupply } from "@/lib/supply";
-import { money, qty as q, date, dateTime } from "@/lib/format";
+import { money, qty as q, date, dateTime, opAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { ROLE_LABELS } from "@/lib/nav";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
@@ -90,7 +90,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
       <PageHeader
         back={{ href: "/taminot", label: "Ta'minot zayavkalari" }}
         title={<>Ta&apos;minot {r.docNo} <Badge color={SUPPLY_COLOR[r.status]}>{SUPPLY_LABEL[r.status]}</Badge></>}
-        subtitle={`${r.warehouse.name} · ${date(r.date)} · ${r.createdBy.fullName} so'radi${r.needBy ? ` · ${date(r.needBy)} gacha kerak` : ""}${r.recheck > 0 ? ` · narx o'zgargani uchun ${r.recheck} marta qayta tasdiqqa qaytgan` : ""}`}
+        subtitle={`${r.warehouse.name} · ${opAt(r.date, r.createdAt)} · ${r.createdBy.fullName} so'radi${r.needBy ? ` · ${date(r.needBy)} gacha kerak` : ""}${r.recheck > 0 ? ` · narx o'zgargani uchun ${r.recheck} marta qayta tasdiqqa qaytgan` : ""}`}
         action={r.receipt ? <LinkButton href={`/receipts/${r.receipt.id}`} variant="secondary"><ReceiptText size={16} /> Kirim {r.receipt.docNo}</LinkButton> : undefined}
       />
 

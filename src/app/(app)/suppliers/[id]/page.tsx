@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { supplierLedger, supplierPrices } from "@/lib/receipt-payables";
 import { receiptTotal } from "@/lib/receipt-vat";
-import { money, qty, date } from "@/lib/format";
+import { money, qty, date, dateTime, opAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { SUPPLY_COLOR, SUPPLY_LABEL } from "@/lib/supply";
 import { Badge, Card, CardHeader, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -47,7 +47,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
     <div>
       <PageHeader back={{ href: "/suppliers", label: "Yetkazuvchilar" }}
         title={<>{sup.name} {sup.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</>}
-        subtitle={[sup.inn ? `INN ${sup.inn}` : null, sup.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas", sup.phone, `qo'shilgan ${date(sup.createdAt)}`].filter(Boolean).join(" · ")} />
+        subtitle={[sup.inn ? `INN ${sup.inn}` : null, sup.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas", sup.phone, `qo'shilgan ${dateTime(sup.createdAt)}`].filter(Boolean).join(" · ")} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <StatCard label="Jami olingan mol (QQS bilan)" value={money(ledger.received)} icon={PackageCheck} tone="brand" href="#kirimlar" />
@@ -130,7 +130,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
               {receipts.map((r) => (
                 <Tr key={r.id}>
                   <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link></Td>
-                  <Td className="whitespace-nowrap">{date(r.date)}</Td>
+                  <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
                   <Td>{r.warehouse.name}</Td>
                   <Td right>{money(receiptTotal(r.items))}</Td>
                 </Tr>
@@ -147,7 +147,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
               {supply.map((r) => (
                 <Tr key={r.id}>
                   <Td><Link href={`/taminot/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link></Td>
-                  <Td className="whitespace-nowrap">{date(r.date)}</Td>
+                  <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
                   <Td><Badge color={SUPPLY_COLOR[r.status]}>{SUPPLY_LABEL[r.status]}</Badge></Td>
                   <Td right>{money(r.items.reduce((x, i) => x + Number(i.qty) * Number(i.price), 0) + Number(r.deliveryCost))}</Td>
                 </Tr>

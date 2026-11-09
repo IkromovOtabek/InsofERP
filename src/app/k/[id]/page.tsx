@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Ban, Phone, Send, ShieldCheck } from "lucide-react";
 import { getCompany } from "@/lib/company";
-import { date, dateTime, fmtNum } from "@/lib/format";
+import { dateTime, fmtNum, opAt } from "@/lib/format";
 import { RENT_METHOD_LABEL } from "@/lib/rent";
 import { rentReceipt, rentReceiptPath, rentReceiptValid } from "@/lib/rent-receipt";
 import { QrScreen, QrField, QrFooter, qrCard, qrBtnDark, qrBtnTelegram, telegramUrl, telHref } from "@/components/qr-screen";
@@ -50,7 +50,7 @@ export default async function PublicRentReceiptPage({ params, searchParams }: { 
         <section className="relative flex flex-col gap-3.5 rounded-t-[18px] bg-[#ffffff] px-5 pb-[18px] pt-5">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex flex-col"><span className="text-[12px] font-medium text-[#5f7088]">Kvitansiya</span><span className="text-[20px] font-extrabold">{r.no}</span></div>
-            <span className="text-[13px] font-bold text-[#314158]">{date(r.tx.date)}</span>
+            <span className="text-[13px] font-bold text-[#314158]">{opAt(r.tx.date, r.tx.createdAt)}</span>
           </div>
           <div className="flex flex-col gap-0.5 border-y-[1.5px] border-dashed border-[#e2e8f0] py-4">
             <span className="text-[12px] font-medium text-[#5f7088]">Summa</span>

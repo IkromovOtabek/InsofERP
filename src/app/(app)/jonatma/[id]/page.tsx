@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { date, dateTime, money } from "@/lib/format";
+import { dateTime, money, opAt } from "@/lib/format";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
 import { getShipment, ownShipmentsOnly, shipmentRights, SHIPMENT_SENDERS, SHIPMENT_STATUS_COLOR, SHIPMENT_STATUS_LABEL } from "@/lib/shipments";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatusSteps } from "@/components/ui";
@@ -35,7 +35,7 @@ export default async function ShipmentPage({ params }: { params: Promise<{ id: s
     <div>
       <PageHeader
         back={{ href: "/jonatma", label: "Jo'natmalar" }}
-        eyebrow={`${sh.supplier.name} · ${date(sh.date)}`}
+        eyebrow={`${sh.supplier.name} · ${opAt(sh.date, sh.createdAt)}`}
         title={`Jo'natma ${sh.docNo}`}
         subtitle={`${sh.items.length} qator · ${sh.createdBy.fullName}`}
         action={can.edit ? <LinkButton href={`/jonatma/${sh.id}/edit`} variant="secondary"><Pencil size={16} /> Tahrirlash</LinkButton> : undefined}
@@ -68,7 +68,7 @@ export default async function ShipmentPage({ params }: { params: Promise<{ id: s
               { k: "Holat", v: <Badge color={SHIPMENT_STATUS_COLOR[sh.status]}>{SHIPMENT_STATUS_LABEL[sh.status]}</Badge> },
               { k: "Yetkazuvchi", v: sh.supplier.name },
               { k: "Sklad", v: sh.warehouse.name },
-              { k: "Sana", v: date(sh.date) },
+              { k: "Sana", v: opAt(sh.date, sh.createdAt) },
               { k: "Nakladnoy №", v: sh.waybillNo },
               { k: "To'lov", v: sh.payment === "BANK" ? "Perechisleniye" : sh.payment === "CASH" ? "Naqd" : null },
               { k: "Kim olib keldi", v: sh.carrier },

@@ -329,6 +329,8 @@ export type PrixodRow = {
   docNo: string;
   /** Kirim sanasi; storno qatorida — storno qilingan payt (cancelledAt) */
   date: Date;
+  /** Kiritilgan payt (soat shundan — `opAt`); storno qatorida — cancelledAt */
+  createdAt: Date;
   material: string;
   materialId: string;
   unit: string;
@@ -418,7 +420,7 @@ export async function prixodJournal(p: { from: Date; to: Date; warehouseId?: str
       material: { select: { id: true, name: true, unit: true } },
       receipt: {
         select: {
-          id: true, docNo: true, date: true, note: true, waybillNo: true, payment: true, address: true, purpose: true, cancelledAt: true,
+          id: true, docNo: true, date: true, createdAt: true, note: true, waybillNo: true, payment: true, address: true, purpose: true, cancelledAt: true,
           carrier: true, loadedFrom: true, autoIssueTo: { select: { name: true } },
           autoIssueBrigade: { select: { name: true } }, autoIssueEmployee: { select: { fullName: true } },
           supplier: { select: { name: true } }, warehouse: { select: { name: true } }, recipient: { select: { name: true } },
@@ -439,7 +441,7 @@ export async function prixodJournal(p: { from: Date; to: Date; warehouseId?: str
     const qty = Number(i.qty), price = Number(i.price), delivery = r2(Number(i.deliveryCost)), vat = r2(Number(i.vatAmount));
     const sum = r2(qty * price + delivery);
     const row: PrixodRow = {
-      id: i.id, receiptId: r.id, docNo: r.docNo, date: r.date,
+      id: i.id, receiptId: r.id, docNo: r.docNo, date: r.date, createdAt: r.createdAt,
       material: i.material.name, materialId: i.material.id, unit: i.material.unit,
       waybillNo: r.waybillNo ?? waybillFromNote(r.note), qty,
       supplier: r.supplier.name, recipient: r.recipient?.name ?? autoName(r) ?? r.warehouse.name,
@@ -450,7 +452,7 @@ export async function prixodJournal(p: { from: Date; to: Date; warehouseId?: str
     if (inPeriod(r.date)) rows.push(r.cancelledAt ? { ...row, cancelled: true } : row);
     if (inPeriod(r.cancelledAt)) {
       stornoRows.push({
-        ...row, id: `${i.id}~storno`, date: r.cancelledAt, storno: true,
+        ...row, id: `${i.id}~storno`, date: r.cancelledAt, createdAt: r.cancelledAt, storno: true,
         qty: neg(qty), delivery: neg(delivery), sum: neg(sum), vat: neg(vat), total: neg(row.total),
       });
     }

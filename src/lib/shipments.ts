@@ -363,13 +363,13 @@ export async function listShipments(tab: ShipmentTab, viewer: Actor, opts: { q?:
   const rows = await db.supplyShipment.findMany({
     where, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: opts.take ?? 200,
     select: {
-      id: true, docNo: true, date: true, status: true, waybillNo: true, sentAt: true,
+      id: true, docNo: true, date: true, createdAt: true, status: true, waybillNo: true, sentAt: true,
       supplier: { select: { name: true } }, createdBy: { select: { fullName: true } },
       items: { select: { qty: true, price: true, status: true, category: true } },
     },
   });
   return rows.map((r) => ({
-    id: r.id, docNo: r.docNo, date: r.date, status: r.status, waybillNo: r.waybillNo, sentAt: r.sentAt,
+    id: r.id, docNo: r.docNo, date: r.date, createdAt: r.createdAt, status: r.status, waybillNo: r.waybillNo, sentAt: r.sentAt,
     supplier: r.supplier.name, by: r.createdBy.fullName,
     lines: r.items.length,
     pending: r.items.filter((i) => i.status === "PENDING").length,

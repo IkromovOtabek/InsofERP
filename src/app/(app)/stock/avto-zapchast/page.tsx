@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Car, PackagePlus, Truck } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { avtoPartsFeed, avtoPartsUnread } from "@/lib/avto-parts";
-import { date, dateTime, fmtNum } from "@/lib/format";
+import { date, fmtNum, opAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -36,7 +36,7 @@ export default async function AvtoPartsPage() {
             {feed.length === 0 && <Empty text={`So'nggi ${DAYS} kunda avto zapchast kelmagan`} icon={Car} />}
             {feed.map((f) => (
               <Tr key={f.key} className={cn(isNew(f.addedAt) && "bg-blue-50/60")}>
-                <Td className="whitespace-nowrap">{f.kind === "in" ? date(f.date) : dateTime(f.date)}</Td>
+                <Td className="whitespace-nowrap">{opAt(f.date, f.addedAt)}</Td>
                 <Td>
                   <span className="font-medium text-slate-900">{f.name}</span>
                   <span className="ml-1.5 text-[11px] text-slate-400">{f.code}</span>

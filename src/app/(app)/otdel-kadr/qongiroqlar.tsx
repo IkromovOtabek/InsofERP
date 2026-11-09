@@ -6,6 +6,7 @@ import { canDo } from "@/lib/permissions";
 import { dayUtc, isoDay, monthDays, monthOf, monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { CALL_STATUSES, CALL_STATUS_BADGE, CALL_STATUS_LABEL } from "@/lib/hr/labels";
 import { formatPhone } from "@/lib/phone";
+import { isoDate, time } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, Select, Table, Th } from "@/components/ui";
 import type { HrCallStatus, Prisma } from "@/generated/prisma";
 import { CallForm, CallRow, type CallRowData } from "./qongiroq-forms";
@@ -64,6 +65,7 @@ export async function QongiroqTab({ s, month, q, suhbat, lavozim, workPositions 
   const data: CallRowData[] = rows.map((r) => ({
     id: r.id, date: isoDay(r.date), position: r.position, phone: r.phone, fullName: r.fullName, address: r.address,
     age: r.age, status: r.status, visitDate: r.visitDate ? isoDay(r.visitDate) : null, reason: r.reason,
+    time: isoDate(r.createdAt) === isoDay(r.date) ? time(r.createdAt) : null,
   }));
   const cols = editable ? 10 : 9;
   const href = (p: Record<string, string | undefined>) => {

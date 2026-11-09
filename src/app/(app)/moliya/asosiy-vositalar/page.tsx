@@ -3,7 +3,7 @@ import { Building2, CalendarClock, Coins, TrendingDown } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { date, fmtNum, isoDate, money } from "@/lib/format";
+import { date, fmtNum, isoDate, money, opAt } from "@/lib/format";
 import { activeAssets, assetStateAt, depreciationIn, monthlyDepreciation } from "@/lib/fin-report/assets";
 import { loadCategories } from "@/lib/fin-report/categories";
 import { addMonths, monthKeyOf, monthLabel, monthRange } from "@/lib/fin-report/period";
@@ -26,7 +26,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
   const unlinked = await db.cashTransaction.findMany({
     where: { type: "EXPENSE", cancelledAt: null, fixedAsset: null, category: { in: assetCats, mode: "insensitive" } },
     orderBy: { date: "desc" }, take: 50,
-    select: { id: true, date: true, amount: true, counterparty: true, note: true, cashAccount: { select: { name: true } } },
+    select: { id: true, date: true, createdAt: true, amount: true, counterparty: true, note: true, cashAccount: { select: { name: true } } },
   });
   const pre = unlinked.find((t) => t.id === sp.tx);
   const prefill: AssetPrefill | undefined = pre ? { cashTxId: pre.id, cost: String(Number(pre.amount)), acquiredAt: isoDate(pre.date), name: pre.note ?? pre.counterparty ?? undefined } : undefined;
@@ -56,7 +56,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
             <tbody>
               {unlinked.map((t) => (
                 <Tr key={t.id}>
-                  <Td>{date(t.date)}</Td>
+                  <Td className="whitespace-nowrap">{opAt(t.date, t.createdAt)}</Td>
                   <Td className="text-slate-500">{t.cashAccount.name}</Td>
                   <Td>{[t.counterparty, t.note].filter(Boolean).join(" · ") || "—"}</Td>
                   <Td right>{money(Number(t.amount))}</Td>

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Check, Clock, Phone, Send, ShieldAlert, Truck, Ban } from "lucide-react";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
-import { date, dateTime, fmtNum } from "@/lib/format";
+import { date, dateTime, fmtNum, opAt, time } from "@/lib/format";
 import { orderQrValid, orderPublicPath } from "@/lib/order-qr";
 import { asOfferLang } from "@/lib/offer-i18n";
 import { donePercent, soleUnit, unitLabel } from "@/lib/unit";
@@ -187,12 +187,12 @@ export default async function PublicOrderPage({ params, searchParams }: { params
   const fields = (
     <section className={`${qrUp(3)} grid grid-cols-2 gap-x-3 gap-y-3.5 ${qrCard} ${cancelled ? "opacity-85" : ""}`}>
       <QrField label={T.client} value={o.customer.name} />
-      <QrField label={T.date} value={date(o.date)} />
+      <QrField label={T.date} value={opAt(o.date, o.createdAt)} />
       <QrField label={T.object} value={site || "—"} />
       {cancelled
         ? <QrField label={T.stateShort} value={T.status.CANCELLED} />
         : closed && lastDelivery
-          ? <QrField label={T.deliveredOn} value={date(lastDelivery)} />
+          ? <QrField label={T.deliveredOn} value={dateTime(lastDelivery)} />
           : <QrField label={T.delivery} value={o.dateUnknown ? T.unknown : `${date(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`} />}
     </section>
   );
@@ -266,7 +266,7 @@ export default async function PublicOrderPage({ params, searchParams }: { params
                 {t.verifyToken
                   ? <a href={`/verify/${encodeURIComponent(t.deliveryNoteNo)}?k=${t.verifyToken}`} className="min-w-0 flex-1 truncate text-[14px] font-bold text-[#1447e6] no-underline">{t.deliveryNoteNo}</a>
                   : <span className="min-w-0 flex-1 truncate text-[14px] font-bold">{t.deliveryNoteNo}</span>}
-                <span className="shrink-0 text-[13px] text-[#5f7088] tabular-nums">{fmtNum(t.acceptedQty ?? t.qtyM3, 3)}{unit ? ` ${unitLabel(unit)}` : ""} · {date(when).slice(0, 5)}</span>
+                <span className="shrink-0 text-[13px] text-[#5f7088] tabular-nums">{fmtNum(t.acceptedQty ?? t.qtyM3, 3)}{unit ? ` ${unitLabel(unit)}` : ""} · {date(when).slice(0, 5)} {time(when)}</span>
                 {!ok && <span className="shrink-0 rounded-full bg-[#eff6ff] px-2.5 py-1 text-[12px] font-bold text-[#1447e6]">{T.tripStatus[t.status] ?? t.status}</span>}
               </div>
             );

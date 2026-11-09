@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { dateRu, time as hm } from "@/lib/format";
 import { canDo } from "@/lib/permissions";
 import { pathAllowed } from "@/lib/nav";
 import { dayUtc, DISMISSAL_REASONS, hoursText, isoDay, monthOf, monthTitle, shiftDay, shiftMonth, today, validDay } from "@/lib/davomat";
@@ -51,6 +52,8 @@ import { KADR_ACCESS, kadrActionPerm } from "./kadr-access";
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
 const d2 = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}.${String(d.getUTCMonth() + 1).padStart(2, "0")}.${d.getUTCFullYear()}`;
+/** Amal vaqti (yozdi, yukladi, bekor qildi) — mahalliy soat bilan: «09.11.2026 14:32». */
+const dtm = (d: Date) => `${dateRu(d)} ${hm(d)}`;
 const dm = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
 const WD = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 const fail = (m: string): never => { throw new ListError("ACTION_FAILED", m, 400); };
@@ -262,7 +265,7 @@ export async function kadrList(user: MobileUser, key: string, q?: string, filter
       return {
         key, title,
         rows: list.filter((s) => match(q, s.title, s.position)).map((s) => ({
-          id: s.id, title: s.title, subtitle: `${s.position ?? "Hamma"} · ${s.anonymous ? "anonim" : "ismli"} · ${d2(s.createdAt)}${s.closesAt ? ` · ${d2(s.closesAt)} gacha` : ""}`,
+          id: s.id, title: s.title, subtitle: `${s.position ?? "Hamma"} · ${s.anonymous ? "anonim" : "ismli"} · ${dtm(s.createdAt)}${s.closesAt ? ` · ${d2(s.closesAt)} gacha` : ""}`,
           right: `${s._count.responses} javob`, status: ST[s.status][0], tone: ST[s.status][1] as Tone,
         })),
       };
@@ -415,8 +418,8 @@ export async function kadrDetail(user: MobileUser, key: string, id: string): Pro
           { label: "Summa", value: `${x.kind === "BONUS" ? "+" : "−"}${money(Number(x.amount))}`, tone: x.kind === "BONUS" ? "success" : "danger" },
           { label: "Sababi", value: x.reason },
           ...(x.date ? [{ label: "Sana", value: d2(x.date) }] : []),
-          { label: "Yozdi", value: `${name(x.createdById)} · ${d2(x.createdAt)}` },
-          ...(x.cancelledAt ? [{ label: "Bekor qildi", value: `${name(x.cancelledById)} · ${d2(x.cancelledAt)} · ${x.cancelReason ?? ""}`, tone: "danger" as Tone }] : []),
+          { label: "Yozdi", value: `${name(x.createdById)} · ${dtm(x.createdAt)}` },
+          ...(x.cancelledAt ? [{ label: "Bekor qildi", value: `${name(x.cancelledById)} · ${dtm(x.cancelledAt)} · ${x.cancelReason ?? ""}`, tone: "danger" as Tone }] : []),
         ],
       };
     }
@@ -595,7 +598,7 @@ async function documentDetail(user: MobileUser, id: string): Promise<MobileDetai
     fields: [
       { label: "Xodim", value: doc.employee.fullName },
       { label: "Fayl", value: doc.fileName },
-      { label: "Yuklandi", value: d2(doc.createdAt) },
+      { label: "Yuklandi", value: dtm(doc.createdAt) },
       ...(image ? [] : [{ label: "Ko'rish", value: "PDF — kompyuterdagi ERP'da oching" }]),
     ],
     sections: [],
@@ -695,7 +698,7 @@ export async function kadrEmployeeExtras(user: MobileUser, employeeId: string): 
       ...(e.user ? [{ id: "login", title: "Login", subtitle: LOGIN_ROLE_OPTIONS.find((o) => o.value === e.user!.role)?.label ?? e.user.role, right: e.user.login, status: e.user.isActive ? "Faol" : "Bloklangan", tone: (e.user.isActive ? "success" : "danger") as Tone }] : []),
     ];
     sections.push({ title: "Kadr ma'lumotlari", empty: "", rows });
-    sections.push({ title: "Hujjatlar", empty: "Hujjat nusxasi yuklanmagan", target: "kadr-hujjat", rows: e.documents.map((d) => ({ id: d.id, title: d.kind, subtitle: `${d.fileName} · ${d2(d.createdAt)}`, tone: "info" as Tone })) });
+    sections.push({ title: "Hujjatlar", empty: "Hujjat nusxasi yuklanmagan", target: "kadr-hujjat", rows: e.documents.map((d) => ({ id: d.id, title: d.kind, subtitle: `${d.fileName} · ${dtm(d.createdAt)}`, tone: "info" as Tone })) });
   }
   const photo = e.photo && pathAllowed("/employees", user.role, user.perms) ? { url: `/api/mobile/kadr/photo?id=${e.id}`, title: "3x4 surat" } : undefined;
   return { actions, sections, photo };

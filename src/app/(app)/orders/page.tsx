@@ -3,7 +3,7 @@ import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDown
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { date, fmtNum } from "@/lib/format";
+import { date, fmtNum, opAt } from "@/lib/format";
 import { fmtUnitTotals } from "@/lib/unit";
 import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { OrderLoadCalendar } from "./load-calendar";
@@ -116,12 +116,14 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             // Hajm mahsulot birligida: beton m³, ustun/blok dona — aralashtirib qo'shilmaydi
             const vol = fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
             const sum = orderTotal(o);
+            // Kiritilgan payt: soat — yetkazish ustunidagidek sana ostida (ustun kengaymasin)
+            const [enteredDay, enteredTime] = opAt(o.date, o.createdAt).split(" ");
             // Guruhning birinchi qatori — mijoz nomi, obyekt manzili va nechta zayavka ekani;
             // qolganlari o'sha guruhga tegishli ekani ko'rinib tursin deb ichkariroq chiziladi.
             const first = idx === 0;
             return (
               <Tr key={o.id} className={first && g.length > 1 ? "[&>td]:border-t-2 [&>td]:border-t-slate-200" : ""}>
-                <Td className="whitespace-nowrap"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{date(o.date)}</Link></Td>
+                <Td className="whitespace-nowrap"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{enteredDay}</Link>{enteredTime && <div className="text-xs text-slate-500">{enteredTime}</div>}</Td>
                 <Td className="whitespace-nowrap">{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : <>{date(o.deliveryDate)}{o.deliveryTime && <div className="text-xs text-slate-500">{o.deliveryTime}</div>}</>}</Td>
                 <Td>
                   {o.kind === "STOCK" ? (

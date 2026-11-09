@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Bus, CheckCheck, MapPin, Package, Phone, Truck } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
-import { qty as q, date, dateTime, deliveryAt } from "@/lib/format";
+import { qty as q, dateTime, deliveryAt } from "@/lib/format";
 import { ecoLabel } from "@/lib/eco/labels";
 import { Card, CardHeader, Empty, EmptyState, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
@@ -102,7 +102,7 @@ export default async function MyTripsPage() {
             <Tr key={t.id}>
               <Td className="font-medium">{t.deliveryNoteNo}</Td>
               <Td>{t.order.customer.name}</Td>
-              <Td>{date(t.createdAt)}</Td>
+              <Td className="whitespace-nowrap">{dateTime(t.createdAt)}</Td>
               <Td className="text-slate-600">{t.deliveredAt ? dateTime(t.deliveredAt) : "—"}{t.receiverName && <div className="text-xs text-slate-500">qabul qildi: {t.receiverName}</div>}</Td>
               <Td right className="whitespace-nowrap">{tripQty(t)}</Td>
               <Td><TripStatusBadge status={t.status} /></Td>

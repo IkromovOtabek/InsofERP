@@ -3,7 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { money, moneyShort, date, isoDate } from "@/lib/format";
+import { money, moneyShort, date, isoDate, opAt } from "@/lib/format";
 import { Badge, Button, Callout, Empty, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { JOURNAL_ONLY, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -216,7 +216,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
           const amtCls = r.cancelled ? "text-slate-400 line-through" : r.transfer ? "text-sky-700" : "";
           return (
             <Tr key={r.id} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
-              <Td className="whitespace-nowrap">{date(r.date)}</Td>
+              <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
               <Td className="whitespace-nowrap">
                 {r.account}
                 <span className="ml-1.5"><Badge color={r.method === "CASH" ? "amber" : "slate"} dot={false}>{r.method === "CASH" ? "naqd" : "bank"}</Badge></span>

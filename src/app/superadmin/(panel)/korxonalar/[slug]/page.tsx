@@ -8,7 +8,7 @@ import type { TenantStats } from "@/lib/control/stats";
 import { EVENT_LABEL } from "@/lib/control/events";
 import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
-import { date, dateTime, fmtNum, money, moneyShort } from "@/lib/format";
+import { dateTime, fmtNum, money, moneyShort, opAt } from "@/lib/format";
 import { Badge, Button, Callout, Card, DL, Empty, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { PageHeader } from "../../../_ui";
 import { TenantStatusBadge, Health, ago } from "../../status";
@@ -155,11 +155,11 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
             <thead><tr><Th>Sana</Th><Th right>Summa</Th><Th>Davr</Th><Th>Usul</Th><Th>Izoh</Th><Th /></tr></thead>
             <tbody>{payments.map((p) => (
               <Tr key={p.id}>
-                <Td>{iso(p.paidAt)}</Td>
+                <Td className="whitespace-nowrap">{opAt(p.paidAt, p.createdAt, iso)}</Td>
                 <Td right>{p.cancelledAt ? <s className="text-slate-400">{money(Number(p.amount))}</s> : money(Number(p.amount))}</Td>
                 <Td>{iso(p.periodFrom)} — {iso(p.periodTo)} <span className="text-slate-500">({p.months} oy)</span></Td>
                 <Td>{PAYMENT_METHODS[p.method] ?? p.method}</Td>
-                <Td>{p.cancelledAt ? <span className="text-red-700">Storno {date(p.cancelledAt)}: {p.cancelReason}</span> : p.note ?? ""}</Td>
+                <Td>{p.cancelledAt ? <span className="text-red-700">Storno {dateTime(p.cancelledAt)}: {p.cancelReason}</span> : p.note ?? ""}</Td>
                 <Td>{p.id === lastActive?.id && <CancelPaymentButton slug={t.slug} id={p.id} />}</Td>
               </Tr>
             ))}</tbody>

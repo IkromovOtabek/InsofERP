@@ -3,11 +3,11 @@ import { ClipboardList, Clock } from "lucide-react";
 import { SUPPLY_COLOR, SUPPLY_LABEL, SUPPLY_OWNER, plannedSum, factSum, hasFact } from "@/lib/supply";
 import type { SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_COLOR, DELIVERY_LABEL, PRIORITY_COLOR, PRIORITY_LABEL } from "@/lib/procurement-const";
-import { money, date } from "@/lib/format";
+import { money, date, opAt } from "@/lib/format";
 import { Badge, Empty, Table, Td, Th, Tr } from "@/components/ui";
 
 export type SupplyRow = {
-  id: string; docNo: string; date: Date; status: SupplyStatus; needBy: Date | null;
+  id: string; docNo: string; date: Date; createdAt?: Date; status: SupplyStatus; needBy: Date | null;
   warehouse: { name: string }; supplier: { name: string } | null; createdBy: { fullName: string };
   items: { qty: unknown; price: unknown; factQty: unknown; factPrice: unknown }[];
   department?: string | null; priority?: SupplyPriority; deliveryStatus?: SupplyDelivery | null; eta?: Date | null;
@@ -32,8 +32,8 @@ export function SupplyTable({ rows, empty }: { rows: SupplyRow[]; empty: string 
                 <Link href={`/taminot/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>
                 {r.priority && r.priority !== "NORMAL" && <div className="mt-0.5"><Badge color={PRIORITY_COLOR[r.priority]}>{PRIORITY_LABEL[r.priority]}</Badge></div>}
               </Td>
-              <Td>
-                {date(r.date)}
+              <Td className="whitespace-nowrap">
+                {opAt(r.date, r.createdAt)}
                 {r.needBy && <div className={late ? "text-xs font-semibold text-red-600" : "text-xs text-slate-500"}>{date(r.needBy)} gacha</div>}
               </Td>
               <Td className="text-slate-600">{r.department ?? r.warehouse.name}<div className="text-xs text-slate-500">{r.createdBy.fullName}</div></Td>

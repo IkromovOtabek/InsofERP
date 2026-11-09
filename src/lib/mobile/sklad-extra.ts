@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { moduleWriteAllowed } from "@/lib/auth";
-import { dateRu, fmtNum } from "@/lib/format";
+import { dateRu, fmtNum, opAt, time } from "@/lib/format";
 import { unitLabel, unitShort } from "@/lib/unit";
 import { ostatkaDetail, ostatkaSummary } from "@/lib/ostatka";
 import { productionCapacity } from "@/lib/production-capacity";
@@ -256,14 +256,14 @@ async function productCard(productId: string): Promise<MobileDetail> {
         title: "Ishlab chiqarilgan partiyalar", empty: "Hali ishlab chiqarilmagan", target: "production", icon: "factory",
         rows: d.batches.map((b) => ({
           id: b.id, title: b.batchNo,
-          subtitle: `${dateRu(b.date)} · ${b.order ? b.order.customer.name : "sklad uchun"} · ${b.createdBy.fullName}`,
+          subtitle: `${opAt(b.date, b.createdAt, dateRu)} · ${b.order ? b.order.customer.name : "sklad uchun"} · ${b.createdBy.fullName}`,
           right: pq(sum(b.qtyM3), u), ...(b.cancelledAt ? { status: "Bekor qilingan", tone: "danger" as Tone } : {}),
         })),
       },
       {
         title: "Harakat tarixi", empty: "Harakat yo'q", icon: "clock",
         rows: d.moves.map((m) => ({
-          id: m.id, title: MOVE_LABEL[m.type] ?? m.type, subtitle: `${dateRu(m.createdAt)} · ${m.createdBy.fullName}${m.note ? ` · ${m.note}` : ""}`,
+          id: m.id, title: MOVE_LABEL[m.type] ?? m.type, subtitle: `${dateRu(m.createdAt)} ${time(m.createdAt)} · ${m.createdBy.fullName}${m.note ? ` · ${m.note}` : ""}`,
           right: `${sum(m.qty) > 0 ? "+" : ""}${fmtNum(sum(m.qty), 3)}`, tone: (sum(m.qty) < 0 ? "danger" : "success") as Tone,
         })),
       },
@@ -336,7 +336,7 @@ async function oluvchiCard(user: MobileUser, rawId: string): Promise<MobileDetai
       title: "Oxirgi chiqimlar", empty: "Chiqim yo'q", target: "stock", icon: "circle-arrow-up",
       rows: c.rows.slice(-30).reverse().map((r, n) => ({
         id: seeDocs && r.ref ? `rasxod:${r.ref}~${n}` : `${r.materialId}~${n}`,
-        title: r.material, subtitle: `${dateRu(r.date)}${r.note ? ` · ${r.note}` : ""}`, right: qtyU(r.qty, r.unit),
+        title: r.material, subtitle: `${opAt(r.date, r.createdAt, dateRu)}${r.note ? ` · ${r.note}` : ""}`, right: qtyU(r.qty, r.unit),
         ...(r.kind === "storno" ? { status: "Bekor qilish", tone: "danger" as Tone } : r.cancelled ? { status: "Bekor", tone: "danger" as Tone } : {}),
       })),
     },
@@ -449,7 +449,7 @@ async function supplyDocCard(user: MobileUser, docId: string): Promise<MobileDet
       f("Hujjat turi", d.kind),
       f("Fayl", d.fileName),
       f("Ta'minot zayavkasi", d.request.docNo),
-      f("Kim biriktirdi", `${d.createdBy.fullName} · ${dateRu(d.createdAt)}`),
+      f("Kim biriktirdi", `${d.createdBy.fullName} · ${dateRu(d.createdAt)} ${time(d.createdAt)}`),
       ...(image ? [] : [f("Ko'rish", "PDF — ilovada ochilmaydi, saytda oching (Ta'minot → hujjat)", "info")]),
     ],
     sections: [{ title: "Ta'minot zayavkasi", empty: "", target: "supply", rows: [{ id: d.request.id, title: d.request.docNo, subtitle: "Zayavkani ochish" }] }],

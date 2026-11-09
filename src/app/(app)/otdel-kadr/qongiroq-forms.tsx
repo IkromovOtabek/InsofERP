@@ -16,6 +16,8 @@ import type { HrCallStatus } from "@/generated/prisma";
 export type CallRowData = {
   id: string; date: string; position: string; phone: string | null; fullName: string | null; address: string | null;
   age: number | null; status: HrCallStatus; visitDate: string | null; reason: string | null;
+  /** Yozilgan soat ("14:32") — shu kuni kiritilgan bo'lsa; orqa sana / import — null */
+  time?: string | null;
 };
 
 /** "YYYY-MM-DD" → 25/07/2025 (mahalliy yarim tun — kun siljimasin). */
@@ -144,7 +146,7 @@ export function CallRow({ row, no, first, times, cols, editable, canHire, positi
   return (
     <>
       <Tr className={cn(row.status === "HIRED" && "bg-emerald-50/50")}>
-        <Td className={cn("whitespace-nowrap align-top", cell)}>{first ? day(row.date) : ""}</Td>
+        <Td className={cn("whitespace-nowrap align-top", cell)}>{first ? day(row.date) : ""}{row.time && <span className={cn("text-xs text-slate-500 tabular", first && "ml-1.5")}>{row.time}</span>}</Td>
         <Td className={cn("align-top", cell)}>{row.position}</Td>
         <Td right className={cn("align-top text-slate-500", cell)}>{no}</Td>
         <Td className={cn("whitespace-nowrap align-top", cell)}>

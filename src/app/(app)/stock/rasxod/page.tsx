@@ -7,7 +7,7 @@ import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { canSeeRasxod } from "@/lib/stock-journal-access";
 import { companyVatPayer } from "@/lib/receipt-vat";
-import { dateRu, fmtNum } from "@/lib/format";
+import { dateRu, fmtNum, opAt } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
 import { rasxodByTarget, rasxodJournal, rasxodTotals, STORNO_NOTE_RE, type RasxodRow, type RasxodTarget } from "@/lib/stock-issue";
 import { recipientList } from "@/lib/stock-recipients";
@@ -286,7 +286,7 @@ function Row({ r, storno }: { r: RasxodRow; storno?: React.ReactNode }) {
   const reason = r.kind === "storno" && r.note ? r.note.replace(STORNO_NOTE_RE, "") : null;
   return (
     <SheetTr className={cn((r.kind === "return" || r.kind === "storno" || r.cancelled) && "text-slate-500")}>
-      <SheetTd tone={tone} className="whitespace-nowrap">{dateRu(r.date)}</SheetTd>
+      <SheetTd tone={tone} className="whitespace-nowrap">{opAt(r.date, r.createdAt, dateRu)}</SheetTd>
       <SheetTd tone={tone} strong>{r.material}</SheetTd>
       <SheetTd tone={tone} center>{unitShort(r.unit)}</SheetTd>
       <SheetTd tone={tone} right strong className={cn(neg && "text-slate-500")}>{fmtNum(r.qty, 3)}</SheetTd>

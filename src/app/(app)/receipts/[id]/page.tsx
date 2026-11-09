@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { date, dateTime, money, qty } from "@/lib/format";
+import { dateTime, money, opAt, qty } from "@/lib/format";
 import { lineDelivery, lineGoods, lineTotal, receiptAmounts } from "@/lib/receipt-vat";
 import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
 import { HardHat } from "lucide-react";
@@ -36,7 +36,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const canDistribute = !r.cancelledAt && canDo(s, "stock", "brigade") && pathAllowed("/stock", s.role, s.perms);
   return (
     <div>
-      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title={`Kirim ${r.docNo}`} subtitle={`${date(r.date)} · ${r.supplier.name} → ${r.warehouse.name}${r.createdBy ? ` · kiritdi: ${r.createdBy.fullName}` : ""}`}
+      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title={`Kirim ${r.docNo}`} subtitle={`${opAt(r.date, r.createdAt)} · ${r.supplier.name} → ${r.warehouse.name}${r.createdBy ? ` · kiritdi: ${r.createdBy.fullName}` : ""}`}
         action={<>
           {canDistribute && <LinkButton href={`/stock?tab=brigades&receipt=${r.id}`} variant="secondary"><HardHat size={16} /> Brigadalarga taqsimlash</LinkButton>}
           {canStorno && <ConfirmButton action={stornoReceipt.bind(null, r.id)} label="Bekor qilish" question={paidSum > 0.005 ? `Kirimga ${money(paidSum)} to'lov bog'langan — avval to'lovni bekor qiling. Baribir urinib ko'rasizmi?` : `${r.docNo} bekor qilinsinmi? Xomashyo skladdan qaytariladi`} reason="required" okText="Bekor qilindi" className="h-9 px-3 text-sm" />}

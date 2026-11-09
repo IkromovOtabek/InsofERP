@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Bank
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { date, fmtNum, isoDate, money } from "@/lib/format";
+import { date, fmtNum, isoDate, money, opAt } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { getCompany } from "@/lib/company";
 import { rentDebtors } from "@/lib/rent-tenant";
@@ -208,7 +208,7 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
               const off = !!x.cancelledAt;
               return (
                 <Tr key={x.id} className={off ? "opacity-55" : undefined}>
-                  <Td className="whitespace-nowrap">{date(x.date)}</Td>
+                  <Td className="whitespace-nowrap">{opAt(x.date, x.createdAt)}</Td>
                   <Td>{off ? <Badge color="slate">bekor qilingan</Badge> : x.type === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
                   <Td className={off ? "line-through" : undefined}>
                     {x.shop ? <><span className="font-medium text-slate-800">{x.shop.name}</span> <span className="text-xs text-slate-500">· {x.shop.location}</span></> : null}

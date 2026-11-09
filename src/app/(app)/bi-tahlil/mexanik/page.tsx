@@ -7,7 +7,7 @@ import { DayRangeBar, parseDayRange } from "../month-bar";
 import { mechanicReport } from "@/lib/mechanic-report";
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { mechanicCounts, mechanicList, mechSubject, MECH_STATUS_COLOR, MECH_STATUS_SHORT } from "@/lib/mechanic-requests";
-import { date, fmtNum, money, moneyShort } from "@/lib/format";
+import { date, dateTime, fmtNum, money, moneyShort } from "@/lib/format";
 import { Badge, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +47,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                   <Td><Link href={`/logistika/transport/${v.id}`} className="font-medium tabular hover:underline">{v.plate}</Link></Td>
                   <Td>{VEHICLE_TYPE[v.type] ?? v.type}</Td>
                   <Td className="text-sm">{v.note || "—"}</Td>
-                  <Td className="tabular text-sm">{v.since ? <>{date(v.since)} <span className="text-slate-500">· {v.days} kun</span></> : "—"}</Td>
+                  <Td className="tabular text-sm">{v.since ? <>{dateTime(v.since)} <span className="text-slate-500">· {v.days} kun</span></> : "—"}</Td>
                 </Tr>
               ))}
             </tbody>
@@ -114,7 +114,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 <Tr key={r.id}>
                   <Td>
                     <Link href={`/mexanik-sorovlar/${r.id}`} className="font-medium tabular hover:underline">{r.docNo}</Link>
-                    <div className="text-xs text-slate-500">{date(r.createdAt)} · {r.createdBy.fullName}</div>
+                    <div className="text-xs text-slate-500">{dateTime(r.createdAt)} · {r.createdBy.fullName}</div>
                   </Td>
                   <Td className="tabular">{mechSubject(r)}</Td>
                   <Td className="text-sm">{r.problem}{r.urgent && <span className="ml-1.5"><Badge color="red">Shoshilinch</Badge></span>}</Td>

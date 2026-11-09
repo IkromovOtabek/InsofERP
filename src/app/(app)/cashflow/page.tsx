@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requireRoles } from "@/lib/page-guard";
-import { money, date, isoDate } from "@/lib/format";
+import { money, date, isoDate, opAt } from "@/lib/format";
 import { Badge, Button, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { TxForm } from "./tx-form";
@@ -28,7 +28,7 @@ import { CASH_METHOD_LABEL, type CashMethod } from "@/lib/cash-categories";
 // TRANSFER — hisoblararo o'tkazma: kirim ham, chiqim ham emas (Kirim/Chiqim jamiga kirmaydi), faqat qoldiqni o'zgartiradi.
 // `sign` — hisob ko'chirmasida (hisob tanlanganda) shu hisobga ta'siri: +1 kirdi, −1 chiqdi; 0 — umumiy ko'rinish.
 // `method` — to'lov usuli, hisob turidan (naqd kassa / bank); o'tkazmada — qatordagi hisob tomoni.
-type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; method: CashMethod; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean; cancelled?: string | null };
+type Row = { id: string; date: Date; createdAt: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; method: CashMethod; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean; cancelled?: string | null };
 
 /** Hisob qoldig'i berilgan sanagacha: mijoz to'lovlari + barcha yozuvlar (kirim, chiqim, boshlang'ich, o'tkazma) ishorasi bilan. */
 async function statementBalance(cashAccountId: string, date: { lt: Date } | { lte: Date }) {
@@ -99,14 +99,14 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
 
   const rows: Row[] = [
-    ...payments.map((p): Row => ({ id: p.id, date: p.date, kind: "INCOME", account: p.cashAccount.name, method: p.cashAccount.type, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
+    ...payments.map((p): Row => ({ id: p.id, date: p.date, createdAt: p.createdAt, kind: "INCOME", account: p.cashAccount.name, method: p.cashAccount.type, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
     // Hujjatdan avtomatik yozilgan chiqim (kirim hujjati / sklad kirimi) — ustiga bosilsa batafsili ochiladi
     // O'tkazma: umumiy ko'rinishda bitta qator (chiqish tomoni "Kassa → Bank"); hisob tanlansa — shu hisob tomoni (+/−)
     ...txs.filter((t) => acc || t.type !== "TRANSFER_IN").map((t): Row => t.type === "TRANSFER_OUT" || t.type === "TRANSFER_IN" ? {
-      id: t.id, date: t.date, kind: "TRANSFER", sign: acc ? txSign(t.type) : 0, account: `${t.cashAccount.name} ${t.counterparty ?? ""}`.trim(), method: t.cashAccount.type,
+      id: t.id, date: t.date, createdAt: t.createdAt, kind: "TRANSFER", sign: acc ? txSign(t.type) : 0, account: `${t.cashAccount.name} ${t.counterparty ?? ""}`.trim(), method: t.cashAccount.type,
       category: acc ? (t.type === "TRANSFER_OUT" ? "Perekit · chiqdi" : "Perekit · kirdi") : "Perekit (hisoblararo)", who: "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), deletable: false,
     } : {
-      id: t.id, date: t.date, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name, method: t.cashAccount.type,
+      id: t.id, date: t.date, createdAt: t.createdAt, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name, method: t.cashAccount.type,
       category: t.refType && t.refType !== TRANSFER_REF ? `Kirim · ${t.category}` : t.category,
       who: t.supplier?.name ?? t.counterparty ?? "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), cancelled: cancelNote(t, cNames),
       href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
@@ -210,7 +210,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
               {transfers.map((t) => (
                 <Tr key={t.id}>
                   <Td className="font-medium whitespace-nowrap">{t.docNo}</Td>
-                  <Td>{date(t.date)}</Td>
+                  <Td className="whitespace-nowrap">{opAt(t.date, t.createdAt)}</Td>
                   <Td><span className="text-slate-800">{t.from} → {t.to}</span><span className="block text-xs text-slate-500">{transferKind(t.fromType, t.toType)} · {t.by}</span></Td>
                   <Td right className="font-medium tabular-nums">{money(t.amount)}</Td>
                   <Td right className="tabular-nums text-slate-500">{t.fee > 0 ? money(t.fee) : "—"}</Td>
@@ -243,7 +243,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
           {rows.length === 0 && <Empty text="Davrda harakat yo'q" />}
           {rows.map((r) => (
             <Tr key={r.id} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
-              <Td>{date(r.date)}</Td>
+              <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
               <Td>{r.kind === "TRANSFER" ? <Badge color="blue">Perekit</Badge> : r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}{r.cancelled && <span className="mt-1 block"><Badge color="slate">Bekor qilingan</Badge></span>}</Td>
               <Td>{r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.category} →</Link> : r.category}</Td>
               <Td><CustomerName name={r.who} blacklisted={!!r.blacklisted} contracted={!!r.contracted} href={r.href} /></Td>

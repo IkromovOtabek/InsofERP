@@ -5,7 +5,7 @@ import type { Prisma } from "@/generated/prisma";
 import { customerMarks, markedName } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
-import { money, date, fmtNum, isoDate } from "@/lib/format";
+import { money, date, dateTime, fmtNum, isoDate, opAt } from "@/lib/format";
 import { Badge, Button, Callout, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
 import { LinkPaymentForm, PaymentForm, type InvOpt, type OrderOpt } from "./payment-form";
 import { RegisterTable, toView } from "./register-table";
@@ -142,7 +142,7 @@ async function PaymentsTab({ role }: { role: string }) {
             const unallocated = !p.invoiceId && !p.register;
             return (
               <Tr key={p.id}>
-                <Td className="whitespace-nowrap">{date(p.date)}</Td>
+                <Td className="whitespace-nowrap">{opAt(p.date, p.createdAt)}</Td>
                 <Td><CustomerName name={p.customer.name} blacklisted={marks.black.has(p.customerId)} contracted={marks.contract.has(p.customerId)} href={`/customers/${p.customerId}`} /></Td>
                 <Td>
                   {p.invoice?.invoiceNo ?? (p.register ? <span className="text-slate-400">realizatsiya</span> : p.order ? <span className="text-slate-500">avans · <Link href={`/orders/${p.orderId}`} className="hover:underline">{date(p.order.deliveryDate)}</Link></span> : <Badge color="amber">taqsimlanmagan</Badge>)}
@@ -252,7 +252,7 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
               {imports.map((b) => (
                 <li key={b.batch} className="flex items-center justify-between gap-2">
                   <Link href={`/payments?tab=jurnal&batch=${b.batch}`} className="min-w-0 truncate text-slate-700 hover:underline">
-                    {b._max.createdAt ? date(b._max.createdAt) : "—"} · {b._count._all} ta qator
+                    {b._max.createdAt ? dateTime(b._max.createdAt) : "—"} · {b._count._all} ta qator
                   </Link>
                   {canUndo(b.batch) && (
                     <ConfirmButton action={deleteImportBatch.bind(null, b.batch)} label="" title="Partiyani qaytarish" icon={<Trash2 size={14} />} question={`${b._count._all} qator qaytarilsinmi?`} okText="Qaytarildi" className="h-7 px-1.5" />

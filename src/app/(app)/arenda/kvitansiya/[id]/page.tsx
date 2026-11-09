@@ -4,7 +4,7 @@ import { requirePage } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { publicOrigin } from "@/lib/public-url";
 import { arendaOrigin } from "@/lib/arenda-host";
-import { date, dateTime, fmtNum } from "@/lib/format";
+import { dateTime, fmtNum, opAt } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { numWords } from "@/lib/num-words";
 import { RENT_METHOD_LABEL } from "@/lib/rent";
@@ -47,7 +47,7 @@ export default async function RentReceiptPage({ params, searchParams }: { params
       <div className="mt-3 flex items-start justify-between gap-4">
         <div className="flex-1">
           <h1 className="text-[16px] font-bold uppercase tracking-wide">Kvitansiya № {r.no}</h1>
-          <div className="text-[12px]">{r.purpose} qabul qilingani haqida · {date(r.tx.date)}</div>
+          <div className="text-[12px]">{r.purpose} qabul qilingani haqida · {opAt(r.tx.date, r.tx.createdAt)}</div>
           <table className="mt-3 w-full text-[12.5px]">
             <tbody>
               <tr><td className="w-40 py-0.5 pr-2 text-slate-600">To&apos;lovchi (ijarachi)</td><td className="border-b border-slate-400 py-0.5 font-semibold">{r.payer.name}{r.payer.inn ? ` · INN ${r.payer.inn}` : ""}</td></tr>

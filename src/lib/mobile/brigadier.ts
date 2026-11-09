@@ -11,6 +11,7 @@ import { brigadeStocks } from "@/lib/brigade-stock";
 import { recipientCard } from "@/lib/recipient-card";
 import { stockPeriod } from "@/components/stock-period";
 import { day, inUnit, money, num, pctText, sum, time, totalsText } from "./fmt";
+import { opAt } from "@/lib/format";
 import { ListError, type MobileList } from "./list";
 import type { MobileUser } from "./auth";
 import type { DetailAction, DetailField, FormField, MobileDetail } from "./detail";
@@ -410,7 +411,7 @@ export async function brigStockDetail(user: MobileUser, brigadeId: string): Prom
     section("Shu xomashyo bilan chiqara olaman", b.makes.map((m) => ({ id: m.productId, title: m.product, subtitle: m.limiting ? `avval tugaydi: ${m.limiting.name} (${q(m.limiting.balance, m.limiting.unit)})` : undefined, right: q(m.canMake, m.unit), tone: "success" as Tone })), { empty: "Hozirgi qoldiq bilan retseptli mahsulot chiqmaydi", icon: "construct" }),
     section(`Davrda olingan tovarlar (${period.label})`, c.byMaterial.map((m) => ({ id: m.materialId, title: m.name, subtitle: `${m.docs} chiqim · oxirgisi ${day(m.lastAt)}`, right: `${q(m.qty, m.unit)} · ${money(m.sum)}` })), { empty: "Bu davrda skladdan olinmagan", icon: "download" }),
     section("Oxirgi chiqimlar", c.rows.slice(-30).reverse().map((r) => ({
-      id: r.id, title: r.material, subtitle: `${day(r.date)}${r.note ? ` · ${r.note}` : ""}`, right: `${q(r.qty, r.unit)}`,
+      id: r.id, title: r.material, subtitle: `${opAt(r.date, r.createdAt, day)}${r.note ? ` · ${r.note}` : ""}`, right: `${q(r.qty, r.unit)}`,
       status: r.kind === "storno" ? "Bekor qilish" : r.kind === "return" ? "Qaytarish" : r.cancelled ? "Bekor" : undefined,
       tone: (r.kind === "storno" || r.cancelled ? "danger" : r.kind === "return" ? "info" : undefined) as Tone | undefined,
     })), { empty: "Chiqim yo'q", icon: "list" }),

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Plus, ScanLine, Sheet as SheetIcon } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
-import { date, money } from "@/lib/format";
+import { money, opAt } from "@/lib/format";
 import { receiptAmounts } from "@/lib/receipt-vat";
 import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
@@ -27,7 +27,7 @@ export default async function ReceiptsPage() {
             return (
               <Tr key={r.id}>
                 <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>{r.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td>
-                <Td>{date(r.date)}</Td><Td>{r.supplier.name}</Td><Td>{r.warehouse.name}</Td>
+                <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td><Td>{r.supplier.name}</Td><Td>{r.warehouse.name}</Td>
                 <Td className="text-slate-600">{r.items.map((i) => `${i.material.name} ${Number(i.qty)} ${i.material.unit}`).join(", ")}</Td>
                 <Td className="whitespace-nowrap text-slate-600">{r.waybillNo ?? waybillFromNote(r.note) ?? "—"}</Td>
                 <Td>{pay ? <Badge color={pay === "BANK" ? "blue" : "amber"} dot={false}>{pay === "BANK" ? "O'tkazma" : "Naqd"}</Badge> : <span className="text-slate-400">—</span>}</Td>

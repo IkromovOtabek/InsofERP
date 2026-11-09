@@ -243,7 +243,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
                     <Link href={`/employees/${e.id}/hujjat/${d.id}`} target="_blank" className="text-slate-700 hover:underline">{d.fileName}</Link>
                     <span className="ml-2 text-xs text-slate-400">{d.fileType}</span>
                   </Td>
-                  <Td>{date(d.createdAt)}</Td>
+                  <Td className="whitespace-nowrap">{dateTime(d.createdAt)}</Td>
                   <Td><DeleteDocument docId={d.id} /></Td>
                 </Tr>
               ))}

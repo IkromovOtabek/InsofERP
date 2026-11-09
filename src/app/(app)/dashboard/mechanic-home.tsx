@@ -8,7 +8,7 @@ import { skladLogistika, type SlLoad, type SlOrder, type SlTone } from "@/lib/sk
 import { VEHICLE_TYPE, vehicleServiceDue } from "@/lib/logistics";
 import { fleetPeriod, fmtLoad } from "@/lib/vehicle-report";
 import { TRIP_STEP } from "@/lib/trips";
-import { date, fmtNum, isoDate, moneyShort } from "@/lib/format";
+import { date, fmtNum, isoDate, moneyShort, opAt } from "@/lib/format";
 import { unitLabel, type LoadKind } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, LinkButton, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -88,7 +88,7 @@ export async function MechanicTech({ period }: { period?: { from: Date; to: Date
     db.supplyRequest.findMany({
       where: { status: { in: ["NEW", "PRICED", "APPROVED", "FUNDED"] }, OR: [{ department: "Texnika" }, { createdBy: { role: "MECHANIC" } }] },
       orderBy: { date: "desc" }, take: 10,
-      select: { id: true, docNo: true, date: true, status: true, needBy: true, items: { select: { name: true }, orderBy: { sortOrder: "asc" } }, createdBy: { select: { fullName: true } } },
+      select: { id: true, docNo: true, date: true, createdAt: true, status: true, needBy: true, items: { select: { name: true }, orderBy: { sortOrder: "asc" } }, createdBy: { select: { fullName: true } } },
     }),
     db.vehicle.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { plate: "asc" }], select: { id: true, plate: true, type: true, brand: true, model: true, status: true, statusNote: true } }),
     fleetPeriod(p.from, p.to),
@@ -145,7 +145,7 @@ export async function MechanicTech({ period }: { period?: { from: Date; to: Date
               <Tr key={r.id}>
                 <Td>
                   <Link href={`/taminot/${r.id}`} className="font-medium tabular hover:underline">{r.docNo}</Link>
-                  <div className="text-xs text-slate-500">{date(r.date)} · {r.createdBy.fullName}</div>
+                  <div className="text-xs text-slate-500">{opAt(r.date, r.createdAt)} · {r.createdBy.fullName}</div>
                 </Td>
                 <Td className="max-w-72 truncate text-sm">{r.items.map((i) => i.name).join(", ")}</Td>
                 <Td className="tabular text-sm">{r.needBy ? date(r.needBy) : "—"}</Td>

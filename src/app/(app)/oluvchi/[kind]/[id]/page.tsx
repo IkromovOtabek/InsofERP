@@ -6,7 +6,7 @@ import { canDo } from "@/lib/permissions";
 import { canSeeRasxod } from "@/lib/stock-journal-access";
 import { CARD_KIND_LABEL, cardHref, cardKey, isCardKind, recipientCard, type RecipientCard } from "@/lib/recipient-card";
 import { stockPeriod, StockPeriodBar } from "@/components/stock-period";
-import { dateRu, fmtNum, isoDate } from "@/lib/format";
+import { dateRu, fmtNum, isoDate, opAt } from "@/lib/format";
 import { unitLabel, unitShort } from "@/lib/unit";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -192,7 +192,7 @@ function HistoryRow({ r }: { r: RecipientCard["rows"][number] }) {
   const note = r.kind === "storno" && r.note ? r.note.replace(/^(?:Storno|Сторно|Bekor qilish):\s*/, "") : r.note;
   return (
     <Tr className={cn(dim && "text-slate-500")}>
-      <Td className="whitespace-nowrap">{dateRu(r.date)}</Td>
+      <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt, dateRu)}</Td>
       <Td className="font-medium">{r.material}</Td>
       <Td className="text-slate-500">{unitShort(r.unit)}</Td>
       <Td right className={cn("tabular", r.qty < 0 && "text-slate-500")}>{fmtNum(r.qty, 3)}</Td>

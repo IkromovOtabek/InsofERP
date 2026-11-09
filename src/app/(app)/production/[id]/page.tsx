@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { date, dateTime, qty } from "@/lib/format";
+import { date, dateTime, opAt, qty } from "@/lib/format";
 import { Badge, Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { unitLabel } from "@/lib/unit";
 import { requirePage } from "@/lib/page-guard";
@@ -26,7 +26,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div>
-      <PageHeader back={{ href: "/production", label: "Ishlab chiqarish" }} title={`Zames ${b.batchNo}`} subtitle={`${date(b.date)} · ${b.shift}-smena · ${b.createdBy.fullName}`}
+      <PageHeader back={{ href: "/production", label: "Ishlab chiqarish" }} title={`Zames ${b.batchNo}`} subtitle={`${opAt(b.date, b.createdAt)} · ${b.shift}-smena · ${b.createdBy.fullName}`}
         action={canStorno ? <ConfirmButton action={stornoBatch.bind(null, b.id)} label="Bekor qilish" question={`${b.batchNo} bekor qilinsinmi? Xomashyo skladga qaytadi, ${qty(b.qtyM3)} ${unitLabel(b.product.unit)} mahsulot qoldiqdan chiqariladi`} reason="required" okText="Bekor qilindi" className="h-9 px-3 text-sm" /> : undefined} />
       {b.cancelledAt && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog, roleForPosition } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
-import { date, isoDate, qty } from "@/lib/format";
+import { date, dateTime, isoDate, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
 import { Badge, Button, Card, Empty, Input, PageHeader, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeForm, GrantLoginForm } from "./employee-form";
@@ -71,7 +71,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
 
       {access.length > 0 && (
         <AccessRequests
-          rows={access.map((r) => ({ ...r, createdAt: date(r.createdAt) }))}
+          rows={access.map((r) => ({ ...r, createdAt: dateTime(r.createdAt) }))}
           roles={LOGIN_ROLE_OPTS.filter((o) => POSITIONS.some((p) => p.role === o.value && p.role !== "DIRECTOR"))}
         />
       )}

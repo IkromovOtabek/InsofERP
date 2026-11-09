@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Truck, MapPin, Phone, ShieldCheck, Info, UserRoundCheck } from "lucide-react";
 import { db } from "@/lib/db";
-import { qty, date, dateTime, time } from "@/lib/format";
+import { qty, dateTime, time } from "@/lib/format";
 import { getCompany } from "@/lib/company";
 import { unitLabel, soleUnit } from "@/lib/unit";
 import { tripLine } from "@/lib/trips";
@@ -89,7 +89,7 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
   const productName = product ? `${product.name}${product.strengthClass && !product.name.includes(product.strengthClass) ? ` (${product.strengthClass})` : ""}` : "—";
   const site = t.order.site?.name ?? t.order.deliveryAddress;
   const vehicleKind = [VEHICLE_TYPE[t.vehicle.type], capText(t.vehicle)].filter(Boolean).join(", ");
-  const day = date(t.loadedAt ?? t.createdAt);
+  const day = dateTime(t.loadedAt ?? t.createdAt);
   const S = t.status;
   const cancelled = S === "CANCELLED";
   const onRoad = S === "ON_ROAD";

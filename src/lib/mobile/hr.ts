@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { dateRu, time } from "@/lib/format";
 import type { HrRequestKind, HrRequestStatus, Role } from "@/generated/prisma";
 import { dayUtc, isoDay, monthTitle, shiftDay, today } from "@/lib/davomat";
 import { cancelHrRequest, createHrRequest, decideHrRequest, employeeOfUser, listHrRequests, periodText } from "@/lib/hr/requests";
@@ -30,7 +31,8 @@ import { payLineFields, payLineIds, payrollRecalc, payrollRecalcActions } from "
  */
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
-const dt = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+/** Amal vaqti (yuborildi, hal qilindi, berildi): «09.11.2026 14:32». */
+const dt = (d: Date) => `${dateRu(d)} ${time(d)}`;
 const WD = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 const forbid = (): never => { throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403); };
 

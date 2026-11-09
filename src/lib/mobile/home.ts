@@ -17,7 +17,7 @@ import { listAllowed, listsFor, payreqRow, skladPeriod } from "./list";
 import { listPaymentRequests, methodsFor } from "@/lib/payment-requests";
 import { prixodJournal, prixodTotals } from "@/lib/receipts";
 import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
-import { fmtNum } from "@/lib/format";
+import { fmtNum, opAt } from "@/lib/format";
 import { prodFilter } from "@/lib/production";
 import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
 import { MECH_STATUS_SHORT, MECH_STATUS_TONE, mechSubject } from "@/lib/mechanic-requests";
@@ -279,7 +279,7 @@ async function supplySection(title: string, empty: string, status: ("NEW" | "PRI
     title, empty, target: "supply",
     rows: rows.map((r) => ({
       id: r.id, title: `${r.docNo} · ${r.warehouse.name}${r.recheck ? " · qayta tasdiq" : ""}`,
-      subtitle: `${day(r.date)} · ${r.items.length} qator${r.supplier ? ` · ${r.supplier.name}` : ""}`,
+      subtitle: `${opAt(r.date, r.createdAt, day)} · ${r.items.length} qator${r.supplier ? ` · ${r.supplier.name}` : ""}`,
       right: r.status === "NEW" ? `${r.items.length} nom` : money(totalPlanned(r)),
       status: SUPPLY_LABEL[r.status], tone: SUPPLY_TONE[r.status],
     })),
@@ -300,7 +300,7 @@ async function kirimSection(title: string, empty: string, status: MechanicReques
     title, empty, target: "kirim", icon: "wrench",
     rows: rows.map((r) => ({
       id: r.id, title: `${mechSubject(r)}${r.urgent ? " · shoshilinch" : ""}`,
-      subtitle: `${r.problem} · ${r.docNo} · ${day(r.createdAt)}${createdById ? "" : ` · ${r.createdBy.fullName}`}`,
+      subtitle: `${r.problem} · ${r.docNo} · ${day(r.createdAt)} ${time(r.createdAt)}${createdById ? "" : ` · ${r.createdBy.fullName}`}`,
       right: money(sum(r.amount)), status: MECH_STATUS_SHORT[r.status], tone: r.urgent && r.status === "NEW" ? "danger" : MECH_STATUS_TONE[r.status],
     })),
   };
@@ -557,7 +557,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       if (supplyWait) cards.push({ key: "supply", label: "Ta'minot tasdig'i", value: String(supplyWait), hint: "sizni kutmoqda", tone: "warning", icon: "clipboard-list", open: { key: "supply" } });
       if (newLeads) cards.push({ key: "leads", label: "Yangi ariza", value: String(newLeads), hint: "saytdan", tone: "brand", icon: "inbox" });
       if (supplyWait) sections.push(await supplySection("Ta'minot — tasdiqingizni kutmoqda", "", ["PRICED"]));
-      if (newLeads) sections.push({ title: "Saytdan yangi arizalar", empty: "", target: "leads", rows: leadRows.map((l) => ({ id: l.id, title: `${l.name} · ${l.phone}`, subtitle: `${day(l.createdAt)}${l.product ? ` · ${l.product.name}` : ""}${l.address ? ` · ${l.address}` : ""}`, status: "Yangi", tone: "brand" as Tone })) });
+      if (newLeads) sections.push({ title: "Saytdan yangi arizalar", empty: "", target: "leads", rows: leadRows.map((l) => ({ id: l.id, title: `${l.name} · ${l.phone}`, subtitle: `${day(l.createdAt)} ${time(l.createdAt)}${l.product ? ` · ${l.product.name}` : ""}${l.address ? ` · ${l.address}` : ""}`, status: "Yangi", tone: "brand" as Tone })) });
       sections.push({ title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: o.customer.name, subtitle: `${o.dateUnknown ? "Sana aniq emas" : `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) });
       break;
     }
@@ -602,7 +602,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       sections.push(
         { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.brigade.name} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.status === "NEW" ? "info" : "warning" })) },
-        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
+        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${time(b.date)} · ${b.order ? b.order.customer.name : "Omborga"}`, right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
       );
       // Veb ishlab chiqarish bosh sahifasidagi «Bugun yuklanadigan mahsulot» — birinchi (`./sex-extra.ts`)
       sections.unshift(...(await todayLoadSections()));
@@ -629,7 +629,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       if (listAllowed(user, "trip-pay")) { const tp = await tripPayApproveSection(); if (tp) sections.unshift(tp); }
       sections.push(
         { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.brigade.name} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.dueDate < today ? "danger" as Tone : t.status === "NEW" ? "info" as Tone : "warning" as Tone })) },
-        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
+        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${time(b.date)} · ${b.order ? b.order.customer.name : "Omborga"}`, right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
       );
       break;
     }
@@ -693,7 +693,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { title: "Kam qolgan xomashyo", empty: "Hammasi minimumdan yuqori", target: "stock", rows: low.map((m) => ({ id: m.id, title: m.name, subtitle: `Minimum ${sum(m.minStock)} ${m.unit}`, right: `${(bal.get(m.id) ?? 0).toFixed(1)} ${m.unit}`, tone: "danger" })) },
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
         ...(needPrice ? [await supplySection("Narx kutayotgan so'rovlar", "", ["NEW"])] : []),
-        { title: "Bugungi kirimlar", empty: "Bugun kirim yo'q", target: "receipts", rows: receipts.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${r.items.length} qator · ${time(r.date)}`, right: money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
+        { title: "Bugungi kirimlar", empty: "Bugun kirim yo'q", target: "receipts", rows: receipts.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${r.items.length} qator · ${time(r.createdAt)}`, right: money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
       );
       break;
     }
@@ -715,7 +715,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       sections.push(
         await supplySection("Narx qo'yish kerak", "Narx kutayotgan so'rov yo'q", ["NEW"]),
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
-        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`, right: r.cancelledAt ? "bekor qilingan" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
+        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${opAt(r.date, r.createdAt, day)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`, right: r.cancelledAt ? "bekor qilingan" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
       );
       break;
     }
@@ -741,7 +741,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       // Zayavka bosh to'lovi perechisleniye bilan — bankka tushganini buxgalter tasdiqlaydi
       const bankQueue = await payreqQueue(user, "BANK", "Perechisleniye kutilmoqda");
       if (bankQueue?.section) sections.push(bankQueue.section);
-      sections.push({ title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" : "danger" }; }) });
+      sections.push({ title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${opAt(i.date, i.createdAt, day)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" : "danger" }; }) });
       break;
     }
 
@@ -763,7 +763,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
       cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: fundWait ? "tasdiq kutmoqda" : "navbat bo'sh", tone: fundWait ? "warning" : "success", icon: "clipboard-list", open: { key: "supply" } });
       if (fundWait) sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
-      sections.push({ title: "So'nggi harakatlar", empty: "Harakat yo'q", target: "cashflow", rows: recent.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT" ? "info" : txSign(t.type) < 0 ? "danger" : "success" })) });
+      sections.push({ title: "So'nggi harakatlar", empty: "Harakat yo'q", target: "cashflow", rows: recent.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${opAt(t.date, t.createdAt, day)} · ${t.cashAccount.name}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT" ? "info" : txSign(t.type) < 0 ? "danger" : "success" })) });
       break;
     }
 
@@ -826,8 +826,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { status: "APPROVED" } }))) sections.push(await kirimSection("Mexanik so'rovlari — pul berish kerak", "", ["APPROVED"]));
       sections.push(
         // Kassir shu yerdan schyotni ochib to'lovni qabul qiladi
-        { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: openInvoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" as Tone : "danger" as Tone }; }) },
-        { title: "Bugungi to'lovlar", empty: "Bugun to'lov yo'q", target: "payments", rows: recent.map((p) => ({ id: p.id, title: p.customer.name, subtitle: `${time(p.date)} · ${p.cashAccount.name}`, right: money(sum(p.amount)), tone: "success" })) },
+        { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: openInvoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${opAt(i.date, i.createdAt, day)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" as Tone : "danger" as Tone }; }) },
+        { title: "Bugungi to'lovlar", empty: "Bugun to'lov yo'q", target: "payments", rows: recent.map((p) => ({ id: p.id, title: p.customer.name, subtitle: `${time(p.createdAt)} · ${p.cashAccount.name}`, right: money(sum(p.amount)), tone: "success" })) },
       );
       break;
     }
@@ -852,7 +852,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       sections.push(
         { title: "Ochiq reyslarim", empty: "Ochiq reys yo'q", target: "trips", rows: active.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
-        { title: "Yaqinda yetkazganlarim", empty: "Hali yetkazilgan reys yo'q", target: "trips", rows: upcoming.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.deliveredAt ? day(t.deliveredAt) : ""} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: "success" })) },
+        { title: "Yaqinda yetkazganlarim", empty: "Hali yetkazilgan reys yo'q", target: "trips", rows: upcoming.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.deliveredAt ? `${day(t.deliveredAt)} ${time(t.deliveredAt)}` : ""} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: "success" })) },
       );
       break;
     }

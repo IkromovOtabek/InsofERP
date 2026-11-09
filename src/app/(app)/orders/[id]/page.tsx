@@ -7,7 +7,7 @@ import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { customerCredit } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
-import { money, date, qty, deliveryAt, isoDate } from "@/lib/format";
+import { money, date, dateTime, qty, deliveryAt, isoDate, opAt } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Progress, StatCard, StatusSteps, Td, Th, Tr } from "@/components/ui";
 import { TaskStatusBadge } from "../../tasks/status";
 import { itemTasks } from "@/lib/production";
@@ -127,7 +127,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       <PageHeader
         back={isStock ? { href: "/orders?tur=sklad", label: "Zayavkalar" } : accepted && pathAllowed("/sales", s.role, s.perms) ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
         title={isStock ? "Sklad zayavkasi" : "Zayavka"}
-        subtitle={<>{date(o.date)} · ochdi: {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />} <EditedMark edit={edits.get(id)} full /></>}
+        subtitle={<>{opAt(o.date, o.createdAt)} · ochdi: {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />} <EditedMark edit={edits.get(id)} full /></>}
         action={
           <>
             {o.status === "DRAFT" && canConfirm && !noDate && <ActionButton action={confirmOrder.bind(null, id)} variant="success"><CheckCircle2 size={16} /> Qabul qilish</ActionButton>}
@@ -188,14 +188,14 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       {isStock && o.status === "CLOSED" && <Callout tone="success" title="Zaxira tayyor">So&apos;ralgan mahsulot hovliga chiqarib qo&apos;yilgan — <Link href="/stock?tab=capacity" className="underline">Sklad qoldig&apos;i</Link>.</Callout>}
       {o.status === "CANCELLED" && <Callout tone="warning">Bu zayavka bekor qilingan.</Callout>}
       {hasContract && (
-        <Callout tone={hasFile ? (justContracted ? "success" : "info") : "warning"} title={hasFile ? `Shartnoma ${o.contractNo} · ${date(o.contractAt ?? o.createdAt)}` : `Shartnoma ${o.contractNo} saqlandi — Didox'da imzolangan faylni tizimga yuklang`}>
+        <Callout tone={hasFile ? (justContracted ? "success" : "info") : "warning"} title={hasFile ? `Shartnoma ${o.contractNo} · ${dateTime(o.contractAt ?? o.createdAt)}` : `Shartnoma ${o.contractNo} saqlandi — Didox'da imzolangan faylni tizimga yuklang`}>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <span>Shartnoma summasi <b>{money(contractAmount)}</b> − mahsulot <b>{money(total)}</b> = {contractLeft >= 0 ? <>qoldiq <b className="text-emerald-700">{money(contractLeft)}</b></> : <b className="text-red-600">mahsulot summasi shartnomadan {money(-contractLeft)} ga oshdi</b>}</span>
             {hasFile ? (
               <>
                 <a href={fileHref} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"><Paperclip size={14} /> {o.contractFileName ?? "Shartnoma fayli"}</a>
                 <a href={`${fileHref}?download=1`} className="inline-flex items-center gap-1 text-xs underline"><Download size={12} /> yuklab olish</a>
-                {o.contractFileAt && <span className="text-xs opacity-70">yuklandi {date(o.contractFileAt)}</span>}
+                {o.contractFileAt && <span className="text-xs opacity-70">yuklandi {dateTime(o.contractFileAt)}</span>}
               </>
             ) : (
               <span className="text-xs">Fayl hali yuklanmagan — isbot uchun imzolangan shartnoma tizimda bo&apos;lishi kerak.</span>
@@ -217,7 +217,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </details>
       )}
       {o.onCredit && o.status !== "CANCELLED" && (
-        <Callout tone={o.guaranteeAt ? "success" : "warning"} title={o.guaranteeAt ? `Kafolat xati qabul qilingan · ${date(o.guaranteeAt)}` : guarantee ? "Zayavka qarzga saqlandi — kafolat xatini chop eting" : "Kafolat xati hali olinmagan"}>
+        <Callout tone={o.guaranteeAt ? "success" : "warning"} title={o.guaranteeAt ? `Kafolat xati qabul qilingan · ${dateTime(o.guaranteeAt)}` : guarantee ? "Zayavka qarzga saqlandi — kafolat xatini chop eting" : "Kafolat xati hali olinmagan"}>
           <div className="flex flex-wrap items-center gap-3">
             <span>Qarzga beriladigan mahsulot uchun mijoz kafolat xatini to&apos;ldirib, imzo va muhr qo&apos;yadi. <Link href={`/orders/${id}/guarantee`} className="underline">Xatni ochish / chop etish</Link></span>
             {can("contract") && <form action={toggleGuarantee.bind(null, id)}><Button variant={o.guaranteeAt ? "ghost" : "secondary"} className="h-8 text-xs">{o.guaranteeAt ? "Belgini olib tashlash" : "Imzolangan xat qabul qilindi"}</Button></form>}
@@ -431,7 +431,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             <thead><tr><Th>№</Th><Th>Sana</Th><Th>Smena</Th><Th right>Miqdor</Th></tr></thead>
             <tbody>
               {o.batches.length === 0 && <Empty text="Hali zames yo'q" icon={Factory} />}
-              {o.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link></Td><Td>{date(b.date)}</Td><Td>{b.shift}</Td><Td right className="whitespace-nowrap">{qty(b.qtyM3)} {unitLabel(b.product.unit)}</Td></Tr>)}
+              {o.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link></Td><Td className="whitespace-nowrap">{opAt(b.date, b.createdAt)}</Td><Td>{b.shift}</Td><Td right className="whitespace-nowrap">{qty(b.qtyM3)} {unitLabel(b.product.unit)}</Td></Tr>)}
             </tbody>
           </table>
           </div>

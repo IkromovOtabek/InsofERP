@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
-import { qty, date, money } from "@/lib/format";
+import { qty, dateTime, money } from "@/lib/format";
 import { Badge, Card, DL, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { RecipeForm } from "../recipe-form";
 import { unitLabel } from "@/lib/unit";
@@ -49,7 +49,7 @@ export default async function RecipePage({ params }: { params: Promise<{ product
       <PageHeader
         back={{ href: "/recipes", label: "Retseptlar" }}
         title={`Retsept: ${p.name}`}
-        subtitle={active ? `Faol versiya v${active.version} · ${date(active.createdAt)}` : "Hali retsept yo'q"}
+        subtitle={active ? `Faol versiya v${active.version} · ${dateTime(active.createdAt)}` : "Hali retsept yo'q"}
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="space-y-4">
@@ -77,7 +77,7 @@ export default async function RecipePage({ params }: { params: Promise<{ product
             {p.recipes.map((r) => (
               <Card key={r.id} className={r.isActive ? "border-emerald-300" : ""}>
                 <div className="mb-2 flex items-center justify-between">
-                  <div className="font-medium">v{r.version} <span className="text-sm font-normal text-slate-500">· {date(r.createdAt)}</span></div>
+                  <div className="font-medium">v{r.version} <span className="text-sm font-normal text-slate-500">· {dateTime(r.createdAt)}</span></div>
                   {r.isActive ? <Badge color="green">Faol</Badge> : <Badge>Arxiv</Badge>}
                 </div>
                 {r.note && <p className="mb-2 text-sm text-slate-600">{r.note}</p>}

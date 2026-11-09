@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CheckCheck, FilePen, PackageCheck, Plus, Truck } from "lucide-react";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { date, money } from "@/lib/format";
+import { money, opAt } from "@/lib/format";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
 import { listShipments, ownShipmentsOnly, shipmentCounts, SHIPMENT_SENDERS, SHIPMENT_STATUS_COLOR, SHIPMENT_STATUS_LABEL, SHIPMENT_TABS, type ShipmentTab } from "@/lib/shipments";
 import { Badge, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
@@ -56,7 +56,7 @@ export default async function ShipmentsPage({ searchParams }: { searchParams: Pr
                 <Link href={`/jonatma/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>
                 {r.waybillNo && <div className="text-xs text-slate-500">Nakl. № {r.waybillNo}</div>}
               </Td>
-              <Td>{date(r.date)}</Td>
+              <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
               <Td className="text-slate-600">{r.supplier}</Td>
               <Td className="text-slate-600">
                 {r.lines} qator

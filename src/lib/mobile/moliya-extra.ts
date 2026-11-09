@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import type { OpeningKind, PayrollKind, Prisma } from "@/generated/prisma";
 import { canDo } from "@/lib/permissions";
-import { dateRu, fmtNum } from "@/lib/format";
+import { dateRu, fmtNum, opAt, time } from "@/lib/format";
 import { accountBalances, linkPaymentToInvoice, reversePayment } from "@/lib/payments";
 import { cancelCashEntry, cashEntryLocked, payReceiptEntry } from "@/lib/cash-entry";
 import { CANCELLED_LABEL, cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -88,7 +88,7 @@ export async function paymentsList(title: string, q?: string, filter?: string): 
       const link = p.invoice?.invoiceNo ?? (p.register ? "realizatsiya" : p.order ? `avans · zayavka ${dateRu(p.order.deliveryDate)}` : null);
       return {
         id: p.id, title: p.customer.name,
-        subtitle: [dateRu(p.date), p.cashAccount.name, link].filter(Boolean).join(" · "),
+        subtitle: [opAt(p.date, p.createdAt, dateRu), p.cashAccount.name, link].filter(Boolean).join(" · "),
         right: `+${money(n(p.amount))}`,
         ...(free ? { status: p.order ? "Avans" : "Taqsimlanmagan", tone: (p.order ? "info" : "warning") as Tone } : { tone: "success" as Tone }),
       };
@@ -161,7 +161,7 @@ async function cfRows(from: Date, to: Date): Promise<CfRow[]> {
     const category = p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi";
     return {
       kind: "INCOME", date: p.date, amount: n(p.amount), category, text: `${category} ${p.customer.name} ${p.cashAccount.name} ${p.note ?? ""}`,
-      row: { id: `payments:${p.id}`, title: `${category} · ${p.customer.name}`, subtitle: `${dateRu(p.date)} · ${p.cashAccount.name}`, right: `+${money(n(p.amount))}`, tone: "success" },
+      row: { id: `payments:${p.id}`, title: `${category} · ${p.customer.name}`, subtitle: `${opAt(p.date, p.createdAt, dateRu)} · ${p.cashAccount.name}`, right: `+${money(n(p.amount))}`, tone: "success" },
     };
   });
   const cNames = await cancellerNames(txs);
@@ -169,7 +169,7 @@ async function cfRows(from: Date, to: Date): Promise<CfRow[]> {
     if (t.type === "TRANSFER_OUT") {
       out.push({
         kind: "TRANSFER", date: t.date, amount: n(t.amount), category: "Perekit (hisoblararo)", text: `perekit ${t.category} ${t.cashAccount.name} ${t.counterparty ?? ""} ${t.note ?? ""}`,
-        row: { id: t.id, title: `${t.category} · perekit (hisoblararo)`, subtitle: `${dateRu(t.date)} · ${`${t.cashAccount.name} ${t.counterparty ?? ""}`.trim()}`, right: `⇄ ${money(n(t.amount))}`, tone: "info" },
+        row: { id: t.id, title: `${t.category} · perekit (hisoblararo)`, subtitle: `${opAt(t.date, t.createdAt, dateRu)} · ${`${t.cashAccount.name} ${t.counterparty ?? ""}`.trim()}`, right: `⇄ ${money(n(t.amount))}`, tone: "info" },
       });
       continue;
     }
@@ -181,7 +181,7 @@ async function cfRows(from: Date, to: Date): Promise<CfRow[]> {
     out.push({
       kind, date: t.date, amount: n(t.amount), category, text: `${category} ${who ?? ""} ${t.cashAccount.name} ${t.note ?? ""}`, cancelled: !!cancel,
       row: {
-        id: t.id, title: `${category}${who ? ` · ${who}` : ""}`, subtitle: `${dateRu(t.date)} · ${t.cashAccount.name}${cancel ? ` · bekor qilindi: ${cancel}` : ""}`,
+        id: t.id, title: `${category}${who ? ` · ${who}` : ""}`, subtitle: `${opAt(t.date, t.createdAt, dateRu)} · ${t.cashAccount.name}${cancel ? ` · bekor qilindi: ${cancel}` : ""}`,
         right: `${kind === "EXPENSE" ? "−" : "+"}${money(n(t.amount))}`, tone: cancel || kind === "EXPENSE" ? "danger" : "success", ...(cancel ? { status: CANCELLED_LABEL } : {}),
       },
     });
@@ -451,7 +451,7 @@ export async function openingDetail(user: MobileUser, id: string): Promise<Mobil
       ...(due ? [{ label: "Qolgan qarz", value: money(due.left), tone: (due.left > 0.005 ? "danger" : "success") as Tone }] : []),
       ...(r.customer?.inn || r.supplier?.inn ? [{ label: "INN", value: (r.customer?.inn ?? r.supplier?.inn)! }] : []),
       ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
-      ...(r.cancelledAt ? [{ label: "Bekor qilingan", value: `${dateRu(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
+      ...(r.cancelledAt ? [{ label: "Bekor qilingan", value: `${dateRu(r.cancelledAt)} ${time(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
     ],
     sections, actions,
   };
@@ -515,7 +515,7 @@ export async function realizatsiyaDetail(id: string): Promise<MobileDetail> {
       ...opt("Kassa / hisob", r.cashAccount?.name),
       ...opt("Mashina №", r.vehicleNo), ...opt("TTN", r.ttn), ...opt("Kimdan", r.fromWho), ...opt("Manzil", r.address),
       ...opt("Shartnoma", r.contractNo), ...opt("Schyot-faktura", r.invoiceNo), ...opt("Oy", r.monthNo), ...opt("Izoh", r.note),
-      { label: "Yukladi", value: `${r.createdBy.fullName} · ${dateRu(r.createdAt)}` },
+      { label: "Yukladi", value: `${r.createdBy.fullName} · ${dateRu(r.createdAt)} ${time(r.createdAt)}` },
     ],
     sections: [], actions: [],
   };

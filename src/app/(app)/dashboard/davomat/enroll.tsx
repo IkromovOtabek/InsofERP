@@ -9,7 +9,7 @@ import { PhotoThumb } from "./photo-viewer";
 import type { RosterRow } from "@/lib/face-id";
 import { DeleteButton } from "@/components/delete-button";
 import { Badge, Button, Callout, Card, Checkbox, Empty, Input, Table, Td, Th, Tr } from "@/components/ui";
-import { date } from "@/lib/format";
+import { dateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 
@@ -62,7 +62,7 @@ export function FaceRosterPanel({ rows }: { rows: RosterRow[] }) {
                   )}
                 </Td>
                 <Td><div className="font-medium">{r.fullName}</div><div className="text-xs text-slate-500">{r.position}</div></Td>
-                <Td>{r.samples > 0 ? <Badge color="green">Ro&apos;yxatda · {r.samples} namuna · {date(new Date(r.enrolledAt!))}</Badge> : <Badge>Yo&apos;q</Badge>}</Td>
+                <Td>{r.samples > 0 ? <Badge color="green">Ro&apos;yxatda · {r.samples} namuna · {dateTime(new Date(r.enrolledAt!))}</Badge> : <Badge>Yo&apos;q</Badge>}</Td>
                 <Td right>
                   <div className="flex items-center justify-end gap-2">
                     <Button type="button" size="sm" variant={r.samples ? "secondary" : "primary"} onClick={() => { setNote(""); setTarget(r); }}>

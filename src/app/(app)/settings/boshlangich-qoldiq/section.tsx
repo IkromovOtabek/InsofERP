@@ -3,7 +3,7 @@ import { Ban, Landmark, Package, Search, Trash2, Truck, Users } from "lucide-rea
 import { db } from "@/lib/db";
 import { moduleWriteAllowed, type Session } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
-import { money, qty as fq, date, isoDate } from "@/lib/format";
+import { money, qty as fq, date, dateTime, isoDate, opAt } from "@/lib/format";
 import { OPENING_WRITERS, supplierOpeningDues, supplierOpeningPayments } from "@/lib/opening-balances";
 import { Badge, Callout, Card, CardHeader, Checkbox, Empty, Field, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
@@ -243,7 +243,7 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
               : r.product ? <span className="font-medium">{r.product.name} <span className="text-xs text-slate-500">· {r.warehouse?.name}</span></span> : "—";
             return (
               <Tr key={r.id} className={r.cancelledAt ? "opacity-60" : ""}>
-                <Td>{date(r.date)}</Td>
+                <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
                 <Td>{who}{r.invoice && <div className="text-xs text-slate-500">{r.invoice.invoiceNo}</div>}</Td>
                 {kind === "STOCK" && <><Td right>{fq(Number(r.qty ?? 0))}</Td><Td right>{r.unitCost == null ? "—" : money(Number(r.unitCost))}</Td></>}
                 <Td right className={amount < 0 ? "text-amber-700" : "font-medium"}>{amount < 0 ? `−${money(-amount)}` : money(amount)}</Td>
@@ -260,7 +260,7 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
                   </Td>
                 )}
                 <Td className="max-w-56 text-xs text-slate-500">{r.note ?? ""}{r.cancelReason && <div className="text-red-600">O&apos;chirildi: {r.cancelReason}</div>}</Td>
-                <Td>{r.cancelledAt ? <Badge color="slate">O&apos;chirilgan ({date(r.cancelledAt)})</Badge> : <Badge color="green">Faol</Badge>}</Td>
+                <Td>{r.cancelledAt ? <Badge color="slate">O&apos;chirilgan ({dateTime(r.cancelledAt)})</Badge> : <Badge color="green">Faol</Badge>}</Td>
                 <Td>
                   {!r.cancelledAt && (
                     <div className="flex flex-wrap items-center justify-end gap-1">

@@ -1,6 +1,6 @@
 import { canDo } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { fmtNum, date, dateTime } from "@/lib/format";
+import { fmtNum, dateTime, opAt } from "@/lib/format";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
 import { acceptShipment, getShipment, listShipments, ownShipmentsOnly, pendingShipments, rejectShipmentItems, shipmentRights, SHIPMENT_STATUS_LABEL } from "@/lib/shipments";
 import type { MobileUser } from "./auth";
@@ -29,7 +29,7 @@ export async function mobileShipments(u: MobileUser) {
     canAccept: accept,
     pending: pend.count,
     rows: rows.map((r) => ({
-      id: r.id, docNo: r.docNo, date: date(r.date), supplier: r.supplier, by: r.by, lines: r.lines, pendingLines: r.pending,
+      id: r.id, docNo: r.docNo, date: opAt(r.date, r.createdAt), supplier: r.supplier, by: r.by, lines: r.lines, pendingLines: r.pending,
       total: `${fmtNum(r.total)} so'm`, status: r.status, statusLabel: SHIPMENT_STATUS_LABEL[r.status],
     })),
   };
@@ -43,7 +43,7 @@ export async function mobileShipment(u: MobileUser, id: string) {
   const can = shipmentRights(sh, who(u), { send: false, accept: canAccept(u) });
   return {
     id: sh.id, docNo: sh.docNo, status: sh.status, statusLabel: SHIPMENT_STATUS_LABEL[sh.status], canAccept: can.accept,
-    date: date(sh.date), supplier: sh.supplier.name, warehouse: sh.warehouse.name, by: sh.createdBy.fullName,
+    date: opAt(sh.date, sh.createdAt), supplier: sh.supplier.name, warehouse: sh.warehouse.name, by: sh.createdBy.fullName,
     waybillNo: sh.waybillNo, carrier: sh.carrier, note: sh.status === "CANCELLED" ? null : sh.note, sentAt: sh.sentAt ? dateTime(sh.sentAt) : null,
     total: `${fmtNum(sh.items.reduce((a, i) => a + Number(i.qty) * Number(i.price), 0))} so'm`,
     items: sh.items.map((i) => ({

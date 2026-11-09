@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Coins, Fuel, Gauge, MapPin, Package, Receipt, Route, Users, Wallet, Wrench } from "lucide-react";
 import { fmtLoad, type VehicleReport } from "@/lib/vehicle-report";
 import { TRIP_STEP } from "@/lib/trips";
-import { date, fmtNum, money, moneyShort } from "@/lib/format";
+import { date, dateTime, fmtNum, money, moneyShort, opAt } from "@/lib/format";
 import { Badge, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "../../excel-button";
 import { TripLink } from "../../ui";
@@ -101,7 +101,7 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
             {r.trips.length === 0 && <Empty text="Bu davrda reys yo'q" icon={Route} />}
             {r.trips.map((t) => (
               <Tr key={t.id}>
-                <Td className="whitespace-nowrap text-sm tabular">{date(t.date)}</Td>
+                <Td className="whitespace-nowrap text-sm tabular">{dateTime(t.date)}</Td>
                 <Td><TripLink id={t.id} noteNo={t.noteNo} plain={tripsClosed} /></Td>
                 <Td className="text-sm">
                   {ordersOpen ? <Link href={`/orders/${t.orderId}`} className="font-medium tabular hover:underline">{t.orderNo}</Link> : <span className="font-medium tabular">{t.orderNo}</span>}
@@ -126,7 +126,7 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
             {r.ledger.length === 0 && <Empty text="Bu davrda zapravka, xarajat yoki texnik xizmat yozilmagan" icon={Receipt} />}
             {r.ledger.map((x) => (
               <Tr key={`${x.kind}-${x.id}`} className={x.counted ? undefined : "text-slate-500"}>
-                <Td className="whitespace-nowrap text-sm tabular">{date(x.date)}</Td>
+                <Td className="whitespace-nowrap text-sm tabular">{opAt(x.date, x.createdAt)}</Td>
                 <Td className="text-sm">{x.label}{!x.counted && <span className="ml-1.5"><Badge>jamiga kirmaydi</Badge></span>}</Td>
                 <Td className="max-w-md text-sm text-slate-600">{x.note || "—"}</Td>
                 <Td right className="tabular">{x.amount ? money(x.amount) : "—"}</Td>

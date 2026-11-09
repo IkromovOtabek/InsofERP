@@ -360,6 +360,8 @@ export type RasxodKind = "issue" | "brigade" | "return" | "storno" | "prod" | "w
 export type RasxodRow = {
   id: string;
   date: Date;
+  /** Harakat yozilgan payt (soat shundan — `opAt`); kunlik zames qatorida yo'q */
+  createdAt?: Date | null;
   material: string;
   materialId: string;
   /** Birlik kodi (kg, t, dona…) — ekranda `unitShort` */
@@ -455,7 +457,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     },
     orderBy: [{ date: "asc" }, { createdAt: "asc" }],
     select: {
-      id: true, date: true, type: true, warehouseId: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true,
+      id: true, date: true, createdAt: true, type: true, warehouseId: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true,
       qty: true, unitCost: true, refType: true, refId: true, note: true,
     },
   });
@@ -551,7 +553,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     else if (m.type === "BRIGADE_RETURN") row = { ...base, id: m.id, date: m.date, to: `${brigade} — qaytarish`, kind: "return", toKey: brKey };
     else if (m.type === "WRITE_OFF") row = { ...base, id: m.id, date: m.date, to: `Hisobdan chiqarish: ${writeOffReason(m.note)}`, kind: "writeoff", toKey: "writeoff" };
     else if (m.type === "ADJUSTMENT") row = { ...base, id: m.id, date: m.date, to: "Inventarizatsiya (kamomad)", kind: "inventory", toKey: "inventory" };
-    if (row) drafts.push({ row, known, unknownQty, prod: false, termsDate });
+    if (row) drafts.push({ row: { ...row, createdAt: m.createdAt }, known, unknownQty, prod: false, termsDate });
   }
 
   const out: { row: RasxodRow; prod: boolean }[] = [];

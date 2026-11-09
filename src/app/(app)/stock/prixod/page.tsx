@@ -7,7 +7,7 @@ import { canDo } from "@/lib/permissions";
 import { canSeePrixod } from "@/lib/stock-journal-access";
 import { pathAllowed } from "@/lib/nav";
 import { visionEnabled } from "@/lib/ai/vision";
-import { dateRu, fmtNum } from "@/lib/format";
+import { dateRu, fmtNum, opAt } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 import { prixodJournal, prixodTotals, type PrixodPayment, type PrixodRow } from "@/lib/receipts";
@@ -211,7 +211,7 @@ function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
   return (
     <SheetTr className={cn("group", r.cancelled && "[&>td]:text-slate-400 [&>td]:line-through", r.storno && "[&>td]:text-red-700")}>
       <SheetTd tone={tone} className="whitespace-nowrap">
-        {canOpen ? <Link href={`/receipts/${r.receiptId}`} title={`${r.docNo} hujjatini ochish`} className="font-medium hover:underline">{dateRu(r.date)}</Link> : <span className="font-medium">{dateRu(r.date)}</span>}
+        {canOpen ? <Link href={`/receipts/${r.receiptId}`} title={`${r.docNo} hujjatini ochish`} className="font-medium hover:underline">{opAt(r.date, r.createdAt, dateRu)}</Link> : <span className="font-medium">{opAt(r.date, r.createdAt, dateRu)}</span>}
         {r.storno
           ? <span className="ml-1.5 text-[11px] font-semibold">{`Bekor qilish ${r.docNo}`}</span>
           : <span className="ml-1.5 text-[11px] text-slate-400">{r.docNo}</span>}

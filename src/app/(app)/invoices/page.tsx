@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
-import { money, date } from "@/lib/format";
+import { money, date, opAt } from "@/lib/format";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
 import { ConfirmButton } from "../payments/confirm-button";
 import { INVOICE_STATUS, InvoiceStatusBadge } from "./status";
@@ -45,7 +45,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
             const paid = i.payments.reduce((p, x) => p + Number(x.amount), 0);
             return (
               <Tr key={i.id}>
-                <Td className="font-medium">{i.invoiceNo}</Td><Td>{date(i.date)}</Td>
+                <Td className="font-medium">{i.invoiceNo}</Td><Td className="whitespace-nowrap">{opAt(i.date, i.createdAt)}</Td>
                 <Td><CustomerName name={i.customer.name} blacklisted={marks.black.has(i.customerId)} contracted={marks.contract.has(i.customerId)} href={`/customers/${i.customerId}`} /></Td>
                 <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{date(i.order.deliveryDate)}</Link> : i.isOpening ? <Badge color="blue" dot={false}>Boshlang&apos;ich qoldiq</Badge> : "—"}</Td>
                 <Td right>{money(i.amount)}</Td><Td right>{money(paid)}</Td>

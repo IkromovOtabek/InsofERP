@@ -31,7 +31,7 @@ export async function SorovnomaTab({ s, positions }: { s: Session; positions: st
             {list.length === 0 && <Empty text="So'rovnoma hali yo'q" />}
             {list.map((x) => (
               <Tr key={x.id}>
-                <Td className="font-medium"><Link href={`/otdel-kadr/sorovnoma/${x.id}`} className="hover:underline">{x.title}</Link><div className="text-xs font-normal text-slate-500">{x.anonymous ? "anonim" : "ismli"} · {date(x.createdAt)}{x.closesAt ? ` · ${date(x.closesAt)} gacha` : ""}</div></Td>
+                <Td className="font-medium"><Link href={`/otdel-kadr/sorovnoma/${x.id}`} className="hover:underline">{x.title}</Link><div className="text-xs font-normal text-slate-500">{x.anonymous ? "anonim" : "ismli"} · {dateTime(x.createdAt)}{x.closesAt ? ` · ${date(x.closesAt)} gacha` : ""}</div></Td>
                 <Td>{x.position ?? "Hamma"}</Td>
                 <Td right>{x._count.responses}</Td>
                 <Td><Badge color={SURVEY_STATUS[x.status][1]}>{SURVEY_STATUS[x.status][0]}</Badge></Td>

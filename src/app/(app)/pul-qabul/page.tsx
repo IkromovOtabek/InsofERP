@@ -3,7 +3,7 @@ import { AlarmClock, Banknote, CalendarDays, CheckCheck, ChevronDown, ChevronUp,
 import type { PayMethod } from "@/generated/prisma";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
-import { date, dateTime, isoDate, money } from "@/lib/format";
+import { date, dateTime, isoDate, money, opAt } from "@/lib/format";
 import { daysLeft, dueLabel } from "@/lib/production";
 import {
   PAYREQ_STATUS_COLOR, PAYREQ_STATUS_LABEL, PAYREQ_TABS, getPaymentRequest, listPaymentRequests, methodsFor, payReqCounts, payReqTab, receiveAccounts,
@@ -143,7 +143,7 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
                   {r.overdue
                     ? <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-700"><AlarmClock size={12} /> {`muddati o'tgan ${late} kun`}</div>
                     : active ? <div className="mt-0.5 text-[11px] text-slate-500">{dueLabel(r.dueDate)}</div>
-                    : r.closedAt ? <div className="mt-0.5 text-[11px] text-slate-500">{`yopildi ${date(r.closedAt)}`}</div> : null}
+                    : r.closedAt ? <div className="mt-0.5 text-[11px] text-slate-500">{`yopildi ${dateTime(r.closedAt)}`}</div> : null}
                 </Td>
                 <Td><Badge color={PAYREQ_STATUS_COLOR[r.status]}>{PAYREQ_STATUS_LABEL[r.status]}</Badge></Td>
                 <Td className="whitespace-nowrap">
@@ -168,7 +168,7 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
                             {r.payments.map((p) => (
                               <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-3 px-3 py-2 text-sm">
                                 <span className="font-medium tabular-nums text-slate-900">{money(p.amount)}</span>
-                                <span className="text-xs text-slate-500">{`${date(p.date)} · ${p.account} (${p.accountType === "CASH" ? "naqd" : "bank"})${p.by ? ` · ${p.by}` : ""}`}</span>
+                                <span className="text-xs text-slate-500">{`${opAt(p.date, p.createdAt)} · ${p.account} (${p.accountType === "CASH" ? "naqd" : "bank"})${p.by ? ` · ${p.by}` : ""}`}</span>
                               </li>
                             ))}
                           </ul>

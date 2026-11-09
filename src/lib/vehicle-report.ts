@@ -100,7 +100,7 @@ export type VehicleTripRow = {
 };
 export type VehiclePlace = { key: string; name: string; address: string; siteId: string | null; customer: string; trips: number; orders: number; load: LoadSum; km: number; revenue: number };
 export type VehicleCustomer = { id: string; name: string; trips: number; orders: number; load: LoadSum; revenue: number };
-export type VehicleLedger = { id: string; date: Date; kind: "fuel" | "expense" | "service"; label: string; note: string | null; amount: number; counted: boolean };
+export type VehicleLedger = { id: string; date: Date; createdAt: Date; kind: "fuel" | "expense" | "service"; label: string; note: string | null; amount: number; counted: boolean };
 export type VehicleReport = {
   row: AvtoRow;
   trips: VehicleTripRow[]; orders: number; days: number; load: LoadSum;
@@ -124,9 +124,9 @@ export async function vehicleReport(vehicleId: string, from: Date, to: Date): Pr
         order: { select: { orderNo: true, deliveryAddress: true, distanceKm: true, deliveryFee: true, siteId: true, site: { select: { name: true } }, customer: { select: { id: true, name: true } }, items: orderItems } },
       },
     }),
-    db.fuelLog.findMany({ where: { vehicleId, cancelledAt: null, date: inRange }, orderBy: { date: "desc" }, select: { id: true, date: true, fuelType: true, liters: true, amount: true, station: true, driver: { select: { fullName: true } } } }),
-    db.transportExpense.findMany({ where: { vehicleId, cancelledAt: null, date: inRange }, orderBy: { date: "desc" }, select: { id: true, date: true, kind: true, amount: true, note: true } }),
-    db.vehicleService.findMany({ where: { vehicleId, cancelledAt: null, date: inRange }, orderBy: { date: "desc" }, select: { id: true, date: true, kind: true, cost: true, note: true } }),
+    db.fuelLog.findMany({ where: { vehicleId, cancelledAt: null, date: inRange }, orderBy: { date: "desc" }, select: { id: true, date: true, createdAt: true, fuelType: true, liters: true, amount: true, station: true, driver: { select: { fullName: true } } } }),
+    db.transportExpense.findMany({ where: { vehicleId, cancelledAt: null, date: inRange }, orderBy: { date: "desc" }, select: { id: true, date: true, createdAt: true, kind: true, amount: true, note: true } }),
+    db.vehicleService.findMany({ where: { vehicleId, cancelledAt: null, date: inRange }, orderBy: { date: "desc" }, select: { id: true, date: true, createdAt: true, kind: true, cost: true, note: true } }),
   ]);
   const row = avto.rows[0] ?? avto.total;
 
@@ -180,11 +180,11 @@ export async function vehicleReport(vehicleId: string, from: Date, to: Date): Pr
   for (const f of fuel) {
     const label = `Yoqilg'i — ${FUEL_TYPE[f.fuelType]}`;
     cost(label, Number(f.amount));
-    ledger.push({ id: f.id, date: f.date, kind: "fuel", label, note: [`${fmtNum(Number(f.liters), 1)} ${f.fuelType === "METHANE" ? "m³" : "l"}`, f.station, f.driver?.fullName].filter(Boolean).join(" · "), amount: Number(f.amount), counted: true });
+    ledger.push({ id: f.id, date: f.date, createdAt: f.createdAt, kind: "fuel", label, note: [`${fmtNum(Number(f.liters), 1)} ${f.fuelType === "METHANE" ? "m³" : "l"}`, f.station, f.driver?.fullName].filter(Boolean).join(" · "), amount: Number(f.amount), counted: true });
   }
   for (const e of expenses) {
     cost(EXPENSE_KIND[e.kind], Number(e.amount));
-    ledger.push({ id: e.id, date: e.date, kind: "expense", label: EXPENSE_KIND[e.kind], note: e.note, amount: Number(e.amount), counted: true });
+    ledger.push({ id: e.id, date: e.date, createdAt: e.createdAt, kind: "expense", label: EXPENSE_KIND[e.kind], note: e.note, amount: Number(e.amount), counted: true });
   }
   // Reys haqi (Trip.payAmount) avtoReport'da ish haqiga qo'shiladi — alohida qator bo'lib ko'rinsin
   const tripPay = row.pay - expenses.filter((e) => e.kind === "DRIVER_PAY").reduce((s, e) => s + Number(e.amount), 0);
@@ -193,7 +193,7 @@ export async function vehicleReport(vehicleId: string, from: Date, to: Date): Pr
   for (const x of services) {
     const a = x.cost != null ? Number(x.cost) : 0;
     serviceSum += a;
-    ledger.push({ id: x.id, date: x.date, kind: "service", label: `Texnik xizmat — ${x.kind}`, note: x.note, amount: a, counted: false });
+    ledger.push({ id: x.id, date: x.date, createdAt: x.createdAt, kind: "service", label: `Texnik xizmat — ${x.kind}`, note: x.note, amount: a, counted: false });
   }
   ledger.sort((a, b) => b.date.getTime() - a.date.getTime());
 

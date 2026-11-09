@@ -106,8 +106,8 @@ export async function listPaymentRequests(tab: PayReqTab, methods: PayMethod[], 
         select: {
           id: true, orderNo: true, status: true, deliveryDate: true, deliveryTime: true, onCredit: true,
           deliveryFee: true, items: { select: { qtyM3: true, price: true, product: { select: { name: true, unit: true } } } },
-          payments: { select: { id: true, amount: true, date: true, cashAccount: { select: { name: true, type: true } }, createdBy: { select: { fullName: true } } }, orderBy: { date: "asc" } },
-          invoices: { where: { status: { not: "CANCELLED" } }, select: { payments: { select: { id: true, amount: true, date: true, cashAccount: { select: { name: true, type: true } }, createdBy: { select: { fullName: true } } } } } },
+          payments: { select: { id: true, amount: true, date: true, createdAt: true, cashAccount: { select: { name: true, type: true } }, createdBy: { select: { fullName: true } } }, orderBy: { date: "asc" } },
+          invoices: { where: { status: { not: "CANCELLED" } }, select: { payments: { select: { id: true, amount: true, date: true, createdAt: true, cashAccount: { select: { name: true, type: true } }, createdBy: { select: { fullName: true } } } } } },
         },
       },
     },
@@ -122,7 +122,7 @@ export async function listPaymentRequests(tab: PayReqTab, methods: PayMethod[], 
       dueDate: r.dueDate, createdAt: r.createdAt, closedAt: r.closedAt, createdBy: r.createdBy.fullName,
       overdue: OPEN_STATUSES.includes(r.status) && r.dueDate < start,
       customer: r.customer, order: { id: r.order.id, orderNo: r.order.orderNo, status: r.order.status, deliveryTime: r.order.deliveryTime, onCredit: r.order.onCredit, total: r2(total), products: r.order.items.map((i) => i.product.name).join(", ") },
-      payments: pays.map((p) => ({ id: p.id, amount: Number(p.amount), date: p.date, account: p.cashAccount.name, accountType: p.cashAccount.type, by: p.createdBy?.fullName ?? null })),
+      payments: pays.map((p) => ({ id: p.id, amount: Number(p.amount), date: p.date, createdAt: p.createdAt, account: p.cashAccount.name, accountType: p.cashAccount.type, by: p.createdBy?.fullName ?? null })),
     };
   });
 }

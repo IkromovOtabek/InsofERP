@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ListTodo, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
-import { date, money } from "@/lib/format";
+import { dateTime, money } from "@/lib/format";
 import { monthTitle } from "@/lib/davomat";
 import { employeeOfUser } from "@/lib/hr/requests";
 import { breakdownOf, myLines } from "@/lib/hr/payroll";
@@ -55,7 +55,7 @@ export async function MyHrSection({ userId }: { userId: string }) {
                   <Td right>{money(Number(l.gross))}</Td>
                   <Td right>{ded ? money(ded) : "—"}</Td>
                   <Td right className="font-semibold">{money(Number(l.net))}</Td>
-                  <Td>{l.paidAt ? <Badge color="green">Berildi {date(l.paidAt)}</Badge> : <Badge color={PAYROLL_STATUS_BADGE[l.run.status]}>{PAYROLL_STATUS_LABEL[l.run.status]}</Badge>}</Td>
+                  <Td>{l.paidAt ? <Badge color="green">Berildi {dateTime(l.paidAt)}</Badge> : <Badge color={PAYROLL_STATUS_BADGE[l.run.status]}>{PAYROLL_STATUS_LABEL[l.run.status]}</Badge>}</Td>
                 </Tr>
               );
             })}

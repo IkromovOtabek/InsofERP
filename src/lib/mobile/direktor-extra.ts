@@ -28,6 +28,7 @@ import { KIND_LABEL, marketingEntries, marketingPlanTab, marketingTab } from "@/
 import { anomaliesTab, forecastTab } from "@/lib/bi/forecast";
 import { ownerCached } from "./owner-cache";
 import { day, money, num, pctText, short, shortSigned, time } from "./fmt";
+import { opAt } from "@/lib/format";
 import { ListError, type ListFilter, type MobileList } from "./list";
 import { DIREKTOR_ACTION_ROLES, DIREKTOR_PERM } from "./direktor-extra-access";
 import type { MobileUser } from "./auth";
@@ -105,7 +106,7 @@ export async function accessApprovalRows(q?: string): Promise<HomeRow[]> {
   const rows = (await pendingAccessRequests()).filter((r) => !s || r.fullName.toLowerCase().includes(s) || r.login.includes(s) || r.phone.includes(s));
   return rows.map((r) => ({
     id: `access:${r.id}`, title: `${r.fullName} · ${r.position}`,
-    subtitle: `Kirish arizasi · login ${r.login} · ${formatPhone(r.phone)} · ${day(r.createdAt)}${r.existingLogin ? ` · raqamda login bor: ${r.existingLogin}` : ""}`,
+    subtitle: `Kirish arizasi · login ${r.login} · ${formatPhone(r.phone)} · ${dt(r.createdAt)}${r.existingLogin ? ` · raqamda login bor: ${r.existingLogin}` : ""}`,
     status: "Login", tone: (r.existingLogin ? "danger" : "warning") as Tone,
   }));
 }
@@ -118,7 +119,7 @@ export async function deletionApprovalRows(q?: string): Promise<HomeRow[]> {
   });
   return list.map((r) => ({
     id: `deletion:${r.id}`, title: r.fullName,
-    subtitle: `Hisobni o'chirish so'rovi · ${SOURCE_LABEL[r.source]}${r.phone ? ` · ${formatPhone(r.phone)}` : ""}${r.user ? ` · login ${r.user.login}` : ""} · ${day(r.createdAt)}`,
+    subtitle: `Hisobni o'chirish so'rovi · ${SOURCE_LABEL[r.source]}${r.phone ? ` · ${formatPhone(r.phone)}` : ""}${r.user ? ` · login ${r.user.login}` : ""} · ${dt(r.createdAt)}`,
     status: "O'chirish", tone: "danger" as Tone,
   }));
 }
@@ -330,7 +331,7 @@ async function budgetDetail(id: string): Promise<MobileDetail> {
   const tx = await db.cashTransaction.findMany({
     where: { type: "EXPENSE", category: cat, cancelledAt: null, date: { gte: new Date(year, month - 1, 1), lt: new Date(year, month, 1) } },
     orderBy: { amount: "desc" }, take: 40,
-    select: { id: true, date: true, amount: true, counterparty: true, note: true, cashAccount: { select: { name: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } },
+    select: { id: true, date: true, createdAt: true, amount: true, counterparty: true, note: true, cashAccount: { select: { name: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } },
   });
   return {
     key: "byudjet", id, title: cat, subtitle: `Xarajat byudjeti — ${monthTitle(ym)}`, status: r.over ? "Byudjetdan oshdi" : r.amount === null && r.fact > 0 ? "Rejasiz" : undefined,
@@ -340,7 +341,7 @@ async function budgetDetail(id: string): Promise<MobileDetail> {
       f("Prognoz (oy oxiri)", money(r.forecast), r.amount !== null && r.forecast > r.amount ? "warning" : undefined),
       f("Oldingi 3 oy o'rtachasi", r.histAvg === null ? "—" : money(r.histAvg)),
     ],
-    sections: [sec("Chiqimlar", tx.map((t) => ({ id: t.id, title: t.supplier?.name ?? t.counterparty ?? "—", subtitle: [day(t.date), t.cashAccount.name, t.createdBy.fullName, t.note].filter(Boolean).join(" · "), right: short(Number(t.amount)) })), { target: "cashflow", empty: "Bu oyda chiqim yo'q" })],
+    sections: [sec("Chiqimlar", tx.map((t) => ({ id: t.id, title: t.supplier?.name ?? t.counterparty ?? "—", subtitle: [opAt(t.date, t.createdAt, day), t.cashAccount.name, t.createdBy.fullName, t.note].filter(Boolean).join(" · "), right: short(Number(t.amount)) })), { target: "cashflow", empty: "Bu oyda chiqim yo'q" })],
     actions: [],
   };
 }

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { avtoPartsFeed, avtoPartsUnread, markAvtoPartsSeen, type AvtoFeedRow } from "@/lib/avto-parts";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
-import { dateRu, fmtNum } from "@/lib/format";
+import { dateRu, fmtNum, opAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import type { MobileUser } from "./auth";
 import type { HomeRow } from "./home";
@@ -22,7 +22,7 @@ function feedRow(f: AvtoFeedRow, fresh: boolean): HomeRow {
   return {
     id: f.materialId,
     title: f.name,
-    subtitle: f.kind === "in" ? `Skladga keldi · ${dateRu(f.date)} · ${f.supplier ?? ""} · ${f.docNo ?? ""}` : `Ro'yxatga qo'shildi · ${dateRu(f.date)}`,
+    subtitle: f.kind === "in" ? `Skladga keldi · ${opAt(f.date, f.addedAt, dateRu)} · ${f.supplier ?? ""} · ${f.docNo ?? ""}` : `Ro'yxatga qo'shildi · ${opAt(f.date, f.addedAt, dateRu)}`,
     right: f.qty != null ? qty(f.qty, f.unit) : undefined,
     ...(fresh ? { status: "Yangi", tone: "brand" as const } : {}),
   };
@@ -49,7 +49,7 @@ export async function avtoDetail(user: MobileUser, id: string): Promise<MobileDe
       db.stockMove.aggregate({ where: { materialId: m.id }, _sum: { qty: true } }),
       db.goodsReceiptItem.findMany({
         where: { materialId: m.id, receipt: { cancelledAt: null } }, orderBy: { receipt: { date: "desc" } }, take: 10,
-        select: { id: true, qty: true, receipt: { select: { docNo: true, date: true, supplier: { select: { name: true } } } } },
+        select: { id: true, qty: true, receipt: { select: { docNo: true, date: true, createdAt: true, supplier: { select: { name: true } } } } },
       }),
     ]);
     const bal = Number(sum._sum.qty ?? 0);
@@ -59,7 +59,7 @@ export async function avtoDetail(user: MobileUser, id: string): Promise<MobileDe
       fields: [{ label: "Skladdagi qoldiq", value: qty(bal, m.unit), tone: bal > 0 ? "success" : "warning" }, { label: "Birlik", value: unitLabel(m.unit) }],
       sections: [{
         title: "So'nggi kirimlar", empty: "Kirim bo'lmagan", icon: "truck",
-        rows: items.map((i) => ({ id: i.id, title: `${i.receipt.docNo} · ${dateRu(i.receipt.date)}`, subtitle: i.receipt.supplier.name, right: qty(Number(i.qty), m.unit) })),
+        rows: items.map((i) => ({ id: i.id, title: `${i.receipt.docNo} · ${opAt(i.receipt.date, i.receipt.createdAt, dateRu)}`, subtitle: i.receipt.supplier.name, right: qty(Number(i.qty), m.unit) })),
       }],
       actions: [],
     };
@@ -69,7 +69,7 @@ export async function avtoDetail(user: MobileUser, id: string): Promise<MobileDe
   const rec = id === "yangi" ? null : await db.goodsReceipt.findUnique({
     where: { id },
     select: {
-      docNo: true, date: true, cancelledAt: true, supplier: { select: { name: true } },
+      docNo: true, date: true, createdAt: true, cancelledAt: true, supplier: { select: { name: true } },
       items: { where: { material: { category: "AVTO_ZAPCHAST" } }, select: { qty: true, material: { select: { id: true, name: true, unit: true } } } },
     },
   });
@@ -82,7 +82,7 @@ export async function avtoDetail(user: MobileUser, id: string): Promise<MobileDe
     return {
       key: "avto-zapchast", id, title: `Avto zapchast keldi — ${rec.docNo}`, subtitle: `${dateRu(rec.date)} · ${rec.supplier.name}`,
       status: rec.cancelledAt ? "Bekor qilingan" : "Skladda",
-      fields: [{ label: "Ta'minotchi", value: rec.supplier.name }, { label: "Sana", value: dateRu(rec.date) }],
+      fields: [{ label: "Ta'minotchi", value: rec.supplier.name }, { label: "Sana", value: opAt(rec.date, rec.createdAt, dateRu) }],
       sections: [
         { title: "Shu kirimdagi avto zapchastlar", empty: "Avto zapchast yo'q", icon: "package", target: "avto-zapchast",
           rows: rec.items.map((i) => ({ id: i.material.id, title: i.material.name, right: qty(Number(i.qty), i.material.unit) })) },

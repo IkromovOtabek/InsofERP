@@ -2,7 +2,7 @@ import { HandCoins, Landmark, Percent, Wallet } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { date, fmtNum, isoDate, money } from "@/lib/format";
+import { date, fmtNum, isoDate, money, opAt } from "@/lib/format";
 import { loanBalances, LOAN_KIND_LABEL } from "@/lib/fin-report/loans";
 import { loadCategories } from "@/lib/fin-report/categories";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -20,7 +20,7 @@ export default async function LoansPage() {
   const unlinked = await db.cashTransaction.findMany({
     where: { cancelledAt: null, loanId: null, type: { in: ["INCOME", "EXPENSE"] }, category: { in: loanCats, mode: "insensitive" } },
     orderBy: { date: "desc" }, take: 100,
-    select: { id: true, date: true, type: true, amount: true, category: true, counterparty: true, note: true, cashAccount: { select: { name: true } } },
+    select: { id: true, date: true, createdAt: true, type: true, amount: true, category: true, counterparty: true, note: true, cashAccount: { select: { name: true } } },
   });
 
   const owe = loans.filter((l) => l.kind !== "LENT" && !l.closedAt);
@@ -75,7 +75,7 @@ export default async function LoansPage() {
             <tbody>
               {unlinked.map((t) => (
                 <Tr key={t.id}>
-                  <Td>{date(t.date)}</Td>
+                  <Td className="whitespace-nowrap">{opAt(t.date, t.createdAt)}</Td>
                   <Td>{t.category}</Td>
                   <Td className="text-slate-500">{t.cashAccount.name}</Td>
                   <Td className="text-slate-500">{[t.counterparty, t.note].filter(Boolean).join(" · ") || "—"}</Td>

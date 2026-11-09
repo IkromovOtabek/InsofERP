@@ -36,7 +36,7 @@ export default async function OfferPage({ params, searchParams }: { params: Prom
       <PageHeader
         back={{ href: "/takliflar", label: "Tijorat takliflari" }}
         title={<>Tijorat taklifi {o.offerNo} <Badge color={meta.color}>{meta.label}</Badge></>}
-        subtitle={<>{date(o.date)} · {o.manager.fullName} · amal qiladi {date(o.validUntil)} gacha{o.lang === "ru" && " · hujjat ruscha"}</>}
+        subtitle={<>{dateTime(o.date)} · {o.manager.fullName} · amal qiladi {date(o.validUntil)} gacha{o.lang === "ru" && " · hujjat ruscha"}</>}
         action={<>
           {canOrder && <LinkButton href={`/orders/new?customer=${o.customerId}`} variant="secondary"><FilePlus2 size={16} /> Zayavka ochish</LinkButton>}
           {canCreate && <LinkButton href={`/takliflar/new?copy=${o.id}`} variant="secondary"><Copy size={16} /> Nusxa (yangi narx)</LinkButton>}

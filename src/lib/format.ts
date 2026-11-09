@@ -56,6 +56,16 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export const date = (d: Date) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 export const time = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 export const dateTime = (d: Date) => `${date(d)} ${time(d)}`;
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+/**
+ * Amal sanasi + soati. Hujjat sanasi formadan kun bo'lib keladi (soati 00:00/05:00 — haqiqiy emas),
+ * shuning uchun soat yozuv kiritilgan vaqtdan (`createdAt`) olinadi: «09/11/2026 14:32».
+ * Orqa sana bilan (yoki Excel'dan) kiritilgan bo'lsa amal soati noma'lum — faqat sana.
+ * `fmt` — sana ko'rinishi (`dateRu`, `dateShort` …).
+ */
+export const opAt = (d: Date, created?: Date | null, fmt: (d: Date) => string = date) =>
+  created && sameDay(d, created) ? `${fmt(d)} ${time(created)}` : fmt(d);
 export const isoDate = (d: Date = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 /** Ruscha jadvallar (Sklad → Приход/Расход): «20.04.2026» — Excel'dagidek nuqta bilan. */
 export const dateRu = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { dateRu, time } from "@/lib/format";
 import { canDo } from "@/lib/permissions";
 import { employeeOfUser } from "@/lib/hr/requests";
 import { courseForEmployee, myCourses, takeTest } from "@/lib/hr/training";
@@ -18,7 +19,8 @@ import { kadrCandidateActions } from "./kadr-extra";
  */
 
 const fail = (m: string): never => { throw new ListError("ACTION_FAILED", m, 400); };
-const dt = (d: Date) => d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+/** «02.10 14:20» — vergulsiz: ECO ro'yxati qatorlarni shu matndan kunlarga guruhlaydi. */
+const dt = (d: Date) => `${dateRu(d).slice(0, 5)} ${time(d)}`;
 const d2 = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}.${String(d.getUTCMonth() + 1).padStart(2, "0")}.${d.getUTCFullYear()}`;
 const recruiter = (u: MobileUser) => (u.role === "HR" || u.role === "DIRECTOR") && canDo(u, "employees", "recruit", ["HR"]);
 

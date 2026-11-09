@@ -3,7 +3,7 @@ import { Prisma, type RentMethod, type RentTxType } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { canDo } from "@/lib/permissions";
 import { MAX_AMOUNT } from "@/lib/action";
-import { dateRu, fmtNum, money } from "@/lib/format";
+import { dateRu, fmtNum, money, opAt, time } from "@/lib/format";
 import {
   RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
   monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, leaseDebts, saveRentChargeData, RENT_MAX_MONTHS, RENT_ELEC_CATEGORY, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentPerM2, rentShopStates, toggleRentShopActive, startRentLease, endRentLease, today, type RentPayStatus,
@@ -71,9 +71,9 @@ export async function arendaScreen(user: MobileUser, oy?: string | null): Promis
 
 const TX_TONE = (t: { type: RentTxType; cancelledAt: Date | null }): Tone => (t.cancelledAt ? "warning" : t.type === "INCOME" ? "success" : "danger");
 
-function txRow(t: { id: string; type: RentTxType; method: RentMethod; date: Date; month: Date | null; amount: Prisma.Decimal; category: string; note: string | null; cancelledAt: Date | null; cancelReason: string | null; shop: { name: string } | null }): HomeRow {
+function txRow(t: { id: string; type: RentTxType; method: RentMethod; date: Date; createdAt: Date; month: Date | null; amount: Prisma.Decimal; category: string; note: string | null; cancelledAt: Date | null; cancelReason: string | null; shop: { name: string } | null }): HomeRow {
   const sign = t.type === "INCOME" ? "+" : "−";
-  const parts = [dateRu(t.date), RENT_METHOD_LABEL[t.method], t.note, t.cancelledAt ? `bekor qilingan: ${t.cancelReason ?? ""}` : null].filter(Boolean);
+  const parts = [opAt(t.date, t.createdAt, dateRu), RENT_METHOD_LABEL[t.method], t.note, t.cancelledAt ? `bekor qilingan: ${t.cancelReason ?? ""}` : null].filter(Boolean);
   return {
     id: t.id,
     title: t.type === "INCOME" ? `${t.shop?.name ?? "Do'kon"}${t.month ? ` · ${monthLabel(t.month)}` : ""}` : t.category,
@@ -214,7 +214,7 @@ export async function arendaTxDetail(user: MobileUser, id: string): Promise<Mobi
   return {
     key: "arenda-tx", id: t.id,
     title: income ? `Kirim · ${t.shop?.name ?? "Do'kon"}` : `Chiqim · ${t.category}`,
-    subtitle: `${dateRu(t.date)} · ${RENT_METHOD_LABEL[t.method]}`,
+    subtitle: `${opAt(t.date, t.createdAt, dateRu)} · ${RENT_METHOD_LABEL[t.method]}`,
     status: t.cancelledAt ? "Bekor qilingan" : income ? "Kirim" : "Chiqim",
     fields: [
       { label: "Summa", value: `${income ? "+" : "−"}${money(n(t.amount))}`, tone: TX_TONE(t) },
@@ -224,8 +224,8 @@ export async function arendaTxDetail(user: MobileUser, id: string): Promise<Mobi
       ...(t.batchId ? [{ label: "Bir necha oyga", value: "summa oylarga bo'lingan — bitta kvitansiya, bekor qilinsa hammasi" }] : []),
       { label: income ? "Turi" : "Chiqim turi", value: t.category },
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
-      { label: "Kiritdi", value: `${t.createdBy.fullName} · ${dateRu(t.createdAt)}` },
-      ...(t.cancelledAt ? [{ label: "Bekor qilindi", value: `${cancelledBy?.fullName ?? "—"} · ${dateRu(t.cancelledAt)}${t.cancelReason ? ` · ${t.cancelReason}` : ""}`, tone: "warning" as Tone }] : []),
+      { label: "Kiritdi", value: `${t.createdBy.fullName} · ${dateRu(t.createdAt)} ${time(t.createdAt)}` },
+      ...(t.cancelledAt ? [{ label: "Bekor qilindi", value: `${cancelledBy?.fullName ?? "—"} · ${dateRu(t.cancelledAt)} ${time(t.cancelledAt)}${t.cancelReason ? ` · ${t.cancelReason}` : ""}`, tone: "warning" as Tone }] : []),
     ],
     sections: [],
     actions,
@@ -405,7 +405,7 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
       const income = t.type === "INCOME", f = rentFor(t);
       return {
         id: t.id, title: income ? `${f?.value ?? "—"}${t.category === RENT_ELEC_CATEGORY ? " · svet" : ""}` : `Chiqim · ${t.category}`,
-        subtitle: [dateRu(t.date), RENT_METHOD_LABEL[t.method], t.batchId ? "bir necha oyga" : null, t.leaseId && t.leaseId !== lease?.id ? "sobiq ijarachi" : null, t.cancelledAt ? `bekor: ${t.cancelReason ?? ""}` : null].filter(Boolean).join(" · "),
+        subtitle: [opAt(t.date, t.createdAt, dateRu), RENT_METHOD_LABEL[t.method], t.batchId ? "bir necha oyga" : null, t.leaseId && t.leaseId !== lease?.id ? "sobiq ijarachi" : null, t.cancelledAt ? `bekor: ${t.cancelReason ?? ""}` : null].filter(Boolean).join(" · "),
         right: `${income ? "+" : "−"}${money(n(t.amount))}`, status: t.cancelledAt ? "Bekor qilingan" : undefined, tone: TX_TONE(t),
       };
     }),
@@ -431,7 +431,7 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
   if (reminders.length) {
     sections.push({
       title: "Eslatmalar", empty: "—",
-      rows: reminders.map((r) => ({ id: `r~${r.id}`, title: `${dateRu(r.createdAt)} · ${r.auto ? "avtomatik" : "qo'lda"}`, subtitle: r.error ?? undefined, right: num(n(r.debt)), status: r.ok ? "Yetkazildi" : "Yetmadi", tone: r.ok ? "success" : "danger" })),
+      rows: reminders.map((r) => ({ id: `r~${r.id}`, title: `${dateRu(r.createdAt)} ${time(r.createdAt)} · ${r.auto ? "avtomatik" : "qo'lda"}`, subtitle: r.error ?? undefined, right: num(n(r.debt)), status: r.ok ? "Yetkazildi" : "Yetmadi", tone: r.ok ? "success" : "danger" })),
     });
   }
 

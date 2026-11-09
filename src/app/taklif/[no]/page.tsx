@@ -146,7 +146,7 @@ export default async function PublicOfferPage({ params, searchParams }: { params
         <section className={`${qrUp(cancelled ? 4 : 3)} grid grid-cols-2 gap-x-3 gap-y-3.5 ${qrCard} ${cancelled ? "opacity-85" : ""}`}>
           <QrField label={T.client} value={o.clientName} />
           {cancelled
-            ? <QrField label={T.qrCancelledOn} value={date(o.cancelledAt ?? o.updatedAt)} />
+            ? <QrField label={T.qrCancelledOn} value={dateTime(o.cancelledAt ?? o.updatedAt)} />
             : <>{o.clientInn && <QrField label={T.inn} value={o.clientInn} />}{o.objectName && <QrField label={T.object} value={o.objectName} />}<QrField label={T.date} value={date(o.date)} />{o.deadline && <QrField label={T.deadline} value={o.deadline} />}</>}
         </section>
       )}

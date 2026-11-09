@@ -4,7 +4,7 @@ import { FileSpreadsheet, PenLine, Receipt, Search, Truck, Undo2, Wallet } from 
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
-import { dateRu, fmtNum, isoDate } from "@/lib/format";
+import { dateRu, fmtNum, isoDate, opAt } from "@/lib/format";
 import { LINE_CELLS, realizationLog, realizationOptions, type AutoCell, type LogRow, type LogSource } from "@/lib/realization-log";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
@@ -128,7 +128,7 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
             <SheetTr key={r.key} className={cn(!auto && "bg-amber-50/40")}>
               <SheetTd className="whitespace-nowrap tabular">
                 {edit("date", "Sana", isoDate(r.date), <>
-                  {dateRu(r.date)}
+                  {opAt(r.date, r.at, dateRu)}
                   {!auto && <span className="block text-[10px] font-semibold text-amber-700" title="Qo'lda kiritilgan qator">qo&apos;lda</span>}
                 </>, { kind: "date" })}
               </SheetTd>

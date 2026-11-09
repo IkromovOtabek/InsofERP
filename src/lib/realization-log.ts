@@ -38,6 +38,8 @@ export type LogRow = {
   ref: string;
   orderId: string | null; tripId: string | null; customerId: string | null;
   date: Date; pay: PayGroupKey; payLabel: string; seller: string;
+  /** Soat qayerdan (`opAt`): reysdan — yuklangan payt (sana ko'chirilmagan bo'lsa), qo'lda — kiritilgan payt; aks holda null */
+  at: Date | null;
   customer: string; product: string; group: string; ttn: string | null; vehicle: string | null;
   /** Reysdan qatorda — dispetcher yozgan TTN (`Trip.ttn`, tahrir qiymati); bo'lmasa ko'rinadigani nakladnoy raqami */
   tripTtn: string | null;
@@ -130,7 +132,7 @@ export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
     const suggest = suggestOf(r);
     rows.push({
       ...e, key: `a-${r.key}`, source: "AUTO", ref, line: r.key, orderId: r.orderId, tripId: r.tripId, customerId: r.customerId,
-      customer: r.customer, tripTtn: r.tripTtn,
+      at: r.tripId && !("date" in e.orig) ? r.date : null, customer: r.customer, tripTtn: r.tripTtn,
       loadPlace: filled.loadPlace ?? suggest.loadPlace ?? "", destination: filled.destination ?? suggest.destination ?? "",
       note: filled.note ?? suggest.note ?? "", refName: filled.refName ?? suggest.refName ?? "",
       filled, suggest,
@@ -142,7 +144,7 @@ export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
     const pay = (PAY_KEYS as string[]).includes(e.payGroup) ? (e.payGroup as PayGroupKey) : "CASH";
     rows.push({
       key: `m-${e.id}`, source: "MANUAL", ref: e.id, orderId: null, tripId: null, customerId: e.customerId,
-      date: e.date, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer: e.customerName, product: e.productName, group: e.groupName,
+      date: e.date, at: e.createdAt, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer: e.customerName, product: e.productName, group: e.groupName,
       ttn: e.ttn, tripTtn: null, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r2(net + vat),
       loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? e.customerName,
       filled: null, suggest: null, line: null, orig: {},

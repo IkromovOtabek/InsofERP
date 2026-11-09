@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Boxes, UserCheck, PackageOpen, AlertTriangle, Factory, History } from "lucide-react";
 import { ostatkaDetail } from "@/lib/ostatka";
-import { qty, date, dateTime } from "@/lib/format";
+import { qty, date, dateTime, opAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Td, Th, Tr } from "@/components/ui";
 import { OrderStatusBadge } from "../../../orders/status";
@@ -62,7 +62,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
             <thead><tr><Th>№</Th><Th>Sana</Th><Th right>Miqdor</Th><Th>Zayavka</Th><Th>Kim</Th></tr></thead>
             <tbody>
               {d.batches.length === 0 && <Empty text="Hali ishlab chiqarilmagan" icon={Factory} />}
-              {d.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td><Td>{date(b.date)}</Td><Td right>{qty(b.qtyM3)}</Td><Td>{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.customer.name}</Link> : <span className="text-slate-400">sklad uchun</span>}</Td><Td>{b.createdBy.fullName}</Td></Tr>)}
+              {d.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td><Td className="whitespace-nowrap">{opAt(b.date, b.createdAt)}</Td><Td right>{qty(b.qtyM3)}</Td><Td>{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.customer.name}</Link> : <span className="text-slate-400">sklad uchun</span>}</Td><Td>{b.createdBy.fullName}</Td></Tr>)}
             </tbody>
           </table></div>
         </Card>

@@ -3,7 +3,7 @@ import { FileBadge2, Plus, Eye, Settings2, CheckCircle2, Clock, Hourglass } from
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { date, money } from "@/lib/format";
+import { date, dateTime, money } from "@/lib/format";
 import { OFFER_STATE, offerState, offerStateWhere, offerTotals, type OfferState } from "@/lib/offers";
 import { Badge, Button, Empty, Input, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import type { Prisma } from "@/generated/prisma";
@@ -78,14 +78,14 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
               const meta = OFFER_STATE[st];
               return (
                 <Tr key={o.id}>
-                  <Td><Link href={`/takliflar/${o.id}`} className="font-medium text-slate-900 hover:underline">{o.offerNo}</Link><div className="text-xs text-slate-500">{date(o.date)}</div></Td>
+                  <Td><Link href={`/takliflar/${o.id}`} className="font-medium text-slate-900 hover:underline">{o.offerNo}</Link><div className="text-xs text-slate-500">{dateTime(o.date)}</div></Td>
                   <Td>{o.customer ? <Link href={`/customers/${o.customer.id}`} className="hover:underline">{o.clientName}</Link> : <span>{o.clientName}<span className="ml-1 text-xs text-slate-400">(bazada yo&apos;q)</span></span>}{o.clientPhone && <div className="text-xs text-slate-500">{o.clientPhone}</div>}</Td>
                   <Td className="max-w-[220px] truncate text-slate-600">{o.objectName ?? "—"}</Td>
                   <Td right className="font-medium tabular-nums">{money(sumOf(o))}</Td>
                   <Td className={st === "EXPIRED" ? "text-amber-700" : ""}>{date(o.validUntil)}</Td>
                   <Td className="text-slate-600">{o.manager.fullName}</Td>
                   <Td><Badge color={meta.color}>{meta.label}</Badge></Td>
-                  <Td right>{o.viewCount > 0 ? <span className="inline-flex items-center gap-1 text-emerald-700" title={o.lastViewedAt ? `Oxirgi: ${date(o.lastViewedAt)}` : undefined}><Eye size={14} /> {o.viewCount}</span> : <span className="text-slate-400">—</span>}</Td>
+                  <Td right>{o.viewCount > 0 ? <span className="inline-flex items-center gap-1 text-emerald-700" title={o.lastViewedAt ? `Oxirgi: ${dateTime(o.lastViewedAt)}` : undefined}><Eye size={14} /> {o.viewCount}</span> : <span className="text-slate-400">—</span>}</Td>
                 </Tr>
               );
             })}

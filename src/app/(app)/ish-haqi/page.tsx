@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Settings2, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
-import { date, money } from "@/lib/format";
+import { dateTime, money } from "@/lib/format";
 import { monthOf, monthTitle, today } from "@/lib/davomat";
 import { canPayroll, listRuns, payrollSettings } from "@/lib/hr/payroll";
 import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
@@ -56,7 +56,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
                 {runs.length === 0 && <Empty text="Vedomost hali yo'q — yuqorida oy va turini tanlab hisoblang" />}
                 {runs.map((r) => (
                   <Tr key={r.id} className={r.status === "CANCELLED" ? "opacity-50" : ""}>
-                    <Td className="font-medium"><Link href={`/ish-haqi/${r.id}`} className="text-brand-700 hover:underline">{r.docNo}</Link><div className="text-xs font-normal text-slate-500">{date(r.createdAt)}{r.note ? ` · ${r.note}` : ""}</div></Td>
+                    <Td className="font-medium"><Link href={`/ish-haqi/${r.id}`} className="text-brand-700 hover:underline">{r.docNo}</Link><div className="text-xs font-normal text-slate-500">{dateTime(r.createdAt)}{r.note ? ` · ${r.note}` : ""}</div></Td>
                     <Td>{monthTitle(r.month)}</Td>
                     <Td>{PAYROLL_KIND_LABEL[r.kind]}</Td>
                     <Td right>{r._count.lines}</Td>

@@ -8,7 +8,7 @@ import { canDo } from "@/lib/permissions";
 import { isDriverPosition } from "@/lib/positions";
 import { LOGIN_HINT } from "@/lib/self-account";
 import { delayLevel, ISSUE_KIND, logisticsSettings, minutesLabel, tripDelayMin, tripPhase } from "@/lib/logistics";
-import { date, dateTime, isoDate, qty } from "@/lib/format";
+import { dateTime, isoDate, qty } from "@/lib/format";
 import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { DriverCardForm } from "../driver-card-form";
 import { DriverLoginForm } from "../driver-login-form";
@@ -89,7 +89,7 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
               const dl = tripDelayMin(t, t.order);
               return (
                 <Tr key={t.id}>
-                  <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} plain={tripsClosed} /><div className="text-xs text-slate-500">{date(t.createdAt)}</div></Td>
+                  <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} plain={tripsClosed} /><div className="text-xs text-slate-500">{dateTime(t.createdAt)}</div></Td>
                   <Td><div className="text-sm">{t.order.customer.name}</div><div className="max-w-xs truncate text-xs text-slate-500">{t.order.deliveryAddress}</div></Td>
                   <Td className="text-sm tabular">{t.vehicle.plate}</Td>
                   <Td right className="tabular">{qty(t.qtyM3)}</Td>

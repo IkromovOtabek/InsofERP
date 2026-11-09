@@ -25,7 +25,7 @@ import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { pullTripFromEco, pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { approveDriverInEco, linkDriverToEco } from "@/lib/eco/driver-link";
-import { date, dateRu, dateTime, deliveryAt, fmtNum, money, moneyShort } from "@/lib/format";
+import { date, dateRu, dateTime, deliveryAt, fmtNum, money, moneyShort, opAt } from "@/lib/format";
 import { unitLabel, unitShort } from "@/lib/unit";
 import type { FuelType, Role, TripStatus } from "@/generated/prisma";
 import type { MobileUser } from "./auth";
@@ -58,6 +58,8 @@ const optNum = (p: Record<string, unknown>, key: string) => (textOf(p, key) === 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+/** Ro'yxat qatoridagi vaqt — nuqtali «09.11.2026 14:32» (ECO qatorlarni shu sanadan kunlarga guruhlaydi). */
+const dtRu = (d: Date) => `${dateRu(d)} ${hhmm(d)}`;
 
 /** Zod xatosi → bitta o'zbekcha satr (`lib/action.ts` `parseForm` bilan bir xil uslub). */
 const ZOD_DEFAULT = /^(required|invalid|expected|too (small|big)|string must|number must|array must|unrecognized)/i;
@@ -309,7 +311,7 @@ async function fuelList(title: string, q?: string, filter?: string): Promise<Mob
     rows: logs.slice(0, TAKE).map((f) => ({
       id: f.id,
       title: `${f.vehicle.plate} · ${fmtNum(n(f.liters), 1)} l`,
-      subtitle: [date(f.date), FUEL_TYPE[f.fuelType], f.driver?.fullName, f.station, f.trip?.deliveryNoteNo, f.odometerKm != null ? `${fmtNum(f.odometerKm)} km` : null].filter(Boolean).join(" · "),
+      subtitle: [opAt(f.date, f.createdAt, dateRu), FUEL_TYPE[f.fuelType], f.driver?.fullName, f.station, f.trip?.deliveryNoteNo, f.odometerKm != null ? `${fmtNum(f.odometerKm)} km` : null].filter(Boolean).join(" · "),
       right: money(n(f.amount)),
       ...(f.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : { tone: "info" as Tone }),
     })),
@@ -333,7 +335,7 @@ async function expensesList(title: string, q?: string, filter?: string): Promise
     rows: rows.slice(0, TAKE).map((e) => ({
       id: e.id,
       title: `${EXPENSE_KIND[e.kind]}${e.vehicle ? ` · ${e.vehicle.plate}` : ""}`,
-      subtitle: [date(e.date), e.driver?.fullName, e.trip?.deliveryNoteNo, e.note].filter(Boolean).join(" · "),
+      subtitle: [opAt(e.date, e.createdAt, dateRu), e.driver?.fullName, e.trip?.deliveryNoteNo, e.note].filter(Boolean).join(" · "),
       right: money(n(e.amount)),
       ...(e.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : { tone: "warning" as Tone }),
     })),
@@ -362,7 +364,7 @@ async function waybillsList(title: string, q?: string, filter?: string): Promise
     rows: trips.map((t) => ({
       id: t.id,
       title: `${t.deliveryNoteNo} · ${t.order.customer.name}`,
-      subtitle: [t.vehicle.plate, t.driver.fullName, [...new Set(t.order.items.map((i) => i.product.code ?? i.product.name))].join(", "), t.loadedAt ? `yuklandi ${dateTime(t.loadedAt)}` : null, t.receiverName ? `qabul: ${t.receiverName}` : null].filter(Boolean).join(" · "),
+      subtitle: [t.vehicle.plate, t.driver.fullName, [...new Set(t.order.items.map((i) => i.product.code ?? i.product.name))].join(", "), t.loadedAt ? `yuklandi ${dtRu(t.loadedAt)}` : null, t.receiverName ? `qabul: ${t.receiverName}` : null].filter(Boolean).join(" · "),
       right: `${fmtNum(n(t.qtyM3), 1)} ${unitShort(orderUnit(t.order.items))}`,
       status: TRIP_PHASE[tripPhase(t)].label,
       tone: tripTone(t),
@@ -414,7 +416,7 @@ async function deliveriesList(title: string, q?: string, filter?: string): Promi
       return {
         id: t.id,
         title: `${t.deliveryNoteNo} · ${t.order.customer.name}`,
-        subtitle: [t.vehicle.plate, t.driver.fullName, t.receiverName ? `qabul: ${t.receiverName}` : null, t.deliveredAt ? dateTime(t.deliveredAt) : null, n(t.returnedQty) > 0 ? `qaytgan ${fmtNum(n(t.returnedQty), 1)}` : null, t.issues.length ? `${t.issues.length} muammo` : null].filter(Boolean).join(" · "),
+        subtitle: [t.vehicle.plate, t.driver.fullName, t.receiverName ? `qabul: ${t.receiverName}` : null, t.deliveredAt ? dtRu(t.deliveredAt) : null, n(t.returnedQty) > 0 ? `qaytgan ${fmtNum(n(t.returnedQty), 1)}` : null, t.issues.length ? `${t.issues.length} muammo` : null].filter(Boolean).join(" · "),
         right: `${fmtNum(a, 1)} / ${fmtNum(n(t.qtyM3), 1)} ${unitShort(orderUnit(t.order.items))}`,
         status: t.closedAt ? "Yopilgan" : "Yopilmagan",
         tone: (openIssue ? "danger" : isDiff(t) || !t.closedAt ? "warning" : "success") as Tone,
@@ -594,8 +596,8 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
     include: {
       order: { select: { customerId: true, deliveryDate: true, deliveryTime: true, items: { select: { product: { select: { unit: true } } } } } },
       vehicle: { select: { type: true } },
-      fuelLogs: { orderBy: { date: "desc" }, select: { id: true, date: true, fuelType: true, liters: true, amount: true, note: true, cancelledAt: true, cancelledById: true, cancelReason: true } },
-      expenses: { orderBy: { date: "desc" }, select: { id: true, date: true, kind: true, amount: true, note: true, cancelledAt: true, cancelledById: true, cancelReason: true } },
+      fuelLogs: { orderBy: { date: "desc" }, select: { id: true, date: true, createdAt: true, fuelType: true, liters: true, amount: true, note: true, cancelledAt: true, cancelledById: true, cancelReason: true } },
+      expenses: { orderBy: { date: "desc" }, select: { id: true, date: true, createdAt: true, kind: true, amount: true, note: true, cancelledAt: true, cancelledById: true, cancelReason: true } },
     },
   });
   const out: TripExtras = { warnings: [], fields: [], sections: [], actions: [] };
@@ -632,8 +634,8 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
   // ── Xarajatlar (yoqilg'i + boshqa) ── bekor qilingani «Bekor qilingan» bo'lib qoladi, jamiga kirmaydi
   const cNames = await cancellerNames([...t.fuelLogs, ...t.expenses]);
   const costs = [
-    ...t.fuelLogs.map((f) => ({ id: `fuel:${f.id}`, at: f.date, title: `Yoqilg'i · ${FUEL_TYPE[f.fuelType]} ${fmtNum(n(f.liters), 1)} l`, note: f.note, amount: n(f.amount), cancel: cancelNote(f, cNames) })),
-    ...t.expenses.map((e) => ({ id: `expenses:${e.id}`, at: e.date, title: EXPENSE_KIND[e.kind], note: e.note, amount: n(e.amount), cancel: cancelNote(e, cNames) })),
+    ...t.fuelLogs.map((f) => ({ id: `fuel:${f.id}`, at: f.date, createdAt: f.createdAt, title: `Yoqilg'i · ${FUEL_TYPE[f.fuelType]} ${fmtNum(n(f.liters), 1)} l`, note: f.note, amount: n(f.amount), cancel: cancelNote(f, cNames) })),
+    ...t.expenses.map((e) => ({ id: `expenses:${e.id}`, at: e.date, createdAt: e.createdAt, title: EXPENSE_KIND[e.kind], note: e.note, amount: n(e.amount), cancel: cancelNote(e, cNames) })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
   const costSum = costs.filter((c) => !c.cancel).reduce((a, c) => a + c.amount, 0);
   if (costs.length) {
@@ -642,7 +644,7 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
       title: `Reys xarajatlari · ${money(costSum)}${n(t.qtyM3) ? ` · 1 birlikka ${money(costSum / n(t.qtyM3))}` : ""}`,
       empty: "", icon: "wallet", ...(open ? { target: "fuel" } : {}),
       rows: costs.map((c) => ({
-        id: open ? c.id : c.id.split(":")[1]!, title: c.title, subtitle: [date(c.at), c.note, c.cancel ? `bekor qilindi: ${c.cancel}` : null].filter(Boolean).join(" · "), right: money(c.amount),
+        id: open ? c.id : c.id.split(":")[1]!, title: c.title, subtitle: [opAt(c.at, c.createdAt, dateRu), c.note, c.cancel ? `bekor qilindi: ${c.cancel}` : null].filter(Boolean).join(" · "), right: money(c.amount),
         ...(c.cancel ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : {}),
       })),
     });
@@ -946,7 +948,7 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
     actions.push({
       id: "vehicle.service.cancel", label: "Xizmat yozuvini bekor qilish", tone: "danger",
       form: [
-        { name: "serviceId", label: "Qaysi yozuv", type: "select", required: true, options: liveServices.map((x) => ({ value: x.id, label: `${x.kind} · ${date(x.date)}`, hint: x.note ?? undefined })), hint: "Faqat xato yozilganini bekor qiling — yozuv jurnalda «Bekor qilingan» bo'lib qoladi" },
+        { name: "serviceId", label: "Qaysi yozuv", type: "select", required: true, options: liveServices.map((x) => ({ value: x.id, label: `${x.kind} · ${opAt(x.date, x.createdAt, dateRu)}`, hint: x.note ?? undefined })), hint: "Faqat xato yozilganini bekor qiling — yozuv jurnalda «Bekor qilingan» bo'lib qoladi" },
         { name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda" },
       ],
     });
@@ -979,18 +981,18 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
     ],
     sections: [
       ...(due.length ? [{ title: "Texnik xizmat muddati", empty: "", icon: "wrench", rows: due.map((d) => ({ id: d.serviceId, title: d.kind, subtitle: d.text, tone: (d.level === "crit" ? "danger" : "warning") as Tone })) }] : []),
-      { title: "Oxirgi reyslar", empty: "Reys yo'q", target: "trips", rows: v.trips.slice(0, 10).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.loadedAt ? dateTime(t.loadedAt) : date(t.createdAt)}`, right: fmtNum(n(t.qtyM3), 1), status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
+      { title: "Oxirgi reyslar", empty: "Reys yo'q", target: "trips", rows: v.trips.slice(0, 10).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.loadedAt ? dtRu(t.loadedAt) : dtRu(t.createdAt)}`, right: fmtNum(n(t.qtyM3), 1), status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
       {
         title: "Yoqilg'i", empty: "Zapravka yozilmagan", icon: "droplets", ...(fuelOpen ? { target: "fuel" } : {}),
         rows: v.fuelLogs.slice(0, 10).map((f) => ({
-          id: f.id, title: `${fmtNum(n(f.liters), 1)} l · ${FUEL_TYPE[f.fuelType]}`, subtitle: [date(f.date), f.driver?.fullName, f.odometerKm != null ? `${fmtNum(f.odometerKm)} km` : null, f.cancelledAt ? `bekor qilindi: ${cancelNote(f, cNames)}` : null].filter(Boolean).join(" · "), right: money(n(f.amount)),
+          id: f.id, title: `${fmtNum(n(f.liters), 1)} l · ${FUEL_TYPE[f.fuelType]}`, subtitle: [opAt(f.date, f.createdAt, dateRu), f.driver?.fullName, f.odometerKm != null ? `${fmtNum(f.odometerKm)} km` : null, f.cancelledAt ? `bekor qilindi: ${cancelNote(f, cNames)}` : null].filter(Boolean).join(" · "), right: money(n(f.amount)),
           ...(f.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : {}),
         })),
       },
       {
         title: "Boshqa xarajatlar", empty: "Xarajat yozilmagan", icon: "wallet", ...(expOpen ? { target: "expenses" } : {}),
         rows: v.expenses.slice(0, 10).map((e) => ({
-          id: e.id, title: EXPENSE_KIND[e.kind], subtitle: [date(e.date), e.note, e.cancelledAt ? `bekor qilindi: ${cancelNote(e, cNames)}` : null].filter(Boolean).join(" · "), right: money(n(e.amount)),
+          id: e.id, title: EXPENSE_KIND[e.kind], subtitle: [opAt(e.date, e.createdAt, dateRu), e.note, e.cancelledAt ? `bekor qilindi: ${cancelNote(e, cNames)}` : null].filter(Boolean).join(" · "), right: money(n(e.amount)),
           ...(e.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : {}),
         })),
       },
@@ -1000,7 +1002,7 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
           const lv = x.cancelledAt ? null : serviceDueLevel(x, v.odometerKm);
           const next = [x.nextDueAt ? date(x.nextDueAt) : null, x.nextDueKm != null ? `${fmtNum(x.nextDueKm)} km` : null].filter(Boolean).join(" / ");
           return {
-            id: `s${x.id}`, title: `${x.kind} · ${date(x.date)}`,
+            id: `s${x.id}`, title: `${x.kind} · ${opAt(x.date, x.createdAt, dateRu)}`,
             subtitle: [x.odometerKm != null ? `${fmtNum(x.odometerKm)} km` : null, next ? `keyingisi ${next}` : null, x.note, x.createdBy.fullName, x.cancelledAt ? `bekor qilindi: ${cancelNote(x, cNames)}` : null].filter(Boolean).join(" · "),
             right: x.cost != null ? money(n(x.cost)) : undefined,
             ...(x.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : lv ? { status: lv.level === "crit" ? "O'tgan" : "Yaqin", tone: (lv.level === "crit" ? "danger" : "warning") as Tone } : {}),
@@ -1022,7 +1024,7 @@ async function fuelDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const by = await db.user.findUnique({ where: { id: f.createdById }, select: { fullName: true } });
   const cancel = cancelNote(f, await cancellerNames([f]));
   return {
-    key: "fuel", id: f.id, title: `Zapravka · ${f.vehicle.plate}`, subtitle: date(f.date),
+    key: "fuel", id: f.id, title: `Zapravka · ${f.vehicle.plate}`, subtitle: opAt(f.date, f.createdAt, dateRu),
     ...(cancel ? { status: CANCELLED_LABEL } : {}),
     fields: [
       ...(cancel ? [{ label: CANCELLED_LABEL, value: cancel, tone: "danger" as Tone }] : []),
@@ -1047,7 +1049,7 @@ async function expenseDetail(user: MobileUser, id: string): Promise<MobileDetail
   const by = await db.user.findUnique({ where: { id: e.createdById }, select: { fullName: true } });
   const cancel = cancelNote(e, await cancellerNames([e]));
   return {
-    key: "expenses", id: e.id, title: EXPENSE_KIND[e.kind], subtitle: date(e.date),
+    key: "expenses", id: e.id, title: EXPENSE_KIND[e.kind], subtitle: opAt(e.date, e.createdAt, dateRu),
     ...(cancel ? { status: CANCELLED_LABEL } : {}),
     fields: [
       ...(cancel ? [{ label: CANCELLED_LABEL, value: cancel, tone: "danger" as Tone }] : []),
@@ -1121,7 +1123,7 @@ async function siteDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     ],
     sections: [
       { title: "Buyurtmalar", empty: "Zayavka yo'q", target: "orders", rows: s.orders.slice(0, 20).map((o) => { const l = orderLogistics(o); return { id: o.id, title: deliveryAt(o.deliveryDate, o.deliveryTime), subtitle: o.items.map((i) => i.product.name).join(", "), right: fmtNum(l.total, 1), status: ORDER_LOGI[l.status].label, tone: l.problem || l.late ? "danger" as Tone : COLOR_TONE[ORDER_LOGI[l.status].color] }; }) },
-      { title: "Yetkazib berish tarixi", empty: "Reys yo'q", target: "trips", rows: trips.slice(0, 20).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: [t.driver.fullName, t.receiverName ? `qabul: ${t.receiverName}` : null, t.deliveredAt ? dateTime(t.deliveredAt) : null].filter(Boolean).join(" · "), right: `${t.acceptedQty != null ? `${fmtNum(n(t.acceptedQty), 1)} / ` : ""}${fmtNum(n(t.qtyM3), 1)}`, status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
+      { title: "Yetkazib berish tarixi", empty: "Reys yo'q", target: "trips", rows: trips.slice(0, 20).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: [t.driver.fullName, t.receiverName ? `qabul: ${t.receiverName}` : null, t.deliveredAt ? dtRu(t.deliveredAt) : null].filter(Boolean).join(" · "), right: `${t.acceptedQty != null ? `${fmtNum(n(t.acceptedQty), 1)} / ` : ""}${fmtNum(n(t.qtyM3), 1)}`, status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
     ],
     actions: can(user, "site.save") ? [{ id: "site.save", label: "Obyekt kartasini tahrirlash", tone: "brand", form: await siteFormFields(s) }] : [],
   };
@@ -1179,7 +1181,7 @@ async function reportDetail(user: MobileUser, id: string): Promise<MobileDetail>
     ],
     sections: [
       { title: "Boshqa davr", empty: "", target: "logi-report", icon: "calendar-days", rows: PERIODS.filter((x) => x.key !== p.key).map((x) => ({ id: x.key, title: logiPeriod(x.key).label })) },
-      ...(open.length ? [{ title: "Yopilmagan reyslar", empty: "", target: "trips", rows: open.slice(0, 15).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: t.deliveredAt ? dateTime(t.deliveredAt) : undefined, right: `${fmtNum(n(t.acceptedQty ?? t.qtyM3), 1)} / ${fmtNum(n(t.qtyM3), 1)}`, tone: "warning" as Tone })) }] : []),
+      ...(open.length ? [{ title: "Yopilmagan reyslar", empty: "", target: "trips", rows: open.slice(0, 15).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: t.deliveredAt ? dtRu(t.deliveredAt) : undefined, right: `${fmtNum(n(t.acceptedQty ?? t.qtyM3), 1)} / ${fmtNum(n(t.qtyM3), 1)}`, tone: "warning" as Tone })) }] : []),
       { title: "Kunlar bo'yicha", empty: "Bu davrda reys yo'q", icon: "chart-column", chart: bars, rows: days.map((d) => ({ id: d.day, title: d.day.split("-").reverse().join("."), subtitle: `${d.delivered} reys · o'z vaqtida ${onTimePct(d) ?? "—"}%`, right: `${fmtNum(d.m3, 1)} m³` })) },
       { title: "Transport bandligi", empty: "Transport yo'q", target: "vehicles", chart: utilChart, rows: rep.byVehicle.slice(0, 20).map((v) => ({ id: v.id, title: v.plate, subtitle: `${v.trips} reys · ${fmtNum(v.km, 0)} km · ${moneyShort(v.fuel + v.other)}${v.m3 ? ` · 1 m³ ga ${moneyShort((v.fuel + v.other) / v.m3)}` : ""}`, right: `${v.utilization}%`, tone: (v.utilization >= 80 ? "success" : v.utilization >= 40 ? "warning" : "info") as Tone })) },
       {

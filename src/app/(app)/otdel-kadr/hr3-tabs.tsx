@@ -3,7 +3,7 @@ import { BookOpen, Briefcase, GraduationCap, UserPlus, Users } from "lucide-reac
 import { db } from "@/lib/db";
 import type { Session } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
-import { date, money } from "@/lib/format";
+import { date, dateTime, money } from "@/lib/format";
 import { isoDay, shiftDay, today } from "@/lib/davomat";
 import { listCandidates } from "@/lib/hr/recruit";
 import { listPlans, stepsOf, stepsToText, DEFAULT_STEPS } from "@/lib/hr/onboarding";
@@ -44,7 +44,7 @@ export async function YollashTab({ s, positions, vakansiya }: { s: Session; posi
             {vacancies.length === 0 && <Empty text="Vakansiya yo'q" />}
             {vacancies.map((v) => (
               <Tr key={v.id} className={v.status === "CLOSED" ? "opacity-60" : ""}>
-                <Td className="font-medium"><Link href={href(v.id)} className="hover:underline">{v.title}</Link><div className="text-xs font-normal text-slate-500">{v._count.candidates} nomzod · {date(v.createdAt)}</div></Td>
+                <Td className="font-medium"><Link href={href(v.id)} className="hover:underline">{v.title}</Link><div className="text-xs font-normal text-slate-500">{v._count.candidates} nomzod · {dateTime(v.createdAt)}</div></Td>
                 <Td>{v.position}</Td>
                 <Td right>{v.headcount} / {v.candidates.length}</Td>
                 <Td right className="text-sm">{v.salaryFrom || v.salaryTo ? `${v.salaryFrom ? money(Number(v.salaryFrom)) : ""}${v.salaryTo ? ` – ${money(Number(v.salaryTo))}` : ""}` : "—"}</Td>

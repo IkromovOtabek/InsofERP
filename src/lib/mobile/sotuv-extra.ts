@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { OrderStatus, Prisma, Role, SmmApproval, SmmBoostObjective, SmmBoostStatus } from "@/generated/prisma";
-import { dateRu, fmtNum, isoDate, money } from "@/lib/format";
+import { dateRu, fmtNum, isoDate, money, opAt } from "@/lib/format";
 import { fmtUnitTotals, unitLabel } from "@/lib/unit";
 import { contractedIds, customersCredit, customersHistory, STAR_LABELS } from "@/lib/finance";
 import { customerStatement } from "@/lib/invoices";
@@ -438,7 +438,7 @@ async function offerDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   }
   const fields: DetailField[] = [
     { label: "Taklif", value: o.offerNo },
-    { label: "Sana", value: dateRu(o.date) },
+    { label: "Sana", value: opAt(o.date, o.createdAt, dateRu) },
     { label: "Amal qiladi", value: `${dateRu(o.validUntil)} gacha`, tone: st === "EXPIRED" ? "warning" : undefined },
     { label: "Mijoz", value: o.clientName },
     ...(o.clientPhone ? [{ label: "Telefon", value: o.clientPhone }] : []),
@@ -733,7 +733,7 @@ export async function customerExtras(user: MobileUser, c: CustomerLite, blacklis
       title: "To'lovlar", empty: "To'lov yo'q", target: "payments",
       rows: payments.map((p) => ({
         id: p.id, title: `+${money(sum(p.amount))}`,
-        subtitle: `${dateRu(p.date)} · ${p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.register ? "realizatsiya" : p.order ? `avans · zayavka ${dateRu(p.order.deliveryDate)}` : "taqsimlanmagan"} · ${p.cashAccount.name}`,
+        subtitle: `${opAt(p.date, p.createdAt, dateRu)} · ${p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.register ? "realizatsiya" : p.order ? `avans · zayavka ${dateRu(p.order.deliveryDate)}` : "taqsimlanmagan"} · ${p.cashAccount.name}`,
         tone: "success" as Tone,
       })),
     });

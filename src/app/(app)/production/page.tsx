@@ -3,7 +3,7 @@ import { Plus, HardHat, Zap, Truck, Factory, AlarmClock, CalendarDays, ListTodo,
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { BlacklistMark, ContractMark } from "@/components/customer-name";
-import { date, qty, deliveryAt } from "@/lib/format";
+import { date, qty, deliveryAt, opAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 // Filtrlar va "muddati yaqin" qoidasi mobil ilova bilan bitta joyda — `lib/production.ts`
@@ -150,7 +150,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           {batches.map((b) => (
             <Tr key={b.id}>
               <Td><Link href={`/production/${b.id}`} className="font-medium hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td>
-              <Td>{date(b.date)}</Td><Td>{b.shift}</Td><Td>{b.product.name}</Td><Td right>{qty(b.qtyM3)} <span className="text-slate-400">{unitLabel(b.product.unit)}</span></Td>
+              <Td className="whitespace-nowrap">{opAt(b.date, b.createdAt)}</Td><Td>{b.shift}</Td><Td>{b.product.name}</Td><Td right>{qty(b.qtyM3)} <span className="text-slate-400">{unitLabel(b.product.unit)}</span></Td>
               <Td>{b.order ? <span className="inline-flex items-center gap-1.5"><Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.customer.name}</Link>{marks.black.has(b.order.customerId) && <BlacklistMark short />}{marks.contract.has(b.order.customerId) && <ContractMark short />}</span> : <span className="text-slate-400">—</span>}</Td>
               <Td>{b.createdBy.fullName}</Td>
             </Tr>

@@ -3,7 +3,7 @@ import { Inbox } from "lucide-react";
 import { db } from "@/lib/db";
 import type { Session } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
-import { date, money } from "@/lib/format";
+import { date, dateTime, money } from "@/lib/format";
 import { dayUtc, isoDay, monthOf, monthTitle, shiftDay, shiftMonth, today, validDay, validMonth } from "@/lib/davomat";
 import { plansInRange } from "@/lib/hr/shifts";
 import { listHrRequests, requestCounts, periodText } from "@/lib/hr/requests";
@@ -107,7 +107,7 @@ export async function ArizalarTab({ s, employees, holat }: { s: Session; employe
             {rows.length === 0 && <Empty text="Ariza yo'q" />}
             {rows.map((r) => (
               <Tr key={r.id}>
-                <Td className="whitespace-nowrap font-medium">{r.docNo}<div className="text-xs font-normal text-slate-500">{date(r.createdAt)}</div></Td>
+                <Td className="whitespace-nowrap font-medium">{r.docNo}<div className="text-xs font-normal text-slate-500">{dateTime(r.createdAt)}</div></Td>
                 <Td>{r.employee.fullName}<div className="text-xs text-slate-500">{r.employee.position}</div></Td>
                 <Td>
                   {REQUEST_KIND[r.kind].label}
@@ -232,7 +232,7 @@ export async function JarimaTab({ s, employees, positions, oy }: { s: Session; e
               {adjustments.length === 0 && <Empty text="Qo'lda yozuv yo'q" />}
               {adjustments.map((a) => (
                 <Tr key={a.id} className={a.cancelledAt ? "opacity-50" : ""}>
-                  <Td className="font-medium">{a.employee.fullName}<div className="text-xs font-normal text-slate-500">{a.date ? date(a.date) : date(a.createdAt)}</div></Td>
+                  <Td className="font-medium">{a.employee.fullName}<div className="text-xs font-normal text-slate-500">{a.date ? date(a.date) : dateTime(a.createdAt)}</div></Td>
                   <Td className="text-sm">{a.reason}{a.cancelledAt && <div className="text-xs text-red-600">Bekor: {a.cancelReason}</div>}</Td>
                   <Td right className={a.kind === "BONUS" ? "text-emerald-700" : "text-red-700"}>{a.kind === "BONUS" ? "+" : "−"}{money(Number(a.amount))}</Td>
                   <Td right>{!a.cancelledAt && editable && <CancelAdjustment id={a.id} />}</Td>

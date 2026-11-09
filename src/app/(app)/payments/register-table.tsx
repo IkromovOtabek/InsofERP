@@ -1,6 +1,6 @@
 import { CustomerName } from "@/components/customer-name";
 import { Empty, Table, Td, Th, Tr } from "@/components/ui";
-import { fmtNum, money, date as fmtDate } from "@/lib/format";
+import { fmtNum, money, opAt } from "@/lib/format";
 import { payKindLabel } from "@/lib/sales-register";
 import type { CustomerMarks } from "@/lib/finance";
 
@@ -11,6 +11,7 @@ import type { CustomerMarks } from "@/lib/finance";
 export type RegisterView = {
   id: string;
   date: Date;
+  createdAt: Date;
   customerId: string;
   customerName: string;
   vehicleNo: string | null;
@@ -34,7 +35,7 @@ export type RegisterView = {
 
 type Dec = { toString(): string };
 type DbRow = {
-  id: string; date: Date; customerId: string; vehicleNo: string | null; ttn: string | null; productName: string;
+  id: string; date: Date; createdAt: Date; customerId: string; vehicleNo: string | null; ttn: string | null; productName: string;
   unit: string; qty: Dec; fromWho: string | null; payType: string | null; deliveryFee: Dec; price: Dec; sum: Dec;
   nds: Dec; total: Dec; address: string | null; contractNo: string | null; invoiceNo: string | null;
   monthNo: string | null; note: string | null;
@@ -44,7 +45,7 @@ type DbRow = {
 /** Prisma qatori → jadval qatori (Decimal'lar raqamga aylantiriladi). */
 export function toView(r: DbRow): RegisterView {
   return {
-    id: r.id, date: r.date, customerId: r.customerId, customerName: r.customer.name,
+    id: r.id, date: r.date, createdAt: r.createdAt, customerId: r.customerId, customerName: r.customer.name,
     vehicleNo: r.vehicleNo, ttn: r.ttn, productName: r.productName, unit: r.unit, qty: Number(r.qty),
     fromWho: r.fromWho, payType: r.payType, deliveryFee: Number(r.deliveryFee), price: Number(r.price),
     sum: Number(r.sum), nds: Number(r.nds), total: Number(r.total), address: r.address,
@@ -88,7 +89,7 @@ export function RegisterTable({ rows, marks, showCustomer = true }: { rows: Regi
         {rows.length === 0 && <Empty text="Jurnalda qator yo'q" />}
         {rows.map((r) => (
           <Tr key={r.id}>
-            <Td>{fmtDate(r.date)}</Td>
+            <Td>{opAt(r.date, r.createdAt)}</Td>
             <Td>{r.vehicleNo || dash}</Td>
             <Td>{r.productName}</Td>
             <Td>{r.ttn || dash}</Td>

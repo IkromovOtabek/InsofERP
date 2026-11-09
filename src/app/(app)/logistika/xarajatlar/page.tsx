@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { transportCosts } from "@/lib/logistics-costs";
 import { EXPENSE_KIND } from "@/lib/logistics";
-import { date, money, moneyShort, qty } from "@/lib/format";
+import { date, money, moneyShort, opAt, qty } from "@/lib/format";
 import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -87,7 +87,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
               {rows.length === 0 && <Empty text="Xarajat yo'q" />}
               {rows.map((e) => (
                 <Tr key={e.id} className={e.cancelledAt ? "bg-slate-50/60 text-slate-400" : undefined}>
-                  <Td className="text-sm tabular">{date(e.date)}</Td>
+                  <Td className="whitespace-nowrap text-sm tabular">{opAt(e.date, e.createdAt)}</Td>
                   <Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note && <div className="text-xs text-slate-500">{e.note}</div>}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td>
                   <Td className="text-sm">{e.vehicle?.plate ?? ""}{e.driver && <span className="text-slate-500"> · {e.driver.fullName}</span>}{e.trip && <> · <Link href={`/trips/${e.trip.id}`} className="hover:underline">{e.trip.deliveryNoteNo}</Link></>}</Td>
                   <Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td>

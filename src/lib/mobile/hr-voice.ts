@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { dateRu, time } from "@/lib/format";
 import { canDo } from "@/lib/permissions";
 import { employeeOfUser } from "@/lib/hr/requests";
 import { answerSurvey, createFeedback, getFeedback, listFeedback, mySurveys, replyFeedback, setFeedbackStatus } from "@/lib/hr/voice";
@@ -14,7 +15,8 @@ import { ListError, type MobileList } from "./list";
  */
 
 const fail = (m: string): never => { throw new ListError("ACTION_FAILED", m, 400); };
-const dt = (d: Date) => d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+/** «02.10 14:20» — vergulsiz: ECO ro'yxati qatorlarni shu matndan kunlarga guruhlaydi. */
+const dt = (d: Date) => `${dateRu(d).slice(0, 5)} ${time(d)}`;
 const KIND: Record<FeedbackKind, string> = { COMPLAINT: "Shikoyat", SUGGESTION: "Taklif", QUESTION: "Savol", THANKS: "Minnatdorchilik" };
 const STATUS = { NEW: ["Yangi", "warning"], IN_REVIEW: ["Ko'rib chiqilmoqda", "brand"], RESOLVED: ["Hal qilindi", "success"] } as const;
 const isHr = (u: MobileUser) => (u.role === "HR" || u.role === "DIRECTOR") && canDo(u, "employees", "voice", ["HR"]);

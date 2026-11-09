@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Banknote, Boxes, CheckCircle2, ClipboardList, Factory, FileText, Gauge, Landmark, ShieldAlert, Sliders, TrendingDown, TrendingUp, Truck, Wallet } from "lucide-react";
 import { ownerDashboard, directorQueue, LEVEL_LABEL, type Level, type DirectorQueue } from "@/lib/owner-dashboard";
-import { moneyShort, pct, qty, date, fmtNum } from "@/lib/format";
+import { moneyShort, pct, qty, date, dateTime, fmtNum } from "@/lib/format";
 import { PAYROLL_KIND_LABEL } from "@/lib/hr/labels";
 import { monthTitle } from "@/lib/davomat";
 import { unitLabel } from "@/lib/unit";
@@ -392,7 +392,7 @@ export async function OwnerHome() {
           </div>
           {(d.transport.repair.length > 0 || d.transport.idle.length > 0) && (
             <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
-              {[...d.transport.repair, ...d.transport.idle].map((v) => <li key={v.id} className="flex flex-wrap justify-between gap-2"><span className="min-w-0"><Truck size={13} className="mr-1 inline text-slate-400" /><b>{v.plate}</b> <span className="text-slate-500">· {v.statusNote ?? "sabab yozilmagan"}</span></span><Badge color={v.status === "REPAIR" ? "red" : "amber"}>{v.status === "REPAIR" ? "Ta'mirda" : "Bekor"}{v.statusSince ? ` · ${date(v.statusSince)} dan` : ""}</Badge></li>)}
+              {[...d.transport.repair, ...d.transport.idle].map((v) => <li key={v.id} className="flex flex-wrap justify-between gap-2"><span className="min-w-0"><Truck size={13} className="mr-1 inline text-slate-400" /><b>{v.plate}</b> <span className="text-slate-500">· {v.statusNote ?? "sabab yozilmagan"}</span></span><Badge color={v.status === "REPAIR" ? "red" : "amber"}>{v.status === "REPAIR" ? "Ta'mirda" : "Bekor"}{v.statusSince ? ` · ${dateTime(v.statusSince)} dan` : ""}</Badge></li>)}
             </ul>
           )}
         </Panel>
@@ -513,7 +513,7 @@ function ApprovalQueue({ q }: { q: DirectorQueue }) {
                 <li key={r.id} className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link href={`/taminot/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link> <span className="text-slate-600">· {r.supplier}</span>
-                    <div className="text-[11px] text-slate-500">{r.by} · {date(r.createdAt)}{r.needBy && <> · kerak {date(r.needBy)}</>}</div>
+                    <div className="text-[11px] text-slate-500">{r.by} · {dateTime(r.createdAt)}{r.needBy && <> · kerak {date(r.needBy)}</>}</div>
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="font-semibold tabular">{moneyShort(r.amount)}</div>
