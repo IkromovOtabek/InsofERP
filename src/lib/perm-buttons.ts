@@ -131,7 +131,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
   ],
   employees: [
     { key: "xodimlar", label: "Xodimlar", paths: ["/employees"], actions: ["create", "edit", "login"] },
-    { key: "kadr", label: "Otdel kadr", paths: ["/otdel-kadr"], actions: ["payrules", "attendance"] },
+    { key: "kadr", label: "Otdel kadr", paths: ["/otdel-kadr"], actions: ["payrules", "attendance", "calls"] },
     { key: "davomat", label: "Davomat sozlamalari", paths: ["/settings/davomat"], actions: ["late_fine"] },
     { key: "taqvim", label: "Ish tartibi va bayramlar", paths: ["/settings/ish-tartibi"], actions: ["calendar"] },
   ],

@@ -1,4 +1,4 @@
-import type { CandidateStage, EnrollmentStatus, InterviewResult, ProbationStatus, VacancyStatus, HrRequestKind, HrRequestStatus, KpiSource, PayAdjKind, PayRuleTrigger, PayType, PayrollKind, PayrollStatus, WorkTaskPriority, WorkTaskStatus } from "@/generated/prisma";
+import type { CandidateStage, EnrollmentStatus, HrCallStatus, InterviewResult, ProbationStatus, VacancyStatus, HrRequestKind, HrRequestStatus, KpiSource, PayAdjKind, PayRuleTrigger, PayType, PayrollKind, PayrollStatus, WorkTaskPriority, WorkTaskStatus } from "@/generated/prisma";
 
 /**
  * Otdel kadr modullari yorliqlari — veb, mobil va chop etish bir xil yozuvni ko'rsatsin.
@@ -86,3 +86,8 @@ export const PROBATION_LABEL: Record<ProbationStatus, string> = { ACTIVE: "Sinov
 export const PROBATION_BADGE: Record<ProbationStatus, "blue" | "green" | "amber" | "red"> = { ACTIVE: "blue", PASSED: "green", EXTENDED: "amber", FAILED: "red" };
 export const ENROLL_STATUS_LABEL: Record<EnrollmentStatus, string> = { ASSIGNED: "Topshirilmagan", PASSED: "O'tdi", FAILED: "O'tmadi" };
 export const ENROLL_STATUS_BADGE: Record<EnrollmentStatus, "amber" | "green" | "red"> = { ASSIGNED: "amber", PASSED: "green", FAILED: "red" };
+
+/** «Qo'ng'iroqlar jurnali»: suhbat holati (tartibi — tanlovda shunday chiqadi). */
+export const CALL_STATUS_LABEL: Record<HrCallStatus, string> = { WAITING: "Keladi", CAME: "Suhbatga keldi", NO_SHOW: "Kelmadi", NO_ANSWER: "Tel ko'tarmadi", HIRED: "Ishga olindi" };
+export const CALL_STATUS_BADGE: Record<HrCallStatus, "amber" | "blue" | "red" | "slate" | "green"> = { WAITING: "amber", CAME: "blue", NO_SHOW: "red", NO_ANSWER: "slate", HIRED: "green" };
+export const CALL_STATUSES = Object.keys(CALL_STATUS_LABEL) as HrCallStatus[];

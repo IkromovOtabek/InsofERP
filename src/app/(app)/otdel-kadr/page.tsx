@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, Scale, FileSpreadsheet, IdCard, Paperclip, Plus, Search, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, Scale, FileSpreadsheet, IdCard, Paperclip, PhoneCall, Plus, Search, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -24,6 +24,7 @@ import { employeesInWindow } from "@/lib/attendance-report";
 import { plansFor } from "@/lib/hr/shifts";
 import { getLateFine } from "@/lib/hr/late-fine";
 import { JarimaTab } from "./hr-tabs";
+import { QongiroqTab } from "./qongiroqlar";
 
 /**
  * Kabinet tablari. Smena grafigi, arizalar, cheklist, KPI, yollash, moslashuv, o'qitish, so'rovnoma, murojaatlar va
@@ -37,6 +38,7 @@ const TABS = [
   ["ish-vaqti", "Ish vaqti", Clock],
   ["taqvim", "Kadr taqvimi", CakeSlice],
   ["jarima-bonus", "Jarima va bonuslar", Scale],
+  ["qongiroqlar", "Qo'ng'iroqlar jurnali", PhoneCall],
 ] as const;
 
 /** Tug'ilgan kunigacha necha kun qolgani (yilni hisobga olmay). */
@@ -64,13 +66,13 @@ const EMP_HOLAT = [
 const empHolat = (e: { isActive: boolean; firedAt: Date | null }) => (e.firedAt ? "boshatilgan" : e.isActive ? "faol" : "nofaol");
 
 export default async function OtdelKadrPage({ searchParams }: {
-  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; holat?: string; q?: string; lavozim?: string }>;
+  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; holat?: string; q?: string; lavozim?: string; suhbat?: string }>;
 }) {
   // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
   await requirePage("/otdel-kadr");
   const s = await requireRoles(["HR"], { module: "employees" });
   const sp = await searchParams;
-  const { qoshildi, yangilandi, kun, oy, holat, q = "", lavozim = "" } = sp;
+  const { qoshildi, yangilandi, kun, oy, holat, q = "", lavozim = "", suhbat } = sp;
   // Olib tashlangan tab (eski havola, bildirishnoma) — xodimlar ro'yxati; lavozimlar faqat direktorga
   const tab = TABS.some(([k]) => k === sp.tab) || (sp.tab === "lavozimlar" && s.role === "DIRECTOR") ? sp.tab! : "xodimlar";
 
@@ -370,6 +372,7 @@ export default async function OtdelKadrPage({ searchParams }: {
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
       {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} oy={oy} />}
+      {tab === "qongiroqlar" && <QongiroqTab s={s} month={oyIso} q={q} suhbat={suhbat} lavozim={lavozim} workPositions={positions.filter((p) => p.isActive).map((p) => p.name)} />}
     </div>
   );
 }

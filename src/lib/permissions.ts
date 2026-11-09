@@ -188,6 +188,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "calendar", label: "Zavod ish tartibi va bayramlar", roles: ["HR"], hint: "Hisobot va prognozlardagi ish kunlari shundan; davomat va ish haqiga ta'sir qilmaydi" },
     { key: "late_fine", label: "Kechikish jarimasi (Sozlamalar → Davomat)", roles: ["HR"] },
     { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
+    { key: "calls", label: "Qo'ng'iroqlar jurnali (ishga so'raganlar)", roles: ["HR"], hint: "Yozish, holatini o'zgartirish, o'chirish va Excel'dan import" },
     { key: "attendance", label: "Barcha xodimlarni davomatdan o'tkazish (skaner)", roles: ["HR", "SUPERVISOR"], hint: "Davomat sahifasi va ECO skaneri — sexdan tashqari xodimlar ham; yuzni ro'yxatga olish baribir faqat otdel kadrda" },
   ],
   // Umumiy vazifalar (`/vazifalar`, `lib/hr/tasks.ts`): o'ziga — har kim; boshqaga berish — rahbarlar

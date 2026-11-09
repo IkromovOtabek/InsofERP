@@ -4489,6 +4489,36 @@ model Interview {
   @@index([candidateId])
 }
 
+/// Ishga so'rab qo'ng'iroq qilganlar bilan suhbat holati
+enum HrCallStatus {
+  WAITING // keladi (va'da berdi, kutilmoqda)
+  CAME // suhbatga keldi
+  NO_SHOW // kelmadi
+  NO_ANSWER // telefonni ko'tarmadi
+  HIRED // ishga olindi
+}
+
+/// Otdel kadr «Qo'ng'iroqlar jurnali»: ishga so'rab telefon qilganlar bilan gaplashuv daftari (Excel jurnalning o'zi).
+/// Bitta odam bir necha kun qo'ng'iroq qilishi mumkin — har qo'ng'iroq alohida qator, takror telefon bo'yicha ko'rinadi.
+model HrCallLog {
+  id          String       @id @default(cuid())
+  date        DateTime     @db.Date // qo'ng'iroq kuni
+  position    String // qaysi lavozimga (beton qoliplovchi, svarshik…)
+  phone       String? // +998… (yaroqsiz bo'lsa — kiritilgandek)
+  fullName    String?
+  address     String? // yashash manzili
+  age         Int?
+  status      HrCallStatus @default(WAITING)
+  visitDate   DateTime?    @db.Date // suhbatga kelishga va'da bergan kun
+  reason      String? // ish to'g'ri kelmagan sababi / izoh
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([date])
+  @@index([phone])
+}
+
 enum ProbationStatus {
   ACTIVE // sinov muddati davom etmoqda
   PASSED // sinovdan o'tdi

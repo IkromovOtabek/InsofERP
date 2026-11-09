@@ -14,11 +14,13 @@ const fileCls =
  * Otdel kadr: yangi xodim kartasi. Shaxsiy ma'lumotlar + 3x4 surat + hujjat nusxalari;
  * "Saqlash" bosilgach shaxsiy varaqa chop etish oynasi bilan ochiladi.
  */
-export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb }: {
+export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb, initial }: {
   positions: string[];
   docAccept: string;
   photoAccept: string;
   maxMb: number;
+  /** Qo'ng'iroqlar jurnalidan «Ishga olindi» → karta: ism, telefon, manzil va lavozim oldindan yoziladi. */
+  initial?: { fullName?: string; phone?: string; address?: string; position?: string };
 }) {
   const [state, action, pending] = useActionState(createEmployeeCard, undefined);
   const [tooBig, setTooBig] = useState<string | null>(null); // 10 MB dan katta fayl — yuborilmaydi
@@ -34,13 +36,13 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb }: {
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="F.I.O. *" className="sm:col-span-2"><Input name="fullName" required autoComplete="off" placeholder="Karimov Bobur Akmalovich" /></Field>
+            <Field label="F.I.O. *" className="sm:col-span-2"><Input name="fullName" required autoComplete="off" placeholder="Karimov Bobur Akmalovich" defaultValue={initial?.fullName} /></Field>
             <Field label="Lavozim *">
-              <Select name="position" required defaultValue={positions[0] ?? ""}>
+              <Select name="position" required defaultValue={positions.find((p) => p.toLowerCase() === initial?.position?.trim().toLowerCase()) ?? positions[0] ?? ""}>
                 {positions.map((p) => <option key={p} value={p}>{p}</option>)}
               </Select>
             </Field>
-            <Field label="Telefon" hint="Haydovchi uchun ilovaga kirish kaliti"><Input name="phone" placeholder="+998 90 123 45 67" /></Field>
+            <Field label="Telefon" hint="Haydovchi uchun ilovaga kirish kaliti"><Input name="phone" placeholder="+998 90 123 45 67" defaultValue={initial?.phone} /></Field>
             <Field label="Tug'ilgan sana"><Input name="birthDate" type="date" /></Field>
             <Field label="Ishga kirgan sana"><Input name="hiredAt" type="date" /></Field>
             <Field label="Ma'lumoti">
@@ -49,7 +51,7 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb }: {
             <Field label="Oilaviy holati">
               <Select name="maritalStatus" defaultValue=""><option value="">—</option>{MARITAL.map((m) => <option key={m} value={m}>{m}</option>)}</Select>
             </Field>
-            <Field label="Yashash manzili" className="lg:col-span-3"><Input name="address" placeholder="Toshkent sh., Chilonzor t., ..." /></Field>
+            <Field label="Yashash manzili" className="lg:col-span-3"><Input name="address" placeholder="Toshkent sh., Chilonzor t., ..." defaultValue={initial?.address} /></Field>
           </div>
         </div>
       </Card>
