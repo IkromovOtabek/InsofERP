@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Undo2 } from "lucide-react";
 import { driverPaySums, type LedgerRow, type LedgerTotals } from "@/lib/driver-ledger";
-import { date, fmtNum } from "@/lib/format";
+import { date, dateTime, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
@@ -102,7 +102,7 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
             return (
               <SheetTr key={`${r.kind}:${r.id}`} className={cn(r.payType === "CASH" && "[&>td]:bg-amber-100!", r.kind === "cost" && "text-slate-500 italic")}>
                 <SheetTd className="whitespace-nowrap">
-                  {r.kind === "trip" ? <Link href={`/trips/${r.id}`} className="hover:underline">{date(r.at)}</Link> : date(r.at)}
+                  {r.kind === "trip" ? <Link href={`/trips/${r.id}`} className="hover:underline">{dateTime(r.at)}</Link> : date(r.at)}
                   {r.kind === "entry" && <span className="block text-[10px] font-semibold text-amber-700" title={r.no}>qo&apos;lda · {r.no}</span>}
                   {r.kind === "cost" && <span className="block text-[10px] font-semibold text-slate-400">reyssiz</span>}
                   {showPlate && <div className="text-[11px] text-slate-500">{r.plate}</div>}

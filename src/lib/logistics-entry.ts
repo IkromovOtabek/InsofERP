@@ -348,7 +348,7 @@ export type EntryRow = {
   pickup: string | null; dropoff: string | null; cargo: string | null; drumHours: number | null;
   /** Naqd haq kassada qaysi holatda (tasdiqdan keyin) */
   cashStatus: string | null;
-  createdBy: string; cancelledAt: Date | null; cancelReason: string | null;
+  createdBy: string; createdAt: Date; cancelledAt: Date | null; cancelReason: string | null;
 };
 
 /** Yozuvlar ro'yxati (tabel jadvali uchun) — yangisi oldin. */
@@ -357,7 +357,7 @@ export async function entryRows(where: Prisma.LogisticsEntryWhereInput, take = 5
     where, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take,
     select: {
       id: true, docNo: true, date: true, driverId: true, vehicleId: true, trips: true, km: true, payAmount: true, payType: true, payApprovedAt: true,
-      revenue: true, note: true, mechanicRequestId: true, cancelledAt: true, cancelReason: true, pickup: true, dropoff: true, cargo: true, drumHours: true,
+      revenue: true, note: true, mechanicRequestId: true, createdAt: true, cancelledAt: true, cancelReason: true, pickup: true, dropoff: true, cargo: true, drumHours: true,
       driver: { select: { fullName: true } }, vehicle: { select: { plate: true } }, createdBy: { select: { fullName: true } },
     },
   });
@@ -368,6 +368,6 @@ export async function entryRows(where: Prisma.LogisticsEntryWhereInput, take = 5
     trips: r.trips, km: r.km != null ? Number(r.km) : null, pay: Number(r.payAmount ?? 0), payType: r.payType, approvedAt: r.payApprovedAt,
     revenue: Number(r.revenue ?? 0), note: r.note, pickup: r.pickup, dropoff: r.dropoff, cargo: r.cargo, drumHours: r.drumHours != null ? Number(r.drumHours) : null,
     cashStatus: r.mechanicRequestId ? mech.get(r.mechanicRequestId) ?? null : null,
-    createdBy: r.createdBy.fullName, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
+    createdBy: r.createdBy.fullName, createdAt: r.createdAt, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
   }));
 }

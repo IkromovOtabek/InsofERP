@@ -13,7 +13,7 @@ import { driverLedger, fuelBalances, ledgerTotals } from "@/lib/driver-ledger";
 import { driverEmployees, mainDriverOf } from "@/lib/logistics";
 import { avtoReport } from "@/lib/fin-report/avto";
 import { entryRows, pendingEntryWhere, type EntryRow } from "@/lib/logistics-entry";
-import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
+import { date, dateTime, fmtNum, isoDate, money, opAt } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { AllCheck, ApproveButton, EntryEditButton, EntryEditProvider, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
@@ -63,7 +63,7 @@ function EntryTable({ rows, canCancel, edit }: { rows: EntryRow[]; canCancel: bo
       <tbody>
         {rows.map((e) => (
           <Tr key={e.id} className={e.cancelledAt ? "opacity-60" : undefined}>
-            <Td className="text-sm"><span className="tabular">{date(e.date)}</span><div className="text-xs text-slate-500 tabular">{e.docNo}</div></Td>
+            <Td className="text-sm"><span className="whitespace-nowrap tabular">{opAt(e.date, e.createdAt)}</span><div className="text-xs text-slate-500 tabular">{e.docNo}</div></Td>
             <Td className="text-sm">{e.driver ?? <span className="text-slate-300">—</span>}</Td>
             <Td className="text-sm tabular">{e.plate ?? <span className="text-slate-300">—</span>}</Td>
             <Td className="max-w-72 text-sm">{e.note}<div className="text-xs text-slate-500">{[e.trips ? `${e.trips} reys` : null, e.km != null ? `${fmtNum(e.km, 0)} km` : null, `yozdi: ${e.createdBy}`].filter(Boolean).join(" · ")}</div></Td>
@@ -361,7 +361,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           <tbody>
             {pendingEntries.map((e) => (
               <Tr key={e.id}>
-                <Td className="text-sm"><span className="tabular">{date(e.date)}</span><div className="text-xs text-slate-500 tabular">{e.docNo}</div></Td>
+                <Td className="text-sm"><span className="whitespace-nowrap tabular">{opAt(e.date, e.createdAt)}</span><div className="text-xs text-slate-500 tabular">{e.docNo}</div></Td>
                 <Td className="text-sm">{e.driver}</Td>
                 <Td className="text-sm tabular">{e.plate ?? <span className="text-slate-300">—</span>}</Td>
                 <Td className="max-w-72 text-sm">{e.note}<div className="text-xs text-slate-500">{[e.trips ? `${e.trips} reys` : null, e.km != null ? `${fmtNum(e.km, 0)} km` : null, `yozdi: ${e.createdBy}`].filter(Boolean).join(" · ")}</div></Td>
@@ -409,7 +409,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                   <tbody>
                     {masters.map((m) => (
                       <Tr key={m.id}>
-                        <Td className="text-sm"><span className="tabular">{date(m.createdAt)}</span><div className="text-xs text-slate-500">{m.docNo}</div></Td>
+                        <Td className="text-sm"><span className="whitespace-nowrap tabular">{dateTime(m.createdAt)}</span><div className="text-xs text-slate-500">{m.docNo}</div></Td>
                         <Td className="text-sm font-medium">{m.payee}</Td>
                         <Td className="text-sm">{m.vehicle?.plate ?? "—"}</Td>
                         <Td className="text-sm">{m.problem}</Td>
