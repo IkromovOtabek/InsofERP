@@ -20,6 +20,14 @@ const BASE = /[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
 const CYRILLIC = /\p{Script=Cyrillic}/u;
 const TYPES = new Set(["text", "search", "email", "url", "tel"]);
 
+/** Ruxsatsiz yozuv harflarini olib tashlaydigan funksiya (`allow` — `writeScripts`). O'z joylashtirishini o'zi qiladigan
+ *  maydonlar (Excel ko'rinishdagi ko'p katakli paste) ham shu qoida bilan tozalaydi. */
+export function scriptCleaner(allow: string[]): (s: string) => string {
+  const kirill = allow.includes("kirill"), boshqa = allow.includes("boshqa");
+  const bad = (ch: string) => !BASE.test(ch) && (CYRILLIC.test(ch) ? !kirill : !boshqa);
+  return (s) => (kirill && boshqa ? s : [...s].filter((ch) => !bad(ch)).join(""));
+}
+
 function eligible(el: EventTarget | null): el is HTMLInputElement | HTMLTextAreaElement {
   if (el instanceof HTMLTextAreaElement) return !el.readOnly && !el.closest("[data-any-script]");
   return el instanceof HTMLInputElement && TYPES.has(el.type) && !el.readOnly && !el.closest("[data-any-script]");
@@ -41,8 +49,7 @@ export function ScriptGuard({ allow }: { allow: string[] }) {
 
   useEffect(() => {
     if (kirill && boshqa) return; // hamma yozuvga ruxsat (direktor)
-    const bad = (ch: string) => !BASE.test(ch) && (CYRILLIC.test(ch) ? !kirill : !boshqa);
-    const clean = (s: string) => [...s].filter((ch) => !bad(ch)).join("");
+    const clean = scriptCleaner([...(kirill ? ["kirill"] : []), ...(boshqa ? ["boshqa"] : [])]);
     const warn = () => {
       setShown(true);
       clearTimeout(timer.current);

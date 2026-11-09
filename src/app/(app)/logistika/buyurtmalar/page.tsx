@@ -22,6 +22,8 @@ type Filter = "open" | "waiting" | "onroad" | "late" | "problem" | "done" | "all
 export default async function LogisticsOrdersPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string }> }) {
   const s = await requireRoles(["LOGISTICS"], { module: "logistika" });
   const canEdit = canDo(s, "logistika", "order_edit");
+  // Direktor zayavka ochishni bergan logistika xodimi shu yerdan ochadi (Excel ko'rinish — `orders` → `excel`)
+  const canCreate = canDo(s, "orders", "create");
   const sp = await searchParams;
   const filter = (["open", "waiting", "onroad", "late", "problem", "done", "all"].includes(sp.filter ?? "") ? sp.filter : "open") as Filter;
   const now = new Date();
@@ -66,7 +68,7 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
   return (
     <div>
       <PageHeader title="Buyurtmalar" subtitle="Dastavkali zayavkalar: yetkazish holati, biriktirilgan va yetkazilgan hajm"
-        action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
+        action={<div className="flex flex-wrap gap-2">{canCreate && <LinkButton href="/orders/new" variant="secondary"><Plus size={16} /> Yangi zayavka</LinkButton>}<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton></div>} />
       <form className="mb-3"><input type="hidden" name="filter" value={filter} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Mijoz yoki manzil…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Tabs current={filter} items={[tab("open", "Ochiq"), tab("waiting", "Transport kutmoqda"), tab("onroad", "Yo'lda"), tab("late", "Kechikmoqda"), tab("problem", "Muammo"), tab("done", "Yetkazilgan"), tab("all", "Hammasi")]} />
       <Card padded={false}>

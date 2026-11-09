@@ -5,10 +5,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
+import { canDo } from "@/lib/permissions";
 import { saveDailyOrderLimits } from "@/lib/company";
 import { createOrder as createOrderDomain, orderConfirm, orderEdit, orderSetDate, orderUnblock } from "@/lib/orders";
 import { cancelOrderWithReason, closeStockOrderLib, setGuarantee, setOrderContract } from "@/lib/order-docs";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
+import { createGridOrders, type GridResult } from "@/lib/orders-grid";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { saveContractFile } from "@/lib/uploads";
 import { withNds } from "@/lib/nds";
@@ -328,6 +330,45 @@ export async function importOrdersFromExcel(_prev: ActionState, fd: FormData): P
       res.failed.length ? `${res.failed.length} ta zayavka ochilmadi: ${res.failed.slice(0, 3).map((f) => `${f.customer} (${f.date}) — ${f.error}`).join("; ")}` : "",
     ].filter(Boolean).join(" · "),
   };
+}
+
+const gridNum = (label: string) => z.coerce.number({ message: `${label} raqam bo'lsin` }).min(0, `${label} manfiy bo'lmasin`).max(MAX_AMOUNT, `${label} juda katta`);
+const gridSchema = z.object({
+  date: zStr("Sana kerak"),
+  rows: z.array(z.object({
+    key: z.string().max(40),
+    section: z.enum(["bank", "cash"]),
+    customer: z.string().trim().max(200),
+    customerId: z.string().max(40).nullish(),
+    product: z.string().trim().max(200),
+    productId: z.string().max(40).nullish(),
+    qty: gridNum("Soni").max(100_000, "Soni juda katta (100 000 dan oshmasin)"),
+    price: gridNum("Narx"),
+    fee: gridNum("Dastavka"),
+    receiver: z.string().trim().max(120).nullish(),
+    phone: z.string().trim().max(40).nullish(),
+    site: z.string().trim().max(300).nullish(),
+    time: z.string().trim().max(10).nullish(),
+  })).min(1, "Jadval bo'sh").max(300, "Bir varaqda 300 qatordan ko'p bo'lmasin"),
+});
+
+/**
+ * Yangi zayavka — «Excel ko'rinish»: varaqdagi qatorlar bo'lim + mijoz + obyekt + soat bo'yicha qoralama zayavkalarga
+ * bo'linadi (`lib/orders-grid.ts`). Bir qismi o'tmasa qolganlari ochiladi — xato qatorlar jadvalda qoladi.
+ */
+export async function saveOrderGrid(input: unknown): Promise<{ error: string } | GridResult> {
+  const s = await requireAction("orders", "create");
+  if (!canDo(s, "orders", "excel")) return { error: "Excel ko'rinishiga ruxsatingiz yo'q — direktordan so'rang" };
+  const r = gridSchema.safeParse(input);
+  if (!r.success) return { error: r.error.issues[0]?.message ?? "Jadval ma'lumotlari noto'g'ri" };
+  let res: GridResult;
+  try {
+    res = await createGridOrders(r.data, s.userId);
+  } catch (e) {
+    return { error: userError(e) };
+  }
+  if (res.created.length) { revalidatePath("/orders"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/logistika/buyurtmalar"); }
+  return res;
 }
 
 /** Bo'sh yoki 0 — belgilanmagan (`null`). Probel/vergul bilan yozilgan son ham qabul qilinadi. */

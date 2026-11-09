@@ -1,14 +1,21 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { FileSpreadsheet, LayoutTemplate } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { customersCredit, customersHistory, contractedIds, defaultCreditLimit } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
-import { PageHeader } from "@/components/ui";
+import { PageHeader, Tabs } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { BLOCK_ORDER } from "@/lib/site-blocks";
 import { OrderForm, type CustomerOpt, type OrderPrefill, type ProductStock } from "../order-form";
 import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
-import { canDo } from "@/lib/permissions";
+import { canDo, writeScripts } from "@/lib/permissions";
+import { unitLabel } from "@/lib/unit";
+import { OrderGrid, RememberView, type GridCustomer } from "../order-grid";
+
+/** Tanlangan ko'rinish (tizim / excel) — keyingi «Yangi zayavka» shu bilan ochiladi */
+const ORDER_VIEW_COOKIE = "zayavka_view";
 import { geoSearchEnabled } from "@/lib/geo";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 import { productCatalog } from "@/lib/product-catalog";
@@ -53,12 +60,46 @@ async function DocHeader() {
  * Sklad (zaxira) zayavkasi bu yerdan olindi: u Ishlab chiqarish → «Skladga zayavka» da (`/production/sklad`),
  * eski `?tur=sklad` havolasi va sotuv ruxsati yo'q xodim (ishlab chiqarish, sklad) o'sha yerga yo'naltiriladi.
  */
-export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string }> }) {
+export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string; view?: string }> }) {
   // Direktor "create" yoki "stock" ruxsatini bergan xodim ham kiradi (rol ro'yxatida bo'lmasa ham)
   const s = await requireRoles([...STOCK_ORDER_ROLES], { module: "orders", actions: ["create", "stock"] });
-  const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId } = await searchParams;
+  const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId, view: viewParam } = await searchParams;
   const canSale = canDo(s, "orders", "create");
   if (tur === "sklad" || !canSale) redirect("/production/sklad");
+
+  // «Excel ko'rinish» (ruxsat: orders → excel) — tanlangan ko'rinish cookie'da eslab qolinadi; mijoz/ariza/amoCRM'dan
+  // ochilgan zayavka doim tizim ko'rinishida (u yerdagi to'ldirishlar Excel varag'ida yo'q)
+  const canExcel = canDo(s, "orders", "excel");
+  const fromLink = !!(customerParam || siteParam || leadId || amoId);
+  const view = viewParam ?? (fromLink ? "tizim" : (await cookies()).get(ORDER_VIEW_COOKIE)?.value);
+  const excel = canExcel && view === "excel";
+  const keep = new URLSearchParams(Object.entries({ customer: customerParam, site: siteParam, lead: leadId, amo: amoId }).filter((e): e is [string, string] => !!e[1]));
+  const viewTabs = canExcel ? (
+    <Tabs className="mb-0" current={excel ? "excel" : "tizim"} items={[
+      { key: "tizim", label: "Tizim ko'rinish", icon: LayoutTemplate, href: `/orders/new?${new URLSearchParams([...keep, ["view", "tizim"]])}` },
+      { key: "excel", label: "Excel ko'rinish", icon: FileSpreadsheet, href: "/orders/new?view=excel" },
+    ]} />
+  ) : undefined;
+
+  if (excel) {
+    const [products, customers] = await Promise.all([
+      db.product.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true, unit: true, price: true } }),
+      db.customer.findMany({
+        where: { isActive: true, isInternal: false }, orderBy: { name: "asc" },
+        select: { id: true, name: true, aliases: true, sites: { where: { isActive: true }, orderBy: { createdAt: "desc" }, select: { address: true } } },
+      }),
+    ]);
+    const opts: GridCustomer[] = customers.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases, sites: [...new Set(c.sites.map((x) => x.address))] }));
+    return (
+      <div>
+        <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />
+        <PageHeader back={{ href: "/orders", label: "Zayavkalar" }} title="Yangi zayavka" action={viewTabs}
+          subtitle="Excel ko'rinish: bir varaqda bir nechta zayavka — perechisleniye va naqd bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
+        <OrderGrid customers={opts} scripts={writeScripts(s)}
+          products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: unitLabel(p.unit), price: Number(p.price) }))} />
+      </div>
+    );
+  }
 
   const [catalog, stock, lead, amoDeal] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
@@ -112,10 +153,12 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
 
   return (
     <div>
+      {canExcel && !fromLink && <RememberView cookie={ORDER_VIEW_COOKIE} view="tizim" />}
       <PageHeader
         back={{ href: "/orders", label: "Zayavkalar" }}
         title="Yangi zayavka"
         subtitle="Mijoz uchun sotuv zayavkasi. Saqlangandan keyin “Qabul qilish” bosiladi."
+        action={viewTabs}
       />
       {/* Blanka keng (QQS ustunli jadval) — to'liq kenglikda; sklad qoldig'i pastda */}
       <div className="space-y-5">

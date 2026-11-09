@@ -44,6 +44,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "edit",     label: "Zayavkani tahrirlash",               roles: ["SALES", "SUPERVISOR"], hint: "Ishlab chiqarish boshlanguncha: mahsulot, soni, narx, sana, manzil, dastavka, to'lov. Summa oshsa limit qayta tekshiriladi" },
     { key: "contract", label: "Shartnoma va kafolat xati",          roles: ["SALES", "ACCOUNTING"] },
     { key: "import",   label: "Excel'dan zayavka import",           roles: ["SALES"] },
+    { key: "excel",    label: "Yangi zayavka: Excel ko'rinish",      roles: ["LOGISTICS"], hint: "Perechisleniye va naqd bo'limli varaq: bir varaqda ko'p zayavka. «Mijoz zayavkasini ochish» ham berilgan bo'lsin" },
     { key: "stock",    label: "Sklad (zaxira) zayavkasi",           roles: STOCK_ORDER, hint: "Ochish (Ishlab chiqarish → «Skladga zayavka»), tahrirlash, qabul qilish, yopish, bekor qilish" },
     { key: "unblock",  label: "Limitdan oshgan zayavka blokini ochish", roles: [], hint: "Odatda faqat direktor — ehtiyot bo'lib bering" },
     { key: "capacity", label: "Kunlik limit (taqvimdagi m³ / dona quvvati)", roles: [], hint: "Zayavkani bloklamaydi, taqvim rangini belgilaydi — odatda direktor" },
