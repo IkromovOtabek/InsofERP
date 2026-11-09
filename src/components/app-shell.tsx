@@ -14,6 +14,7 @@ import { LogoMark } from "@/components/logo";
 import { AiPanel, AiTrigger } from "@/components/ai-panel";
 import { Tour, TourTrigger } from "@/components/tour";
 import { NotificationStack } from "@/components/notification-stack";
+import { NavProgress } from "@/components/nav-progress";
 import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -378,6 +379,7 @@ export function AppShell({ items, user, brand, product = "Insof ERP", ai = false
               </div>
             </div>
           </div>
+          <NavProgress />
         </header>
         {ai && <AiPanel />}
         <main className="app-main min-w-0 flex-1 px-3 py-5 sm:px-4 sm:py-6 lg:px-8 lg:py-7 has-[[data-wide]]:lg:px-4">

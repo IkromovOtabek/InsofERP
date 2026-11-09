@@ -591,6 +591,16 @@ table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="numbe
 @keyframes notif-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 .animate-fade-up { animation: fade-up .35s ease-out both; }
 
+/* Bo'limga o'tish kutilmoqda (components/nav-progress.tsx): tepada chiziq asta to'ladi, eski kontent xiralashadi.
+   Ikkalasi ham 120–150 ms kechikadi — tez ochiladigan sahifada miltillamasin. */
+@keyframes nav-progress { from { transform: scaleX(0); } to { transform: scaleX(.9); } }
+.nav-progress { transform-origin: left; animation: nav-progress 8s cubic-bezier(.08,.7,.2,1) .12s both; }
+html[data-nav] .app-main { opacity: .55; transition: opacity .2s ease .15s; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress { animation: none; transform: scaleX(.6); }
+  html[data-nav] .app-main { transition: none; }
+}
+
 /* ───────── Sidebar: yozuvlar animatsiyasi ─────────
    Har bir yozuv (guruh sarlavhasi, band, ichki band) chapdan ketma-ket suzib kiradi.
    --i — tartib raqami (app-shell.tsx beradi), kechikish shundan hisoblanadi. */
