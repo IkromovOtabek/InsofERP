@@ -6,7 +6,8 @@ import { notifyAfter, notifyRoles } from "./notify";
 
 /**
  * Yangi zayavka — «Excel ko'rinish»: logistika/sotuv xodimi kunlik «Zayavka realizatsiya» varag'ini to'ldiradi.
- * Varaq ikki bo'lim: Perechisleniye (bank, QQS 12% bilan) va Naqd (QQS'siz). Bitta qator — mijoz × mahsulot.
+ * Varaq uch bo'lim — tizim formasidagi to'lov turlari: Perechisleniye (bank, QQS 12% bilan), Naqd (QQS'siz) va Qarzga
+ * (kafolat xati bilan; QQS va bosh to'lov usuli bo'lim uchun tanlanadi). Bitta qator — mijoz × mahsulot.
  *
  * Bo'lim + mijoz + obyekt + soat — bitta qoralama zayavka: qatorlar shu bo'yicha guruhlanadi, qator dastavkalari
  * zayavka dastavkasiga qo'shiladi. Zayavka `lib/orders.ts` → `createOrder` orqali ochiladi (qora ro'yxat, raqamlash,
@@ -15,7 +16,7 @@ import { notifyAfter, notifyRoles } from "./notify";
  * «Bosh to'lov» ustuni — qatorlar bo'yicha yig'ilib zayavka bosh to'lovi bo'ladi (bo'lim usuli bilan: naqd — kassaga,
  * perechisleniye — buxgalterga so'rov). Qora ro'yxatdagi mijozga zayavka faqat to'liq bosh to'lov bilan ochiladi.
  */
-export type GridSection = "bank" | "cash";
+export type GridSection = "bank" | "cash" | "credit";
 export type GridRow = {
   key: string;
   section: GridSection;
@@ -34,9 +35,12 @@ export type GridRow = {
   phone?: string | null;
   site?: string | null;
   time?: string | null;
+  /** «Obyekt joyi» oynasida xaritadan belgilangan nuqta */
+  lat?: number | null;
+  lng?: number | null;
 };
 export type GridResult = {
-  created: { id: string; orderNo: string; customer: string; keys: string[] }[];
+  created: { id: string; orderNo: string; customer: string; credit: boolean; keys: string[] }[];
   failed: { customer: string; error: string; keys: string[] }[];
 };
 
@@ -54,7 +58,10 @@ export function gridTime(v?: string | null): string | null | undefined {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
-export async function createGridOrders(input: { date: string; rows: GridRow[] }, userId: string): Promise<GridResult> {
+export async function createGridOrders(
+  input: { date: string; rows: GridRow[]; /** Qarzga bo'limida QQS 12% */ creditVat?: boolean; /** Qarzga bo'limida bosh to'lov qanday keladi */ creditPay?: "CASH" | "BANK" },
+  userId: string,
+): Promise<GridResult> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error("Sana noto'g'ri");
   const rows = input.rows.filter((r) => r.customer.trim() || r.product.trim());
   if (rows.length === 0) throw new Error("Jadvalda to'ldirilgan qator yo'q");
@@ -100,15 +107,18 @@ export async function createGridOrders(input: { date: string; rows: GridRow[] },
   for (const g of groups.values()) {
     const keys = g.rows.map((r) => r.key);
     if (g.error) { failed.push({ customer: g.customer, error: g.error, keys }); continue; }
-    const bank = g.section === "bank";
+    const credit = g.section === "credit";
+    const vat = g.section === "bank" || (credit && !!input.creditVat);
     const customerId = g.customerId ?? newCustomers.get(flatName(g.customer)) ?? null;
     const c = customerId ? customerById.get(customerId) : null;
     // Obyekt: qatordagi joy → mijozning oxirgi obyekti → mijoz manzili. Nuqta — mijozning shu manzildagi obyektidan
     const address = g.site || c?.sites[0]?.address || c?.address?.trim() || "";
     if (!address) { failed.push({ customer: g.customer, error: "«Obyekt joyi» yozilmagan", keys }); continue; }
-    const place = c?.sites.find((s) => norm(s.address) === norm(address));
+    // Nuqta: xaritada belgilangani → mijozning shu manzildagi obyektiniki
+    const marked = g.rows.find((r) => r.lat != null && r.lng != null);
+    const place = marked ? { lat: marked.lat!, lng: marked.lng! } : c?.sites.find((s) => norm(s.address) === norm(address));
 
-    // Bir mahsulot takrorlansa — bir qator (narx birinchisidan); QQS perechisleniyeda narx ustiga qo'shiladi
+    // Bir mahsulot takrorlansa — bir qator (narx birinchisidan); QQS narx va dastavka ustiga qo'shiladi
     const items = new Map<string, { qty: number; price: number }>();
     let fee = 0, prepay = 0;
     for (const r of g.rows) {
@@ -118,8 +128,8 @@ export async function createGridOrders(input: { date: string; rows: GridRow[] },
       fee += r.fee;
       prepay += r.prepay ?? 0;
     }
-    const lines = [...items].map(([productId, v]) => ({ productId, qtyM3: v.qty, price: bank ? withNds(v.price) : v.price, nds: bank }));
-    const deliveryFee = r2(fee + (bank ? ndsOf(fee) : 0));
+    const lines = [...items].map(([productId, v]) => ({ productId, qtyM3: v.qty, price: vat ? withNds(v.price) : v.price, nds: vat }));
+    const deliveryFee = r2(fee + (vat ? ndsOf(fee) : 0));
 
     // Saqlash ikki marta bosilsa (javob kelmay qolgan) — shu xodim yaqinda ochgan aynan shu zayavka takrorlanmaydi
     if (customerId) {
@@ -147,17 +157,17 @@ export async function createGridOrders(input: { date: string; rows: GridRow[] },
           items: lines,
           needsDelivery: true,
           deliveryFee,
-          // Tizim formasidagi «Naqd» / «Perechisleniye» (bosh to'lovsiz)
-          onCredit: false,
+          // Tizim formasidagi «Naqd» / «Perechisleniye» / «Qarzga»: qarzga usul faqat bosh to'lov bo'lsa beriladi
+          onCredit: credit,
           prepay: prepay > 0 ? { amount: r2(prepay) } : undefined,
-          payMethod: bank ? "BANK" : "CASH",
+          payMethod: g.section === "bank" ? "BANK" : g.section === "cash" ? "CASH" : prepay > 0 ? (input.creditPay ?? "CASH") : null,
           note: [receivers.length ? `Qabul qiluvchi: ${receivers.join("; ")}` : null, "Excel ko'rinishdan"].filter(Boolean).join("\n"),
         },
         userId,
         { viaImport: true }, // «create» va «excel» ruxsati chaqiruvchida tekshirilgan; sotuvga bitta umumiy xabar boradi
       );
       if (!customerId) newCustomers.set(flatName(g.customer), res.customerId);
-      created.push({ id: res.id, orderNo: res.orderNo, customer: g.customer, keys });
+      created.push({ id: res.id, orderNo: res.orderNo, customer: g.customer, credit: res.onCredit, keys });
     } catch (e) {
       failed.push({ customer: g.customer, error: (e as Error).message || "Zayavka saqlanmadi", keys });
     }

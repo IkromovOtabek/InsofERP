@@ -86,17 +86,17 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       db.product.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true, unit: true, price: true } }),
       db.customer.findMany({
         where: { isActive: true, isInternal: false }, orderBy: { name: "asc" },
-        select: { id: true, name: true, aliases: true, sites: { where: { isActive: true }, orderBy: { createdAt: "desc" }, select: { address: true } } },
+        select: { id: true, name: true, aliases: true, sites: { where: { isActive: true }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, address: true, lat: true, lng: true } } },
       }),
       blacklistedIds(), // «limit yo'q» belgisi — bunday mijozga faqat to'liq bosh to'lov bilan
     ]);
-    const opts: GridCustomer[] = customers.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases, sites: [...new Set(c.sites.map((x) => x.address))], blacklisted: black.has(c.id) }));
+    const opts: GridCustomer[] = customers.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases, sites: c.sites, blacklisted: black.has(c.id) }));
     return (
       <div>
         <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />
         <PageHeader back={{ href: "/orders", label: "Zayavkalar" }} title="Yangi zayavka" action={viewTabs}
-          subtitle="Excel ko'rinish: bir varaqda bir nechta zayavka — perechisleniye va naqd bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
-        <OrderGrid customers={opts} scripts={writeScripts(s)}
+          subtitle="Excel ko'rinish: bir varaqda bir nechta zayavka — perechisleniye, naqd va qarzga bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
+        <OrderGrid customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()}
           products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: unitLabel(p.unit), price: Number(p.price) }))} />
       </div>
     );

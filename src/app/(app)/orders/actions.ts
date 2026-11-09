@@ -335,9 +335,11 @@ export async function importOrdersFromExcel(_prev: ActionState, fd: FormData): P
 const gridNum = (label: string) => z.coerce.number({ message: `${label} raqam bo'lsin` }).min(0, `${label} manfiy bo'lmasin`).max(MAX_AMOUNT, `${label} juda katta`);
 const gridSchema = z.object({
   date: zStr("Sana kerak"),
+  creditVat: z.boolean().default(false),
+  creditPay: z.enum(["CASH", "BANK"]).default("CASH"),
   rows: z.array(z.object({
     key: z.string().max(40),
-    section: z.enum(["bank", "cash"]),
+    section: z.enum(["bank", "cash", "credit"]),
     customer: z.string().trim().max(200),
     customerId: z.string().max(40).nullish(),
     product: z.string().trim().max(200),
@@ -350,6 +352,8 @@ const gridSchema = z.object({
     phone: z.string().trim().max(40).nullish(),
     site: z.string().trim().max(300).nullish(),
     time: z.string().trim().max(10).nullish(),
+    lat: z.number().min(-90).max(90).nullish(),
+    lng: z.number().min(-180).max(180).nullish(),
   })).min(1, "Jadval bo'sh").max(300, "Bir varaqda 300 qatordan ko'p bo'lmasin"),
 });
 

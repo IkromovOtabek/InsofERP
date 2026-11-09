@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Plus, X, Save, CheckCircle2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Plus, X, Save, CheckCircle2, MapPin, FileSignature } from "lucide-react";
 import { Button, Callout, Card, Input, LinkButton } from "@/components/ui";
+import { AddressPicker, type SavedPlace } from "@/components/address-picker";
 import { scriptCleaner } from "@/components/script-guard";
 import { fmtNum, isoDate, numText, dateRu } from "@/lib/format";
 import { ndsOf } from "@/lib/nds";
@@ -11,12 +13,17 @@ import { cn } from "@/lib/utils";
 import { saveOrderGrid } from "./actions";
 
 /** `blacklisted` — kredit limiti yo'q/to'lgan: zayavka faqat to'liq bosh to'lov bilan ochiladi (`lib/orders.ts`) */
-export type GridCustomer = { id: string; name: string; aliases: string[]; sites: string[]; blacklisted: boolean };
+export type GridCustomer = { id: string; name: string; aliases: string[]; sites: SavedPlace[]; blacklisted: boolean };
 export type GridProduct = { id: string; code: string; name: string; unit: string; price: number };
 
-type Section = "bank" | "cash";
-type Row = { key: string; customer: string; product: string; qty: string; price: string; fee: string; receiver: string; phone: string; site: string; time: string; prepay: string; error?: string };
-type Field = Exclude<keyof Row, "key" | "error">;
+/** Bo'limlar tizim formasidagi to'lov turlari: Perechisleniye (QQS bilan), Naqd, Qarzga (QQS ixtiyoriy) */
+type Section = "bank" | "cash" | "credit";
+const SECTIONS: { sec: Section; title: string }[] = [{ sec: "bank", title: "Perechisleniye" }, { sec: "cash", title: "Naqd" }, { sec: "credit", title: "Qarzga" }];
+/** `lat`/`lng` — «Obyekt joyi» oynasida xaritadan belgilangan nuqta (qo'lda yozilsa tozalanadi) */
+type Row = { key: string; customer: string; product: string; qty: string; price: string; fee: string; receiver: string; phone: string; site: string; time: string; prepay: string; lat: number | null; lng: number | null; error?: string };
+type Field = Exclude<keyof Row, "key" | "error" | "lat" | "lng">;
+/** Bir zayavkaga tushadigan (2+ qatorli) guruhlar № katagida rangli chiziq bilan ajraladi */
+const GROUP_COLORS = ["border-l-sky-500", "border-l-violet-500", "border-l-amber-500", "border-l-emerald-500", "border-l-rose-500"];
 
 /**
  * Varaq ustunlari Excel'dagi «Zayavka realizatsiya» tartibida: joylashtirish (paste) shu tartib bo'yicha tushadi,
@@ -50,7 +57,7 @@ export function RememberView({ cookie, view }: { cookie: string; view: "tizim" |
 }
 
 let seq = 0;
-const blank = (): Row => ({ key: `r${Date.now().toString(36)}${(seq++).toString(36)}`, customer: "", product: "", qty: "", price: "", fee: "", receiver: "", phone: "", site: "", time: "", prepay: "" });
+const blank = (): Row => ({ key: `r${Date.now().toString(36)}${(seq++).toString(36)}`, customer: "", product: "", qty: "", price: "", fee: "", receiver: "", phone: "", site: "", time: "", prepay: "", lat: null, lng: null });
 const filled = (r: Row) => EDITABLE.some((f) => r[f].trim() !== "");
 const n = (v: string) => { const x = Number(numText(v)); return Number.isFinite(x) ? x : 0; };
 /** Son katagi Excel'dagidek guruhlanadi: 1205357,14 → «1 205 357,14»; o'qilmasa — o'zicha qoladi (serverda xato bo'lmasin, ko'rinsin) */
@@ -66,12 +73,16 @@ const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёўқғҳ]+/g
  * narx ustiga) va Naqd. Katakdan katakka Enter/strelka bilan o'tiladi, Excel'dan bir nechta katak joylashtiriladi.
  * Saqlanganda bo'lim + mijoz + obyekt + soat bo'yicha qoralama zayavkalar ochiladi (`lib/orders-grid.ts`).
  */
-export function OrderGrid({ customers, products, scripts }: { customers: GridCustomer[]; products: GridProduct[]; /** Ruxsat berilgan yozuvlar (`writeScripts`) */ scripts: string[] }) {
+export function OrderGrid({ customers, products, scripts, geoSearch }: { customers: GridCustomer[]; products: GridProduct[]; /** Ruxsat berilgan yozuvlar (`writeScripts`) */ scripts: string[]; /** Xarita qidiruvi kaliti sozlanganmi (`geoSearchEnabled`) */ geoSearch: boolean }) {
   const [date, setDate] = useState(() => isoDate(new Date(Date.now() + 86400000)));
-  const [rows, setRows] = useState<Record<Section, Row[]>>(() => ({ bank: Array.from({ length: START_ROWS }, blank), cash: Array.from({ length: START_ROWS }, blank) }));
+  const [rows, setRows] = useState<Record<Section, Row[]>>(() => ({ bank: Array.from({ length: START_ROWS }, blank), cash: Array.from({ length: START_ROWS }, blank), credit: Array.from({ length: 3 }, blank) }));
+  // Qarzga bo'limi: QQS ixtiyoriy (tizim formasidagi «QQS 12%» tugmasi) va bosh to'lov qanday keladi
+  const [creditVat, setCreditVat] = useState(false);
+  const [creditPay, setCreditPay] = useState<"CASH" | "BANK">("CASH");
+  const [siteFor, setSiteFor] = useState<{ sec: Section; key: string } | null>(null); // «Obyekt joyi» xarita oynasi
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<{ id: string; orderNo: string; customer: string }[]>([]);
+  const [saved, setSaved] = useState<{ id: string; orderNo: string; customer: string; credit: boolean }[]>([]);
   const tableRef = useRef<HTMLDivElement>(null);
   const clean = useMemo(() => scriptCleaner(scripts), [scripts]);
 
@@ -89,15 +100,17 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
   const customerOf = (r: Row) => (r.customer.trim() ? byCustomer.get(flat(r.customer)) ?? null : null);
   const productOf = (r: Row) => (r.product.trim() ? byProduct.get(flat(r.product)) ?? null : null);
 
+  /** QQS: perechisleniyeda doim, qarzga — «QQS 12%» yoqilsa, naqdda yo'q (tizim formasidagi kabi) */
+  const vatOn = (sec: Section) => sec === "bank" || (sec === "credit" && creditVat);
   const lineOf = (sec: Section, r: Row) => {
     const q = n(r.qty), p = n(r.price), f = n(r.fee);
     const sum = q * p + f;
-    const vat = sec === "bank" ? q * ndsOf(p) + ndsOf(f) : 0;
+    const vat = vatOn(sec) ? q * ndsOf(p) + ndsOf(f) : 0;
     return { sum, vat, total: sum + vat };
   };
 
   // Saqlanmagan qatorlar bor — sahifadan chiqishda brauzer so'raydi
-  const dirty = rows.bank.some(filled) || rows.cash.some(filled);
+  const dirty = SECTIONS.some(({ sec }) => rows[sec].some(filled));
   useEffect(() => {
     if (!dirty) return;
     const h = (e: BeforeUnloadEvent) => { e.preventDefault(); };
@@ -111,6 +124,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
       const list = all[sec].map((r) => {
         if (r.key !== key) return r;
         const next = { ...r, [f]: v, error: undefined };
+        if (f === "site") { next.lat = null; next.lng = null; } // qo'lda yozilgan joy — eski nuqta unga tegishli emas
         if (f === "product") {
           const was = productOf(r), now = productOf(next);
           if (now && now.id !== was?.id && (!r.price.trim() || (was && n(r.price) === was.price))) next.price = now.price ? fmtNum(now.price, 2) : "";
@@ -159,6 +173,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
         cells.forEach((v, j) => {
           const col = COLS[startCol + j];
           if (col?.f) next[col.f] = col.num ? numCell(col.f, v) : v.trim();
+          if (col?.f === "site") { next.lat = null; next.lng = null; }
         });
         const p = productOf(next);
         if (p && !next.price.trim()) next.price = p.price ? fmtNum(p.price, 2) : "";
@@ -180,19 +195,44 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
     const list = all[sec].filter((r) => r.key !== key);
     return { ...all, [sec]: list.length ? list : [blank()] };
   });
+  /**
+   * «Shu mijozga yana mahsulot»: ostiga mijoz, qabul qiluvchi, telefon, obyekt (nuqtasi bilan) va vaqt ko'chirilgan qator —
+   * bir xil mijoz + obyekt + vaqt bo'lgani uchun saqlanganda shu zayavkaga qo'shiladi. Kursor mahsulot katagiga o'tadi.
+   */
+  const addAfter = (sec: Section, i: number) => {
+    const src = rows[sec][i];
+    if (!src) return;
+    setRows((all) => {
+      const list = [...all[sec]];
+      list.splice(i + 1, 0, { ...blank(), customer: src.customer, receiver: src.receiver, phone: src.phone, site: src.site, lat: src.lat, lng: src.lng, time: src.time });
+      return { ...all, [sec]: list };
+    });
+    setTimeout(() => focusCell(sec, i + 1, EDITABLE.indexOf("product")), 0);
+  };
+  /** Xarita oynasidan: manzil va nuqta shu qatorga va shu mijozning eski joyi yozilgan qatorlariga (zayavka bo'linib ketmasin) */
+  const applySite = (sec: Section, key: string, site: string, point: { lat: number; lng: number } | null) =>
+    setRows((all) => {
+      const me = all[sec].find((r) => r.key === key);
+      if (!me) return all;
+      const old = me.site.trim(), who = flat(me.customer);
+      const list = all[sec].map((r) => (r.key === key || (old && who && flat(r.customer) === who && r.site.trim() === old)
+        ? { ...r, site, lat: point?.lat ?? null, lng: point?.lng ?? null, error: undefined } : r));
+      if (filled(list[list.length - 1]!)) list.push(blank());
+      return { ...all, [sec]: list };
+    });
 
   const save = () => {
     setError(null);
-    const payload = (["bank", "cash"] as const).flatMap((sec) => rows[sec].filter(filled).map((r) => ({
+    const payload = SECTIONS.flatMap(({ sec }) => rows[sec].filter(filled).map((r) => ({
       key: r.key, section: sec,
       customer: r.customer, customerId: customerOf(r)?.id ?? null,
       product: r.product, productId: productOf(r)?.id ?? null,
       qty: n(r.qty), price: n(r.price), fee: n(r.fee), prepay: n(r.prepay),
-      receiver: r.receiver, phone: r.phone, site: r.site, time: r.time,
+      receiver: r.receiver, phone: r.phone, site: r.site, time: r.time, lat: r.lat, lng: r.lng,
     })));
     if (!payload.length) { setError("Jadval bo'sh — kamida bitta qatorni to'ldiring"); return; }
     start(async () => {
-      const res = await saveOrderGrid({ date, rows: payload });
+      const res = await saveOrderGrid({ date, creditVat, creditPay, rows: payload });
       if ("error" in res) { setError(res.error); return; }
       const done = new Set(res.created.flatMap((c) => c.keys));
       const errs = new Map(res.failed.flatMap((x) => x.keys.map((k) => [k, x.error] as const)));
@@ -201,30 +241,24 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
           const l = list.filter((r) => !done.has(r.key)).map((r) => (errs.has(r.key) ? { ...r, error: errs.get(r.key) } : r));
           return l.length && !filled(l[l.length - 1]!) ? l : [...l, blank()];
         };
-        return { bank: keep(all.bank), cash: keep(all.cash) };
+        return { bank: keep(all.bank), cash: keep(all.cash), credit: keep(all.credit) };
       });
-      setSaved((s) => [...res.created.map(({ id, orderNo, customer }) => ({ id, orderNo, customer })), ...s]);
+      setSaved((s) => [...res.created.map(({ id, orderNo, customer, credit }) => ({ id, orderNo, customer, credit })), ...s]);
       if (res.failed.length) setError(`${res.failed.length} ta zayavka ochilmadi — qizil qatorlarni tekshiring: ${res.failed.slice(0, 3).map((x) => `${x.customer} — ${x.error}`).join("; ")}${res.failed.length > 3 ? "…" : ""}`);
     });
   };
 
-  // Mijozning obyektlari — «Obyekt joyi» katagida taklif (faqat jadvaldagi mijozlarniki)
-  const siteLists = useMemo(() => {
-    const m = new Map<string, string[]>();
-    for (const r of [...rows.bank, ...rows.cash]) { const c = byCustomer.get(flat(r.customer)); if (c?.sites.length) m.set(c.id, c.sites); }
-    return m;
-  }, [rows, byCustomer]);
 
   /**
    * Zayavka guruhi (serverdagi kabi: bo'lim + mijoz + obyekt + soat) bo'yicha jami va bosh to'lov — katakdagi ogohlantirish
    * va «To'liq» tugmasi uchun. Qora ro'yxatdagi mijozda bosh to'lov guruh jamisiga teng bo'lishi shart.
    */
   const groupKey = (sec: Section, r: Row) => [sec, customerOf(r)?.id ?? `new:${flat(r.customer)}`, r.site.trim().replace(/\s+/g, " ").toLowerCase(), r.time.trim()].join("|");
-  const groups = new Map<string, { total: number; prepay: number }>();
-  for (const sec of ["bank", "cash"] as const) for (const r of rows[sec]) {
+  const groups = new Map<string, { total: number; prepay: number; rows: number; no: number }>();
+  for (const { sec } of SECTIONS) for (const r of rows[sec]) {
     if (!filled(r)) continue;
-    const k = groupKey(sec, r), g = groups.get(k) ?? { total: 0, prepay: 0 };
-    g.total += lineOf(sec, r).total; g.prepay += n(r.prepay);
+    const k = groupKey(sec, r), g = groups.get(k) ?? { total: 0, prepay: 0, rows: 0, no: groups.size + 1 };
+    g.total += lineOf(sec, r).total; g.prepay += n(r.prepay); g.rows += 1;
     groups.set(k, g);
   }
   /** «To'liq»: shu qatorga guruhning qolgan summasi — guruh bosh to'lovi jamiga teng bo'ladi */
@@ -238,7 +272,8 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
   const ro = "border border-slate-300 bg-slate-50/70 px-1.5 text-right text-[13px] tabular-nums text-slate-700 whitespace-nowrap";
 
   const totals = (sec: Section) => rows[sec].reduce((a, r) => { const l = lineOf(sec, r); return { sum: a.sum + l.sum, vat: a.vat + l.vat, total: a.total + l.total, prepay: a.prepay + n(r.prepay) }; }, { sum: 0, vat: 0, total: 0, prepay: 0 });
-  const grand = { bank: totals("bank"), cash: totals("cash") };
+  const grand = { bank: totals("bank"), cash: totals("cash"), credit: totals("credit") };
+  const all = (k: "sum" | "vat" | "total" | "prepay") => SECTIONS.reduce((a, { sec }) => a + grand[sec][k], 0);
 
   const section = (sec: Section, title: string) => {
     const t = grand[sec];
@@ -247,29 +282,49 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
         <tr>
           <td className="border border-slate-300 bg-slate-100" />
           <td className={cell} />
-          <td className="border border-slate-300 bg-emerald-200/70 py-1 text-center text-sm font-bold text-slate-900" colSpan={3}>{title}</td>
-          <td className={cell} colSpan={COLS.length - 4} />
+          <td className={cn("border border-slate-300 py-1 text-center text-sm font-bold text-slate-900", sec === "credit" ? "bg-amber-100" : "bg-emerald-200/70")} colSpan={3}>{title}</td>
+          <td className={cn(cell, "px-2")} colSpan={COLS.length - 4}>
+            {sec === "credit" && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 py-1 text-xs text-slate-600">
+                <label className="inline-flex cursor-pointer items-center gap-1.5">
+                  <input type="checkbox" checked={creditVat} onChange={(e) => setCreditVat(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900" /> QQS 12% qo&apos;shilsin
+                </label>
+                <span className="inline-flex items-center gap-1.5">Bosh to&apos;lov qanday keladi:
+                  {(["CASH", "BANK"] as const).map((m) => (
+                    <button key={m} type="button" aria-pressed={creditPay === m} onClick={() => setCreditPay(m)}
+                      className={cn("rounded px-1.5 py-0.5 font-medium", creditPay === m ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>{m === "CASH" ? "Naqd" : "Perechisleniye"}</button>
+                  ))}
+                </span>
+                <span className="inline-flex items-center gap-1 text-amber-700"><FileSignature size={13} /> saqlangach har zayavkaga kafolat xati</span>
+              </div>
+            )}
+          </td>
         </tr>
         {rows[sec].map((r, i) => {
           const c = customerOf(r), p = productOf(r), l = lineOf(sec, r);
           const has = filled(r);
+          const grp = has ? groups.get(groupKey(sec, r)) : undefined;
           return (
             <tr key={r.key} className={cn("group", r.error && "bg-red-50")} title={r.error}>
-              <td className={cn("relative w-9 border border-slate-300 bg-slate-100 text-center text-[11px] text-slate-500", r.error && "bg-red-200 text-red-800")}>
+              <td title={grp ? `${grp.no}-zayavka${grp.rows > 1 ? ` · ${grp.rows} ta mahsulot` : ""}` : undefined}
+                className={cn("relative w-12 border border-slate-300 bg-slate-100 text-center text-[11px] text-slate-500", grp && grp.rows > 1 && `border-l-4 ${GROUP_COLORS[(grp.no - 1) % GROUP_COLORS.length]}`, r.error && "bg-red-200 text-red-800")}>
                 <span className="group-hover:invisible">{i + 1}</span>
-                <button type="button" onClick={() => removeRow(sec, r.key)} aria-label="Qatorni o'chirish" className="invisible absolute inset-0 flex items-center justify-center text-slate-400 hover:text-red-600 group-hover:visible"><X size={13} /></button>
+                <span className="invisible absolute inset-0 flex items-center justify-center gap-0.5 group-hover:visible">
+                  {has && <button type="button" tabIndex={-1} onClick={() => addAfter(sec, i)} aria-label="Shu mijozga yana mahsulot" title="Shu mijozga yana mahsulot (ostiga qator)" className="rounded p-0.5 text-sky-700 hover:bg-sky-100"><Plus size={13} /></button>}
+                  <button type="button" tabIndex={-1} onClick={() => removeRow(sec, r.key)} aria-label="Qatorni o'chirish" title="Qatorni o'chirish" className="rounded p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={13} /></button>
+                </span>
               </td>
               {COLS.map((col, ci) => {
                 if (!col.f) {
-                  const v = ci === 2 ? p?.unit ?? "" : ci === 6 ? l.sum : ci === 7 ? (sec === "bank" ? l.vat : null) : l.total;
+                  const v = ci === 2 ? p?.unit ?? "" : ci === 6 ? l.sum : ci === 7 ? (vatOn(sec) ? l.vat : null) : l.total;
                   return <td key={ci} className={cn(ro, ci === 2 && "text-center", ci === 8 && "font-semibold")}>{typeof v === "number" ? (has ? fmtNum(v) : "") : v}</td>;
                 }
                 const f = col.f, ei = EDITABLE.indexOf(f);
-                const list = f === "customer" ? "og-customers" : f === "product" ? "og-products" : f === "site" && c && siteLists.has(c.id) ? `og-sites-${c.id}` : undefined;
+                const list = f === "customer" ? "og-customers" : f === "product" ? "og-products" : undefined;
                 const unknownProduct = f === "product" && r.product.trim() && !p;
                 const newCustomer = f === "customer" && r.customer.trim() && !c;
                 const noCredit = f === "customer" && !!c?.blacklisted;
-                const g = f === "prepay" && has ? groups.get(groupKey(sec, r)) : undefined;
+                const g = f === "prepay" ? grp : undefined;
                 const prepayBad = !!g && (g.prepay > g.total + 0.005 || (!!c?.blacklisted && g.prepay < g.total - 0.005));
                 return (
                   <td key={ci} className={cn(cell, "relative", col.w, prepayBad && "bg-red-50")}
@@ -283,11 +338,17 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
                       onBlur={col.num ? (e) => onBlurNum(sec, r.key, f, e.target.value) : undefined}
                       onKeyDown={(e) => onKey(sec, i, ei, e)}
                       onPaste={(e) => onPaste(sec, i, f, e)}
-                      className={cn(inp, col.num && "text-right tabular-nums", unknownProduct && "text-red-600", newCustomer && "pr-11", noCredit && "pr-16", f === "prepay" && "pl-12")}
+                      onClick={f === "site" ? () => setSiteFor({ sec, key: r.key }) : undefined}
+                      className={cn(inp, col.num && "text-right tabular-nums", unknownProduct && "text-red-600", newCustomer && "pr-11", noCredit && "pr-16", f === "prepay" && "pl-12", f === "site" && "cursor-pointer pr-6")}
                       title={unknownProduct ? "Bunday mahsulot ro'yxatda yo'q" : newCustomer ? "Ro'yxatda yo'q — saqlanganda yangi mijoz ochiladi" : noCredit ? "Kredit limiti yo'q — zayavka faqat to'liq bosh to'lov bilan ochiladi" : undefined}
                     />
                     {newCustomer && <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800">yangi</span>}
                     {noCredit && <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700">limit yo&apos;q</span>}
+                    {f === "site" && (
+                      <button type="button" tabIndex={-1} onClick={() => setSiteFor({ sec, key: r.key })} aria-label="Xaritadan tanlash"
+                        title={r.lat != null ? "Xaritada nuqta belgilangan — o'zgartirish" : "Xaritadan tanlash"}
+                        className={cn("absolute right-1 top-1/2 -translate-y-1/2", r.lat != null ? "text-emerald-600" : "text-slate-400 hover:text-slate-700")}><MapPin size={14} /></button>
+                    )}
                     {f === "prepay" && has && (
                       <button type="button" tabIndex={-1} onClick={() => fillPrepay(sec, r)} title="Bosh to'lov = zayavka summasi (shu mijoz, obyekt va vaqt bo'yicha)"
                         className={cn("absolute left-1 top-1/2 -translate-y-1/2 rounded px-1 text-[10px] font-medium", prepayBad ? "bg-red-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>To&apos;liq</button>
@@ -304,7 +365,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
             <button type="button" onClick={() => addRows(sec)} className="inline-flex items-center gap-1 px-1.5 py-1 text-xs font-medium text-sky-700 hover:underline"><Plus size={13} /> 5 qator qo&apos;shish</button>
           </td>
           <td className={cn(ro, "font-bold text-slate-900")}>{fmtNum(t.sum)}</td>
-          <td className={cn(ro, "font-bold text-slate-900")}>{sec === "bank" ? fmtNum(t.vat) : ""}</td>
+          <td className={cn(ro, "font-bold text-slate-900")}>{vatOn(sec) ? fmtNum(t.vat) : ""}</td>
           <td className={cn(ro, "font-bold text-slate-900")}>{fmtNum(t.total)}</td>
           <td className={cell} colSpan={4} />
           <td className={cn(ro, "font-bold text-slate-900")}>{t.prepay ? fmtNum(t.prepay) : ""}</td>
@@ -318,7 +379,11 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
       {saved.length > 0 && (
         <Callout tone="success" title={`${saved.length} ta zayavka qoralama bo'lib ochildi — sotuv qabul qiladi`}>
           <div className="flex flex-wrap gap-x-3 gap-y-1">
-            {saved.map((s) => <Link key={s.id} href={`/orders/${s.id}`} className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"><CheckCircle2 size={13} /> {s.orderNo} · {s.customer}</Link>)}
+            {saved.map((s) => (
+              <Link key={s.id} href={s.credit ? `/orders/${s.id}?guarantee=1` : `/orders/${s.id}`} className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline">
+                <CheckCircle2 size={13} /> {s.orderNo} · {s.customer}{s.credit && <span className="inline-flex items-center gap-0.5 font-normal text-amber-800"><FileSignature size={12} /> kafolat xati</span>}
+              </Link>
+            ))}
           </div>
         </Callout>
       )}
@@ -338,7 +403,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
           <table className="w-full min-w-[1620px] border-collapse">
             <thead>
               <tr>
-                <th className="w-9 border border-slate-300 bg-slate-100" />
+                <th className="w-12 border border-slate-300 bg-slate-100" />
                 {COLS.map((c, i) => <th key={i} className="border border-slate-300 bg-slate-100 py-0.5 text-center text-[10px] font-normal text-slate-400">{LETTERS[i]}</th>)}
               </tr>
               <tr>
@@ -349,16 +414,15 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
               </tr>
             </thead>
             <tbody>
-              {section("bank", "Perechisleniye")}
-              {section("cash", "Naqd")}
+              {SECTIONS.map(({ sec, title }) => section(sec, title))}
               <tr>
                 <td className="border border-slate-300 bg-slate-100" />
-                <td className={cn(ro, "bg-slate-100 text-left font-bold text-slate-900")} colSpan={6}>Jami (perechisleniye + naqd)</td>
-                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(grand.bank.sum + grand.cash.sum)}</td>
-                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(grand.bank.vat)}</td>
-                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(grand.bank.total + grand.cash.total)}</td>
+                <td className={cn(ro, "bg-slate-100 text-left font-bold text-slate-900")} colSpan={6}>Jami (perechisleniye + naqd + qarzga)</td>
+                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(all("sum"))}</td>
+                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(all("vat"))}</td>
+                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(all("total"))}</td>
                 <td className={cn(cell, "bg-slate-100")} colSpan={4} />
-                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{grand.bank.prepay + grand.cash.prepay ? fmtNum(grand.bank.prepay + grand.cash.prepay) : ""}</td>
+                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{all("prepay") ? fmtNum(all("prepay")) : ""}</td>
               </tr>
             </tbody>
           </table>
@@ -366,19 +430,70 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
 
         <datalist id="og-customers">{customers.map((c) => <option key={c.id} value={c.name} />)}</datalist>
         <datalist id="og-products">{products.map((p) => <option key={p.id} value={p.name}>{p.unit}</option>)}</datalist>
-        {[...siteLists].map(([id, sites]) => <datalist key={id} id={`og-sites-${id}`}>{sites.map((s) => <option key={s} value={s} />)}</datalist>)}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 px-4 py-3">
           <Button type="button" onClick={save} disabled={pending || !dirty}><Save size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>
           <LinkButton href="/orders" variant="secondary">Zayavkalar</LinkButton>
           <p className="text-xs text-slate-500">
-            Bir mijozning bir obyekt va vaqtdagi qatorlari — bitta zayavka. Perechisleniyeda QQS 12% narx va dastavka ustiga qo&apos;shiladi.
+            Bir mijozga bir nechta mahsulot — qator raqami ustidagi «+» (mijoz, obyekt, vaqt ko&apos;chadi): bir mijoz + obyekt + vaqt qatorlari
+            bitta zayavka bo&apos;ladi va chapda bir rangli chiziq bilan ko&apos;rinadi. «Obyekt joyi» bosilsa xarita ochiladi.
+            Perechisleniyeda QQS 12% narx va dastavka ustiga qo&apos;shiladi, qarzga — belgilansa.
             Qabul qiluvchi va telefon zayavka izohiga yoziladi; ro&apos;yxatda yo&apos;q mijoz yangi ochiladi.
             Bosh to&apos;lov bo&apos;lsa — naqdda kassirga, perechisleniyeda buxgalterga so&apos;rov boradi; pul tushmaguncha reys ochilmaydi.
             «Limit yo&apos;q» mijozga zayavka faqat to&apos;liq bosh to&apos;lov bilan ochiladi.
           </p>
         </div>
       </Card>
+
+      {siteFor && (() => {
+        const r = rows[siteFor.sec].find((x) => x.key === siteFor.key);
+        return r ? <SiteDialog row={r} customer={customerOf(r)} geoSearch={geoSearch} onClose={() => setSiteFor(null)}
+          onApply={(site, point) => applySite(siteFor.sec, siteFor.key, site, point)} /> : null;
+      })()}
     </div>
   );
+}
+
+const normAddr = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * «Obyekt joyi» — xarita oynasi: yozganda xaritada qidiradi, mijozning saqlangan obyektlari ro'yxati, xaritaga bosib nuqta.
+ * Nuqta zayavkaga ketadi — haydovchida navigatsiya va masofa shundan (`AddressPicker`).
+ */
+function SiteDialog({ row, customer, geoSearch, onClose, onApply }: {
+  row: Row; customer: GridCustomer | null; geoSearch: boolean; onClose: () => void;
+  onApply: (site: string, point: { lat: number; lng: number } | null) => void;
+}) {
+  // Qatorda nuqta bo'lmasa — mijozning shu manzildagi obyekti nuqtasi
+  const hit = customer?.sites.find((x) => normAddr(x.address) === normAddr(row.site) && x.lat != null && x.lng != null);
+  const start = row.lat != null && row.lng != null ? { lat: row.lat, lng: row.lng } : hit ? { lat: hit.lat!, lng: hit.lng! } : null;
+  const [address, setAddress] = useState(row.site);
+  const [point, setPoint] = useState(start);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const apply = () => { onApply(address.trim(), point); onClose(); };
+
+  return createPortal((
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onMouseDown={onClose}>
+      <div role="dialog" aria-label="Obyekt joyi" onMouseDown={(e) => e.stopPropagation()} className="w-full max-w-2xl rounded-(--radius-card) bg-white p-5 shadow-xl">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold text-slate-900">Obyekt joyi</div>
+            <div className="text-xs text-slate-500">{customer?.name || row.customer || "Mijoz yozilmagan"}{customer?.sites.length ? ` · ${customer.sites.length} ta saqlangan obyekt` : ""}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={16} /></button>
+        </div>
+        <AddressPicker className="" label="Manzil" name="gridSite" latName="gridLat" lngName="gridLng" searchEnabled={geoSearch}
+          defaultAddress={row.site} defaultLat={start?.lat} defaultLng={start?.lng} saved={customer?.sites ?? []}
+          onAddress={setAddress} onPoint={setPoint} />
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Bekor</Button>
+          <Button type="button" onClick={apply} disabled={!address.trim()}><MapPin size={15} /> Tanlash</Button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
 }
