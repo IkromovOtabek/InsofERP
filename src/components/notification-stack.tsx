@@ -6,6 +6,7 @@ import { Bell, BellRing, ChevronUp, ClipboardList, HardHat, ShoppingBasket, Truc
 import { cn } from "@/lib/utils";
 import { dateTime } from "@/lib/format";
 import type { WebNotification } from "@/lib/web-notifications";
+import { DATA_VERSION_EVENT } from "@/components/live-refresh";
 
 /**
  * O'ng tepadagi bildirishnomalar oqimi: kirgandan keyin ham, ish paytida ham keladi, ketma-ket yig'iladi va
@@ -51,7 +52,12 @@ export function NotificationStack() {
     if (document.visibilityState !== "visible") return;
     try {
       const res = await fetch("/api/notifications", { cache: "no-store" });
-      if (res.ok) apply(await res.json());
+      if (res.ok) {
+        const d = (await res.json()) as Data & { v?: string | null };
+        apply(d);
+        // Ma'lumot versiyasi — LiveRefresh shundan sahifani yangilash kerakligini biladi
+        if (d.v) window.dispatchEvent(new CustomEvent(DATA_VERSION_EVENT, { detail: d.v }));
+      }
     } catch { /* tarmoq uzilgan — keyingi urinishda */ }
   }, [apply]);
 
