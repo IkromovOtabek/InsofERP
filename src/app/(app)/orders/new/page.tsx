@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { FileSpreadsheet, LayoutTemplate } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
-import { customersCredit, customersHistory, contractedIds, defaultCreditLimit } from "@/lib/finance";
+import { blacklistedIds, customersCredit, customersHistory, contractedIds, defaultCreditLimit } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
 import { PageHeader, Tabs } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
@@ -82,14 +82,15 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
   ) : undefined;
 
   if (excel) {
-    const [products, customers] = await Promise.all([
+    const [products, customers, black] = await Promise.all([
       db.product.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true, unit: true, price: true } }),
       db.customer.findMany({
         where: { isActive: true, isInternal: false }, orderBy: { name: "asc" },
         select: { id: true, name: true, aliases: true, sites: { where: { isActive: true }, orderBy: { createdAt: "desc" }, select: { address: true } } },
       }),
+      blacklistedIds(), // «limit yo'q» belgisi — bunday mijozga faqat to'liq bosh to'lov bilan
     ]);
-    const opts: GridCustomer[] = customers.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases, sites: [...new Set(c.sites.map((x) => x.address))] }));
+    const opts: GridCustomer[] = customers.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases, sites: [...new Set(c.sites.map((x) => x.address))], blacklisted: black.has(c.id) }));
     return (
       <div>
         <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />

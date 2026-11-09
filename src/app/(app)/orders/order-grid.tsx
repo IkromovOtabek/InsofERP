@@ -10,16 +10,18 @@ import { ndsOf } from "@/lib/nds";
 import { cn } from "@/lib/utils";
 import { saveOrderGrid } from "./actions";
 
-export type GridCustomer = { id: string; name: string; aliases: string[]; sites: string[] };
+/** `blacklisted` — kredit limiti yo'q/to'lgan: zayavka faqat to'liq bosh to'lov bilan ochiladi (`lib/orders.ts`) */
+export type GridCustomer = { id: string; name: string; aliases: string[]; sites: string[]; blacklisted: boolean };
 export type GridProduct = { id: string; code: string; name: string; unit: string; price: number };
 
 type Section = "bank" | "cash";
-type Row = { key: string; customer: string; product: string; qty: string; price: string; fee: string; receiver: string; phone: string; site: string; time: string; error?: string };
+type Row = { key: string; customer: string; product: string; qty: string; price: string; fee: string; receiver: string; phone: string; site: string; time: string; prepay: string; error?: string };
 type Field = Exclude<keyof Row, "key" | "error">;
 
 /**
  * Varaq ustunlari Excel'dagi «Zayavka realizatsiya» tartibida: joylashtirish (paste) shu tartib bo'yicha tushadi,
  * hisoblanadigan ustunlar (birlik, summalar) o'tkazib yuboriladi — Excel'dan butun qatorni ko'chirsa ham to'g'ri tushadi.
+ * «Bosh to'lov» Excel'da yo'q — oxirida turadi, 13 ustunli varaq avvalgidek joylashadi.
  */
 const COLS: { f: Field | null; label: string; w: string; yellow?: boolean; num?: boolean }[] = [
   { f: "customer", label: "Kimga", w: "min-w-[190px]" },
@@ -35,6 +37,7 @@ const COLS: { f: Field | null; label: string; w: string; yellow?: boolean; num?:
   { f: "phone", label: "Telefon raqami", w: "min-w-[120px]", yellow: true },
   { f: "site", label: "Obyekt joyi", w: "min-w-[140px]", yellow: true },
   { f: "time", label: "Vaqti", w: "min-w-[64px]", yellow: true },
+  { f: "prepay", label: "Bosh to'lov", w: "min-w-[140px]", num: true },
 ];
 const EDITABLE = COLS.map((c) => c.f).filter((f): f is Field => !!f);
 const LETTERS = "ABCDEFGHIJKLMN";
@@ -47,7 +50,7 @@ export function RememberView({ cookie, view }: { cookie: string; view: "tizim" |
 }
 
 let seq = 0;
-const blank = (): Row => ({ key: `r${Date.now().toString(36)}${(seq++).toString(36)}`, customer: "", product: "", qty: "", price: "", fee: "", receiver: "", phone: "", site: "", time: "" });
+const blank = (): Row => ({ key: `r${Date.now().toString(36)}${(seq++).toString(36)}`, customer: "", product: "", qty: "", price: "", fee: "", receiver: "", phone: "", site: "", time: "", prepay: "" });
 const filled = (r: Row) => EDITABLE.some((f) => r[f].trim() !== "");
 const n = (v: string) => { const x = Number(numText(v)); return Number.isFinite(x) ? x : 0; };
 /** Son katagi Excel'dagidek guruhlanadi: 1205357,14 → «1 205 357,14»; o'qilmasa — o'zicha qoladi (serverda xato bo'lmasin, ko'rinsin) */
@@ -184,7 +187,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
       key: r.key, section: sec,
       customer: r.customer, customerId: customerOf(r)?.id ?? null,
       product: r.product, productId: productOf(r)?.id ?? null,
-      qty: n(r.qty), price: n(r.price), fee: n(r.fee),
+      qty: n(r.qty), price: n(r.price), fee: n(r.fee), prepay: n(r.prepay),
       receiver: r.receiver, phone: r.phone, site: r.site, time: r.time,
     })));
     if (!payload.length) { setError("Jadval bo'sh — kamida bitta qatorni to'ldiring"); return; }
@@ -212,11 +215,29 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
     return m;
   }, [rows, byCustomer]);
 
+  /**
+   * Zayavka guruhi (serverdagi kabi: bo'lim + mijoz + obyekt + soat) bo'yicha jami va bosh to'lov — katakdagi ogohlantirish
+   * va «To'liq» tugmasi uchun. Qora ro'yxatdagi mijozda bosh to'lov guruh jamisiga teng bo'lishi shart.
+   */
+  const groupKey = (sec: Section, r: Row) => [sec, customerOf(r)?.id ?? `new:${flat(r.customer)}`, r.site.trim().replace(/\s+/g, " ").toLowerCase(), r.time.trim()].join("|");
+  const groups = new Map<string, { total: number; prepay: number }>();
+  for (const sec of ["bank", "cash"] as const) for (const r of rows[sec]) {
+    if (!filled(r)) continue;
+    const k = groupKey(sec, r), g = groups.get(k) ?? { total: 0, prepay: 0 };
+    g.total += lineOf(sec, r).total; g.prepay += n(r.prepay);
+    groups.set(k, g);
+  }
+  /** «To'liq»: shu qatorga guruhning qolgan summasi — guruh bosh to'lovi jamiga teng bo'ladi */
+  const fillPrepay = (sec: Section, r: Row) => {
+    const g = groups.get(groupKey(sec, r));
+    if (g) patch(sec, r.key, "prepay", fmtNum(Math.max(0, g.total - (g.prepay - n(r.prepay))), 2));
+  };
+
   const cell = "border border-slate-300 p-0";
   const inp = "h-8 w-full min-w-0 bg-transparent px-1.5 text-[13px] text-slate-900 outline-none placeholder:text-slate-300 focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-500";
   const ro = "border border-slate-300 bg-slate-50/70 px-1.5 text-right text-[13px] tabular-nums text-slate-700 whitespace-nowrap";
 
-  const totals = (sec: Section) => rows[sec].reduce((a, r) => { const l = lineOf(sec, r); return { sum: a.sum + l.sum, vat: a.vat + l.vat, total: a.total + l.total }; }, { sum: 0, vat: 0, total: 0 });
+  const totals = (sec: Section) => rows[sec].reduce((a, r) => { const l = lineOf(sec, r); return { sum: a.sum + l.sum, vat: a.vat + l.vat, total: a.total + l.total, prepay: a.prepay + n(r.prepay) }; }, { sum: 0, vat: 0, total: 0, prepay: 0 });
   const grand = { bank: totals("bank"), cash: totals("cash") };
 
   const section = (sec: Section, title: string) => {
@@ -247,8 +268,12 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
                 const list = f === "customer" ? "og-customers" : f === "product" ? "og-products" : f === "site" && c && siteLists.has(c.id) ? `og-sites-${c.id}` : undefined;
                 const unknownProduct = f === "product" && r.product.trim() && !p;
                 const newCustomer = f === "customer" && r.customer.trim() && !c;
+                const noCredit = f === "customer" && !!c?.blacklisted;
+                const g = f === "prepay" && has ? groups.get(groupKey(sec, r)) : undefined;
+                const prepayBad = !!g && (g.prepay > g.total + 0.005 || (!!c?.blacklisted && g.prepay < g.total - 0.005));
                 return (
-                  <td key={ci} className={cn(cell, "relative", col.w)}>
+                  <td key={ci} className={cn(cell, "relative", col.w, prepayBad && "bg-red-50")}
+                    title={prepayBad ? (g!.prepay > g!.total + 0.005 ? "Bosh to'lov zayavka summasidan katta" : "Kredit limiti yo'q — bosh to'lov zayavka summasiga teng bo'lsin («To'liq»)") : undefined}>
                     <input
                       value={r[f]} list={list} autoComplete="off" aria-label={`${title}, ${i + 1}-qator: ${col.label}`}
                       data-sec={sec} data-row={i} data-col={ei}
@@ -258,10 +283,15 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
                       onBlur={col.num ? (e) => onBlurNum(sec, r.key, f, e.target.value) : undefined}
                       onKeyDown={(e) => onKey(sec, i, ei, e)}
                       onPaste={(e) => onPaste(sec, i, f, e)}
-                      className={cn(inp, col.num && "text-right tabular-nums", unknownProduct && "text-red-600", newCustomer && "pr-11")}
-                      title={unknownProduct ? "Bunday mahsulot ro'yxatda yo'q" : newCustomer ? "Ro'yxatda yo'q — saqlanganda yangi mijoz ochiladi" : undefined}
+                      className={cn(inp, col.num && "text-right tabular-nums", unknownProduct && "text-red-600", newCustomer && "pr-11", noCredit && "pr-16", f === "prepay" && "pl-12")}
+                      title={unknownProduct ? "Bunday mahsulot ro'yxatda yo'q" : newCustomer ? "Ro'yxatda yo'q — saqlanganda yangi mijoz ochiladi" : noCredit ? "Kredit limiti yo'q — zayavka faqat to'liq bosh to'lov bilan ochiladi" : undefined}
                     />
                     {newCustomer && <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800">yangi</span>}
+                    {noCredit && <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700">limit yo&apos;q</span>}
+                    {f === "prepay" && has && (
+                      <button type="button" tabIndex={-1} onClick={() => fillPrepay(sec, r)} title="Bosh to'lov = zayavka summasi (shu mijoz, obyekt va vaqt bo'yicha)"
+                        className={cn("absolute left-1 top-1/2 -translate-y-1/2 rounded px-1 text-[10px] font-medium", prepayBad ? "bg-red-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>To&apos;liq</button>
+                    )}
                   </td>
                 );
               })}
@@ -277,6 +307,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
           <td className={cn(ro, "font-bold text-slate-900")}>{sec === "bank" ? fmtNum(t.vat) : ""}</td>
           <td className={cn(ro, "font-bold text-slate-900")}>{fmtNum(t.total)}</td>
           <td className={cell} colSpan={4} />
+          <td className={cn(ro, "font-bold text-slate-900")}>{t.prepay ? fmtNum(t.prepay) : ""}</td>
         </tr>
       </Fragment>
     );
@@ -304,7 +335,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
         </div>
 
         <div ref={tableRef} className="overflow-x-auto">
-          <table className="w-full min-w-[1480px] border-collapse">
+          <table className="w-full min-w-[1620px] border-collapse">
             <thead>
               <tr>
                 <th className="w-9 border border-slate-300 bg-slate-100" />
@@ -327,6 +358,7 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
                 <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(grand.bank.vat)}</td>
                 <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{fmtNum(grand.bank.total + grand.cash.total)}</td>
                 <td className={cn(cell, "bg-slate-100")} colSpan={4} />
+                <td className={cn(ro, "bg-slate-100 font-bold text-slate-900")}>{grand.bank.prepay + grand.cash.prepay ? fmtNum(grand.bank.prepay + grand.cash.prepay) : ""}</td>
               </tr>
             </tbody>
           </table>
@@ -342,6 +374,8 @@ export function OrderGrid({ customers, products, scripts }: { customers: GridCus
           <p className="text-xs text-slate-500">
             Bir mijozning bir obyekt va vaqtdagi qatorlari — bitta zayavka. Perechisleniyeda QQS 12% narx va dastavka ustiga qo&apos;shiladi.
             Qabul qiluvchi va telefon zayavka izohiga yoziladi; ro&apos;yxatda yo&apos;q mijoz yangi ochiladi.
+            Bosh to&apos;lov bo&apos;lsa — naqdda kassirga, perechisleniyeda buxgalterga so&apos;rov boradi; pul tushmaguncha reys ochilmaydi.
+            «Limit yo&apos;q» mijozga zayavka faqat to&apos;liq bosh to&apos;lov bilan ochiladi.
           </p>
         </div>
       </Card>

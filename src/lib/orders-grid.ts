@@ -11,6 +11,9 @@ import { notifyAfter, notifyRoles } from "./notify";
  * Bo'lim + mijoz + obyekt + soat — bitta qoralama zayavka: qatorlar shu bo'yicha guruhlanadi, qator dastavkalari
  * zayavka dastavkasiga qo'shiladi. Zayavka `lib/orders.ts` → `createOrder` orqali ochiladi (qora ro'yxat, raqamlash,
  * obyekt kartasi, audit — tizim formasidagi kabi). Ro'yxatda yo'q mijoz — yangi mijoz (telefoni qatordagi raqam).
+ *
+ * «Bosh to'lov» ustuni — qatorlar bo'yicha yig'ilib zayavka bosh to'lovi bo'ladi (bo'lim usuli bilan: naqd — kassaga,
+ * perechisleniye — buxgalterga so'rov). Qora ro'yxatdagi mijozga zayavka faqat to'liq bosh to'lov bilan ochiladi.
  */
 export type GridSection = "bank" | "cash";
 export type GridRow = {
@@ -25,6 +28,8 @@ export type GridRow = {
   price: number;
   /** Shu qatorning dastavka summasi (QQS'siz) */
   fee: number;
+  /** Kutilayotgan bosh to'lov (QQS bilan, so'm); 0 — yo'q */
+  prepay?: number;
   receiver?: string | null;
   phone?: string | null;
   site?: string | null;
@@ -81,7 +86,7 @@ export async function createGridOrders(input: { date: string; rows: GridRow[] },
       else if (!r.product.trim()) g.error = "Mahsulot yozilmagan";
       else if (!((r.productId && productById.get(r.productId)) || productByName.get(flatName(r.product)))) g.error = `Bunday mahsulot ro'yxatda yo'q: «${r.product}»`;
       else if (!(r.qty > 0)) g.error = `${r.product}: soni 0 dan katta bo'lsin`;
-      else if (!(r.price >= 0) || !(r.fee >= 0)) g.error = `${r.product}: narx yoki dastavka manfiy bo'lmasin`;
+      else if (!(r.price >= 0) || !(r.fee >= 0) || !((r.prepay ?? 0) >= 0)) g.error = `${r.product}: narx, dastavka yoki bosh to'lov manfiy bo'lmasin`;
       else if (time === undefined) g.error = `Vaqt noto'g'ri: «${r.time}» — masalan 9:00`;
     }
     groups.set(key, g);
@@ -105,12 +110,13 @@ export async function createGridOrders(input: { date: string; rows: GridRow[] },
 
     // Bir mahsulot takrorlansa — bir qator (narx birinchisidan); QQS perechisleniyeda narx ustiga qo'shiladi
     const items = new Map<string, { qty: number; price: number }>();
-    let fee = 0;
+    let fee = 0, prepay = 0;
     for (const r of g.rows) {
       const p = (r.productId && productById.get(r.productId)) || productByName.get(flatName(r.product))!;
       const prev = items.get(p.id);
       items.set(p.id, { qty: (prev?.qty ?? 0) + r.qty, price: prev?.price ?? r.price });
       fee += r.fee;
+      prepay += r.prepay ?? 0;
     }
     const lines = [...items].map(([productId, v]) => ({ productId, qtyM3: v.qty, price: bank ? withNds(v.price) : v.price, nds: bank }));
     const deliveryFee = r2(fee + (bank ? ndsOf(fee) : 0));
@@ -143,6 +149,7 @@ export async function createGridOrders(input: { date: string; rows: GridRow[] },
           deliveryFee,
           // Tizim formasidagi «Naqd» / «Perechisleniye» (bosh to'lovsiz)
           onCredit: false,
+          prepay: prepay > 0 ? { amount: r2(prepay) } : undefined,
           payMethod: bank ? "BANK" : "CASH",
           note: [receivers.length ? `Qabul qiluvchi: ${receivers.join("; ")}` : null, "Excel ko'rinishdan"].filter(Boolean).join("\n"),
         },

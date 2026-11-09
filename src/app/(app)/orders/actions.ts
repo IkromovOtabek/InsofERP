@@ -345,6 +345,7 @@ const gridSchema = z.object({
     qty: gridNum("Soni").max(100_000, "Soni juda katta (100 000 dan oshmasin)"),
     price: gridNum("Narx"),
     fee: gridNum("Dastavka"),
+    prepay: gridNum("Bosh to'lov").default(0),
     receiver: z.string().trim().max(120).nullish(),
     phone: z.string().trim().max(40).nullish(),
     site: z.string().trim().max(300).nullish(),
