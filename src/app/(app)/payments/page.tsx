@@ -11,9 +11,10 @@ import { LinkPaymentForm, PaymentForm, type InvOpt, type OrderOpt } from "./paym
 import { RegisterTable, toView } from "./register-table";
 import { deleteImportBatch, stornoPayment } from "./actions";
 import { ConfirmButton } from "./confirm-button";
+import { CashEditButton, CashEditProvider } from "./cash-edit";
 import { AccountMatrix, KassaJurnalTab } from "./kassa-jurnal";
 import { canDo } from "@/lib/permissions";
-import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance } from "@/lib/payments";
+import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance, paymentLocks, paymentSig } from "@/lib/payments";
 import { orderTotal } from "@/lib/order-total";
 
 /**
@@ -31,6 +32,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
   const canImport = ["CASHIER", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
   const canBalance = !!s && canDo(s, "payments", "balance");
+  // Qatorlardagi qalam (Kassa jurnali, To'lovlar, Realizatsiya jurnali) — bitta amal
+  const canEdit = !!s && canDo(s, "cashflow", "edit");
   // Excel importidan qaytganda (batch) — realizatsiya jurnali; aks holda sukut bo'yicha kassa jurnali
   const tab = sp.tab === "jurnal" || (!sp.tab && sp.batch) ? "jurnal" : sp.tab === "tolovlar" ? "tolovlar" : "kassa";
   const batch = sp.batch || undefined;
@@ -72,8 +75,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         { key: "jurnal", label: "Realizatsiya jurnali", href: qs("jurnal"), icon: Receipt, count: regCount },
       ]} />
 
-      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={!!s && canDo(s, "cashflow", "edit")} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
-        <JurnalTab where={regWhere} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={role === "CASHIER"} from={from} to={to}
+      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} /> : tab === "tolovlar" ? <PaymentsTab role={role} canEdit={canEdit} /> : (
+        <JurnalTab where={regWhere} canEdit={canEdit} accounts={accounts} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={role === "CASHIER"} from={from} to={to}
           totals={{ rows: regTotals._count._all, qty: Number(regTotals._sum.qty ?? 0), sum: Number(regTotals._sum.sum ?? 0), nds: Number(regTotals._sum.nds ?? 0), total: Number(regTotals._sum.total ?? 0) }} />
       )}
     </div>
@@ -82,7 +85,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
 /* ───────── To'lovlar ───────── */
 
-async function PaymentsTab({ role }: { role: string }) {
+async function PaymentsTab({ role, canEdit }: { role: string; canEdit: boolean }) {
   // Server ruxsatiga mos: to'lov — kassir/buxgalter; bog'lash — kassir/buxgalter; storno — buxgalter (va direktor)
   const canPay = ["CASHIER", "ACCOUNTING", "DIRECTOR"].includes(role);
   const canStorno = ["ACCOUNTING", "DIRECTOR"].includes(role);
@@ -134,6 +137,7 @@ async function PaymentsTab({ role }: { role: string }) {
         <Card className="mb-6"><h2 className="mb-3 font-semibold">Yangi to&apos;lov (kirim)</h2><PaymentForm customers={custOpts} invoices={invOpts} orders={orderOpts} accounts={accounts} /></Card>
       )}
       <h2 className="mb-3 font-semibold">So&apos;nggi to&apos;lovlar</h2>
+      <CashEditProvider options={{ accounts, income: [], expense: [], customers }}>
       <Table>
         <thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Schyot / zayavka</Th><Th>Kassa/hisob</Th><Th right>Summa</Th><Th>Kim kiritdi</Th><Th>Izoh</Th><Th></Th></tr></thead>
         <tbody>
@@ -152,19 +156,29 @@ async function PaymentsTab({ role }: { role: string }) {
                 <Td right className="font-medium whitespace-nowrap text-emerald-700">+{money(p.amount)}</Td>
                 <Td className="text-slate-500">{p.createdBy?.fullName ?? <span className="text-slate-300">—</span>}</Td>
                 <Td className="text-slate-500">{p.note ?? ""}</Td>
-                <Td>{canStorno && !p.register && <ConfirmButton action={stornoPayment.bind(null, p.id)} label="Bekor qilish" question={`${money(p.amount)} to'lov bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}</Td>
+                <Td>
+                  <div className="flex items-center justify-end gap-1">
+                    {canEdit && <CashEditButton entry={{
+                      kind: "pay", id: p.id, date: isoDate(p.date), cashAccountId: p.cashAccountId, amount: Number(p.amount), customerId: p.customerId,
+                      customerName: p.customer.name, note: p.note ?? "", sig: paymentSig(p), lock: paymentLocks(p),
+                    }} />}
+                    {canStorno && !p.register && <ConfirmButton action={stornoPayment.bind(null, p.id)} label="Bekor qilish" question={`${money(p.amount)} to'lov bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}
+                  </div>
+                </Td>
               </Tr>
             );
           })}
         </tbody>
       </Table>
+      </CashEditProvider>
     </>
   );
 }
 
 /* ───────── Realizatsiya jurnali ───────── */
 
-async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, canDelete, userId, isCashier, from, to, totals }: {
+async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, canDelete, userId, isCashier, from, to, totals, canEdit, accounts }: {
+  canEdit: boolean; accounts: { id: string; name: string; type: "CASH" | "BANK" }[];
   where: Prisma.SalesRegisterWhereInput; batch?: string; skipped?: number; unknown?: number; paid?: number | null; canDelete: boolean; userId: string; isCashier: boolean; from?: Date; to?: Date;
   totals: { rows: number; qty: number; sum: number; nds: number; total: number };
 }) {
@@ -181,7 +195,10 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
   for (const o of owners) byBatch.set(o.batch, (byBatch.get(o.batch) ?? new Set()).add(o.createdById));
   const canUndo = (b: string) => canDelete || (isCashier && [...(byBatch.get(b) ?? [])].join() === userId);
   const names = new Map((await db.customer.findMany({ where: { id: { in: byCustomer.map((c) => c.customerId) } }, select: { id: true, name: true } })).map((c) => [c.id, c.name]));
-  const marks = await customerMarks(byCustomer.map((c) => c.customerId));
+  const [marks, customers] = await Promise.all([
+    customerMarks(byCustomer.map((c) => c.customerId)),
+    canEdit ? db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
+  ]);
   const cust = byCustomer
     .map((c) => ({ id: c.customerId, name: names.get(c.customerId) ?? "—", count: c._count._all, total: Number(c._sum.total ?? 0), qty: Number(c._sum.qty ?? 0) }))
     .sort((a, b) => b.total - a.total);
@@ -265,7 +282,9 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
       </div>
 
       <h2 id="jurnal-qatorlar" className="mb-3 scroll-mt-20 font-semibold">Jurnal {rows.length < totals.rows && <span className="text-sm font-normal text-slate-500">· oxirgi {rows.length} ta qator ({totals.rows} tadan)</span>}</h2>
-      <RegisterTable rows={rows.map(toView)} marks={marks} />
+      <CashEditProvider options={{ accounts, income: [], expense: [], customers }}>
+        <RegisterTable rows={rows.map(toView)} marks={marks} canEdit={canEdit} />
+      </CashEditProvider>
     </>
   );
 }

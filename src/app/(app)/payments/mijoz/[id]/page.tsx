@@ -9,6 +9,8 @@ import { money, fmtNum, date, isoDate } from "@/lib/format";
 import { payKindLabel } from "@/lib/sales-register";
 import { Button, Card, Input, LinkButton, PageHeader, StatCard } from "@/components/ui";
 import { RegisterTable, toView } from "../../register-table";
+import { CashEditProvider } from "../../cash-edit";
+import { canDo } from "@/lib/permissions";
 
 /**
  * Realizatsiya jurnali — bitta mijoz. Kassa/bank jadvalida mijoz nomi bosilganda shu sahifa ochiladi:
@@ -20,7 +22,8 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "payments" });
+  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "payments" });
+  const canEdit = canDo(s, "cashflow", "edit");
 
   const from = sp.from ? new Date(sp.from) : undefined;
   const to = sp.to ? new Date(sp.to) : undefined;
@@ -30,12 +33,14 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
   const customer = await db.customer.findUnique({ where: { id }, select: { id: true, name: true, inn: true, phone: true } });
   if (!customer) notFound();
 
-  const [rows, totals, byProduct, credit, contracted] = await Promise.all([
+  const [rows, totals, byProduct, credit, contracted, accounts, customers] = await Promise.all([
     db.salesRegister.findMany({ where, orderBy: [{ date: "desc" }, { createdAt: "desc" }], include: { customer: { select: { name: true } } } }),
     db.salesRegister.aggregate({ where, _count: { _all: true }, _sum: { qty: true, sum: true, nds: true, total: true, deliveryFee: true } }),
     db.salesRegister.groupBy({ by: ["productName", "unit"], where, _count: { _all: true }, _sum: { qty: true, total: true }, orderBy: { _sum: { total: "desc" } } }),
     customerCredit(id),
     contractedIds([id]),
+    canEdit ? db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }) : [],
+    canEdit ? db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
   ]);
 
   // Naqd / o'tkazma bo'yicha bo'linish — "Деньги" ustuni
@@ -97,7 +102,9 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
       </div>
 
       <h2 id="qatorlar" className="mb-3 scroll-mt-20 font-semibold">Qatorlar <span className="text-sm font-normal text-slate-500">· {count} ta</span></h2>
-      <RegisterTable rows={rows.map(toView)} showCustomer={false} />
+      <CashEditProvider options={{ accounts, income: [], expense: [], customers }}>
+        <RegisterTable rows={rows.map(toView)} showCustomer={false} canEdit={canEdit} />
+      </CashEditProvider>
     </div>
   );
 }

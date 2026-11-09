@@ -57,6 +57,8 @@ const ASSET_PURCHASE_CATEGORY = "Asosiy vosita xaridi";
  * «Bekor qilingan» bo'lib qoladi. Qoida `lib/cash-entry.ts` da (mobil ham). Ruxsat — avvalgi `cashflow.delete` amali.
  */
 const editSchema = z.object({
+  // Berilmasa — turi o'zgarmaydi (eski forma); berilsa chiqim ⇄ kirim
+  type: z.enum(["INCOME", "EXPENSE"]).optional(),
   date: zStr("Sana kerak").refine(validDate, "sana noto'g'ri"),
   cashAccountId: zStr("Kassa/hisob tanlanmagan"),
   amount: z.coerce.number().positive("summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "summa juda katta"),
@@ -67,7 +69,7 @@ const editSchema = z.object({
   sig: z.string().max(5000),
 });
 
-/** Kassa / bank → Kassa jurnali: qo'lda yozilgan kirim/chiqimni tuzatish. Qoida — `lib/cash-entry.ts` → `updateCashEntry`. */
+/** Kassa / bank → Kassa jurnali: kirim/chiqimni tuzatish (turi ham). Qoida — `lib/cash-entry.ts` → `updateCashEntry`. */
 export async function updateCashTx(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("cashflow", "edit");
   const r = parseForm(editSchema, fd);

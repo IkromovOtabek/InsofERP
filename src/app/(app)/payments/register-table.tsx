@@ -1,7 +1,8 @@
 import { CustomerName } from "@/components/customer-name";
 import { Empty, Table, Td, Th, Tr } from "@/components/ui";
-import { fmtNum, money, opAt } from "@/lib/format";
-import { payKindLabel } from "@/lib/sales-register";
+import { fmtNum, isoDate, money, opAt } from "@/lib/format";
+import { payKindLabel, registerSig } from "@/lib/sales-register";
+import { RegisterEditButton, type RegisterEditRow } from "./register-edit";
 import type { CustomerMarks } from "@/lib/finance";
 
 /**
@@ -31,6 +32,8 @@ export type RegisterView = {
   invoiceNo: string | null;
   monthNo: string | null;
   note: string | null;
+  /** Qalam (tahrir oynasi) qiymatlari */
+  edit: RegisterEditRow;
 };
 
 type Dec = { toString(): string };
@@ -38,7 +41,7 @@ type DbRow = {
   id: string; date: Date; createdAt: Date; customerId: string; vehicleNo: string | null; ttn: string | null; productName: string;
   unit: string; qty: Dec; fromWho: string | null; payType: string | null; deliveryFee: Dec; price: Dec; sum: Dec;
   nds: Dec; total: Dec; address: string | null; contractNo: string | null; invoiceNo: string | null;
-  monthNo: string | null; note: string | null;
+  monthNo: string | null; note: string | null; cashAccountId: string | null; paymentId: string | null;
   customer: { name: string };
 };
 
@@ -50,12 +53,20 @@ export function toView(r: DbRow): RegisterView {
     fromWho: r.fromWho, payType: r.payType, deliveryFee: Number(r.deliveryFee), price: Number(r.price),
     sum: Number(r.sum), nds: Number(r.nds), total: Number(r.total), address: r.address,
     contractNo: r.contractNo, invoiceNo: r.invoiceNo, monthNo: r.monthNo, note: r.note,
+    edit: {
+      id: r.id, date: isoDate(r.date), customerId: r.customerId, customerName: r.customer.name, vehicleNo: r.vehicleNo ?? "", ttn: r.ttn ?? "",
+      productName: r.productName, unit: r.unit, qty: Number(r.qty), fromWho: r.fromWho ?? "", payType: r.payType ?? "",
+      deliveryFee: Number(r.deliveryFee), price: Number(r.price), sum: Number(r.sum), nds: Number(r.nds), total: Number(r.total),
+      address: r.address ?? "", contractNo: r.contractNo ?? "", invoiceNo: r.invoiceNo ?? "", monthNo: r.monthNo ?? "", note: r.note ?? "",
+      cashAccountId: r.cashAccountId ?? "", hasPayment: !!r.paymentId, sig: registerSig(r),
+    },
   };
 }
 
 const dash = <span className="text-slate-300">—</span>;
 
-export function RegisterTable({ rows, marks, showCustomer = true }: { rows: RegisterView[]; marks?: CustomerMarks; showCustomer?: boolean }) {
+/** `canEdit` — har qator oxirida qalam (`RegisterEditButton`); jadval `CashEditProvider` (hisoblar, mijozlar) ichida bo'lsin. */
+export function RegisterTable({ rows, marks, showCustomer = true, canEdit = false }: { rows: RegisterView[]; marks?: CustomerMarks; showCustomer?: boolean; canEdit?: boolean }) {
   const t = rows.reduce((a, r) => ({ qty: a.qty + r.qty, delivery: a.delivery + r.deliveryFee, sum: a.sum + r.sum, nds: a.nds + r.nds, total: a.total + r.total }),
     { qty: 0, delivery: 0, sum: 0, nds: 0, total: 0 });
 
@@ -83,6 +94,7 @@ export function RegisterTable({ rows, marks, showCustomer = true }: { rows: Regi
           <Th>Schyot</Th>
           <Th>Oy</Th>
           <Th>Izoh</Th>
+          {canEdit && <Th><span className="sr-only">Tahrirlash</span></Th>}
         </tr>
       </thead>
       <tbody>
@@ -113,6 +125,7 @@ export function RegisterTable({ rows, marks, showCustomer = true }: { rows: Regi
             <Td className="text-slate-500">{r.invoiceNo || dash}</Td>
             <Td className="text-slate-500">{r.monthNo || dash}</Td>
             <Td className="max-w-56 truncate text-slate-500"><span title={r.note ?? undefined}>{r.note || dash}</span></Td>
+            {canEdit && <Td className="w-10"><RegisterEditButton row={r.edit} /></Td>}
           </Tr>
         ))}
       </tbody>
@@ -127,7 +140,7 @@ export function RegisterTable({ rows, marks, showCustomer = true }: { rows: Regi
             <Td right className="font-semibold">{fmtNum(t.sum)}</Td>
             <Td right className="font-semibold">{fmtNum(t.nds)}</Td>
             <Td right className="bg-emerald-50 font-semibold text-emerald-800">{money(t.total)}</Td>
-            <Td colSpan={5} />
+            <Td colSpan={canEdit ? 6 : 5} />
           </tr>
         </tfoot>
       )}

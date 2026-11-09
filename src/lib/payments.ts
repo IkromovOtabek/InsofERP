@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { date, money, orderLabel } from "@/lib/format";
+import { date, isoDate, money, orderLabel } from "@/lib/format";
 import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import type { PayMethod, Prisma } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
@@ -314,4 +314,89 @@ export async function cashOutflowError(tx: Tx, cashAccountId: string, amount: nu
       : `${acc.name} hisobida yetarli pul yo'q: qoldiq ${money(left)}, chiqim ${money(amount)} (overdraft kerak bo'lsa direktor Sozlamalarda ruxsat beradi)`;
   }
   return null;
+}
+
+/**
+ * Tahrir hisoblar qoldig'ini qanday o'zgartiradi (`delta` — hisobga ta'sir: kirim +, chiqim −; avvalgisi ayirilgan):
+ * qaysi hisob kamaysa, o'sha hisob minusga tushmasin (`cashOutflowError` bilan bir qoida). Tranzaksiya ichida,
+ * yozishdan OLDIN chaqiriladi; hisoblar har doim bir xil tartibda qulflanadi. Qaytaradi: xato matni yoki null.
+ */
+export async function balanceDropError(tx: Tx, changes: { accountId: string; delta: number }[]): Promise<string | null> {
+  const by = new Map<string, number>();
+  for (const c of changes) by.set(c.accountId, (by.get(c.accountId) ?? 0) + c.delta);
+  for (const id of [...by.keys()].sort()) {
+    const d = r2(by.get(id) ?? 0);
+    if (d < -0.005) { const err = await cashOutflowError(tx, id, -d); if (err) return err; }
+  }
+  return null;
+}
+
+// ───────────────────────── To'lovni tahrirlash (Kassa / bank) ─────────────────────────
+
+/** Tahrir oynasi ochilgandagi holat: saqlashda bazadagisi boshqacha bo'lsa — boshqa joyda o'zgartirilgan. */
+export const paymentSig = (p: { amount: unknown; date: Date; cashAccountId: string; customerId: string; note: string | null }) =>
+  [Number(p.amount).toFixed(2), isoDate(p.date), p.cashAccountId, p.customerId, p.note ?? ""].join("|");
+
+/** Qaysi maydon qulf va nega: realizatsiya qatoridan yozilgan to'lov — summa va mijoz jurnal qatorida; schyot/avans — mijoz. */
+export function paymentLocks(p: { invoiceId: string | null; orderId: string | null; register?: { id: string } | null }) {
+  if (p.register) return { customer: true, amount: true, why: "Realizatsiya jurnalidan yozilgan to'lov — summa va mijoz jurnal qatorida tahrirlanadi" };
+  if (p.invoiceId) return { customer: true, amount: false, why: "Schyotga bog'langan to'lov — mijoz o'zgarmaydi" };
+  if (p.orderId) return { customer: true, amount: false, why: "Zayavka avansi — mijoz o'zgarmaydi" };
+  return { customer: false, amount: false, why: null };
+}
+
+export type PaymentEdit = { date: Date; cashAccountId: string; amount: number; customerId: string; note?: string | null; sig: string };
+
+/**
+ * Mijoz to'lovini tuzatish: sana, kassa/hisob, summa, mijoz, izoh. Schyotga bog'langan to'lov schyot qoldig'idan, avans —
+ * zayavka qoldig'idan oshmaydi; schyot holati va bosh to'lov so'rovi qayta hisoblanadi. Hisob kamaysa (summa kamaydi yoki
+ * boshqa hisobga ko'chdi) — minusga tushmasin. Realizatsiya qatorining to'lovida qator hisobi ham yangilanadi.
+ * Turi o'zgarmaydi: mijoz to'lovi har doim kirim. Avvalgi va yangi qiymat AuditLog'da (UPDATE).
+ */
+export async function updatePaymentEntry(id: string, d: PaymentEdit, userId: string): Promise<{ error?: string }> {
+  const amount = r2(d.amount);
+  if (!(amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
+  if (!Number.isFinite(d.date.getTime())) return { error: "Sana noto'g'ri" };
+  if (d.date.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
+  const p0 = await db.payment.findUnique({ where: { id }, select: { customerId: true } });
+  if (!p0) return { error: "To'lov topilmadi" };
+  const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
+  if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
+  return db.$transaction(async (tx) => {
+    // Mijoz bo'yicha navbat (to'lov yozish va storno bilan bir xil) — ikkala mijoz, bir xil tartibda
+    for (const c of [...new Set([p0.customerId, d.customerId])].sort()) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${c}))`;
+    const p = await tx.payment.findUnique({ where: { id }, include: { register: { select: { id: true } } } });
+    if (!p) throw new PaymentError("To'lov topilmadi");
+    if (paymentSig(p) !== d.sig) throw new PaymentError("To'lov boshqa joyda o'zgartirildi — sahifani yangilang");
+    const lock = paymentLocks(p);
+    const old = Number(p.amount);
+    if (lock.customer && d.customerId !== p.customerId) throw new PaymentError(lock.why!);
+    if (lock.amount && Math.abs(amount - old) > 0.005) throw new PaymentError(lock.why!);
+    if (d.customerId !== p.customerId) {
+      const cust = await tx.customer.findUnique({ where: { id: d.customerId }, select: { isInternal: true } });
+      if (!cust) throw new PaymentError("Mijoz topilmadi");
+      if (cust.isInternal) throw new PaymentError("Ichki (tizim) mijoziga to'lov yozilmaydi");
+    }
+    if (amount > old + 0.005 && p.invoiceId) {
+      const inv = await tx.invoice.findUniqueOrThrow({ where: { id: p.invoiceId }, include: { payments: { where: { id: { not: p.id } }, select: { amount: true } } } });
+      const left = r2(Number(inv.amount) - inv.payments.reduce((x, y) => x + Number(y.amount), 0));
+      if (amount > left + 0.005) throw new PaymentError(`${inv.invoiceNo} schyot qoldig'i ${money(Math.max(0, left))} — to'lov undan oshmasin`);
+    }
+    if (amount > old + 0.005 && p.orderId && !p.invoiceId) {
+      const o = await tx.order.findUniqueOrThrow({ where: { id: p.orderId }, select: { deliveryFee: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null, id: { not: p.id } }, select: { amount: true } } } });
+      const left = r2(orderTotal(o) - o.payments.reduce((x, y) => x + Number(y.amount), 0));
+      if (amount > left + 0.005) throw new PaymentError(`Avans zayavka qoldig'idan ko'p: ${money(Math.max(0, left))}`);
+    }
+    const err = await balanceDropError(tx, [{ accountId: p.cashAccountId, delta: -old }, { accountId: d.cashAccountId, delta: amount }]);
+    if (err) throw new PaymentError(err);
+    // Sana o'zgarmagan bo'lsa — asl vaqt (soat) qoladi: ro'yxat tartibi tahrirdan keyin buzilmasin
+    const data = { date: isoDate(d.date) === isoDate(p.date) ? p.date : d.date, cashAccountId: d.cashAccountId, amount, customerId: d.customerId, note: d.note?.trim() || null };
+    await tx.payment.update({ where: { id }, data });
+    if (p.register && d.cashAccountId !== p.cashAccountId) await tx.salesRegister.update({ where: { id: p.register.id }, data: { cashAccountId: d.cashAccountId } });
+    await audit(tx, userId, "UPDATE", "Payment", id, { date: p.date, cashAccountId: p.cashAccountId, amount: p.amount, customerId: p.customerId, note: p.note }, data);
+    if (p.invoiceId) await recalcInvoice(tx, p.invoiceId, userId);
+    const orderOf = p.orderId ?? (p.invoiceId ? (await tx.invoice.findUnique({ where: { id: p.invoiceId }, select: { orderId: true } }))?.orderId : null);
+    await syncPaymentRequest(tx, orderOf, userId);
+    return {};
+  }).catch((e: Error) => { if (e instanceof PaymentError) return { error: e.message }; throw e; });
 }

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { isoDate, money } from "@/lib/format";
-import { cashOutflowError } from "@/lib/payments";
+import { balanceDropError, cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 import { MAX_AMOUNT } from "@/lib/action";
@@ -156,29 +156,46 @@ export async function cancelCashEntry(id: string, reason: string, userId: string
 
 // ───────────────────────── Tahrirlash (Kassa / bank → Kassa jurnali) ─────────────────────────
 
-/** Qo'lda yozilgan kirim/chiqimgina tahrirlanadi; bo'lmasa — sababi (jurnaldagi qalam shu bilan o'chadi). */
-export function cashEntryEditBlock(t: { type: string; refType: string | null; cancelledAt: Date | null; loanId: string | null; projectId: string | null }): string | null {
+/**
+ * Kirim/chiqim yozuvi umuman tahrirlanmasa — sababi (jurnaldagi qalam shu bilan o'chadi): bekor qilingan yozuv va
+ * perekit oyog'i (u o'tkazma hujjati bo'yicha — `updateTransfer`) — boshqa hamma yozuvda qalam bor.
+ */
+export function cashEntryEditBlock(t: { type: string; cancelledAt: Date | null }): string | null {
   if (t.cancelledAt) return "Bekor qilingan yozuv tahrirlanmaydi";
-  if (t.type !== "INCOME" && t.type !== "EXPENSE") return "O'tkazma va boshlang'ich qoldiq tahrirlanmaydi";
-  if (t.refType) return "Hujjatga bog'langan yozuv — hujjatning o'zida tuzatiladi";
-  if (t.loanId || t.projectId) return "Kredit / loyiha yozuvi — bekor qilib, Kirim-Chiqim formasida qayta kiriting";
+  if (t.type !== "INCOME" && t.type !== "EXPENSE") return "O'tkazma (perekit) — o'tkazma hujjati bo'yicha tahrirlanadi";
   return null;
 }
 
+/**
+ * Qaysi ustun qulf va nega. Qo'lda yozilgan yozuvda hammasi ochiq (turi ham: chiqim ⇄ kirim). Hujjatdan yozilgan
+ * (kirim to'lovi, ta'minot, mexanik so'rov, o'tkazma komissiyasi) — summa, tur va hisob hujjat bilan bog'liq;
+ * kredit / loyiha yozuvi — manba va tur (bog'lanish shu manbaga tegishli).
+ */
+export function cashEntryLocks(t: { refType: string | null; loanId: string | null; projectId: string | null }) {
+  if (t.refType) return { type: true, amount: true, account: true, category: false, why: "Hujjatga bog'langan yozuv — summa, tur va hisob hujjatning o'zida o'zgaradi" };
+  if (t.loanId || t.projectId) return { type: true, amount: false, account: false, category: true, why: "Kredit / loyiha yozuvi — manba va tur o'zgarmaydi (kerak bo'lsa bekor qilib, Kirim-Chiqimda qayta kiriting)" };
+  return { type: false, amount: false, account: false, category: false, why: null };
+}
+
 /** Tahrir oynasi ochilgandagi holat: saqlashda bazadagisi boshqacha bo'lsa — boshqa joyda o'zgartirilgan (ustma-ust yozilmasin). */
-export const cashEntrySig = (t: { amount: unknown; date: Date; cashAccountId: string; category: string; subCategory: string | null; counterparty: string | null; note: string | null }) =>
-  [Number(t.amount).toFixed(2), isoDate(t.date), t.cashAccountId, t.category, t.subCategory ?? "", t.counterparty ?? "", t.note ?? ""].join("|");
+export const cashEntrySig = (t: { type: string; amount: unknown; date: Date; cashAccountId: string; category: string; subCategory: string | null; counterparty: string | null; note: string | null }) =>
+  [t.type, Number(t.amount).toFixed(2), isoDate(t.date), t.cashAccountId, t.category, t.subCategory ?? "", t.counterparty ?? "", t.note ?? ""].join("|");
 
 export type CashEntryEdit = {
+  /** Berilmasa — turi o'zgarmaydi */
+  type?: "INCOME" | "EXPENSE" | null;
   date: Date; cashAccountId: string; amount: number; category: string; subCategory?: string | null;
   counterparty?: string | null; note?: string | null; sig: string;
 };
 
+const effect = (type: string, amount: number) => (type === "INCOME" ? amount : -amount);
+const sameDay = (a: Date, b: Date) => isoDate(a) === isoDate(b);
+
 /**
- * Qo'lda yozilgan kirim/chiqimni tuzatish: sana, hisob, summa, manba, sub manba, kontragent, izoh (turi o'zgarmaydi).
- * Kategoriya qoidasi yozishdagi bilan bir xil; kredit / loyiha manbasiga o'tkazilmaydi (ular bog'lanish so'raydi).
- * Hisob bo'yicha navbat ostida: chiqim ko'paysa yoki boshqa hisobga o'tsa, kirim kamaysa yoki ko'chsa — hisob minusga
- * tushmasin. Avvalgi va yangi qiymatlar AuditLog'ga (UPDATE) yoziladi.
+ * Kirim/chiqimni tuzatish: turi (chiqim ⇄ kirim), sana, hisob, summa, manba, sub manba, kontragent, izoh.
+ * Kategoriya qoidasi yozishdagi bilan bir xil (manba yangi turga mos bo'lsin); kredit / loyiha manbasiga o'tkazilmaydi.
+ * Qulflangan ustunlar — `cashEntryLocks`. Hisob bo'yicha navbat ostida: tahrirdan keyin qaysi hisob kamaysa (chiqim
+ * ko'paydi, kirim kamaydi, kirim chiqimga aylandi, boshqa hisobga ko'chdi) — minusga tushmasin. AuditLog'ga UPDATE.
  */
 export async function updateCashEntry(id: string, d: CashEntryEdit, userId: string): Promise<{ error?: string }> {
   const amount = r2(d.amount);
@@ -190,32 +207,35 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
   if (!t) return { error: "Yozuv topilmadi" };
   const block = cashEntryEditBlock(t);
   if (block) return { error: block };
+  const lock = cashEntryLocks(t);
+  const type = d.type ?? (t.type as "INCOME" | "EXPENSE");
+  if (lock.type && type !== t.type) return { error: lock.why! };
+  if (lock.amount && Math.abs(amount - Number(t.amount)) > 0.005) return { error: lock.why! };
+  if (lock.account && d.cashAccountId !== t.cashAccountId) return { error: lock.why! };
+  if (lock.category && d.category !== t.category) return { error: lock.why! };
   if (d.category === PEREKIT_CATEGORY) return { error: "Perekit — hisoblararo o'tkazma: «Kassa ⇄ bank» orqali yozing" };
-  const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
-  if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
+  if (d.cashAccountId !== t.cashAccountId) {
+    const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
+    if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
+  }
   const top = makeResolver(await loadCategories())(d.category)?.top;
-  if (top?.needs === "LOAN" || top?.needs === "PROJECT") return { error: `«${top.name}» — ${top.needs === "LOAN" ? "kredit" : "loyiha"} tanlanadi: eski yozuvni bekor qilib, Kirim-Chiqim formasida kiriting` };
-  const type = t.type as "INCOME" | "EXPENSE";
+  // Kredit / loyiha manbasiga boshqa manbadan o'tib bo'lmaydi — bog'lanish (qaysi kredit, loyiha) so'raladi
+  if ((top?.needs === "LOAN" || top?.needs === "PROJECT") && d.category !== t.category) return { error: `«${top.name}» — ${top.needs === "LOAN" ? "kredit" : "loyiha"} tanlanadi: eski yozuvni bekor qilib, Kirim-Chiqim formasida kiriting` };
   const links = await categoryLinks({ type, category: d.category, subCategory: d.subCategory || null });
   if ("error" in links) return { error: links.error };
   const data = {
-    date: d.date, cashAccountId: d.cashAccountId, amount, category: links.data.category ?? d.category, subCategory: links.data.subCategory,
+    type, date: d.date, cashAccountId: d.cashAccountId, amount, category: links.data.category ?? d.category, subCategory: links.data.subCategory,
     counterparty: d.counterparty?.trim() || null, note: d.note?.trim() || null,
   };
   return db.$transaction(async (tx) => {
     for (const a of [...new Set([t.cashAccountId, d.cashAccountId])].sort()) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + a}))`;
     const cur = await tx.cashTransaction.findUniqueOrThrow({ where: { id } });
     if (cur.cancelledAt || cashEntrySig(cur) !== d.sig) throw new CashError("Yozuv boshqa joyda o'zgartirildi yoki bekor qilindi — sahifani yangilang");
-    const old = Number(cur.amount);
-    if (type === "EXPENSE") {
-      const extra = d.cashAccountId === cur.cashAccountId ? amount - old : amount;
-      if (extra > 0.005) { const err = await cashOutflowError(tx, d.cashAccountId, extra); if (err) throw new CashError(err); }
-    } else {
-      const lost = d.cashAccountId === cur.cashAccountId ? old - amount : old;
-      if (lost > 0.005) { const err = await cashOutflowError(tx, cur.cashAccountId, lost); if (err) throw new CashError(`Kirim kamaysa hisob minusga tushadi. ${err}`); }
-    }
-    await tx.cashTransaction.update({ where: { id }, data });
-    const before = { date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, note: cur.note };
+    const err = await balanceDropError(tx, [{ accountId: cur.cashAccountId, delta: -effect(cur.type, Number(cur.amount)) }, { accountId: d.cashAccountId, delta: effect(type, amount) }]);
+    if (err) throw new CashError(type !== cur.type && type === "EXPENSE" ? `Kirim chiqimga aylansa hisob minusga tushadi. ${err}` : err);
+    // Sana o'zgarmagan bo'lsa — asl vaqt (soat) qoladi: jurnal tartibi tahrirdan keyin buzilmasin
+    await tx.cashTransaction.update({ where: { id }, data: { ...data, date: sameDay(d.date, cur.date) ? cur.date : d.date } });
+    const before = { type: cur.type, date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, note: cur.note };
     await audit(tx, userId, "UPDATE", "CashTransaction", id, before, data);
     return {};
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });

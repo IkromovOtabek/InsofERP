@@ -5,10 +5,12 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { money, moneyShort, date, isoDate, opAt } from "@/lib/format";
 import { Badge, Button, Callout, Empty, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { JOURNAL_ONLY, isTransfer, txSign } from "@/lib/cash-tx";
+import { JOURNAL_ONLY, TRANSFER_REF, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { SALES_MANBA } from "@/lib/cash-import";
-import { cashEntryEditBlock, cashEntrySig } from "@/lib/cash-entry";
+import { cashEntryEditBlock, cashEntryLocks, cashEntrySig } from "@/lib/cash-entry";
+import { paymentLocks, paymentSig } from "@/lib/payments";
+import { transferSig } from "@/lib/cash-transfer";
 import { categoryOptions } from "@/lib/fin-report/categories";
 import { CashEditButton, CashEditProvider, type CashEditEntry } from "./cash-edit";
 import { ExcelButton } from "../logistika/excel-button";
@@ -102,7 +104,7 @@ type JRow = {
   inc: number; exp: number; transfer: boolean;
   manba: string; sub: string; who: string; whoHref?: string; blacklisted?: boolean; contracted?: boolean;
   note: string | null; by: string | null; href?: string; cancelled: string | null;
-  /** Kirim-chiqim yozuvida: tahrir qiymatlari yoki nega tahrirlanmasligi (mijoz to'lovida — yo'q) */
+  /** Qalam: tahrir qiymatlari (kirim/chiqim, mijoz to'lovi, perekit) yoki nega tahrirlanmasligi (bekor qilingan) */
   edit?: CashEditEntry; editBlock?: string | null;
 };
 
@@ -141,11 +143,14 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
       include: { cashAccount: true, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } },
     }),
   ]);
-  const [marks, cNames, editCats] = await Promise.all([
+  const transferIds = [...new Set(txs.filter((t) => isTransfer(t.type) && t.refType === TRANSFER_REF && t.refId).map((t) => t.refId!))];
+  const [marks, cNames, editCats, transferDocs] = await Promise.all([
     customerMarks(payments.map((p) => p.customerId)), cancellerNames(txs),
-    canEdit ? Promise.all([categoryOptions("INCOME"), categoryOptions("EXPENSE")]) : null,
+    canEdit ? Promise.all([categoryOptions("INCOME"), categoryOptions("EXPENSE"), db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } })]) : null,
+    canEdit && transferIds.length ? db.cashTransfer.findMany({ where: { id: { in: transferIds }, cancelledAt: null } }) : [],
   ]);
-  const editOptions = editCats ? { accounts, income: editCats[0], expense: editCats[1] } : null;
+  const editOptions = editCats ? { accounts, income: editCats[0], expense: editCats[1], customers: editCats[2] } : null;
+  const transferOf = new Map(transferDocs.map((t) => [t.id, t]));
 
   const all: JRow[] = [
     ...payments.map((p): JRow => ({
@@ -155,23 +160,34 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
       sub: p.invoice ? `Schyot ${p.invoice.invoiceNo}` : p.register ? "Realizatsiya" : p.orderId ? "Zayavka avansi" : "Mijoz avansi",
       who: p.customer.name, whoHref: `/customers/${p.customerId}`, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId),
       note: p.note, by: p.createdBy?.fullName ?? null, href: p.orderId && !p.invoice ? `/orders/${p.orderId}` : undefined, cancelled: null,
+      edit: canEdit ? {
+        kind: "pay", id: p.id, date: isoDate(p.date), cashAccountId: p.cashAccountId, amount: Number(p.amount), customerId: p.customerId,
+        customerName: p.customer.name, note: p.note ?? "", sig: paymentSig(p), lock: paymentLocks(p),
+      } : undefined,
     })),
     ...txs.map((t): JRow => {
       const transfer = isTransfer(t.type);
       const amount = Number(t.amount);
       const sign = txSign(t.type);
+      const doc = transfer && t.refId ? transferOf.get(t.refId) : undefined;
       return {
         id: t.id, date: t.date, createdAt: t.createdAt, accountId: t.cashAccountId, account: t.cashAccount.name, method: t.cashAccount.type,
         inc: sign > 0 ? amount : 0, exp: sign < 0 ? amount : 0, transfer,
         manba: transfer ? "Perekit" : t.category,
         sub: transfer ? (t.counterparty ?? "") : (t.subCategory ?? ""),
-        who: transfer ? "" : (t.supplier?.name ?? t.counterparty ?? ""),
+        // Kontragent — yozilgan nom (tahrirda shu o'zgaradi), bo'lmasa yetkazuvchi
+        who: transfer ? "" : (t.counterparty ?? t.supplier?.name ?? ""),
         note: t.note, by: t.createdBy.fullName, cancelled: cancelNote(t, cNames),
-        editBlock: canEdit && !transfer ? cashEntryEditBlock(t) : null,
-        edit: canEdit && !transfer && (t.type === "INCOME" || t.type === "EXPENSE") ? {
-          id: t.id, type: t.type, date: isoDate(t.date), cashAccountId: t.cashAccountId, amount: amount, category: t.category,
-          subCategory: t.subCategory ?? "", counterparty: t.counterparty ?? "", note: t.note ?? "", sig: cashEntrySig(t),
-        } : undefined,
+        editBlock: !canEdit ? null : transfer ? (doc ? null : "O'tkazma hujjati topilmadi yoki bekor qilingan") : cashEntryEditBlock(t),
+        edit: !canEdit ? undefined
+          : doc ? {
+            kind: "transfer", id: doc.id, docNo: doc.docNo, date: isoDate(doc.date), fromAccountId: doc.fromAccountId, toAccountId: doc.toAccountId,
+            amount: Number(doc.amount), note: doc.note ?? "", sig: transferSig(doc), feeLock: Number(doc.fee ?? 0) > 0,
+          }
+          : t.type === "INCOME" || t.type === "EXPENSE" ? {
+            kind: "tx", id: t.id, type: t.type, date: isoDate(t.date), cashAccountId: t.cashAccountId, amount: amount, category: t.category,
+            subCategory: t.subCategory ?? "", counterparty: t.counterparty ?? t.supplier?.name ?? "", note: t.note ?? "", sig: cashEntrySig(t), lock: cashEntryLocks(t),
+          } : undefined,
         href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
           : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
           : t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}`

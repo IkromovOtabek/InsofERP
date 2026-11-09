@@ -5,13 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAction } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { addPayment, linkPaymentToInvoice, reversePayment } from "@/lib/payments";
+import { addPayment, linkPaymentToInvoice, reversePayment, updatePaymentEntry } from "@/lib/payments";
+import { updateTransfer } from "@/lib/cash-transfer";
 import type { ValueMaps } from "@/lib/excel";
 import { isoDate } from "@/lib/format";
 import { importCashEntries, type CashImportRow } from "@/lib/cash-import";
 import { monthEndDate, setCashBalanceAt } from "@/lib/opening-balances";
-import { deleteRegisterBatch } from "@/lib/sales-register";
-import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
+import { deleteRegisterBatch, updateRegisterRow } from "@/lib/sales-register";
+import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 
 const schema = z.object({
   customerId: zStr("Mijoz tanlanmagan"),
@@ -55,6 +56,78 @@ export async function stornoPayment(paymentId: string, reason: string): Promise<
   if (r.error) return { error: r.error };
   revalidatePath("/payments"); revalidatePath("/invoices"); revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/cashflow"); revalidatePath("/customers"); revalidatePath("/");
   return { ok: true, note: "Bekor qilindi" };
+}
+
+/* ───────── Tahrirlash (Kassa jurnali, To'lovlar, Realizatsiya jurnali) ─────────
+ * Ruxsat — `cashflow.edit` («Yozuvni tahrirlash (Kassa / bank)»): Kassa jurnalidagi kirim/chiqim qalami bilan bir amal. */
+
+const revalidateCash = () => {
+  revalidatePath("/payments", "layout"); revalidatePath("/cashflow"); revalidatePath("/invoices"); revalidatePath("/orders");
+  revalidatePath("/customers"); revalidatePath("/pul-qabul"); revalidatePath("/"); revalidatePath("/moliya", "layout");
+};
+
+const payEditSchema = z.object({
+  date: zStr("Sana kerak").refine(validDate, "sana noto'g'ri"),
+  cashAccountId: zStr("Kassa/hisob tanlanmagan"),
+  amount: z.coerce.number().positive("summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "summa juda katta"),
+  customerId: zStr("Mijoz tanlanmagan"),
+  note: zOpt,
+  sig: z.string().max(5000),
+});
+
+/** Mijoz to'lovini tuzatish (sana, hisob, summa, mijoz, izoh). Qoida — `lib/payments.ts` → `updatePaymentEntry`. */
+export async function updatePaymentRow(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("cashflow", "edit");
+  const r = parseForm(payEditSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await updatePaymentEntry(id, { ...r.data, date: new Date(r.data.date) }, s.userId);
+  if (res.error) return { error: res.error };
+  revalidateCash();
+  return { ok: true, note: "Saqlandi" };
+}
+
+const transferEditSchema = z.object({
+  date: zStr("Sana kerak").refine(validDate, "sana noto'g'ri"),
+  fromAccountId: zStr("Qayerdan — hisob tanlanmagan"),
+  toAccountId: zStr("Qayerga — hisob tanlanmagan"),
+  amount: z.coerce.number().positive("summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "summa juda katta"),
+  note: zOpt,
+  sig: z.string().max(5000),
+});
+
+/** Perekit (hisoblararo o'tkazma) — hujjat va ikkala oyog'i birga. Qoida — `lib/cash-transfer.ts` → `updateTransfer`. */
+export async function updateTransferRow(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("cashflow", "edit");
+  const r = parseForm(transferEditSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await updateTransfer(id, { ...r.data, date: new Date(r.data.date) }, s.userId);
+  if (res.error) return { error: res.error };
+  revalidateCash();
+  return { ok: true, note: "Saqlandi" };
+}
+
+const regEditSchema = z.object({
+  date: zStr("Sana kerak").refine(validDate, "sana noto'g'ri"),
+  customerId: zStr("Mijoz tanlanmagan"),
+  vehicleNo: zOpt, ttn: zOpt,
+  productName: zStr("Mahsulot nomi kerak"),
+  unit: z.string().trim().max(20).default("m3"),
+  qty: zDec(0), fromWho: zOpt, payType: zOpt,
+  deliveryFee: zDec(0), price: zDec(0), sum: zDec(0), nds: zDec(0), total: zDec(0),
+  address: zOpt, contractNo: zOpt, invoiceNo: zOpt, monthNo: zOpt, note: zOpt,
+  cashAccountId: zOpt,
+  sig: z.string().max(5000),
+});
+
+/** Realizatsiya jurnali qatori — barcha ustunlar; kassaga yozilgan kirimi ham birga. Qoida — `lib/sales-register.ts`. */
+export async function updateRegisterLine(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("cashflow", "edit");
+  const r = parseForm(regEditSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await updateRegisterRow(id, { ...r.data, date: new Date(r.data.date) }, s.userId);
+  if (res.error) return { error: res.error };
+  revalidateCash();
+  return { ok: true, note: "Saqlandi" };
 }
 
 /* ───────── Kassa jurnali (Excel import) ───────── */

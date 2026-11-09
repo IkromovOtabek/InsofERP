@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { Prisma } from "@/generated/prisma";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
-import { cashOutflowError } from "@/lib/payments";
+import { balanceDropError, cashOutflowError } from "@/lib/payments";
+import { isoDate } from "@/lib/format";
 import { BANK_FEE_CATEGORY, TRANSFER_CATEGORY, TRANSFER_REF } from "@/lib/cash-tx";
 
 /**
@@ -159,6 +160,60 @@ export async function cancelTransfer(id: string, reason: string, userId: string)
       for (const l of legs) await audit(tx, userId, "DELETE", "CashTransaction", l.id, l, { reversed: true, by: "transfer-storno", transfer: t.docNo });
       const after = await tx.cashTransfer.update({ where: { id: t.id }, data: { cancelledAt: new Date(), cancelReason: why.slice(0, 300), cancelledById: userId } });
       await audit(tx, userId, "STATUS_CHANGE", "CashTransfer", t.id, { cancelledAt: null }, { cancelledAt: after.cancelledAt, reason: after.cancelReason });
+      return {};
+    });
+  } catch (e) {
+    if (e instanceof TransferError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Tahrir oynasi ochilgandagi holat: saqlashda bazadagisi boshqacha bo'lsa — boshqa joyda o'zgartirilgan. */
+export const transferSig = (t: { amount: unknown; date: Date; fromAccountId: string; toAccountId: string; note: string | null }) =>
+  [Number(t.amount).toFixed(2), isoDate(t.date), t.fromAccountId, t.toAccountId, t.note ?? ""].join("|");
+
+export type TransferEdit = { date: Date; fromAccountId: string; toAccountId: string; amount: number; note?: string | null; sig: string };
+
+/**
+ * O'tkazmani (perekit) tuzatish — Kassa / bank → Kassa jurnalidagi oyoq qalami: sana, qayerdan, qayerga, summa, izoh.
+ * Hujjat va ikkala oyog'i birga o'zgaradi (komissiya yozuvining sanasi ham). Komissiyali o'tkazmada hisoblar o'zgarmaydi
+ * (komissiya shu hisoblardan biriga yechilgan). Tahrirdan keyin qaysi hisob kamaysa — minusga tushmasin. AuditLog'ga UPDATE.
+ */
+export async function updateTransfer(id: string, d: TransferEdit, userId: string): Promise<{ error?: string }> {
+  const amount = r2(d.amount);
+  if (!(amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
+  if (!Number.isFinite(d.date.getTime())) return { error: "Sana noto'g'ri" };
+  if (d.date.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
+  if (d.fromAccountId === d.toAccountId) return { error: "Qayerdan va qayerga — bir xil hisob bo'lolmaydi" };
+  const accs = await db.cashAccount.findMany({ where: { id: { in: [d.fromAccountId, d.toAccountId] } }, select: { id: true, name: true, isActive: true } });
+  const from = accs.find((a) => a.id === d.fromAccountId), to = accs.find((a) => a.id === d.toAccountId);
+  try {
+    return await db.$transaction(async (tx) => {
+      const pre = await tx.cashTransfer.findUnique({ where: { id }, select: { fromAccountId: true, toAccountId: true } });
+      if (!pre) throw new TransferError("O'tkazma topilmadi");
+      await lockAccounts(tx, [pre.fromAccountId, pre.toAccountId, d.fromAccountId, d.toAccountId]);
+      const t = await tx.cashTransfer.findUniqueOrThrow({ where: { id } });
+      if (t.cancelledAt) throw new TransferError(`${t.docNo} bekor qilingan — tahrirlanmaydi`);
+      if (transferSig(t) !== d.sig) throw new TransferError(`${t.docNo} boshqa joyda o'zgartirildi — sahifani yangilang`);
+      const moved = d.fromAccountId !== t.fromAccountId || d.toAccountId !== t.toAccountId;
+      if (moved && Number(t.fee ?? 0) > 0) throw new TransferError(`${t.docNo} komissiyali — hisoblar o'zgarmaydi (bekor qilib, qayta kiriting)`);
+      if (d.fromAccountId !== t.fromAccountId && !from?.isActive) throw new TransferError("Qayerdan: kassa/hisob topilmadi yoki yopilgan");
+      if (d.toAccountId !== t.toAccountId && !to?.isActive) throw new TransferError("Qayerga: kassa/hisob topilmadi yoki yopilgan");
+      const old = Number(t.amount);
+      const err = await balanceDropError(tx, [
+        { accountId: t.fromAccountId, delta: old }, { accountId: t.toAccountId, delta: -old },
+        { accountId: d.fromAccountId, delta: -amount }, { accountId: d.toAccountId, delta: amount },
+      ]);
+      if (err) throw new TransferError(err);
+      const note = d.note?.trim() || null;
+      // Sana o'zgarmagan bo'lsa — asl vaqt (soat) qoladi
+      const date = isoDate(d.date) === isoDate(t.date) ? t.date : d.date;
+      const after = await tx.cashTransfer.update({ where: { id }, data: { date, fromAccountId: d.fromAccountId, toAccountId: d.toAccountId, amount, note } });
+      const legNote = [t.docNo, note].filter(Boolean).join(" · ");
+      await tx.cashTransaction.updateMany({ where: { refType: TRANSFER_REF, refId: id, type: "TRANSFER_OUT" }, data: { date, cashAccountId: d.fromAccountId, amount, counterparty: `→ ${to?.name ?? ""}`, note: legNote } });
+      await tx.cashTransaction.updateMany({ where: { refType: TRANSFER_REF, refId: id, type: "TRANSFER_IN" }, data: { date, cashAccountId: d.toAccountId, amount, counterparty: `← ${from?.name ?? ""}`, note: legNote } });
+      await tx.cashTransaction.updateMany({ where: { refType: TRANSFER_REF, refId: id, type: "EXPENSE" }, data: { date } });
+      await audit(tx, userId, "UPDATE", "CashTransfer", id, { date: t.date, fromAccountId: t.fromAccountId, toAccountId: t.toAccountId, amount: t.amount, note: t.note }, { date: after.date, fromAccountId: after.fromAccountId, toAccountId: after.toAccountId, amount: after.amount, note: after.note });
       return {};
     });
   } catch (e) {

@@ -82,6 +82,45 @@ check("C15 perekit oyog'i tahrirlanmaydi", /O'tkazma/.test(r.result?.error ?? ""
 const page = await buh.get("/payments?tab=kassa");
 check("C16 Kassa jurnalida «Yozuvni tahrirlash» tugmasi (buxgalter)", page.status === 200 && page.text.includes("Yozuvni tahrirlash"), page.status);
 
+// ───────── Har qatorni to'liq tahrirlash: kirim ⇄ chiqim, mijoz to'lovi, perekit, realizatsiya qatori ─────────
+const { paymentSig } = await import("../../src/lib/payments");
+const { transferSig } = await import("../../src/lib/cash-transfer");
+const { registerSig } = await import("../../src/lib/sales-register");
+const f = await db.cashTransaction.findFirstOrThrow({ where: { note: `QA ${T} F` } });
+r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "INCOME", date: d1, cashAccountId: K, amount: "2000", category: "Boshqa tushum", note: `QA ${T} F`, sig: cashEntrySig(f) })], "/payments");
+check("C16a chiqim kirimga aylandi (tur, manba, sub manba tozalandi)", r.result?.ok === true && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME' and category='Boshqa tushum' and "subCategory" is null`) === 1, r.result);
+const f2 = await db.cashTransaction.findUniqueOrThrow({ where: { id: f.id } });
+r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "900000000", category: "Pitaniya", note: `QA ${T} F`, sig: cashEntrySig(f2) })], "/payments");
+check("C16b kirim katta chiqimga aylansa kassa minusga tushadi — rad, yozuv o'zgarmadi", /yetarli pul yo'q/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME' and amount=2000`) === 1, r.result);
+r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "2000", category: "Boshqa tushum", sig: cashEntrySig(f2) })], "/payments");
+check("C16c chiqimga kirim manbasi — rad", /kirim kategoriyasi/.test(r.result?.error ?? ""), r.result);
+
+const doc = await db.cashTransfer.findUniqueOrThrow({ where: { id: leg.refId! } });
+const trForm = (c: typeof dir, o: Row = {}) => c.action("payments/actions#updateTransferRow", [doc.id, undefined, fd({ date: d2, fromAccountId: B, toAccountId: K, amount: "8000", note: "QA tahrir", sig: transferSig(doc), ...o })], "/payments");
+r = await trForm(kassa);
+check("C16d kassir perekitni tahrirlay olmaydi", !r.result?.ok && n(`select count(*)::int c from "CashTransfer" where id=${lit(doc.id)} and amount=7000`) === 1, r.result);
+r = await trForm(buh);
+check("C16e perekit tahrirlandi: hujjat va ikkala oyog'i 8000, sana, izoh", r.result?.ok === true
+  && n(`select count(*)::int c from "CashTransfer" where id=${lit(doc.id)} and amount=8000 and note='QA tahrir' and to_char(date,'YYYY-MM-DD')=${lit(d2)}`) === 1
+  && n(`select count(*)::int c from "CashTransaction" where "refId"=${lit(doc.id)} and type in ('TRANSFER_IN','TRANSFER_OUT') and amount=8000 and note like '%QA tahrir'`) === 2
+  && n(`select count(*)::int c from "AuditLog" where entity='CashTransfer' and "entityId"=${lit(doc.id)} and action='UPDATE'`) === 1, r.result);
+
+const cust = q1(`select id from "Customer" where "isInternal"=false and "isActive"=true order by name limit 1`).id as string;
+await buh.action("payments/actions#createPayment", [undefined, fd({ customerId: cust, cashAccountId: K, amount: "5000", date: d1, note: `QA ${T} P` })], "/payments");
+const p = await db.payment.findFirstOrThrow({ where: { note: `QA ${T} P` } });
+r = await buh.action("payments/actions#updatePaymentRow", [p.id, undefined, fd({ date: d1, cashAccountId: B, amount: "6000", customerId: cust, note: `QA ${T} P`, sig: paymentSig(p) })], "/payments");
+check("C16f mijoz to'lovi: summa va hisob tuzatildi, AuditLog'da", r.result?.ok === true
+  && n(`select count(*)::int c from "Payment" where id=${lit(p.id)} and amount=6000 and "cashAccountId"=${lit(B)}`) === 1
+  && n(`select count(*)::int c from "AuditLog" where entity='Payment' and "entityId"=${lit(p.id)} and action='UPDATE'`) === 1, r.result);
+
+const reg = await db.salesRegister.create({ data: { date: new Date(d1), customerId: cust, productName: `QA beton ${T}`, qty: 2, price: 100, sum: 200, total: 200, batch: `qa-${T}`, createdById: (await db.user.findFirstOrThrow({ where: { login: "test.buh" } })).id } });
+const regForm = { date: d1, customerId: cust, productName: `QA beton M300 ${T}`, unit: "m3", qty: "3", price: "100", sum: "300", nds: "36", total: "336", vehicleNo: "01A777AA", payType: "naqd", deliveryFee: "0", sig: registerSig(reg) };
+r = await buh.action("payments/actions#updateRegisterLine", [reg.id, undefined, fd(regForm)], "/payments");
+check("C16g realizatsiya qatori: mahsulot, miqdor, NDS, itogo, mashina tuzatildi", r.result?.ok === true
+  && n(`select count(*)::int c from "SalesRegister" where id=${lit(reg.id)} and "productName"=${lit(`QA beton M300 ${T}`)} and qty=3 and nds=36 and total=336 and "vehicleNo"='01A777AA'`) === 1, r.result);
+r = await buh.action("payments/actions#updateRegisterLine", [reg.id, undefined, fd(regForm)], "/payments");
+check("C16h realizatsiya: eski holat bilan qayta saqlash — rad", /boshqa joyda/.test(r.result?.error ?? ""), r.result);
+
 // ───────── Kirim-Chiqim: «+» ─────────
 const QA = "lib/quick-add-actions";
 const manba = `QA manba ${T}`;
