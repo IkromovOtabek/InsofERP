@@ -31,7 +31,7 @@ const WEB_PATH: Record<string, (id: string) => string> = {
   oyligim: () => "/hisobim",
   smm: (id) => `/marketing/kontent/${id}`,
   receipts: (id) => `/receipts/${id}`,
-  "prod-report": () => "/production",
+  "prod-report": (id) => (id ? `/dashboard/hisobot/${id}` : "/dashboard/hisobot"), // ochilganda «ko'rildi» belgilanadi
   payreq: () => "/pul-qabul",
   invoices: () => "/invoices",
   customers: (id) => `/customers/${id}`,
