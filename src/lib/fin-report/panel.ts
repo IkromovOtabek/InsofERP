@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { loadRevenue, finishedUnitCosts } from "@/lib/bi/core";
 import { txSign, isSalesIncome } from "@/lib/cash-tx";
@@ -34,8 +35,8 @@ export type Panel = {
   daily: { date: Date; sales: number; cashIn: number }[];
 };
 
-/** Mahsulot → yuqori guruh nomi (Plita, Stalba, Beton…); guruhsiz — «Boshqalar». */
-export async function groupsOf(): Promise<Map<string, { group: string; unit: string; price: number }>> {
+/** Mahsulot → yuqori guruh nomi (Plita, Stalba, Beton…); guruhsiz — «Boshqalar». Sahifa chizilishida bir marta (`cache`). */
+export const groupsOf = cache(async (): Promise<Map<string, { group: string; unit: string; price: number }>> => {
   const [products, groups] = await Promise.all([
     db.product.findMany({ select: { id: true, groupId: true, unit: true, price: true } }),
     db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
@@ -43,7 +44,7 @@ export async function groupsOf(): Promise<Map<string, { group: string; unit: str
   const byId = new Map(groups.map((g) => [g.id, g]));
   const top = (id: string | null) => { let g = id ? byId.get(id) : undefined; for (let i = 0; g?.parentId && i < 10; i++) g = byId.get(g.parentId) ?? g; return g?.name ?? "Boshqalar"; };
   return new Map(products.map((p) => [p.id, { group: top(p.groupId), unit: p.unit, price: Number(p.price) }]));
-}
+});
 
 export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
   const nowDay = new Date(); nowDay.setHours(0, 0, 0, 0);

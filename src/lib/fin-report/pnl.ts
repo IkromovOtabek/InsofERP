@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { loadRevenue } from "@/lib/bi/core";
 import { avgUnitCosts } from "@/lib/stock";
@@ -105,6 +106,12 @@ async function productGroupNames(): Promise<Map<string, string>> {
 }
 
 export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): Promise<PnlReport> {
+  return pnlOnce(months.join(","), mode);
+}
+/** Bosh sahifada «Bugun» va boshqaruv paneli joriy oy PNL'ini ikkalasi so'raydi — bir marta (`cache`). Natija o'zgartirilmaydi. */
+const pnlOnce = cache((months: string, mode: PnlMode) => buildPnl(months.split(",") as MonthKey[], mode));
+
+async function buildPnl(months: MonthKey[], mode: PnlMode): Promise<PnlReport> {
   const n = months.length;
   const from = monthStart(months[0]!), to = monthEnd(months[n - 1]!);
   const idx = new Map(months.map((m, i) => [m, i]));

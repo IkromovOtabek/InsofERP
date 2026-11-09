@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "./db";
 import type { Prisma } from "@/generated/prisma";
 import { NDS_RATE } from "./nds";
@@ -78,11 +79,12 @@ export function receiptAmounts(items: VatLine[]): { base: number; vat: number; t
 /** Kirim hujjatining to'lanadigan summasi (QQS bilan) — qarz, to'lov qoldig'i, hisobotlar. */
 export const receiptTotal = (items: VatLine[]) => receiptAmounts(items).total;
 
-/** Korxona QQS to'lovchisimi (Sozlamalar; yozuv bo'lmasa — standart true). */
+/** Korxona QQS to'lovchisimi (Sozlamalar; yozuv bo'lmasa — standart true). Tranzaksiyasiz chaqiruv — sahifa chizilishida bir marta. */
 export async function companyVatPayer(client: Client = db): Promise<boolean> {
-  const c = await client.companySettings.findUnique({ where: { id: "main" }, select: { vatPayer: true } });
-  return c?.vatPayer ?? true;
+  return client === db ? vatPayerOnce() : readVatPayer(client);
 }
+const readVatPayer = async (client: Client) => (await client.companySettings.findUnique({ where: { id: "main" }, select: { vatPayer: true } }))?.vatPayer ?? true;
+const vatPayerOnce = cache(() => readVatPayer(db));
 
 /**
  * Sklad tannarxi (StockMove.unitCost) — kirim qatoridan: QQS to'lovchisi korxonada QQS'siz,

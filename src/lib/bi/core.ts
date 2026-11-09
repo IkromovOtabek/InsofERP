@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { isoDate } from "@/lib/format";
 import { avgUnitCosts } from "@/lib/stock";
@@ -135,8 +136,9 @@ export async function materialCosts() {
  * Har mahsulot uchun 1 birlik tannarx (faol retsept × xomashyo o'rtacha narxi). Retsept yo'q → null.
  * Retsept qatorida boshqa mahsulot bo'lsa (masalan FBS blok) — ko'p bosqichli (rekursiv) tannarx
  * hisoblanmaydi, o'sha mahsulotning o'z sotuv narxi taxminiy tannarx sifatida olinadi.
+ * Bitta sahifa chizilishi ichida bir marta (`cache`): har `loadRevenue`/`loadOrders` uni qayta so'rardi. Natija o'zgartirilmaydi.
  */
-export async function productCosts() {
+export const productCosts = cache(async () => {
   const [products, costs] = await Promise.all([
     db.product.findMany({ include: { recipes: { where: { isActive: true }, orderBy: { version: "desc" }, take: 1, include: { items: true } } } }),
     materialCosts(),
@@ -153,14 +155,14 @@ export async function productCosts() {
     out.set(p.id, { cost, price: Number(p.price), name: p.name, code: p.code, unit: p.unit, isActive: p.isActive });
   }
   return out;
-}
+});
 
 /**
  * Tayyor (dona) mahsulotning 1 birlik tannarxi — ombordagi qiymati uchun (Ombor va Mahsulotlar tablari bir xil).
  * Avval narx bilan kiritilgan kirim/boshlang'ich qoldiq (musbat ADJUSTMENT / PRODUCTION_OUTPUT, miqdorga tortilgan),
  * bo'lmasa retsept tannarxi (> 0). Sotuv narxi tannarx o'rniga olinmaydi — topilmasa `null`.
  */
-export async function finishedUnitCosts(): Promise<Map<string, number | null>> {
+export const finishedUnitCosts = cache(async (): Promise<Map<string, number | null>> => {
   const [rows, recipe] = await Promise.all([
     db.$queryRaw<{ productId: string; cost: unknown }[]>`
       SELECT "productId", SUM("qty" * "unitCost") / NULLIF(SUM("qty"), 0) AS "cost"
@@ -173,7 +175,7 @@ export async function finishedUnitCosts(): Promise<Map<string, number | null>> {
   for (const [id, c] of recipe) out.set(id, c.cost !== null && c.cost > 0 ? c.cost : null);
   for (const r of rows) if (r.cost != null && Number(r.cost) > 0) out.set(r.productId, Number(r.cost));
   return out;
-}
+});
 
 /**
  * Sotuvchi (reyting, reja, "mening sotuvim"): mijozga biriktirilgan agent; agent yo'q bo'lsa — zayavkani kiritgan xodim.
@@ -229,6 +231,13 @@ export async function loadOrders(from: Date, to: Date, statuses: string[] = ACTI
  * Qaytadigan qator `SaleRow` bilan bir xil — marja, mahsulot kesimi va trend shu funksiyadan.
  */
 export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
+  // Nusxa: chaqiruvchi massivni joyida saralasa, keshdagi boshqa chaqiruvchiga ta'sir qilmasin (qatorlar o'zgartirilmaydi)
+  return [...(await revenueOnce(from.getTime(), to.getTime()))];
+}
+/** Bir xil davr bitta sahifada bir necha marta so'raladi (direktor bosh sahifasi: «Bugun», panel) — bir marta (`cache`). */
+const revenueOnce = cache((from: number, to: number) => queryRevenue(new Date(from), new Date(to)));
+
+async function queryRevenue(from: Date, to: Date): Promise<SaleRow[]> {
   const orderSelect = {
     id: true, orderNo: true, date: true, deliveryDate: true, status: true, customerId: true, ...SELLER_SELECT,
     items: { select: { productId: true, qtyM3: true, price: true, nds: true, product: { select: { name: true, code: true, unit: true, price: true } } } },

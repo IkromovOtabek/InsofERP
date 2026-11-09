@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { ostatkaSummary } from "./ostatka";
@@ -12,10 +13,23 @@ import { productionCapacity } from "./production-capacity";
  * Sklad, brigada qoldig'i qiymati, kirim/qo'lda kiritish formalari — hammasi shu bitta funksiyadan oladi.
  *
  * `client` — tranzaksiya ichida chaqirilsa `tx` beriladi.
+ *
+ * Hamma xomashyo bo'yicha (argumentsiz) chaqiruv bitta sahifa chizilishi ichida bir marta bajariladi (`cache`):
+ * direktor bosh sahifasida tannarx, PNL, aylanma va panel uni 13 marta so'rardi. Natija (Map) umumiy — o'zgartirilmaydi.
  */
 export async function avgUnitCosts(
   materialIds?: string[],
   client: Pick<Prisma.TransactionClient, "$queryRaw"> = db,
+): Promise<Map<string, number>> {
+  if (!materialIds && client === db) return allAvgUnitCosts();
+  return queryAvgUnitCosts(materialIds, client);
+}
+
+const allAvgUnitCosts = cache(() => queryAvgUnitCosts(undefined, db));
+
+async function queryAvgUnitCosts(
+  materialIds: string[] | undefined,
+  client: Pick<Prisma.TransactionClient, "$queryRaw">,
 ): Promise<Map<string, number>> {
   if (materialIds && !materialIds.length) return new Map();
   // Filtr oddiy parametr (`Prisma.sql` bo'lagi emas): dev'da HMR dan keyin globalThis'dagi eski client
