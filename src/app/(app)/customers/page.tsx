@@ -7,9 +7,12 @@ import { money } from "@/lib/format";
 import { Badge, Callout, Empty, Input, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; tab?: string }> }) {
+/** Ro'yxat sukut bo'yicha shuncha qator: 700+ mijozning hammasi sahifani 2–3 MB qilardi. Qidiruv natijasi — to'liq. */
+const LIMIT = 200;
+
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; tab?: string; hammasi?: string }> }) {
   await requirePage("/customers");
-  const { q, tab = "all" } = await searchParams;
+  const { q, tab = "all", hammasi } = await searchParams;
   // Boshqa nomlari bo'yicha ham (kassada «Dumbirabod 998865055» deb yozilgan mijoz) — massiv ichida qisman moslik
   const aliasIds = q
     ? (await db.$queryRaw<{ id: string }[]>`SELECT id FROM "Customer" WHERE EXISTS (SELECT 1 FROM unnest(aliases) a WHERE a ILIKE ${`%${q}%`})`).map((r) => r.id)
@@ -28,6 +31,8 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const black = rows.filter((r) => r.c.isActive && r.cr.blacklisted);
   const withContract = rows.filter((r) => r.contract);
   const shown = tab === "black" ? black : tab === "contract" ? withContract : tab === "inactive" ? rows.filter((r) => !r.c.isActive) : rows;
+  const visible = hammasi === "1" || q ? shown : shown.slice(0, LIMIT);
+  const allHref = `/customers?${new URLSearchParams({ ...(tab !== "all" ? { tab } : {}), hammasi: "1" }).toString()}`;
 
   return (
     <div>
@@ -46,7 +51,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         <thead><tr><Th>Nomi</Th><Th>INN</Th><Th>Telefon</Th><Th right>Qarz / avans</Th><Th right>Limit</Th><Th right>Ishlatilgan</Th><Th right>Bo'sh limit</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {shown.length === 0 && <Empty text={tab === "black" ? "Qora ro'yxat bo'sh" : tab === "contract" ? "Shartnomali mijoz yo'q" : "Mijozlar yo'q"} />}
-          {shown.map(({ c, cr, contract }) => (
+          {visible.map(({ c, cr, contract }) => (
             <Tr key={c.id}>
               <Td><span className="inline-flex items-center gap-1.5"><Link href={`/customers/${c.id}`} data-no-translit className="font-medium hover:underline">{c.name}</Link>{contract && <ContractMark />}</span></Td>
               <Td>{c.inn ?? "—"}</Td>
@@ -60,6 +65,13 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           ))}
         </tbody>
       </Table>
+      {visible.length < shown.length && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 px-1 text-sm text-slate-500">
+          <span className="tabular">{visible.length} / {shown.length}</span>
+          <span>· kerakli mijozni qidiruvdan toping yoki</span>
+          <Link href={allHref} className="font-medium text-slate-700 hover:underline">hammasini ko&apos;rsating</Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -39,11 +39,25 @@ import { parseRange } from "@/lib/bi/core";
 import { BI_ROLES } from "../bi-tahlil/shell";
 import { OverviewTab } from "../bi-tahlil/tabs/overview";
 
+/** Operatsion ko'rinishdagi xomashyo va qarzdorlar ro'yxati — sukut bo'yicha shuncha qator. */
+const SHORT_LIST = 15;
+
+/** Qisqartirilgan ro'yxat ostida: «15 / 510 — hammasini ko'rsatish». `href` null — hammasi ko'rinib turibdi. */
+function MoreLink({ shown, total, href, hint, className }: { shown: number; total: number; href: string | null; hint: string; className?: string }) {
+  if (total <= SHORT_LIST) return null;
+  return (
+    <div className={`flex flex-wrap items-center gap-x-2 text-sm text-slate-500 ${className ?? ""}`}>
+      <span className="tabular">{shown} / {total}</span>
+      {href ? <><span>· {hint}</span><Link href={href} scroll={false} className="font-medium text-slate-700 hover:underline">Hammasini ko&apos;rsatish <ArrowRight size={13} className="inline" /></Link></> : <span>· hammasi ko&apos;rsatilgan</span>}
+    </div>
+  );
+}
+
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); d.setDate(d.getDate() + 1); return d; }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Xayrli tong" : h < 18 ? "Xayrli kun" : "Xayrli kech"; };
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string; view?: string; date?: string; birlik?: string } & ProcFilters> }) {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string; view?: string; date?: string; birlik?: string; hammasi?: string } & ProcFilters> }) {
   const sp = await searchParams;
   const { denied, view, date: dayParam } = sp;
   const s = await getSession();
@@ -136,6 +150,15 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const todayPlan = fmtUnitTotals(ordersToday.flatMap((o) => o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))));
   const deliveredToday = trips.filter((t) => t.status === "DELIVERED" && t.deliveredAt && t.deliveredAt >= today).reduce((x, t) => x + Number(t.qtyM3), 0);
   const busyMixers = mixers.filter((m) => m.active).length;
+  // Bosh sahifa — xulosa: 500 xomashyo va barcha qarzdorlarning hammasi emas (sahifa 2.5 MB bo'lardi), avval e'tibor
+  // kerak bo'lganlari — tugayotgan xomashyo (kam kun qolgani yuqorida), eng katta qarzlar. To'liq ro'yxat — `?hammasi=`
+  const levelOf = (m: (typeof materials)[number]) => m.short || (m.days !== null && m.days < company.stockCritDays) || m.balance < m.minStock ? "danger" as const : m.days !== null && m.days < company.stockWarnDays ? "warning" as const : "success" as const;
+  const RANK = { danger: 0, warning: 1, success: 2 };
+  const rated = materials.map((m) => ({ m, level: levelOf(m) })).sort((a, b) => RANK[a.level] - RANK[b.level] || (a.m.days ?? Infinity) - (b.m.days ?? Infinity));
+  const allMaterials = sp.hammasi === "xomashyo", allDebts = sp.hammasi === "qarzdor";
+  const shownMaterials = allMaterials ? rated : rated.slice(0, SHORT_LIST);
+  const shownDebts = allDebts ? debts : debts.slice(0, SHORT_LIST);
+  const fullHref = (what: string) => `/dashboard?${new URLSearchParams({ ...(view ? { view } : {}), hammasi: what }).toString()}`;
   // Buxgalteriya kabinetida Logistika yo'q: jonli xarita, mikserlar va bugungi reyslar bloklari chiqmaydi
   const showLogistics = s?.role !== "ACCOUNTING";
   // Kassir va buxgalter — tepada «Pul qabul qilish» (zayavka bosh to'lovi so'rovlari): kassir naqdni, buxgalter perechisleniyeni
@@ -246,8 +269,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <table className="w-full text-sm">
               <thead><tr><Th>Xomashyo</Th><Th right>Qoldiq</Th><Th right>Kunlik sarf</Th><Th className="w-48">Yetadi</Th><Th right>Rejadagi ehtiyoj</Th><Th>Holat</Th></tr></thead>
               <tbody>
-                {materials.map((m) => {
-                  const level = m.short || (m.days !== null && m.days < company.stockCritDays) || m.balance < m.minStock ? "danger" : m.days !== null && m.days < company.stockWarnDays ? "warning" : "success";
+                {shownMaterials.map(({ m, level }) => {
                   const badge = { danger: "red", warning: "amber", success: "green" } as const;
                   const label = m.short ? "Zayavkalarga yetmaydi" : m.balance < m.minStock ? "Minimaldan kam" : level === "warning" ? "Buyurtma bering" : "Yetarli";
                   return (
@@ -271,6 +293,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               </tbody>
             </table>
           </div>
+          <MoreLink shown={shownMaterials.length} total={rated.length} href={allMaterials ? null : fullHref("xomashyo")} hint="e'tibor kerak bo'lganlari yuqorida" className="border-t border-slate-100 px-5 py-2.5" />
         </Card>
       </Section>
 
@@ -278,8 +301,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <Section title="Qarzdor mijozlar">
           <Table>
             <thead><tr><Th>Mijoz</Th><Th right>Qarz</Th></tr></thead>
-            <tbody>{debts.map((c) => <Tr key={c.id}><Td><CustomerName name={c.name} blacklisted={marks.black.has(c.id)} contracted={marks.contract.has(c.id)} href={`/customers/${c.id}`} /></Td><Td right className="font-semibold text-red-600">{money(c.debt)}</Td></Tr>)}</tbody>
+            <tbody>{shownDebts.map((c) => <Tr key={c.id}><Td><CustomerName name={c.name} blacklisted={marks.black.has(c.id)} contracted={marks.contract.has(c.id)} href={`/customers/${c.id}`} /></Td><Td right className="font-semibold text-red-600">{money(c.debt)}</Td></Tr>)}</tbody>
           </Table>
+          <MoreLink shown={shownDebts.length} total={debts.length} href={allDebts ? null : fullHref("qarzdor")} hint="eng katta qarzlar" className="mt-2 px-1" />
         </Section>
       )}
     </div>

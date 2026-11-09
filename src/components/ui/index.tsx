@@ -275,10 +275,12 @@ export function Th({ children, right, className }: { children?: React.ReactNode;
   return <th scope="col" className={cn("sticky top-0 z-[1] whitespace-nowrap border-b-2 border-brand-300 bg-brand-100 px-4 py-3 text-left text-[12.5px] font-bold uppercase tracking-wide text-slate-900", right && "text-right", className)}>{children}</th>;
 }
 export function Td({ children, right, className, colSpan }: { children?: React.ReactNode; right?: boolean; className?: string; colSpan?: number }) {
-  return <td colSpan={colSpan} className={cn("border-t border-slate-100 px-4 py-3 text-slate-700 first:font-medium first:text-slate-900", right && "whitespace-nowrap text-right tabular", className)}>{children}</td>;
+  // Asosiy uslub — `ui-td` (globals.css): har katakda uzun sinflar qatori takrorlanmasin.
+  // `colSpan` faqat berilganda — aks holda RSC har katakka `"colSpan":"$undefined"` yozadi
+  return <td {...(colSpan ? { colSpan } : null)} className={cn("ui-td", right && "whitespace-nowrap text-right tabular", className)}>{children}</td>;
 }
 export function Tr({ children, className, ...p }: React.HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn("transition-colors hover:bg-slate-50/70", className)} {...p}>{children}</tr>;
+  return <tr className={cn("ui-tr", className)} {...p}>{children}</tr>;
 }
 /**
  * Bo'sh holat. Jadval ichida (`<tbody>`) — `<tr><td colSpan>` qatori, oddiy blok ichida

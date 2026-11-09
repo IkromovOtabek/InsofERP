@@ -8,7 +8,6 @@ import { describeModuleValue } from "@/lib/perm-buttons";
 import { describeWriteScripts, SCRIPT_PERM } from "@/lib/permissions";
 import { BULK_FORM_ID, permModules } from "@/lib/perm-modules";
 import { describePerms, positionTemplates, templateRoleLabel } from "@/lib/perm-template";
-import type { Role } from "@/generated/prisma";
 import { parsePerms } from "@/lib/auth";
 import { dateTime, isoDate, money } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
@@ -23,7 +22,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, PayablesSinceForm, VatPayerForm, ProductionChannelForm, UserPermsForm, CopyPermsForm, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, PayablesSinceForm, VatPayerForm, ProductionChannelForm, UserPermsPanel, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
 import { AttendanceRadiusForm, CustomerLimitsTable, DailyLimitsForm, DefaultCreditLimitForm, type CustomerLimitRow } from "./limits-forms";
 import { ThresholdForm } from "../dashboard/byudjet/budget-form";
 import { SettingsForm as LogisticsSettingsForm } from "../logistika/sozlamalar/settings-form";
@@ -287,7 +286,6 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
     (!q || u.fullName.toLowerCase().includes(q) || u.login.toLowerCase().includes(q)) &&
     (!f.rol || u.role === f.rol) &&
     (f.faqat !== "1" || !!parsePerms(u.perms)));
-  const modulesFor = (role: Role) => permModules(role);
   const templates: PermTemplateOpt[] = (await positionTemplates()).map((t) => ({
     id: t.id, name: t.name, roleLabel: t.loginRole ? templateRoleLabel(t.loginRole) : null,
     summary: [t.loginRole ? `Asosiy bo'lim: ${templateRoleLabel(t.loginRole)}` : "", ...(Object.keys(t.perms).length ? describePerms(t.perms) : ["Ruxsatlar: rol bo'yicha"])].filter(Boolean).join(" · "),
@@ -352,20 +350,14 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
           <Card key={u.id}>
             <div className="flex items-start gap-3">
             <input type="checkbox" form={BULK_FORM_ID} name="ids" value={u.id} aria-label={`${u.fullName} — belgilash`} className="mt-1 h-4 w-4 shrink-0 accent-slate-900" />
-            <details open={f.u === u.id || users.length === 1} className="min-w-0 flex-1">
-              <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
+            <UserPermsPanel userId={u.id} role={u.role} current={perms} others={others.filter((o) => o.id !== u.id)} open={f.u === u.id || users.length === 1} summary={<>
                 <ShieldCheck size={16} className={chips.length ? "text-amber-500" : "text-slate-300"} />
                 <span className="font-medium">{u.fullName}</span>
                 <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{u.login}</code>
                 <Badge color="slate">{ROLE_LABELS[u.role]}</Badge>
                 {chips.length === 0 ? <span className="text-xs text-slate-400">rol bo&apos;yicha</span> : chips.map((c) => <Badge key={c.key} color={c.color}>{c.text}</Badge>)}
                 <span className="ml-auto text-xs text-slate-400">ochish / yopish</span>
-              </summary>
-              <div className="mt-4 space-y-3">
-                <CopyPermsForm userId={u.id} others={others.filter((o) => o.id !== u.id)} />
-                <UserPermsForm userId={u.id} modules={modulesFor(u.role)} current={perms} />
-              </div>
-            </details>
+              </>} />
             </div>
           </Card>
         );

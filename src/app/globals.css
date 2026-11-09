@@ -555,6 +555,38 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   :root:has(.app-main) :is(input[type="date"], input[type="month"], input[type="datetime-local"]):not(.paper *) { min-width: max-content; }
 }
 
+/* Jadval kataklari (components/ui: Td, Tr, SheetTd, SheetTr). Ilgari har katakda 80–106 belgilik bir xil Tailwind
+   sinflari takrorlanardi: 700 qatorli jadvalda bu sahifa hajmining 40–60% i edi (HTML va RSC'da ikki marta).
+   Asosi `components` qatlamida — sahifa bergan utility (`px-2`, `text-red-600`) baribir ustun (avval tailwind-merge
+   shuni qilardi). `:first-child`/`:last-child`/`:hover` qismlari `utilities` da: oldingi `first:`/`hover:`
+   utility'lari kabi oddiy utility'dan ustun turadi — ko'rinish o'zgarmaydi. */
+@layer components {
+  .ui-td { @apply border-t border-slate-100 px-4 py-3 text-slate-700; }
+  .ui-tr { @apply transition-colors; }
+  .ui-std {
+    @apply border-r border-b border-slate-200 px-2.5 py-1.5 align-middle;
+    /* SheetTd `tone` foni: katakning o'zida hisoblanadi (tungi rejim va palitra shu yerdagi --color-white bilan) */
+    --st-green: color-mix(in srgb, #16a34a 7%, var(--color-white));
+    --st-red: color-mix(in srgb, #dc2626 6%, var(--color-white));
+    --st-gray: color-mix(in srgb, #64748b 6%, var(--color-white));
+    --st-yellow: color-mix(in srgb, #eab308 9%, var(--color-white));
+    --st-blue: color-mix(in srgb, #3b82f6 7%, var(--color-white));
+  }
+  .ui-str { @apply transition-colors; }
+}
+/* SheetTd `tone` foni. Qatlamsiz: avvalgi inline `style` kabi har qanday utility (`[&_td]:bg-slate-50` …) dan ustun */
+.ui-std[data-t="green"] { background: var(--st-green); }
+.ui-std[data-t="red"] { background: var(--st-red); }
+.ui-std[data-t="gray"] { background: var(--st-gray); }
+.ui-std[data-t="yellow"] { background: var(--st-yellow); }
+.ui-std[data-t="blue"] { background: var(--st-blue); }
+@layer utilities {
+  .ui-td:first-child { @apply font-medium text-slate-900; }
+  .ui-tr { @apply hover:bg-slate-50/70; }
+  .ui-std:last-child { @apply border-r-0; }
+  .ui-str { @apply hover:bg-slate-50; }
+}
+
 .tabular { font-variant-numeric: tabular-nums; }
 /* Jadval va raqam maydonlarida raqamlar ustun bo'yicha tekis turadi (1 111 va 8 888 bir xil en) */
 table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="number"] { font-variant-numeric: tabular-nums; }

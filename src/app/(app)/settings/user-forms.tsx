@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, Copy, KeyRound, RotateCcw, Save, ShieldCheck, UserPlus } from "lucide-react";
 import { createUser, resetPassword, saveSupplyDirectorLimit, savePayablesSince, saveVatPayer, saveProductionChannel, saveUserPerms, copyUserPerms, toggleUser, updateUser, applyPermTemplate, bulkSaveUserPerms } from "./actions";
 import { MoneyInput } from "@/components/money-input";
 import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select } from "@/components/ui";
-import { BULK_FORM_ID, type PermModule } from "@/lib/perm-modules";
+import { BULK_FORM_ID, permModules, type PermModule } from "@/lib/perm-modules";
+import type { Role } from "@/generated/prisma";
 import { PermsTree } from "./perms-tree";
 
 export function UserForm({ roles }: { roles: [string, string][] }) {
@@ -134,12 +135,36 @@ export function ProductionChannelForm({ value }: { value: string | null }) {
 export type { PermModule };
 
 /**
+ * Ruxsatlar ro'yxatidagi bitta xodim: sarlavha (`summary`) doim ko'rinadi, nusxalash va daraxt esa faqat ochilganda
+ * chiziladi. Daraxt ma'lumoti (`permModules`, ~30 KB) brauzerda roldan quriladi — ilgari har xodimga serverdan alohida
+ * yuborilardi: 35 xodimda sahifa 2.7 MB bo'lib, 1 MB i yopiq turgan daraxtlar edi. Bir marta ochilgani yopilganda
+ * ham saqlanadi (saqlanmagan belgilar yo'qolmasin).
+ */
+export function UserPermsPanel({ userId, role, current, others, open, summary }: {
+  userId: string; role: Role; current: Record<string, string | string[]>; others: { id: string; label: string }[]; open: boolean; summary: React.ReactNode;
+}) {
+  const [shown, setShown] = useState(open);
+  return (
+    <details open={open} onToggle={(e) => { if (e.currentTarget.open) setShown(true); }} className="min-w-0 flex-1">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">{summary}</summary>
+      {shown && (
+        <div className="mt-4 space-y-3">
+          <CopyPermsForm userId={userId} others={others} />
+          <UserPermsForm userId={userId} role={role} current={current} />
+        </div>
+      )}
+    </details>
+  );
+}
+
+/**
  * Bo'lim → tugma → amal bo'yicha ruxsat — faqat direktor (`PermsTree`): masalan Ishlab chiqarish xodimiga
  * Sklad → «Kirim» oynasini va undagi «Kirim qabul qilish»ni berish, «Chiqim» oynasini esa yopiq qoldirish.
  */
 export function UserPermsForm({
-  userId, modules, current,
-}: { userId: string; modules: PermModule[]; current: Record<string, string | string[]> }) {
+  userId, role, current,
+}: { userId: string; role: Role; current: Record<string, string | string[]> }) {
+  const modules = useMemo(() => permModules(role), [role]);
   const [state, action, pending] = useActionState(saveUserPerms.bind(null, userId), undefined);
   const [dirty, setDirty] = useState(false);
   useEffect(() => { if (state?.ok) setDirty(false); }, [state]);

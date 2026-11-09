@@ -11,6 +11,11 @@ import { num, str, codeFromName } from "@/lib/excel";
 import { normalizeUnit, UNIT_FALLBACK, toMaterialUnit } from "@/lib/unit";
 import { ensureMaterialGroup } from "@/lib/material-groups";
 import { cashOutflowError } from "@/lib/payments";
+import { requirePage } from "@/lib/page-guard";
+import { stockPeriod } from "@/components/stock-period";
+import { categoriesFor, categoryFromSlug } from "@/lib/material-category";
+import { materialTurnover } from "@/lib/stock-turnover";
+import { balanceExcelRows, filterTurnover } from "./balance-excel";
 
 
 const schema = z.object({
@@ -129,4 +134,20 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
   if ("error" in out) return { error: out.error };
   revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/receipts/new"); revalidatePath("/recipes"); revalidatePath("/cashflow"); revalidatePath("/dashboard");
   redirect(`/stock?tab=balance&added=${out.created}&updated=${out.updated}&moved=${out.moved}&guessed=${out.guessed}`);
+}
+
+/**
+ * Sklad → «Qoldiqlar» Excel'i — tugma bosilganda tayyorlanadi. Ilgari 500 qatorlik varaq sahifa bilan birga
+ * yuborilardi (~0.2 MB, har avtomatik yangilanishda ham). Qatorlar, filtr va ruxsat sahifadagi bilan bir xil.
+ */
+export async function stockBalanceExcel(input: { from?: string; to?: string; wh?: string; kat?: string; q?: string }) {
+  const s = await requirePage("/stock");
+  const period = stockPeriod({ from: input.from, to: input.to });
+  const cats = categoriesFor(s.role);
+  const katWant = categoryFromSlug(input.kat);
+  const kat = katWant && cats.includes(katWant) ? katWant : null;
+  const wh = input.wh ? await db.warehouse.findUnique({ where: { id: input.wh }, select: { id: true } }) : null;
+  const all = await materialTurnover({ from: period.from, to: period.to, warehouseId: wh?.id });
+  const { rows } = filterTurnover(all, { cats, kat, q: (input.q ?? "").trim().slice(0, 100) });
+  return [{ name: "Qoldiqlar", rows: balanceExcelRows(rows, period) }];
 }

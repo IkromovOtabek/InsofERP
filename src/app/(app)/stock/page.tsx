@@ -19,6 +19,8 @@ import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
 import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
 import { MaterialBulkBar } from "./material-bulk";
 import { FillPricesButton, PriceCell } from "./price-cell";
+import { filterTurnover, turnoverTotals } from "./balance-excel";
+import { stockBalanceExcel } from "./actions";
 import { ExcelButton } from "../logistika/excel-button";
 import { moduleWriteAllowed } from "@/lib/auth";
 import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
@@ -40,7 +42,6 @@ const EPS = 0.0005;
 /** «Qoldiqlar» kataklari: miqdor — 3 kasrgacha, summa — butun so'm («so'm» qo'shilmaydi). Nol — bo'sh (Excel'dagidek). */
 const cellQ = (v: number) => (Math.abs(v) < EPS ? "" : fmtNum(v, 3));
 const cellS = (v: number) => (Math.abs(v) < 0.5 ? "" : fmtNum(v, 0));
-const r2 = (v: number) => Math.round(v * 100) / 100;
 /** Xomashyo qoldig'i jadvalidagi belgilar shu formaga tegishli (`MaterialBulkBar`). */
 const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
@@ -93,32 +94,14 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const [turnoverAll, last] = tab === "balance" && (!bolim || bolim === "xomashyo")
     ? await Promise.all([materialTurnover({ from: period.from, to: period.to, warehouseId: wh?.id }), lastInboundMoves()])
     : [[], null] as [Awaited<ReturnType<typeof materialTurnover>>, null];
-  const qLow = q.toLowerCase();
-  const turnoverSeen = turnoverAll.filter((r) => cats.includes(r.category) && (!qLow || r.name.toLowerCase().includes(qLow) || r.code.toLowerCase().includes(qLow)));
-  const turnover = kat ? turnoverSeen.filter((r) => r.category === kat) : turnoverSeen;
+  const { seen: turnoverSeen, rows: turnover } = filterTurnover(turnoverAll, { cats, kat, q });
   // Mexanik «Siz uchun» — faqat Avto zapchastlar: joriy qoldiq va oxirgi kelganlari
   const forYou = tab === "balance" && s?.role === "MECHANIC" ? await avtoPartsFeed(30) : null;
   const activeRows = turnover.filter((r) => r.isActive).length;
   const noPrice = turnover.filter((r) => r.isActive && r.unitPrice == null && (r.avgCost ?? 0) > 0).length;
-  const tot = turnover.reduce((a, r) => ({ open: a.open + r.open.s, in: a.in + r.in.s, out: a.out + r.out.s, close: a.close + r.close.s, approx: a.approx || r.approx }), { open: 0, in: 0, out: 0, close: 0, approx: false });
-  // Excel — barcha ustunlar (ekrandagi kabi) + «Jami» qatori; raqamlar raqam bo'lib (Excel'da qo'shib bo'lsin).
-  // Sarlavha va matnlar o'zbekcha — ExcelButton ularni ekrandagi tilga o'giradi
-  const openH = period.all ? "Boshlang'ich qoldiq" : `${dateRu(period.from)} holatiga qoldiq`, closeH = `${dateRu(toIncl)} oxiridagi qoldiq`;
-  const excelRows: Record<string, string | number | null>[] = turnover.map((r, i) => ({
-    "№": i + 1, "Nomi": r.name, "Kod": r.code, "Kategoriya": MATERIAL_CATEGORY_LABEL[r.category], "Birlik": unitShort(r.unit),
-    "Dona narxi": r.unitPrice, "O'rtacha tannarx": r.avgCost == null ? null : r2(r.avgCost),
-    [`${openH}, miqdor`]: r.open.q, [`${openH}, summa`]: r.open.s,
-    "Kirim, miqdor": r.in.q, "Kirim, summa": r.in.s,
-    "Chiqim, miqdor": r.out.q, "Chiqim, summa": r.out.s,
-    [`${closeH}, miqdor`]: r.close.q, [`${closeH}, jami summa`]: r.close.s,
-    "Minimal qoldiq": r.minStock, "Baholash": r.approx ? "≈ narxsiz qismi bor" : "", "Holat": r.isActive ? "" : "arxiv",
-  }));
-  if (turnover.length) excelRows.push({
-    "№": null, "Nomi": "Jami", "Kod": "", "Kategoriya": "", "Birlik": "", "Dona narxi": null, "O'rtacha tannarx": null,
-    [`${openH}, miqdor`]: null, [`${openH}, summa`]: r2(tot.open), "Kirim, miqdor": null, "Kirim, summa": r2(tot.in),
-    "Chiqim, miqdor": null, "Chiqim, summa": r2(tot.out), [`${closeH}, miqdor`]: null, [`${closeH}, jami summa`]: r2(tot.close),
-    "Minimal qoldiq": null, "Baholash": tot.approx ? "≈" : "", "Holat": "",
-  });
+  const tot = turnoverTotals(turnover);
+  // Excel varag'i bosilganda serverda tayyorlanadi (`stockBalanceExcel`): 500 qatorlik ma'lumot sahifa bilan yuborilmaydi
+  const excelInput = { from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...(q ? { q } : {}) };
   const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ, ...extra }).toString();
 
   // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi);
@@ -442,7 +425,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {canPrice && <FillPricesButton count={noPrice} />}
-              <ExcelButton file={`Qoldiqlar ${period.fromStr} — ${period.toStr}${kat ? ` ${MATERIAL_CATEGORY_LABEL[kat]}` : ""}${wh ? ` (${wh.name.replace(/[\\/:*?"<>|]/g, " ")})` : ""}`} sheets={[{ name: "Qoldiqlar", rows: excelRows }]} />
+              <ExcelButton file={`Qoldiqlar ${period.fromStr} — ${period.toStr}${kat ? ` ${MATERIAL_CATEGORY_LABEL[kat]}` : ""}${wh ? ` (${wh.name.replace(/[\\/:*?"<>|]/g, " ")})` : ""}`} load={stockBalanceExcel.bind(null, excelInput)} />
             </div>
           </div>
           <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...bolimQ, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ }} />

@@ -27,14 +27,11 @@ const HEAD_BG: Record<SheetTone, string> = {
   blue: mix("#3b82f6", 24),
 };
 
-/** Tana kataklari uchun yengil ustun tusi (guruh ustunlari ko'zda ajralib tursin). */
-const CELL_BG: Partial<Record<SheetTone, string>> = {
-  green: mix("#16a34a", 7),
-  red: mix("#dc2626", 6),
-  gray: mix("#64748b", 6),
-  yellow: mix("#eab308", 9),
-  blue: mix("#3b82f6", 7),
-};
+/**
+ * Tana kataklari uchun yengil ustun tusi (guruh ustunlari ko'zda ajralib tursin). Rangning o'zi globals.css da
+ * (`.ui-std[data-t=…]`): har katakka uzun `style="background: color-mix(...)"` yozilmasin — 500 qatorli jadvalda bu ~0.4 MB edi.
+ */
+const TONED = new Set<SheetTone>(["green", "red", "gray", "yellow", "blue"]);
 
 export function Sheet({ children, className, maxHeight = "72vh", lang = "ru" }: { children: React.ReactNode; className?: string; maxHeight?: string | number; lang?: string }) {
   return (
@@ -63,17 +60,17 @@ export function SheetTh({ children, tone = "head", colSpan, rowSpan, right, clas
 export function SheetTd({ children, right, center, tone, strong, muted, className, colSpan }: {
   children?: React.ReactNode; right?: boolean; center?: boolean; tone?: SheetTone; strong?: boolean; muted?: boolean; className?: string; colSpan?: number;
 }) {
-  const bg = tone ? CELL_BG[tone] : undefined;
+  // Fon — `data-t` (globals.css), `colSpan` — faqat berilganda: har katakka `style`/`$undefined` yozilmasin
   return (
-    <td colSpan={colSpan} style={bg ? { background: bg } : undefined}
-      className={cn("border-r border-b border-slate-200 px-2.5 py-1.5 align-middle last:border-r-0", right && "text-right whitespace-nowrap", center && "text-center", strong && "font-semibold text-slate-900", muted && "text-slate-400", className)}>
+    <td {...(colSpan ? { colSpan } : null)} {...(tone && TONED.has(tone) ? { "data-t": tone } : null)}
+      className={cn("ui-std", right && "text-right whitespace-nowrap", center && "text-center", strong && "font-semibold text-slate-900", muted && "text-slate-400", className)}>
       {children}
     </td>
   );
 }
 
 export function SheetTr({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <tr className={cn("transition-colors hover:bg-slate-50", className)}>{children}</tr>;
+  return <tr className={cn("ui-str", className)}>{children}</tr>;
 }
 
 /** Pastki «Итого» qatori — yopishqoq emas, qalin, kulrang fon. */
