@@ -103,7 +103,7 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
 
       <h2 id="qatorlar" className="mb-3 scroll-mt-20 font-semibold">Qatorlar <span className="text-sm font-normal text-slate-500">· {count} ta</span></h2>
       <CashEditProvider options={{ accounts, income: [], expense: [], customers }}>
-        <RegisterTable rows={rows.map(toView)} showCustomer={false} canEdit={canEdit} />
+        <RegisterTable rows={rows.map(toView)} showCustomer={false} />
       </CashEditProvider>
     </div>
   );

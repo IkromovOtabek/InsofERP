@@ -1,8 +1,9 @@
 import { CustomerName } from "@/components/customer-name";
-import { Empty, Table, Td, Th, Tr } from "@/components/ui";
+import { Empty, Table, Td, Th } from "@/components/ui";
 import { fmtNum, isoDate, money, opAt } from "@/lib/format";
 import { payKindLabel, registerSig } from "@/lib/sales-register";
-import { RegisterEditButton, type RegisterEditRow } from "./register-edit";
+import { CashRow } from "./cash-detail";
+import type { RegisterEditRow } from "./register-edit";
 import type { CustomerMarks } from "@/lib/finance";
 
 /**
@@ -32,8 +33,6 @@ export type RegisterView = {
   invoiceNo: string | null;
   monthNo: string | null;
   note: string | null;
-  /** Qalam (tahrir oynasi) qiymatlari */
-  edit: RegisterEditRow;
 };
 
 type Dec = { toString(): string };
@@ -53,20 +52,27 @@ export function toView(r: DbRow): RegisterView {
     fromWho: r.fromWho, payType: r.payType, deliveryFee: Number(r.deliveryFee), price: Number(r.price),
     sum: Number(r.sum), nds: Number(r.nds), total: Number(r.total), address: r.address,
     contractNo: r.contractNo, invoiceNo: r.invoiceNo, monthNo: r.monthNo, note: r.note,
-    edit: {
-      id: r.id, date: isoDate(r.date), customerId: r.customerId, customerName: r.customer.name, vehicleNo: r.vehicleNo ?? "", ttn: r.ttn ?? "",
-      productName: r.productName, unit: r.unit, qty: Number(r.qty), fromWho: r.fromWho ?? "", payType: r.payType ?? "",
-      deliveryFee: Number(r.deliveryFee), price: Number(r.price), sum: Number(r.sum), nds: Number(r.nds), total: Number(r.total),
-      address: r.address ?? "", contractNo: r.contractNo ?? "", invoiceNo: r.invoiceNo ?? "", monthNo: r.monthNo ?? "", note: r.note ?? "",
-      cashAccountId: r.cashAccountId ?? "", hasPayment: !!r.paymentId, sig: registerSig(r),
-    },
+  };
+}
+
+/** Tahrir oynasi qiymatlari — qator bosilganda tafsilot bilan birga keladi (`row-detail.ts`). */
+export function registerEditRow(r: DbRow): RegisterEditRow {
+  return {
+    id: r.id, date: isoDate(r.date), customerId: r.customerId, customerName: r.customer.name, vehicleNo: r.vehicleNo ?? "", ttn: r.ttn ?? "",
+    productName: r.productName, unit: r.unit, qty: Number(r.qty), fromWho: r.fromWho ?? "", payType: r.payType ?? "",
+    deliveryFee: Number(r.deliveryFee), price: Number(r.price), sum: Number(r.sum), nds: Number(r.nds), total: Number(r.total),
+    address: r.address ?? "", contractNo: r.contractNo ?? "", invoiceNo: r.invoiceNo ?? "", monthNo: r.monthNo ?? "", note: r.note ?? "",
+    cashAccountId: r.cashAccountId ?? "", hasPayment: !!r.paymentId, sig: registerSig(r),
   };
 }
 
 const dash = <span className="text-slate-300">—</span>;
 
-/** `canEdit` — har qator oxirida qalam (`RegisterEditButton`); jadval `CashEditProvider` (hisoblar, mijozlar) ichida bo'lsin. */
-export function RegisterTable({ rows, marks, showCustomer = true, canEdit = false }: { rows: RegisterView[]; marks?: CustomerMarks; showCustomer?: boolean; canEdit?: boolean }) {
+/**
+ * Qator bosilsa — tafsilot oynasi (`CashRow`): kim/qachon kiritgan, amallar tarixi, Tahrirlash va O'chirish (ruxsatga qarab).
+ * Tahrir oynasi hisoblar va mijozlar ro'yxatini `CashEditProvider` dan oladi — jadval uning ichida bo'lsin.
+ */
+export function RegisterTable({ rows, marks, showCustomer = true }: { rows: RegisterView[]; marks?: CustomerMarks; showCustomer?: boolean }) {
   const t = rows.reduce((a, r) => ({ qty: a.qty + r.qty, delivery: a.delivery + r.deliveryFee, sum: a.sum + r.sum, nds: a.nds + r.nds, total: a.total + r.total }),
     { qty: 0, delivery: 0, sum: 0, nds: 0, total: 0 });
 
@@ -94,13 +100,12 @@ export function RegisterTable({ rows, marks, showCustomer = true, canEdit = fals
           <Th>Schyot</Th>
           <Th>Oy</Th>
           <Th>Izoh</Th>
-          {canEdit && <Th><span className="sr-only">Tahrirlash</span></Th>}
         </tr>
       </thead>
       <tbody>
         {rows.length === 0 && <Empty text="Jurnalda qator yo'q" />}
         {rows.map((r) => (
-          <Tr key={r.id}>
+          <CashRow key={r.id} kind="reg" id={r.id}>
             <Td>{opAt(r.date, r.createdAt)}</Td>
             <Td>{r.vehicleNo || dash}</Td>
             <Td>{r.productName}</Td>
@@ -125,8 +130,7 @@ export function RegisterTable({ rows, marks, showCustomer = true, canEdit = fals
             <Td className="text-slate-500">{r.invoiceNo || dash}</Td>
             <Td className="text-slate-500">{r.monthNo || dash}</Td>
             <Td className="max-w-56 truncate text-slate-500"><span title={r.note ?? undefined}>{r.note || dash}</span></Td>
-            {canEdit && <Td className="w-10"><RegisterEditButton row={r.edit} /></Td>}
-          </Tr>
+          </CashRow>
         ))}
       </tbody>
       {rows.length > 0 && (
@@ -140,7 +144,7 @@ export function RegisterTable({ rows, marks, showCustomer = true, canEdit = fals
             <Td right className="font-semibold">{fmtNum(t.sum)}</Td>
             <Td right className="font-semibold">{fmtNum(t.nds)}</Td>
             <Td right className="bg-emerald-50 font-semibold text-emerald-800">{money(t.total)}</Td>
-            <Td colSpan={canEdit ? 6 : 5} />
+            <Td colSpan={5} />
           </tr>
         </tfoot>
       )}

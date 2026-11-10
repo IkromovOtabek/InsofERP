@@ -6,15 +6,16 @@ import { customerMarks, markedName } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
 import { money, date, dateTime, fmtNum, isoDate, opAt } from "@/lib/format";
-import { Badge, Button, Callout, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
+import { Badge, Button, Callout, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Input } from "@/components/ui";
 import { LinkPaymentForm, PaymentForm, type InvOpt, type OrderOpt } from "./payment-form";
 import { RegisterTable, toView } from "./register-table";
-import { deleteImportBatch, stornoPayment } from "./actions";
+import { deleteImportBatch } from "./actions";
 import { ConfirmButton } from "./confirm-button";
-import { CashEditButton, CashEditProvider } from "./cash-edit";
+import { CashEditProvider } from "./cash-edit";
+import { CashRow } from "./cash-detail";
 import { AccountMatrix, KassaJurnalTab } from "./kassa-jurnal";
 import { canDo } from "@/lib/permissions";
-import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance, paymentLocks, paymentSig } from "@/lib/payments";
+import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance } from "@/lib/payments";
 import { orderTotal } from "@/lib/order-total";
 
 /**
@@ -32,7 +33,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
   const canImport = ["CASHIER", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
   const canBalance = !!s && canDo(s, "payments", "balance");
-  // Qatorlardagi qalam (Kassa jurnali, To'lovlar, Realizatsiya jurnali) — bitta amal
+  // Qator tafsilotidagi «Tahrirlash» (Kassa jurnali, To'lovlar, Realizatsiya jurnali) — bitta amal; tugmalarni server
+  // har qator uchun alohida hal qiladi (`row-detail.ts`), bu yerda faqat tahrir oynasi ro'yxatlari yuklanadimi
   const canEdit = !!s && canDo(s, "cashflow", "edit");
   // Excel importidan qaytganda (batch) — realizatsiya jurnali; aks holda sukut bo'yicha kassa jurnali
   const tab = sp.tab === "jurnal" || (!sp.tab && sp.batch) ? "jurnal" : sp.tab === "tolovlar" ? "tolovlar" : "kassa";
@@ -75,7 +77,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         { key: "jurnal", label: "Realizatsiya jurnali", href: qs("jurnal"), icon: Receipt, count: regCount },
       ]} />
 
-      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} /> : tab === "tolovlar" ? <PaymentsTab role={role} canEdit={canEdit} /> : (
+      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
         <JurnalTab where={regWhere} canEdit={canEdit} accounts={accounts} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={role === "CASHIER"} from={from} to={to}
           totals={{ rows: regTotals._count._all, qty: Number(regTotals._sum.qty ?? 0), sum: Number(regTotals._sum.sum ?? 0), nds: Number(regTotals._sum.nds ?? 0), total: Number(regTotals._sum.total ?? 0) }} />
       )}
@@ -85,10 +87,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
 /* ───────── To'lovlar ───────── */
 
-async function PaymentsTab({ role, canEdit }: { role: string; canEdit: boolean }) {
-  // Server ruxsatiga mos: to'lov — kassir/buxgalter; bog'lash — kassir/buxgalter; storno — buxgalter (va direktor)
+async function PaymentsTab({ role }: { role: string }) {
+  // Server ruxsatiga mos: to'lov — kassir/buxgalter; bog'lash — kassir/buxgalter. Tahrir va storno — qator tafsilotida
   const canPay = ["CASHIER", "ACCOUNTING", "DIRECTOR"].includes(role);
-  const canStorno = ["ACCOUNTING", "DIRECTOR"].includes(role);
   const [payments, accounts, customers, openInvoices, advOrders] = await Promise.all([
     db.payment.findMany({
       orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 200,
@@ -136,16 +137,19 @@ async function PaymentsTab({ role, canEdit }: { role: string; canEdit: boolean }
       {canPay && (
         <Card className="mb-6"><h2 className="mb-3 font-semibold">Yangi to&apos;lov (kirim)</h2><PaymentForm customers={custOpts} invoices={invOpts} orders={orderOpts} accounts={accounts} /></Card>
       )}
-      <h2 className="mb-3 font-semibold">So&apos;nggi to&apos;lovlar</h2>
+      <h2 className="mb-3 font-semibold">
+        So&apos;nggi to&apos;lovlar
+        <span className="block text-xs font-normal text-slate-500">Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash va o&apos;chirish (ruxsatga qarab)</span>
+      </h2>
       <CashEditProvider options={{ accounts, income: [], expense: [], customers }}>
       <Table>
-        <thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Schyot / zayavka</Th><Th>Kassa/hisob</Th><Th right>Summa</Th><Th>Kim kiritdi</Th><Th>Izoh</Th><Th></Th></tr></thead>
+        <thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Schyot / zayavka</Th><Th>Kassa/hisob</Th><Th right>Summa</Th><Th>Kim kiritdi</Th><Th>Izoh</Th></tr></thead>
         <tbody>
           {payments.length === 0 && <Empty text="To'lovlar yo'q" />}
           {payments.map((p) => {
             const unallocated = !p.invoiceId && !p.register;
             return (
-              <Tr key={p.id}>
+              <CashRow key={p.id} kind="pay" id={p.id}>
                 <Td className="whitespace-nowrap">{opAt(p.date, p.createdAt)}</Td>
                 <Td><CustomerName name={p.customer.name} blacklisted={marks.black.has(p.customerId)} contracted={marks.contract.has(p.customerId)} href={`/customers/${p.customerId}`} /></Td>
                 <Td>
@@ -156,16 +160,7 @@ async function PaymentsTab({ role, canEdit }: { role: string; canEdit: boolean }
                 <Td right className="font-medium whitespace-nowrap text-emerald-700">+{money(p.amount)}</Td>
                 <Td className="text-slate-500">{p.createdBy?.fullName ?? <span className="text-slate-300">—</span>}</Td>
                 <Td className="text-slate-500">{p.note ?? ""}</Td>
-                <Td>
-                  <div className="flex items-center justify-end gap-1">
-                    {canEdit && <CashEditButton entry={{
-                      kind: "pay", id: p.id, date: isoDate(p.date), cashAccountId: p.cashAccountId, amount: Number(p.amount), customerId: p.customerId,
-                      customerName: p.customer.name, note: p.note ?? "", sig: paymentSig(p), lock: paymentLocks(p),
-                    }} />}
-                    {canStorno && !p.register && <ConfirmButton action={stornoPayment.bind(null, p.id)} label="Bekor qilish" question={`${money(p.amount)} to'lov bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}
-                  </div>
-                </Td>
-              </Tr>
+              </CashRow>
             );
           })}
         </tbody>
@@ -281,9 +276,12 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
         </Card>
       </div>
 
-      <h2 id="jurnal-qatorlar" className="mb-3 scroll-mt-20 font-semibold">Jurnal {rows.length < totals.rows && <span className="text-sm font-normal text-slate-500">· oxirgi {rows.length} ta qator ({totals.rows} tadan)</span>}</h2>
+      <h2 id="jurnal-qatorlar" className="mb-3 scroll-mt-20 font-semibold">
+        Jurnal {rows.length < totals.rows && <span className="text-sm font-normal text-slate-500">· oxirgi {rows.length} ta qator ({totals.rows} tadan)</span>}
+        <span className="block text-xs font-normal text-slate-500">Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash va o&apos;chirish (ruxsatga qarab)</span>
+      </h2>
       <CashEditProvider options={{ accounts, income: [], expense: [], customers }}>
-        <RegisterTable rows={rows.map(toView)} marks={marks} canEdit={canEdit} />
+        <RegisterTable rows={rows.map(toView)} marks={marks} />
       </CashEditProvider>
     </>
   );

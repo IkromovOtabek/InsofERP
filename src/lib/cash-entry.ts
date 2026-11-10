@@ -154,6 +154,47 @@ export async function cancelCashEntry(id: string, reason: string, userId: string
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
 }
 
+/**
+ * Yozuvni butunlay o'chirib bo'lmasa — sababi (Kassa / bank qator tafsilotidagi «O'chirish» tugmasi shu bilan o'chadi).
+ * Bekor qilishdagi qoida (hujjatga bog'langan yozuv — hujjat orqali) + yozuvga bog'langan kartochka (asosiy vosita).
+ * Bekor qilingan yozuv ham o'chiriladi.
+ */
+export async function cashEntryDeleteBlock(t: { id: string; type: string; refType: string | null }): Promise<string | null> {
+  if (t.type === "OPENING") return "Boshlang'ich qoldiq — Oy oxiri qoldiqlari / Boshlang'ich qoldiq sahifasida o'zgaradi";
+  if (t.type !== "INCOME" && t.type !== "EXPENSE") return "O'tkazma (perekit) — o'tkazma hujjati bo'yicha o'chiriladi";
+  const locked = await cashEntryLocked({ id: t.id, refType: t.refType });
+  if (locked) return locked;
+  if (await db.fixedAsset.count({ where: { cashTxId: t.id } })) return "Bu chiqimga asosiy vosita kartochkasi bog'langan — avval Moliya → Asosiy vositalarda kartochkani o'chiring";
+  return null;
+}
+
+/**
+ * Kirim/chiqimni butunlay o'chirish (Kassa / bank → qator tafsiloti → «O'chirish»): yozuv jurnaldan olinadi, to'liq
+ * holati va sabab AuditLog'ga DELETE bo'lib yoziladi. Bekor qilishdan farqi — jurnalda kulrang qator ham qolmaydi.
+ * Bekor qilinmagan kirim o'chsa hisobdan pul chiqqandek bo'ladi — naqd kassa minusga tushmasin (`cashOutflowError`).
+ */
+export async function deleteCashEntry(id: string, reason: string, userId: string): Promise<{ error?: string }> {
+  const why = String(reason ?? "").trim();
+  if (why.length < 3) return { error: "O'chirish sababini yozing (kamida 3 belgi)" };
+  const t = await db.cashTransaction.findUnique({ where: { id } });
+  if (!t) return { error: "Yozuv topilmadi — allaqachon o'chirilgan bo'lishi mumkin" };
+  const block = await cashEntryDeleteBlock(t);
+  if (block) return { error: block };
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + t.cashAccountId}))`;
+    if (t.refType === "GoodsReceipt" && t.refId) await lockReceipt(tx, t.refId);
+    const cur = await tx.cashTransaction.findUnique({ where: { id } });
+    if (!cur) throw new CashError("Yozuv allaqachon o'chirilgan");
+    if (!cur.cancelledAt && cur.type === "INCOME") {
+      const err = await cashOutflowError(tx, cur.cashAccountId, Number(cur.amount));
+      if (err) throw new CashError(`Bu kirim o'chirilsa kassa minusga tushadi. ${err}`);
+    }
+    await tx.cashTransaction.delete({ where: { id } });
+    await audit(tx, userId, "DELETE", "CashTransaction", id, cur, { deleted: true, reason: why.slice(0, 300) });
+    return {};
+  }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
+}
+
 // ───────────────────────── Tahrirlash (Kassa / bank → Kassa jurnali) ─────────────────────────
 
 /**

@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { audit } from "./audit";
-import { balanceDropError, cashOutflowError } from "./payments";
+import { balanceDropError, cashOutflowError, recalcInvoice } from "./payments";
 import { isoDate } from "./format";
 
 /**
@@ -100,6 +100,36 @@ export async function updateRegisterRow(id: string, d: RegisterEdit, userId: str
         await tx.payment.update({ where: { id: p.id }, data: pay });
         await audit(tx, userId, "UPDATE", "Payment", p.id, { amount: p.amount, customerId: p.customerId, cashAccountId: p.cashAccountId, date: p.date }, { ...pay, by: "register-edit" });
       }
+    }
+    return {};
+  }).catch((e: Error) => { if (e instanceof RegisterError) return { error: e.message }; throw e; });
+}
+
+/**
+ * Realizatsiya jurnalining bitta qatorini o'chirish (Kassa / bank → qator tafsiloti → «O'chirish»): qatordan kassaga
+ * yozilgan kirim ham birga o'chadi — naqd kassa minusga tushmasin. Qator va kirimning to'liq holati AuditLog'da (DELETE).
+ */
+export async function deleteRegisterRow(id: string, reason: string, userId: string): Promise<{ error?: string }> {
+  const why = String(reason ?? "").trim();
+  if (why.length < 3) return { error: "O'chirish sababini yozing (kamida 3 belgi)" };
+  const r0 = await db.salesRegister.findUnique({ where: { id }, select: { customerId: true } });
+  if (!r0) return { error: "Qator topilmadi — allaqachon o'chirilgan bo'lishi mumkin" };
+  return db.$transaction(async (tx) => {
+    // To'lov yozish/storno/tahrir bilan bir navbat — mijoz bo'yicha
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${r0.customerId}))`;
+    const cur = await tx.salesRegister.findUnique({ where: { id }, include: { payment: true } });
+    if (!cur) throw new RegisterError("Qator allaqachon o'chirilgan");
+    const p = cur.payment;
+    if (p) {
+      const err = await cashOutflowError(tx, p.cashAccountId, Number(p.amount));
+      if (err) throw new RegisterError(`Qator o'chirilsa uning kassadagi kirimi ham o'chadi va kassa minusga tushadi. ${err}`);
+    }
+    await tx.salesRegister.delete({ where: { id } });
+    await audit(tx, userId, "DELETE", "SalesRegister", id, { ...cur, payment: undefined }, { deleted: true, reason: why.slice(0, 300) });
+    if (p) {
+      await tx.payment.delete({ where: { id: p.id } });
+      await audit(tx, userId, "DELETE", "Payment", p.id, p, { deleted: true, by: "register-row-delete", reason: why.slice(0, 300) });
+      if (p.invoiceId) await recalcInvoice(tx, p.invoiceId, userId);
     }
     return {};
   }).catch((e: Error) => { if (e instanceof RegisterError) return { error: e.message }; throw e; });

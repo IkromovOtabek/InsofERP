@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Pencil, X } from "lucide-react";
 import { updateCashTx } from "../cashflow/actions";
 import { updatePaymentRow, updateTransferRow } from "./actions";
-import { Button, Field, FormError, IconButton, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import type { ActionState } from "@/lib/action";
@@ -41,22 +41,14 @@ export type CashEditEntry =
     };
 
 /**
- * Kassa / bank ro'yxatlaridagi qalam: qatorning hamma ustunini tuzatish (kirim ⇄ chiqim ham). Qoidalar serverda —
- * `lib/cash-entry.ts`, `lib/payments.ts`, `lib/cash-transfer.ts` (qoldiq, kategoriya, boshqa joyda o'zgargan bo'lsa rad).
- * `blocked` — nega tahrirlanmasligi (masalan bekor qilingan yozuv; tooltip).
+ * Kassa / bank qatorining tahrir oynasi — qator tafsilotidagi «Tahrirlash» tugmasidan (`cash-detail.tsx`): hamma ustunni
+ * tuzatish (kirim ⇄ chiqim ham). Qoidalar serverda — `lib/cash-entry.ts`, `lib/payments.ts`, `lib/cash-transfer.ts`
+ * (qoldiq, kategoriya, boshqa joyda o'zgargan bo'lsa rad).
  */
-export function CashEditButton({ entry, blocked }: { entry?: CashEditEntry; blocked?: string | null }) {
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  if (!entry || blocked) return blocked ? <span title={blocked} className="inline-flex h-7 w-7 items-center justify-center text-slate-300"><Pencil size={14} /></span> : null;
-  return (
-    <>
-      <IconButton icon={Pencil} label="Yozuvni tahrirlash" onClick={() => setOpen(true)} className="h-7 w-7" />
-      {open && (entry.kind === "tx" ? <TxDialog entry={entry} onClose={close} />
-        : entry.kind === "pay" ? <PayDialog entry={entry} onClose={close} />
-        : <TransferDialog entry={entry} onClose={close} />)}
-    </>
-  );
+export function CashEditDialog({ entry, onClose }: { entry: CashEditEntry; onClose: () => void }) {
+  return entry.kind === "tx" ? <TxDialog entry={entry} onClose={onClose} />
+    : entry.kind === "pay" ? <PayDialog entry={entry} onClose={onClose} />
+    : <TransferDialog entry={entry} onClose={onClose} />;
 }
 
 type Act = (prev: ActionState, fd: FormData) => Promise<ActionState>;

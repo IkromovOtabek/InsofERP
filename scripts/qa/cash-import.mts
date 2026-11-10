@@ -80,7 +80,7 @@ const leg = await db.cashTransaction.findFirstOrThrow({ where: { type: "TRANSFER
 r = await buh.action("cashflow/actions#updateCashTx", [leg.id, undefined, fd({ date: d1, cashAccountId: K, amount: "1", category: "Pitaniya", sig: cashEntrySig(leg) })], "/payments");
 check("C15 perekit oyog'i tahrirlanmaydi", /O'tkazma/.test(r.result?.error ?? ""), r.result);
 const page = await buh.get("/payments?tab=kassa");
-check("C16 Kassa jurnalida «Yozuvni tahrirlash» tugmasi (buxgalter)", page.status === 200 && page.text.includes("Yozuvni tahrirlash"), page.status);
+check("C16 Kassa jurnali: qator bosiladi (tafsilot oynasi)", page.status === 200 && page.text.includes("Qatorni bosing") && page.text.includes("aria-haspopup"), page.status);
 
 // ───────── Har qatorni to'liq tahrirlash: kirim ⇄ chiqim, mijoz to'lovi, perekit, realizatsiya qatori ─────────
 const { paymentSig } = await import("../../src/lib/payments");
@@ -120,6 +120,40 @@ check("C16g realizatsiya qatori: mahsulot, miqdor, NDS, itogo, mashina tuzatildi
   && n(`select count(*)::int c from "SalesRegister" where id=${lit(reg.id)} and "productName"=${lit(`QA beton M300 ${T}`)} and qty=3 and nds=36 and total=336 and "vehicleNo"='01A777AA'`) === 1, r.result);
 r = await buh.action("payments/actions#updateRegisterLine", [reg.id, undefined, fd(regForm)], "/payments");
 check("C16h realizatsiya: eski holat bilan qayta saqlash — rad", /boshqa joyda/.test(r.result?.error ?? ""), r.result);
+
+// ───────── Qator tafsiloti (bosilganda): kim/qachon, tarix, Tahrirlash / Bekor qilish / O'chirish ─────────
+const info = (c: typeof dir, kind: string, id: string) => c.action("payments/actions#cashRowInfo", [kind, id], "/payments");
+const del = (c: typeof dir, kind: string, id: string, why = "QA o'chirish") => c.action("payments/actions#deleteCashRow", [kind, id, why], "/payments");
+r = await info(buh, "tx", a.id);
+let dt = r.result?.data;
+check("C16i tafsilot: kiritgan xodim, vaqt, tarixda summa tahriri, uchala tugma ochiq (buxgalter)", !!dt?.createdBy && !!dt?.createdAt
+  && dt.history?.some((h: { text: string; details: string[] }) => h.text === "Yozuv tahrirlandi" && h.details.some((x) => x.startsWith("Summa:")))
+  && dt.buttons?.edit === null && dt.buttons?.cancel === null && dt.buttons?.remove === null && dt.edit?.kind === "tx", dt ?? r.result);
+r = await info(kassa, "tx", a.id);
+// RSC javobida `undefined` — "$undefined" matni
+const none = (v: unknown) => v == null || v === "$undefined";
+check("C16j kassir tafsilotni ko'radi, lekin tahrir/o'chirish tugmasi yo'q", r.result?.data?.buttons?.edit === false && r.result?.data?.buttons?.remove === false && none(r.result?.data?.edit), r.result?.data?.buttons ?? r.result);
+r = await info(buh, "tx", leg.id);
+check("C16k perekit oyog'i bosilsa — o'tkazma hujjati ochiladi", r.result?.data?.kind === "transfer" && r.result?.data?.id === leg.refId, r.result);
+r = await buh.action("payments/actions#cancelCashRow", ["tx", a.id, "QA bekor"], "/payments");
+dt = (await info(buh, "tx", a.id)).result?.data;
+check("C16l bekor qilindi: yozuv qoldi, tahrir/bekor yopiq, o'chirish ochiq", r.result?.ok === true && !!dt?.cancelled && typeof dt?.buttons?.edit === "string" && typeof dt?.buttons?.cancel === "string" && dt?.buttons?.remove === null, dt ?? r.result);
+r = await del(kassa, "tx", a.id);
+check("C16m kassir o'chira olmaydi", !r.result?.ok && n(`select count(*)::int c from "CashTransaction" where id=${lit(a.id)}`) === 1, r.result);
+r = await del(buh, "tx", f.id, "ab");
+check("C16n sababsiz o'chirilmaydi", /sababini/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)}`) === 1, r.result);
+r = await del(buh, "tx", a.id);
+check("C16o buxgalter bekor qilingan yozuvni o'chirdi — jurnalda yo'q, AuditLog'da DELETE", r.result?.ok === true && n(`select count(*)::int c from "CashTransaction" where id=${lit(a.id)}`) === 0
+  && n(`select count(*)::int c from "AuditLog" where entity='CashTransaction' and "entityId"=${lit(a.id)} and action='DELETE' and after->>'reason'='QA o''chirish'`) === 1, r.result);
+r = await del(buh, "reg", reg.id);
+check("C16p realizatsiya qatori o'chirildi", r.result?.ok === true && n(`select count(*)::int c from "SalesRegister" where id=${lit(reg.id)}`) === 0, r.result);
+r = await del(buh, "pay", p.id);
+check("C16q mijoz to'lovi o'chirildi (storno)", r.result?.ok === true && n(`select count(*)::int c from "Payment" where id=${lit(p.id)}`) === 0, r.result);
+r = await del(buh, "transfer", doc.id);
+check("C16r perekitni buxgalter o'chira olmaydi (faqat direktor)", !r.result?.ok && n(`select count(*)::int c from "CashTransfer" where id=${lit(doc.id)}`) === 1, r.result);
+r = await del(dir, "transfer", doc.id);
+check("C16s direktor perekitni o'chirdi: hujjat va ikkala oyog'i yo'q", r.result?.ok === true && n(`select count(*)::int c from "CashTransfer" where id=${lit(doc.id)}`) === 0
+  && n(`select count(*)::int c from "CashTransaction" where "refId"=${lit(doc.id)}`) === 0, r.result);
 
 // ───────── Kirim-Chiqim: «+» ─────────
 const QA = "lib/quick-add-actions";

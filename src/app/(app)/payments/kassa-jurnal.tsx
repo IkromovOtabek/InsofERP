@@ -8,11 +8,10 @@ import { Badge, Button, Callout, Empty, Input, Select, StatCard, Table, Td, Th, 
 import { JOURNAL_ONLY, TRANSFER_REF, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { SALES_MANBA } from "@/lib/cash-import";
-import { cashEntryEditBlock, cashEntryLocks, cashEntrySig } from "@/lib/cash-entry";
-import { paymentLocks, paymentSig } from "@/lib/payments";
-import { transferSig } from "@/lib/cash-transfer";
 import { categoryOptions } from "@/lib/fin-report/categories";
-import { CashEditButton, CashEditProvider, type CashEditEntry } from "./cash-edit";
+import { CashEditProvider } from "./cash-edit";
+import { CashRow } from "./cash-detail";
+import type { CashRowKind } from "./row-detail";
 import { ExcelButton } from "../logistika/excel-button";
 
 type Account = { id: string; name: string; type: "CASH" | "BANK" };
@@ -104,8 +103,8 @@ type JRow = {
   inc: number; exp: number; transfer: boolean;
   manba: string; sub: string; who: string; whoHref?: string; blacklisted?: boolean; contracted?: boolean;
   note: string | null; by: string | null; href?: string; cancelled: string | null;
-  /** Qalam: tahrir qiymatlari (kirim/chiqim, mijoz to'lovi, perekit) yoki nega tahrirlanmasligi (bekor qilingan) */
-  edit?: CashEditEntry; editBlock?: string | null;
+  /** Qator bosilganda ochiladigan tafsilot: perekit oyog'i — o'tkazma hujjati, qolganlari — yozuvning o'zi */
+  kind: CashRowKind; rowId: string;
 };
 
 const KINDS = [
@@ -143,14 +142,12 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
       include: { cashAccount: true, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } },
     }),
   ]);
-  const transferIds = [...new Set(txs.filter((t) => isTransfer(t.type) && t.refType === TRANSFER_REF && t.refId).map((t) => t.refId!))];
-  const [marks, cNames, editCats, transferDocs] = await Promise.all([
+  // Tahrir oynasining ro'yxatlari (qator tafsilotidagi «Tahrirlash») — jadvalga bir marta
+  const [marks, cNames, editCats] = await Promise.all([
     customerMarks(payments.map((p) => p.customerId)), cancellerNames(txs),
     canEdit ? Promise.all([categoryOptions("INCOME"), categoryOptions("EXPENSE"), db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } })]) : null,
-    canEdit && transferIds.length ? db.cashTransfer.findMany({ where: { id: { in: transferIds }, cancelledAt: null } }) : [],
   ]);
   const editOptions = editCats ? { accounts, income: editCats[0], expense: editCats[1], customers: editCats[2] } : null;
-  const transferOf = new Map(transferDocs.map((t) => [t.id, t]));
 
   const all: JRow[] = [
     ...payments.map((p): JRow => ({
@@ -160,16 +157,13 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
       sub: p.invoice ? `Schyot ${p.invoice.invoiceNo}` : p.register ? "Realizatsiya" : p.orderId ? "Zayavka avansi" : "Mijoz avansi",
       who: p.customer.name, whoHref: `/customers/${p.customerId}`, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId),
       note: p.note, by: p.createdBy?.fullName ?? null, href: p.orderId && !p.invoice ? `/orders/${p.orderId}` : undefined, cancelled: null,
-      edit: canEdit ? {
-        kind: "pay", id: p.id, date: isoDate(p.date), cashAccountId: p.cashAccountId, amount: Number(p.amount), customerId: p.customerId,
-        customerName: p.customer.name, note: p.note ?? "", sig: paymentSig(p), lock: paymentLocks(p),
-      } : undefined,
+      kind: "pay", rowId: p.id,
     })),
     ...txs.map((t): JRow => {
       const transfer = isTransfer(t.type);
       const amount = Number(t.amount);
       const sign = txSign(t.type);
-      const doc = transfer && t.refId ? transferOf.get(t.refId) : undefined;
+      const doc = transfer && t.refType === TRANSFER_REF && t.refId ? t.refId : null;
       return {
         id: t.id, date: t.date, createdAt: t.createdAt, accountId: t.cashAccountId, account: t.cashAccount.name, method: t.cashAccount.type,
         inc: sign > 0 ? amount : 0, exp: sign < 0 ? amount : 0, transfer,
@@ -178,16 +172,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
         // Kontragent — yozilgan nom (tahrirda shu o'zgaradi), bo'lmasa yetkazuvchi
         who: transfer ? "" : (t.counterparty ?? t.supplier?.name ?? ""),
         note: t.note, by: t.createdBy.fullName, cancelled: cancelNote(t, cNames),
-        editBlock: !canEdit ? null : transfer ? (doc ? null : "O'tkazma hujjati topilmadi yoki bekor qilingan") : cashEntryEditBlock(t),
-        edit: !canEdit ? undefined
-          : doc ? {
-            kind: "transfer", id: doc.id, docNo: doc.docNo, date: isoDate(doc.date), fromAccountId: doc.fromAccountId, toAccountId: doc.toAccountId,
-            amount: Number(doc.amount), note: doc.note ?? "", sig: transferSig(doc), feeLock: Number(doc.fee ?? 0) > 0,
-          }
-          : t.type === "INCOME" || t.type === "EXPENSE" ? {
-            kind: "tx", id: t.id, type: t.type, date: isoDate(t.date), cashAccountId: t.cashAccountId, amount: amount, category: t.category,
-            subCategory: t.subCategory ?? "", counterparty: t.counterparty ?? t.supplier?.name ?? "", note: t.note ?? "", sig: cashEntrySig(t), lock: cashEntryLocks(t),
-          } : undefined,
+        kind: doc ? "transfer" : "tx", rowId: doc ?? t.id,
         href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
           : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
           : t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}`
@@ -224,14 +209,14 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
   const table = (
     <Table maxHeight="75vh">
       <thead>
-        <tr><Th>Sana</Th><Th>Hisob</Th><Th right>Kirim</Th><Th right>Chiqim</Th><Th>Manba</Th><Th>Sub manba</Th><Th>Kontragent</Th><Th className="min-w-80">Izoh</Th>{canEdit && <Th><span className="sr-only">Tahrirlash</span></Th>}</tr>
+        <tr><Th>Sana</Th><Th>Hisob</Th><Th right>Kirim</Th><Th right>Chiqim</Th><Th>Manba</Th><Th>Sub manba</Th><Th>Kontragent</Th><Th className="min-w-80">Izoh</Th></tr>
       </thead>
       <tbody>
         {shown.length === 0 && <Empty text="Davrda kirim-chiqim yo'q" />}
         {shown.map((r) => {
           const amtCls = r.cancelled ? "text-slate-400 line-through" : r.transfer ? "text-sky-700" : "";
           return (
-            <Tr key={r.id} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
+            <CashRow key={r.id} kind={r.kind} id={r.rowId} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
               <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
               <Td className="whitespace-nowrap">
                 {r.account}
@@ -250,8 +235,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
                 {r.by && <span className="block text-xs text-slate-400">kiritdi: {r.by}</span>}
                 {r.cancelled && <span className="block text-xs text-red-600">Bekor qilindi: {r.cancelled}</span>}
               </Td>
-              {canEdit && <Td className="w-10">{(r.edit || r.editBlock) && <CashEditButton entry={r.edit} blocked={r.editBlock} />}</Td>}
-            </Tr>
+            </CashRow>
           );
         })}
       </tbody>
@@ -295,6 +279,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false }: { accoun
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-semibold">
           Kassa jurnali <span className="text-sm font-normal text-slate-500">· {rows.length} ta yozuv{rows.length > shown.length ? ` (oxirgi ${shown.length} tasi ko'rsatilgan — Excel'da hammasi)` : ""}</span>
+          <span className="block text-xs font-normal text-slate-500">Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash, bekor qilish va o&apos;chirish (ruxsatga qarab)</span>
         </h2>
         <ExcelButton file={`Kassa jurnali ${isoDate(from)} — ${isoDate(to)}`} sheets={[{ name: "Kassa jurnali", rows: sheet }]} />
       </div>

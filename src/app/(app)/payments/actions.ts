@@ -5,13 +5,16 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAction } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { requirePage } from "@/lib/page-guard";
 import { addPayment, linkPaymentToInvoice, reversePayment, updatePaymentEntry } from "@/lib/payments";
-import { updateTransfer } from "@/lib/cash-transfer";
+import { cancelTransfer, deleteTransfer, updateTransfer } from "@/lib/cash-transfer";
+import { cancelCashEntry, deleteCashEntry } from "@/lib/cash-entry";
 import type { ValueMaps } from "@/lib/excel";
 import { isoDate } from "@/lib/format";
 import { importCashEntries, type CashImportRow } from "@/lib/cash-import";
 import { monthEndDate, setCashBalanceAt } from "@/lib/opening-balances";
-import { deleteRegisterBatch, updateRegisterRow } from "@/lib/sales-register";
+import { deleteRegisterBatch, deleteRegisterRow, updateRegisterRow } from "@/lib/sales-register";
+import { CASH_ROW_KINDS, cashRowDetail, type CashRowDetail, type CashRowKind } from "./row-detail";
 import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 
 const schema = z.object({
@@ -128,6 +131,49 @@ export async function updateRegisterLine(id: string, _prev: ActionState, fd: For
   if (res.error) return { error: res.error };
   revalidateCash();
   return { ok: true, note: "Saqlandi" };
+}
+
+/* ───────── Qator tafsiloti: bekor qilish, o'chirish ─────────
+ * Kassa / bank ro'yxatlarida qator bosilganda ochiladigan oyna (`cash-detail.tsx`). Ruxsatlar avvalgi tugmalardagidek:
+ * kirim/chiqim — `cashflow.delete`, to'lov — `payments.storno`, perekit — `cashflow.transfer_storno`,
+ * realizatsiya qatori — `cashflow.delete`. */
+
+const rowKind = (k: unknown): k is CashRowKind => typeof k === "string" && (CASH_ROW_KINDS as readonly string[]).includes(k);
+const rowId = (id: unknown): id is string => typeof id === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(id);
+
+/** Qator tafsiloti: barcha ustunlar, kim va qachon kiritgani, amallar tarixi, shu foydalanuvchiga ruxsat etilgan tugmalar. */
+export async function cashRowInfo(kind: CashRowKind, id: string): Promise<{ data?: CashRowDetail; error?: string }> {
+  const s = await requirePage("/payments");
+  if (!rowKind(kind) || !rowId(id)) return { error: "Noto'g'ri so'rov" };
+  const data = await cashRowDetail(kind, id, s);
+  return data ? { data } : { error: "Yozuv topilmadi — o'chirilgan bo'lishi mumkin, sahifani yangilang" };
+}
+
+/** Bekor qilish — yozuv «bekor qilingan» bo'lib qoladi (kirim/chiqim jurnalda kulrang, perekit hujjati O'tkazmalarda). */
+export async function cancelCashRow(kind: CashRowKind, id: string, reason: string): Promise<ActionState> {
+  if (!rowKind(kind) || !rowId(id)) return { error: "Noto'g'ri so'rov" };
+  const why = String(reason ?? "").slice(0, 300);
+  let res: { error?: string };
+  if (kind === "tx") res = await cancelCashEntry(id, why, (await requireAction("cashflow", "delete")).userId);
+  else if (kind === "transfer") res = await cancelTransfer(id, why, (await requireAction("cashflow", "transfer_storno")).userId);
+  else return { error: "Bu yozuvda bekor qilish yo'q — o'chiriladi" };
+  if (res.error) return { error: res.error };
+  revalidateCash(); revalidatePath("/receipts", "layout");
+  return { ok: true, note: "Bekor qilindi" };
+}
+
+/** O'chirish — yozuv jurnaldan butunlay olinadi, oldingi holati va sabab AuditLog'da. */
+export async function deleteCashRow(kind: CashRowKind, id: string, reason: string): Promise<ActionState> {
+  if (!rowKind(kind) || !rowId(id)) return { error: "Noto'g'ri so'rov" };
+  const why = String(reason ?? "").slice(0, 300);
+  let res: { error?: string };
+  if (kind === "tx") res = await deleteCashEntry(id, why, (await requireAction("cashflow", "delete")).userId);
+  else if (kind === "pay") res = await reversePayment(id, why, (await requireAction("payments", "storno")).userId);
+  else if (kind === "transfer") res = await deleteTransfer(id, why, (await requireAction("cashflow", "transfer_storno")).userId);
+  else res = await deleteRegisterRow(id, why, (await requireAction("cashflow", "delete")).userId);
+  if (res.error) return { error: res.error };
+  revalidateCash(); revalidatePath("/receipts", "layout"); revalidatePath("/sales");
+  return { ok: true, note: "O'chirildi" };
 }
 
 /* ───────── Kassa jurnali (Excel import) ───────── */

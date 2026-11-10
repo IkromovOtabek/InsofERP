@@ -25,36 +25,55 @@ const FIELD: Record<string, string> = {
   contractAmount: "Shartnoma summasi", cancelReason: "Bekor qilish sababi", ttn: "TTN", pickupAddress: "Yuk olingan joy",
   payAmount: "Reys haqi", payType: "To'lov turi", payNote: "Haq izohi",
 };
-const MONEY = new Set(["deliveryFee", "prepayAmount", "total", "contractAmount", "payAmount"]);
+const MONEY = new Set(["deliveryFee", "prepayAmount", "total", "contractAmount", "payAmount", "amount", "price", "sum", "nds"]);
+
+/** Kassa / bank yozuvlari (kirim/chiqim, to'lov, perekit, realizatsiya qatori) tahririda ko'rsatiladigan maydonlar — `cashActivity`. */
+const CASH_FIELD: Record<string, string> = {
+  type: "Turi", date: "Sana", cashAccountId: "Hisob", fromAccountId: "Qayerdan", toAccountId: "Qayerga", amount: "Summa",
+  category: "Manba", subCategory: "Sub manba", counterparty: "Kontragent", customerId: "Mijoz", note: "Izoh",
+  vehicleNo: "Mashina №", ttn: "TTN", productName: "Mahsulot", unit: "Birlik", qty: "Miqdor", fromWho: "Kimdan", payType: "Deniga",
+  deliveryFee: "Dostavka", price: "Narx", sum: "Summa (NDS'siz)", nds: "NDS", total: "Itogo", address: "Manzil",
+  contractNo: "Shartnoma", invoiceNo: "Schyot", monthNo: "Oy",
+};
+/** Hisob / mijoz id'lari — `cashActivity` da nomga aylanadi. */
+const ID_KEYS = { account: ["cashAccountId", "fromAccountId", "toAccountId"], customer: ["customerId"] };
+type Names = Map<string, string>;
 
 type Json = Record<string, unknown> | null;
 const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
-function show(k: string, v: unknown): string {
+function show(k: string, v: unknown, names?: Names): string {
   if (v == null || v === "") return "—";
   if (typeof v === "boolean") return v ? "ha" : "yo'q";
+  if (typeof v === "string" && names?.has(v)) return names.get(v)!;
+  if (k === "type") return v === "INCOME" ? "kirim" : v === "EXPENSE" ? "chiqim" : String(v);
   if (MONEY.has(k)) return money(Number(v));
   if (k === "payMethod" || k === "payType") return v === "CASH" ? "naqd" : v === "BANK" ? "perechisleniye" : v === "PAYROLL" ? "oylikka" : String(v);
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v)) return k === "deliveryDate" ? date(new Date(v)) : dateTime(new Date(v));
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v)) return k === "deliveryDate" || k === "date" ? date(new Date(v)) : dateTime(new Date(v));
   if (typeof v === "number") return fmtNum(v);
   return String(v).slice(0, 120);
 }
 
 /** before → after farqi: «Yetkazish sanasi: 06.11.2026 → 08.11.2026». */
-function diff(before: Json, after: Json): string[] {
+function diff(before: Json, after: Json, fields: Record<string, string> = FIELD, names?: Names): string[] {
   if (!after) return [];
   const out: string[] = [];
   for (const k of Object.keys(after)) {
-    if (!FIELD[k]) continue;
+    if (!fields[k]) continue;
     const a = before?.[k], b = after[k];
-    if (before && show(k, a) === show(k, b)) continue;
-    out.push(before && k in before ? `${FIELD[k]}: ${show(k, a)} → ${show(k, b)}` : `${FIELD[k]}: ${show(k, b)}`);
+    if (before && show(k, a, names) === show(k, b, names)) continue;
+    out.push(before && k in before ? `${fields[k]}: ${show(k, a, names)} → ${show(k, b, names)}` : `${fields[k]}: ${show(k, b, names)}`);
   }
   if (Array.isArray(after.items) && JSON.stringify(after.items) !== JSON.stringify(before?.items)) out.push("Mahsulot qatorlari o'zgardi");
   return out;
 }
 
-function describe(entity: string, action: string, before: Json, after: Json, label?: string): { text: string; details: string[] } {
+/** Bekor qilish / o'chirish sababi — tarix qatori ostida. */
+const why = (a: Json): string[] => (typeof a?.reason === "string" && a.reason ? [`Sabab: ${a.reason}`] : []);
+const sumOf = (a: Json) => (a?.amount != null ? ` — ${money(Number(a.amount))}` : "");
+
+/** `names` — `cashActivity` dan: hisob/mijoz id'lari nomga aylanadi, kassa yozuvlari tahriri maydonma-maydon ko'rinadi. */
+function describe(entity: string, action: string, before: Json, after: Json, label?: string, names?: Names): { text: string; details: string[] } {
   const st = typeof after?.status === "string" ? after.status : null;
   const tag = label ? ` ${label}` : "";
   switch (entity) {
@@ -74,8 +93,22 @@ function describe(entity: string, action: string, before: Json, after: Json, lab
       return { text: `Reys${tag} tahrirlandi`, details: diff(before, after) };
     case "Payment":
       if (action === "CREATE") return { text: `To'lov qabul qilindi${after?.amount != null ? ` — ${money(Number(after.amount))}` : ""}`, details: [] };
-      if (action === "DELETE") return { text: "To'lov bekor qilindi", details: typeof after?.reason === "string" ? [after.reason] : [] };
-      return { text: "To'lov o'zgardi", details: [] };
+      if (action === "DELETE") return { text: after?.by === "register-row-delete" ? "To'lov realizatsiya qatori bilan o'chirildi" : "To'lov bekor qilindi", details: typeof after?.reason === "string" ? [after.reason] : [] };
+      return { text: after?.by === "register-edit" ? "To'lov realizatsiya qatori bilan o'zgardi" : "To'lov o'zgardi", details: names ? diff(before, after, CASH_FIELD, names) : [] };
+    case "CashTransaction":
+      if (action === "CREATE") return { text: `${after?.type === "INCOME" ? "Kirim" : after?.type === "EXPENSE" ? "Chiqim" : "Yozuv"} kiritildi${sumOf(after)}`, details: [] };
+      if (action === "UPDATE") return { text: "Yozuv tahrirlandi", details: diff(before, after, CASH_FIELD, names) };
+      if (action === "STATUS_CHANGE") return { text: "Bekor qilindi", details: why(after) };
+      return { text: after?.by === "transfer-storno" ? "Perekit bekor qilindi" : "O'chirildi", details: why(after) };
+    case "CashTransfer":
+      if (action === "CREATE") return { text: `Perekit yozildi${sumOf(after)}`, details: [] };
+      if (action === "UPDATE") return { text: "Perekit tahrirlandi", details: diff(before, after, CASH_FIELD, names) };
+      if (action === "STATUS_CHANGE") return { text: "Perekit bekor qilindi", details: why(after) };
+      return { text: "Perekit o'chirildi", details: why(after) };
+    case "SalesRegister":
+      if (action === "CREATE") return { text: "Qator kiritildi", details: [] };
+      if (action === "UPDATE") return { text: "Qator tahrirlandi", details: diff(before, after, CASH_FIELD, names) };
+      return { text: "Qator o'chirildi", details: why(after) };
     case "PaymentRequest":
       if (action === "CREATE") return { text: `Bosh to'lov so'rovi ochildi${after?.amount != null ? ` — ${money(Number(after.amount))}` : ""}`, details: [] };
       if (st === "RECEIVED") return { text: "Bosh to'lov qabul qilindi", details: [] };
@@ -99,7 +132,7 @@ function describe(entity: string, action: string, before: Json, after: Json, lab
   }
 }
 
-async function activity(refs: Ref[]): Promise<ActivityRow[]> {
+async function activity(refs: Ref[], cash = false): Promise<ActivityRow[]> {
   const or = refs.filter((r) => r.ids.length).map((r) => ({ entity: r.entity, entityId: { in: r.ids } }));
   if (!or.length) return [];
   const log = await db.auditLog.findMany({
@@ -108,11 +141,37 @@ async function activity(refs: Ref[]): Promise<ActivityRow[]> {
     take: 200,
     select: { id: true, entity: true, entityId: true, action: true, before: true, after: true, createdAt: true, user: { select: { fullName: true } } },
   });
+  const names = cash ? await idNames(log) : undefined;
   return log.map((l) => {
     const label = refs.find((r) => r.entity === l.entity)?.label?.get(l.entityId);
-    const d = describe(l.entity, l.action, obj(l.before), obj(l.after), label);
+    const d = describe(l.entity, l.action, obj(l.before), obj(l.after), label, names);
     return { id: l.id, at: l.createdAt, by: l.user.fullName, ...d };
   });
+}
+
+/** Tarixdagi hisob va mijoz id'lari → nomlari (ikki so'rov). */
+async function idNames(log: { before: unknown; after: unknown }[]): Promise<Names> {
+  const acc = new Set<string>(), cust = new Set<string>();
+  for (const l of log) {
+    for (const o of [obj(l.before), obj(l.after)]) {
+      if (!o) continue;
+      for (const k of ID_KEYS.account) if (typeof o[k] === "string") acc.add(o[k] as string);
+      for (const k of ID_KEYS.customer) if (typeof o[k] === "string") cust.add(o[k] as string);
+    }
+  }
+  const [a, c] = await Promise.all([
+    acc.size ? db.cashAccount.findMany({ where: { id: { in: [...acc] } }, select: { id: true, name: true } }) : [],
+    cust.size ? db.customer.findMany({ where: { id: { in: [...cust] } }, select: { id: true, name: true } }) : [],
+  ]);
+  return new Map([...a, ...c].map((x) => [x.id, x.name]));
+}
+
+/**
+ * Kassa / bank qatori tafsiloti (`payments/row-detail.ts`): kirim/chiqim, to'lov, perekit hujjati, realizatsiya qatori —
+ * kim kiritdi, tahrirladi (qaysi ustun nimadan nimaga), bekor qildi yoki o'chirdi.
+ */
+export async function cashActivity(refs: { entity: string; ids: string[] }[]): Promise<ActivityRow[]> {
+  return activity(refs, true);
 }
 
 /** Zayavka va unga bog'liq hujjatlar: reys, to'lov, bosh to'lov so'rovi, schyot, topshiriq, zames. */

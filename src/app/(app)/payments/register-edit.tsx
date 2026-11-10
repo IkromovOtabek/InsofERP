@@ -1,14 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { Pencil } from "lucide-react";
-import { Field, IconButton, Input, Select } from "@/components/ui";
+import { useCallback } from "react";
+import { Field, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { updateRegisterLine } from "./actions";
 import { EditModal, useCashEditOptions } from "./cash-edit";
 import type { ActionState } from "@/lib/action";
 
-/** Realizatsiya jurnali qatorining tahrir qiymatlari (`register-table.tsx` → `toView`). */
+/** Realizatsiya jurnali qatorining tahrir qiymatlari (`register-table.tsx` → `registerEditRow`). */
 export type RegisterEditRow = {
   id: string; date: string; customerId: string; customerName: string; vehicleNo: string; ttn: string; productName: string; unit: string;
   qty: number; fromWho: string; payType: string; deliveryFee: number; price: number; sum: number; nds: number; total: number;
@@ -16,26 +15,16 @@ export type RegisterEditRow = {
   cashAccountId: string; hasPayment: boolean; sig: string;
 };
 
-/**
- * Realizatsiya jurnali qatoridagi qalam — Excel'dagi barcha ustunlar. Qatordan kassaga kirim yozilgan bo'lsa,
- * o'sha kirim ham birga o'zgaradi (summa = Itogo, mijoz, hisob, sana). Qoida — `lib/sales-register.ts` → `updateRegisterRow`.
- */
-export function RegisterEditButton({ row }: { row: RegisterEditRow }) {
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  return (
-    <>
-      <IconButton icon={Pencil} label="Qatorni tahrirlash" onClick={() => setOpen(true)} className="h-7 w-7" />
-      {open && <RegisterDialog row={row} onClose={close} />}
-    </>
-  );
-}
-
 const money = (name: string, label: string, v: number) => (
   <Field label={label}><MoneyInput name={name} defaultValue={String(v)} /></Field>
 );
 
-function RegisterDialog({ row, onClose }: { row: RegisterEditRow; onClose: () => void }) {
+/**
+ * Realizatsiya jurnali qatorining tahrir oynasi (qator tafsilotidagi «Tahrirlash»dan) — Excel'dagi barcha ustunlar.
+ * Qatordan kassaga kirim yozilgan bo'lsa, o'sha kirim ham birga o'zgaradi (summa = Itogo, mijoz, hisob, sana).
+ * Qoida — `lib/sales-register.ts` → `updateRegisterRow`.
+ */
+export function RegisterDialog({ row, onClose }: { row: RegisterEditRow; onClose: () => void }) {
   const o = useCashEditOptions();
   const action = useCallback((p: ActionState, fd: FormData) => updateRegisterLine(row.id, p, fd), [row.id]);
   const custs = o.customers ?? [];
