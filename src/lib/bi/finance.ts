@@ -5,6 +5,7 @@ import { type Range, type Gran, type SaleRow, loadSales, loadRevenue, materialCo
 import { materialOverview } from "./stock";
 import { customerBase } from "./customers";
 import { txSign, FLOW_ONLY } from "@/lib/cash-tx";
+import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
 
 /** Bazaviy narxdan (QQS'siz) past sotilgan qatorlar — NDS li qator narxi ham QQS'siz bilan solishtiriladi */
 const netPrice = (x: SaleRow) => safeDiv(x.net, x.qty);
@@ -25,11 +26,22 @@ import { companyVatPayer, lineCost } from "@/lib/receipt-vat";
 
 export type LossChannel = { key: string; title: string; sub: string; perDay: number; frozen?: number; periodTotal: number; kind: "ANIQ" | "TAXMIN" | "QISMAN"; flow: "OQIM" | "ZAXIRA"; count: string; text: string; action: string; href?: string };
 
+/**
+ * Kassa tushumi — faqat operatsion kirim (DDS bilan bir xil ajratish, kategoriya `flow` bo'yicha). Kredit/qarz olish,
+ * ta'sischi kiritmasi (kirim qilib yozilgan boshlang'ich qoldiq ham shunga tushadi) va investitsion kirim tushum emas:
+ * ular «Kassa tushumi», 7 kunlik prognoz va 6 oylik grafikni shishirardi. Manbasi aniqlanmagan kirim — tushumda qoladi.
+ */
+async function operatingOnly<T extends { category: string; subCategory: string | null }>(rows: T[]): Promise<T[]> {
+  if (!rows.length) return rows;
+  const resolve = makeResolver(await loadCategories());
+  return rows.filter((t) => { const r = resolve(t.category, t.subCategory); return !r || r.top.flow === "OPERATING"; });
+}
+
 /** Yo'qotish kanallari — kuniga qancha pul ketyapti (Team24 "Moliya" mantiqi, beton zavodiga moslangan). */
 export async function lossChannels(r: Range) {
   const today = startOfDay(new Date());
-  const [materials, customers, blocked, cancelled, cur, wo] = await Promise.all([
-    materialOverview(), customerBase(), loadSales(addDays(today, -365), addDays(today, 1), ["BLOCKED"]), loadSales(r.from, r.to, ["CANCELLED"]), loadRevenue(r.from, r.to),
+  const [materials, customers, blocked, cur, wo] = await Promise.all([
+    materialOverview(), customerBase(), loadSales(addDays(today, -365), addDays(today, 1), ["BLOCKED"]), loadRevenue(r.from, r.to),
     writeOffValue(r.from, r.to),
   ]);
   // Marja stavkasi yo'qotilgan foydani baholash uchun: manfiy bo'lsa "yo'qotish" ham manfiy chiqib,
@@ -51,8 +63,7 @@ export async function lossChannels(r: Range) {
   const dead = materials.filter((m) => m.dead); const deadValue = sum(dead.map((m) => m.value));
   // 4. Bloklangan zayavkalar (kredit limit)
   const blockedRevenue = sum(blocked.map((x) => x.revenue)), blockedOrders = new Set(blocked.map((x) => x.orderId)).size;
-  // 5. Bekor qilingan
-  const cancelledRevenue = sum(cancelled.map((x) => x.revenue)), cancelledOrders = new Set(cancelled.map((x) => x.orderId)).size;
+  // 5. Bekor qilingan zayavka kanal emas: bekor qilingan zayavka bazadan o'chiriladi (`lib/purge-cancelled.ts`), summa doim 0 edi
   // 6. Chegirma
   const { rows: discountRows, value: discount } = discountOf(cur);
   // 7. Write-off (xomashyo + tayyor mahsulot braki)
@@ -63,7 +74,6 @@ export async function lossChannels(r: Range) {
     { key: "debt", title: "Debitorka", sub: "Ketayotgan mijozlarda qolgan qarz", perDay: riskyDebt * CAPITAL_RATE_DAY, frozen: riskyDebt, periodTotal: riskyDebt * CAPITAL_RATE_DAY * r.days, kind: "ANIQ", flow: "ZAXIRA", count: `${riskyDebtors.length} ta mijoz (At Risk / Lost / eski qarz)`, text: `${riskyDebtors.length} ta mijoz xarid qilishni to'xtatgan, lekin qarzi qolgan. Aloqa uzilgan sari bu pulni qaytarib olish qiyinlashadi. Muddati o'tgan qarz jami: ${fmtNum(overdueDebt)} so'm.`, action: "Eng katta qarzdorlardan boshlab qo'ng'iroq qiling — Mijozlar bo'limida ro'yxat tayyor.", href: "/invoices" },
     { key: "blocked", title: "Bloklangan zayavkalar", sub: "Kredit limit sabab to'xtab turgan sotuv", perDay: blockedRevenue * marginRate / 30, periodTotal: blockedRevenue * marginRate, kind: "ANIQ", flow: "OQIM", count: `${blockedOrders} ta zayavka`, text: `${blockedOrders} ta zayavka kredit limiti oshgani uchun bloklangan — ${fmtNum(blockedRevenue)} so'm sotuv kutmoqda.`, action: "Direktor limitni ko'rib chiqsin yoki mijoz oldindan to'lov qilsin.", href: "/orders?status=BLOCKED" },
     { key: "dead", title: "Dead Stock", sub: "Omborda muzlab qolgan xomashyo", perDay: deadValue * CAPITAL_RATE_DAY, frozen: deadValue, periodTotal: deadValue * CAPITAL_RATE_DAY * r.days, kind: "TAXMIN", flow: "ZAXIRA", count: `${dead.length} ta pozitsiya 90 kun ishlatilmagan`, text: dead.length ? `${dead.map((m) => m.name).slice(0, 4).join(", ")} — 90 kundan beri retseptga kirmagan. Pul kassada emas — omborda.` : "Muzlab qolgan xomashyo yo'q.", action: "Retseptga qaytaring, qaytarib bering yoki sotib yuboring — bu pul o'zi harakatga kelmaydi.", href: "/stock" },
-    { key: "cancelled", title: "Bekor qilingan zayavkalar", sub: "Rasmiylashtirilib bekor qilingan", perDay: cancelledRevenue * marginRate / r.days, periodTotal: cancelledRevenue * marginRate, kind: "ANIQ", flow: "OQIM", count: `${cancelledOrders} ta zayavka`, text: `Davr ichida ${cancelledOrders} ta zayavka (${fmtNum(cancelledRevenue)} so'm) bekor qilindi — yo'qolgan foyda ${fmtNum(cancelledRevenue * marginRate)} so'm.`, action: "Bekor qilish sabablarini toifalab chiqing: narx, muddat, sifat yoki logistika.", href: "/orders?status=CANCELLED" },
     { key: "discount", title: "Chegirma", sub: "Bazaviy narxdan arzon sotilgan", perDay: discount / r.days, periodTotal: discount, kind: "QISMAN", flow: "OQIM", count: `${discountRows.length} ta pozitsiya`, text: `Bazaviy narxdan (marka narxi) past sotilgan pozitsiyalarda qo'ldan ketgan tushum — ${fmtNum(discount)} so'm.`, action: "Chegirma berish qoidasini belgilang: o'lchanmagan chegirma — nazorat qilinmaydigan foyda teshigi." },
     { key: "writeoff", title: "Brak / Write-off", sub: "Hisobdan chiqarilgan xomashyo va tayyor mahsulot braki", perDay: woValue / r.days, periodTotal: woValue, kind: "ANIQ", flow: "OQIM", count: `${woCount} ta yozuv`, text: `Davr ichida ${woCount} ta hisobdan chiqarish va brak — tannarxda ${fmtNum(woValue)} so'm. Bu to'liq yo'qotish.`, action: "Sabablarini toifalang: saqlash sharti, muddat yoki ortiqcha buyurtma.", href: "/stock" },
   ] satisfies LossChannel[])
@@ -97,8 +107,8 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     db.trip.findMany({ where: { deliveredAt: { gte: r.from, lt: r.to }, status: "DELIVERED", vehicle: { type: "MIXER" } }, select: { qtyM3: true } }),
     db.trip.findMany({ where: { deliveredAt: { gte: r.prevFrom, lt: r.prevTo }, status: "DELIVERED", vehicle: { type: "MIXER" } }, select: { qtyM3: true } }),
     // Boshqa kirimlar (Kirim-Chiqim → Kirim): kassa tushumi Kirim-Chiqim sahifasi bilan bir xil bo'lsin
-    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, category: true, subCategory: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { amount: true, category: true, subCategory: true } }),
     goLiveDate(),
   ]);
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
@@ -113,8 +123,9 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const vatPayer = await companyVatPayer();
   const writeOff = wo.value;
   const profit = gross - writeOff;
-  const otherIn = sum(incomeTx.map((t) => Number(t.amount)));
-  const cashIn = sum(payments.map((p) => Number(p.amount))) + otherIn, prevCashIn = sum(prevPayments.map((p) => Number(p.amount))) + sum(prevIncomeTx.map((t) => Number(t.amount)));
+  const [opIncome, prevOpIncome] = await Promise.all([operatingOnly(incomeTx), operatingOnly(prevIncomeTx)]);
+  const otherIn = sum(opIncome.map((t) => Number(t.amount)));
+  const cashIn = sum(payments.map((p) => Number(p.amount))) + otherIn, prevCashIn = sum(prevPayments.map((p) => Number(p.amount))) + sum(prevOpIncome.map((t) => Number(t.amount)));
   const purchases = sum(receipts.map((i) => lineCost(i, vatPayer))), prevPurchases = sum(prevReceipts.map((i) => lineCost(i, vatPayer)));
   const receivable = recv.total;
   const debtors = cust.filter((c) => c.debt > 0).length;
@@ -131,7 +142,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const cashForecast = await cashForecast7({ today, since, receivable, cashTotal });
 
   // Cashflow trendi (davr) — tushum + kumulyativ
-  const flow = series([...payments.map((p) => ({ date: p.date, amount: p.amount })), ...incomeTx], r.from, r.to, gran, (p) => p.date, (p) => Number(p.amount));
+  const flow = series([...payments.map((p) => ({ date: p.date, amount: p.amount })), ...opIncome], r.from, r.to, gran, (p) => p.date, (p) => Number(p.amount));
   let run = 0; const cumulative = flow.map((f) => (run += f.value));
 
   // Daromad vs xarajat — oxirgi 6 oy
@@ -140,7 +151,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     loadRevenue(from6, addDays(today, 1)),
     db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from6 } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { date: true } } } }),
     db.payment.findMany({ where: { date: { gte: from6 } }, select: { date: true, amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: from6 } }, select: { date: true, amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: from6 } }, select: { date: true, amount: true, category: true, subCategory: true } }).then(operatingOnly),
   ]);
   const rev6 = series(sales6, from6, addDays(today, 1), "month", (x) => x.date, (x) => x.revenue);
   const cost6 = series(rec6, from6, addDays(today, 1), "month", (x) => x.receipt.date, (x) => lineCost(x, vatPayer));
@@ -200,7 +211,7 @@ export async function cashForecast7({ today, since, receivable, cashTotal }: { t
   const fcTo = fcFrom < today ? today : addDays(today, 1); // o'tish bugun bo'lsa — bugungi kun bilan
   const [last30, last30Inc, last30Exp] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true, category: true, subCategory: true } }).then(operatingOnly),
     db.cashTransaction.aggregate({ where: { ...FLOW_ONLY, type: "EXPENSE", cancelledAt: null, date: { gte: fcFrom, lt: fcTo } }, _sum: { amount: true } }),
   ]);
   const daily = series([...last30, ...last30Inc], fcFrom, fcTo, "day", (p) => p.date, (p) => Number(p.amount)).map((x) => x.value);

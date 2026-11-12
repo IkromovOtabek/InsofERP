@@ -15,10 +15,22 @@ const toEntry = (e: { year: number; month: number; kind: "BUDGET" | "PLAN" | "FA
 function monthsIn(from: Date, to: Date) { const out: { year: number; month: number }[] = []; for (let d = new Date(from.getFullYear(), from.getMonth(), 1); d < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) out.push({ year: d.getFullYear(), month: d.getMonth() + 1 }); return out; }
 const inMonths = (e: Entry, ms: { year: number; month: number }[]) => ms.some((m) => m.year === e.year && m.month === e.month);
 
+/**
+ * ROAS / ROMI uchun daromad — faqat pul sarflangan kanallardan (fakt yozuvlari, kanal bo'yicha xarajat > 0).
+ * Xarajatsiz kanal (tavsiya, organik) daromadi reklama puli qaytimi emas: umumiy ROAS'ni shishirardi va kanallar
+ * jadvali yig'indisi umumiy songa teng chiqmasdi. Jami daromad (`revenue`) va LTV/chek hisobi o'zgarmaydi.
+ */
+function paidRevenueOf(fact: Entry[]) {
+  const spendBy = new Map<string, number>();
+  for (const e of fact) spendBy.set(e.channel, (spendBy.get(e.channel) ?? 0) + e.amount);
+  return sum(fact.filter((e) => (spendBy.get(e.channel) ?? 0) > 0).map((e) => e.revenue));
+}
+
 function channelStats(list: Entry[]) {
   const fact = list.filter((e) => e.kind === "FACT");
   const spend = sum(fact.map((e) => e.amount)), revenue = sum(fact.map((e) => e.revenue)), leads = sum(fact.map((e) => e.leads)), customers = sum(fact.map((e) => e.customers)), impressions = sum(fact.map((e) => e.impressions)), clicks = sum(fact.map((e) => e.clicks));
-  return { spend, revenue, leads, customers, impressions, clicks, roas: spend > 0 ? revenue / spend : null, cac: customers > 0 ? spend / customers : null, cpl: leads > 0 ? spend / leads : null, romi: spend > 0 ? ((revenue - spend) / spend) * 100 : null, profit: revenue - spend, budget: sum(list.filter((e) => e.kind === "BUDGET").map((e) => e.amount)) };
+  const paidRevenue = paidRevenueOf(fact);
+  return { spend, revenue, paidRevenue, leads, customers, impressions, clicks, roas: spend > 0 ? paidRevenue / spend : null, cac: customers > 0 ? spend / customers : null, cpl: leads > 0 ? spend / leads : null, romi: spend > 0 ? ((paidRevenue - spend) / spend) * 100 : null, profit: paidRevenue - spend, budget: sum(list.filter((e) => e.kind === "BUDGET").map((e) => e.amount)) };
 }
 
 /** Marketing tahlili — Team24 "Marketing" ekvivalenti. Ma'lumot MarketingEntry (fakt yozuvlari) dan. */
@@ -84,7 +96,7 @@ export async function marketingPlanTab(year: number, month: number) {
     const F = { spend: sum(fact.map((e) => e.amount)), leads: sum(fact.map((e) => e.leads)), customers: sum(fact.map((e) => e.customers)), revenue: sum(fact.map((e) => e.revenue)) };
     return { channel: ch, budget: sum(budget.map((e) => e.amount)), plan: P, fact: F, pct: { spend: P.spend ? (F.spend / P.spend) * 100 : null, leads: P.leads ? (F.leads / P.leads) * 100 : null, customers: P.customers ? (F.customers / P.customers) * 100 : null, revenue: P.revenue ? (F.revenue / P.revenue) * 100 : null }, cac: F.customers ? F.spend / F.customers : null, roas: F.spend ? F.revenue / F.spend : null };
   }).sort((a, b) => b.plan.revenue - a.plan.revenue);
-  const totals = { plan: { spend: sum(byChannel.map((c) => c.plan.spend)), leads: sum(byChannel.map((c) => c.plan.leads)), customers: sum(byChannel.map((c) => c.plan.customers)), revenue: sum(byChannel.map((c) => c.plan.revenue)) }, fact: { spend: sum(byChannel.map((c) => c.fact.spend)), leads: sum(byChannel.map((c) => c.fact.leads)), customers: sum(byChannel.map((c) => c.fact.customers)), revenue: sum(byChannel.map((c) => c.fact.revenue)) }, budget: sum(byChannel.map((c) => c.budget)) };
+  const totals = { plan: { spend: sum(byChannel.map((c) => c.plan.spend)), leads: sum(byChannel.map((c) => c.plan.leads)), customers: sum(byChannel.map((c) => c.plan.customers)), revenue: sum(byChannel.map((c) => c.plan.revenue)) }, fact: { spend: sum(byChannel.map((c) => c.fact.spend)), leads: sum(byChannel.map((c) => c.fact.leads)), customers: sum(byChannel.map((c) => c.fact.customers)), revenue: sum(byChannel.map((c) => c.fact.revenue)), paidRevenue: sum(byChannel.filter((c) => c.fact.spend > 0).map((c) => c.fact.revenue)) }, budget: sum(byChannel.map((c) => c.budget)) };
   const monthly = Array.from({ length: 12 }, (_, i) => { const m = i + 1; const plan = all.filter((e) => e.month === m && e.kind === "PLAN"), fact = all.filter((e) => e.month === m && e.kind === "FACT"); return { label: MONTHS_SHORT[i], planRevenue: sum(plan.map((e) => e.revenue)), factRevenue: sum(fact.map((e) => e.revenue)), planSpend: sum(plan.map((e) => e.amount)), factSpend: sum(fact.map((e) => e.amount)), planLeads: sum(plan.map((e) => e.leads)), factLeads: sum(fact.map((e) => e.leads)), planCustomers: sum(plan.map((e) => e.customers)), factCustomers: sum(fact.map((e) => e.customers)) }; });
   const notes: { level: "info" | "warning" | "success" | "danger"; title: string; text: string }[] = [];
   if (month && year === today.getFullYear() && month === today.getMonth() + 1) { const dim = new Date(year, month, 0).getDate(); notes.push({ level: "info", title: `Oy hali tugamagan — ${today.getDate()}/${dim} kun o'tdi (${Math.round((today.getDate() / dim) * 100)}%)`, text: "Bajarilish foizlarini shu nisbatga qarab baholang." }); }
@@ -105,5 +117,5 @@ export async function marketingEntries(filter: { year?: number; month?: number; 
   const yr = (await db.marketingEntry.findMany({ where: { year } })).map(toEntry);
   const budget = sum(yr.filter((e) => e.kind === "BUDGET").map((e) => e.amount)), spent = sum(yr.filter((e) => e.kind === "FACT").map((e) => e.amount)), revenue = sum(yr.filter((e) => e.kind === "FACT").map((e) => e.revenue));
   const years = [...new Set((await db.marketingEntry.findMany({ select: { year: true }, distinct: ["year"] })).map((y) => y.year))].sort((a, b) => b - a);
-  return { rows, summary: { year, budget, spent, revenue, count: yr.length, roas: spent ? revenue / spent : null }, years };
+  return { rows, summary: { year, budget, spent, revenue, count: yr.length, roas: spent ? paidRevenueOf(yr.filter((e) => e.kind === "FACT")) / spent : null }, years };
 }

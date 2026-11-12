@@ -100,10 +100,9 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
             </div>
             {cDown[0] && <div className="mt-3"><Action href={tabHref(range, "customers", { q: cDown[0].name })}>{cDown[0].name} bilan bog'laning — {moneyShort(Math.abs(cDown[0].diff))} so'm kamaygan</Action></div>}
           </Panel>
-          <Panel title="Lost Revenue — yo'qotilgan tushum" info="Bloklangan (kredit limit) va bekor qilingan zayavkalar summasi.">
-            <div className="grid grid-cols-2 gap-3">
+          <Panel title="Lost Revenue — yo'qotilgan tushum" info="Kredit limit sabab bloklangan zayavkalar summasi (hozirgi holat). Bekor qilingan zayavka bazadan o'chiriladi — bu yerda ko'rsatilmaydi.">
+            <div>
               <div className="rounded-lg bg-red-50 p-3"><div className="text-xs text-red-700">Bloklangan (hozir)</div><div className="text-xl font-bold tabular text-red-700">{moneyShort(d.lost.blocked)}</div><div className="text-xs text-red-600">{d.lost.blockedOrders} ta zayavka</div></div>
-              <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs text-slate-500">Bekor qilingan (davr)</div><div className="text-xl font-bold tabular text-slate-800">{moneyShort(d.lost.cancelled)}</div><div className="text-xs text-slate-500">{d.lost.cancelledOrders} ta zayavka</div></div>
             </div>
             {d.lost.blockedRows.length > 0 && <ul className="mt-3 space-y-1 text-[13px]">{d.lost.blockedRows.map((o) => <li key={o.orderId} className="flex justify-between gap-2"><Link href={`/orders/${o.orderId}`} className="truncate hover:underline">{o.customer}</Link><span className="shrink-0 tabular">{moneyShort(o.revenue)}</span></li>)}</ul>}
             <div className="mt-3"><Action href="/orders?status=BLOCKED">Bloklangan zayavkalarni ko'rib chiqing — direktor limitni ochsin yoki mijoz oldindan to'lasin</Action></div>

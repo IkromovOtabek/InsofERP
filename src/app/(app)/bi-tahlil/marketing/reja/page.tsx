@@ -46,7 +46,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <Kpi label="Leadlar" value={fmtNum(T.fact.leads)} icon={Megaphone} tone={kTone(ratio(T.fact.leads, T.plan.leads))} hint={planHint(T.plan.leads, T.fact.leads, (v) => fmtNum(v))} />
           <Kpi label="Yangi mijozlar" value={fmtNum(T.fact.customers)} icon={Users} tone={kTone(ratio(T.fact.customers, T.plan.customers))} hint={planHint(T.plan.customers, T.fact.customers, (v) => fmtNum(v))} />
           <Kpi label="Daromad" value={moneyShort(T.fact.revenue)} icon={TrendingUp} tone={kTone(ratio(T.fact.revenue, T.plan.revenue))} hint={planHint(T.plan.revenue, T.fact.revenue, moneyShort)} />
-          <Kpi label="ROAS" value={T.fact.spend ? `${fmtNum(T.fact.revenue / T.fact.spend, 2)}x` : "—"} icon={Percent} tone={!T.fact.spend ? "default" : T.fact.revenue >= T.fact.spend ? "success" : "danger"} hint={`CAC ${T.fact.customers && T.fact.spend ? moneyShort(T.fact.spend / T.fact.customers) : "—"}`} href="/bi-tahlil/marketing" />
+          <Kpi label="ROAS" value={T.fact.spend ? `${fmtNum(T.fact.paidRevenue / T.fact.spend, 2)}x` : "—"} icon={Percent} tone={!T.fact.spend ? "default" : T.fact.paidRevenue >= T.fact.spend ? "success" : "danger"} hint={`CAC ${T.fact.customers && T.fact.spend ? moneyShort(T.fact.spend / T.fact.customers) : "—"}`} href="/bi-tahlil/marketing" />
         </div>
 
         <Panel title="Xulosalar">

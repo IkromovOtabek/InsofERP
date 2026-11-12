@@ -7,7 +7,8 @@ import { tripPayKm } from "@/lib/trip-summary";
  * «Insof 2026» → «AVTOTRANSPORT TAHLILI — har bir mashina va kunlik solishtirish» (Tahlil → Mexanik).
  *
  * Manbalar (oy bo'yicha, bekor qilinganlarsiz):
- *  - reys, probeg (zavod → obyekt → zavod, GPS yoki zayavka masofasi — haydovchi tabeli bilan bir xil), baraban soati — `Trip`;
+ *  - reys, probeg (zavod → obyekt → zavod, GPS yoki zayavka masofasi — haydovchi tabeli bilan bir xil), baraban soati — `Trip`,
+ *    faqat yetkazilgan reys, yetkazilgan sanasi bo'yicha (`deliveredTripWhere`);
  *  - yoqilg'i normasi — transport kartasidagi norma × km + soat (dizel litr, metan m³); berilgan — `FuelLog`;
  *  - ish haqi — reys haqi (`Trip.payAmount`) + «Haydovchi haqi» transport xarajati; remont / zapchast / boshqa — `TransportExpense`;
  *  - daromad — zayavka dastavka haqi reyslarga hajm ulushida bo'linadi;
@@ -38,6 +39,14 @@ export type AvtoReport = { from: Date; to: Date; rows: AvtoRow[]; total: AvtoRow
 
 const REPAIR_KINDS = new Set(["REPAIR", "PARTS"]);
 
+/**
+ * Davrdagi ish = yetkazilgan reys, yetkazilgan sanasi bo'yicha (haydovchi tabeli va Tahlil → Logistika bilan bir xil).
+ * Rejadagi / yuklangan / yo'ldagi reys hali ish emas: uning km taxmini, normasi, reys haqi va dastavka ulushi
+ * yetkazilganda tushadi. Transport ro'yxati va kartasi (`lib/vehicle-report.ts`) ham shu filtrni oladi.
+ */
+export const deliveredTripWhere = (from: Date, to: Date, vehicleId?: string) =>
+  ({ status: "DELIVERED" as const, deliveredAt: { gte: from, lt: to }, ...(vehicleId ? { vehicleId } : {}) });
+
 /** Ixtiyoriy kunlar oralig'i: `from` (kun boshi) dan `to` gacha (kirmaydi). `vehicleId` — faqat bitta mashina (transport kartasi). */
 export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: string } = {}): Promise<AvtoReport> {
   const inMonth = { gte: from, lt: to };
@@ -46,7 +55,7 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
   const [vehicles, trips, fuel, expenses, mech, cashTx, receipts, manual, logiTx] = await Promise.all([
     db.vehicle.findMany({ where: vid ? { id: vid } : {}, select: { id: true, plate: true, type: true, brand: true, model: true, isActive: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } }),
     db.trip.findMany({
-      where: { status: { not: "CANCELLED" }, ...(vid ? { vehicleId: vid } : {}), OR: [{ deliveredAt: inMonth }, { deliveredAt: null, createdAt: inMonth }] },
+      where: deliveredTripWhere(from, to, vid),
       select: { id: true, vehicleId: true, orderId: true, qtyM3: true, workHours: true, payAmount: true, deliveredAt: true, createdAt: true, distanceKm: true, summaryAt: true, order: { select: { distanceKm: true, deliveryFee: true } } },
     }),
     db.fuelLog.findMany({ where: { cancelledAt: null, date: inMonth, ...(vid ? { vehicleId: vid } : {}) }, select: { vehicleId: true, date: true, fuelType: true, liters: true, amount: true } }),

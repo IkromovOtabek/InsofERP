@@ -28,7 +28,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <Kpi label="Rejalashtirilgan byudjet" value={moneyShort(S.budget)} icon={Wallet} tone="info" hint={`${S.year}-yil`} href={`/bi-tahlil/marketing/malumotlar?year=${S.year}&kind=BUDGET#yozuvlar`} />
           <Kpi label="Haqiqiy sarflangan" value={moneyShort(S.spent)} icon={Coins} tone="brand" hint={S.budget ? `${S.spent <= S.budget ? "▼" : "▲"} ${fmtNum(Math.abs(((S.spent - S.budget) / S.budget) * 100), 1)}% byudjetdan ${S.spent <= S.budget ? "kam" : "ko'p"}` : "byudjet kiritilmagan"} href={`/bi-tahlil/marketing/malumotlar?year=${S.year}&kind=FACT#yozuvlar`} />
           <Kpi label="Kiritilgan yozuvlar" value={String(S.count)} icon={ListChecks} hint={`${S.year}-yil · oy × kanal bo'yicha`} href={`/bi-tahlil/marketing/malumotlar?year=${S.year}#yozuvlar`} />
-          <Kpi label="Qaytim (ROAS)" value={S.roas !== null ? `${fmtNum(S.roas, 2)}x` : "—"} icon={Percent} tone={S.roas !== null && S.roas >= 1 ? "success" : "default"} hint="daromad / fakt xarajat" href="/bi-tahlil/marketing" />
+          <Kpi label="Qaytim (ROAS)" value={S.roas !== null ? `${fmtNum(S.roas, 2)}x` : "—"} icon={Percent} tone={S.roas !== null && S.roas >= 1 ? "success" : "default"} hint="pullik kanallar daromadi / fakt xarajat" href="/bi-tahlil/marketing" />
         </div>
 
         <Panel title="Yangi yozuv qo'shish" info="Byudjet — oy boshida kanalga ajratilgan pul. Reja — natija maqsadlari (xarajat, lead, mijoz, daromad). Fakt — haqiqiy to'langan xarajat va olingan natija.">

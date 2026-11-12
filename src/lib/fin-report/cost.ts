@@ -228,7 +228,9 @@ export async function costSheet(month: MonthKey, params?: CostParams, ctxIn?: Ct
   const autoCoefs: Record<string, number> = {};
   const groups: GroupRow[] = COST_GROUPS.filter((g) => (arrivedG.get(g) ?? 0) !== 0 || (normG.get(g) ?? 0) !== 0).map((g) => {
     const arrived = r2(arrivedG.get(g) ?? 0), norm = r2(normG.get(g) ?? 0);
-    const coef = COEF_GROUPS.includes(g) && norm > 0 ? Math.round((arrived / norm) * 1000) / 1000 : null;
+    // Oyda kirim bo'lmagan guruh (oldingi zaxiradan ishlatilgan): koeffitsiyent yo'q — mahsulot tannarxida norma (×1)
+    // olinadi. Ilgari 0 chiqib, guruh tannarxdan butunlay tushib qolardi (masalan dobavka kelmagan oyda FBS arzonlashardi)
+    const coef = COEF_GROUPS.includes(g) && norm > 0 && arrived > 0 ? Math.round((arrived / norm) * 1000) / 1000 : null;
     if (coef !== null) autoCoefs[g] = coef;
     return { group: g, arrived, norm, diff: r2(arrived - norm), coef };
   });

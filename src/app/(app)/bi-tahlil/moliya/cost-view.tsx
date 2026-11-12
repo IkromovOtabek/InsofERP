@@ -105,7 +105,7 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
                 <Td right>{fmtNum(g.arrived)}</Td>
                 <Td right>{g.norm ? fmtNum(g.norm) : <span className="text-[13px] italic text-slate-400">normada yo&apos;q</span>}</Td>
                 <Td right>{g.norm ? <Neg v={g.diff} /> : "—"}</Td>
-                <Td right className="font-semibold">{coefStr(g.coef)}</Td>
+                <Td right className="font-semibold">{g.coef === null && g.norm > 0 && g.arrived <= 0 && COEF_GROUPS.includes(g.group) ? <span className="text-[13px] font-normal italic text-slate-400">kirim yo&apos;q — norma (1)</span> : coefStr(g.coef)}</Td>
               </Tr>
             ))}
           </tbody>

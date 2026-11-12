@@ -123,7 +123,7 @@ export async function aiReport(type: ReportType): Promise<Report> {
         { title: "Asosiy raqamlar", lines: [`Sotuv ${M(k.revenue.cur)} (${pct(k.revenue.delta)}), ${k.orders.cur} zayavka (${pct(k.orders.delta)}), ${k.customers.cur} faol mijoz (${pct(k.customers.delta)}).`, `Yalpi foyda ${M(k.gross.cur)} · marja ${pct(k.margin.cur, 1)}.`, `O'rtacha chek ${M(k.avgCheck.cur)} (${pct(k.avgCheck.delta)}).`] },
         { title: "Nima o'sdi / pasaydi", lines: [s.prodMovers[0] && s.prodMovers[0].diff > 0 ? `Eng katta o'sish: ${s.prodMovers[0].name} +${moneyShort(s.prodMovers[0].diff)}.` : "", s.prodMovers.at(-1) && s.prodMovers.at(-1)!.diff < 0 ? `Eng katta pasayish: ${s.prodMovers.at(-1)!.name} −${moneyShort(Math.abs(s.prodMovers.at(-1)!.diff))}.` : ""].filter(Boolean).concat(s.prodMovers.some((m) => m.diff !== 0) ? [] : ["Mahsulotlar bo'yicha sezilarli o'zgarish yo'q."]) },
         { title: "Sotuvchilar", lines: [ag.best ? `Eng yaxshi — ${ag.best.name}: ${M(ag.best.revenue)}.` : "", ag.slow.length ? `${ag.slow.length} ta sotuvchi sekinlashdi (kuniga ${M(ag.slowLoss)}).` : "Sekinlashgan sotuvchi yo'q."].filter(Boolean) },
-        { title: "Yo'qotishlar", lines: [`Bekor qilingan: ${M(s.lost.cancelled)} (${s.lost.cancelledOrders} zayavka) · bloklangan: ${M(s.lost.blocked)}.`, `Chegirma: ${M(s.discount)} (${s.discountCount} pozitsiya).`] },
+        { title: "Yo'qotishlar", lines: [`Bloklangan zayavkalar: ${M(s.lost.blocked)} (${s.lost.blockedOrders} ta).`, `Chegirma: ${M(s.discount)} (${s.discountCount} pozitsiya).`] },
       ], hrefs: [{ label: "Sotuvlar", href: "/bi-tahlil/sotuvlar" }, { label: "Agentlar", href: "/bi-tahlil/agentlar" }],
     };
   }

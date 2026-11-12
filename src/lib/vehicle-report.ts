@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { avtoReport, type AvtoRow } from "./fin-report/avto";
+import { avtoReport, deliveredTripWhere, type AvtoRow } from "./fin-report/avto";
 import { EXPENSE_KIND, FUEL_TYPE } from "./logistics";
 import { tripPayKm } from "./trip-summary";
 import { itemTons } from "./trip-plan";
@@ -12,7 +12,7 @@ import { fmtNum } from "./format";
  *
  * Pul ko'rsatkichlari — `avtoReport` (Tahlil → Avtotransport) bilan bitta manba: jami xarajat = yoqilg'i + ish haqi
  * + ta'mir/zapchast + boshqa transport xarajati; daromad — zayavka dastavka haqi reyslarga hajm ulushida.
- * Reys davrga yetkazilgan sanasi (bo'lmasa ochilgan sanasi) bo'yicha tushadi — xuddi `avtoReport` dagidek.
+ * Davrga faqat yetkazilgan reys, yetkazilgan sanasi bo'yicha tushadi — xuddi `avtoReport` dagidek (`deliveredTripWhere`).
  * Reysda mahsulot ko'rsatilmaydi: miqdori zayavka qatorlariga ulush bo'yicha bo'linadi (`sklad-logistika.ts` dagidek).
  */
 
@@ -52,10 +52,7 @@ function tripLoad(qty: number, items: LoadItem[]): LoadSum {
   return l;
 }
 
-const tripWhere = (from: Date, to: Date, vehicleId?: string) => ({
-  status: { not: "CANCELLED" as const }, ...(vehicleId ? { vehicleId } : {}),
-  OR: [{ deliveredAt: { gte: from, lt: to } }, { deliveredAt: null, createdAt: { gte: from, lt: to } }],
-});
+const tripWhere = deliveredTripWhere;
 const orderItems = { select: { qtyM3: true, product: { select: { code: true, name: true, unit: true, weightKg: true } } } } as const;
 
 // ───────────────────────── Hamma transport (ro'yxat) ─────────────────────────
