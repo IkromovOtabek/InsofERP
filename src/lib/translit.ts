@@ -189,6 +189,51 @@ export function toCyrillic(text: string): string {
   return res;
 }
 
+// ───────────────────────── Kirill → lotin ─────────────────────────
+
+const LAT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", ж: "j", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n",
+  о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "x", ч: "ch", ш: "sh", щ: "sh", ы: "i", э: "e",
+  ё: "yo", ю: "yu", я: "ya", ў: "o'", қ: "q", ғ: "g'", ҳ: "h", і: "i", ь: "",
+};
+const CYR_VOWEL = new Set([..."аеёиоуэюяўы"]);
+const isCyr = (ch: string | undefined) => !!ch && /[а-яёўқғҳі]/i.test(ch);
+
+/**
+ * O'zbek kirill (va rus) matnini lotin yozuviga o'tkazadi (1995 yilgi rasmiy qoidalar):
+ *  · е so'z boshida, unli yoki ъ/ь dan keyin → ye (Ер → Yer, объект → obyekt), qolgan hollarda → e;
+ *  · ц unlidan keyin → ts (милиция → militsiya), so'z boshida va undoshdan keyin → s (Цемент → Sement);
+ *  · ъ → ' (маълумот → ma'lumot), lekin е/ё/ю/я oldidan tushadi; ь tushadi;
+ *  · ў → o', ғ → g', қ → q, ҳ → h, х → x.
+ * Katta-kichik harf saqlanadi: «Шамшод» → «Shamshod», «ШАҲАР» → «SHAHAR». Lotin, raqam va belgilar tegilmaydi.
+ */
+export function toLatin(text: string): string {
+  if (!text || !/[а-яёўқғҳі]/i.test(text)) return text;
+  // Tashkiliy-huquqiy shakllar loyihadagi lotin ko'rinishida: МЧЖ → MChJ, ЯТТ → YaTT
+  const s = [...text.replace(/(?<![а-яёўқғҳ])(МЧЖ|ЯТТ)(?![а-яёўқғҳ])/gi, (m) => (m.toUpperCase() === "МЧЖ" ? "MChJ" : "YaTT"))];
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    const lc = c.toLowerCase();
+    if (!isCyr(c)) { out += c; continue; }
+    const prev = s[i - 1]?.toLowerCase();
+    const nx = s[i + 1];
+    let r: string;
+    if (lc === "е") r = !isCyr(prev) || CYR_VOWEL.has(prev!) || prev === "ъ" || prev === "ь" ? "ye" : "e";
+    else if (lc === "ц") r = isCyr(prev) && CYR_VOWEL.has(prev!) ? "ts" : "s";
+    else if (lc === "ъ") r = nx && /[еёюя]/i.test(nx) ? "" : "'";
+    else r = LAT[lc] ?? c;
+    if (c !== lc && r) {
+      // Katta harf: so'z butunlay katta (qo'shni harf ham katta) bo'lsa — «SH», aks holda «Sh»
+      const near = isCyr(nx) ? nx : isCyr(s[i - 1]) ? s[i - 1] : undefined;
+      const allUp = !!near && near !== near.toLowerCase();
+      r = allUp ? r.toUpperCase() : r[0].toUpperCase() + r.slice(1);
+    }
+    out += r;
+  }
+  return out;
+}
+
 /** `rus` — rus tili: matn lug'at bo'yicha tarjima qilinadi (`lib/ru-translate.ts`), transliteratsiya emas. */
 export type Yozuv = "lotin" | "kiril" | "rus";
 export const YOZUV_COOKIE = "yozuv";

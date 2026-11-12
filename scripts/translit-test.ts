@@ -2,7 +2,7 @@
  * Lotin → kirill transliteratsiya testlari.
  * Ishga tushirish: npx tsx scripts/translit-test.ts
  */
-import { toCyrillic } from "../src/lib/translit";
+import { toCyrillic, toLatin } from "../src/lib/translit";
 
 const CASES: [string, string][] = [
   ["O'zbekiston", "Ўзбекистон"],
@@ -105,13 +105,44 @@ const CASES: [string, string][] = [
   ["", ""],
 ];
 
+/** Kirill → lotin (spravochniklarni lotinga o'tkazish: scripts/royxatlar-lotinga.ts) */
+const LATIN_CASES: [string, string][] = [
+  ["Ўзбекистон", "O'zbekiston"],
+  ["Ғалаба", "G'alaba"],
+  ["ШАҲАР", "SHAHAR"],
+  ["Шамшод 931434003", "Shamshod 931434003"],
+  ["маълумот", "ma'lumot"],
+  ["объект", "obyekt"],
+  ["Ер", "Yer"],
+  ["поезд", "poyezd"],
+  ["Цемент М-400", "Sement M-400"],
+  ["милиция", "militsiya"],
+  ["станция", "stansiya"],
+  ["Михайловка", "Mixaylovka"],
+  ["Ҳайдовчи", "Haydovchi"],
+  ["Ёғ", "Yog'"],
+  ["Янгиюл", "Yangiyul"],
+  ["Веник маленький", "Venik malenkiy"],
+  ["ФБС блок 24.4.6", "FBS blok 24.4.6"],
+  ["Бордюр БР 100.30.15", "Bordyur BR 100.30.15"],
+  ["\"Қурилиш\" МЧЖ", "\"Qurilish\" MChJ"],
+  ["ЯТТ Каримов", "YaTT Karimov"],
+  ["Beton M300", "Beton M300"],
+  ["", ""],
+];
+
 let fail = 0;
-for (const [src, want] of CASES) {
-  const got = toCyrillic(src);
-  if (got !== want) {
-    fail++;
-    console.log(`✗ ${JSON.stringify(src)} → ${JSON.stringify(got)} (kutilgan ${JSON.stringify(want)})`);
+const check = (fn: (s: string) => string, cases: [string, string][]) => {
+  for (const [src, want] of cases) {
+    const got = fn(src);
+    if (got !== want) {
+      fail++;
+      console.log(`✗ ${JSON.stringify(src)} → ${JSON.stringify(got)} (kutilgan ${JSON.stringify(want)})`);
+    }
   }
-}
-console.log(`${CASES.length - fail}/${CASES.length} o'tdi`);
+};
+check(toCyrillic, CASES);
+check(toLatin, LATIN_CASES);
+const total = CASES.length + LATIN_CASES.length;
+console.log(`${total - fail}/${total} o'tdi`);
 if (fail) process.exit(1);
