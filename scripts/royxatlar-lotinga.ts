@@ -5,11 +5,13 @@
  *   ENV_FILE=/var/www/insof-erp/tenants/<slug>.env npx tsx scripts/royxatlar-lotinga.ts          (faqat ro'yxat)
  *   ENV_FILE=/var/www/insof-erp/tenants/<slug>.env npx tsx scripts/royxatlar-lotinga.ts --yes    (yozish)
  *   ... --faqat=Product,Material   — faqat shu jadvallar
+ *   ... --takror                   — lotinda bir xil nomli yozuv bo'lsa ham o'girish (sukut: o'tkazib yuboriladi)
  *
  * Qoida `toLatin` (lib/translit.ts); birlik ustuni `normalizeUnit` bilan kanonik kodga keltiriladi (шт → dona, м3 → m3).
  * Hujjatlar (zayavka, reys, kassa izohlari) tegilmaydi — faqat ro'yxat yozuvlarining nomi.
- * Har o'zgarish AuditLog'ga UPDATE bo'lib yoziladi. Shu nom boshqa yozuvda allaqachon bo'lsa — ogohlantirish
- * (unique ustunda o'tkazib yuboriladi, qo'lda birlashtiriladi). Oldin pg_dump zaxira oling.
+ * Har o'zgarish AuditLog'ga UPDATE bo'lib yoziladi. Nom (name/fullName) lotinda boshqa yozuvda allaqachon bo'lsa —
+ * o'tkazib yuboriladi: avval ikki nusxani birlashtiring (mahsulot uchun scripts/mahsulot-birlashtirish.ts).
+ * Oldin pg_dump zaxira oling.
  */
 import { loadEnv } from "./env";
 loadEnv();
@@ -40,6 +42,8 @@ const TARGETS: [string, string[]][] = [
   ["ShiftTemplate", ["name"]],
 ];
 
+/** Takror tekshiriladigan ustunlar — yozuvning nomi; lavozim, birlik, marka kabi qiymatlarda bir xillik normal */
+const NAME_COLS = new Set(["name", "fullName"]);
 const CYR_RE = "[А-Яа-яЁёЎўҚқҒғҲҳІі]";
 const q = (id: string) => `"${id.replace(/"/g, "")}"`;
 
@@ -52,6 +56,7 @@ async function main() {
   const { audit } = await import("@/lib/audit");
   const { dbLabel } = await import("./demo-guard");
   const confirmed = process.argv.includes("--yes");
+  const allowDup = process.argv.includes("--takror");
   const only = process.argv.find((a) => a.startsWith("--faqat="))?.slice(8).split(",").map((s) => s.trim()).filter(Boolean);
 
   const cols = await db.$queryRawUnsafe<{ table_name: string; column_name: string }[]>(
@@ -75,7 +80,7 @@ async function main() {
       for (const r of rows) {
         const to = col === "unit" ? (normalizeUnit(r.v) ?? toLatin(r.v)) : toLatin(r.v);
         if (to === r.v) continue;
-        changes.push({ table, col, id: r.id, from: r.v, to, dup: col !== "address" && existing.has(to.toLowerCase()) });
+        changes.push({ table, col, id: r.id, from: r.v, to, dup: NAME_COLS.has(col) && existing.has(to.toLowerCase()) });
       }
     }
   }
@@ -88,16 +93,17 @@ async function main() {
     console.log(`  ${c.from}  →  ${c.to}${c.dup ? "   ⚠ shu nom allaqachon bor" : ""}`);
   }
   const dups = changes.filter((c) => c.dup).length;
-  if (dups) console.log(`\n⚠ ${dups} ta qiymat lotindagi mavjud yozuv bilan bir xil bo'ladi — ikki nusxani keyin qo'lda birlashtiring.`);
+  if (dups) console.log(`\n⚠ ${dups} ta nom lotindagi mavjud yozuv bilan bir xil bo'ladi — ${allowDup ? "--takror: baribir o'giriladi" : "o'tkazib yuboriladi (avval birlashtiring)"}.`);
   if (!confirmed) { console.log("\nFaqat ro'yxat. Yozish uchun: --yes\n"); return; }
-  if (!changes.length) return;
+  const todo = allowDup ? changes : changes.filter((c) => !c.dup);
+  if (!todo.length) return;
 
   const director = await db.user.findFirst({ where: { role: "DIRECTOR", isActive: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
   if (!director) throw new Error("Faol direktor topilmadi — audit kimga yozilishini bilmaymiz");
 
   let ok = 0;
   const skipped: string[] = [];
-  for (const c of changes) {
+  for (const c of todo) {
     const touch = has.has(`${c.table}.updatedAt`) ? `, ${q("updatedAt")} = now()` : "";
     try {
       const n = await db.$transaction(async (tx) => {
