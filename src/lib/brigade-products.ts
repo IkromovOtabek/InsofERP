@@ -118,6 +118,64 @@ export async function ownerOverview(opts?: { productId?: string; warehouseId?: s
   return { columns, rows: [...rows.values()].sort((a, b) => a.name.localeCompare(b.name, "uz", { numeric: true })) };
 }
 
+export type TurnCell = { in: number; out: number; close: number };
+export type OwnerTurnRow = { productId: string; name: string; unit: string; byOwner: Record<string, TurnCell>; total: TurnCell };
+
+/**
+ * Sklad → «Hovli va tayyor mahsulot» Excel jadvali: mahsulot × ombor (brigadalar, oxirida umumiy hovli). Har omborda davrdagi
+ * kirim (qty > 0), chiqim (qty < 0, musbat son bilan) va davr oxiridagi qoldiq (`to` gacha barcha harakatlar yig'indisi).
+ * Ko'chirish (OWNER_TRANSFER) brigada ustunida kirim/chiqim bo'ladi, «Jami» kirim/chiqimiga esa qo'shilmaydi — sklad jami o'zgarmaydi.
+ * `to` — eksklyuziv (`components/stock-period.tsx`).
+ */
+export async function ownerTurnover(period: { from: Date; to: Date }): Promise<{ columns: OwnerColumn[]; rows: OwnerTurnRow[] }> {
+  const dona: Prisma.StockMoveWhereInput = { productId: { not: null }, product: { unit: { not: "m3" } } };
+  const inPeriod: Prisma.StockMoveWhereInput = { ...dona, date: { gte: period.from, lt: period.to } };
+  const [close, plus, minus, products, names] = await Promise.all([
+    db.stockMove.groupBy({ by: ["productId", "ownerBrigadeId"], where: { ...dona, date: { lt: period.to } }, _sum: { qty: true } }),
+    db.stockMove.groupBy({ by: ["productId", "ownerBrigadeId", "type"], where: { ...inPeriod, qty: { gt: 0 } }, _sum: { qty: true } }),
+    db.stockMove.groupBy({ by: ["productId", "ownerBrigadeId", "type"], where: { ...inPeriod, qty: { lt: 0 } }, _sum: { qty: true } }),
+    db.product.findMany({ where: { unit: { not: "m3" } }, select: { id: true, name: true, unit: true } }),
+    brigadeNames(),
+  ]);
+  const meta = new Map(products.map((p) => [p.id, p]));
+  const rows = new Map<string, OwnerTurnRow>();
+  const used = new Set<Owner>();
+  const at = (productId: string | null, owner: Owner) => {
+    const p = productId ? meta.get(productId) : undefined;
+    if (!p) return null;
+    let r = rows.get(p.id);
+    if (!r) { r = { productId: p.id, name: p.name, unit: p.unit, byOwner: {}, total: { in: 0, out: 0, close: 0 } }; rows.set(p.id, r); }
+    const k = owner ?? COMMON_KEY;
+    used.add(owner);
+    let c = r.byOwner[k];
+    if (!c) { c = { in: 0, out: 0, close: 0 }; r.byOwner[k] = c; }
+    return { r, c };
+  };
+  for (const s of close) {
+    const q = r3(Number(s._sum.qty ?? 0));
+    if (Math.abs(q) <= STOCK_EPS) continue;
+    const x = at(s.productId, s.ownerBrigadeId);
+    if (!x) continue;
+    x.c.close = r3(x.c.close + q);
+    x.r.total.close = r3(x.r.total.close + q);
+  }
+  for (const [list, key] of [[plus, "in"], [minus, "out"]] as const) {
+    for (const s of list) {
+      const q = r3(Math.abs(Number(s._sum.qty ?? 0)));
+      if (q <= STOCK_EPS) continue;
+      const x = at(s.productId, s.ownerBrigadeId);
+      if (!x) continue;
+      x.c[key] = r3(x.c[key] + q);
+      if (s.type !== "OWNER_TRANSFER") x.r.total[key] = r3(x.r.total[key] + q);
+    }
+  }
+  const columns: OwnerColumn[] = [...used].filter((o): o is string => o !== null)
+    .map((o) => ({ key: o, owner: o, name: names.get(o) ?? "Brigada" }))
+    .sort((a, b) => a.name.localeCompare(b.name, "uz", { numeric: true }));
+  if (used.has(null)) columns.push({ key: COMMON_KEY, owner: null, name: COMMON_YARD });
+  return { columns, rows: [...rows.values()].sort((a, b) => a.name.localeCompare(b.name, "uz", { numeric: true })) };
+}
+
 export type BrigadeProduct = { productId: string; name: string; unit: string; qty: number };
 
 /** Bitta brigada omboridagi tayyor mahsulot (brigada kartasi, brigadir ilovasi). Nolga teng qatorlar chiqmaydi. */

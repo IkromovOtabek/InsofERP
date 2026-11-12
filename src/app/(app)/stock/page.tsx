@@ -177,7 +177,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         title={bolim === "xomashyo" ? "Xomashyo qoldiqlari" : bolim === "hovli" ? "Hovli va tayyor mahsulot" : bolim === "holat" ? "Sklad holati — xomashyo" : "Sklad"}
         back={bolim ? { href: "/stock", label: "Sklad" } : undefined}
         subtitle={bolim === "xomashyo" ? "Davr bo'yicha kirim, chiqim va qoldiq — har xomashyo, kategoriya va sklad kesimida."
-          : bolim === "hovli" ? "Hovlidagi dona mahsulot (erkin / zayavkaga band) va betondan xomashyo qoldig'i bilan qancha chiqadi."
+          : bolim === "hovli" ? "Dona mahsulot brigadalar bo'yicha: davrdagi kirim, chiqim va qoldiq; zayavkaga band / erkin va betondan xomashyo bilan qancha chiqadi."
           : bolim === "holat" ? "Qoldiq, kunlik sarf, necha kunga yetadi va tasdiqlangan zayavkalarga yetmaydigan xomashyo."
           : "Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."}
         action={
@@ -424,7 +424,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {holdings && !bolim && <div className="mb-4"><HoldingsPanel holdings={holdings} collapsible /></div>}
       {/* Xomashyo holati (yetadi / zayavkalarga kerak) va hovli — har biri o'z oynasida (tepadagi tugmalar); asosiy oynada — xomashyo qoldiqlari */}
       {tab === "balance" && bolim === "holat" && <RawStockStatus />}
-      {tab === "balance" && bolim === "hovli" && <YardStatus ombor={sp.ombor} canDistribute={canDo(s, "stock", "products")} />}
+      {tab === "balance" && bolim === "hovli" && <YardStatus ombor={sp.ombor} period={period} canDistribute={canDo(s, "stock", "products")} />}
       {tab === "balance" && (!bolim || bolim === "xomashyo") && (
         <div id="xomashyo" className="scroll-mt-20 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">

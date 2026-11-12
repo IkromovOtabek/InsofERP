@@ -16,7 +16,7 @@ import { addProductStockLines } from "@/lib/product-stock";
 import { taskProgress } from "@/lib/tasks";
 import { tripLoaded, tripDelivered } from "@/lib/trips";
 import { addProductDefect, deleteProductDefect } from "@/lib/defects";
-import { brigadeProducts, ownerOverview, splitByOwners, transferProductOwner, transferProductOwnerLines } from "@/lib/brigade-products";
+import { brigadeProducts, ownerOverview, ownerTurnover, splitByOwners, transferProductOwner, transferProductOwnerLines } from "@/lib/brigade-products";
 import { defaultWarehouse } from "@/lib/warehouse";
 
 async function main() {
@@ -130,6 +130,20 @@ async function main() {
   o = await own();
   const blokA = (await brigadeProducts(A.id)).find((p) => p.productId === blok.id)?.qty;
   check("plita 3 + blok 6 (ikki qator qo'shildi, 0 lisi tashlandi) → A", "ok" in m && m.count === 2 && o.u === 1 && o.a === 9 && blokA === 6, { m, o, blokA });
+
+  section("8. Hovli Excel jadvali — brigada × kirim / chiqim / qoldiq");
+  const from = new Date(); from.setDate(from.getDate() - 1);
+  const to = new Date(); to.setDate(to.getDate() + 1);
+  const tv = await ownerTurnover({ from, to });
+  const row = tv.rows.find((x) => x.productId === plita.id);
+  const ovRow = (await ownerOverview({ productId: plita.id })).rows[0];
+  check("qoldiq ombor bo'yicha «Brigada omborlari» bilan bir xil", !!row && !!ovRow && Object.entries(ovRow.byOwner).every(([k, q]) => Math.abs((row.byOwner[k]?.close ?? 0) - q) < 0.001) && Math.abs(row.total.close - ovRow.total) < 0.001, { row, ovRow });
+  check("har omborda qoldiq = kirim − chiqim (hamma harakat davr ichida)", !!row && Object.values(row.byOwner).every((c) => Math.abs(c.close - (c.in - c.out)) < 0.001), row);
+  const realIn = Number((await db.stockMove.aggregate({ where: { productId: plita.id, qty: { gt: 0 }, type: { not: "OWNER_TRANSFER" } }, _sum: { qty: true } }))._sum.qty ?? 0);
+  check("Jami kirim — ko'chirishsiz, brigada kirimida esa ko'chirish bor", !!row && Math.abs(row.total.in - realIn) < 0.001 && Object.values(row.byOwner).reduce((a, c) => a + c.in, 0) > realIn, { total: row?.total, realIn });
+  check("ustunlar: brigadalar, oxirida umumiy hovli", tv.columns.at(-1)?.owner === null && [A.id, B.id, C.id].every((id) => tv.columns.some((c) => c.owner === id)), tv.columns.map((c) => c.name));
+  const old = await ownerTurnover({ from: new Date("2000-01-01T00:00:00"), to: from });
+  check("davrdan oldin — plita qatori yo'q", !old.rows.some((x) => x.productId === plita.id), old.rows.length);
 
   done();
 }
