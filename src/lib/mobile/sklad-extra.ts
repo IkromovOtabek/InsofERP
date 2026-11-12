@@ -730,7 +730,7 @@ function recipientOf(rawId: string): string {
 
 export async function skladForm(user: MobileUser, key: string): Promise<CreateForm> {
   switch (key) {
-    case "products": return productsForm(user);
+    case "products": return productsForm();
     case "inventory": return inventoryForm();
     case "writeoff": return writeoffForm();
     case "recipient": return recipientForm();
@@ -744,22 +744,19 @@ const warehouseField = async (): Promise<FormField> => {
 };
 
 /** «Tayyor mahsulot qo'shish» — veb `/stock/products/new`: dona mahsulot, sklad, miqdor (butun son), izoh. */
-async function productsForm(user: MobileUser): Promise<CreateForm> {
-  const [products, moved, warehouse, brigades] = await Promise.all([
+async function productsForm(): Promise<CreateForm> {
+  const [products, warehouse, brigades] = await Promise.all([
     db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, orderBy: { code: "asc" }, select: { id: true, code: true, name: true, unit: true } }),
-    db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _count: { _all: true } }),
     warehouseField(),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
   ]);
-  const hasMoves = new Set(moved.map((m) => m.productId));
-  const director = user.role === "DIRECTOR";
   return {
     key: "products", title: "Tayyor mahsulot qo'shish", submitLabel: "Qo'shish",
     fields: [
       {
         name: "productId", label: "Mahsulot", type: "select", required: true,
-        options: products.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}`, hint: hasMoves.has(p.id) ? (director ? "harakati bor — direktor sifatida qo'shasiz" : "harakati bor — qo'lda qo'shib bo'lmaydi (faqat direktor)") : unitLabel(p.unit) })),
-        hint: "Faqat hali harakati yo'q dona mahsulotga boshlang'ich qoldiq; ishlab chiqarilgani topshiriq orqali kirim bo'ladi",
+        options: products.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}`, hint: unitLabel(p.unit) })),
+        hint: "Dona mahsulot — miqdor skladdagi qoldiqqa qo'shiladi",
       },
       warehouse,
       {

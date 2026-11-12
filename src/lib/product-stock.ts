@@ -6,8 +6,6 @@ import { isoDate } from "./format";
 import { ISSUE_BACK_DAYS } from "./stock-issue";
 import { Prisma, type Role } from "@/generated/prisma";
 
-class AddStockError extends Error {}
-
 /** Bitta formada qo'shiladigan qatorlar soni chegarasi */
 const MAX_LINES = 100;
 
@@ -31,13 +29,12 @@ function stockDay(s: string | null | undefined, now = new Date()): Date | { erro
 
 /**
  * Hovliga tayyor mahsulotni qo'lda kirim qilish (retseptsiz). Sklad harakati: ADJUSTMENT (+), refType "Manual".
- * Qoldiqni hujjatsiz oshirib bo'lmasin: faqat HALI HARAKATI YO'Q mahsulotga (boshlang'ich qoldiq)
- * yoki direktor. Ishlab chiqarilgan mahsulot topshiriq orqali (PRODUCTION_OUTPUT) kirim bo'ladi.
+ * Skladda harakati bor mahsulotga ham qo'shiladi (2026-11-12 dan cheklov yo'q) — har yozuv AuditLog'da.
  * Veb (`stock/products/actions.ts`) va mobil ilova (`lib/mobile/sklad-extra.ts`) shu yerdan chaqiradi.
  * Ruxsat (stock → "products") va `revalidatePath` — chaqiruvchida.
  *
  * Ikki marta bosilgan "Qo'shish": formadagi bir martalik kalit (StockMove.clientToken — unique) bilan
- * ikkinchi so'rov hech narsa yozmaydi (`dup`). Kalitsiz so'rov uchun — "harakati yo'q" tekshiruvi qulf ichida.
+ * ikkinchi so'rov hech narsa yozmaydi (`dup`).
  */
 export async function addProductStock(
   input: { productId: string; warehouseId: string; qty: number; brigadeId?: string | null; note?: string | null; clientToken?: string | null; date?: string | null },
@@ -98,13 +95,6 @@ export async function addProductStockLines(
   const res = await db.$transaction(async (tx) => {
     await lockStock(tx);
     if (clientToken && (await tx.stockMove.findUnique({ where: { clientToken }, select: { id: true } }))) return "dup" as const;
-    if (actor.role !== "DIRECTOR") {
-      const moved = await tx.stockMove.groupBy({ by: ["productId"], where: { productId: { in: [...perProduct.keys()] } } });
-      if (moved.length) {
-        const names = moved.map((m) => `"${byId.get(m.productId!)?.name}"`).join(", ");
-        throw new AddStockError(`${names} skladda harakati bor — qo'lda qoldiq qo'shib bo'lmaydi. Ishlab chiqarilgani topshiriq (brigada) orqali kirim bo'ladi; sanoq farqini direktor tuzatadi`);
-      }
-    }
     let first = true;
     for (const { productId, brigadeId, qty } of merged.values()) {
       const p = byId.get(productId)!;
@@ -114,7 +104,6 @@ export async function addProductStockLines(
     }
     return "ok" as const;
   }).catch((e: Error) => {
-    if (e instanceof AddStockError) return { error: e.message };
     if (clientToken && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return "dup" as const;
     throw e;
   });

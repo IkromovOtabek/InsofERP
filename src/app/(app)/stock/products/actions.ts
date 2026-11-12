@@ -21,7 +21,7 @@ const schema = z.object({
 
 /**
  * Hovliga tayyor mahsulotni qo'lda kirim qilish (retseptsiz) — bir nechta qator, tanlangan sana bilan; har qator — brigada omboriga.
- * Qoida `lib/product-stock.ts` da (mobil ilova ham shundan): faqat HALI HARAKATI YO'Q mahsulotga (boshlang'ich qoldiq) yoki direktor.
+ * Qoida `lib/product-stock.ts` da (mobil ilova ham shundan): skladda harakati bor mahsulotga ham qo'shiladi.
  */
 export async function addStock(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "products");

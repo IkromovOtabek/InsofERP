@@ -51,6 +51,12 @@ async function main() {
   let r = await addProductStockLines({ warehouseId: wh.id, lines: [{ productId: plita.id, qty: 10, brigadeId: A.id }, { productId: plita.id, qty: 5, brigadeId: B.id }, { productId: plita.id, qty: 3 }, { productId: plita.id, qty: 2, brigadeId: A.id }] }, actor);
   let o = await own();
   check("A 12 (ikki qator qo'shildi), B 5, umumiy 3, jami 20", "ok" in r && o.a === 12 && o.b === 5 && o.u === 3 && o.total === 20, { r, o });
+  // Harakati bor mahsulotga ham (direktor emas) qo'shiladi — cheklov 2026-11-12 da olindi
+  const qayta = await db.product.create({ data: { code: `QABQ${tag}`, name: `QA Qayta BO ${tag}`, unit: "dona" } });
+  await addProductStockLines({ warehouseId: wh.id, lines: [{ productId: qayta.id, qty: 2 }] }, actor);
+  r = await addProductStockLines({ warehouseId: wh.id, lines: [{ productId: qayta.id, qty: 3, brigadeId: C.id }] }, actor);
+  const qaytaSum = Number((await db.stockMove.aggregate({ where: { productId: qayta.id }, _sum: { qty: true } }))._sum.qty ?? 0);
+  check("harakati bor mahsulotga sklad roli ham qo'shadi (2 + 3 = 5)", "ok" in r && qaytaSum === 5, { r, qaytaSum });
   const nofaol = await db.brigade.create({ data: { name: `QA nofaol ${tag}`, isActive: false } });
   r = await addProductStockLines({ warehouseId: wh.id, lines: [{ productId: plita.id, qty: 1, brigadeId: nofaol.id }] }, { userId: U, role: "DIRECTOR" });
   check("nofaol brigadaga qo'shib bo'lmaydi", "error" in r && /Brigada/.test(r.error), r);
