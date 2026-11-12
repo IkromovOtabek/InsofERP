@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, startTransition, useActionState, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, startTransition, useActionState, useCallback, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,7 @@ import type { LedgerEditData } from "@/lib/ledger-edit";
 import { today } from "@/lib/davomat";
 import { fmtNum } from "@/lib/format";
 import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
+import { cn } from "@/lib/utils";
 
 /**
  * Yuborish — `onSubmit` + `startTransition`: `<form action>` bo'lsa React 19 xato bilan qaytgan amaldan keyin ham formani
@@ -171,6 +172,212 @@ export function KmFix({ tripId, km, hours, children }: { tripId: string; km: num
 
 const KIND_LABEL: Record<LedgerKind, string> = { trip: "ECO reys", entry: "Qo'lda qator", cost: "Reyssiz kun" };
 
+/** Bo'sh / nol — bo'sh maydon (tahrir oynasidagi `defaultValue`). */
+const val = (n: number | null) => (n ? String(n) : "");
+
+/** Reys haqi — dispetcher (`logistika.pay`), qotgan haq (kassaga o'tgan naqd / yopilgan oy) o'zgarmaydi; qo'lda qatorda — doim. */
+const payEditableOf = (x: LedgerEditData, canPay: boolean) => x.kind === "entry" || (x.kind === "trip" && canPay && !x.payLock);
+
+/**
+ * Tahrir oynasi «Saqlash» da yuboradigan qiymatlar — o'zgartirilmagan holda (`LedgerEditForm` dagi `name` + `defaultValue`).
+ * Katak tahriri shularning ustiga faqat o'z ustunini yozadi — server qolganini «o'zgarmadi» deb ko'radi.
+ */
+function editDefaults(x: LedgerEditData, payEditable: boolean): Record<string, string> {
+  const d: Record<string, string> = {
+    refuel: val(x.refuel), fuelPrice: x.fuelPrice != null ? String(x.fuelPrice) : "",
+    repair: val(x.repair), parts: val(x.parts), vulc: val(x.vulc), other: val(x.other),
+  };
+  if (x.kind === "cost") return d;
+  Object.assign(d, { pickup: x.pickup, km: val(x.km), drumHours: x.hours != null ? String(x.hours) : "", payAmount: x.pay != null ? String(x.pay) : "", note: x.note });
+  // Tanlov o'chirilgan (haq qotgan / dispetcher emas) bo'lsa oynada ham yuborilmaydi
+  if (payEditable) d.payType = x.payType ?? "";
+  if (x.kind === "entry") {
+    Object.assign(d, {
+      date: x.date, vehicleId: x.vehicleId, driverId: x.driverId ?? "", trips: String(x.trips), dropoff: x.dropoff, cargo: x.cargo,
+      revenue: val(x.revenue), revenueType: x.revenueType ?? "",
+    });
+  }
+  return d;
+}
+
+/** Katakdagi qalam qaysi ustun(lar)ni ochadi. «fuel» — zapravka va narxi, «pay» — haq va turi, «revenue» — kirim va turi. */
+export type LedgerField = "date" | "driver" | "pickup" | "dropoff" | "trips" | "cargo" | "km" | "hours" | "fuel" | "pay" | "repair" | "parts" | "vulc" | "other" | "revenue" | "note";
+
+/**
+ * Varaq katagidagi qalam (Realizatsiya'dagi kabi): bosilsa katak ostida kichik oyna — faqat shu ustun. Qatorning hozirgi
+ * qiymatlari oyna ochilganda serverdan olinadi, saqlash — butun qator tahriri bilan bir xil (`updateLedgerRowAction`):
+ * hamma tekshiruv, haq qoidalari, zapravka/xarajat yozuvlari va AuditLog o'sha yerda.
+ */
+export function LedgerCell({ kind, id, field, label, right, children }: {
+  kind: LedgerKind; id: string; field: LedgerField; label: string; right?: boolean; children: React.ReactNode;
+}) {
+  const [at, setAt] = useState<DOMRect | null>(null);
+  const close = useCallback(() => setAt(null), []);
+  return (
+    <span className={cn("group/cell flex items-start gap-1", right && "flex-row-reverse")}>
+      <span className="min-w-0 flex-1">{children}</span>
+      <button type="button" onClick={(e) => setAt(e.currentTarget.getBoundingClientRect())} aria-label={`${label}: tahrirlash`} title={`${label} — tahrirlash`}
+        className={cn("mt-px shrink-0 rounded p-0.5 transition hover:bg-slate-200 hover:!text-slate-900 print:hidden", at ? "bg-slate-200 text-slate-900" : "text-slate-300 group-hover/cell:text-slate-500")}>
+        <Pencil size={11} />
+      </button>
+      {at && <CellPopover kind={kind} id={id} field={field} label={label} at={at} onClose={close} />}
+    </span>
+  );
+}
+
+const POP_W = 300;
+
+function CellPopover({ kind, id, field, label, at, onClose }: { kind: LedgerKind; id: string; field: LedgerField; label: string; at: DOMRect; onClose: () => void }) {
+  const ctx = useContext(LedgerCtx);
+  const o = ctx?.options ?? EMPTY;
+  const [data, setData] = useState<LedgerEditData | null>(null);
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let live = true;
+    ledgerRowAction(kind, id)
+      .then((r) => { if (live) { if (r.row) setData(r.row); else setError(r.error ?? "Qatorni ochib bo'lmadi"); } })
+      .catch(() => { if (live) setError("Qatorni ochib bo'lmadi — sahifani yangilang"); });
+    return () => { live = false; };
+  }, [kind, id]);
+  // Esc — yopish; varaq yoki sahifa aylantirilsa oyna katakdan ajralib qolmasin — yopiladi
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onScroll = (e: Event) => { if (!box.current?.contains(e.target as Node)) onClose(); };
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onClose);
+    return () => { document.removeEventListener("keydown", onKey); window.removeEventListener("scroll", onScroll, true); window.removeEventListener("resize", onClose); };
+  }, [onClose]);
+  // Yuklangach birinchi maydonga fokus
+  useEffect(() => {
+    const el = box.current?.querySelector<HTMLInputElement | HTMLSelectElement>("input:not([type=hidden]):not([disabled]),select:not([disabled])");
+    el?.focus();
+    if (el instanceof HTMLInputElement && el.type === "text") el.select();
+  }, [data]);
+
+  const payEditable = data ? payEditableOf(data, !!ctx?.canPay) : false;
+  const save = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!data || pending) return;
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(editDefaults(data, payEditable))) fd.set(k, v);
+    for (const [k, v] of new FormData(e.currentTarget)) fd.set(k, v);
+    setError(undefined);
+    start(async () => {
+      const r = await updateLedgerRowAction(kind, id, undefined, fd);
+      if (r?.error) setError(r.error);
+      else { router.refresh(); onClose(); }
+    });
+  };
+
+  // Katak ostida; pastda joy bo'lmasa — ustida. Ekran chetidan chiqmaydi.
+  const left = Math.max(8, Math.min(at.left - 8, window.innerWidth - POP_W - 8));
+  const below = window.innerHeight - at.bottom > 280;
+  const pos: React.CSSProperties = below ? { top: at.bottom + 4, left, width: POP_W } : { bottom: window.innerHeight - at.top + 4, left, width: POP_W };
+
+  return createPortal((
+    <div className="fixed inset-0 z-50" onMouseDown={onClose}>
+      <div ref={box} role="dialog" aria-label={`${label}: tahrirlash`} style={pos} onMouseDown={(e) => e.stopPropagation()}
+        className="fixed space-y-2.5 rounded-lg border border-slate-200 bg-white p-3 text-left text-sm font-normal whitespace-normal text-slate-900 normal-case not-italic shadow-(--shadow-pop)">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[13px] font-semibold">{label}</div>
+            {data && <div className="truncate text-[11px] text-slate-500">{data.no || KIND_LABEL[kind]} · {data.dateText} · {data.plate}</div>}
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={15} /></button>
+        </div>
+        {data ? (
+          <form onSubmit={save} className="space-y-2.5">
+            <CellFields x={data} field={field} o={o} payEditable={payEditable} canPay={!!ctx?.canPay} />
+            <FormError error={error} />
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={onClose}>Bekor</Button>
+              <Button size="sm" disabled={pending || (field === "pay" && !payEditable)}><Check size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+            </div>
+          </form>
+        ) : error ? <FormError error={error} /> : <p className="py-4 text-center text-xs text-slate-500">Yuklanmoqda…</p>}
+      </div>
+    </div>
+  ), document.body);
+}
+
+/** Katak oynasidagi maydon(lar) — tahrir oynasidagi bilan bir xil nom va cheklovlar. */
+function CellFields({ x, field, o, payEditable, canPay }: { x: LedgerEditData; field: LedgerField; o: LedgerOptions; payEditable: boolean; canPay: boolean }) {
+  const cls = "h-9 text-right tabular";
+  const num = (name: string, value: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) =>
+    <Input name={name} type="number" min="0" step="any" defaultValue={value} className={cls} {...props} />;
+  const list = (id: string, items: string[]) => <datalist id={id}>{items.map((v) => <option key={v} value={v} />)}</datalist>;
+  switch (field) {
+    case "date":
+      return <Field label="Sana"><Input name="date" type="date" defaultValue={x.date} max={today()} required /></Field>;
+    case "driver": {
+      const drivers = x.driverId && !o.drivers.some((d) => d.id === x.driverId) ? [{ id: x.driverId, name: x.driver ?? "—" }, ...o.drivers] : o.drivers;
+      return (
+        <Field label="Haydovchi" hint={x.payLock ? `${x.payLock} — haydovchi o'zgarmaydi` : undefined}>
+          <Select name="driverId" defaultValue={x.driverId ?? ""}><option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select>
+        </Field>
+      );
+    }
+    case "pickup":
+      return <Field label="Yuklash joyi"><Input name="pickup" list="ledger-cell-list" defaultValue={x.pickup} placeholder="Zavod" maxLength={120} />{list("ledger-cell-list", o.pickups)}</Field>;
+    case "dropoff":
+      return <Field label="Tushirish joyi"><Input name="dropoff" list="ledger-cell-list" defaultValue={x.dropoff} placeholder="Obyekt yoki mijoz" maxLength={160} />{list("ledger-cell-list", o.dropoffs)}</Field>;
+    case "cargo":
+      return <Field label="Yuk"><Input name="cargo" list="ledger-cell-list" defaultValue={x.cargo} placeholder="M-250 10 m³" maxLength={120} />{list("ledger-cell-list", o.cargos)}</Field>;
+    case "trips":
+      return <Field label="Reys soni">{num("trips", String(x.trips), { max: 1000, step: 1 })}</Field>;
+    case "km":
+      return <Field label="Probeg, km">{num("km", val(x.km))}</Field>;
+    case "hours":
+      return <Field label="Baraban, soat" hint="0 — 24">{num("drumHours", x.hours != null ? String(x.hours) : "", { max: 24 })}</Field>;
+    case "fuel":
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label={`Zapravka, ${x.unit}`}>{num("refuel", val(x.refuel), { max: 1000 })}</Field>
+          <Field label="Narxi" hint={!x.fuelPrice && x.lastPrice ? `bo'sh — ${fmtNum(x.lastPrice, 0)}` : undefined}>
+            {num("fuelPrice", x.fuelPrice != null ? String(x.fuelPrice) : "", { placeholder: x.lastPrice ? String(x.lastPrice) : "" })}
+          </Field>
+          <p className="col-span-2 text-[11px] text-slate-500">0 — zapravka bekor qilinadi. Yoqilg&apos;i summasi va qoldiq o&apos;zi qayta hisoblanadi.</p>
+        </div>
+      );
+    case "pay":
+      if (!payEditable) {
+        return <p className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">{x.payLock ? `${x.payLock} — haq o'zgarmaydi.` : !canPay ? "Reys haqini dispetcher qo'yadi." : "Haq bu yerda o'zgarmaydi."}</p>;
+      }
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Haydovchi haqi" hint={x.kind === "trip" && !x.priced && x.suggested ? `taklif — ${fmtNum(x.suggested, 0)}` : undefined}>
+            {num("payAmount", x.pay != null ? String(x.pay) : "", { placeholder: x.kind === "trip" && !x.priced && x.suggested ? String(x.suggested) : "" })}
+          </Field>
+          <Field label="To'lov turi">
+            <Select name="payType" defaultValue={x.payType ?? ""}><option value="">—</option><option value="PAYROLL">Oylik</option><option value="CASH">Naqd</option></Select>
+          </Field>
+          {x.kind === "trip" && x.priced && <Field label="O'zgarsa — sababi" className="col-span-2"><Input name="payReason" maxLength={300} placeholder="Nega o'zgartirildi" /></Field>}
+          {x.kind === "entry" && x.approved && <p className="col-span-2 text-[11px] text-slate-500">Haq tasdiqlangan: summa yoki tur o&apos;zgarsa — ish boshqaruvchi qayta tasdiqlaydi.</p>}
+        </div>
+      );
+    case "repair": return <Field label="Ta'mir (usta)">{num("repair", val(x.repair))}</Field>;
+    case "parts": return <Field label="Zapchast">{num("parts", val(x.parts))}</Field>;
+    case "vulc": return <Field label="Vulkanizator">{num("vulc", val(x.vulc))}</Field>;
+    case "other": return <Field label="Boshqa xarajat">{num("other", val(x.other))}</Field>;
+    case "revenue":
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Kirim (bajarilgan)">{num("revenue", val(x.revenue))}</Field>
+          <Field label="Kirim turi">
+            <Select name="revenueType" defaultValue={x.revenueType ?? ""}><option value="">—</option><option value="BANK">P/R</option><option value="CASH">N/L</option><option value="OBJECT">Obyekt</option></Select>
+          </Field>
+        </div>
+      );
+    case "note":
+      return <Field label={x.kind === "trip" ? "Izoh (yetkazishdagi)" : "Izoh"}><Input name="note" defaultValue={x.note} maxLength={300} placeholder={x.kind === "entry" ? "bo'sh — yuklash → tushirish" : ""} /></Field>;
+  }
+}
+
 /**
  * Varaq qatoridagi qalam: Excel'dagidek hamma ustun bitta oynada (`lib/ledger-edit.ts`). Qiymatlar oyna ochilganda
  * serverdan olinadi — jadvalda har qatorga yuborilmaydi va tahrir eng so'nggi holatdan boshlanadi.
@@ -236,9 +443,7 @@ function LedgerEditForm({ x, onClose }: { x: LedgerEditData; onClose: () => void
   // Ro'yxatda yo'q (ko'chadan, faol emas) haydovchi va transport ham tanlovda tursin
   const drivers = x.driverId && !o.drivers.some((d) => d.id === x.driverId) ? [{ id: x.driverId, name: x.driver ?? "—" }, ...o.drivers] : o.drivers;
   const vehicles = [...(o.vehicles.some((v) => v.id === x.vehicleId) ? [] : [{ id: x.vehicleId, plate: x.plate }]), ...o.vehicles];
-  // Reys haqi — dispetcher (`pay`), qotgan haq (kassaga o'tgan naqd / yopilgan oy) o'zgarmaydi
-  const payEditable = entry || (trip && !!ctx?.canPay && !x.payLock);
-  const val = (n: number | null) => (n ? String(n) : "");
+  const payEditable = payEditableOf(x, !!ctx?.canPay);
   // Summa maydoni: step="any" — oldingi qiymat 1000 ga karrali bo'lmasa ham brauzer rad etmasin
   const money = (name: string, n: number) => <Input name={name} type="number" min="0" step="any" defaultValue={val(n)} className="text-right tabular" />;
   const fromTrip = "reys / zayavkadan";

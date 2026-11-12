@@ -41,7 +41,9 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
   const canManual = canDo(s, "logistika", "real_manual");
   // TTN reysning o'zida — reys ochuvchi yoki reestrni yurituvchi dispetcher yozadi
   const canTtn = canAuto || canDo(s, "trips", "create");
-  const [all, options] = await Promise.all([realizationLog(from, to), canAuto || canManual || canTtn ? realizationOptions() : null]);
+  const [log, options] = await Promise.all([realizationLog(from, to), canAuto || canManual || canTtn ? realizationOptions() : null]);
+  // Eng yangi kun tepada (bugun, bo'lmasa oxirgi jo'natma kuni); kun ichida varaqdagi tartib (TTN) qoladi — sort barqaror
+  const all = log.sort((a, b) => isoDate(b.date).localeCompare(isoDate(a.date)));
   const orderLink = pathAllowed("/orders", s.role, s.perms);
   const tripLink = pathAllowed("/trips", s.role, s.perms);
 
@@ -196,8 +198,9 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
     </Sheet>
   );
 
+  // `data-wide` — qobiqning 1400px cheklovi olinadi, varaq ekranning ikki yoniga yoyiladi
   const body = (
-    <div>
+    <div data-wide>
       <PageHeader
         title="Realizatsiya"
         subtitle={`${period} · ${trips} ta reys (TTN) · ${rows.length} qator`}
