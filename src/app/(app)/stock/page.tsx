@@ -48,7 +48,7 @@ const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; ombor?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string; q?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; ombor?: string; added?: string; qoshildi?: string; jami?: string; takror?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string; kat?: string; bolim?: string; q?: string }> }) {
   const s = await requirePage("/stock");
   const sp = await searchParams;
   const { added, updated, moved, guessed, ref, material } = sp;
@@ -218,6 +218,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       )}
       {added != null && (
         <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`}</Callout>
+      )}
+      {/* «Tayyor mahsulot qo'shish» saqlangandan keyin (`stock/products/actions.ts` → addStock) */}
+      {Number(sp.qoshildi) > 0 && (
+        sp.takror
+          ? <Callout tone="info" title="Allaqachon saqlangan">Bu forma hozirgina saqlangan edi — qayta yozilmadi.</Callout>
+          : <Callout tone="success" title="Tayyor mahsulot qo'shildi">{fmtNum(Number(sp.qoshildi))} ta mahsulot, jami {fmtNum(Number(sp.jami) || 0)} dona skladga kirim qilindi. Brigadalar bo&apos;yicha qoldiq — pastdagi «Brigada omborlari» jadvalida.</Callout>
       )}
 
       {arrivals.length > 0 && !bolim && (tab === "balance" || tab === "brigades") && (

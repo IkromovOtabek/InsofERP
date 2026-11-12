@@ -36,7 +36,9 @@ export async function addStock(_prev: ActionState, fd: FormData): Promise<Action
   if ("error" in res) return { error: res.error };
   revalidatePath("/stock");
   for (const id of new Set(d.productId)) revalidatePath(`/stock/products/${id}`);
-  redirect("/stock?tab=capacity");
+  // Sklad sahifasida yashil xabar: nechta mahsulot, jami necha dona (takror yuborilgan forma — «allaqachon saqlangan»)
+  const total = lines.reduce((a, l) => a + l.qty, 0);
+  redirect(`/stock?tab=capacity&qoshildi=${new Set(d.productId).size}&jami=${total}${res.dup ? "&takror=1" : ""}`);
 }
 
 const transferSchema = z.object({
