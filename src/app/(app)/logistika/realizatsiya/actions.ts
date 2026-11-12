@@ -62,10 +62,13 @@ export async function importRealizationAction(_prev: ActionState, fd: FormData):
   if (res.added) refresh();
   const bad = res.problems.length;
   // Hammasi joyida — reestrga, qo'shilganlar davri bilan
-  const fresh = res.newProducts.length;
-  if (res.added && !bad) redirect(`/logistika/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}-${fresh}`);
+  const fresh = res.newProducts.length, newCust = res.newCustomers.length;
+  if (res.added && !bad) {
+    redirect(`/logistika/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}-${fresh}-${newCust}`);
+  }
   // O'qilmagan qator bor — shu sahifada qoladi: qo'shilgani yashil, o'tkazilgani sababi bilan sariq (import to'xtamaydi)
-  const prods = fresh ? ` Katalogga ${fresh} ta yangi mahsulot qo'shildi (narxi 0): ${listProblems(res.newProducts, 10)}.` : "";
+  const prods = (fresh ? ` Katalogga ${fresh} ta yangi mahsulot qo'shildi (narxi 0): ${listProblems(res.newProducts, 10)}.` : "")
+    + (newCust ? ` Mijozlar ro'yxatiga ${newCust} ta yangi xaridor qo'shildi: ${listProblems(res.newCustomers, 10)}.` : "");
   const units = res.guessedUnits ? ` ${res.guessedUnits} tasida o'lchov ko'rsatilmagan yoki tanilmadi — mahsulot nomidan qo'yildi (m³ yoki dona), kerak bo'lsa mahsulotlar katalogida tuzating.` : "";
   const dup = res.skipped ? `${res.skipped} tasi reestrda bor edi — o'tkazib yuborildi` : "";
   return {

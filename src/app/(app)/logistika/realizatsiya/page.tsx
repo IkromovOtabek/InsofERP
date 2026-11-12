@@ -72,8 +72,8 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
   const trips = new Set(rows.map((r) => r.tripId).filter(Boolean)).size;
   const manual = rows.filter((r) => r.source === "MANUAL").length;
   const period = `${dateRu(from)} — ${dateRu(to)}`;
-  // Excel importdan qaytganda: «qo'shildi-o'tkazib yuborildi[-o'lchovi nomidan qo'yilgan[-katalogga qo'shilgan mahsulot]]»
-  const imported = /^(\d+)-(\d+)(?:-(\d+))?(?:-(\d+))?$/.exec(sp.import ?? "");
+  // Excel importdan qaytganda: «qo'shildi-o'tkazib yuborildi[-o'lchovi nomidan qo'yilgan[-yangi mahsulot[-yangi mijoz]]]»
+  const imported = /^(\d+)-(\d+)(?:-(\d+))?(?:-(\d+))?(?:-(\d+))?$/.exec(sp.import ?? "");
 
   // Excel — varaqdagi ustunlar tartibida
   const excelRows = rows.map((r) => ({
@@ -214,6 +214,7 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
         <Callout tone="success" title="Excel'dan import qilindi">
           {imported[1]} ta qator «Qo&apos;lda» bo&apos;lib qo&apos;shildi{Number(imported[2]) > 0 && `, ${imported[2]} tasi reestrda bor edi — o'tkazib yuborildi`}.
           {Number(imported[4]) > 0 && ` Katalogga ${imported[4]} ta yangi mahsulot qo'shildi (narxi 0).`}
+          {Number(imported[5]) > 0 && ` Mijozlar ro'yxatiga ${imported[5]} ta yangi xaridor qo'shildi.`}
           {Number(imported[3]) > 0 && ` ${imported[3]} tasida o'lchov ko'rsatilmagan yoki tanilmadi — mahsulot nomidan qo'yildi (m³ yoki dona), kerak bo'lsa mahsulotlar katalogida tuzating.`}
         </Callout>
       )}

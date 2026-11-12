@@ -10,6 +10,7 @@ import { dayField, numIn } from "@/lib/logistics-admin";
 import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
 import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-sheet";
 import { nextCatalogCode } from "@/lib/numbering";
+import { defaultCreditLimit } from "@/lib/finance";
 
 /**
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
@@ -28,8 +29,8 @@ import { nextCatalogCode } from "@/lib/numbering";
  *    QQS — perechisleniyeda 12% (miqdor × narx dan, dastavkasiz). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
  *  · Summa (QQSsiz) = miqdor × narx + dastavka; Jami = Summa + QQS (`lib/realization.ts` bilan bitta qoida).
  *  · Excel'dan import: varaqdagi qatorlar qo'lda qator bo'lib tushadi. Reestrda bori (reys yoki avval kiritilgan) o'tkazib
- *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`). Ro'yxatda yo'q mijoz nomi bilan
- *    qo'shiladi, ro'yxatda yo'q mahsulot katalogga ham qo'shiladi; o'qib bo'lmaydigan qator (sana, to'lov turi, miqdor)
+ *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`). Ro'yxatda yo'q xaridor mijozlarga,
+ *    ro'yxatda yo'q mahsulot katalogga ham qo'shiladi; o'qib bo'lmaydigan qator (sana, to'lov turi, miqdor)
  *    o'tkazib yuboriladi — qolganini to'xtatmaydi.
  */
 
@@ -516,10 +517,11 @@ export async function saveRealizationLineField(key: string, field: LineCell, val
 export type ImportRow = Record<string, unknown>;
 /**
  * `problems` — o'qilmagan va qo'shilmagan qatorlar (sabab bilan); `guessedUnits` — ro'yxatda yo'q mahsulot o'lchovi
- * ko'rsatilmagan yoki tanilmagan, nomidan qo'yilgan qatorlar soni; `newProducts` — katalogga qo'shilgan mahsulotlar nomi.
+ * ko'rsatilmagan yoki tanilmagan, nomidan qo'yilgan qatorlar soni; `newProducts` / `newCustomers` — katalogga qo'shilgan
+ * mahsulotlar va mijozlar ro'yxatiga qo'shilgan xaridorlar nomi.
  */
 export type ImportResult =
-  | { ok: true; added: number; skipped: number; problems: string[]; guessedUnits: number; newProducts: string[]; from: Date; to: Date }
+  | { ok: true; added: number; skipped: number; problems: string[]; guessedUnits: number; newProducts: string[]; newCustomers: string[]; from: Date; to: Date }
   | { error: string };
 
 const IMPORT_MAX = 3000;
@@ -565,8 +567,8 @@ const sameQty = (a: Seen, b: Seen) => Math.abs(a.qty - b.qty) < 0.0005;
 /**
  * Varaqdagi jo'natmalar → qo'lda qatorlar (bitta formadagi qoidalar bilan).
  * Xato qator importni to'xtatmaydi: sana, to'lov turi, xaridor yoki miqdori o'qilmagan qator sababi bilan `problems` ga tushadi,
- * qolganlari yoziladi. Ro'yxatda yo'q xaridor — xato emas, nomi bilan; ro'yxatda yo'q mahsulot katalogga qo'shiladi va bog'lanadi
- * (`addMissingProducts`; o'lchovi tanilmasa nomidan).
+ * qolganlari yoziladi. Ro'yxatda yo'q xaridor mijozlarga (`addMissingCustomers`), ro'yxatda yo'q mahsulot katalogga
+ * (`addMissingProducts`; o'lchovi tanilmasa nomidan) qo'shiladi va qator ularga bog'lanadi.
  * Uzun matn forma chegarasida kesiladi. Reestrda bor qator o'tkazib yuboriladi:
  *  · TTN bor — shu TTN reysdan yoki qo'lda qatorda ±1 kun ichida bor (mijoz, mahsulot, miqdor yoki mashinadan biri mos);
  *  · TTN'siz — o'sha kuni xaridor, mahsulot va miqdori bir xil qator bor (har mavjud qator bitta fayl qatoriga sanaladi).
@@ -650,13 +652,16 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
       used.add(twin);
       return false;
     });
-    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [] };
+    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [], newCustomers: [] };
     const cat = await addMissingProducts(tx, fresh, userId);
+    const cust = await addMissingCustomers(tx, fresh, userId);
     const created = await tx.realizationEntry.createManyAndReturn({
-      data: fresh.map((b) => ({ ...b, productId: b.productId ?? cat.idOf(b.productName), createdById: userId })),
+      data: fresh.map((b) => ({
+        ...b, productId: b.productId ?? cat.idOf(b.productName), customerId: b.customerId ?? cust.idOf(b.customerName), createdById: userId,
+      })),
     });
     await auditMany(tx, userId, "CREATE", "RealizationEntry", created.map((row) => ({ id: row.id, after: row })));
-    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created };
+    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: cust.created };
   }, { timeout: 60_000 });
   return { ok: true, ...res, problems, guessedUnits, from, to };
 }
@@ -702,6 +707,43 @@ async function addMissingProducts(
     await audit(tx, userId, "CREATE", "Product", p.id, undefined, p);
     idOf.set(key, p.id);
     created.push(p.name);
+  }
+  return result;
+}
+
+/**
+ * Importda ro'yxatda yo'q xaridor mijozlar ro'yxatiga ham qo'shiladi (Otabek, 2026-11-12) — boshqa Excel importlaridagidek:
+ * nomi bilan, standart kredit limiti (Sozlamalar → Limitlar), AuditLog'da `via: "realization-import"`. Reestr qatori faqat
+ * bog'lanadi — mijoz qarzi, kassa va skladga ta'sir yo'q. Bir xil nom (katta-kichik harfsiz) — bitta mijoz; import qulfi ostida
+ * nomi yoki aliasi bo'yicha qayta tekshiriladi. Faqat yoziladigan (reestrda yo'q) qatorlar uchun.
+ */
+async function addMissingCustomers(
+  tx: Prisma.TransactionClient,
+  rows: readonly { customerId: string | null; customerName: string }[],
+  userId: string,
+): Promise<{ idOf: (name: string) => string | null; created: string[] }> {
+  const lc = (v: string) => v.toLowerCase();
+  const want = new Map<string, string>();
+  for (const r of rows) if (!r.customerId && !want.has(lc(r.customerName))) want.set(lc(r.customerName), r.customerName);
+  const idOf = new Map<string, string>();
+  const created: string[] = [];
+  const result = { idOf: (n: string) => idOf.get(lc(n)) ?? null, created };
+  if (!want.size) return result;
+
+  const names = [...want.values()];
+  const have = await tx.customer.findMany({
+    where: { isInternal: false, OR: [...names.map((n) => ({ name: { equals: n, mode: "insensitive" as const } })), { aliases: { hasSome: names } }] },
+    orderBy: { isActive: "desc" }, select: { id: true, name: true, aliases: true },
+  });
+  for (const c of have) if (!idOf.has(lc(c.name))) idOf.set(lc(c.name), c.id);
+  for (const c of have) for (const a of c.aliases) if (!idOf.has(lc(a))) idOf.set(lc(a), c.id);
+  const limit = await defaultCreditLimit(tx);
+  for (const [key, name] of want) {
+    if (idOf.has(key)) continue;
+    const c = await tx.customer.create({ data: { name, creditLimit: limit } });
+    await audit(tx, userId, "CREATE", "Customer", c.id, undefined, { ...c, via: "realization-import" });
+    idOf.set(key, c.id);
+    created.push(c.name);
   }
   return result;
 }

@@ -320,9 +320,14 @@ check(impProds.length === 2 && impProds.every((p) => Number(p[2]) === 0 && p[3] 
   && n1(`select count(*) from "RealizationEntry" e join "Product" p on p.id=e."productId" where e."customerName"='QA Imp ${tag}'`) === 2
   && n1(`select count(*) from "AuditLog" where entity='Product' and action='CREATE' and "entityId" in (select id ${prodSql})`) === 2,
   "ro'yxatda yo'q mahsulot katalogga qo'shildi (faol, narxi 0, o'lchovi bilan), qatorlar unga bog'landi, AuditLog'da", JSON.stringify(impProds));
+const custSql = `from "Customer" where name='QA Imp ${tag}'`;
+check(n1(`select count(*) ${custSql}`) === 1 && n1(`select count(*) from "Customer" where name like 'QA Imp xato %${tag}'`) === 0
+  && n1(`select count(*) from "RealizationEntry" e join "Customer" c on c.id=e."customerId" where e."customerName"='QA Imp ${tag}'`) === 2
+  && n1(`select count(*) from "AuditLog" where entity='Customer' and action='CREATE' and "entityId" in (select id ${custSql})`) === 1,
+  "ro'yxatda yo'q xaridor mijozlarga bitta bo'lib qo'shildi, ikkala qator bog'landi; xato qator xaridori qo'shilmadi");
 r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/logistika/realizatsiya/import");
 check(r.ok && n1(`select count(*) from "RealizationEntry" where "customerName"='QA Imp ${tag}'`) === 2 && r.text.includes("Yangi qator yo'q")
-  && n1(`select count(*) ${prodSql}`) === 2, "o'sha faylni qayta yuklash — yangi qator va yangi mahsulot yo'q, takror yozilmadi", r.error);
+  && n1(`select count(*) ${prodSql}`) === 2 && n1(`select count(*) ${custSql}`) === 1, "o'sha faylni qayta yuklash — yangi qator, mahsulot va mijoz yo'q, takror yozilmadi", r.error);
 r = await logist.action(`${RA}#importRealizationAction`, [undefined, fd({ rows: JSON.stringify(impRows.slice(2)), valueMaps: "{}" })], "/logistika/realizatsiya/import");
 check(!r.ok && !!r.error?.includes("Hech bir qator qo'shilmadi"), "faqat xato qatorli fayl — qo'shilmadi deb aytildi", r.error);
 
