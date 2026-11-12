@@ -101,7 +101,7 @@ export async function runChecks(opts: { day?: Date; now?: Date } = {}): Promise<
 
   // 3. Naqd sotuv − kassaga tushgan (oy)
   const cashOrders = new Set((await db.order.findMany({ where: { id: { in: [...new Set(revenueMonth.map((r) => r.orderId))] }, payMethod: "CASH" }, select: { id: true } })).map((o) => o.id));
-  const cashSales = revenueMonth.filter((r) => cashOrders.has(r.orderId)).reduce((s, r) => s + r.revenue, 0);
+  const cashSales = revenueMonth.filter((r) => cashOrders.has(r.orderId) || r.rz?.payGroup === "CASH").reduce((s, r) => s + r.revenue, 0);
   const cashIn = Number(payCashMonth._sum.amount ?? 0);
   const gap = cashSales - cashIn;
   add({

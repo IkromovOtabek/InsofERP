@@ -83,14 +83,15 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const all = revMonth.map((r) => {
     const o = orderOf.get(r.orderId);
     const totalQty = o ? sum(o.items.map((i) => Number(i.qtyM3))) : 0;
-    const delivery = o && totalQty > 0 ? (Number(o.deliveryFee) * r.qty) / totalQty : 0;
-    const pay: PayGroupKey = o?.onCredit ? "DEBT" : o?.payMethod ? (o.payMethod === "BANK" ? "BANK" : "CASH") : o?.items.some((i) => i.nds) ? "BANK" : "CASH";
+    // Realizatsiya reestri qatori (`r.rz`) — zayavkasi yo'q: dastavka, to'lov turi, guruh va manzil qatorning o'zidan
+    const delivery = r.rz ? r.rz.delivery : o && totalQty > 0 ? (Number(o.deliveryFee) * r.qty) / totalQty : 0;
+    const pay: PayGroupKey = r.rz ? r.rz.payGroup : o?.onCredit ? "DEBT" : o?.payMethod ? (o.payMethod === "BANK" ? "BANK" : "CASH") : o?.items.some((i) => i.nds) ? "BANK" : "CASH";
     return {
-      src: r, unset: !!o && !o.onCredit && !o.payMethod, group: prods.get(r.productId)?.group ?? "Boshqalar",
+      src: r, unset: !!o && !o.onCredit && !o.payMethod, group: prods.get(r.productId)?.group ?? r.rz?.group ?? "Boshqalar",
       row: {
         pay, payLabel: payLabel.get(pay) ?? pay, seller: r.seller, customer: r.customer, product: r.product, unit: unitLabel(r.unit),
         qty: r.qty, price: r.qty ? r.net / r.qty : r.price, delivery, net: r.net + delivery, vat: r.revenue - r.net, total: r.revenue + delivery,
-        address: o?.site?.name || o?.deliveryAddress || "",
+        address: o?.site?.name || o?.deliveryAddress || r.rz?.address || "",
       } satisfies RzRow,
     };
   });
@@ -115,7 +116,7 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   // (chala oy hajmi ÷ butun oy ish kuni) past chiqardi. Joriy oy rekorddan oshsa — «Rekorddan %» 100% dan katta.
   const erpMonths = new Map<string, Map<string, number>>(); // guruh → "YYYY-M" → miqdor
   for (const r of hist) {
-    const g = prods.get(r.productId)?.group ?? "Boshqalar", k = `${r.date.getFullYear()}-${r.date.getMonth() + 1}`;
+    const g = prods.get(r.productId)?.group ?? r.rz?.group ?? "Boshqalar", k = `${r.date.getFullYear()}-${r.date.getMonth() + 1}`;
     const m = erpMonths.get(g) ?? new Map<string, number>(); m.set(k, (m.get(k) ?? 0) + r.qty); erpMonths.set(g, m);
   }
   const groupNames = [...records.map((r) => r.group), ...[...new Set(all.map((x) => x.group))].filter((g) => !records.some((r) => r.group === g)).sort((a, b) => sum(all.filter((x) => x.group === b).map((x) => x.src.qty)) - sum(all.filter((x) => x.group === a).map((x) => x.src.qty)))];

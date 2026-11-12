@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { TrendingUp, Receipt, ClipboardList, Users, Wallet, Percent, Boxes } from "lucide-react";
 import { salesTab } from "@/lib/bi/sales";
-import { type Range, type Gran, autoGran, addDays } from "@/lib/bi/core";
+import { type Range, type Gran, autoGran, addDays, isRealizationRow } from "@/lib/bi/core";
 import { money, moneyShort, fmtNum, qty, dateTime, isoDate } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select } from "@/components/ui";
 import { BarChart, DonutChart, HBarList, LineChart } from "@/components/ui/charts";
@@ -137,7 +137,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
           <thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Marka</Th><Th right>Miqdor</Th><Th right>Narx</Th><Th right>Summa</Th><Th right>Foyda</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {d.detail.rows.length === 0 && <Empty text="Tranzaksiya topilmadi" />}
-            {d.detail.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td><Link href={`/orders/${x.orderId}`} className="hover:underline">{x.customer}</Link></Td><Td>{x.product}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right className={x.price < x.basePrice ? "text-amber-600" : ""}>{moneyShort(x.price)}</Td><Td right className="font-medium">{money(x.revenue)}</Td><Td right className={x.revenue - x.cost < 0 ? "text-red-600" : "text-emerald-700"}>{x.cost ? moneyShort(x.revenue - x.cost) : "—"}</Td><Td><Tag>{x.status}</Tag></Td></Tr>)}
+            {d.detail.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td><Link href={isRealizationRow(x) ? `/logistika/realizatsiya?from=${isoDate(x.date)}&to=${isoDate(x.date)}` : `/orders/${x.orderId}`} className="hover:underline">{x.customer}</Link></Td><Td>{x.product}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right className={x.price < x.basePrice ? "text-amber-600" : ""}>{moneyShort(x.price)}</Td><Td right className="font-medium">{money(x.revenue)}</Td><Td right className={x.revenue - x.cost < 0 ? "text-red-600" : "text-emerald-700"}>{x.cost ? moneyShort(x.revenue - x.cost) : "—"}</Td><Td><Tag>{x.status}</Tag></Td></Tr>)}
           </tbody>
         </Table>
         <Pager total={d.detail.total} page={d.detail.page} size={d.detail.size} href={(p) => href({ page: String(p), size: String(size) })} />

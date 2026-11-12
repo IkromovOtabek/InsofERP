@@ -102,6 +102,8 @@ export type SaleRow = {
   net: number;
   /** Tannarx ma'lummi (faol retsept bor va har xomashyoning narxi bor). Bilinmasa marjaga kirmaydi — 100% foyda bo'lib ko'rinmasin */
   costKnown: boolean;
+  /** Faqat Realizatsiya reestri qatorida: zayavka yo'q — to'lov turi, dastavka, guruh va manzil qatorning o'zidan */
+  rz?: { payGroup: "BANK" | "CASH" | "DEBT"; delivery: number; group: string; address: string };
 };
 
 /* ───────────── Yalpi foyda: faqat tannarxi ma'lum qatorlar bo'yicha ───────────── */
@@ -228,6 +230,9 @@ export async function loadOrders(from: Date, to: Date, statuses: string[] = ACTI
  *
  * Reyssiz yopilgan zayavka (o'zi olib ketish, ЖБИ hovlidan) — DELIVERED/CLOSED va birorta yetkazilgan reysi
  * yo'q bo'lsa, to'liq summasi yetkazish sanasida (deliveryDate) tushum bo'ladi.
+ *
+ * Logistika → Realizatsiya reestrining qo'lda / Excel qatorlari (`RealizationEntry`) — tizimga reys bo'lib tushmagan
+ * jo'natma ham tushum (`realizationRows` pastda). Shu TTN bilan ±1 kunda yetkazilgan reys bo'lsa, qator ikki marta sanalmaydi.
  * Qaytadigan qator `SaleRow` bilan bir xil — marja, mahsulot kesimi va trend shu funksiyadan.
  */
 export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
@@ -267,6 +272,63 @@ async function queryRevenue(from: Date, to: Date): Promise<SaleRow[]> {
     out.push(...rowsOf(t.order, t.deliveredAt!, accepted / total));
   }
   for (const o of noTrip) out.push(...rowsOf(o, o.deliveryDate, 1));
+  out.push(...(await realizationRows(from, to, costs, vatPayer)));
+  return out;
+}
+
+/** Realizatsiya reestri qatori (`RealizationEntry`) — `SaleRow.orderId` shu prefiks bilan boshlanadi (zayavka emas, havola reestrga). */
+export const REALIZATION_PREFIX = "rz:";
+export const isRealizationRow = (r: { orderId: string }) => r.orderId.startsWith(REALIZATION_PREFIX);
+/** TTN solishtirish kaliti: «N-2026-00161», «ТТН-161», «№161», «161» — bitta (`lib/realization-log.ts` dagi qoida). */
+const ttnKey = (v: string | null | undefined) => (v ?? "").replace(/^.*-0*(?=\d)/, "").toLowerCase().replace(/[^0-9a-zа-яё]/g, "").replace(/^0+(?=\d)/, "");
+const nameKey = (v: string) => v.trim().toLowerCase().replace(/[ʻʼ’‘`']/g, "").replace(/\s+/g, " ");
+
+/**
+ * Reestrning qo'lda / Excel qatorlari → `SaleRow` (sana — jo'natma sanasi). Pul: miqdor × narx (QQSsiz) + QQS;
+ * dastavka zayavkalardagi kabi tushumga kirmaydi. Mijoz / mahsulot katalogga bog'langan bo'lsa — o'sha, aks holda nomi
+ * bo'yicha (`rz:` kalit, mijoz kartasi yo'q). «Zayavka» — bir kunda bitta xaridorga jo'natmalar.
+ * Sotuvchi: mijozga biriktirilgan agent → qatordagi sotuvchi nomi (xodimga mos kelsa — o'sha xodim) → «Ko'rsatilmagan».
+ * Tannarx faqat katalogdagi mahsulotda (retsept bo'yicha); chegirma hisoblanmaydi (bazaviy narx = sotilgan narx).
+ */
+async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<typeof productCosts>>, vatPayer: boolean): Promise<SaleRow[]> {
+  const entries = await db.realizationEntry.findMany({
+    where: { cancelledAt: null, date: { gte: from, lt: to } },
+    select: {
+      id: true, date: true, payGroup: true, seller: true, customerId: true, customerName: true, productId: true, productName: true, groupName: true, unit: true, ttn: true, qty: true, price: true, delivery: true, vat: true, destination: true,
+      customer: { select: { name: true, agentId: true, agent: { select: { fullName: true } } } }, product: { select: { name: true, code: true, unit: true } },
+    },
+  });
+  if (!entries.length) return [];
+  const DAY = 86_400_000;
+  const withTtn = entries.some((e) => ttnKey(e.ttn));
+  const [trips, users] = await Promise.all([
+    withTtn ? db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: new Date(from.getTime() - DAY), lt: new Date(to.getTime() + DAY) } }, select: { ttn: true, deliveryNoteNo: true, deliveredAt: true } }) : [],
+    entries.some((e) => e.seller) ? db.user.findMany({ select: { id: true, fullName: true } }) : [],
+  ]);
+  const tripDays = new Map<string, number[]>();
+  for (const t of trips) for (const k of new Set([ttnKey(t.ttn), ttnKey(t.deliveryNoteNo)])) if (k) tripDays.set(k, [...(tripDays.get(k) ?? []), t.deliveredAt!.getTime()]);
+  const userByName = new Map(users.map((u) => [nameKey(u.fullName), u]));
+  const out: SaleRow[] = [];
+  for (const e of entries) {
+    const k = ttnKey(e.ttn);
+    if (k && (tripDays.get(k) ?? []).some((d) => Math.abs(d - e.date.getTime()) <= DAY)) continue;
+    const qty = Number(e.qty), price = Number(e.price), vat = Number(e.vat);
+    const customer = e.customer?.name ?? e.customerName, customerId = e.customerId ?? `${REALIZATION_PREFIX}c:${nameKey(e.customerName)}`;
+    const u = e.seller ? userByName.get(nameKey(e.seller)) : undefined;
+    const seller = e.customer?.agentId && e.customer.agent ? { sellerId: e.customer.agentId, seller: e.customer.agent.fullName }
+      : u ? { sellerId: u.id, seller: u.fullName }
+      : { sellerId: `${REALIZATION_PREFIX}s:${nameKey(e.seller ?? "")}`, seller: e.seller?.trim() || "Ko'rsatilmagan" };
+    const c = e.productId ? costs.get(e.productId)?.cost ?? null : null;
+    const gross = qty * price + vat;
+    out.push({
+      date: e.date, orderId: `${REALIZATION_PREFIX}${isoDate(e.date)}:${customerId}`, orderNo: e.ttn ? `TTN ${e.ttn}` : "Realizatsiya", status: "DELIVERED",
+      customerId, customer, ...seller,
+      productId: e.productId ?? `${REALIZATION_PREFIX}p:${nameKey(e.productName)}`, product: e.product?.name ?? e.productName, code: e.product?.code ?? "", unit: e.product?.unit ?? e.unit,
+      qty, price: qty > 0 ? gross / qty : price, basePrice: qty > 0 ? gross / qty : price, revenue: gross, cost: qty * (c ?? 0),
+      net: vatPayer ? qty * price : gross, costKnown: c !== null,
+      rz: { payGroup: e.payGroup === "BANK" || e.payGroup === "DEBT" ? e.payGroup : "CASH", delivery: Number(e.delivery), group: e.groupName, address: e.destination ?? "" },
+    });
+  }
   return out;
 }
 

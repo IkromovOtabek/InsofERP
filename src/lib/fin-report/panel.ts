@@ -119,7 +119,7 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
   const sales = [...sg.values()].map((x) => ({ ...x, qtyToday: r2(x.qtyToday), sumToday: r2(x.sumToday), qtyMonth: r2(x.qtyMonth), sumMonth: r2(x.sumMonth), share: salesMonth ? (x.sumMonth / salesMonth) * 100 : 0, avgPrice: x.qtyMonth ? r2(x.sumMonth / x.qtyMonth) : null })).sort((a, b) => b.sumMonth - a.sumMonth);
   const salesTotal = { qtyToday: r2(sales.reduce((s, x) => s + x.qtyToday, 0)), sumToday: r2(sales.reduce((s, x) => s + x.sumToday, 0)), qtyMonth: r2(sales.reduce((s, x) => s + x.qtyMonth, 0)), sumMonth: salesMonth, share: salesMonth ? 100 : 0 };
   const cashOrders = new Set((await db.order.findMany({ where: { id: { in: [...new Set(revenueMonth.map((r) => r.orderId))] }, payMethod: "CASH" }, select: { id: true } })).map((o) => o.id));
-  const cashSalesSum = r2(revenueMonth.filter((r) => cashOrders.has(r.orderId)).reduce((s, r) => s + r.revenue, 0));
+  const cashSalesSum = r2(revenueMonth.filter((r) => cashOrders.has(r.orderId) || r.rz?.payGroup === "CASH").reduce((s, r) => s + r.revenue, 0));
   // Kassaga savdo tushumi: naqd hisobga mijoz to'lovlari + «Savdo» kirimi (to'lov bo'lib yozilmagan sotuv puli)
   const saleTxMonth = txMonth.filter(isSalesIncome);
   const cashIn = r2([...payMonth, ...saleTxMonth].filter((p) => p.cashAccount.type === "CASH").reduce((s, p) => s + Number(p.amount), 0));
