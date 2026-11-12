@@ -16,7 +16,6 @@ import { OWNER_EDGES } from "@/lib/receivables";
 import { autoGran, parseRange, type Kpi, type Range } from "@/lib/bi/core";
 import { overviewTab } from "@/lib/bi/overview";
 import { salesTab } from "@/lib/bi/sales";
-import { returnsTab } from "@/lib/bi/returns";
 import { agentsTab } from "@/lib/bi/agents";
 import { customersTab } from "@/lib/bi/customers";
 import { stockTab } from "@/lib/bi/stock";
@@ -352,7 +351,6 @@ async function budgetDetail(id: string): Promise<MobileDetail> {
 const BI_TABS: { key: string; title: string; hint: string; periodic: boolean }[] = [
   { key: "overview", title: "Umumiy ko'rinish", hint: "Biznes salomatligi, bugungi vazifalar, xavf ostidagi pul", periodic: true },
   { key: "sales", title: "Sotuvlar", hint: "Dinamika, mahsulot va mijoz kesimi, o'sganlar / pasayganlar", periodic: true },
-  { key: "cancelled", title: "Bekor qilinganlar", hint: "Yo'qotilgan tushum, sabablar, sotuvchilar", periodic: true },
   { key: "agents", title: "Agentlar", hint: "Sotuvchilar reytingi, sekinlashganlar, reja holati", periodic: true },
   { key: "customers", title: "Mijozlar", hint: "RFM segmentlar, qarz aging, kim bilan ishlash kerak", periodic: true },
   { key: "stock", title: "Ombor", hint: "Buyurtma navbati, xavf zonasi, muzlagan zaxira", periodic: true },
@@ -429,7 +427,7 @@ async function biSales({ r }: BiCtx): Promise<Part> {
       kf("Yalpi foyda", K.gross), f("Marja", `${fx(K.margin.cur)}%${arrow(K.margin.delta) ? ` · ${arrow(K.margin.delta)}` : ""}`), kf("Beton hajmi", K.volume, (v) => `${num(v)} m³`),
       f("Oy sur'ati", `${short(d.pulse.perDay)}/kun · prognoz ${short(d.pulse.forecast)}`),
       f("Chegirma", `${short(d.discount)} · ${d.discountCount} qator`, d.discount > 0 ? "warning" : undefined),
-      f("Yo'qotilgan tushum", `bloklangan ${short(d.lost.blocked)} (${d.lost.blockedOrders}) · bekor ${short(d.lost.cancelled)} (${d.lost.cancelledOrders})`, d.lost.blocked + d.lost.cancelled > 0 ? "warning" : undefined),
+      f("Bloklangan zayavkalar", `${short(d.lost.blocked)} · ${d.lost.blockedOrders} ta`, d.lost.blocked > 0 ? "warning" : undefined),
       ...(K.uncosted > 0 ? [f("Tannarxi noma'lum sotuv", short(K.uncosted), "info")] : []),
     ],
     sections: pick(
@@ -444,29 +442,6 @@ async function biSales({ r }: BiCtx): Promise<Part> {
   };
 }
 
-async function biCancelled({ r }: BiCtx): Promise<Part> {
-  const d = await returnsTab(r, autoGran(r.days), { page: 1, size: 1 });
-  const K = d.kpis;
-  const grp = (title: string, list: typeof d.byReason, o: { target?: string; icon?: string } = {}) =>
-    sec(title, list.slice(0, 10).map((x) => ({ id: x.key, title: x.name, subtitle: `${x.count} zayavka · ulush ${fx(x.share, 0)}%`, right: short(x.value) })), { ...o, empty: "Bekor qilingan yo'q" });
-  return {
-    title: "Bekor qilingan zayavkalar", subtitle: `Davr: ${r.label} · zayavka sanasi bo'yicha`,
-    fields: [
-      kf("Bekor qilingan tushum", K.total, short, true), f("Bekor ulushi", `${fx(K.rate.cur)}%${K.rateDelta ? ` · ${K.rateDelta > 0 ? "▲" : "▼"} ${fx(Math.abs(K.rateDelta))} p.p.` : ""}`, K.rateDelta > 0 ? "warning" : undefined),
-      kf("Yo'qotilgan marja", K.lostMargin, short, true), kf("Zayavkalar", K.count, (v) => `${Math.round(v)} ta`, true), kf("O'rtacha", K.avg),
-      f("Mijozlar", `${K.customers} ta`), f("Hajm", `${num(K.volume)} m³`), f("O'rtacha kunlik", short(d.avgDaily)),
-      ...(d.worst && d.worst.value > 0 ? [f("Eng yomon kun", `${d.worst.label} · ${short(d.worst.value)}`)] : []),
-    ],
-    sections: [
-      sec("Dinamika", dynRows(d.dyn), { icon: "chart-column", chart: barsOf("Bekor", d.dyn) }),
-      { ...grp("Sabablar", d.byReason, { icon: "triangle-alert" }), chart: donutOf(d.byReason.map((x) => ({ label: x.name, value: x.value }))) },
-      grp("Mahsulotlar", d.byProduct, { icon: "package" }),
-      grp("Sotuvchilar", d.bySeller, { icon: "user" }),
-      grp("Mijozlar", d.byCustomer, { target: "customers" }),
-    ],
-  };
-}
-
 const TIER_TONE: Record<string, Tone> = { TOP: "success", YAXSHI: "brand", "O'RTA": "warning", PAST: "danger" };
 
 async function biAgents({ r }: BiCtx): Promise<Part> {
@@ -477,7 +452,7 @@ async function biAgents({ r }: BiCtx): Promise<Part> {
     fields: [
       kf("Faol sotuvchilar", K.active, (v) => `${Math.round(v)} ta`), kf("Sotuv", K.revenue), kf("Sotuvchiga o'rtacha", K.perAgent),
       f("Zayavka sifati", `${fx(d.quality.pct, 0)}% · ${d.quality.converted}/${d.quality.created} sotuvga aylandi`),
-      f("Bugun", `${short(K.todayRevenue)} · ${K.todayOrders} zayavka`), f("Bekor qilingan", short(K.cancelledRevenue), K.cancelledRevenue > 0 ? "warning" : undefined),
+      f("Bugun", `${short(K.todayRevenue)} · ${K.todayOrders} zayavka`), f("Natijasiz zayavka", `${d.quality.created - d.quality.converted} ta`, d.quality.created - d.quality.converted > 0 ? "warning" : undefined),
       f("Reja (oy)", P.withPlan ? `${P.withPlan}/${P.total} rejali · ${P.done} bajardi · ${P.behind} ortda` : "reja belgilanmagan", P.behind ? "warning" : undefined),
       f("Sekinlashganlar", d.slow.length ? `${d.slow.length} ta · kuniga −${short(d.slowLoss)}` : "yo'q", d.slow.length ? "warning" : "success"),
       f("3+ kun faol emas", `${d.offline.length} ta`, d.offline.length ? "warning" : undefined),
@@ -813,7 +788,7 @@ async function biTelegram({ user }: BiCtx): Promise<Part> {
 }
 
 const BI_BUILDERS: Record<string, (c: BiCtx) => Promise<Part>> = {
-  overview: biOverview, sales: biSales, cancelled: biCancelled, agents: biAgents, customers: biCustomers, stock: biStock,
+  overview: biOverview, sales: biSales, agents: biAgents, customers: biCustomers, stock: biStock,
   products: biProducts, operations: biOperations, finance: biFinance, plan: () => biPlan(), marketing: biMarketing,
   mplan: () => biMarketingPlan(), mdata: () => biMarketingData(), forecast: () => biForecast(), churn: biChurn,
   clusters: biClusters, anomalies: () => biAnomalies(), telegram: biTelegram,
