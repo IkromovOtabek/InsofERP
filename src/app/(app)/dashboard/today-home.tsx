@@ -43,9 +43,9 @@ function PanelKpis({ p, d, allow }: { p: Panel; d: TodayData | null; allow?: (hr
   return (
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       <StatCard label={p.isToday ? "Jami pul (hozir)" : "Jami pul (kun oxiri)"} value={moneyShort(k.cash)} hint={fmtNum(k.cash)} icon={Wallet} href={to("/bi-tahlil/moliya/dds")} />
-      <StatCard label="Bugun kirim" value={moneyShort(k.inToday)} hint={fmtNum(k.inToday)} icon={ArrowDownLeft} tone="success" href={to("/cashflow", "/payments")} />
-      <StatCard label="Bugun chiqim" value={moneyShort(k.outToday)} hint={fmtNum(k.outToday)} icon={ArrowUpRight} tone="danger" href={to("/cashflow", "/payments")} />
-      <StatCard label="Bugun sotuv" value={moneyShort(k.salesToday)} hint={fmtNum(k.salesToday)} icon={ShoppingCart} href={to("/bi-tahlil/sotuvlar", "/sales/realizatsiya")} />
+      <StatCard label={p.isToday ? "Bugun kirim" : "Kun kirimi"} value={moneyShort(k.inToday)} hint={fmtNum(k.inToday)} icon={ArrowDownLeft} tone="success" href={to("/cashflow", "/payments")} />
+      <StatCard label={p.isToday ? "Bugun chiqim" : "Kun chiqimi"} value={moneyShort(k.outToday)} hint={fmtNum(k.outToday)} icon={ArrowUpRight} tone="danger" href={to("/cashflow", "/payments")} />
+      <StatCard label={p.isToday ? "Bugun sotuv" : "Kun sotuvi"} value={moneyShort(k.salesToday)} hint={fmtNum(k.salesToday)} icon={ShoppingCart} href={to("/bi-tahlil/sotuvlar", "/sales/realizatsiya")} />
       <StatCard label="Oy sotuvi" value={moneyShort(k.salesMonth)} hint={d?.sales.plan ? `reja ${moneyShort(d.sales.plan)} · ${pct(d.sales.pct ?? 0, 0)}` : fmtNum(k.salesMonth)} icon={TrendingUp} tone={d?.sales.pct != null && d.sales.pct < 50 ? "warning" : "success"} href={to("/bi-tahlil/sotuvlar", "/sales/realizatsiya")} />
       <StatCard label="Oy zavod sof foydasi" value={moneyShort(k.netMonth)} hint={p.isToday ? "hisoblangan PNL" : "butun oy, hisoblangan PNL"} icon={Scale} tone={k.netMonth < 0 ? "danger" : "brand"} href={to("/bi-tahlil/moliya/pnl")} />
       <StatCard label="Bizga qarzlar (haqdorlik)" value={moneyShort(k.receivable)} hint={d?.receivable.over60 ? `60+ kun: ${moneyShort(d.receivable.over60)}` : fmtNum(k.receivable)} icon={HandCoins} tone={d?.receivable.over60 ? "warning" : "default"} href={to("/bi-tahlil/mijozlar", "/bi-tahlil/mijozlar/xaridorlar")} />

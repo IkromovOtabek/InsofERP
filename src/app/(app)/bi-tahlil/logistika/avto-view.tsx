@@ -19,8 +19,10 @@ export function AvtoView({ r, period, base }: { r: AvtoReport; period: DayRange;
   const hasDt = r.rows.some((x) => x.dtNorm != null || x.dtGiven), hasGas = r.rows.some((x) => x.gasNorm != null || x.gasGiven);
   const dtDiff = (x: AvtoRow) => (x.dtNorm != null ? x.dtGiven - x.dtNorm : null);
   const gasDiff = (x: AvtoRow) => (x.gasNorm != null ? x.gasGiven - x.gasNorm : null);
-  const overFuel = t.fuelNormSum != null ? t.fuelSum - t.fuelNormSum : null;
   const normSum = r.rows.some((x) => x.fuelNormSum != null) ? r.rows.reduce((s, x) => s + (x.fuelNormSum ?? 0), 0) : null;
+  // Ortiqcha / tejaldi — faqat normasi bor mashinalar yoqilg'isi normaga solishtiriladi (normasizniki normaga kirmaydi)
+  const normFuel = r.rows.reduce((s, x) => s + (x.fuelNormSum != null ? x.fuelSum : 0), 0);
+  const overFuel = normSum != null ? normFuel - normSum : null;
   const sheet = (x: AvtoRow) => ({
     Mashina: x.plate, Turi: [x.type, x.model].filter(Boolean).join(" · "), Reys: x.trips, "Probeg (km)": x.km, "Baraban (soat)": x.hours,
     "DT norma (l)": x.dtNorm, "DT berilgan (l)": x.dtGiven, "DT farq (l)": dtDiff(x), "Gaz norma (m3)": x.gasNorm, "Gaz zapravka (m3)": x.gasGiven, "Gaz farq (m3)": gasDiff(x),
@@ -29,6 +31,7 @@ export function AvtoView({ r, period, base }: { r: AvtoReport; period: DayRange;
   });
   const active = r.rows.filter((x) => x.trips || x.fuelSum || x.total || x.cash || x.mechanic);
   const idle = r.rows.length - active.length;
+  const worked = active.filter((x) => x.trips || x.km).length;
 
   return (
     <div className="space-y-5">
@@ -44,8 +47,8 @@ export function AvtoView({ r, period, base }: { r: AvtoReport; period: DayRange;
       </DayRangeBar>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Reyslar" value={fmtNum(t.trips)} hint={`${fmtNum(t.km)} km · ${active.length} mashina ishladi`} icon={Truck} href="#mashinalar" />
-        <StatCard label="Yoqilg'i (berilgan)" value={moneyShort(t.fuelSum)} hint={normSum != null ? `norma ${moneyShort(normSum)}${overFuel != null && Math.abs(overFuel) >= 1 ? ` · ${overFuel > 0 ? "ortiqcha" : "tejaldi"} ${moneyShort(Math.abs(t.fuelSum - normSum))}` : ""}` : "norma kiritilmagan"} icon={Fuel} tone={normSum != null && t.fuelSum > normSum * 1.05 ? "danger" : "default"} href="#mashinalar" />
+        <StatCard label="Reyslar" value={fmtNum(t.trips)} hint={`${fmtNum(t.km)} km · ${worked} mashina ishladi`} icon={Truck} href="#mashinalar" />
+        <StatCard label="Yoqilg'i (berilgan)" value={moneyShort(t.fuelSum)} hint={normSum != null ? `norma ${moneyShort(normSum)}${overFuel != null && Math.abs(overFuel) >= 1 ? ` · ${overFuel > 0 ? "ortiqcha" : "tejaldi"} ${moneyShort(Math.abs(overFuel))}` : ""}` : "norma kiritilmagan"} icon={Fuel} tone={normSum != null && normFuel > normSum * 1.05 ? "danger" : "default"} href="#mashinalar" />
         <StatCard label="Jami xarajat" value={moneyShort(t.total)} hint={t.perKm != null ? `1 km ga ${fmtNum(t.perKm)} so'm` : "yoqilg'i + ish haqi + remont"} icon={Gauge} href="#mashinalar" />
         <StatCard label="Foyda (dastavka)" value={moneyShort(t.profit)} hint={`daromad ${moneyShort(t.revenue)}`} icon={Wallet} tone={t.profit < 0 ? "danger" : "success"} href="#mashinalar" />
       </div>

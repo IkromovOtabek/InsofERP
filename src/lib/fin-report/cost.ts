@@ -30,7 +30,7 @@ export const COEF_GROUPS: CostGroup[] = ["Sement", "Sheben, klinets, qum", "Arma
 
 const RULES: [CostGroup, RegExp][] = [
   ["Sement", /sement|цемент|cement/i],
-  ["Sheben, klinets, qum", /sheben|щеб|klinets|клинц|qum|песок|pesok|shag.?al|graviy|гравий|otsev|отсев|inert/i],
+  ["Sheben, klinets, qum", /sheben|щеб|klinet?s|клинц|qum|песок|pesok|shag.?al|graviy|гравий|otsev|отсев|inert/i],
   ["Armatura, metall", /armatur|арматур|metal|металл|provolok|проволок|katank|катанк/i],
   ["Xim. dobavka", /dobavk|добав|xim|хим|plastif|пластиф/i],
   ["Gaz (bug'lash)", /(^|\s)gaz(\s|$)|(^|\s)газ(\s|$)|propan|metan/i],

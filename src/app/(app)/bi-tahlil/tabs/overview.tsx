@@ -25,7 +25,7 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
       <div className="on-dark rounded-(--radius-card) bg-gradient-to-br from-ink-950 via-ink-900 to-slate-800 px-6 py-5 text-white shadow-(--shadow-pop)">
         <div className="flex items-center gap-2 text-xs text-slate-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Ma'lumotlar jonli · {fmtDate(today)} {String(today.getHours()).padStart(2, "0")}:{String(today.getMinutes()).padStart(2, "0")}</div>
         <h2 className="mt-1.5 text-2xl font-semibold tracking-tight">{greeting()}, {name.split(" ")[0]}!</h2>
-        <p className="mt-1 text-[14px] text-slate-300">Bugun <span className="font-medium text-white">{WEEKDAYS_FULL[today.getDay()]}, {fmtDate(today)}</span>. Bugungi sotuv <span className="font-semibold text-white">{moneyShort(d.todayRevenue)}</span> (<Delta value={d.todayDelta} label="kechagi kunga nisbatan" />) · {qty(d.todayM3)} m³ zayavka · {d.delivered}/{d.tripsToday} reys yetkazildi</p>
+        <p className="mt-1 text-[14px] text-slate-300">Bugun <span className="font-medium text-white">{WEEKDAYS_FULL[today.getDay()]}, {fmtDate(today)}</span>. Bugungi sotuv <span className="font-semibold text-white">{moneyShort(d.todayRevenue)}</span> (<Delta value={d.todayDelta} label="kechagi kunga nisbatan" />) · {qty(d.todayM3)} m³ beton sotildi ·{d.delivered}/{d.tripsToday} reys yetkazildi</p>
       </div>
 
       {/* Davr filtri — salomlashuvdan keyin (qobiqda emas: BiPage'ga period={false} berilgan) */}

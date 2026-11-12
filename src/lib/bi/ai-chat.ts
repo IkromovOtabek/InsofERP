@@ -88,3 +88,56 @@ export async function addMessage(
 
   return { ...msg, role: msg.role === "assistant" ? "assistant" : "user" };
 }
+
+/* ───────────── Foydalanish statistikasi (KPI qatori) ───────────── */
+
+const avg = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+
+/**
+ * Panel chatida javob vaqti: har suhbatda user xabaridan keyingi birinchi assistant xabarigacha (ms).
+ * `sendAction` savolni AI'dan oldin, javobni keyin yozadi — farq javob tayyorlash vaqti. Javobsiz qolgan savol
+ * (xato) keyingi savolning javobiga ulanmaydi.
+ */
+export function panelLatencies(rows: { chatId: string; role: string; createdAt: Date }[]): number[] {
+  const pending = new Map<string, number>(), out: number[] = [];
+  for (const r of [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
+    if (r.role === "user") pending.set(r.chatId, r.createdAt.getTime());
+    else if (pending.has(r.chatId)) { out.push(r.createdAt.getTime() - pending.get(r.chatId)!); pending.delete(r.chatId); }
+  }
+  return out;
+}
+
+/**
+ * Insof AI'dan foydalanish: panel chat (`AiMessage`) + Telegram bot (`TelegramMessage`), joriy oy va bugun.
+ * `userId` berilsa — faqat shu foydalanuvchi; `null` — butun korxona (direktor uchun). Savol matni qaytarilmaydi:
+ * panel suhbatlari egasiga xos, statistikada faqat son va vaqt.
+ */
+export async function aiUsageStats(userId: string | null) {
+  const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate()), month0 = new Date(now.getFullYear(), now.getMonth(), 1);
+  const chatScope = userId ? { chat: { userId } } : {}, tgScope = userId ? { account: { userId } } : {};
+  const [panel, tg, chats, lastPanel, lastTg] = await Promise.all([
+    db.aiMessage.findMany({ where: { ...chatScope, createdAt: { gte: month0 } }, select: { chatId: true, role: true, createdAt: true, chat: { select: { userId: true } } } }),
+    db.telegramMessage.findMany({ where: { ...tgScope, createdAt: { gte: month0 } }, select: { kind: true, level: true, latencyMs: true, createdAt: true, account: { select: { userId: true } } } }),
+    db.aiChat.count({ where: userId ? { userId } : {} }),
+    db.aiMessage.findFirst({ where: { ...chatScope, role: "user" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    db.telegramMessage.findFirst({ where: tgScope, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+  ]);
+  const asked = panel.filter((m) => m.role === "user");
+  const pLat = panelLatencies(panel), tLat = tg.map((m) => m.latencyMs).filter((v): v is number => v !== null);
+  const users = new Set([...asked.map((m) => m.chat.userId), ...tg.map((m) => m.account.userId).filter((v): v is string => !!v)]);
+  const last = [lastPanel && { at: lastPanel.createdAt, channel: "Panel" as const }, lastTg && { at: lastTg.createdAt, channel: "Telegram" as const }]
+    .filter((x): x is { at: Date; channel: "Panel" | "Telegram" } => !!x).sort((a, b) => b.at.getTime() - a.at.getTime())[0] ?? null;
+  return {
+    today: asked.filter((m) => m.createdAt >= today).length + tg.filter((m) => m.createdAt >= today).length,
+    month: asked.length + tg.length,
+    panel: { today: asked.filter((m) => m.createdAt >= today).length, month: asked.length, avgMs: avg(pLat) },
+    telegram: { today: tg.filter((m) => m.createdAt >= today).length, month: tg.length, voice: tg.filter((m) => m.kind === "voice").length, llm: tg.filter((m) => m.level > 0).length, avgMs: avg(tLat) },
+    /** Bu oy savol bergan foydalanuvchilar soni */
+    users: users.size,
+    /** O'rtacha javob vaqti (ms), ikkala kanal — bu oy */
+    avgMs: avg([...pLat, ...tLat]),
+    chats,
+    last,
+  };
+}
+export type AiUsage = Awaited<ReturnType<typeof aiUsageStats>>;

@@ -1,9 +1,10 @@
-import { Bot, Mic, Sparkles, Link2, ShieldAlert } from "lucide-react";
+import { Bot, Mic, Sparkles, Link2, ShieldAlert, Users, MessageSquare, Timer } from "lucide-react";
 import { biContext } from "../../shell";
-import { Panel, Note } from "../../ui";
+import { Panel, Note, Kpi } from "../../ui";
 import { Badge, Button, Table, Td, Th, Tr, Empty } from "@/components/ui";
 import { db } from "@/lib/db";
-import { dateTime } from "@/lib/format";
+import { dateTime, fmtNum } from "@/lib/format";
+import { aiUsageStats } from "@/lib/bi/ai-chat";
 import { ROLE_LABELS } from "@/lib/nav";
 import { llmEnabled, llmProvider, PROVIDER_LABEL } from "@/lib/ai/llm";
 import { botEnabled, getMe } from "@/lib/telegram/api";
@@ -24,7 +25,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const bot = botEnabled() ? await getMe().catch(() => null) : null;
   const stt = sttProvider();
 
-  const [mine, all, messages] = await Promise.all([
+  const [mine, all, messages, usage] = await Promise.all([
     db.telegramAccount.findMany({ where: { userId: s.userId }, orderBy: { linkedAt: "desc" } }),
     isDirector
       ? db.telegramAccount.findMany({ where: { userId: { not: null } }, orderBy: { linkedAt: "desc" }, include: { user: true } })
@@ -35,7 +36,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       take: 15,
       include: { account: { include: { user: true } } },
     }),
+    // Statistika: direktor — hamma, boshqalar — faqat o'z savollari (jurnal bilan bir xil)
+    aiUsageStats(isDirector ? null : s.userId),
   ]);
+  const tg = usage.telegram, linked = isDirector ? all : mine, blocked = linked.filter((a) => a.isBlocked).length;
 
   const ready = Boolean(bot) && Boolean(stt);
 
@@ -48,6 +52,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           Telegramga ovozli xabar yuborasiz — bot uni matnga o'giradi, ERP ma'lumotlari asosida javob qaytaradi.
           Javob shu sahifadagi tahlil raqamlaridan olinadi, bot hech qanday ma'lumotni o'zgartirmaydi.
         </p>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Kpi label={isDirector ? "Ulangan hisoblar" : "Ulangan chatlaringiz"} value={String(linked.length)} icon={Users} tone="brand" hint={blocked ? `${blocked} tasi bloklangan` : linked.length ? "hammasi faol" : "hali ulanmagan"} />
+        <Kpi label="Bu oy savollar" value={String(tg.month)} icon={MessageSquare} tone="info" hint={`bugun ${tg.today} · ovozli ${tg.voice}`} />
+        <Kpi label="O'rtacha javob vaqti" value={tg.avgMs === null ? "—" : `${fmtNum(tg.avgMs / 1000, 1)} soniya`} icon={Timer} hint={tg.month ? `Claude javoblari ${fmtNum((tg.llm / tg.month) * 100, 0)}% · qolgani qoida` : "bu oy savol yo'q"} />
+        <Kpi label="Bot holati" value={ready ? "Ishlayapti" : bot ? "Qisman" : "Sozlanmagan"} icon={Bot} tone={ready ? "success" : bot ? "warning" : "danger"} hint={bot ? `@${bot.username}${stt ? "" : " · ovoz→matn kaliti yo'q"}` : "TELEGRAM_BOT_TOKEN yo'q"} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">

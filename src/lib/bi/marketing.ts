@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { type Range, sum, safeDiv, median, delta, startOfDay, addDays, goLiveDate } from "./core";
 import { customerBase } from "./customers";
 import { MONTHS_UZ, MONTHS_SHORT } from "./plans";
+import { fmtNum, money } from "@/lib/format";
 
 export const CHANNELS = ["Instagram", "Telegram", "Google Ads", "Facebook", "YouTube", "Influencer", "Banner", "SMS", "OLX / e'lon", "Tavsiya (referal)", "Boshqa"];
 export const KIND_LABEL = { BUDGET: "Byudjet (ajratilgan pul)", PLAN: "Reja (natija maqsadlari)", FACT: "Fakt (to'langan xarajat va natija)" } as const;
@@ -22,7 +23,9 @@ function channelStats(list: Entry[]) {
 
 /** Marketing tahlili — Team24 "Marketing" ekvivalenti. Ma'lumot MarketingEntry (fakt yozuvlari) dan. */
 export async function marketingTab(r: Range) {
-  const ms = monthsIn(r.from, r.to), prevMs = monthsIn(r.prevFrom, r.prevTo);
+  // Yozuvlar oy kesimida: qisqa davrda (masalan 15–20-sentabr) oldingi davr ham shu oyga tushadi va oy o'zi bilan
+  // taqqoslanib "0%" chiqardi — joriy davr oylari oldingi davrdan chiqariladi
+  const ms = monthsIn(r.from, r.to), prevMs = monthsIn(r.prevFrom, r.prevTo).filter((m) => !ms.some((c) => c.year === m.year && c.month === m.month));
   const [raw, customers, live] = await Promise.all([db.marketingEntry.findMany(), customerBase(), goLiveDate()]);
   const all = raw.map(toEntry);
   const cur = all.filter((e) => inMonths(e, ms)), prev = all.filter((e) => inMonths(e, prevMs));
@@ -56,9 +59,9 @@ export async function marketingTab(r: Range) {
     { label: "Mijozlar", value: t.customers, cost: t.cac ?? 0 },
   ];
   const signals: { level: "success" | "warning" | "danger" | "info"; title: string; text: string }[] = [];
-  if (best && best.roas) signals.push({ level: "success", title: `Eng samarali kanal — ${best.channel}`, text: `ROAS ${best.roas.toFixed(1)}x. Byudjetni shu kanal tomon siljitish mumkin.` });
-  for (const c of stop) signals.push({ level: "danger", title: `${c.channel} zarar keltiryapti`, text: `ROAS ${(c.roas ?? 0).toFixed(2)}x — sarflangan puldan kam qaytyapti. To'xtating yoki auditoriyani qayta ko'ring.` });
-  for (const c of verdicts.filter((c) => c.verdict === "KAMAYTIRING")) signals.push({ level: "warning", title: `${c.channel} sust ishlayapti`, text: `ROAS ${(c.roas ?? 0).toFixed(1)}x — mediana (${med.toFixed(1)}x) dan past.` });
+  if (best && best.roas) signals.push({ level: "success", title: `Eng samarali kanal — ${best.channel}`, text: `ROAS ${fmtNum(best.roas, 1)}x. Byudjetni shu kanal tomon siljitish mumkin.` });
+  for (const c of stop) signals.push({ level: "danger", title: `${c.channel} zarar keltiryapti`, text: `ROAS ${fmtNum(c.roas ?? 0, 2)}x — sarflangan puldan kam qaytyapti. To'xtating yoki auditoriyani qayta ko'ring.` });
+  for (const c of verdicts.filter((c) => c.verdict === "KAMAYTIRING")) signals.push({ level: "warning", title: `${c.channel} sust ishlayapti`, text: `ROAS ${fmtNum(c.roas ?? 0, 1)}x — mediana (${fmtNum(med, 1)}x) dan past.` });
   if (erpComparable && t.customers && erpNew && Math.abs(t.customers - erpNew) / Math.max(t.customers, erpNew) > 0.3) signals.push({ level: "info", title: "Marketing hisoboti va ERP farq qilyapti", text: `Marketing ${t.customers} ta yangi mijoz deb yozgan, ERP da davrda ${erpNew} ta mijoz birinchi buyurtma bergan. Manbani tekshiring.` });
   if (!cur.length) signals.push({ level: "info", title: "Bu davr uchun ma'lumot kiritilmagan", text: "Marketing ma'lumotlari sahifasida oy × kanal bo'yicha fakt yozuvlarini kiriting." });
 
@@ -88,9 +91,9 @@ export async function marketingPlanTab(year: number, month: number) {
   if (!sel.some((e) => e.kind === "PLAN")) notes.push({ level: "warning", title: "Reja kiritilmagan", text: "Marketing ma'lumotlari sahifasida byudjet va reja kiriting — shundan keyin bu yerda bajarilish ko'rinadi." });
   else {
     const rp = totals.plan.revenue ? (totals.fact.revenue / totals.plan.revenue) * 100 : null;
-    if (rp !== null) notes.push({ level: rp >= 100 ? "success" : rp >= 70 ? "info" : "danger", title: `Daromad rejasi ${rp.toFixed(0)}% bajarildi`, text: `Reja ${Math.round(totals.plan.revenue).toLocaleString("ru")} so'm, fakt ${Math.round(totals.fact.revenue).toLocaleString("ru")} so'm.` });
+    if (rp !== null) notes.push({ level: rp >= 100 ? "success" : rp >= 70 ? "info" : "danger", title: `Daromad rejasi ${fmtNum(rp, 0)}% bajarildi`, text: `Reja ${money(totals.plan.revenue)}, fakt ${money(totals.fact.revenue)}.` });
     const over = byChannel.filter((c) => c.pct.spend !== null && c.pct.spend > 110);
-    if (over.length) notes.push({ level: "warning", title: `${over.length} ta kanal byudjetdan oshdi`, text: over.map((c) => `${c.channel} (${c.pct.spend!.toFixed(0)}%)`).join(", ") });
+    if (over.length) notes.push({ level: "warning", title: `${over.length} ta kanal byudjetdan oshdi`, text: over.map((c) => `${c.channel} (${fmtNum(c.pct.spend!, 0)}%)`).join(", ") });
   }
   return { year, month, byChannel, totals, monthly, notes, months: MONTHS_UZ };
 }

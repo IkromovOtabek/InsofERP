@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Info, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { Info, AlertTriangle, CheckCircle2, XCircle, Wallet, Coins, Megaphone, Users, TrendingUp, Percent } from "lucide-react";
 import { biContext, BiPage } from "../../shell";
 import { marketingPlanTab } from "@/lib/bi/marketing";
 import { MONTHS_SHORT } from "@/lib/bi/plans";
 import { moneyShort, fmtNum } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty } from "@/components/ui";
 import { BarChart } from "@/components/ui/charts";
-import { Panel, Note, ProgressBar, Chip, Action } from "../../ui";
+import { Kpi, Panel, Note, ProgressBar, Chip, Action } from "../../ui";
 import { cn } from "@/lib/utils";
 import { requirePage } from "@/lib/page-guard";
 
@@ -24,6 +24,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const M = { revenue: { label: "Daromad", plan: (m: typeof d.monthly[number]) => m.planRevenue, fact: (m: typeof d.monthly[number]) => m.factRevenue, fmt: (v: number) => `${moneyShort(v)} so'm` }, spend: { label: "Xarajat", plan: (m: typeof d.monthly[number]) => m.planSpend, fact: (m: typeof d.monthly[number]) => m.factSpend, fmt: (v: number) => `${moneyShort(v)} so'm` }, leads: { label: "Leadlar", plan: (m: typeof d.monthly[number]) => m.planLeads, fact: (m: typeof d.monthly[number]) => m.factLeads, fmt: (v: number) => `${v} ta` }, customers: { label: "Mijozlar", plan: (m: typeof d.monthly[number]) => m.planCustomers, fact: (m: typeof d.monthly[number]) => m.factCustomers, fmt: (v: number) => `${v} ta` } }[metric];
   const href = (p: Record<string, string | number>) => `/bi-tahlil/marketing/reja?${new URLSearchParams({ year: String(year), month: String(month), metric, ...Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)])) })}`;
   const Icon = { info: Info, warning: AlertTriangle, success: CheckCircle2, danger: XCircle };
+  // KPI qatori — tanlangan oy (yoki butun yil) jami: fakt va reja bajarilishi
+  const T = d.totals;
+  const ratio = (f: number, p: number) => (p ? (f / p) * 100 : null);
+  const kTone = (v: number | null) => (v === null ? "default" : v >= 100 ? "success" : v >= 70 ? "warning" : "danger") as "default" | "success" | "warning" | "danger";
+  const planHint = (p: number, f: number, show: (v: number) => string) => (p ? `reja ${show(p)} · ${pct(ratio(f, p))}` : "reja kiritilmagan");
+  const spendBase = T.plan.spend || T.budget, spendPct = ratio(T.fact.spend, spendBase);
+  const dataHref = (kind: string) => `/bi-tahlil/marketing/malumotlar?${new URLSearchParams({ year: String(year), ...(month ? { month: String(month) } : {}), kind })}#yozuvlar`;
 
   return (
     <BiPage title="Marketing reja nazorati" subtitle="Kanal bo'yicha reja bajarilishi — xarajat, leadlar, mijozlar, daromad; oylar bo'yicha reja va fakt." tab="marketingPlan" range={range} period={false}>
@@ -31,6 +38,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2 shadow-(--shadow-card) text-[13px]">
           <Link href={href({ year: year - 1 })} className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100">‹</Link><span className="rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white">{year}</span><Link href={href({ year: year + 1 })} className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100">›</Link>
           <div className="ml-2 flex flex-wrap gap-1"><Chip active={month === 0} href={href({ month: 0 })}>Butun yil</Chip>{MONTHS_SHORT.map((m, i) => <Chip key={m} active={month === i + 1} href={href({ month: i + 1 })}>{m}</Chip>)}</div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6 [&>*]:min-w-0">
+          <Kpi label="Ajratilgan byudjet" value={moneyShort(T.budget)} icon={Wallet} tone="info" hint={month ? `${d.months[month - 1]} ${year}` : `${year}-yil`} href={dataHref("BUDGET")} />
+          <Kpi label="Sarflangan" value={moneyShort(T.fact.spend)} icon={Coins} tone={spendPct !== null && spendPct > 110 ? "danger" : "brand"} hint={T.plan.spend ? planHint(T.plan.spend, T.fact.spend, moneyShort) : T.budget ? `byudjetning ${pct(spendPct)}` : "byudjet kiritilmagan"} href={dataHref("FACT")} />
+          <Kpi label="Leadlar" value={fmtNum(T.fact.leads)} icon={Megaphone} tone={kTone(ratio(T.fact.leads, T.plan.leads))} hint={planHint(T.plan.leads, T.fact.leads, (v) => fmtNum(v))} />
+          <Kpi label="Yangi mijozlar" value={fmtNum(T.fact.customers)} icon={Users} tone={kTone(ratio(T.fact.customers, T.plan.customers))} hint={planHint(T.plan.customers, T.fact.customers, (v) => fmtNum(v))} />
+          <Kpi label="Daromad" value={moneyShort(T.fact.revenue)} icon={TrendingUp} tone={kTone(ratio(T.fact.revenue, T.plan.revenue))} hint={planHint(T.plan.revenue, T.fact.revenue, moneyShort)} />
+          <Kpi label="ROAS" value={T.fact.spend ? `${fmtNum(T.fact.revenue / T.fact.spend, 2)}x` : "—"} icon={Percent} tone={!T.fact.spend ? "default" : T.fact.revenue >= T.fact.spend ? "success" : "danger"} hint={`CAC ${T.fact.customers && T.fact.spend ? moneyShort(T.fact.spend / T.fact.customers) : "—"}`} href="/bi-tahlil/marketing" />
         </div>
 
         <Panel title="Xulosalar">

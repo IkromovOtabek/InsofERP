@@ -81,7 +81,7 @@ export async function ProductsTab({ range }: { range: Range }) {
                 <Td right>{moneyShort(p.revenue)}</Td><Td right>{qty(p.qty)} {p.unit}</Td><Td right>{fmtNum(p.share, 1)}%</Td>
                 <Td right>{moneyShort(p.price)}</Td><Td right>{p.cost === null ? <Link href="/recipes" className="text-amber-600 hover:underline" title="Faol retsept yo'q yoki retseptdagi xomashyo narxi kiritilmagan">tannarx yo'q</Link> : moneyShort(p.cost)}</Td>
                 <Td right className={p.cmUnit !== null && p.cmUnit < 0 ? "text-red-600" : ""}>{p.cmUnit === null ? "—" : moneyShort(p.cmUnit)}</Td>
-                <Td right className={p.revenue > 0 ? (p.margin < 10 ? "text-red-600" : p.margin < 20 ? "text-amber-600" : "text-emerald-700") : "text-slate-400"}>{p.revenue > 0 ? `${fmtNum(p.margin, 1)}%` : "—"}</Td>
+                <Td right className={p.revenue > 0 && p.cost !== null ? (p.margin < 10 ? "text-red-600" : p.margin < 20 ? "text-amber-600" : "text-emerald-700") : "text-slate-400"}>{p.revenue > 0 && p.cost !== null ? `${fmtNum(p.margin, 1)}%` : "—"}</Td>
                 <Td right className={p.trend > 10 ? "text-emerald-600" : p.trend < -10 ? "text-red-600" : "text-slate-500"}>{p.trend > 10 ? "▲" : p.trend < -10 ? "▼" : "▬"} {fmtNum(Math.abs(p.trend), 0)}%</Td>
               </Tr>
             ))}

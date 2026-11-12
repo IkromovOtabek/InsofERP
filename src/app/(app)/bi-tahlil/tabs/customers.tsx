@@ -24,6 +24,15 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
 
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Kpi label="Jami mijozlar" value={String(c.total)} icon={Users} hint={`Faollik ${fmtNum(c.activityRate, 0)}%`} href={`${tabHref(range, "customers")}#mijozlar-royxati`} />
+        <Kpi label="Faol mijozlar" value={String(c.active)} icon={CheckCircle2} tone="success" hint="30 kunda buyurtma" href="#rfm" />
+        <Kpi label="VIP mijozlar" value={String(c.vip)} icon={Star} tone="brand" hint="top 20% tushum" href={`${tabHref(range, "customers", { segment: "VIP" })}#mijozlar-royxati`} />
+        <Kpi label="Xavf ostida" value={String(c.atRisk)} icon={AlertTriangle} tone={c.atRisk ? "danger" : "default"} hint="At Risk + Lost" href={tabHref(range, "churn")} />
+        <Kpi label="O'rtacha chek" value={moneyShort(c.avgCheck)} icon={Receipt} hint="so'm / zayavka · davr" href={tabHref(range, "sales")} />
+        <Kpi label="Jami qarz" value={moneyShort(c.debt)} icon={FileWarning} tone={c.debt ? "warning" : "default"} hint={`${c.debtors} ta qarzdor`} href="#qarzdorlar" />
+      </div>
+
       {/* Qaror qatlami */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel title="Next Best Action" eyebrow="Mijozlar — qaror qatlami" info="Har mijoz uchun bitta aniq harakat. Pul bo'yicha tartiblangan: muddati o'tgan qarz × 1.5 + kutilayotgan yo'qotish (eski qarzdorda — butun qarz)." padded={false}>
@@ -39,15 +48,6 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
           {d.clv.length ? <Scatter points={d.clv} xLabel="Umumiy sotuv (LTV)" yLabel="So'nggi 180 kun" formatX={moneyShort} formatY={moneyShort} height={220} /> : <Note>Ma'lumot yo'q.</Note>}
           <div className="mt-2 flex flex-wrap gap-2 text-[11px]">{Object.entries(SEGMENT_COLOR).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: v }} />{k}</span>)}</div>
         </Panel>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Jami mijozlar" value={String(c.total)} icon={Users} hint={`Faollik ${fmtNum(c.activityRate, 0)}%`} href={`${tabHref(range, "customers")}#mijozlar-royxati`} />
-        <Kpi label="Faol mijozlar" value={String(c.active)} icon={CheckCircle2} tone="success" hint="30 kunda buyurtma" href="#rfm" />
-        <Kpi label="VIP mijozlar" value={String(c.vip)} icon={Star} tone="brand" hint="top 20% tushum" href={`${tabHref(range, "customers", { segment: "VIP" })}#mijozlar-royxati`} />
-        <Kpi label="Xavf ostida" value={String(c.atRisk)} icon={AlertTriangle} tone={c.atRisk ? "danger" : "default"} hint="At Risk + Lost" href={tabHref(range, "churn")} />
-        <Kpi label="O'rtacha chek" value={moneyShort(c.avgCheck)} icon={Receipt} hint="so'm / zayavka" href={tabHref(range, "sales")} />
-        <Kpi label="Jami qarz" value={moneyShort(c.debt)} icon={FileWarning} tone={c.debt ? "warning" : "default"} hint={`${c.debtors} ta qarzdor`} href="#qarzdorlar" />
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-5">

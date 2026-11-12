@@ -42,8 +42,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </MonthBar>
 
         {!v.run ? (
-          <EmptyState icon={Banknote} title="Bu oy uchun yakuniy hisob-kitob (vedomost) hali tuzilmagan"
-            text={v.advanceRuns ? `Faqat avans hisob-kitobi bor (${v.advanceRuns} ta). Oy yakunida Ish haqi bo'limida «Oy yakuni» hisoblanadi.` : "Ish haqi bo'limida oy yakuni hisoblangach, shu yerda guruhlar bo'yicha ko'rinadi."} />
+          <>
+            {v.pending && (
+              <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <StatCard label="Avans hisoblangan" value={moneyShort(v.pending.advanceDue)} hint={`${v.advanceRuns} ta avans${v.pending.extraRuns ? `, ${v.pending.extraRuns} ta alohida to'lov` : ""}`} icon={HandCoins} tone="brand" href="/ish-haqi" />
+                <StatCard label="Avans to'langan" value={moneyShort(v.pending.advancePaid)} hint={v.pending.advanceDue > v.pending.advancePaid ? `to'lanmagan ${moneyShort(v.pending.advanceDue - v.pending.advancePaid)}` : v.pending.advanceDue ? "hammasi to'langan" : "shu oy avans yo'q"} icon={Banknote} tone={v.pending.advanceDue > v.pending.advancePaid ? "warning" : "default"} href="/ish-haqi" />
+                <StatCard label="Avans olgan xodimlar" value={fmtNum(v.pending.advancePeople)} hint="avans yoki alohida to'lov" icon={Users} href="/ish-haqi" />
+                <StatCard label="O'tgan oy yakuni (brutto)" value={v.pending.prev ? moneyShort(v.pending.prev.gross) : "—"} hint={v.pending.prev ? `${monthTitle(v.pending.prev.month)} · ${fmtNum(v.pending.prev.people)} xodim` : "o'tgan oy yakuniy hisob tuzilmagan"} icon={Receipt} href={v.pending.prev ? `${base}?oy=${v.pending.prev.month}` : undefined} />
+              </div>
+            )}
+            <EmptyState icon={Banknote} title="Bu oy uchun yakuniy hisob-kitob (vedomost) hali tuzilmagan"
+              text={v.advanceRuns ? `Faqat avans hisob-kitobi bor (${v.advanceRuns} ta). Oy yakunida Ish haqi bo'limida «Oy yakuni» hisoblanadi.` : "Ish haqi bo'limida oy yakuni hisoblangach, shu yerda guruhlar bo'yicha ko'rinadi."} />
+          </>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">

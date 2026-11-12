@@ -78,7 +78,8 @@ export async function plansTab(year: number, month: number) {
     if (i < cum.length) { cumVals.push(cum[i]); fcVals.push(i === cum.length - 1 ? cum[i] : null); }
     else { cumVals.push(null); if (isWorkDay(cal, d)) fcAcc += perWd; fcVals.push(fcAcc); }
   }
-  const needPerDay = wdLeft > 0 ? Math.max(0, companyPlan - fact) / wdLeft : null, bonusPerDay = wdLeft > 0 ? Math.max(0, companyPlan * 1.1 - fact) / wdLeft : null;
+  // Reja kiritilmagan bo'lsa "kerak/kun" yo'q (null) — 0 bo'lsa sahifa «Bajarilgan» deb ko'rsatardi
+  const needPerDay = companyPlan > 0 && wdLeft > 0 ? Math.max(0, companyPlan - fact) / wdLeft : null, bonusPerDay = companyPlan > 0 && wdLeft > 0 ? Math.max(0, companyPlan * 1.1 - fact) / wdLeft : null;
 
   // Oylik trend (6 oy): reja vs fakt vs prognoz
   const monthly = Array.from({ length: 6 }, (_, i) => { const d = new Date(year, month - 6 + i, 1), e = new Date(year, month - 5 + i, 1); const hf = rev(hist.filter((x) => x.date >= d && x.date < e)); const rowsP = plans6.filter((q) => q.year === d.getFullYear() && q.month === d.getMonth() + 1); const cp = rowsP.find((q) => q.sellerId === null); const plan = cp ? Number(cp.amount) : sum(rowsP.map((q) => Number(q.amount))); return { label: `${MONTHS_SHORT[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, plan, fact: hf, forecast: i === 5 ? forecast : hf, pct: plan > 0 ? (hf / plan) * 100 : null }; });

@@ -1,11 +1,13 @@
 import Link from "next/link";
+import { CalendarDays, FileWarning, Gauge, ShoppingCart, Target, TrendingUp } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { realizatsiyaReport, MONTHS } from "@/lib/fin-report/realizatsiya";
-import { date, fmtNum, isoDate, pct } from "@/lib/format";
+import { date, fmtNum, isoDate, moneyShort, pct } from "@/lib/format";
 import { Card, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { biContext, BiPage, type SP } from "../../shell";
+import { Kpi } from "../../ui";
 import { MonthPlanForm, SalesRecordForm } from "./forms";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +17,7 @@ const n0 = (v: number | null | undefined) => (v === null || v === undefined || M
 const n1 = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.0005 ? "–" : fmtNum(v, 1));
 const p1 = (v: number | null) => (v === null ? "–" : pct(v));
 const tone = (v: number | null) => (v === null ? undefined : v >= 100 ? "text-emerald-600" : v >= 70 ? "text-amber-600" : "text-red-600");
+const kpiTone = (v: number | null) => (v === null ? "default" : v >= 100 ? "success" : v >= 70 ? "warning" : "danger");
 
 function Block({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
@@ -38,6 +41,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
   const r = await realizatsiyaReport(parseDay(sp.sana));
   const canEdit = canDo(s, "bi-tahlil", "plan");
   const base = "/bi-tahlil/moliya/realizatsiya";
+  const debt = r.pay.find((p) => p.key === "DEBT");
 
   return (
     <BiPage title="Moliya" subtitle="Kunlik realizatsiya hisoboti — to'lov turi, hajm, reja va sotuvchilar" tab="finance" range={range} period={false}>
@@ -57,6 +61,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
             <button className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
             {!r.isToday && <Link href={base} className="h-9 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Bugun</Link>}
           </form>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6 [&>*]:min-w-0">
+          <Kpi label={r.isToday ? "Bugungi sotuv" : "Shu kungi sotuv"} value={moneyShort(r.payTotal.total)} icon={ShoppingCart} tone="brand" hint={`${r.rows.length} ta qator · QQS va dostavka bilan`} href="#sotuvlar" />
+          <Kpi label="Oy boshidan sotuv" value={moneyShort(r.payTotal.month)} icon={TrendingUp} tone="info" hint={`QQS va dostavka bilan · ${MONTHS[r.day.getMonth()]}`} />
+          <Kpi label="Oylik reja bajarilishi" value={p1(r.plan.pctMonth)} icon={Target} tone={kpiTone(r.plan.pctMonth)} hint={r.plan.month > 0 ? `fakt ${moneyShort(r.plan.factMonth)} / reja ${moneyShort(r.plan.month)}` : "reja kiritilmagan"} />
+          <Kpi label="Oylik prognoz" value={moneyShort(r.plan.forecast)} icon={Gauge} tone={kpiTone(r.plan.forecastPct)} hint={r.plan.forecastPct !== null ? `rejaning ${pct(r.plan.forecastPct)} · dastavkasiz` : "dastavkasiz, ish kuni sur'atida"} />
+          <Kpi label="Qarzga sotuv (oy)" value={moneyShort(debt?.month ?? 0)} icon={FileWarning} tone={debt?.month ? "warning" : "default"} hint={`oydagi ulushi ${pct(debt?.share ?? 0)}`} />
+          <Kpi label="Ish kuni" value={`${r.wdPassed} / ${r.wdTotal}`} icon={CalendarDays} hint={`o'rtacha kunlik fakt ${moneyShort(r.plan.avgDay)}`} />
         </div>
 
         <Block title="1. To'lov turi bo'yicha summa (so'm)">
@@ -99,7 +112,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
                   return <SalesRecordForm key={g.group} group={g.group} unit={g.unit} qty={m?.qty ?? null} ym={m ? `${m.year}-${String(m.month).padStart(2, "0")}` : ""} workDays={m?.workDays ?? null} autoWd={m?.autoWorkDays ?? null} />;
                 })}
               </div>
-              <p className="mt-3 text-[12px] text-slate-400">ERP&apos;dagi biror oy shu rekorddan oshsa, hisobotda o&apos;sha oy rekord bo&apos;lib ko&apos;rinadi. Ish kuni bo&apos;sh — ish kalendaridan (dam olish va bayramlarsiz).</p>
+              <p className="mt-3 text-[12px] text-slate-400">ERP&apos;dagi biror tugagan oy shu rekorddan oshsa, hisobotda o&apos;sha oy rekord bo&apos;lib ko&apos;rinadi. Ish kuni bo&apos;sh — ish kalendaridan (dam olish va bayramlarsiz).</p>
             </Card>
           )}
         </Block>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Target, Wallet, Percent, Gauge, AlertTriangle, Award, Users, Trash2, Check, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { biContext, BiPage } from "../shell";
-import { plansTab, MONTHS_UZ, MONTHS_SHORT, type Signal } from "@/lib/bi/plans";
+import { plansTab, signalOf, MONTHS_UZ, MONTHS_SHORT, type Signal } from "@/lib/bi/plans";
 import { money, moneyShort, fmtNum, qty } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Badge, type BadgeColor } from "@/components/ui";
 import { BarChart, LineChart, Sparkline } from "@/components/ui/charts";
@@ -48,8 +48,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7 [&>*]:min-w-0">
             <Kpi label="Jami reja" value={d.companyPlan ? moneyShort(d.companyPlan) : "—"} icon={Target} tone="brand" hint={d.hasCompanyPlan ? "zavod rejasi" : d.companyPlan ? "sotuvchilar rejalari yig'indisi" : "reja kiritilmagan"} href="#sotuvchilar" />
             <Kpi label="Jami fakt" value={moneyShort(d.fact)} icon={Wallet} hint={`${d.wdPassed} ish kunida`} href="#sotuvchilar" />
-            <Kpi label="Reja bajarilishi" value={pct(d.pct, 1)} icon={Percent} tone={d.pct === null ? "default" : d.pct >= 100 ? "success" : d.pct >= 70 ? "warning" : "danger"} badge={d.pct !== null && <Badge color={SIG[d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"]} dot={false}>{d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"}</Badge>} href="#forecast" />
-            <Kpi label="Plan gap" value={d.companyPlan ? `${d.gap >= 0 ? "+" : "−"}${moneyShort(Math.abs(d.gap))}` : "—"} icon={Gauge} tone={d.gap >= 0 ? "success" : "danger"} hint="oy oxiridagi kutilma" href="#forecast" />
+            {/* Signal — sotuvchilardagi kabi prognoz bo'yicha: oy o'rtasida hozirgacha bajarilgan % tabiiy past, rang uni "XAVF" qilmasin */}
+            <Kpi label="Reja bajarilishi" value={pct(d.pct, 1)} icon={Percent} tone={d.fpct === null ? "default" : d.fpct >= 100 ? "success" : d.fpct >= 70 ? "warning" : "danger"} badge={d.fpct !== null && <Badge color={SIG[signalOf(d.fpct)]} dot={false}>{signalOf(d.fpct)}</Badge>} hint={d.isCurrent && d.wdTotal ? `kutilgan ${pct((d.wdPassed / d.wdTotal) * 100)} · signal prognozdan` : undefined} href="#forecast" />
+            <Kpi label="Rejaga farq" value={d.companyPlan ? `${d.gap >= 0 ? "+" : "−"}${moneyShort(Math.abs(d.gap))}` : "—"} icon={Gauge} tone={!d.companyPlan ? "default" : d.gap >= 0 ? "success" : "danger"} hint="oy oxiridagi kutilma" href="#forecast" />
             <Kpi label="Oy oxiri prognoz" value={pct(d.fpct, 1)} icon={Gauge} tone={d.fpct === null ? "default" : d.fpct >= 100 ? "success" : d.fpct >= 70 ? "warning" : "danger"} hint={moneyShort(d.forecast)} href="#forecast" />
             <Kpi label="Risk sotuvchilar" value={String(d.dist.risk)} icon={AlertTriangle} tone={d.dist.risk ? "danger" : "default"} hint="prognoz < 70%" href="#risk" />
             <Kpi label="Bonus sotuvchilar" value={String(d.dist.bonus)} icon={Award} tone={d.dist.bonus ? "success" : "default"} hint="prognoz ≥ 110%" href="#risk" />

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { receivablesReport } from "@/lib/receivables";
-import { type Range, addDays, startOfDay, sum, safeDiv, ACTIVE_ORDER, abc, bucketKey, bucketLabel, bucketsFor, goLiveDate } from "./core";
+import { type Range, addDays, startOfDay, sum, safeDiv, ACTIVE_ORDER, abc, bucketKey, bucketLabel, bucketsFor, goLiveDate, loadSales } from "./core";
 
 /** "Eski qarzdor" — ERP'da zayavkasi yo'q, lekin qarzi (boshlang'ich qoldiq) bor: tizimgacha bo'lgan mijoz, yangi emas. */
 export type Segment = "VIP" | "Loyal" | "Regular" | "New" | "At Risk" | "Lost" | "Eski qarzdor" | "Yangi (xaridsiz)";
@@ -86,8 +86,10 @@ export async function customersTab(r: Range, filter: { segment?: string; risk?: 
   const [base, live] = await Promise.all([customerBase(), goLiveDate()]);
   const today = startOfDay(new Date());
   const active = base.filter((x) => x.recency !== null && x.recency < 30);
-  const cur = await db.orderItem.findMany({ where: { order: { kind: "SALE", date: { gte: r.from, lt: r.to }, status: { in: ACTIVE_ORDER } } }, select: { qtyM3: true, price: true, orderId: true, order: { select: { customerId: true, date: true } } } });
-  const revenue = sum(cur.map((x) => Number(x.qtyM3) * Number(x.price)));
+  // O'rtacha chek — Sotuvlar bo'limi bilan bitta raqam: yetkazilgan tushum (`loadSales`, yetkazish sanasi) / shu davrda yetkazilgan zayavkalar.
+  // Ilgari zayavka sanasi bo'yicha tasdiqlangan zayavkalar olinardi — karta bosilganda ochiladigan Sotuvlar sahifasidagidan farq qilardi.
+  const cur = await loadSales(r.from, r.to);
+  const revenue = sum(cur.map((x) => x.revenue));
   const orderIds = new Set(cur.map((x) => x.orderId)).size;
 
   const seg = (s: Segment) => base.filter((x) => x.segment === s);

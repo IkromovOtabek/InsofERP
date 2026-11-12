@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { Sparkles, Bot, Zap, TrendingUp, FileText, MessageSquare, ArrowRight, Clock, RefreshCw } from "lucide-react";
+import { Sparkles, Bot, Zap, TrendingUp, FileText, MessageSquare, ArrowRight, Clock, RefreshCw, AlertTriangle, ListChecks, MessagesSquare, Timer, History } from "lucide-react";
 import { biContext, BiPage } from "../shell";
 import { aiDirector, aiReport, REPORTS, type ReportType } from "@/lib/bi/ai";
-import { moneyShort, dateTime, date as fmtDate } from "@/lib/format";
-import { Panel, Note, ScoreRing, Chip } from "../ui";
+import { aiUsageStats } from "@/lib/bi/ai-chat";
+import { rangeQuery, startOfDay } from "@/lib/bi/core";
+import { moneyShort, dateTime, date as fmtDate, time, fmtNum } from "@/lib/format";
+import { Panel, Note, ScoreRing, Chip, Kpi } from "../ui";
 import { cn } from "@/lib/utils";
 import { requirePage } from "@/lib/page-guard";
 
@@ -11,14 +13,28 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePage("/bi-tahlil/ai");
-  const { sp, range } = await biContext(searchParams);
+  const { s, sp, range } = await biContext(searchParams);
   const type: ReportType = (REPORTS.some((r) => r.key === sp.report) ? sp.report : "executive") as ReportType;
-  const [d, rep] = await Promise.all([aiDirector(range), aiReport(type)]);
-  const q = (extra: Record<string, string>) => { const p = new URLSearchParams(Object.entries({ period: range.period === "custom" ? undefined : range.period, from: range.period === "custom" ? range.from.toISOString().slice(0, 10) : undefined, to: range.period === "custom" ? new Date(range.to.getTime() - 1).toISOString().slice(0, 10) : undefined, report: type, ...extra }).filter((kv): kv is [string, string] => !!kv[1])); return `/bi-tahlil/ai?${p}`; };
+  // Direktor — butun korxona bo'yicha foydalanish; boshqa rollar — faqat o'zining savollari
+  const all = s.role === "DIRECTOR";
+  const [d, rep, u] = await Promise.all([aiDirector(range), aiReport(type), aiUsageStats(all ? null : s.userId)]);
+  // Sana — mahalliy (Toshkent) kun: toISOString UTC bo'yicha bir kun oldingi sanani berardi
+  const q = (extra: Record<string, string>) => `/bi-tahlil/ai?${rangeQuery(range, { report: type, ...extra })}`;
+  const today = startOfDay(new Date()), sec = (ms: number | null) => (ms === null ? "—" : `${fmtNum(ms / 1000, 1)} soniya`);
+  const dangerRisks = d.risks.filter((r) => r.tone === "danger").length, taskMoney = d.tasks.reduce((t, x) => t + (x.money ?? 0), 0);
 
   return (
     <BiPage title="Insof AI — tahlil" subtitle="Bu sahifa savolni kutmaydi: tizim butun biznesni o'zi ko'rib chiqadi va bugun nima qilish kerakligini pul bo'yicha tartiblab beradi. Savol berish uchun — AI Chat." eyebrow="Insof AI" tab="ai" range={range} keep={{ report: type }}>
       <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <Kpi label="Xavflar" value={String(d.risks.length)} icon={AlertTriangle} tone={dangerRisks ? "danger" : d.risks.length ? "warning" : "success"} hint={d.risks.length ? `${dangerRisks} tasi jiddiy · pul bo'yicha tartiblangan` : "shoshilinch xavf yo'q"} href="#xavflar" />
+          <Kpi label="Vazifalar" value={String(d.tasks.length)} icon={ListChecks} tone="brand" hint={taskMoney ? `≈ ${moneyShort(taskMoney)} so'm ta'sir` : "bajariladigan ish yo'q"} href="#xavflar" />
+          <Kpi label="AI savollar · bu oy" value={String(u.month)} icon={MessageSquare} tone="info" hint={`bugun ${u.today} · panel ${u.panel.month} · Telegram ${u.telegram.month}${all ? "" : " (sizniki)"}`} href="/bi-tahlil/ai/chat" />
+          <Kpi label="Suhbatlar" value={String(u.chats)} icon={MessagesSquare} tone="violet" hint={all ? `bu oy ${u.users} foydalanuvchi savol berdi` : "AI Chat'dagi suhbatlaringiz"} href="/bi-tahlil/ai/chat" />
+          <Kpi label="O'rtacha javob vaqti" value={sec(u.avgMs)} icon={Timer} hint={u.avgMs === null ? "bu oy savol yo'q" : `bu oy · panel ${sec(u.panel.avgMs)} · Telegram ${sec(u.telegram.avgMs)}`} />
+          <Kpi label="Oxirgi savol" value={u.last ? (u.last.at >= today ? time(u.last.at) : fmtDate(u.last.at)) : "—"} icon={History} hint={u.last ? `${u.last.at >= today ? "bugun" : time(u.last.at)} · ${u.last.channel}` : "hali savol berilmagan"} />
+        </div>
+
         {/* AI Direktor */}
         <div className="on-dark rounded-(--radius-card) bg-gradient-to-br from-ink-950 via-ink-900 to-slate-800 px-6 py-5 text-white shadow-(--shadow-pop)">
           <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-400"><Bot size={14} /> AI Direktor</div>
@@ -31,7 +47,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Panel className="xl:col-span-2" title={<span className="inline-flex items-center gap-1.5"><Zap size={15} className="text-brand-500" /> Salom. Hozir {d.risks.length} ta xavf.</span>} eyebrow="Bugungi vazifalar" info="Pul bo'yicha tartiblangan. Har karta — nima bo'lyapti, nima qilish kerak va qayerga borish." action={<span className="inline-flex items-center gap-1"><Clock size={12} /> {dateTime(d.generatedAt)} · <RefreshCw size={12} /> avtomatik</span>} padded={false}>
+          <Panel id="xavflar" className="xl:col-span-2" title={<span className="inline-flex items-center gap-1.5"><Zap size={15} className="text-brand-500" /> Salom. Hozir {d.risks.length} ta xavf.</span>} eyebrow="Bugungi vazifalar" info="Pul bo'yicha tartiblangan. Har karta — nima bo'lyapti, nima qilish kerak va qayerga borish." action={<span className="inline-flex items-center gap-1"><Clock size={12} /> {dateTime(d.generatedAt)} · <RefreshCw size={12} /> avtomatik</span>} padded={false}>
             {d.risks.length ? <ul className="divide-y divide-slate-100">{d.risks.map((r) => (
               <li key={r.key} className="px-5 py-3.5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2"><div className="flex items-center gap-2 text-[14px] font-semibold"><span className={cn("h-2 w-2 rounded-full", r.tone === "danger" ? "bg-red-500" : r.tone === "warning" ? "bg-amber-500" : "bg-blue-500")} />{r.title}</div><div className={cn("text-sm font-bold tabular", r.tone === "danger" ? "text-red-600" : r.tone === "warning" ? "text-amber-600" : "text-blue-600")}>{r.money}</div></div>

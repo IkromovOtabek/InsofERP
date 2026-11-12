@@ -4,6 +4,7 @@ import { getCompany } from "@/lib/company";
 import { supplierAkt, parseAktRange } from "@/lib/fin-report/akt";
 import { isoDate } from "@/lib/format";
 import { AktSverkaDoc, AktToolbar } from "@/components/akt-sverka";
+import { AktStats } from "../../qarz";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   return (
     <div className="p-1 sm:p-4 print:p-0">
       <AktToolbar akt={akt} back={{ href: `/bi-tahlil/mijozlar/taminotchilar?dan=${isoDate(from)}&sana=${isoDate(to)}`, label: "Ta'minotchilar qarzdorligi" }} />
+      <AktStats akt={akt} />
       <AktSverkaDoc akt={akt} company={company} />
     </div>
   );

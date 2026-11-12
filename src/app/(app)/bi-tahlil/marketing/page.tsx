@@ -71,7 +71,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             <Kpi label="Leadlar" value={String(t.leads)} delta={d.deltas.leads} icon={Megaphone} tone="info" hint={`konversiya ${fmtNum(d.conversion, 0)}%`} href="#voronka" />
             <Kpi label="Yangi mijozlar" value={String(t.customers)} delta={d.deltas.customers} icon={Users} tone="violet" hint={d.erpComparable ? `ERP: ${d.erpNew} ta birinchi buyurtma` : "ERP: tizimgacha ma'lumot yo'q"} href={tabHref(range, "customers")} />
             <Kpi label="Marketing daromadi" value={moneyShort(t.revenue)} delta={d.deltas.revenue} icon={TrendingUp} tone="brand" href="#trend" />
-            <Kpi label="ROAS" value={x(t.roas)} delta={d.deltas.roas} icon={Percent} tone={t.roas !== null && t.roas >= 1 ? "success" : "danger"} href="#hukm" />
+            <Kpi label="ROAS" value={x(t.roas)} delta={d.deltas.roas} icon={Percent} tone={t.roas === null ? "default" : t.roas >= 1 ? "success" : "danger"} href="#hukm" />
             <Kpi label="CAC" value={t.cac !== null ? moneyShort(t.cac) : "—"} delta={d.deltas.cac} invert icon={Coins} href="#kanallar" />
           </div>
         </div>

@@ -63,7 +63,7 @@ export async function materialOverview(): Promise<MaterialRow[]> {
     const dead = historyDays >= 90 && balance > 0 && (lc === null) && planned === 0;
     const target = Math.max(planned, perDay * 30, Number(m.minStock));
     const suggestQty = Math.max(0, target - balance);
-    return { id: m.id, code: m.code, name: m.name, unit: m.unit, minStock: Number(m.minStock), balance, avgCost, value: balance * avgCost, perDay, days, planned, short: balance < planned, zone, overstock: days !== null && days > 90, dead, lastConsume: lc, suggestQty, suggestCost: suggestQty * avgCost, consumed30: cons.get(m.id) ?? 0, received30: rec.get(m.id) ?? 0 } as Omit<MaterialRow, "abc">;
+    return { id: m.id, code: m.code, name: m.name, unit: m.unit, minStock: Number(m.minStock), balance, avgCost, value: balance * avgCost, perDay, days, planned, short: balance < planned, zone, overstock: days !== null && days > 90, dead, lastConsume: lc, suggestQty, suggestCost: suggestQty * avgCost, consumed30: Math.max(0, cons.get(m.id) ?? 0) /* storno bekor qilingan sanada yoziladi — oynada sarf manfiy chiqib, ABC/aylanmani buzmasin */, received30: rec.get(m.id) ?? 0 } as Omit<MaterialRow, "abc">;
   });
   const abcMap = abc(pre, (x) => x.consumed30 * x.avgCost);
   return pre.map((x) => ({ ...x, abc: abcMap.get(x) ?? "C" }));
@@ -71,12 +71,15 @@ export async function materialOverview(): Promise<MaterialRow[]> {
 
 export async function stockTab(r: Range, gran: Gran) {
   const today = startOfDay(new Date());
-  const [materials, moves, writeOffs, receipts, finished] = await Promise.all([
+  // Trend 180 kun + oylik write-off 6 oy; yillik/eski davr tanlansa kirim/chiqim va write-off davr boshidan olinadi
+  const since = new Date(Math.min(addDays(today, -180).getTime(), new Date(today.getFullYear(), today.getMonth() - 5, 1).getTime(), r.from.getTime()));
+  const [materials, moves, writeOffs, receipts, finished, productCost] = await Promise.all([
     materialOverview(),
-    db.stockMove.findMany({ where: { date: { gte: addDays(today, -180) }, materialId: { not: null } }, select: { date: true, type: true, qty: true, materialId: true } }),
-    db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: addDays(today, -180) } }, select: { date: true, qty: true, materialId: true, productId: true, note: true } }),
+    db.stockMove.findMany({ where: { date: { gte: since }, materialId: { not: null } }, select: { date: true, type: true, qty: true, materialId: true } }),
+    db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: since } }, select: { date: true, qty: true, materialId: true, productId: true, note: true } }),
     db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, include: { supplier: true, items: true } }),
     finishedStock(),
+    finishedUnitCosts(),
   ]);
   const costOf = new Map(materials.map((m) => [m.id, m.avgCost]));
   const value = sum(materials.map((m) => m.value));
@@ -86,7 +89,8 @@ export async function stockTab(r: Range, gran: Gran) {
 
   // Write-off (davr) va oylik
   const woInRange = writeOffs.filter((w) => w.date >= r.from && w.date < r.to);
-  const woValue = sum(woInRange.map((w) => Math.abs(Number(w.qty)) * (w.materialId ? costOf.get(w.materialId) ?? 0 : 0)));
+  // Xomashyo — o'rtacha kirim narxi, tayyor mahsulot brak — tannarx (ilgari 0 bo'lib, soni bor-u summasi yo'q edi)
+  const woValue = sum(woInRange.map((w) => Math.abs(Number(w.qty)) * (w.materialId ? costOf.get(w.materialId) ?? 0 : w.productId ? productCost.get(w.productId) ?? 0 : 0)));
   const months = bucketsFor(new Date(today.getFullYear(), today.getMonth() - 5, 1), addDays(today, 1), "month");
   const woMonthly = months.map((m) => ({ label: bucketLabel(m, "month"), value: writeOffs.filter((w) => bucketKey(w.date, "month") === m).length }));
 

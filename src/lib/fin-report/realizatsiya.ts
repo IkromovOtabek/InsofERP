@@ -111,8 +111,10 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const units = new Map<string, Map<string, number>>();
   for (const p of prods.values()) { const u = units.get(p.group) ?? new Map<string, number>(); u.set(p.unit, (u.get(p.unit) ?? 0) + 1); units.set(p.group, u); }
   const unitOf = (g: string) => unitLabel([...(units.get(g) ?? new Map<string, number>())].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "");
+  // Faqat tugagan (oldingi) oylar: joriy chala oy rekord bo'lsa «Rekorddan %» doim 100% va kunlik reja
+  // (chala oy hajmi ÷ butun oy ish kuni) past chiqardi. Joriy oy rekorddan oshsa — «Rekorddan %» 100% dan katta.
   const erpMonths = new Map<string, Map<string, number>>(); // guruh → "YYYY-M" → miqdor
-  for (const r of [...hist, ...revMonth]) {
+  for (const r of hist) {
     const g = prods.get(r.productId)?.group ?? "Boshqalar", k = `${r.date.getFullYear()}-${r.date.getMonth() + 1}`;
     const m = erpMonths.get(g) ?? new Map<string, number>(); m.set(k, (m.get(k) ?? 0) + r.qty); erpMonths.set(g, m);
   }

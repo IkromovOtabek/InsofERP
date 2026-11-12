@@ -5,7 +5,7 @@ import { publicOrigin } from "@/lib/public-url";
 import { runChecks, tashkentDay, STATUS_LABEL, type CheckStatus } from "@/lib/nazorat/checks";
 import { directorText } from "@/lib/nazorat/report";
 import { dateTime } from "@/lib/format";
-import { Card, CardHeader, Input } from "@/components/ui";
+import { Card, CardHeader, Input, StatCard } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { NazoratSettingsForm, SendNowButton } from "./nazorat-forms";
 
@@ -40,17 +40,20 @@ export async function NazoratHome({ date }: { date?: string }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold">
-          <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">{count("crit")} shoshilinch</span>
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-800">{count("warn")} tekshirish kerak</span>
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">{count("ok")} joyida</span>
-          {count("unset") > 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">{count("unset")} sozlanmagan</span>}
-        </div>
+        <div className="text-[13px] font-semibold text-slate-500">Kunlik tekshiruv · {checks.length} ta band</div>
         <form method="get" className="flex items-center gap-2">
           <input type="hidden" name="view" value="nazorat" />
           <Input type="date" name="date" defaultValue={ymd} className="h-9 w-44" aria-label="Kun" />
           <button className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
         </form>
+      </div>
+
+      {/* Statistika: holatlar bo'yicha bandlar soni */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard label="Shoshilinch" value={String(count("crit"))} hint="darhol hal qilish kerak" icon={CircleAlert} tone={count("crit") ? "danger" : "default"} />
+        <StatCard label="Tekshirish kerak" value={String(count("warn"))} hint="ogohlantirish" icon={CircleAlert} tone={count("warn") ? "warning" : "default"} />
+        <StatCard label="Joyida" value={String(count("ok"))} hint={`${checks.length} ta bandning ${checks.length ? Math.round((count("ok") / checks.length) * 100) : 0}%i`} icon={CircleCheck} tone="success" />
+        <StatCard label="Sozlanmagan / ma'lumot" value={String(count("unset") + count("info"))} hint={`${count("unset")} sozlanmagan · ${count("info")} ma'lumot`} icon={CircleDashed} />
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

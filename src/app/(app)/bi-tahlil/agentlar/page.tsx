@@ -31,6 +31,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   return (
     <BiPage title="Agentlar" subtitle="Sotuvchilar — qaror qatlami: kim kuchli, kim zaif, kim sekinlashdi va nega. Agent = zayavka kiritadigan sotuvchi; «tashrif» = kiritilgan zayavka." tab="agents" range={range}>
       <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <Kpi label="Faol sotuvchilar" value={String(k.active.cur)} delta={k.active.delta} icon={Users} hint={`${d.sellers.length} ta ro'yxatda`} href="#scorecard" />
+          <Kpi label="Kiritilgan zayavkalar" value={String(k.created)} icon={ClipboardCheck} tone="info" hint={`${k.converted} tasi sotuvga aylandi`} href="#sifat" />
+          <Kpi label="Davr sotuvi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={Wallet} tone="brand" hint="so'm" href={tabHref(range, "sales")} />
+          <Kpi label="O'rtacha / sotuvchi" value={moneyShort(k.perAgent.cur)} delta={k.perAgent.delta} icon={BarChart3} hint="so'm / faol sotuvchi" href="#scorecard" />
+          <Kpi label="Bugungi sotuv" value={moneyShort(k.todayRevenue)} icon={TrendingDown} tone="success" hint={`${k.todayOrders} zayavka`} href="/bi-tahlil/sotuvlar?period=day" />
+          <Kpi label="Bekor qilingan" value={moneyShort(k.cancelledRevenue)} icon={Ban} tone={k.cancelledRevenue ? "danger" : "default"} hint="sotuvchilar kiritgan, bekor bo'lgan" href="/bi-tahlil/sotuvlar/bekor" />
+        </div>
+
         <Note>Sekinlashuv, oflayn va bugungi ko'rsatkichlar oxirgi 35 kun bo'yicha jonli hisoblanadi — sana filtri scorecard, top/bottom va sifat kartalariga qo'llanadi.</Note>
 
         {/* Qaror qatlami */}
@@ -44,15 +53,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             {card("PLAN", "joriy oy", Math.round(d.planStatus.pct || 0), d.planStatus.withPlan ? `${d.planStatus.withPlan} sotuvchida reja bor: ${d.planStatus.done} bajardi, ${d.planStatus.behind} tasining prognozi 70% dan past` : "Sotuvchilarga reja kiritilmagan — Reja nazorati sahifasida kiriting", null, "border-amber-400", BarChart3, d.sellers.filter((s) => s.planFcPct !== null && s.planFcPct < 70).map((s) => `${s.name} (prognoz ${pct(s.planFcPct)})`))}
           </div>
           <div className="mt-3"><Insight>{d.sellers.filter((s) => s.orders > 0).length} sotuvchi ishladi. {d.best ? <>Eng kuchlisi — <b>{d.best.name}</b>: {money(d.best.revenue)} ({d.best.orders} zayavka, {d.best.customers} mijoz).</> : "Davrda sotuv yo'q."} Zayavka sifati {pct(d.quality.pct)}. {d.slow.length ? `${d.slow.length} sotuvchi odatidan orqada.` : "Sekinlashgan sotuvchi yo'q."} {d.offline.length ? `${d.offline.length} sotuvchi 3+ kun ko'rinmadi.` : ""}</Insight></div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Kpi label="Faol sotuvchilar" value={String(k.active.cur)} delta={k.active.delta} icon={Users} hint={`${d.sellers.length} ta ro'yxatda`} href="#scorecard" />
-          <Kpi label="Kiritilgan zayavkalar" value={String(k.created)} icon={ClipboardCheck} tone="info" hint={`${k.converted} tasi sotuvga aylandi`} href="#sifat" />
-          <Kpi label="Davr sotuvi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={Wallet} tone="brand" hint="so'm" href={tabHref(range, "sales")} />
-          <Kpi label="O'rtacha / sotuvchi" value={moneyShort(k.perAgent.cur)} delta={k.perAgent.delta} icon={BarChart3} hint="so'm / faol sotuvchi" href="#scorecard" />
-          <Kpi label="Bugungi sotuv" value={moneyShort(k.todayRevenue)} icon={TrendingDown} tone="success" hint={`${k.todayOrders} zayavka`} href="/bi-tahlil/sotuvlar?period=day" />
-          <Kpi label="Bekor qilingan" value={moneyShort(k.cancelledRevenue)} icon={Ban} tone={k.cancelledRevenue ? "danger" : "default"} hint="sotuvchilar kiritgan, bekor bo'lgan" href="/bi-tahlil/sotuvlar/bekor" />
         </div>
 
         {/* Kim sekinlashdi va nega */}

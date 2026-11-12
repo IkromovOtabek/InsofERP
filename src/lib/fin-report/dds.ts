@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
 import type { LoanKind } from "@/generated/prisma";
@@ -32,6 +33,12 @@ function financingLine(category: string, type: string, loanKind: LoanKind | null
 }
 
 export async function ddsReport(months: MonthKey[]): Promise<DdsReport> {
+  return ddsOnce(months.join(","));
+}
+/** Tahlil → Pul oqimi: KPI qatori va jadval bir sahifada bir xil hisobotni so'raydi — bir marta (`cache`). Natija o'zgartirilmaydi. */
+const ddsOnce = cache((months: string) => buildDds(months.split(",") as MonthKey[]));
+
+async function buildDds(months: MonthKey[]): Promise<DdsReport> {
   const n = months.length;
   const from = monthStart(months[0]!), to = monthEnd(months[n - 1]!);
   const idx = new Map(months.map((m, i) => [m, i]));

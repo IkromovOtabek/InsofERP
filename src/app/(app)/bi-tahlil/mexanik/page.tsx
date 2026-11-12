@@ -32,7 +32,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <StatCard label="Transport ta'miri" value={moneyShort(r.transport.sum)} hint={`${r.transport.count} ta yozuv · ta'mir + zapchast`} icon={Truck} tone="info" />
           <StatCard label="Zavod / boshqa ta'mir" value={moneyShort(r.factory.sum)} hint={`${r.factory.count} ta to'langan so'rov`} icon={Factory} tone="brand" />
-          <StatCard label="Ta'mirdagi texnika" value={`${r.fleet.repair} ta`} hint={`saflda ${r.fleet.active} ta · hozirgi holat`} icon={Hammer} tone={r.fleet.repair ? "warning" : "default"} />
+          <StatCard label="Ta'mirdagi texnika" value={`${r.fleet.repair} ta`} hint={`safda ${r.fleet.active} ta · hozirgi holat`} icon={Hammer} tone={r.fleet.repair ? "warning" : "default"} />
           <StatCard label="Buzilish / YTH" value={`${r.issues.count} ta`} hint={r.issues.open ? `${r.issues.open} tasi hal qilinmagan` : "hammasi hal qilingan"} icon={AlertTriangle} tone={r.issues.open ? "danger" : "default"} />
         </div>
       </Section>

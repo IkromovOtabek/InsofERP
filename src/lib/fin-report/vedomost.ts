@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { monthBounds } from "./sklad";
-import type { MonthKey } from "./period";
+import { type MonthKey, addMonths } from "./period";
 
 /**
  * «Insof 2026» → «Oy uchun hisoblangan ish haqi (vedomost bo'yicha)» — Tahlil → Moliya.
@@ -25,6 +25,8 @@ export type Vedomost = {
   advanceRuns: number;
   rows: VedomostRow[];
   total: Omit<VedomostRow, "group" | "kind" | "perUnit">;
+  /** Yakuniy hisob yo'q oyda statistika uchun: shu oy avans va alohida to'lovlar (bekor qilinganlarsiz), o'tgan oy yakuni. */
+  pending: { advanceDue: number; advancePaid: number; advancePeople: number; extraRuns: number; prev: { month: MonthKey; gross: number; people: number } | null } | null;
 };
 
 export async function vedomost(month: MonthKey): Promise<Vedomost> {
@@ -36,7 +38,26 @@ export async function vedomost(month: MonthKey): Promise<Vedomost> {
   const run = runs.find((r) => r.kind === "FINAL") ?? null;
   const advanceRuns = runs.filter((r) => r.kind === "ADVANCE").length;
   const empty = { people: 0, gross: 0, tax: 0, hand: 0, deductions: 0, advance: 0, toPay: 0, paid: 0, units: null };
-  if (!run) return { month, run: null, advanceRuns, rows: [], total: empty };
+  if (!run) {
+    // Avans qatori `net` — ilgari to'langan alohida to'lov ayirilgani (ikki marta sanalmaydi); alohida to'lovda net = summa
+    const advIds = runs.filter((r) => r.kind !== "FINAL").map((r) => r.id);
+    const prevMonth = addMonths(month, -1);
+    const [adv, prevRun] = await Promise.all([
+      advIds.length ? db.payrollLine.groupBy({ by: ["employeeId"], where: { runId: { in: advIds } }, _sum: { net: true, paid: true } }) : [],
+      db.payrollRun.findFirst({ where: { month: prevMonth, kind: "FINAL", cancelledAt: null, status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, select: { id: true } }),
+    ]);
+    const prevAgg = prevRun ? await db.payrollLine.aggregate({ where: { runId: prevRun.id }, _sum: { gross: true }, _count: true }) : null;
+    return {
+      month, run: null, advanceRuns, rows: [], total: empty,
+      pending: {
+        advanceDue: r2(adv.reduce((a, l) => a + Math.max(0, Number(l._sum.net ?? 0)), 0)),
+        advancePaid: r2(adv.reduce((a, l) => a + Number(l._sum.paid ?? 0), 0)),
+        advancePeople: adv.length,
+        extraRuns: runs.filter((r) => r.kind === "EXTRA").length,
+        prev: prevAgg ? { month: prevMonth, gross: r2(Number(prevAgg._sum.gross ?? 0)), people: prevAgg._count } : null,
+      },
+    };
+  }
 
   const [lines, tasks] = await Promise.all([
     db.payrollLine.findMany({
@@ -73,7 +94,7 @@ export async function vedomost(month: MonthKey): Promise<Vedomost> {
   const s = (f: (r: VedomostRow) => number) => r2(list.reduce((a, r) => a + f(r), 0));
   const units = list.some((r) => r.units != null) ? s((r) => r.units ?? 0) : null;
   return {
-    month, run: { id: run.id, docNo: run.docNo, status: run.status }, advanceRuns, rows: list,
+    month, run: { id: run.id, docNo: run.docNo, status: run.status }, advanceRuns, rows: list, pending: null,
     total: { people: s((r) => r.people), gross: s((r) => r.gross), tax: s((r) => r.tax), hand: s((r) => r.hand), deductions: s((r) => r.deductions), advance: s((r) => r.advance), toPay: s((r) => r.toPay), paid: s((r) => r.paid), units },
   };
 }

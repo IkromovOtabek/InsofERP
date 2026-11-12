@@ -145,7 +145,8 @@ export async function anomaliesTab(filter: { level?: string; source?: string; pa
   if (filter.level) list = list.filter((a) => a.level === filter.level);
   if (filter.source) list = list.filter((a) => a.source === filter.source);
   if (filter.pattern) list = list.filter((a) => a.pattern === filter.pattern);
-  const last7 = all.filter((a) => a.date >= addDays(today, -7)).length, prev7 = all.filter((a) => a.date >= addDays(today, -14) && a.date < addDays(today, -7)).length;
+  // «Oxirgi 7 kun» = bugun + oldingi 6 kun (ilgari 8 kun olinib, oldingi 7 kun bilan solishtirilardi)
+  const last7 = all.filter((a) => a.date >= addDays(today, -6)).length, prev7 = all.filter((a) => a.date >= addDays(today, -13) && a.date < addDays(today, -6)).length;
   const patterns = [...new Set(all.map((a) => a.pattern))].map((p) => ({ pattern: p, count: all.filter((a) => a.pattern === p).length, high: all.filter((a) => a.pattern === p && a.level === "High").length, amount: sum(all.filter((a) => a.pattern === p).map((a) => a.amount)), source: all.find((a) => a.pattern === p)!.source }));
   const trend = series(all, since, addDays(today, 1), filter.days > 62 ? "week" : "day", (a) => a.date, () => 1);
   const trendHigh = series(all.filter((a) => a.level === "High"), since, addDays(today, 1), filter.days > 62 ? "week" : "day", (a) => a.date, () => 1);

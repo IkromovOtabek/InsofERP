@@ -17,6 +17,18 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
 
   return (
     <div className="space-y-6">
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <Kpi label="Ombor qiymati" value={moneyShort(c.value)} icon={Warehouse} tone="brand" hint="xomashyo × o'rt. kirim narxi" href="#ombor-holati" />
+          <Kpi label="Xomashyo turlari" value={String(c.sku)} icon={Layers} hint="faol pozitsiya" href="#ombor-holati" />
+          <Kpi label="Aylanma" value={c.turnoverDays === null ? "—" : `${fmtNum(c.turnoverDays, 0)} kun`} icon={RefreshCw} tone="info" hint="o'rtacha omborda turish" href="#ombor-holati" />
+          <Kpi label="Tugash xavfi" value={String(c.stockout)} icon={AlertTriangle} tone={c.stockout ? "danger" : "success"} hint="xomashyo ≤20 kunga yetadi" href="#stockout-timeline" />
+          <Kpi label="Ortiqcha zaxira" value={String(c.overstock)} icon={Snowflake} tone={c.overstock ? "warning" : "default"} hint="90+ kunlik zaxira" href="#muzlagan" />
+          <Kpi label="Hisobdan chiqarildi" value={moneyShort(c.writeOff)} icon={Trash2} tone={c.writeOff ? "danger" : "default"} hint={`${c.writeOffCount} ta yozuv · davr (brak — tannarxda)`} href="/stock/spisanie" />
+        </div>
+        <Note>Ombor ko'rsatkichlari — joriy holat snapshot'i. Davr filtri hisobdan chiqarish, kirim/chiqim va yetkazuvchilar kartalariga ta'sir qiladi.</Note>
+      </div>
+
       {/* Harakat qatlami */}
       <Panel title="Buyurtma navbati" eyebrow="Harakat qatlami · ogohlantirish · buyurtma · prognoz" info="Pul bo'yicha tartiblangan. Tavsiya miqdor = max(rejadagi ehtiyoj, 30 kunlik sarf, minimal zaxira) − qoldiq." padded={false} action={<Link href="/receipts/new" className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800">Kirim rasmiylashtirish</Link>}>
         {d.queue.length === 0 ? <div className="p-5"><Note>Buyurtma talab qiladigan xomashyo yo'q — zaxira yetarli.</Note></div> : (
@@ -27,16 +39,6 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
         )}
         <div className="border-t border-slate-100 px-5 py-3"><Action href="/receipts/new">Jami {moneyShort(d.queue.reduce((s, m) => s + m.suggestCost, 0))} so'mlik buyurtma loyihasi — sklad tasdiqlasin</Action></div>
       </Panel>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Ombor qiymati" value={moneyShort(c.value)} icon={Warehouse} tone="brand" hint="xomashyo × o'rt. kirim narxi" href="#ombor-holati" />
-        <Kpi label="Xomashyo turlari" value={String(c.sku)} icon={Layers} hint="faol pozitsiya" href="#ombor-holati" />
-        <Kpi label="Aylanma" value={c.turnoverDays === null ? "—" : `${fmtNum(c.turnoverDays, 0)} kun`} icon={RefreshCw} tone="info" hint="o'rtacha omborda turish" href="#ombor-holati" />
-        <Kpi label="Stockout xavfi" value={String(c.stockout)} icon={AlertTriangle} tone={c.stockout ? "danger" : "success"} hint="xomashyo <20 kun" href="#stockout-timeline" />
-        <Kpi label="Overstock" value={String(c.overstock)} icon={Snowflake} tone={c.overstock ? "warning" : "default"} hint="90+ kunlik zaxira" href="#muzlagan" />
-        <Kpi label="Write-off" value={moneyShort(c.writeOff)} icon={Trash2} tone={c.writeOff ? "danger" : "default"} hint={`${c.writeOffCount} ta yozuv · davr`} href="/stock/spisanie" />
-      </div>
-      <Note>Ombor ko'rsatkichlari — joriy holat snapshot'i. Davr filtri Write-off, kirim/chiqim va yetkazuvchilar kartalariga ta'sir qiladi.</Note>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel id="ombor-holati" className="xl:col-span-2" title="Ombor holati" info="Qoldiq, kunlik sarf (30 kun o'rtachasi), necha kunga yetadi, rejadagi ehtiyoj (tasdiqlangan zayavkalar × retsept)." padded={false} action={<ExportLink type="materials" range={range} />}>

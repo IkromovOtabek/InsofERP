@@ -9,14 +9,17 @@ import { tripLine } from "@/lib/trips";
  *  - dona mahsulot — PRODUCTION_OUTPUT jurnalidan (zames ham, brigada ham shu yerga yozadi; storno manfiy qator bilan qaytadi).
  */
 const isMixerTrip = (t: { vehicle: { type: string } }) => t.vehicle.type === "MIXER";
+/** Reys sanasi — yetkazilgan bo'lsa `deliveredAt`, aks holda `createdAt` (`lib/vehicle-report.ts` bilan bir xil): orqaga sana bilan kiritilgan reys kiritilgan kunga tushmasin. */
+const tripWhere = (from: Date, to: Date) => ({ OR: [{ deliveredAt: { gte: from, lt: to } }, { deliveredAt: null, createdAt: { gte: from, lt: to } }] });
+const tripDay = (t: { deliveredAt: Date | null; createdAt: Date }) => t.deliveredAt ?? t.createdAt;
 
 export async function operationsTab(r: Range, gran: Gran) {
   const today = startOfDay(new Date());
   const [batches, prevBatches, trips, prevTrips, vehicles, drivers, openOrders] = await Promise.all([
     db.productionBatch.findMany({ where: { cancelledAt: null, product: { unit: "m3" }, date: { gte: r.from, lt: r.to } }, include: { product: { select: { code: true, name: true, unit: true } }, order: { select: { orderNo: true } } } }),
     db.productionBatch.findMany({ where: { cancelledAt: null, product: { unit: "m3" }, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true } }),
-    db.trip.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, include: { vehicle: true, driver: true, order: { select: { deliveryDate: true, customer: { select: { name: true } } } } } }),
-    db.trip.findMany({ where: { createdAt: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, status: true, loadedAt: true, deliveredAt: true, vehicle: { select: { type: true } } } }),
+    db.trip.findMany({ where: tripWhere(r.from, r.to), include: { vehicle: true, driver: true, order: { select: { deliveryDate: true, customer: { select: { name: true } } } } } }),
+    db.trip.findMany({ where: tripWhere(r.prevFrom, r.prevTo), select: { qtyM3: true, status: true, loadedAt: true, deliveredAt: true, vehicle: { select: { type: true } } } }),
     db.vehicle.findMany({ where: { isActive: true }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
     db.employee.findMany({ where: { isActive: true, trips: { some: {} } }, select: { id: true, fullName: true } }),
     db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: { select: { unit: true } }, tasks: { select: { doneQty: true } } } }, batches: { where: { cancelledAt: null } }, trips: { where: { status: { not: "CANCELLED" } }, include: { vehicle: { select: { type: true } } } } }, orderBy: { deliveryDate: "asc" } }),
@@ -54,7 +57,7 @@ export async function operationsTab(r: Range, gran: Gran) {
   // Mikserlar
   const mixers = vehicles.filter((v) => v.type === "MIXER").map((v) => {
     const vt = active.filter((t) => t.vehicleId === v.id), vd = vt.filter((t) => t.status === "DELIVERED");
-    const m3 = sum(vt.map((t) => Number(t.qtyM3))); const daysActive = new Set(vt.map((t) => t.createdAt.toDateString())).size;
+    const m3 = sum(vt.map((t) => Number(t.qtyM3))); const daysActive = new Set(vt.map((t) => tripDay(t).toDateString())).size;
     const cap = v.capacityM3 ? Number(v.capacityM3) : null;
     return { id: v.id, plate: v.plate, trips: vt.length, m3, delivered: vd.length, daysActive, tripsPerDay: safeDiv(vt.length, daysActive), fill: cap ? safeDiv(m3, vt.length * cap) * 100 : null, idle: v.trips.length === 0, avgMinutes: mean(vd.filter((t) => t.loadedAt && t.deliveredAt).map((t) => (t.deliveredAt!.getTime() - t.loadedAt!.getTime()) / 60000)) };
   }).sort((a, b) => b.m3 - a.m3);
@@ -67,7 +70,7 @@ export async function operationsTab(r: Range, gran: Gran) {
     const mins = mean(dd.filter((t) => t.loadedAt && t.deliveredAt).map((t) => (t.deliveredAt!.getTime() - t.loadedAt!.getTime()) / 60000));
     const lateN = dd.filter((t) => t.deliveredAt && t.deliveredAt > addDays(startOfDay(t.order.deliveryDate), 1)).length;
     const cancelledN = trips.filter((t) => t.driverId === d.id && t.status === "CANCELLED").length;
-    return { id: d.id, name: d.fullName, trips: dt.length, delivered: dd.length, m3, rate, avgMinutes: mins, late: lateN, cancelled: cancelledN, days: new Set(dt.map((t) => t.createdAt.toDateString())).size };
+    return { id: d.id, name: d.fullName, trips: dt.length, delivered: dd.length, m3, rate, avgMinutes: mins, late: lateN, cancelled: cancelledN, days: new Set(dt.map((t) => tripDay(t).toDateString())).size };
   }).filter((d) => d.trips > 0);
   const maxM3 = Math.max(1, ...driverRows.map((d) => d.m3)), minMins = Math.min(...driverRows.filter((d) => d.avgMinutes > 0).map((d) => d.avgMinutes), Infinity);
   const scored = driverRows.map((d) => {
@@ -77,9 +80,9 @@ export async function operationsTab(r: Range, gran: Gran) {
   }).sort((a, b) => b.score - a.score);
 
   // Haydovchi × hafta kuni (reyslar soni) — so'nggi 7 kun
-  const last7 = trips.filter((t) => t.createdAt >= addDays(today, -6) && t.status !== "CANCELLED");
+  const last7 = trips.filter((t) => tripDay(t) >= addDays(today, -6) && t.status !== "CANCELLED");
   const top = scored.slice(0, 10);
-  const heat = top.map((d) => WEEKDAYS.map((_, wd) => last7.filter((t) => t.driverId === d.id && t.createdAt.getDay() === wd).length));
+  const heat = top.map((d) => WEEKDAYS.map((_, wd) => last7.filter((t) => t.driverId === d.id && tripDay(t).getDay() === wd).length));
 
   // Zayavkalar bajarilishi
   // Har birlik alohida: beton — zameslar, dona — brigada topshirig'ining bajarilgani; jo'natish — reys qatori (mikser → beton)

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowDownWideNarrow, Crown, FileSpreadsheet, Hourglass, HandCoins, Scale, Search, SlidersHorizontal, Truck, UserRound, Users, Wallet, X } from "lucide-react";
 import { type SP } from "../shell";
 import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_LABEL } from "@/lib/fin-report/debts";
+import type { Akt } from "@/lib/fin-report/akt";
 import { MONTHS_UZ } from "@/lib/bi/plans";
 import { date, dateRu, dateShort, fmtFixed, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, type BadgeColor, Card, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -152,7 +153,9 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref }: {
   const dan = isoDate(s.monthStart), sana = isoDate(s.day);
   // Oy boshidan boshlangan davrda `dan` URL'da yurmaydi — sana o'zgarsa davr boshi ham o'sha oyga ko'chadi
   const danKeep = s.monthStart.getDate() === 1 && s.monthStart.getMonth() === s.day.getMonth() && s.monthStart.getFullYear() === s.day.getFullYear() ? undefined : dan;
-  const t = s.total;
+  // Kartalar va «Ko'rinish» chiplari qidiruvga (`q`) bo'ysunadi — soni kabi summasi ham topilganlar bo'yicha
+  const sumNamed = (f: (r: DebtSheet["rows"][number]) => number) => named.reduce((a, r) => a + f(r), 0);
+  const t = named === s.rows ? s.total : { open: { debt: sumNamed((r) => r.open.debt), advance: sumNamed((r) => r.open.advance) }, now: { debt: sumNamed((r) => r.now.debt), advance: sumNamed((r) => r.now.advance) } };
   const sumRows = (f: (r: DebtSheet["rows"][number]) => number) => rows.reduce((a, r) => a + f(r), 0);
   const ft = { open: { debt: sumRows((r) => r.open.debt), advance: sumRows((r) => r.open.advance) }, now: { debt: sumRows((r) => r.now.debt), advance: sumRows((r) => r.now.advance) } };
   const debitorSum = sup ? t.now.advance : t.now.debt, kreditorSum = sup ? t.now.debt : t.now.advance;
@@ -391,6 +394,24 @@ export function DebtAgeView({ r, sp, base }: { r: AgeReport; sp: SP; base: strin
       <p className="text-[13px] text-slate-500">
         Naqd va perechisleniye birga. Qarz yoshi — to&apos;lanmagan schyot sanasidan {date(r.day)} gacha. Holat — mijozning eng eski to&apos;lanmagan qarzi qaysi oraliqda.
       </p>
+    </div>
+  );
+}
+
+// ───────────────────── Akt sverka — tepadagi qisqa statistika (chop etilmaydi) ─────────────────────
+
+/** Saldo: musbat — ular bizga qarz, manfiy — biz ularga qarzmiz (akt ishorasi, `lib/fin-report/akt.ts`). */
+const saldoHint = (v: number) => (v > 0.005 ? "ular bizga qarz" : v < -0.005 ? "biz ularga qarzmiz" : "qarz yo'q");
+
+export function AktStats({ akt }: { akt: Akt }) {
+  const sup = akt.who === "supplier";
+  const nDebit = akt.lines.filter((l) => l.debit > 0).length, nCredit = akt.lines.filter((l) => l.credit > 0).length;
+  return (
+    <div className="mx-auto mb-4 grid max-w-4xl grid-cols-2 gap-3 md:grid-cols-4 print:hidden">
+      <StatCard label={`Davr boshi saldo, ${dateShort(akt.from)}`} value={moneyShort(Math.abs(akt.opening))} hint={saldoHint(akt.opening)} icon={Scale} />
+      <StatCard label={sup ? "To'lovimiz (debet)" : "Sotuv (debet)"} value={moneyShort(akt.debit)} hint={`${nDebit} ta yozuv`} icon={sup ? Wallet : FileSpreadsheet} tone="info" />
+      <StatCard label={sup ? "Kirim hujjatlari (kredit)" : "To'lovlar (kredit)"} value={moneyShort(akt.credit)} hint={`${nCredit} ta yozuv`} icon={sup ? Truck : Wallet} tone="success" />
+      <StatCard label={`Davr oxiri saldo, ${dateShort(akt.to)}`} value={moneyShort(Math.abs(akt.closing))} hint={saldoHint(akt.closing)} icon={HandCoins} tone={Math.abs(akt.closing) > 0.005 ? "warning" : "success"} />
     </div>
   );
 }

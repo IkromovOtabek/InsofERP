@@ -68,7 +68,7 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
       </p>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Kelgan xom-ashyo (QQSsiz)" value={moneyShort(s.arrivedNet)} hint={fmtNum(s.arrivedNet)} icon={Truck} href="#kelgan" />
+        <StatCard label={`Kelgan xom-ashyo (${s.vatPayer ? "QQSsiz" : "QQS bilan"})`} value={moneyShort(s.arrivedNet)} hint={fmtNum(s.arrivedNet)} icon={Truck} href="#kelgan" />
         <StatCard label="Tannarxga kirgan xom-ashyo" value={moneyShort(s.consumed)} hint={fmtNum(s.consumed)} icon={Factory} href="#sarf" />
         <StatCard label="Koeffitsiyent (haqiqiy ÷ norma)" value={coefStr(s.coefTotal)} hint={overPct !== null ? `normadan ${over < 0 ? "kam" : "ortiq"} ${pct(Math.abs(overPct))}` : "sotuv yo'q"} icon={Scale} tone={s.coefTotal !== null && s.coefTotal > 1.05 ? "warning" : "default"} href="#guruhlar" />
         <StatCard label="Ishlab chiqarish xarajatlari stavkasi" value={pct(s.overheadPct)} hint={`${fmtNum(s.overheadTotal)} xom-ashyoga nisbatan`} icon={Percent} href="#xarajatlar" />
@@ -221,7 +221,7 @@ export function ProductProfitView({ p, base, canWrite }: { p: ProductProfit; bas
       </p>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="Tushum (mahsulot, QQSsiz)" value={moneyShort(p.revenue)} hint={fmtNum(p.revenue)} icon={Wallet} href="#mahsulotlar" />
+        <StatCard label="Tushum (mahsulot, QQSsiz)" value={moneyShort(p.revenue)} hint={p.uncostedRevenue > 0 ? `tannarxi bor mahsulotlar · jami ${moneyShort(p.revenue + p.uncostedRevenue)}` : fmtNum(p.revenue)} icon={Wallet} href="#mahsulotlar" />
         <StatCard label="Tannarx" value={moneyShort(p.cost)} hint={fmtNum(p.cost)} icon={Calculator} href="#mahsulotlar" />
         <StatCard label="Yalpi foyda" value={moneyShort(p.profit)} hint={fmtNum(p.profit)} icon={TrendingUp} tone={p.profit < 0 ? "danger" : "success"} href="#mahsulotlar" />
         <StatCard label="O'rtacha marja" value={p.margin !== null ? pct(p.margin) : "—"} icon={Percent} href="#mahsulotlar" />

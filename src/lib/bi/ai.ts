@@ -100,7 +100,7 @@ export async function aiReport(type: ReportType): Promise<Report> {
       sections: [
         { title: "Kecha", lines: [`Sotuv: ${M(sum(y.map((x) => x.revenue)))} · ${new Set(y.map((x) => x.orderId)).size} zayavka · ${qty(sum(y.filter((x) => x.unit === "m3").map((x) => x.qty)))} m³.`] },
         { title: "Bugun kutilmoqda", lines: [`${trips.length} ta reys rejalashtirilgan (${qty(sum(trips.map((x) => Number(x.qtyM3))))} m³): ${[...new Set(trips.map((x) => x.order.customer.name))].slice(0, 5).join(", ") || "reys yo'q"}.`, t.length ? `Bugun allaqachon ${new Set(t.map((x) => x.orderId)).size} ta zayavka kiritildi (${M(sum(t.map((x) => x.revenue)))}).` : "Bugun hali zayavka kiritilmagan."] },
-        { title: "Bugun e'tibor bering", lines: [crit.length ? `Xomashyo: ${crit.map((m) => `${m.name} (${m.days === null ? "sarf yo'q" : `${fmtNum(m.days, 0)} kun`})`).slice(0, 4).join(", ")} — bugun buyurtma qiling.` : "Xomashyo zaxirasi yetarli.", debtors.length ? `Qarzdorlar: ${debtors.slice(0, 3).map((c) => `${c.name} (${moneyShort(c.overdueDebt)})`).join(", ")} — muddati o'tgan, qo'ng'iroq qiling.` : "Muddati o'tgan qarz yo'q."] },
+        { title: "Bugun e'tibor bering", lines: [crit.length ? `Xomashyo: ${crit.map((m) => `${m.name} (${m.short ? "zayavkalarga yetmaydi" : m.days === null ? "sarf yo'q" : `${fmtNum(m.days, 0)} kun`})`).slice(0, 4).join(", ")} — bugun buyurtma qiling.` : "Xomashyo zaxirasi yetarli.", debtors.length ? `Qarzdorlar: ${debtors.slice(0, 3).map((c) => `${c.name} (${moneyShort(c.overdueDebt)})`).join(", ")} — muddati o'tgan, qo'ng'iroq qiling.` : "Muddati o'tgan qarz yo'q."] },
       ], hrefs: [{ label: "Ombor", href: "/bi-tahlil/ombor" }, { label: "Mijozlar", href: "/bi-tahlil/mijozlar" }, { label: "Reyslar", href: "/trips" }],
     };
     return {
@@ -114,13 +114,14 @@ export async function aiReport(type: ReportType): Promise<Report> {
     };
   }
   if (type === "weekly") {
-    const r: Range = { ...parseRange({ from: addDays(today, -6).toISOString().slice(0, 10), to: today.toISOString().slice(0, 10) }) };
+    // Sana mahalliy (isoDate): toISOString Toshkent yarim tunida kechagi sanani berib, davrni bir kun orqaga surardi
+    const r: Range = { ...parseRange({ from: isoDate(addDays(today, -6)), to: isoDate(today) }) };
     const s = await salesTab(r, "day", 1, 10, {}); const ag = await agentsTab(r); const k = s.kpis;
     return {
       title: `Haftalik hisobot — ${r.label}`, sub: `taqqoslash: ${r.prevLabel}`,
       sections: [
         { title: "Asosiy raqamlar", lines: [`Sotuv ${M(k.revenue.cur)} (${pct(k.revenue.delta)}), ${k.orders.cur} zayavka (${pct(k.orders.delta)}), ${k.customers.cur} faol mijoz (${pct(k.customers.delta)}).`, `Yalpi foyda ${M(k.gross.cur)} · marja ${pct(k.margin.cur, 1)}.`, `O'rtacha chek ${M(k.avgCheck.cur)} (${pct(k.avgCheck.delta)}).`] },
-        { title: "Nima o'sdi / pasaydi", lines: [s.prodMovers[0] ? `Eng katta o'sish: ${s.prodMovers[0].name} +${moneyShort(s.prodMovers[0].diff)}.` : "", s.prodMovers.at(-1) && s.prodMovers.at(-1)!.diff < 0 ? `Eng katta pasayish: ${s.prodMovers.at(-1)!.name} −${moneyShort(Math.abs(s.prodMovers.at(-1)!.diff))}.` : ""].filter(Boolean) },
+        { title: "Nima o'sdi / pasaydi", lines: [s.prodMovers[0] && s.prodMovers[0].diff > 0 ? `Eng katta o'sish: ${s.prodMovers[0].name} +${moneyShort(s.prodMovers[0].diff)}.` : "", s.prodMovers.at(-1) && s.prodMovers.at(-1)!.diff < 0 ? `Eng katta pasayish: ${s.prodMovers.at(-1)!.name} −${moneyShort(Math.abs(s.prodMovers.at(-1)!.diff))}.` : ""].filter(Boolean).concat(s.prodMovers.some((m) => m.diff !== 0) ? [] : ["Mahsulotlar bo'yicha sezilarli o'zgarish yo'q."]) },
         { title: "Sotuvchilar", lines: [ag.best ? `Eng yaxshi — ${ag.best.name}: ${M(ag.best.revenue)}.` : "", ag.slow.length ? `${ag.slow.length} ta sotuvchi sekinlashdi (kuniga ${M(ag.slowLoss)}).` : "Sekinlashgan sotuvchi yo'q."].filter(Boolean) },
         { title: "Yo'qotishlar", lines: [`Bekor qilingan: ${M(s.lost.cancelled)} (${s.lost.cancelledOrders} zayavka) · bloklangan: ${M(s.lost.blocked)}.`, `Chegirma: ${M(s.discount)} (${s.discountCount} pozitsiya).`] },
       ], hrefs: [{ label: "Sotuvlar", href: "/bi-tahlil/sotuvlar" }, { label: "Agentlar", href: "/bi-tahlil/agentlar" }],

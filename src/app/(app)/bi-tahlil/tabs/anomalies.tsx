@@ -20,7 +20,7 @@ export async function AnomaliesTab({ sp }: { sp: SP }) {
         <Kpi label="Jami anomaliyalar" value={String(a.cards.total)} icon={AlertTriangle} hint={`Oxirgi 7 kun: ${a.cards.last7} ${a.cards.prev7 ? `(${a.cards.last7 >= a.cards.prev7 ? "▲" : "▼"} ${fmtNum(Math.abs(((a.cards.last7 - a.cards.prev7) / a.cards.prev7) * 100), 0)}%)` : ""}`} href={`/bi-tahlil/ml/anomaliyalar?days=${days}#royxat`} />
         <Kpi label="Yuqori xavfli" value={String(a.cards.high)} icon={AlertTriangle} tone={a.cards.high ? "danger" : "default"} hint={`Jamining ${a.cards.total ? fmtNum((a.cards.high / a.cards.total) * 100, 0) : 0}%i`} href={href({ level: "High" })} />
         <Kpi label="Ta'sirlangan pul" value={moneyShort(a.cards.money)} icon={Activity} tone="warning" hint="High anomaliyalar summasi" href={`${href({ level: "High" })}#royxat`} />
-        <Kpi label="Ish vaqtidan tashqari" value={String(a.cards.offHours)} icon={Clock} tone={a.cards.offHours ? "warning" : "default"} hint="To'lov 20:00–07:00 oralig'ida kiritilgan" href={href({ pattern: "Ish vaqtidan tashqari" })} />
+        <Kpi label="Ish vaqtidan tashqari" value={String(a.cards.offHours)} icon={Clock} tone={a.cards.offHours ? "warning" : "default"} hint="To'lov 20:00–07:00 yoki zames 22:00–05:00 oralig'ida" href={href({ pattern: "Ish vaqtidan tashqari" })} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">

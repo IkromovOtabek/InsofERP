@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
 import { customerBalances } from "@/lib/receivables";
@@ -100,6 +101,12 @@ async function snapshot(asOf: Date, ctx: { matCost: Map<string, number>; prodCos
 }
 
 export async function balanceReport(months: MonthKey[]): Promise<BalanceReport> {
+  return balanceOnce(months.join(","));
+}
+/** Tahlil → Balans: KPI qatori va jadval bir sahifada bir xil hisobotni so'raydi — bir marta (`cache`, n + 1 ta og'ir snapshot). Natija o'zgartirilmaydi. */
+const balanceOnce = cache((months: string) => buildBalance(months.split(",") as MonthKey[]));
+
+async function buildBalance(months: MonthKey[]): Promise<BalanceReport> {
   const n = months.length;
   const prev = addMonths(months[0]!, -1);
   const [matCost, prodCost, since, assets, accounts, pnl, nodes, contrib] = await Promise.all([

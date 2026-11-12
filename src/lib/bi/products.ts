@@ -77,7 +77,8 @@ export async function productsTab(r: Range) {
     noRecipe: rows.filter((x) => x.cost === null && x.isActive).length,
     frozen: sum(finished.map((f) => f.value)),
     growing: withAbc.filter((x) => x.trend > 10 && x.revenue > 0).length,
-    lowMargin: withAbc.filter((x) => x.revenue > 0 && x.margin < 10).length,
+    // Tannarxi noma'lum markaning marjasi hisoblanmaydi (0 chiqadi) — «past marja» qatoriga kirmaydi
+    lowMargin: withAbc.filter((x) => x.revenue > 0 && x.cost !== null && x.margin < 10).length,
   };
   const productsWithClusters = quadrants.map((x) => ({ ...x, cluster: clusterOf(x) }));
   return { rows: productsWithClusters, matrix, scatter, medRev, medMargin, clusters, pareto, paretoCount, monthLabels, cards, totalRevenue };

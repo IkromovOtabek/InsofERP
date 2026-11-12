@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { type Range, type Gran, loadSales, series, kpi, sum, abc, safeDiv, addDays, startOfDay, WEEKDAYS, grossOf, marginOf, uncostedRevenue, type SaleRow } from "./core";
+import { workCalendar } from "@/lib/work-calendar";
+import { type Range, type Gran, loadSales, series, kpi, sum, abc, safeDiv, addDays, startOfDay, WEEKDAYS, grossOf, marginOf, uncostedRevenue, monthForecast, goLiveDate, type SaleRow } from "./core";
 
 function groupBy<T, K>(rows: T[], key: (r: T) => K) {
   const m = new Map<K, T[]>();
@@ -8,9 +9,12 @@ function groupBy<T, K>(rows: T[], key: (r: T) => K) {
 }
 
 export async function salesTab(r: Range, gran: Gran, page: number, size: number, filter: { customer?: string; product?: string }) {
+  const today = startOfDay(new Date());
+  // Bloklangan — «hozir» bloklangan zayavkalar (davrdan mustaqil, so'nggi 365 kun) — Moliya «Yo'qotish kanallari» va
+  // Bosh sahifa «Xavf ostidagi pul» bilan bir xil. Ilgari davr ichidagi zayavka sanasi bo'yicha olinardi: oy boshida 0 chiqardi.
   const [cur, prev, blocked, cancelled] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
-    loadSales(r.from, r.to, ["BLOCKED"]), loadSales(r.from, r.to, ["CANCELLED"]),
+    loadSales(addDays(today, -365), addDays(today, 1), ["BLOCKED"]), loadSales(r.from, r.to, ["CANCELLED"]),
   ]);
 
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
@@ -20,14 +24,14 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   const gross = grossOf(cur), prevGross = grossOf(prev), uncosted = uncostedRevenue(cur);
   const volume = sum(cur.filter((x) => x.unit === "m3").map((x) => x.qty)), prevVolume = sum(prev.filter((x) => x.unit === "m3").map((x) => x.qty));
 
-  // Temp / prognoz: joriy oy uchun kunlik o'rtacha × qolgan kunlar
-  const today = startOfDay(new Date());
+  // Temp / prognoz: joriy oy. Prognoz — Bosh sahifa va Egasi paneli bilan bitta formula (`monthForecast`: ish kunlari
+  // sur'ati, tizimga o'tish sanasidan); ilgari kalendar kun × oy kunlari edi — sahifalarda ikki xil prognoz chiqardi
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1), monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  const monthRows = r.period === "month" ? cur : await loadSales(monthStart, addDays(today, 1));
+  const [monthRows, cal, live] = await Promise.all([r.period === "month" ? cur : loadSales(monthStart, addDays(today, 1)), workCalendar(), goLiveDate()]);
   const monthRevenue = sum(monthRows.map((x) => x.revenue));
   const daysPassed = Math.max(1, Math.round((today.getTime() - monthStart.getTime()) / 86400000) + 1);
   const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86400000);
-  const pulse = { monthRevenue, perDay: monthRevenue / daysPassed, forecast: (monthRevenue / daysPassed) * daysInMonth, daysPassed, daysLeft: daysInMonth - daysPassed, today: sum(monthRows.filter((x) => x.date >= today).map((x) => x.revenue)) };
+  const pulse = { monthRevenue, perDay: monthRevenue / daysPassed, forecast: monthForecast(monthRevenue, cal, today, live), daysPassed, daysLeft: daysInMonth - daysPassed, today: sum(monthRows.filter((x) => x.date >= today).map((x) => x.revenue)) };
 
   const dyn = series(cur, r.from, r.to, gran, (x) => x.date, (x) => x.revenue);
   const dynPrev = series(prev, r.prevFrom, r.prevTo, gran, (x) => x.date, (x) => x.revenue);
