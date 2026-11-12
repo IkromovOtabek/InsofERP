@@ -382,18 +382,28 @@ function CellFields({ x, field, o, payEditable, canPay }: { x: LedgerEditData; f
  * Varaq qatoridagi qalam: Excel'dagidek hamma ustun bitta oynada (`lib/ledger-edit.ts`). Qiymatlar oyna ochilganda
  * serverdan olinadi — jadvalda har qatorga yuborilmaydi va tahrir eng so'nggi holatdan boshlanadi.
  */
-export function LedgerEditButton({ kind, id }: { kind: LedgerKind; id: string }) {
+export function LedgerEditButton({ kind, id, autoOpen = false }: { kind: LedgerKind; id: string; autoOpen?: boolean }) {
+  // `autoOpen` — reys kartasidan «Yetkazdim» (haydovchi o'rniga) dan keyin `?tahrir=<reys>` bilan kelindi: oyna o'zi ochiladi.
+  // Faqat brauzerda (mount'dan keyin) — oyna `document.body` ga portal, server renderida u yo'q
   const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
+  useEffect(() => { if (autoOpen) setOpen(true); }, [autoOpen]);
+  const close = useCallback(() => {
+    setOpen(false);
+    // Sahifa yangilanganda (saqlagach `router.refresh`) yoki qayta ochilganda oyna yana chiqmasin
+    if (autoOpen) {
+      const u = new URL(window.location.href);
+      if (u.searchParams.has("tahrir")) { u.searchParams.delete("tahrir"); window.history.replaceState(null, "", u.pathname + u.search); }
+    }
+  }, [autoOpen]);
   return (
     <>
       <IconButton type="button" icon={Pencil} label="Qatorni tahrirlash" onClick={() => setOpen(true)} className="h-7 w-7" />
-      {open && <LedgerEditDialog kind={kind} id={id} onClose={close} />}
+      {open && <LedgerEditDialog kind={kind} id={id} onClose={close} intro={autoOpen ? "Reys yetkazildi — hisob varag'iga km, baraban soati, zapravka, xarajat va haqni kiriting" : undefined} />}
     </>
   );
 }
 
-function LedgerEditDialog({ kind, id, onClose }: { kind: LedgerKind; id: string; onClose: () => void }) {
+function LedgerEditDialog({ kind, id, onClose, intro }: { kind: LedgerKind; id: string; onClose: () => void; intro?: string }) {
   const [data, setData] = useState<LedgerEditData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
@@ -417,6 +427,7 @@ function LedgerEditDialog({ kind, id, onClose }: { kind: LedgerKind; id: string;
           <div>
             <h2 className="text-base font-semibold tracking-tight">{data?.no || KIND_LABEL[kind]} — tahrirlash</h2>
             {data && <p className="text-xs text-slate-500">{KIND_LABEL[kind]} · {data.dateText} · {data.plate}</p>}
+            {intro && <p className="mt-1 text-sm font-medium text-emerald-700">{intro}</p>}
           </div>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
         </div>

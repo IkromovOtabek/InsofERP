@@ -1,8 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Coins, Lock, PackageCheck, Pencil, Truck } from "lucide-react";
-import { addTripCost, closeTrip, markDelivered, markLoaded, markOnRoad, reportIssue, resolveIssue, saveTripTtn } from "../actions";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowDownToLine, CheckCircle2, Coins, Factory, Lock, MapPin, PackageCheck, Pencil, Truck } from "lucide-react";
+import { addTripCost, closeTrip, driverStep, markDelivered, markLoaded, markOnRoad, reportIssue, resolveIssue, saveTripTtn } from "../actions";
+import type { DriverStep } from "@/lib/trip-dispatch";
+import type { ActionState } from "@/lib/action";
+import { isAccessDenied } from "@/lib/access-denied";
 import { Button, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
 
 const ISSUE_OPTS: [string, string][] = [
@@ -119,28 +123,64 @@ export function LoadButton({ tripId }: { tripId: string }) {
   );
 }
 
-/** "Yo'lga chiqdi" — dispetcher vebdan (haydovchi ilovasi ishlamaganda). */
-export function OnRoadButton({ tripId }: { tripId: string }) {
-  const [state, action, pending] = useActionState(markOnRoad.bind(null, tripId), undefined);
+/** Haydovchi ilovasidagi tugma nomlari — dispetcher aynan shularni bosadi. */
+const STEP_UI: Record<DriverStep | "onroad", { label: string; icon: typeof Truck }> = {
+  loaded: { label: "Yukladim", icon: PackageCheck },
+  onroad: { label: "Yo'lga chiqdim", icon: Truck },
+  arrived: { label: "Yetib keldim", icon: MapPin },
+  unloading: { label: "Tushirishni boshladim", icon: ArrowDownToLine },
+  returned: { label: "Zavodga qaytdim", icon: Factory },
+};
+
+/** Haydovchi o'rniga bitta bosqich («Yetkazdim» — alohida forma, `DriverDeliverForm`). */
+export function DriverStepButton({ tripId, step }: { tripId: string; step: DriverStep | "onroad" }) {
+  const [state, action, pending] = useActionState(step === "onroad" ? markOnRoad.bind(null, tripId) : driverStep.bind(null, tripId, step), undefined);
+  const { label, icon: Icon } = STEP_UI[step];
   return (
-    <form action={action} className="flex flex-col items-end gap-1">
-      <Button variant="secondary" disabled={pending}><Truck size={16} /> Yo&apos;lga chiqdi</Button>
-      {state?.error && <span className="max-w-xs text-right text-xs text-red-600">{state.error}</span>}
+    <form action={action} className="flex flex-col gap-1">
+      <Button variant="secondary" disabled={pending}><Icon size={16} /> {pending ? "Saqlanmoqda…" : label}</Button>
+      {state?.error && <span className="max-w-xs text-xs text-red-600">{state.error}</span>}
     </form>
   );
 }
 
-/** "Yetkazildi (dispetcher)": qabul qilgan kishi, qabul / qaytgan miqdor. GPS tasdig'isiz — reysga muammo yoziladi. */
-export function DispatchDeliverForm({ tripId, loaded, unit }: { tripId: string; loaded: number; unit: string }) {
-  const [state, action, pending] = useActionState(markDelivered.bind(null, tripId), undefined);
+/**
+ * «Yetkazdim» haydovchi o'rniga: qabul qilgan kishi, qabul / qaytgan miqdor, mikserda aylantirish soni.
+ * Saqlangach `ledgerHref` bo'lsa — shu mashinaning Hisob varag'i reys qatori tahriri bilan ochiladi.
+ * Yuborish `onSubmit` orqali: xato qaytsa yozilgan qiymatlar o'chmasin.
+ */
+export function DriverDeliverForm({ tripId, loaded, unit, mixer, ledgerHref }: { tripId: string; loaded: number; unit: string; mixer: boolean; ledgerHref: string | null }) {
+  const [state, setState] = useState<ActionState>(undefined);
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  // Amal to'g'ridan-to'g'ri chaqiriladi: javob bilan kelgan yangilanishda reys «Yetkazildi» bo'lib bu forma yo'qoladi,
+  // shuning uchun Hisob varag'iga o'tish effektda emas, shu yerda — natija kelishi bilan
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    start(async () => {
+      try {
+        const res = await markDelivered(tripId, undefined, fd);
+        setState(res);
+        if (res?.ok && ledgerHref) router.push(ledgerHref);
+      } catch (err) {
+        setState({ error: isAccessDenied(err) ? "Bu amal uchun ruxsatingiz yo'q — direktordan ruxsat so'rang" : "Amal bajarilmadi — sahifani yangilab qayta urining" });
+      }
+    });
+  };
   return (
-    <form action={action} className="flex flex-wrap items-end gap-2">
+    <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
       <label className="flex min-w-[12rem] flex-1 flex-col text-xs text-slate-500">Qabul qildi (F.I.O.) *<Input name="receiverName" className="mt-1 h-9 text-sm" required /></label>
-      <label className="flex flex-col text-xs text-slate-500">Qabul, {unit}<Input name="acceptedQty" type="number" step="0.001" min="0" defaultValue={loaded} className="mt-1 h-9 w-28 text-sm" /></label>
-      <label className="flex flex-col text-xs text-slate-500">Qaytdi, {unit}<Input name="returnedQty" type="number" step="0.001" min="0" placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qabul{unit ? `, ${unit}` : ""}<Input name="acceptedQty" type="number" step="0.001" min="0" defaultValue={loaded} className="mt-1 h-9 w-28 text-sm" /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qaytdi{unit ? `, ${unit}` : ""}<Input name="returnedQty" type="number" step="0.001" min="0" placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
+      {mixer && <label className="flex flex-col text-xs text-slate-500">Mikser aylantirildi<Input name="drumTurns" type="number" step="1" min="0" max="500" placeholder="marta" className="mt-1 h-9 w-28 text-sm" /></label>}
       <label className="flex min-w-[10rem] flex-1 flex-col text-xs text-slate-500">Izoh<Input name="comment" className="mt-1 h-9 text-sm" /></label>
-      <Button size="sm" variant="success" disabled={pending}><PackageCheck size={14} /> Yetkazildi (dispetcher)</Button>
-      <div className="w-full"><FormError error={state?.error} /></div>
+      <Button size="sm" variant="success" disabled={pending || (state?.ok && !!ledgerHref)}><PackageCheck size={14} /> {pending ? "Saqlanmoqda…" : "Yetkazdim"}</Button>
+      <div className="w-full">
+        <FormError error={state?.error} />
+        {state?.ok && ledgerHref ? <FormSuccess text="Yetkazildi — Hisob varag'i ochilmoqda…" />
+          : ledgerHref && <p className="text-xs text-slate-500">Saqlangach Hisob varag&apos;i ochiladi: km, baraban soati, zapravka, xarajat va haydovchi haqini shu yerda yozasiz.</p>}
+      </div>
     </form>
   );
 }

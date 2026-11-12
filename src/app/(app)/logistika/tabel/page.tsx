@@ -143,7 +143,7 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
 const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "qolda", "tarif"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
-export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string }> }) {
+export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
   // Jami xarajat, daromad, foyda — faqat direktor, ish boshqaruvchi, mexanik (Logistika moliya); qolganlarga hisoblanmaydi ham
   const showMoney = canSeeLogiMoney(s);
@@ -481,7 +481,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         ]} />
         {/* Qator qo'shish va qatorni tahrirlash oynasi ro'yxatlarni bitta joydan oladi */}
         <LedgerFormsProvider options={ledgerOpts} canPay={canPrice}>
-          <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger} money={showMoney}
+          <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger} money={showMoney} openTrip={sp.tahrir ?? null}
             file={`Hisob varag'i ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
           {canLedger && <div className="mt-3"><LedgerRowForm vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
         </LedgerFormsProvider>

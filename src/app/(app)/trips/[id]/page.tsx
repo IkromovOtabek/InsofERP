@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, Trash2, Truck, Package, Clock, MapPin, MapPinned, Smartphone, Route, AlertTriangle, Coins } from "lucide-react";
+import { Printer, PackageCheck, Trash2, Truck, Package, Clock, MapPin, MapPinned, Smartphone, Route, AlertTriangle, Coins, UserRoundCheck, FileSpreadsheet } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -17,7 +17,7 @@ import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, VEHICLE_TYPE, DRUM_MAX_MIN, isConc
 import { lastFuelPrice } from "@/lib/logistics-costs";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { money } from "@/lib/format";
-import { CloseTripForm, DispatchDeliverForm, LoadButton, OnRoadButton, ReportIssueForm, ResolveIssueForm, TripCostForm, TtnForm } from "./trip-extras";
+import { CloseTripForm, DriverDeliverForm, DriverStepButton, LoadButton, ReportIssueForm, ResolveIssueForm, TripCostForm, TtnForm } from "./trip-extras";
 import { DelayText, PhaseBadge } from "../../logistika/ui";
 import { distanceLabel, tripLine, tripTrack, tripTrackStats } from "@/lib/trips";
 import { tripActivity } from "@/lib/activity";
@@ -33,6 +33,9 @@ import { geoSearchEnabled } from "@/lib/geo";
 // TZ reys bosqichlari: yuklash kutilmoqda → … → yetkazildi → yopildi (oraliqlari vaqt belgilaridan)
 const STEPS = PHASE_STEPS.map((k) => ({ key: k, label: TRIP_PHASE[k].label }));
 const dt = (d: Date | null) => d ? dateTime(d) : "—";
+
+/** `2026-11` — Hisob varag'i oyi (reys yetkazilgan oy). */
+const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 /** `104` → `1 soat 44 daq` — yo'lda o'tgan vaqt. */
 const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} soat ${m % 60} daq` : `${m} daq`);
@@ -60,11 +63,15 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   // Kim nima qiladi (har kim o'z ishiga javob beradi):
   //  • dispetcher (LOGISTICS) — reysni ochadi/bekor qiladi, ECO'ga yuboradi, muammoni hal qiladi, reysni yopadi;
   //  • ishlab chiqarish — "Yuklandi" (mikser zavodda yuklandi, skladdan chiqim);
-  //  • haydovchi — yo'l bosqichlari (yo'lga chiqdi, obyektga keldi, tushirilmoqda, yetkazildi, qaytdi) o'z ilovasidan;
-  //    ilova ishlamasa dispetcher vebdan "Yo'lga chiqdi" / "Yetkazildi (dispetcher)" ni belgilaydi (auditda va muammo sifatida);
+  //  • haydovchi — yo'l bosqichlari (yukladim, yo'lga chiqdim, yetib keldim, tushirishni boshladim, yetkazdim, qaytdim) o'z ilovasidan;
+  //    ilovasi bo'lmasa (hozircha hammasida) logistika / dispetcher «Haydovchi o'rniga» blokidan o'sha tugmalarni bosadi
+  //    (`trips → driver`), «Yetkazdim» dan keyin mashinaning Hisob varag'i reys qatori tahriri bilan ochiladi;
   //  • direktor — dispetcher va ishlab chiqarish tugmalarini ham ko'radi.
   const canLog = ["LOGISTICS", "DIRECTOR"].includes(s.role);
   const canLoad = ["PRODUCTION", "DIRECTOR"].includes(s.role);
+  const canDriver = t.status !== "CANCELLED" && !t.closedAt && (canDo(s, "trips", "driver") || canDo(s, "trips", "move"));
+  const ledgerHref = canDo(s, "logistika", "ledger") && pathAllowed("/logistika/tabel", s.role, s.perms)
+    ? `/logistika/tabel?bolim=hisob&transport=${t.vehicleId}&oy=${ym(t.deliveredAt ?? new Date())}&tahrir=${id}` : null;
   const canPlan = canLog || canLoad;
   const canResolve = canDo(s, "trips", "resolve");
   // O'chirish — ruxsatlar daraxti bo'yicha (trips → cancel), yuklanmagan reysgina
@@ -100,9 +107,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         action={
           <>
             <LinkButton href={`/trips/${id}/print`} variant="secondary"><Printer size={16} /> Chop etish</LinkButton>
-            {t.status === "PLANNED" && canLoad && <LoadButton tripId={id} />}
-            {t.status === "LOADED" && canLog && <OnRoadButton tripId={id} />}
-            {driverPhase && canPlan && !t.vehicle.external && <span className="self-center text-xs text-slate-500">Yo&apos;l bosqichlarini haydovchi o&apos;z ilovasidan belgilaydi</span>}
+            {t.status === "PLANNED" && canLoad && !canDriver && <LoadButton tripId={id} />}
+            {driverPhase && canPlan && !canDriver && !t.vehicle.external && <span className="self-center text-xs text-slate-500">Yo&apos;l bosqichlarini haydovchi o&apos;z ilovasidan belgilaydi</span>}
             {t.status === "PLANNED" && canCancel && (
               <ConfirmButton action={cancelTrip.bind(null, id)} label="O'chirish" icon={<Trash2 size={16} />} reason="optional" okText="O'chirildi"
                 question={`${t.deliveryNoteNo} reysi o'chirilsinmi? Haydovchiga xabar boradi`} goTo={`/orders/${t.orderId}`} className="h-10 px-3" />
@@ -156,11 +162,26 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         </Card>
       )}
 
-      {["LOADED", "ON_ROAD"].includes(t.status) && canLog && (
-        <Card className="mt-5">
-          <CardHeader title="Yetkazildi (dispetcher)" icon={PackageCheck}
-            description="Haydovchi ilovadan belgilay olmasa (telefon o'chgan, pudratchi). GPS tasdig'isiz — reysga muammo yoziladi va yopishdan oldin ko'rib chiqiladi" />
-          <DispatchDeliverForm tripId={id} loaded={Number(t.qtyM3)} unit={tripUnit ? unitLabel(tripUnit) : ""} />
+      {/* ── Haydovchi o'rniga: ilovadagi tugmalar ketma-ket, har holatda faqat keyingi qadam (`lib/trip-dispatch.ts`) ── */}
+      {canDriver && (
+        <Card className="mt-5 border-brand-200">
+          <CardHeader title="Haydovchi o'rniga" icon={UserRoundCheck}
+            description={t.status === "DELIVERED"
+              ? (t.returnedAt ? "Haydovchi bosqichlari tugadi — Hisob varag'ini to'ldiring va reysni yoping" : "Yetkazildi. Mashina zavodga qaytganda «Zavodga qaytdim» ni bosing")
+              : "Haydovchida ilova yo'q — uning tugmalarini shu yerdan bosing. Kim va qachon belgilagani «Amallar tarixi»da qoladi"}
+            action={t.status === "DELIVERED" && ledgerHref ? <LinkButton href={ledgerHref} variant="secondary" size="sm"><FileSpreadsheet size={15} /> Hisob varag&apos;i</LinkButton> : undefined} />
+          <div className="flex flex-wrap items-start gap-2">
+            {t.status === "PLANNED" && <DriverStepButton tripId={id} step="loaded" />}
+            {t.status === "LOADED" && <DriverStepButton tripId={id} step="onroad" />}
+            {t.status === "ON_ROAD" && !t.arrivedAt && <DriverStepButton tripId={id} step="arrived" />}
+            {t.status === "ON_ROAD" && t.arrivedAt && !t.unloadingAt && <DriverStepButton tripId={id} step="unloading" />}
+            {t.status === "DELIVERED" && !t.returnedAt && <DriverStepButton tripId={id} step="returned" />}
+          </div>
+          {t.status === "ON_ROAD" && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <DriverDeliverForm tripId={id} loaded={Number(t.qtyM3)} unit={tripUnit ? unitLabel(tripUnit) : ""} mixer={t.vehicle.type === "MIXER"} ledgerHref={ledgerHref} />
+            </div>
+          )}
         </Card>
       )}
 

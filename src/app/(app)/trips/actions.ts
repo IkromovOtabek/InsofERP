@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { createTrip as createTripDomain, hideExternalCar, reportTripIssue, resolveTripIssue, setTripTtn, tripCancelled, tripClosed, tripLoaded, tripPickup, type DeliveryQty } from "@/lib/trips";
-import { addTripCostRecord, dispatchDelivered, dispatchOnRoad } from "@/lib/trip-dispatch";
+import { addTripCostRecord, dispatchDelivered, dispatchOnRoad, dispatchStep, DRIVER_STEPS, type DriverStep } from "@/lib/trip-dispatch";
 import type { TripIssueKind } from "@/generated/prisma";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
@@ -104,9 +104,29 @@ export async function hideExternalVehicle(id: string): Promise<ActionState> {
 }
 
 // Yo'l bosqichlarini odatda haydovchi o'z ilovasidan belgilaydi (`lib/mobile/actions.ts`), ECO webhook'i ham
-// shu yo'ldan keladi. Haydovchida ilova bo'lmasa (telefon o'chgan, pudratchi) dispetcher vebdan
-// "Yo'lga chiqdi" va "Yetkazildi"ni belgilaydi — bu audit jurnaliga "dispetcher belgiladi" deb yoziladi,
-// yetkazish esa GPS tasdig'isiz bo'lgani uchun reysga muammo sifatida tushadi (yopishdan oldin ko'riladi).
+// shu yo'ldan keladi. Haydovchida ilova bo'lmasa (hozircha — hammasida) dispetcher reys kartasidagi «Haydovchi o'rniga»
+// blokidan uning hamma tugmasini bosadi: yukladim → yo'lga chiqdim → yetib keldim → tushirishni boshladim → yetkazdim →
+// zavodga qaytdim. Auditda "dispetcher belgiladi" bo'lib qoladi; qoidalar — `lib/trip-dispatch.ts` (mobil ham).
+
+/** Haydovchi o'rniga bosish: `trips → driver` (logistika, dispetcher) yoki eski `move` ruxsati. */
+async function requireDriverStand() {
+  try { return await requireAction("trips", "driver"); } catch { return requireAction("trips", "move"); }
+}
+
+const STEP_ECO = { loaded: "LOADING", arrived: "ARRIVED", unloading: "UNLOADING" } as const;
+
+/** «Yukladim», «Yetib keldim», «Tushirishni boshladim», «Zavodga qaytdim» — haydovchi o'rniga. */
+export async function driverStep(id: string, step: DriverStep): Promise<ActionState> {
+  const s = await requireDriverStand();
+  if (!(DRIVER_STEPS as readonly string[]).includes(step)) return { error: "Bosqich noto'g'ri" };
+  const r = await dispatchStep(id, s.userId, step);
+  if ("error" in r) return { error: r.error };
+  const eco = step === "returned" ? null : STEP_ECO[step];
+  if (r.changed && eco && ecoEnabled()) after(() => pushTripStatus(id, eco));
+  refresh(id, r.orderId);
+  if (step === "loaded") revalidatePath("/stock");
+  return { ok: true };
+}
 
 /** PLANNED → LOADED: mikser zavodda yuklandi, tayyor beton skladdan chiqadi (SHIPMENT). Ishlab chiqarish tasdiqlaydi. */
 export async function markLoaded(id: string): Promise<ActionState> {
@@ -118,9 +138,9 @@ export async function markLoaded(id: string): Promise<ActionState> {
   return { ok: true };
 }
 
-/** LOADED → ON_ROAD — dispetcher vebdan (haydovchi ilovasi ishlamaganda). Qoida — `lib/trip-dispatch.ts` (mobil ham). */
+/** LOADED → ON_ROAD — «Yo'lga chiqdim» haydovchi o'rniga. Qoida — `lib/trip-dispatch.ts` (mobil ham). */
 export async function markOnRoad(id: string): Promise<ActionState> {
-  const s = await requireAction("trips", "move");
+  const s = await requireDriverStand();
   const r = await dispatchOnRoad(id, s.userId);
   if ("error" in r) return { error: r.error };
   if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "EN_ROUTE"));
@@ -128,12 +148,15 @@ export async function markOnRoad(id: string): Promise<ActionState> {
   return { ok: true };
 }
 
-/** LOADED / ON_ROAD → DELIVERED — dispetcher vebdan: qabul qilgan kishi va miqdorlar bilan. */
+/**
+ * LOADED / ON_ROAD → DELIVERED — «Yetkazdim» haydovchi o'rniga: qabul qilgan kishi, miqdorlar, mikser aylantirish soni.
+ * Keyin klient shu mashinaning Hisob varag'ini reys qatori tahriri bilan ochadi (km, baraban soati, zapravka, haq).
+ */
 export async function markDelivered(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireAction("trips", "move");
+  const s = await requireDriverStand();
   const receiverName = String(fd.get("receiverName") ?? "").trim();
-  const q = qtyFrom(fd);
-  // Haydovchi tasdig'i ham, GPS ham yo'q — reysga muammo yoziladi (`dispatchDelivered`), hal qilinmaguncha yopilmaydi
+  const q = { ...qtyFrom(fd), drumTurns: numOrNull(fd.get("drumTurns")), workHours: numOrNull(fd.get("workHours")) };
+  // Haydovchi ilovasi shu reysda ulangan bo'lsa — reysga muammo yoziladi (`dispatchDelivered`), hal qilinmaguncha yopilmaydi
   const r = await dispatchDelivered(id, s.userId, receiverName, q);
   if ("error" in r) return { error: r.error };
   if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${receiverName}`, acceptedM3: q.acceptedQty ?? undefined }));

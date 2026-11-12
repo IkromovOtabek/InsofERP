@@ -101,6 +101,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "create",  label: "Reys ochish",                       roles: ["LOGISTICS", "PRODUCTION"] },
     { key: "load",    label: "Yuklandi deb belgilash",            roles: ["PRODUCTION"] },
     { key: "move",    label: "Yo'lga chiqdi / yetkazildi / yopish", roles: ["LOGISTICS"] },
+    { key: "driver",  label: "Haydovchi o'rniga: yukladi, yo'lga chiqdi, yetib keldi, tushirdi, yetkazdi, qaytdi", roles: ["LOGISTICS", "DISPATCHER"], hint: "Haydovchida ilova bo'lmaganda reys kartasidan; har bosish tarixda «dispetcher belgiladi» bo'lib qoladi" },
     { key: "cancel",  label: "Reysni bekor qilish",               roles: ["LOGISTICS"] },
     { key: "issue",   label: "Muammo yozish",                     roles: ["LOGISTICS", "PRODUCTION"] },
     { key: "resolve", label: "Reys muammosini hal qilish",        roles: ["LOGISTICS", "DISPATCHER"], hint: "Dispetcher — buzilish, avariya va boshqa transport muammolari" },

@@ -655,7 +655,7 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
     out.actions.push({ id: "trip.dispatch.onroad", label: "Yo'lga chiqdi (dispetcher)", tone: "brand", confirm: "Haydovchi ilovadan belgilay olmayaptimi? Reys yo'lga chiqdi deb belgilansinmi (auditda — dispetcher)?" });
   }
   if (["LOADED", "ON_ROAD"].includes(t.status) && can(user, "trip.dispatch.delivered")) {
-    out.actions.push({ id: "trip.dispatch.delivered", label: "Yetkazildi (dispetcher)", tone: "success", form: RECEIVER_FIELDS, hint: "GPS tasdig'isiz — reysga muammo yoziladi va yopishdan oldin ko'rib chiqiladi" });
+    out.actions.push({ id: "trip.dispatch.delivered", label: "Yetkazildi (dispetcher)", tone: "success", form: RECEIVER_FIELDS, hint: "Haydovchi o'rniga. Haydovchi ilovasi shu reysda ulangan bo'lsa — reysga muammo yoziladi va yopishdan oldin ko'rib chiqiladi" });
   }
   if (t.status === "LOADED" && can(user, "trip.pickup")) {
     const plant = await db.companySettings.findUnique({ where: { id: "main" }, select: { name: true, address: true, lat: true, lng: true } });
@@ -1328,7 +1328,7 @@ export async function runLogiAction(user: MobileUser, action: string, id: string
       const r = await dispatchDelivered(id, user.id, receiverName, q, APP_NOTE);
       if ("error" in r) return fail(r.error);
       if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${receiverName}`, acceptedM3: q.acceptedQty ?? undefined }));
-      return "Yetkazildi deb belgilandi — GPS tasdig'isiz, reysga muammo yozildi (yopishdan oldin hal qiling)";
+      return r.issue ? "Yetkazildi deb belgilandi — haydovchi ilovasi ulangan edi, reysga muammo yozildi (yopishdan oldin hal qiling)" : "Yetkazildi deb belgilandi (haydovchi o'rniga)";
     }
     case "trip.pickup": {
       const lat = optNum(payload, "pickupLat"), lng = optNum(payload, "pickupLng");

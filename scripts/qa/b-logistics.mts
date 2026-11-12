@@ -163,6 +163,17 @@ r = await logist.action(`${TA}#cancelTrip`, [t1], `/trips/${t1}`);
 check(q1(`select status from "Trip" where id='${t1}'`) === "LOADED", "yuklangan reysni bekor qilib bo'lmaydi");
 r = await logist.action(`${TA}#markOnRoad`, [t1], `/trips/${t1}`);
 check(r.ok && q1(`select status from "Trip" where id='${t1}'`) === "ON_ROAD", "yo'lga chiqdi", r.error);
+// Haydovchi o'rniga (ilovasiz): yetib keldi → tushirish boshlandi; zavodga qaytish faqat yetkazilgandan keyin
+r = await logist.action(`${TA}#driverStep`, [t1, "returned"], `/trips/${t1}`);
+check(/Yetkazdim/.test(r.error ?? ""), "yetkazilmagan reysda «Zavodga qaytdim» rad etildi", r.error);
+r = await logist.action(`${TA}#driverStep`, [t1, "arrived"], `/trips/${t1}`);
+check(r.ok && !!q1(`select "arrivedAt" from "Trip" where id='${t1}'`), "haydovchi o'rniga: yetib keldi", r.error);
+r = await logist.action(`${TA}#driverStep`, [t1, "unloading"], `/trips/${t1}`);
+check(r.ok && !!q1(`select "unloadingAt" from "Trip" where id='${t1}'`), "haydovchi o'rniga: tushirish boshlandi", r.error);
+r = await mex.action(`${TA}#driverStep`, [t1, "arrived"], `/trips/${t1}`);
+check(!r.ok, "mexanik haydovchi o'rniga bosa olmaydi");
+// Haydovchi telefoni shu reysda ilova bilan aloqada bo'lgan — dispetcher bosgani muammo bo'lib tushadi (pastda)
+q(`update "Trip" set "lastSeenAt"=now() where id='${t1}'`);
 r = await logist.action(`${TA}#markDelivered`, [t1, undefined, fd({ receiverName: "" })], `/trips/${t1}`);
 check(/qabul/.test(r.error ?? ""), "qabul qiluvchisiz yetkazish rad etildi", r.error);
 r = await logist.action(`${TA}#markDelivered`, [t1, undefined, fd({ receiverName: "Prorab Aliyev", acceptedQty: "7", returnedQty: "0" })], `/trips/${t1}`);
@@ -176,6 +187,8 @@ check(/muammo/.test(r.error ?? ""), "ochiq muammo — yopish rad etildi", r.erro
 const issue = q1(`select id from "TripIssue" where "tripId"='${t1}' and "resolvedAt" is null`)!;
 r = await logist.action(`${TA}#resolveIssue`, [issue, undefined, fd({ resolution: "Haydovchi telefonda tasdiqladi" })], `/trips/${t1}`);
 check(r.ok, "muammo hal qilindi", r.error);
+r = await logist.action(`${TA}#driverStep`, [t1, "returned"], `/trips/${t1}`);
+check(r.ok && !!q1(`select "returnedAt" from "Trip" where id='${t1}'`), "haydovchi o'rniga: zavodga qaytdi", r.error);
 r = await logist.action(`${TA}#closeTrip`, [t1, undefined, fd({ acceptedQty: "5,5", returnedQty: "0,5" })], `/trips/${t1}`);
 check(r.ok && !!q1(`select "closedAt" from "Trip" where id='${t1}'`), "reys yopildi", r.error);
 
@@ -208,8 +221,10 @@ if (t4 && recIds && need4 > 0 && pbal(M300, wh2) < qty4) {
   r = await dir.action("(app)/production/actions#stornoBatch", [bid, "QA: jo'natilgan betonni storno"], "/production");
   check(!!r.error && n1(`select count(*) from "ProductionBatch" where id='${bid}' and "cancelledAt" is null`) === 1, "jo'natilgan beton zamesi storno qilinmaydi", r.error);
   await logist.action(`${TA}#markOnRoad`, [t4], `/trips/${t4}`);
-  r = await logist.action(`${TA}#markDelivered`, [t4, undefined, fd({ receiverName: "QA avto zames" })], `/trips/${t4}`);
+  r = await logist.action(`${TA}#markDelivered`, [t4, undefined, fd({ receiverName: "QA avto zames", drumTurns: "3" })], `/trips/${t4}`);
   check(r.ok, "avto zamesli reys yetkazildi", r.error);
+  check(n1(`select count(*) from "TripIssue" where "tripId"='${t4}'`) === 0 && n1(`select coalesce("drumTurns",0) from "Trip" where id='${t4}'`) === 3,
+    "ilovasiz haydovchi o'rniga yetkazildi: muammo yozilmadi, aylantirish soni saqlandi");
 } else check(false, "avto zames sinovi uchun sharoit yo'q (reys ochilmadi, M300 retsepti yo'q yoki skladda M300 yetarli)", r.error ?? [main4, pbal(M300, wh2)]);
 
 // Yoqilg'i va xarajat

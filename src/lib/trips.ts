@@ -427,13 +427,13 @@ export async function tripUnloading(id: string, userId: string, note?: string): 
 }
 
 /** Yetkazilgan reysdan keyin mashina zavodga qaytdi — aylanish vaqti yopiladi, mashina bo'shaydi. */
-export async function tripReturned(id: string, userId: string): Promise<TripResult> {
+export async function tripReturned(id: string, userId: string, note?: string): Promise<TripResult> {
   const t = await db.trip.findUniqueOrThrow({ where: { id } });
   if (t.status !== "DELIVERED") return { changed: false, orderId: t.orderId, error: "Avval yetkazildi deb belgilang" };
   if (t.returnedAt) return { changed: false, orderId: t.orderId };
   const r = await db.trip.updateMany({ where: { id, status: "DELIVERED", returnedAt: null }, data: { returnedAt: new Date() } });
   if (!r.count) return { changed: false, orderId: t.orderId };
-  await audit(db, userId, "UPDATE", "Trip", id, { returnedAt: null }, { returnedAt: new Date() });
+  await audit(db, userId, "UPDATE", "Trip", id, { returnedAt: null }, { returnedAt: new Date(), note });
   return { changed: true, orderId: t.orderId };
 }
 

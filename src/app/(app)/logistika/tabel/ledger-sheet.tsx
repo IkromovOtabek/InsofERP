@@ -58,8 +58,10 @@ const excelRow = (r: LedgerRow, money: boolean) => ({
  * `money` — Jami xarajat, daromad (P/R, N/L, Obyekt), Foyda va pul jamlari: faqat direktor, ish boshqaruvchi, mexanik
  * (`lib/logistics-finance.ts` → `canSeeLogiMoney`). Qolganlarga bu ustunlar ham, Excel'da ham yuborilmaydi.
  */
-export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, canEdit, money }: {
+export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, canEdit, money, openTrip }: {
   rows: LedgerRow[]; total: LedgerTotals; month: string; file: string; showDriver: boolean; showPlate: boolean; canEdit: boolean; money: boolean;
+  /** `?tahrir=<reys>` — reys kartasidan haydovchi o'rniga yetkazilgach: shu reys qatorining tahrir oynasi o'zi ochiladi */
+  openTrip?: string | null;
 }) {
   const units = new Set(rows.map((r) => r.unit));
   const unit = units.size === 1 ? [...units][0] : "m³ / l";
@@ -163,7 +165,7 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
                 {canEdit && (
                   <SheetTd className="whitespace-nowrap">
                     <span className="inline-flex items-center gap-0.5">
-                      <LedgerEditButton kind={r.kind} id={r.id} />
+                      <LedgerEditButton kind={r.kind} id={r.id} autoOpen={!!openTrip && r.kind === "trip" && r.id === openTrip} />
                       {r.kind === "entry" && !(r.payType === "CASH" && r.approvedAt) && (
                         <ConfirmButton action={cancelEntryAction.bind(null, r.id)} reason="required" label="" title="Qatorni bekor qilish" icon={<Undo2 size={14} />}
                           question={`${r.no} (${date(r.at)} · ${r.plate}) bekor qilinsinmi? Zapravka va xarajati ham bekor bo'ladi.`} okText="Bekor qilindi" className="h-7 px-1.5" />
