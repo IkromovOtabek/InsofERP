@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { ndsPart, withoutNds } from "@/lib/nds";
 import { unitLabel } from "@/lib/unit";
+import type { OrderStatus } from "@/generated/prisma";
 
 /**
  * «Realizatsiya zayavkasi» — bir kunga yetkaziladigan zayavkalar Excel varag'i ko'rinishida
@@ -40,6 +41,9 @@ export type DaySheetRow = {
   orderId: string; customer: string; product: string; unit: string;
   qty: number; price: number; delivery: number; net: number; vat: number; total: number;
   receiver: string | null; phone: string | null; site: string; time: string | null;
+  /** Yangi zayavka «Excel ko'rinish» varag'i uchun: holat, blok, reys soni (0 — dastavka yo'q, null — noma'lum),
+   *  bosh to'lov (zayavkaning birinchi qatorida) va `first` — zayavkaning birinchi qatori */
+  status: OrderStatus; block: string | null; trips: number | null; prepay: number; first: boolean;
 };
 export type DaySheetTotals = { qty: number; delivery: number; net: number; vat: number; total: number };
 export type DaySheetGroup = { key: PayGroupKey; label: string; rows: DaySheetRow[]; totals: DaySheetTotals; qtyText: string };
@@ -62,6 +66,18 @@ function qtyText(rows: DaySheetRow[]): string {
   return [...m].map(([u, q]) => `${+q.toFixed(3)} ${u}`).join(" · ");
 }
 
+/**
+ * Excel ko'rinishda (`lib/orders-grid.ts`) qabul qiluvchi va reys soni zayavka izohiga yoziladi:
+ * «Qabul qiluvchi: Ism, +998…; …» va «Dastavka: N reys». Izohda bo'lmasa — obyekt/mijoz kontakti.
+ */
+function noteInfo(note: string | null) {
+  const first = note?.match(/^Qabul qiluvchi:\s*(.+)$/m)?.[1]?.split(";")[0] ?? "";
+  const parts = first.split(",").map((x) => x.trim()).filter(Boolean);
+  const phone = parts.find((x) => x.replace(/\D/g, "").length >= 7) ?? null;
+  const trips = note?.match(/^Dastavka:\s*(\d+)\s*reys/m)?.[1];
+  return { receiver: parts.filter((x) => x !== phone).join(", ") || null, phone, trips: trips ? Number(trips) : null };
+}
+
 export async function orderDaySheet(day: Date): Promise<DaySheet> {
   const from = new Date(day); from.setHours(0, 0, 0, 0);
   const to = new Date(from); to.setDate(to.getDate() + 1);
@@ -71,10 +87,11 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
       where: { kind: "SALE", status: { not: "CANCELLED" }, dateUnknown: false, deliveryDate: { gte: from, lt: to } },
       orderBy: [{ deliveryTime: "asc" }, { orderNo: "asc" }],
       select: {
-        id: true, deliveryTime: true, deliveryAddress: true, deliveryFee: true, payMethod: true, onCredit: true,
+        id: true, status: true, deliveryTime: true, deliveryAddress: true, deliveryFee: true, payMethod: true, onCredit: true,
+        note: true, needsDelivery: true, prepayAmount: true,
         customer: { select: { name: true, phone: true, contactPerson: true } },
         site: { select: { name: true, contactName: true, contactPhone: true } },
-        items: { orderBy: { id: "asc" }, select: { qtyM3: true, price: true, nds: true, product: { select: { name: true, unit: true, groupId: true } } } },
+        items: { orderBy: { id: "asc" }, select: { qtyM3: true, price: true, nds: true, block: { select: { name: true } }, product: { select: { name: true, unit: true, groupId: true } } } },
       },
     }),
     db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
@@ -88,6 +105,10 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
   for (const o of orders) {
     const key = payGroupOf(o);
     const fee = Number(o.deliveryFee);
+    const ni = noteInfo(o.note);
+    const receiver = ni.receiver || o.site?.contactName || o.customer.contactPerson || null;
+    const phone = ni.phone || o.site?.contactPhone || o.customer.phone || null;
+    const extra = { status: o.status, trips: o.needsDelivery ? ni.trips : 0, prepay: Number(o.prepayAmount ?? 0) };
     o.items.forEach((i, n) => {
       const qty = Number(i.qtyM3), price = Number(i.price);
       const line = r2(qty * price);
@@ -98,9 +119,8 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
         orderId: o.id, customer: o.customer.name, product: i.product.name, unit,
         qty, price: i.nds ? withoutNds(price) : price, delivery,
         net: r2(line - vat + delivery), vat, total: r2(line + delivery),
-        receiver: o.site?.contactName || o.customer.contactPerson || null,
-        phone: o.site?.contactPhone || o.customer.phone || null,
-        site: o.site?.name || o.deliveryAddress, time: o.deliveryTime,
+        receiver, phone, site: o.site?.name || o.deliveryAddress, time: o.deliveryTime,
+        ...extra, block: i.block?.name ?? null, prepay: n === 0 ? extra.prepay : 0, first: n === 0,
       });
       const pk = `${rootName(i.product.groupId)}|${unit}`;
       const p = products.get(pk) ?? { name: rootName(i.product.groupId), unit, qty: 0 };
@@ -110,8 +130,8 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
     if (o.items.length === 0 && fee > 0) {
       rowsBy[key].push({
         orderId: o.id, customer: o.customer.name, product: "Dastavka", unit: "", qty: 0, price: 0, delivery: fee,
-        net: fee, vat: 0, total: fee, receiver: o.site?.contactName || o.customer.contactPerson || null,
-        phone: o.site?.contactPhone || o.customer.phone || null, site: o.site?.name || o.deliveryAddress, time: o.deliveryTime,
+        net: fee, vat: 0, total: fee, receiver, phone, site: o.site?.name || o.deliveryAddress, time: o.deliveryTime,
+        ...extra, block: null, first: true,
       });
     }
   }

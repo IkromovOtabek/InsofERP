@@ -12,7 +12,9 @@ import { OrderForm, type CustomerOpt, type OrderPrefill, type ProductStock } fro
 import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
 import { canDo, writeScripts } from "@/lib/permissions";
 import { unitLabel } from "@/lib/unit";
-import { OrderGrid, RememberView, type GridCustomer } from "../order-grid";
+import { OrderGrid, RememberView, type GridCustomer, type GridExisting } from "../order-grid";
+import { orderDaySheet, type PayGroupKey } from "@/lib/order-day-sheet";
+import { isoDate } from "@/lib/format";
 
 /** Tanlangan ko'rinish (tizim / excel) — keyingi «Yangi zayavka» shu bilan ochiladi */
 const ORDER_VIEW_COOKIE = "zayavka_view";
@@ -60,10 +62,10 @@ async function DocHeader() {
  * Sklad (zaxira) zayavkasi bu yerdan olindi: u Ishlab chiqarish → «Skladga zayavka» da (`/production/sklad`),
  * eski `?tur=sklad` havolasi va sotuv ruxsati yo'q xodim (ishlab chiqarish, sklad) o'sha yerga yo'naltiriladi.
  */
-export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string; view?: string }> }) {
+export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string; view?: string; sana?: string }> }) {
   // Direktor "create" yoki "stock" ruxsatini bergan xodim ham kiradi (rol ro'yxatida bo'lmasa ham)
   const s = await requireRoles([...STOCK_ORDER_ROLES], { module: "orders", actions: ["create", "stock"] });
-  const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId, view: viewParam } = await searchParams;
+  const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId, view: viewParam, sana } = await searchParams;
   const canSale = canDo(s, "orders", "create");
   if (tur === "sklad" || !canSale) redirect("/production/sklad");
 
@@ -82,7 +84,9 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
   ) : undefined;
 
   if (excel) {
-    const [products, customers, black] = await Promise.all([
+    // Varaq sanasi (`?sana=YYYY-MM-DD`, sukut — ertaga): shu kunga olingan barcha zayavkalar varaq tepasida ko'rinadi
+    const day = sana && /^\d{4}-\d{2}-\d{2}$/.test(sana) && isoDate(new Date(`${sana}T00:00:00`)) === sana ? sana : isoDate(new Date(Date.now() + 86_400_000));
+    const [products, customers, black, sheet] = await Promise.all([
       db.product.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true, unit: true, price: true } }),
       db.customer.findMany({
         where: { isActive: true, isInternal: false }, orderBy: { name: "asc" },
@@ -92,7 +96,11 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
         },
       }),
       blacklistedIds(), // «limit yo'q» belgisi — bunday mijozga faqat to'liq bosh to'lov bilan
+      orderDaySheet(new Date(`${day}T00:00:00`)), // kunlik «Realizatsiya zayavkasi» bilan bir xil hisob
     ]);
+    const SEC: Record<PayGroupKey, keyof GridExisting> = { BANK: "bank", CASH: "cash", DEBT: "credit" };
+    const existing: GridExisting = { bank: [], cash: [], credit: [] };
+    for (const g of sheet.groups) existing[SEC[g.key]] = g.rows;
     const opts: GridCustomer[] = customers.map((c) => ({
       id: c.id, name: c.name, aliases: c.aliases, phone: c.phone, blacklisted: black.has(c.id),
       sites: c.sites.map(({ blocks, ...x }) => ({ ...x, blocks: blocks.map((b) => b.name) })),
@@ -101,8 +109,8 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <div>
         <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />
         <PageHeader back={{ href: "/orders", label: "Zayavkalar" }} title="Yangi zayavka" action={viewTabs}
-          subtitle="Excel ko'rinish: bir varaqda bir nechta zayavka — perechisleniye, naqd va qarzga bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
-        <OrderGrid customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()}
+          subtitle="Excel ko'rinish: tanlangan kunga olingan barcha zayavkalar va yangi qatorlar — perechisleniye, naqd va qarzga bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
+        <OrderGrid day={day} existing={existing} orderCount={sheet.orderCount} customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()}
           products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: unitLabel(p.unit), price: Number(p.price) }))} />
       </div>
     );

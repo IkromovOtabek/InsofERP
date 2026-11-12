@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Save, CheckCircle2, MapPin, FileSignature, UserPlus, Building2, CalendarDays, Clock } from "lucide-react";
+import { Plus, X, Save, CheckCircle2, MapPin, FileSignature, UserPlus, Building2, CalendarDays, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import type { DaySheetRow } from "@/lib/order-day-sheet";
+import { ORDER_STATUS, OrderStatusBadge } from "./status";
 import { Button, Callout, Card, Field as FormField, Input, LinkButton } from "@/components/ui";
 import { AddressPicker, type SavedPlace } from "@/components/address-picker";
 import { scriptCleaner } from "@/components/script-guard";
@@ -24,6 +27,8 @@ type NewCustomer = { name: string; phone: string; inn: string; address: string; 
 
 /** Bo'limlar tizim formasidagi to'lov turlari: Perechisleniye (QQS bilan), Naqd, Qarzga (QQS ixtiyoriy) */
 type Section = "bank" | "cash" | "credit";
+/** Varaq kuniga olingan zayavkalar (`lib/order-day-sheet.ts`) — bo'limlar bo'yicha, faqat ko'rish uchun */
+export type GridExisting = Record<Section, DaySheetRow[]>;
 const SECTIONS: { sec: Section; title: string }[] = [{ sec: "bank", title: "Perechisleniye" }, { sec: "cash", title: "Naqd" }, { sec: "credit", title: "Qarzga" }];
 /**
  * `trips` — reys soni: «0» — dastavka yo'q (mijoz o'zi olib ketadi), 1+ — dastavka bor; bo'sh — dastavka bor, soni noma'lum.
@@ -128,9 +133,28 @@ type CustOpt = { c: GridCustomer; site?: GridSite; block?: string };
  * Yangi zayavka — «Excel ko'rinish»: kunlik «Zayavka realizatsiya» varag'i. Uch bo'lim — Perechisleniye (QQS 12%
  * narx ustiga), Naqd va Qarzga. Katakdan katakka Enter/strelka bilan o'tiladi, Excel'dan bir nechta katak joylashtiriladi.
  * Saqlanganda bo'lim + mijoz + obyekt + sana + soat bo'yicha qoralama zayavkalar ochiladi (`lib/orders-grid.ts`).
+ *
+ * Har bo'lim tepasida — varaq kuniga olingan barcha zayavkalar (kulrang, faqat ko'rish; mijoz nomi zayavkaga olib boradi).
+ * Varaq sanasi URL'da (`?sana=`): kun almashsa server o'sha kun zayavkalarini beradi, yozilgan yangi qatorlar joyida qoladi.
  */
-export function OrderGrid({ customers, products, scripts, geoSearch }: { customers: GridCustomer[]; products: GridProduct[]; /** Ruxsat berilgan yozuvlar (`writeScripts`) */ scripts: string[]; /** Xarita qidiruvi kaliti sozlanganmi (`geoSearchEnabled`) */ geoSearch: boolean }) {
-  const [date, setDate] = useState(() => isoDate(new Date(Date.now() + 86400000)));
+export function OrderGrid({ day, existing, orderCount, customers, products, scripts, geoSearch }: {
+  /** Varaq kuni «YYYY-MM-DD» */ day: string; existing: GridExisting; /** Shu kunga olingan zayavkalar soni */ orderCount: number;
+  customers: GridCustomer[]; products: GridProduct[]; /** Ruxsat berilgan yozuvlar (`writeScripts`) */ scripts: string[]; /** Xarita qidiruvi kaliti sozlanganmi (`geoSearchEnabled`) */ geoSearch: boolean;
+}) {
+  const router = useRouter();
+  const [date, setDate] = useState(day);
+  // Kun URL orqali almashsa (orqaga tugmasi ham) — varaq sanasi ham shu kunga
+  const [shownDay, setShownDay] = useState(day);
+  if (day !== shownDay) { setShownDay(day); setDate(day); }
+  const [loading, startNav] = useTransition();
+  /** Boshqa kun: sana darhol almashadi, o'sha kun zayavkalari serverdan keladi (yozilgan qatorlar saqlanib qoladi) */
+  const goDay = (iso: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso === date) return;
+    setDate(iso);
+    const y = Number(iso.slice(0, 4));
+    if (y >= 2020 && y <= 2100) startNav(() => router.replace(`/orders/new?view=excel&sana=${iso}`, { scroll: false }));
+  };
+  const shiftDay = (n: number) => { const d = new Date(`${date}T00:00:00`); d.setDate(d.getDate() + n); goDay(isoDate(d)); };
   const [rows, setRows] = useState<Record<Section, Row[]>>(() => ({ bank: Array.from({ length: START_ROWS }, blank), cash: Array.from({ length: START_ROWS }, blank), credit: Array.from({ length: 3 }, blank) }));
   // Qarzga bo'limi: QQS ixtiyoriy (tizim formasidagi «QQS 12%» tugmasi) va bosh to'lov qanday keladi
   const [creditVat, setCreditVat] = useState(false);
@@ -393,6 +417,7 @@ export function OrderGrid({ customers, products, scripts, geoSearch }: { custome
         return { bank: keep(all.bank), cash: keep(all.cash), credit: keep(all.credit) };
       });
       setSaved((s) => [...res.created.map(({ id, orderNo, customer, credit }) => ({ id, orderNo, customer, credit })), ...s]);
+      if (res.created.length) router.refresh(); // ochilgan zayavkalar varaq tepasidagi olinganlar qatoriga o'tadi
       if (res.failed.length) setError(`${res.failed.length} ta zayavka ochilmadi — qizil qatorlarni tekshiring: ${res.failed.slice(0, 3).map((x) => `${x.customer} — ${x.error}`).join("; ")}${res.failed.length > 3 ? "…" : ""}`);
     });
   };
@@ -428,7 +453,44 @@ export function OrderGrid({ customers, products, scripts, geoSearch }: { custome
   const badge = "absolute right-1 top-1/2 -translate-y-1/2 rounded px-1 text-[10px] font-medium";
   const icon = "absolute right-1 top-1/2 -translate-y-1/2";
 
-  const totals = (sec: Section) => rows[sec].reduce((a, r) => { const l = lineOf(sec, r); return { sum: a.sum + l.sum, vat: a.vat + l.vat, total: a.total + l.total, prepay: a.prepay + n(r.prepay) }; }, { sum: 0, vat: 0, total: 0, prepay: 0 });
+  // Bo'lim jami = shu kunga olingan zayavkalar + yozilayotgan yangi qatorlar
+  const totals = (sec: Section) => rows[sec].reduce((a, r) => { const l = lineOf(sec, r); return { sum: a.sum + l.sum, vat: a.vat + l.vat, total: a.total + l.total, prepay: a.prepay + n(r.prepay) }; },
+    existing[sec].reduce((a, x) => ({ sum: a.sum + x.net, vat: a.vat + x.vat, total: a.total + x.total, prepay: a.prepay + x.prepay }), { sum: 0, vat: 0, total: 0, prepay: 0 }));
+  /** Olingan zayavkalar: bir nechta mahsulotli zayavka № katagida rangli chiziq bilan (yangi qatorlar guruhidagi kabi) */
+  const exGroups = useMemo(() => {
+    const m = new Map<string, { no: number; rows: number }>();
+    for (const { sec } of SECTIONS) for (const x of existing[sec]) { const g = m.get(x.orderId) ?? { no: m.size + 1, rows: 0 }; g.rows += 1; m.set(x.orderId, g); }
+    return m;
+  }, [existing]);
+  const exText = "border border-slate-300 px-1.5 text-[13px] text-slate-700";
+  /** Olingan zayavka katagi — ustun bo'yicha qiymat (faqat ko'rish) */
+  const exCell = (x: DaySheetRow, col: Col): React.ReactNode => {
+    switch (col.calc ?? col.f) {
+      case "customer": return (
+        <div className="flex items-center justify-between gap-1.5">
+          <Link href={`/orders/${x.orderId}`} className="min-w-0 truncate font-medium text-slate-900 underline-offset-2 hover:text-sky-700 hover:underline">{x.customer}</Link>
+          {x.first && <OrderStatusBadge status={x.status} />}
+        </div>
+      );
+      case "product": return x.product;
+      case "block": return x.block ?? "";
+      case "unit": return x.unit;
+      case "qty": return x.qty ? fmtNum(x.qty, 3) : "";
+      case "price": return x.price ? fmtNum(x.price, 2) : "";
+      case "trips": return x.first && x.trips != null ? (x.trips === 0 ? "0 · yo'q" : String(x.trips)) : "";
+      case "fee": return x.delivery ? fmtNum(x.delivery) : "";
+      case "sum": return fmtNum(x.net);
+      case "vat": return x.vat ? fmtNum(x.vat) : "";
+      case "total": return fmtNum(x.total);
+      case "receiver": return x.receiver ?? "";
+      case "phone": return x.phone ?? "";
+      case "site": return x.site;
+      case "date": return showDay(day);
+      case "time": return x.time ?? "";
+      case "prepay": return x.prepay ? fmtNum(x.prepay) : "";
+      default: return "";
+    }
+  };
   const grand = { bank: totals("bank"), cash: totals("cash"), credit: totals("credit") };
   const all = (k: "sum" | "vat" | "total" | "prepay") => SECTIONS.reduce((a, { sec }) => a + grand[sec][k], 0);
 
@@ -457,16 +519,36 @@ export function OrderGrid({ customers, products, scripts, geoSearch }: { custome
             )}
           </td>
         </tr>
+        {/* Shu kunga olingan zayavkalar — kulrang, faqat ko'rish (o'zgartirish — mijoz nomi orqali zayavka sahifasida) */}
+        {existing[sec].map((x, i) => {
+          const g = exGroups.get(x.orderId);
+          return (
+            <tr key={`ex-${x.orderId}-${i}`} className={cn("h-8 bg-slate-50", (loading || date !== day) && "opacity-40")}
+              title={`Olingan zayavka · ${ORDER_STATUS[x.status].label} — o'zgartirish uchun mijoz nomini bosing`}>
+              <td className={cn("w-14 min-w-14 border border-slate-300 bg-slate-100 text-center text-[11px] text-slate-500", g && g.rows > 1 && `border-l-4 ${GROUP_COLORS[(g.no - 1) % GROUP_COLORS.length]}`)}>{i + 1}</td>
+              {COLS.map((col, ci) => {
+                const right = col.num || col.calc === "sum" || col.calc === "vat" || col.calc === "total";
+                const v = exCell(x, col);
+                return (
+                  <td key={ci} className={cn(exText, col.w, right && "text-right tabular-nums whitespace-nowrap", col.calc === "unit" && "text-center", col.calc === "total" && "font-semibold", col.f === "trips" && "text-right text-slate-500")}>
+                    {typeof v === "string" ? <div className="max-w-[260px] truncate" title={v.length > 24 ? v : undefined}>{v}</div> : v}
+                  </td>
+                );
+              })}
+            </tr>
+          );
+        })}
         {rows[sec].map((r, i) => {
           const c = customerOf(r), p = productOf(r), l = lineOf(sec, r), site = siteOf(r), d = dayOf(r);
           const has = filled(r);
           const grp = has ? groups.get(groupKey(sec, r)) : undefined;
+          const no = existing[sec].length + i + 1; // varaqdagi raqam — olingan zayavkalardan keyin davom etadi
           return (
             <tr key={r.key} className={cn("group", r.error && "bg-red-50")} title={r.error}>
               <td title={grp ? `${grp.no}-zayavka${grp.rows > 1 ? ` · ${grp.rows} ta mahsulot` : ""}` : undefined}
                 className={cn("relative w-14 min-w-14 border border-slate-300 bg-slate-100 text-center text-[11px] text-slate-500", grp && grp.rows > 1 && `border-l-4 ${GROUP_COLORS[(grp.no - 1) % GROUP_COLORS.length]}`, r.error && "bg-red-200 text-red-800")}>
                 {/* Sichqoncha ustida: raqam o'rnida «X» (qatorni o'chirish), chap chetda «+» (shu mijozga yana mahsulot) — katakdan chiqmaydi */}
-                <span className="group-hover:invisible">{i + 1}</span>
+                <span className="group-hover:invisible">{no}</span>
                 {has && <button type="button" tabIndex={-1} onClick={() => addAfter(sec, i)} aria-label="Shu mijozga yana mahsulot" title="Shu mijozga yana mahsulot (ostiga qator)"
                   className="invisible absolute left-0.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-sky-700 hover:bg-sky-100 group-hover:visible"><Plus size={12} /></button>}
                 <button type="button" tabIndex={-1} onClick={() => removeRow(sec, r.key)} aria-label="Qatorni o'chirish" title="Qatorni o'chirish"
@@ -492,7 +574,7 @@ export function OrderGrid({ customers, products, scripts, geoSearch }: { custome
                     title={prepayBad ? (g!.prepay > g!.total + 0.005 ? "Bosh to'lov zayavka summasidan katta" : "Kredit limiti yo'q — bosh to'lov zayavka summasiga teng bo'lsin («To'liq»)")
                       : badDate ? "Sana noto'g'ri — masalan 10.11.2026 yoki «aniq emas»" : badTime ? "Vaqt noto'g'ri — masalan 9:00" : undefined}>
                     <input
-                      value={r[f]} list={list} autoComplete="off" aria-label={`${title}, ${i + 1}-qator: ${col.label}`}
+                      value={r[f]} list={list} autoComplete="off" aria-label={`${title}, ${no}-qator: ${col.label}`}
                       data-sec={sec} data-row={i} data-col={ei} disabled={off}
                       inputMode={col.num || f === "trips" ? "decimal" : f === "phone" ? "tel" : undefined}
                       placeholder={f === "time" && i === 0 ? "9:00" : f === "date" ? showDay(date) : f === "trips" ? "—" : off ? "yo'q" : undefined}
@@ -544,7 +626,7 @@ export function OrderGrid({ customers, products, scripts, geoSearch }: { custome
             <button type="button" onClick={() => addRows(sec)} className="inline-flex items-center gap-1 px-1.5 py-1 text-xs font-medium text-sky-700 hover:underline"><Plus size={13} /> 5 qator qo&apos;shish</button>
           </td>
           <td className={cn(ro, "font-bold text-slate-900")}>{fmtNum(t.sum)}</td>
-          <td className={cn(ro, "font-bold text-slate-900")}>{vatOn(sec) ? fmtNum(t.vat) : ""}</td>
+          <td className={cn(ro, "font-bold text-slate-900")}>{vatOn(sec) || t.vat ? fmtNum(t.vat) : ""}</td>
           <td className={cn(ro, "font-bold text-slate-900")}>{fmtNum(t.total)}</td>
           <td className={cell} colSpan={TAIL} />
           <td className={cn(ro, "font-bold text-slate-900")}>{t.prepay ? fmtNum(t.prepay) : ""}</td>
@@ -572,8 +654,17 @@ export function OrderGrid({ customers, products, scripts, geoSearch }: { custome
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-slate-900">
             Zayavka realizatsiya
-            <Input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} min={isoDate(new Date(Date.now() - 86400000))} aria-label="Varaq sanasi" className="h-8 w-auto" />
-            <span className="font-normal text-slate-500">— {showDay(date)} · «Sana» bo&apos;sh qatorlar shu sana bilan</span>
+            <div className="inline-flex items-center gap-1">
+              <button type="button" onClick={() => shiftDay(-1)} aria-label="Oldingi kun" title="Oldingi kun"
+                className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"><ChevronLeft size={16} /></button>
+              <Input type="date" value={date} onChange={(e) => goDay(e.target.value)} aria-label="Varaq sanasi" className="h-8 w-auto" />
+              <button type="button" onClick={() => shiftDay(1)} aria-label="Keyingi kun" title="Keyingi kun"
+                className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"><ChevronRight size={16} /></button>
+            </div>
+            <span className="font-normal text-slate-500">
+              — {showDay(date)} · {loading || date !== day ? "yuklanmoqda…" : orderCount ? <b className="font-semibold text-slate-700">{orderCount} ta zayavka olingan</b> : "bu kunga zayavka yo'q"}
+              {" "}· «Sana» bo&apos;sh yangi qatorlar shu sana bilan
+            </span>
           </div>
           <p className="text-xs text-slate-500">Enter — pastga, Tab — o&apos;ngga. Excel&apos;dan bir nechta katakni ko&apos;chirib joylashtirsa bo&apos;ladi.</p>
         </div>
@@ -614,6 +705,7 @@ export function OrderGrid({ customers, products, scripts, geoSearch }: { custome
           <Button type="button" onClick={save} disabled={pending || !dirty}><Save size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>
           <LinkButton href="/orders" variant="secondary">Zayavkalar</LinkButton>
           <p className="text-xs text-slate-500">
+            Har bo&apos;lim tepasidagi kulrang qatorlar — varaq kuniga olingan barcha zayavkalar (kun almashsa o&apos;sha kunniki); o&apos;zgartirish — mijoz nomini bosib, zayavka sahifasida.
             «Kimga» bosilsa ro&apos;yxat: tepada «Yangi mijoz», obyektida bloklari bor mijoz — har blok alohida («Mijoz — A blok»).
             Bir mijozga bir nechta mahsulot — qator raqami ustidagi «+»: bir mijoz + obyekt + sana + vaqt qatorlari bitta zayavka (chapda bir rangli chiziq).
             «Reys»: 0 — dastavka yo&apos;q (mijoz o&apos;zi olib ketadi), 1 va undan ko&apos;p — nechta reys. «Sana» bo&apos;sh — varaq sanasi, «aniq emas» ham tanlanadi.
