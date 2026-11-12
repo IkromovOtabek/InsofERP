@@ -3,7 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, Building2, Landmark } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { avtoReport } from "@/lib/fin-report/avto";
 import {
-  LOGI_EXPENSE, LOGI_INCOME, LOGI_TRANSFER_IN, canLogiPay, canLogiWrite, driverMonthPays, logiAccounts, logiJournal, logiRequestsToPay, paySources,
+  LOGI_EXPENSE, LOGI_INCOME, LOGI_TRANSFER_IN, canLogiPay, canLogiWrite, cashLinkCandidates, driverMonthPays, logiAccounts, logiJournal, logiRequestsToPay, paySources,
 } from "@/lib/logistics-finance";
 import { driverEmployees } from "@/lib/logistics";
 import { db } from "@/lib/db";
@@ -11,7 +11,7 @@ import { date, dateTime, money, moneyShort } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { AvtoView } from "@/app/(app)/bi-tahlil/logistika/avto-view";
 import { DayRangeBar, MonthBar, monthTitle, parseDayRange, parseMonth } from "@/app/(app)/bi-tahlil/month-bar";
-import { CancelTx, MonthPayForm, TxForm, type SourceOpt } from "./forms";
+import { CancelTx, LinkCashForm, MonthPayForm, TxForm, type SourceOpt } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -61,8 +61,9 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
   if (tab === "jurnal") {
     const period = parseDayRange(sp);
     const write = canLogiWrite(s);
-    const [j, sources, vehicles, drivers] = await Promise.all([
+    const [j, links, sources, vehicles, drivers] = await Promise.all([
       logiJournal(period.from, period.to),
+      write ? cashLinkCandidates() : Promise.resolve({ total: 0, rows: [] }),
       write ? paySources(true) : Promise.resolve([]),
       write ? db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }) : Promise.resolve([]),
       write ? driverEmployees({ activeOnly: true }) : Promise.resolve([]),
@@ -91,6 +92,21 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
             </Card>
           )}
 
+          {write && links.total > 0 && (
+            <Card className="mb-5">
+              <CardHeader title={`Kassadagi transport yozuvlari — logistikaga olinmagan: ${links.total} ta`}
+                description="Zavod kassasida to'g'ridan yozilgan «Transport» chiqimlari va transport xizmati kirimi. Logistikaga olinsa — tafsiloti (toifa, mashina, haydovchi) shu yerda; kassa qoldig'i va PNL o'zgarmaydi, kassada qator qulflanadi. Mashinaga yozilgan ta'mir, zapchast, yo'l xarajati Foydaga ham tushadi (yoqilg'i — zapravkadan). Toifa va mashina izohdan taklif qilingan — tekshiring." />
+              <LinkCashForm
+                rows={links.rows.map((r) => ({
+                  id: r.id, date: date(r.date), type: r.type as "INCOME" | "EXPENSE", amount: money(r.amount), account: r.account, source: r.source,
+                  counterparty: r.counterparty, note: r.note, category: r.category, vehicleId: r.vehicleId,
+                }))}
+                vehicles={vehicles.map((v) => ({ id: v.id, label: v.plate }))} drivers={drivers.map((d) => ({ id: d.id, label: d.fullName }))}
+                expense={LOGI_EXPENSE} income={LOGI_INCOME.filter((c) => c !== LOGI_TRANSFER_IN)} />
+              {links.total > links.rows.length && <p className="mt-2 text-xs text-slate-500">Ko&apos;rsatilgan: oxirgi {links.rows.length} ta — saqlangach keyingilari chiqadi.</p>}
+            </Card>
+          )}
+
           <Section title={`Jurnal — ${period.label}`}>
             {j.rows.length === 0 ? <Empty text="Bu davrda logistika kirim-chiqimi yo'q" /> : (
               <Table>
@@ -106,7 +122,7 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
                       <Td right className="tabular text-emerald-700">{r.type === "INCOME" ? money(r.amount) : ""}</Td>
                       <Td right className="tabular">{r.type === "EXPENSE" ? money(r.amount) : ""}</Td>
                       <Td className="max-w-72 text-xs text-slate-500">{r.note ?? ""}</Td>
-                      {write && <Td>{r.logiTxId && r.cancellable ? <CancelTx id={r.logiTxId} docNo={r.docNo} /> : null}</Td>}
+                      {write && <Td>{r.logiTxId && r.cancellable ? <CancelTx id={r.logiTxId} docNo={r.docNo} unlink={r.linked} /> : null}</Td>}
                     </Tr>
                   ))}
                 </tbody>

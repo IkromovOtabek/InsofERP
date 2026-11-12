@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
-import { addLogiTx, cancelLogiTx, payDriverMonth } from "@/lib/logistics-finance";
+import { addLogiTx, cancelLogiTx, linkCashToLogi, payDriverMonth } from "@/lib/logistics-finance";
 
 /**
  * Logistika moliya amallari (veb). Qoida `lib/logistics-finance.ts` da: yozish — `fin_write`, pul berish — `fin_pay`
@@ -43,6 +43,18 @@ export async function addTx(_prev: ActionState, fd: FormData): Promise<ActionSta
   const date = dayOf(p.data.date);
   if (!date) return { error: "Sana noto'g'ri (kelajak sana bo'lmaydi)" };
   const r = await addLogiTx({ ...p.data, date, fromCashAccountId: p.data.fromCashAccountId || null }, s.userId);
+  if (r.error) return { error: r.error };
+  refresh();
+  return { ok: true, note: r.note };
+}
+
+/** Kassadagi transport yozuvlarini logistikaga olish: `pick` — belgilangan kassa qatorlari, `c_/v_/d_<id>` — toifa, mashina, haydovchi. */
+export async function linkCash(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "fin_write");
+  const ids = [...new Set(fd.getAll("pick").map(String).filter(Boolean))];
+  if (!ids.length) return { error: "Logistikaga olinadigan qatorlarni belgilang" };
+  const str = (k: string) => { const v = fd.get(k); return typeof v === "string" && v.trim() ? v.trim() : null; };
+  const r = await linkCashToLogi(ids.map((id) => ({ cashTxId: id, category: str(`c_${id}`) ?? "", vehicleId: str(`v_${id}`), driverId: str(`d_${id}`) })), s.userId);
   if (r.error) return { error: r.error };
   refresh();
   return { ok: true, note: r.note };

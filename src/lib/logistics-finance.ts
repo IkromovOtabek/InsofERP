@@ -57,6 +57,12 @@ const CASH_EXPENSE_SUB_DEFAULT = "Logistika xarajatlari";
 const CASH_INCOME_CATEGORY = "Xizmat (nasos, transport)";
 /** Zavod kassasidagi qatorning `refType` i — kassa uni hujjatga bog'langan deb qulflaydi. */
 export const LOGI_REF = "LogisticsTx";
+/**
+ * Kassadan biriktirilgan yozuv: zavod kassasida avval to'g'ridan yozilgan transport kirim/chiqimi logistikaga olinadi
+ * (`refId` = kassa qatori id). Kassa qatori o'z joyida qoladi (qoldiq, PNL o'zgarmaydi), faqat hujjatga bog'lanadi.
+ * Bekor qilinsa — kassa qatori bekor bo'lmaydi, logistikadan ajratiladi.
+ */
+export const CASH_LINK_REF = "CashLink";
 /** Oylik reys haqi yozuvi: `refId` = «YYYY-MM:<haydovchi id>». */
 export const DRIVER_MONTH_REF = "DriverMonthPay";
 /** Naqd reys haqi mexanik so'rovi muammo turi (`lib/driver-trip-pay.ts` → `TRIP_PAY_PROBLEM`). */
@@ -265,13 +271,19 @@ export async function cancelLogiTx(id: string, reason: string, userId: string): 
     if (lock) return { error: `${lock} — oylik haqni bekor qilib bo'lmaydi` };
   }
   const now = new Date();
+  const link = t.refType === CASH_LINK_REF;
   try {
     await db.$transaction(async (tx) => {
-      const u = await tx.logisticsTx.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: now, cancelledById: userId, cancelReason: why } });
+      // Kassadan biriktirilgani — `cashTxId` bo'shatiladi (unique), shu kassa qatorini keyin qayta biriktirish mumkin bo'lsin
+      const u = await tx.logisticsTx.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: now, cancelledById: userId, cancelReason: why, ...(link ? { cashTxId: null } : {}) } });
       if (u.count !== 1) throw new LogiError("Yozuv boshqa joyda o'zgartirildi — sahifani yangilang");
       // Logistika hisobiga tushgan kirim qaytsa — hisob minusga tushmasin
       if (t.accountId && t.type === "INCOME") { const e = await logiOutflowError(tx, t.accountId, Number(t.amount)); if (e) throw new LogiError(e); }
-      if (t.cashTxId) {
+      if (link && t.cashTxId) {
+        // Kassa qatori bekor qilinmaydi — faqat logistikadan ajraladi (yana oddiy kassa yozuvi)
+        const c = await tx.cashTransaction.updateMany({ where: { id: t.cashTxId, refType: LOGI_REF, refId: id }, data: { refType: null, refId: null } });
+        if (c.count) await audit(tx, userId, "UPDATE", "CashTransaction", t.cashTxId, { refType: LOGI_REF, refId: id }, { refType: null, refId: null, unlinkedFrom: t.docNo });
+      } else if (t.cashTxId) {
         const ct = await tx.cashTransaction.findUnique({ where: { id: t.cashTxId } });
         if (ct && !ct.cancelledAt) {
           // Zavod kassasiga tushgan kirim qaytsa — kassa minusga tushmasin
@@ -293,7 +305,7 @@ export async function cancelLogiTx(id: string, reason: string, userId: string): 
     if (e instanceof LogiError) return { error: e.message };
     throw e;
   }
-  return { id, docNo: t.docNo, note: `${t.docNo} bekor qilindi` };
+  return { id, docNo: t.docNo, note: link ? `${t.docNo} logistikadan ajratildi — kassa yozuvi o'z joyida` : `${t.docNo} bekor qilindi` };
 }
 
 // ───────────────────────── Jurnal: qayerdan bo'lmasin — hammasi ─────────────────────────
@@ -304,6 +316,8 @@ export type LogiJournalRow = {
   vehicle: string | null; who: string | null; amount: number; note: string | null; href: string | null;
   /** Logistika moliya yozuvi (bekor qilish shu orqali) — kassadan to'g'ridan yozilganlarda null */
   logiTxId: string | null; cancellable: boolean;
+  /** Kassadan biriktirilgan — bekor qilish = ajratish */
+  linked: boolean;
 };
 
 /**
@@ -313,15 +327,18 @@ export type LogiJournalRow = {
  */
 export async function logiJournal(from: Date, to: Date) {
   const range = { gte: from, lt: to };
-  const [own, transportCats] = await Promise.all([
+  const [own, names] = await Promise.all([
     db.logisticsTx.findMany({ where: { cancelledAt: null, date: range }, orderBy: { date: "desc" } }),
-    db.cashCategory.findMany({ where: { pnlLine: "TRANSPORT" }, select: { name: true } }),
+    transportCashNames(),
   ]);
-  const names = [...new Set([CASH_EXPENSE_CATEGORY, ...transportCats.map((c) => c.name)])];
   const cashRows = await db.cashTransaction.findMany({
     where: {
-      cancelledAt: null, date: range, NOT: { refType: LOGI_REF },
-      OR: [{ category: { in: names } }, { subCategory: { in: names } }, { refType: "MechanicRequest" }],
+      // `NOT: { refType }` NULL qatorlarni ham chiqarib tashlaydi (SQL) — bog'lanmagan kassa yozuvlari shu yerda kerak
+      cancelledAt: null, date: range,
+      AND: [
+        { OR: [{ refType: null }, { refType: { not: LOGI_REF } }] },
+        { OR: [{ category: { in: names } }, { subCategory: { in: names } }, { refType: "MechanicRequest" }] },
+      ],
     },
     orderBy: { date: "desc" },
     select: { id: true, date: true, type: true, amount: true, category: true, subCategory: true, counterparty: true, note: true, refType: true, refId: true, cashAccount: { select: { name: true } } },
@@ -357,7 +374,7 @@ export async function logiJournal(from: Date, to: Date) {
       type: t.type, category: t.category, vehicle: t.vehicleId ? plate.get(t.vehicleId) ?? null : null,
       who: t.driverId ? drv.get(t.driverId) ?? t.counterparty : t.counterparty, amount: Number(t.amount), note: t.note,
       href: t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}` : null,
-      logiTxId: t.id, cancellable: t.refType !== "MechanicRequest",
+      logiTxId: t.id, cancellable: t.refType !== "MechanicRequest", linked: t.refType === CASH_LINK_REF,
     });
   }
   for (const c of cashRows) {
@@ -367,7 +384,7 @@ export async function logiJournal(from: Date, to: Date) {
       key: `C${c.id}`, at: c.date, docNo: req?.docNo ?? "Kassa", kind: "FACTORY", account: c.cashAccount.name, type: c.type,
       category: req ? (req.problem === TRIP_PAY || req.tripId ? "Haydovchi haqi" : req.problem) : (c.subCategory ?? c.category),
       vehicle: req?.vehicle?.plate ?? null, who: req?.payee ?? c.counterparty, amount: Number(c.amount), note: c.note,
-      href: req ? `/mexanik-sorovlar/${req.id}` : null, logiTxId: null, cancellable: false,
+      href: req ? `/mexanik-sorovlar/${req.id}` : null, logiTxId: null, cancellable: false, linked: false,
     });
   }
   rows.sort((a, b) => b.at.getTime() - a.at.getTime());
@@ -382,6 +399,138 @@ export async function logiJournal(from: Date, to: Date) {
     expenseLogi: sum((r) => r.type === "EXPENSE" && r.kind === "LOGI"),
   };
   return { rows, totals };
+}
+
+// ───────────────────────── Kassadan logistikaga biriktirish ─────────────────────────
+
+/** Kassa sub manbasi → logistika toifasi (`CASH_SUB` ning teskarisi). */
+const SUB_TO_LOGI: Record<string, string> = {
+  "Yoqilg'i": "Yoqilg'i", "Transport ta'miri va zapchast": "Ta'mir", "Yo'l kira, shtraf, sug'urta": "Yo'l kira, shtraf", "Yollanma texnika": "Yollanma texnika",
+};
+/** Izoh / kimga / manba matnidan toifa (lotin va kirill). Birinchi mos kelgani olinadi. */
+const LOGI_KEYWORDS: [RegExp, string][] = [
+  [/vulkan|balon|ballon|shina|pokrishk|вулкан|балон|баллон|шина|покрышк/, "Vulkanizator"],
+  [/zapchast|ehtiyot|запчаст|эхтиёт/, "Ehtiyot qism"],
+  [/ta'?mir|remont|usta|ремонт|таъмир|уста/, "Ta'mir"],
+  [/yoqil|solyar|dizel|benzin|metan|propan|zapravk|ёқил|соляр|дизел|бензин|метан|пропан|заправк/, "Yoqilg'i"],
+  [/shtraf|yo'?l kira|sug'?urta|strax|штраф|йўл|суғурта|страх/, "Yo'l kira, shtraf"],
+  [/yollanma|arenda|ijara|наём|аренд|ижара/, "Yollanma texnika"],
+];
+export function guessLogiCategory(c: { type: CashTxType; category: string; subCategory: string | null; note: string | null; counterparty: string | null }): string {
+  if (c.type === "INCOME") return "Transport xizmati";
+  const byName = SUB_TO_LOGI[c.subCategory ?? ""] ?? SUB_TO_LOGI[c.category];
+  if (byName) return byName;
+  const text = `${c.subCategory ?? ""} ${c.note ?? ""} ${c.counterparty ?? ""}`.toLowerCase().replace(/[ʻʼ‘’`]/g, "'");
+  return LOGI_KEYWORDS.find(([re]) => re.test(text))?.[1] ?? "Boshqa chiqim";
+}
+const plateKey = (s: string | null | undefined) => (s ?? "").toUpperCase().replace(/[^0-9A-ZА-ЯЁ]/g, "");
+
+/** Zavod kassasidagi transport yozuvlari manbalari: «Transport» va PNL «Avtotransport» qatoridagi manbalar (chiqim), transport xizmati (kirim). */
+async function transportCashNames() {
+  const cats = await db.cashCategory.findMany({ where: { pnlLine: "TRANSPORT" }, select: { name: true } });
+  return [...new Set([CASH_EXPENSE_CATEGORY, ...cats.map((c) => c.name)])];
+}
+
+const LINK_LIMIT = 200;
+
+/**
+ * Logistikaga hali olinmagan kassa yozuvlari (butun davr, yangisi tepada): transport chiqimlari va transport xizmati kirimi.
+ * Hujjatga bog'langan qatorlar (mexanik so'rovi, kirim hujjati…) — o'z hujjatida, bu yerga chiqmaydi.
+ * Har qatorga taklif: toifa (sub manba / izohdan) va mashina (izohdagi davlat raqamidan).
+ */
+export async function cashLinkCandidates() {
+  const names = await transportCashNames();
+  const where: Prisma.CashTransactionWhereInput = {
+    cancelledAt: null, refType: null,
+    OR: [
+      { type: "EXPENSE", OR: [{ category: { in: names } }, { subCategory: { in: names } }] },
+      { type: "INCOME", category: CASH_INCOME_CATEGORY },
+    ],
+  };
+  const [total, rows, vehicles] = await Promise.all([
+    db.cashTransaction.count({ where }),
+    db.cashTransaction.findMany({
+      where, orderBy: { date: "desc" }, take: LINK_LIMIT,
+      select: { id: true, date: true, type: true, amount: true, category: true, subCategory: true, counterparty: true, note: true, cashAccount: { select: { name: true } } },
+    }),
+    db.vehicle.findMany({ select: { id: true, plate: true } }),
+  ]);
+  const plates = vehicles.map((v) => ({ id: v.id, key: plateKey(v.plate) })).filter((p) => p.key.length >= 5);
+  return {
+    total,
+    rows: rows.map((c) => {
+      const text = plateKey(`${c.note ?? ""} ${c.counterparty ?? ""} ${c.subCategory ?? ""}`);
+      return {
+        id: c.id, date: c.date, type: c.type, amount: Number(c.amount), account: c.cashAccount.name,
+        source: [c.category, c.subCategory].filter(Boolean).join(" · "), counterparty: c.counterparty, note: c.note,
+        category: guessLogiCategory(c), vehicleId: (text && plates.find((p) => text.includes(p.key))?.id) || null,
+      };
+    }),
+  };
+}
+
+export type CashLinkItem = { cashTxId: string; category: string; vehicleId?: string | null; driverId?: string | null };
+
+/**
+ * Tanlangan kassa yozuvlarini logistikaga oladi — bitta tranzaksiyada (biri o'xshamasa, hech biri yozilmaydi).
+ * Har biriga LM-… yozuv: summa, sana, tur kassadagidek; kassa qatori `refType` = "LogisticsTx" bilan bog'lanadi
+ * (kassada qulflanadi, qoldiq va PNL o'zgarmaydi). Mashinaga yozilgan ta'mir/zapchast/yo'l xarajati Foydaga ham tushadi.
+ */
+export async function linkCashToLogi(items: CashLinkItem[], userId: string): Promise<LogiResult & { count?: number }> {
+  const list = items.filter((i) => i.cashTxId).slice(0, LINK_LIMIT);
+  if (!list.length) return { error: "Qatorlarni belgilang" };
+  const incomeCats: readonly string[] = LOGI_INCOME.filter((c) => c !== LOGI_TRANSFER_IN);
+  try {
+    const docs = await db.$transaction(async (tx) => {
+      const out: string[] = [];
+      for (const it of list) {
+        const ct = await tx.cashTransaction.findUnique({ where: { id: it.cashTxId }, select: { id: true, date: true, type: true, amount: true, counterparty: true, note: true, refType: true, cancelledAt: true } });
+        if (!ct || ct.cancelledAt) throw new LogiError("Kassa yozuvi topilmadi yoki bekor qilingan — sahifani yangilang");
+        if (ct.refType) throw new LogiError(`Kassa yozuvi (${money(Number(ct.amount))}) allaqachon hujjatga bog'langan — sahifani yangilang`);
+        if (ct.type !== "EXPENSE" && ct.type !== "INCOME") throw new LogiError("Faqat kirim yoki chiqimni olish mumkin");
+        const cats: readonly string[] = ct.type === "EXPENSE" ? LOGI_EXPENSE : incomeCats;
+        if (!cats.includes(it.category)) throw new LogiError(`${money(Number(ct.amount))}: toifani tanlang`);
+        const vehicle = it.vehicleId ? await tx.vehicle.findUnique({ where: { id: it.vehicleId }, select: { id: true } }) : null;
+        if (it.vehicleId && !vehicle) throw new LogiError("Transport topilmadi");
+        const driver = it.driverId ? await tx.employee.findUnique({ where: { id: it.driverId }, select: { id: true, fullName: true } }) : null;
+        if (it.driverId && !driver) throw new LogiError("Haydovchi topilmadi");
+
+        const docNo = await nextNo(tx, "logisticsTx", "LM");
+        const counterparty = ct.counterparty ?? driver?.fullName ?? null;
+        const lt = await tx.logisticsTx.create({
+          data: {
+            docNo, date: ct.date, type: ct.type, amount: ct.amount, category: it.category, accountId: null, cashTxId: ct.id,
+            vehicleId: vehicle?.id ?? null, driverId: driver?.id ?? null, counterparty, note: ct.note,
+            refType: CASH_LINK_REF, refId: ct.id, createdById: userId,
+          },
+        });
+        // Shartli: shu orada boshqa joyda bog'langan / bekor qilingan bo'lsa — hammasi qaytadi
+        const u = await tx.cashTransaction.updateMany({ where: { id: ct.id, refType: null, cancelledAt: null }, data: { refType: LOGI_REF, refId: lt.id } });
+        if (u.count !== 1) throw new LogiError("Kassa yozuvi boshqa joyda o'zgartirildi — sahifani yangilang");
+        await audit(tx, userId, "UPDATE", "CashTransaction", ct.id, { refType: null, refId: null }, { refType: LOGI_REF, refId: lt.id, logisticsTx: docNo });
+
+        let teId: string | null = null;
+        const kind = EXPENSE_KIND[it.category];
+        if (ct.type === "EXPENSE" && vehicle && kind) {
+          const te = await tx.transportExpense.create({
+            data: { date: ct.date, kind, vehicleId: vehicle.id, driverId: driver?.id ?? null, amount: ct.amount, createdById: userId,
+              note: [docNo, it.category, counterparty, ct.note].filter(Boolean).join(" · ").slice(0, 500) },
+          });
+          await audit(tx, userId, "CREATE", "TransportExpense", te.id, undefined, te);
+          teId = te.id;
+          await tx.logisticsTx.update({ where: { id: lt.id }, data: { transportExpenseId: teId } });
+        }
+        await audit(tx, userId, "CREATE", "LogisticsTx", lt.id, undefined, { ...lt, transportExpenseId: teId });
+        out.push(docNo);
+      }
+      return out;
+    }, { timeout: 120_000, maxWait: 10_000 });
+    return { count: docs.length, note: `Logistikaga olindi: ${docs.length} ta yozuv (${docs[0]}${docs.length > 1 ? ` … ${docs[docs.length - 1]}` : ""})` };
+  } catch (e) {
+    if (e instanceof LogiError) return { error: e.message };
+    if ((e as { code?: string }).code === "P2002") return { error: "Kassa yozuvi allaqachon logistikaga olingan — sahifani yangilang" };
+    throw e;
+  }
 }
 
 // ───────────────────────── Oylik reys haqi: vedomost yoki logistika hisobi ─────────────────────────
