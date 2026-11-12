@@ -182,6 +182,11 @@ export function FormSuccess({ text }: { text?: string }) {
   if (!text) return null;
   return <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">{text}</div>;
 }
+/** Amal bajarildi, lekin e'tibor kerak (o'tkazib yuborilgan qatorlar va h.k.) — xato emas, sariq */
+export function FormWarning({ text }: { text?: string }) {
+  if (!text) return null;
+  return <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">{text}</div>;
+}
 
 /** Forma ostidagi tugmalar qatori */
 export function FormActions({ children }: { children: React.ReactNode }) {

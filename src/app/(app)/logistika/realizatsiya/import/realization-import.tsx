@@ -8,8 +8,8 @@ import { importRealizationAction } from "../actions";
 
 /** To'lov turi taxmini oldindan ko'rishda; server (`payGroupOf`) moslanmaganini so'z boshidan ham aniqlaydi. */
 const PAY_ALIASES: Record<PayGroupKey, string[]> = {
-  BANK: ["Перечисление", "Перечисления", "Perechislenie", "Perechisleniye", "Безнал", "Безналичный", "Bank", "Hisob raqam"],
-  CASH: ["Наличные", "Нал", "Нақд", "Накд", "Naqd", "Nal", "Naqt", "Cash"],
+  BANK: ["Перечисление", "Перечисления", "Perechislenie", "Perechisleniye", "Безнал", "Безналичный", "Bank", "Hisob raqam", "п-р", "п/п", "б/н"],
+  CASH: ["Наличные", "Нал", "Нақд", "Накд", "Naqd", "Nal", "Naqt", "Cash", "н-к"],
   DEBT: ["Долг", "Қарз", "Карз", "Qarz", "Qarz (tekin)", "Насия", "Nasiya", "Tekin"],
 };
 
@@ -25,15 +25,15 @@ export function RealizationImport({ pays }: { pays: { key: PayGroupKey; label: s
       valueMap: {
         options: pays.map((p) => ({ value: p.key, label: p.label, aliases: [p.label, ...PAY_ALIASES[p.key]].map(matchKey) })),
         newLabel: "So'zidan aniqlanadi",
-        note: "Fayldagi to'lov turi tizimdagiga moslanadi. Perechisleniyeda QQS 12% hisoblanadi; aniqlanmagan qiymat bo'lsa import to'xtaydi va qator ko'rsatiladi.",
+        note: "Fayldagi to'lov turi tizimdagiga moslanadi. Perechisleniyeda QQS 12% hisoblanadi; aniqlanmagan qiymatli qator qo'shilmaydi va ko'rsatiladi, qolganlari qo'shiladi.",
       },
     },
     { key: "seller", label: "Sotuvchi", synonyms: ["sotuvchi", "сотувчи", "продав", "менеджер", "manager"] },
-    { key: "customerName", label: "Xaridor", required: true, hint: "nomi yoki aliasi ro'yxatdagiga mos kelsa bog'lanadi", synonyms: ["xaridor", "харидор", "mijoz", "мижоз", "покупател", "клиент", "заказчик", "контрагент", "customer"] },
-    { key: "productName", label: "Mahsulot", required: true, hint: "nomi yoki kodi; mos kelsa birlik va guruh mahsulotdan", synonyms: [...FIELD_SYNONYMS.product, "маҳсулот", "махсулот"] },
+    { key: "customerName", label: "Xaridor", required: true, hint: "ro'yxatda bo'lsa bog'lanadi, bo'lmasa nomi bilan qo'shiladi", synonyms: ["xaridor", "харидор", "mijoz", "мижоз", "покупател", "клиент", "заказчик", "контрагент", "customer"] },
+    { key: "productName", label: "Mahsulot", required: true, hint: "ro'yxatda bo'lsa birlik va guruh undan, bo'lmasa nomi bilan qo'shiladi", synonyms: [...FIELD_SYNONYMS.product, "маҳсулот", "махсулот"] },
     { key: "ttn", label: "TTN №", synonyms: ["ttn", "ттн", "накладн", "nakladnoy"] },
     { key: "vehicle", label: "Mashina", synonyms: ["mashina", "машина", "avto", "авто", "гос", "transport", "транспорт"] },
-    { key: "unit", label: "O'lchov", hint: "mahsulot ro'yxatda bo'lmasa kerak", synonyms: FIELD_SYNONYMS.unit },
+    { key: "unit", label: "O'lchov", hint: "mahsulot ro'yxatda bo'lmasa olinadi; tanilmasa nomidan (m³ yoki dona)", synonyms: FIELD_SYNONYMS.unit },
     { key: "qty", label: "Miqdor", required: true, synonyms: FIELD_SYNONYMS.qty },
     { key: "price", label: "Narx (QQSsiz)", synonyms: ["narx", "нарх", "цена", "price"] },
     { key: "delivery", label: "Dostavka", hint: "so'm", synonyms: ["dostavka", "доставк", "yetkaz", "етказ", "delivery"] },
@@ -59,7 +59,8 @@ export function RealizationImport({ pays }: { pays: { key: PayGroupKey; label: s
         Har qator «Qo&apos;lda» qator bo&apos;ladi: faqat reestr — mijoz qarzi, kassa va skladga ta&apos;sir qilmaydi, keyin tuzatish yoki sabab bilan bekor qilish mumkin.
         Reestrda bor jo&apos;natma qo&apos;shilmaydi: shu TTN reysdan yoki avval kiritilgan bo&apos;lsa (±1 kun), TTN&apos;siz qatorda — o&apos;sha kuni xaridor, mahsulot va miqdori bir xil qator bo&apos;lsa.
         Shuning uchun reestrning o&apos;zidan yuklab olingan faylni ham, bir faylni qayta ham yuklash mumkin — ikki marta yozilmaydi.
-        «Summa», «QQS», «Jami», «Manba» ustunlari kerak emas. Biror qatorda xato bo&apos;lsa hech narsa yozilmaydi — xato qatorlar ko&apos;rsatiladi.
+        «Summa», «QQS», «Jami», «Manba» ustunlari kerak emas. Xaridor yoki mahsulot ro&apos;yxatda bo&apos;lmasa ham qator nomi bilan qo&apos;shiladi.
+        Sanasi, to&apos;lov turi yoki miqdori o&apos;qilmagan qator importni to&apos;xtatmaydi — u qo&apos;shilmaydi va sababi bilan ko&apos;rsatiladi, qolganlari qo&apos;shiladi.
       </p>
     </ExcelImport>
   );

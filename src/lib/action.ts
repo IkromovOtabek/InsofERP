@@ -4,7 +4,8 @@ import { numText } from "@/lib/format";
 /** `note` — amal bajarildi, lekin yonidagi ish haqida aytadigan gap bor
  *  (masalan: parol almashdi — uni xodimga kadr o'zi yetkazadi).
  *  `field` — xato qaysi maydonda (forma `name`i): forma xatoni o'sha katak ostida ko'rsatadi. */
-export type ActionState = { error?: string; ok?: boolean; note?: string; field?: string } | undefined;
+/** `warn` — amal bajarildi, lekin e'tibor kerak (masalan importda o'tkazib yuborilgan qatorlar) */
+export type ActionState = { error?: string; ok?: boolean; note?: string; warn?: string; field?: string } | undefined;
 
 /** Zod'ning standart (inglizcha) xabarlari — bular uchun maydon kaliti ko'rsatiladi. */
 const ZOD_DEFAULT = /^(required|invalid|expected|too (small|big)|string must|number must|array must|unrecognized)/i;

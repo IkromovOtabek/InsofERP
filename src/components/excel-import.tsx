@@ -3,7 +3,7 @@
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List, ArrowRightLeft } from "lucide-react";
-import { Button, FormError, FormSuccess, Select, Table, Td, Th, Tr } from "@/components/ui";
+import { Button, FormError, FormSuccess, FormWarning, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
 import { flatName, guessColumn, guessMatrix, headerRowIndex, matchKey, matrixColumns, maxLen, num, parseDate, str, trimEmptyRows, unpivotDayGroups, unpivotMatrix, valueKey, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick, type ValueMaps } from "@/lib/excel";
 import { normalizeUnit } from "@/lib/unit";
@@ -842,6 +842,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     <form ref={formRef} onSubmit={submit} className="space-y-5">
       <FormError error={state?.error} />
       <FormSuccess text={state?.note} />
+      <FormWarning text={state?.warn} />
       <input type="hidden" name="rows" value={JSON.stringify(skipBad ? validRows : allRows)} />
       {vmFields.length > 0 && <input type="hidden" name="valueMaps" value={JSON.stringify(valueMaps)} />}
       {children}

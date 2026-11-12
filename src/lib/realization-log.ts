@@ -27,7 +27,8 @@ import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-she
  *    QQS — perechisleniyeda 12% (miqdor × narx dan, dastavkasiz). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
  *  · Summa (QQSsiz) = miqdor × narx + dastavka; Jami = Summa + QQS (`lib/realization.ts` bilan bitta qoida).
  *  · Excel'dan import: varaqdagi qatorlar qo'lda qator bo'lib tushadi. Reestrda bori (reys yoki avval kiritilgan) o'tkazib
- *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`).
+ *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`). Ro'yxatda yo'q mijoz/mahsulot
+ *    ham nomi bilan qo'shiladi; o'qib bo'lmaydigan qator (sana, to'lov turi, miqdor) o'tkazib yuboriladi — qolganini to'xtatmaydi.
  */
 
 export type LogSource = "AUTO" | "MANUAL";
@@ -198,23 +199,29 @@ export async function realizationOptions(): Promise<LogOptions> {
 
 const text = (max: number) => z.string().trim().max(max, `ko'pi bilan ${max} belgi`).optional().transform((v) => (v ? v.replace(/\s+/g, " ") : null));
 
+/** Matn maydonlari uzunligi — forma qoidasi; Excel importida uzun qiymat xato emas, shu uzunlikda kesiladi. */
+const MAX_LEN = {
+  seller: 100, customerName: 200, productName: 200, groupName: 60, unit: 10, ttn: 40, vehicle: 40,
+  loadPlace: 60, destination: 200, note: 300, refName: 200,
+} as const;
+
 export const entrySchema = z.object({
   date: dayField.refine((d) => d !== null, "Sanani kiriting"),
   payGroup: z.enum(PAY_KEYS, { message: "To'lov turini tanlang" }),
-  seller: text(100),
-  customerName: z.string().trim().min(2, "Xaridor nomini yozing").max(200).transform((v) => v.replace(/\s+/g, " ")),
-  productName: z.string().trim().min(1, "Mahsulotni yozing").max(200).transform((v) => v.replace(/\s+/g, " ")),
-  groupName: text(60),
-  unit: text(10),
-  ttn: text(40),
-  vehicle: text(40),
+  seller: text(MAX_LEN.seller),
+  customerName: z.string().trim().min(2, "Xaridor nomini yozing").max(MAX_LEN.customerName).transform((v) => v.replace(/\s+/g, " ")),
+  productName: z.string().trim().min(1, "Mahsulotni yozing").max(MAX_LEN.productName).transform((v) => v.replace(/\s+/g, " ")),
+  groupName: text(MAX_LEN.groupName),
+  unit: text(MAX_LEN.unit),
+  ttn: text(MAX_LEN.ttn),
+  vehicle: text(MAX_LEN.vehicle),
   qty: numIn(0, 1_000_000).refine((v) => v !== null && v > 0, "Miqdorni kiriting"),
   price: numIn(0, 10_000_000_000),
   delivery: numIn(0, 10_000_000_000),
-  loadPlace: text(60),
-  destination: text(200),
-  note: text(300),
-  refName: text(200),
+  loadPlace: text(MAX_LEN.loadPlace),
+  destination: text(MAX_LEN.destination),
+  note: text(MAX_LEN.note),
+  refName: text(MAX_LEN.refName),
   clientToken: z.string().trim().max(64).optional().transform((v) => v || null),
 });
 export type EntryInput = z.infer<typeof entrySchema>;
@@ -505,17 +512,32 @@ export async function saveRealizationLineField(key: string, field: LineCell, val
 // ───────────────────────── Excel'dan import ─────────────────────────
 
 export type ImportRow = Record<string, unknown>;
-export type ImportResult = { ok: true; added: number; skipped: number; from: Date; to: Date } | { error: string };
+/**
+ * `problems` — o'qilmagan va qo'shilmagan qatorlar (sabab bilan); `guessedUnits` — ro'yxatda yo'q mahsulot o'lchovi
+ * ko'rsatilmagan yoki tanilmagan, nomidan qo'yilgan qatorlar soni.
+ */
+export type ImportResult = { ok: true; added: number; skipped: number; problems: string[]; guessedUnits: number; from: Date; to: Date } | { error: string };
 
 const IMPORT_MAX = 3000;
 const DAY = 86_400_000;
 
-/** To'lov turi so'z boshidan (`matchKey` ko'rinishida): «Перечисление», «Безнал» → BANK; «Нал», «Нақд» → CASH; «Қарз», «Долг» → DEBT. */
+/**
+ * To'lov turi so'z boshidan (`matchKey` ko'rinishida): «Перечисление», «Безнал», «п-р», «б/н» → BANK;
+ * «Нал», «Нақд», «н-к» → CASH; «Қарз», «Долг» → DEBT.
+ */
 const PAY_WORDS: [PayGroupKey, RegExp][] = [
-  ["BANK", /^(perec|bezn|bank|xisob)/],
-  ["CASH", /^(naqd|nakd|naqt|nal|cash)/],
+  ["BANK", /^(perec|bezn|bank|xisob|pr$|pp$|bn$|bnal)/],
+  ["CASH", /^(naqd|nakd|naqt|nal|cash|nk$)/],
   ["DEBT", /^(qarz|karz|dolg|nasiya|nasia|tekin|debt)/],
 ];
+
+/** Ro'yxatda yo'q mahsulotning o'lchovi ko'rsatilmagan yoki tanilmagan — nomidan: ustun, blok, bordyur, halqa… → dona, qolgani (beton, shag'al) → m³. */
+const PIECE_WORDS = /ustun|устун|stolb|столб|fbs|фбс|blok|блок|bord[yu]r|бордюр|halqa|xalqa|кольц|lotok|лоток|truba|труб/i;
+const guessUnit = (product: string) => (PIECE_WORDS.test(product) ? "dona" : "m3");
+const isProductUnit = (u: string | null) => !!u && PRODUCT_UNITS.some(([k]) => k === u);
+
+/** O'tkazilgan qatorlar ro'yxati xabarga: birinchi `max` tasi, qolgani soni bilan. */
+export const listProblems = (p: string[], max = 8) => `${p.slice(0, max).join("; ")}${p.length > max ? `; yana ${p.length - max} ta` : ""}`;
 export function payGroupOf(v: string): PayGroupKey | null {
   // Oynadagi «Qiymatlarni moslash» tizim kalitini yuboradi (CASH…) — `matchKey` uni «casx» qilib qo'yadi
   const key = v.trim().toUpperCase();
@@ -537,8 +559,10 @@ const sameCust = (a: Seen, b: Seen) => (!!a.customerId && a.customerId === b.cus
 const sameQty = (a: Seen, b: Seen) => Math.abs(a.qty - b.qty) < 0.0005;
 
 /**
- * Varaqdagi jo'natmalar → qo'lda qatorlar (bitta formadagi qoidalar bilan). Biror qatorda xato bo'lsa hech narsa yozilmaydi.
- * Reestrda bor qator o'tkazib yuboriladi:
+ * Varaqdagi jo'natmalar → qo'lda qatorlar (bitta formadagi qoidalar bilan).
+ * Xato qator importni to'xtatmaydi: sana, to'lov turi, xaridor yoki miqdori o'qilmagan qator sababi bilan `problems` ga tushadi,
+ * qolganlari yoziladi. Ro'yxatda yo'q xaridor/mahsulot — xato emas, nomi bilan qo'shiladi (o'lchovi tanilmasa nomidan).
+ * Uzun matn forma chegarasida kesiladi. Reestrda bor qator o'tkazib yuboriladi:
  *  · TTN bor — shu TTN reysdan yoki qo'lda qatorda ±1 kun ichida bor (mijoz, mahsulot, miqdor yoki mashinadan biri mos);
  *  · TTN'siz — o'sha kuni xaridor, mahsulot va miqdori bir xil qator bor (har mavjud qator bitta fayl qatoriga sanaladi).
  * Ikki import bir vaqtda kelsa — qulf ostida navbat bilan, ikkinchisi birinchisi yozganini ko'radi.
@@ -547,12 +571,16 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
   if (!rows.length) return { error: "Faylda qator yo'q" };
   if (rows.length > IMPORT_MAX) return { error: `Bir martada ko'pi bilan ${IMPORT_MAX} qator — faylni bo'lib yuklang` };
   const pay = valueMapper(maps, "payGroup");
-  const errors: string[] = [];
+  const problems: string[] = [];
   const where = (i: number, name: string) => `${i + 1}-qator${name ? ` (${name})` : ""}`;
 
-  const inputs: EntryInput[] = [];
+  const inputs: { d: EntryInput; i: number }[] = [];
   rows.forEach((x, i) => {
-    const cell = (k: string) => str(x[k]);
+    const cell = (k: string) => {
+      const v = str(x[k]).replace(/\s+/g, " ");
+      const max = MAX_LEN[k as keyof typeof MAX_LEN];
+      return max && v.length > max ? v.slice(0, max).trimEnd() : v;
+    };
     // Raqam katakdan (minglik ajratkich, vergul) — o'qilmasa matnicha qoladi va forma qoidasi xato beradi
     const amount = (k: string, read: (v: unknown) => number) => {
       if (!cell(k)) return "";
@@ -562,8 +590,8 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
     const date = parseDate(x.date);
     const payGroup = payGroupOf(pay(cell("payGroup")));
     // Fayldagi qiymat bor, lekin o'qilmadi — qiymatning o'zi bilan aytiladi (forma xabari «tanlang» bo'lib chalg'itmasin)
-    if (cell("date") && !date) { errors.push(`${where(i, cell("customerName"))}: Sana o'qilmadi — «${cell("date")}»`); return; }
-    if (cell("payGroup") && !payGroup) { errors.push(`${where(i, cell("customerName"))}: To'lov turi aniqlanmadi — «${cell("payGroup")}» (Perechisleniye, Naqd yoki Qarz)`); return; }
+    if (cell("date") && !date) { problems.push(`${where(i, cell("customerName"))}: sana o'qilmadi — «${cell("date")}»`); return; }
+    if (cell("payGroup") && !payGroup) { problems.push(`${where(i, cell("customerName"))}: to'lov turi aniqlanmadi — «${cell("payGroup")}» (Perechisleniye, Naqd yoki Qarz)`); return; }
     const p = entrySchema.safeParse({
       date: date ? isoDate(date) : "",
       payGroup: payGroup ?? "",
@@ -575,21 +603,26 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
     if (!p.success) {
       const is = p.error.issues[0];
       const label = ENTRY_LABELS[String(is.path[0] ?? "")];
-      errors.push(`${where(i, cell("customerName"))}: ${label && !is.message.startsWith(label) ? `${label} — ` : ""}${is.message}`);
-    } else if (future(p.data.date!)) errors.push(`${where(i, p.data.customerName)}: sana kelajakda`);
-    else inputs.push(p.data);
+      problems.push(`${where(i, cell("customerName"))}: ${label && !is.message.startsWith(label) ? `${label} — ` : ""}${is.message}`);
+    } else if (future(p.data.date!)) problems.push(`${where(i, p.data.customerName)}: sana kelajakda`);
+    else inputs.push({ d: p.data, i });
   });
 
-  const lk = errors.length ? null : await entryLookup(inputs.map((d) => d.customerName), inputs.map((d) => d.productName));
-  const built = lk ? inputs.map((d, i) => {
+  // Ro'yxatda yo'q mahsulot ham qo'shiladi: o'lchovi ko'rsatilmagan yoki tanilmagan bo'lsa — nomidan (forma «tanlang» deydi, import to'xtamaydi)
+  const lk = inputs.length ? await entryLookup(inputs.map((x) => x.d.customerName), inputs.map((x) => x.d.productName)) : null;
+  let guessedUnits = 0;
+  const data = lk ? inputs.flatMap(({ d, i }) => {
+    if (!lk.product(d.productName) && !isProductUnit(d.unit)) {
+      guessedUnits++;
+      d = { ...d, unit: guessUnit(d.productName) };
+    }
     const r = entryData(d, lk);
-    if ("error" in r) { errors.push(`${where(i, d.customerName)}: ${r.error} — «${d.productName}» mahsulotlar ro'yxatida yo'q`); return null; }
-    return r.data;
+    if ("error" in r) { problems.push(`${where(i, d.customerName)}: ${r.error}`); return []; }
+    return [r.data];
   }) : [];
-  if (errors.length) {
-    return { error: `${errors.slice(0, 5).join("; ")}${errors.length > 5 ? `; yana ${errors.length - 5} ta qatorda xato` : ""}. Faylni tuzatib qayta yuklang — hech narsa yozilmadi` };
+  if (!data.length) {
+    return { error: `Hech bir qator qo'shilmadi — ${listProblems(problems)}. Faylni tuzatib qayta yuklang` };
   }
-  const data = built.filter((b) => b !== null);
 
   const times = data.map((b) => day0(b.date));
   const from = new Date(Math.min(...times)), to = new Date(Math.max(...times));
@@ -617,5 +650,5 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
     await auditMany(tx, userId, "CREATE", "RealizationEntry", created.map((row) => ({ id: row.id, after: row })));
     return { added: created.length, skipped: data.length - created.length };
   }, { timeout: 60_000 });
-  return { ok: true, ...res, from, to };
+  return { ok: true, ...res, problems, guessedUnits, from, to };
 }

@@ -298,7 +298,28 @@ r = await logist.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "date", "
 check(/kelajak/.test(r.error ?? ""), "katakdan kelajak sana rad etildi", r.error);
 r = await sklad.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "note", "x"], "/logistika/realizatsiya");
 check(!r.ok, "sklad Realizatsiya katagini tahrirlay olmaydi");
-const vt = q1(`select "verifyToken" from "Trip" where id='${t1}'`)!;
+
+// Realizatsiya Excel importi: xato qator importni to'xtatmaydi, ro'yxatda yo'q mahsulot nomi bilan qo'shiladi
+const tag = token().slice(0, 6);
+const dmy = today.split("-").reverse().join(".");
+const impRows = [
+  { date: dmy, payGroup: "н-к,", customerName: `QA Imp ${tag}`, productName: `QA Imp shag'al ${tag}`, unit: "кг", qty: "12", price: "90000" },
+  { date: dmy, payGroup: "п-р", customerName: `QA Imp ${tag}`, productName: `QA Imp FBS blok ${tag}`, unit: "", qty: "20", price: "450000", note: "x".repeat(400) },
+  { date: "32.13.2026", payGroup: "Naqd", customerName: `QA Imp xato ${tag}`, productName: "B25", qty: "5" },
+  { date: dmy, payGroup: "абв", customerName: `QA Imp xato ${tag}`, productName: "B25", qty: "5" },
+];
+const impFd = () => fd({ rows: JSON.stringify(impRows), valueMaps: "{}" });
+r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/logistika/realizatsiya/import");
+const imp = q(`select "productName", unit, "payGroup", length(coalesce(note, '')) from "RealizationEntry" where "customerName"='QA Imp ${tag}' order by unit`);
+check(r.ok && !r.redirect && imp.length === 2 && r.text.includes("2 ta qator o'qilmadi"), "importda 2 xato qator o'tkazildi, qolgan 2 tasi qo'shildi", r.error ?? imp.length);
+check(imp[0]?.[1] === "dona" && imp[0]?.[2] === "BANK" && imp[0]?.[3] === "300" && imp[1]?.[1] === "m3" && imp[1]?.[2] === "CASH",
+  "ro'yxatda yo'q mahsulot: o'lchov nomidan (blok → dona, «кг» → m³), «п-р»/«н-к» to'lov turi, uzun izoh kesildi", JSON.stringify(imp));
+r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/logistika/realizatsiya/import");
+check(r.ok && n1(`select count(*) from "RealizationEntry" where "customerName"='QA Imp ${tag}'`) === 2 && r.text.includes("Yangi qator yo'q"), "o'sha faylni qayta yuklash — yangi qator yo'q, takror yozilmadi", r.error);
+r = await logist.action(`${RA}#importRealizationAction`, [undefined, fd({ rows: JSON.stringify(impRows.slice(2)), valueMaps: "{}" })], "/logistika/realizatsiya/import");
+check(!r.ok && !!r.error?.includes("Hech bir qator qo'shilmadi"), "faqat xato qatorli fayl — qo'shilmadi deb aytildi", r.error);
+
+const vt =q1(`select "verifyToken" from "Trip" where id='${t1}'`)!;
 const anon = async (p: string) => { const res = await fetch(BASE + p, { redirect: "manual" }); return { status: res.status, text: await res.text() }; };
 let v = await anon(`/verify/${encodeURIComponent(note1)}?k=${vt}`);
 const cust = (q1(`select c.name from "Customer" c join "Order" o on o."customerId"=c.id where o.id='${oid}'`) ?? "").split(/["'&<>]/).sort((a, b) => b.length - a.length)[0].trim();

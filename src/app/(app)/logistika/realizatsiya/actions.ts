@@ -9,7 +9,7 @@ import { parseForm, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 import { setTripTtn } from "@/lib/trips";
 import {
-  ENTRY_CELLS, ENTRY_LABELS as LABEL, LINE_CELLS, NOTE_CELLS, TRIP_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, noteSchema,
+  ENTRY_CELLS, ENTRY_LABELS as LABEL, LINE_CELLS, NOTE_CELLS, TRIP_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, listProblems, noteSchema,
   saveRealizationLineField, saveRealizationNote, saveRealizationNoteField, saveRealizationTripField, updateRealizationEntry, updateRealizationEntryField,
   type EntryCell, type ImportRow, type LineCell, type NoteCell, type TripCell,
 } from "@/lib/realization-log";
@@ -59,9 +59,21 @@ export async function importRealizationAction(_prev: ActionState, fd: FormData):
   const list = rows.filter((x): x is ImportRow => !!x && typeof x === "object" && !Array.isArray(x));
   const res = await importRealizationEntries(list, { payGroup: pay }, s.userId);
   if ("error" in res) return { error: res.error };
-  if (!res.added) return { error: `Yangi qator yo'q: faylning ${res.skipped} ta qatori reestrda bor (reysdan yoki avval kiritilgan)` };
-  refresh();
-  redirect(`/logistika/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}`);
+  if (res.added) refresh();
+  const bad = res.problems.length;
+  // Hammasi joyida — reestrga, qo'shilganlar davri bilan
+  if (res.added && !bad) redirect(`/logistika/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}`);
+  // O'qilmagan qator bor — shu sahifada qoladi: qo'shilgani yashil, o'tkazilgani sababi bilan sariq (import to'xtamaydi)
+  const units = res.guessedUnits ? ` ${res.guessedUnits} tasida o'lchov ko'rsatilmagan yoki tanilmadi — mahsulot nomidan qo'yildi (m³ yoki dona), kerak bo'lsa reestrda katakdan tuzating.` : "";
+  const dup = res.skipped ? `${res.skipped} tasi reestrda bor edi — o'tkazib yuborildi` : "";
+  return {
+    ok: true,
+    note: res.added ? `${res.added} ta qator reestrga «Qo'lda» bo'lib qo'shildi${dup ? `, ${dup}` : ""}.${units}` : undefined,
+    warn: [
+      !res.added && `Yangi qator yo'q: faylning ${res.skipped} ta qatori reestrda bor (reysdan yoki avval kiritilgan).`,
+      bad && `${bad} ta qator o'qilmadi va qo'shilmadi: ${listProblems(res.problems)}. Shularni tuzatib faylni qayta yuklang — qo'shilganlari takrorlanmaydi.`,
+    ].filter(Boolean).join(" ") || undefined,
+  };
 }
 
 export async function cancelRealizationAction(id: string, reason: string): Promise<ActionState> {
