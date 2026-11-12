@@ -22,6 +22,7 @@ import { ConfirmButton } from "../../payments/confirm-button";
 import { ExpenseForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
 import { cancelEntryAction } from "../actions";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 export const dynamic = "force-dynamic";
 
@@ -144,6 +145,8 @@ type SectionKey = (typeof SECTIONS)[number];
 
 export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
+  // Jami xarajat, daromad, foyda — faqat direktor, ish boshqaruvchi, mexanik (Logistika moliya); qolganlarga hisoblanmaydi ham
+  const showMoney = canSeeLogiMoney(s);
   const sp = await searchParams;
   const month = normMonth(sp.oy);
   const [y, m] = month.split("-").map(Number);
@@ -179,7 +182,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     entryRows(pendingEntryWhere()),
     bolim === "oylik" || bolim === "qolda" ? entryRows({ date: { gte: from, lt: to }, ...(bolim === "oylik" && sp.driver ? { driverId: sp.driver } : {}) }, 2000) : Promise.resolve([] as EntryRow[]),
     bolim === "oylik" && kesim === "haydovchi" ? driverEmployees({ activeOnly: true }) : Promise.resolve([]),
-    bolim === "oylik" && kesim === "transport" ? avtoReport(from, to) : Promise.resolve(null),
+    bolim === "oylik" && kesim === "transport" && showMoney ? avtoReport(from, to) : Promise.resolve(null),
     bolim === "oylik" && kesim === "transport" ? db.vehicle.findMany({ where: { external: true }, select: { id: true } }) : Promise.resolve([]),
     bolim === "qolda" && (canPrice || canExpense) ? costOptions() : Promise.resolve(null),
   ]);
@@ -478,7 +481,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         ]} />
         {/* Qator qo'shish va qatorni tahrirlash oynasi ro'yxatlarni bitta joydan oladi */}
         <LedgerFormsProvider options={ledgerOpts} canPay={canPrice}>
-          <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger}
+          <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger} money={showMoney}
             file={`Hisob varag'i ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
           {canLedger && <div className="mt-3"><LedgerRowForm vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
         </LedgerFormsProvider>
@@ -626,6 +629,9 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         )}
         </>}
 
+        {kesim === "transport" && !showMoney && (
+          <Callout tone="info" title="Logistika moliya">Transport bo&apos;yicha kirim, chiqim va foyda — Logistika moliyada (direktor, ish boshqaruvchi va mexanik ko&apos;radi).</Callout>
+        )}
         {kesim === "transport" && avto && (() => {
           // Transport: kirim (dastavka haqi + qo'lda kirim), chiqim (yoqilg'i, haydovchi haqi, ta'mir/zapchast, boshqa), foyda —
           // Tahlil → Avtotransport bilan bitta manba (`avtoReport`). Ko'chadan mashina — faqat shu oyda harakati bo'lsa, pastda
@@ -709,7 +715,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         <Card padded={false}>
           <div className="px-5 pt-5">
             <CardHeader title={`${monthTitle(month)} — qo'lda yozuvlar`} icon={FileSpreadsheet}
-              description={`Haq: ${money(liveEntries.reduce((a, e) => a + e.pay, 0))} · kirim: ${money(liveEntries.reduce((a, e) => a + e.revenue, 0))}. Yozuv o'chirilmaydi — bekor qilinadi (sababi bilan)`} />
+              description={`Haq: ${money(liveEntries.reduce((a, e) => a + e.pay, 0))}${showMoney ? ` · kirim: ${money(liveEntries.reduce((a, e) => a + e.revenue, 0))}` : ""}. Yozuv o'chirilmaydi — bekor qilinadi (sababi bilan)`} />
           </div>
           {monthEntries.length === 0 ? <Empty text="Bu oyda qo'lda yozuv yo'q" icon={PencilLine} /> : <EntryTable rows={monthEntries} canCancel={canPrice} edit={canPrice && opts ? { drivers: opts.drivers, vehicles: opts.vehicles.map((v) => ({ id: v.id, label: v.label })) } : null} />}
         </Card>

@@ -13,6 +13,7 @@ import { costOptions } from "../cost-data";
 import { cancelExpense } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,9 @@ export const dynamic = "force-dynamic";
  * reysning jami logistika tannarxi. 1 m³ ga tannarx — xarajat / yetkazilgan hajm.
  */
 export default async function ExpensesPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; vehicleId?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
+  const ses = await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
+  // Jami tannarx, turlar va transport bo'yicha jamlar — faqat Logistika moliyani ko'radiganlarga; alohida yozuv summasi qoladi
+  const m = canSeeLogiMoney(ses);
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [rows, costs, opts, delivered, vehicles] = await Promise.all([
@@ -49,14 +52,16 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       <PeriodTabs base="/logistika/xarajatlar" current={r.period} />
       <RangeForm base="/logistika/xarajatlar" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Jami tannarx" value={moneyShort(costs.total)} icon={Coins} tone="brand" href="#turlar" />
-        <StatCard label="Yoqilg'i" value={moneyShort(costs.fuel)} hint={costs.total ? `${Math.round((costs.fuel / costs.total) * 100)}%` : undefined} icon={Fuel} href="/logistika/yoqilgi" />
-        <StatCard label="Boshqa xarajat" value={moneyShort(costs.other)} icon={Truck} href="#xarajatlar" />
-        <StatCard label="1 m³ ga" value={m3 ? money(costs.total / m3) : "—"} hint={`${qty(m3)} m³ yetkazildi`} icon={Route} href="#transport-boyicha" />
+        {m ? <>
+          <StatCard label="Jami tannarx" value={moneyShort(costs.total)} icon={Coins} tone="brand" href="#turlar" />
+          <StatCard label="Yoqilg'i" value={moneyShort(costs.fuel)} hint={costs.total ? `${Math.round((costs.fuel / costs.total) * 100)}%` : undefined} icon={Fuel} href="/logistika/yoqilgi" />
+          <StatCard label="Boshqa xarajat" value={moneyShort(costs.other)} icon={Truck} href="#xarajatlar" />
+          <StatCard label="1 m³ ga" value={m3 ? money(costs.total / m3) : "—"} hint={`${qty(m3)} m³ yetkazildi`} icon={Route} href="#transport-boyicha" />
+        </> : <StatCard label="Yetkazildi" value={`${qty(m3)} m³`} hint="jami summalar — Logistika moliyada" icon={Route} />}
       </div>
       <Card className="mb-5"><CardHeader title="Xarajat qo'shish" description="Yoqilg'i — alohida bo'limda" icon={Coins} /><ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} vehicleId={sp.vehicleId} /></Card>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
-        <div className="space-y-5 xl:col-span-2">
+        {m && <div className="space-y-5 xl:col-span-2">
           <Card>
             <div id="turlar" className="scroll-mt-20" />
             <CardHeader title="Turlar bo'yicha" icon={Coins} />
@@ -78,8 +83,8 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
               </tbody>
             </Table>
           </Card>
-        </div>
-        <Card padded={false} className="xl:col-span-3">
+        </div>}
+        <Card padded={false} className={m ? "xl:col-span-3" : "xl:col-span-5"}>
           <div id="xarajatlar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Xarajatlar" icon={Coins} /></div>
           <Table>
             <thead><tr><Th>Sana</Th><Th>Turi</Th><Th>Transport / haydovchi / reys</Th><Th right>Summa</Th><Th /></tr></thead>

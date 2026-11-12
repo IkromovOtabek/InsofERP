@@ -29,6 +29,7 @@ import type { HomeRow, HomeSection, Tone } from "./home";
 import type { BrigadeIssueKind, Role } from "@/generated/prisma";
 import { procReportDetail } from "./sklad-extra";
 import { opAt } from "@/lib/format";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 /**
  * Dashboard kartasi bosilganda ochiladigan "batafsil" kartochka — barcha rollar uchun.
@@ -1374,6 +1375,8 @@ export async function dashDetail(user: MobileUser, rawId: string): Promise<Mobil
   const own = BUILDERS[user.role];
   const build = own && Object.hasOwn(own, stat ?? "") ? own[stat!] : undefined; // "constructor.x" — kartochka emas
   if (!build) throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
+  // Logistika xarajati jamlari (yoqilg'i, transport xarajati) — faqat Logistika moliyani ko'radiganlarga
+  if (user.role === "LOGISTICS" && (stat === "cost" || stat === "fuel") && !canSeeLogiMoney(user)) throw new ListError("FORBIDDEN", "Logistika summalari — Logistika moliyada (direktor, ish boshqaruvchi, mexanik)", 403);
   const part = await build({ user, r: parsePeriod(per) });
   return { key: "dash", id: rawId, actions: [], ...part };
 }

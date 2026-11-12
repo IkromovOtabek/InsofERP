@@ -43,7 +43,7 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
   const inMonth = { gte: from, lt: to };
   const vid = opts.vehicleId;
 
-  const [vehicles, trips, fuel, expenses, mech, cashTx, receipts, manual] = await Promise.all([
+  const [vehicles, trips, fuel, expenses, mech, cashTx, receipts, manual, logiTx] = await Promise.all([
     db.vehicle.findMany({ where: vid ? { id: vid } : {}, select: { id: true, plate: true, type: true, brand: true, model: true, isActive: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } }),
     db.trip.findMany({
       where: { status: { not: "CANCELLED" }, ...(vid ? { vehicleId: vid } : {}), OR: [{ deliveredAt: inMonth }, { deliveredAt: null, createdAt: inMonth }] },
@@ -55,6 +55,8 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
     db.cashTransaction.findMany({ where: { cancelledAt: null, type: "EXPENSE", date: inMonth }, select: { date: true, amount: true, note: true, counterparty: true, subCategory: true } }),
     db.goodsReceipt.findMany({ where: { cancelledAt: null, date: inMonth, carrier: { not: null } }, select: { carrier: true } }),
     db.logisticsEntry.findMany({ where: { cancelledAt: null, date: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, date: true, payAmount: true, revenue: true, trips: true, km: true, drumHours: true } }),
+    // Logistika hisobidan berilgan pul (kassaga tushmaydi) — nazoratda kassadan chiqqani bilan birga (`lib/logistics-finance.ts`)
+    db.logisticsTx.findMany({ where: { cancelledAt: null, type: "EXPENSE", accountId: { not: null }, cashTxId: null, date: inMonth, ...(vid ? { vehicleId: vid } : {}) }, select: { date: true, amount: true, vehicleId: true, note: true, counterparty: true } }),
   ]);
 
   // Dastavka haqi zayavkaning barcha reyslariga hajm ulushida
@@ -149,6 +151,12 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
     if (!text) continue;
     const hit = plates.find((p) => text.includes(p.key));
     if (!hit) continue;
+    const a = Number(t.amount);
+    row(hit.id).cash += a; day(t.date).cash += a;
+  }
+  for (const t of logiTx) {
+    const hit = t.vehicleId ? { id: t.vehicleId } : plates.find((p) => norm(`${t.note ?? ""} ${t.counterparty ?? ""}`).includes(p.key));
+    if (!hit || !vById.has(hit.id)) continue;
     const a = Number(t.amount);
     row(hit.id).cash += a; day(t.date).cash += a;
   }

@@ -38,6 +38,7 @@ import { faceScope } from "@/lib/face-id";
 import { parseRange } from "@/lib/bi/core";
 import { BI_ROLES } from "../bi-tahlil/shell";
 import { OverviewTab } from "../bi-tahlil/tabs/overview";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 /** Operatsion ko'rinishdagi xomashyo va qarzdorlar ro'yxati — sukut bo'yicha shuncha qator. */
 const SHORT_LIST = 15;
@@ -122,7 +123,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (panelView && s) return <div>{header}<div className="space-y-6"><ApprovalBanners s={s} /><PanelHome date={dayParam} allow={(href) => pathAllowed(href, s.role, s.perms)} /></div></div>;
   if (productionView && s) return <div>{header}<ProductionHome s={s} /></div>;
   if (procurementView) return <div>{header}<ProcurementHome filters={sp} base={isDirector ? "/dashboard?view=procurement" : "/dashboard"} /></div>;
-  if (logisticsView) return <div>{header}<LogisticsHome day={dayParam ? parseDay(dayParam) : undefined} /></div>;
+  if (logisticsView) return <div>{header}<LogisticsHome day={dayParam ? parseDay(dayParam) : undefined} money={!!s && canSeeLogiMoney(s)} /></div>;
   if (mechanicView) return <div>{header}<MechanicHome day={dayParam} unit={sp.birlik} base={isDirector ? "/dashboard?view=mechanic" : "/dashboard"} /></div>;
   if (hrView) return <div>{header}<HrHome /></div>;
   if (dispatcherView) return <div>{header}<DispatcherHome /></div>;

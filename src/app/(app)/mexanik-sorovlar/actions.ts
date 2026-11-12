@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireModuleWrite } from "@/lib/auth";
+import { requireAction, requireModuleWrite } from "@/lib/auth";
 import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
 import { MECH_ROLES, approveMechanicRequest, cancelMechanicRequest, payMechanicRequest, rejectMechanicRequest } from "@/lib/mechanic-requests";
 
@@ -12,7 +12,7 @@ import { MECH_ROLES, approveMechanicRequest, cancelMechanicRequest, payMechanicR
  */
 function refresh(id: string) {
   revalidatePath("/mexanik-sorovlar"); revalidatePath(`/mexanik-sorovlar/${id}`);
-  revalidatePath("/cashflow"); revalidatePath("/dashboard"); revalidatePath("/logistika/xarajatlar");
+  revalidatePath("/cashflow"); revalidatePath("/dashboard"); revalidatePath("/logistika/xarajatlar"); revalidatePath("/logistika/moliya");
 }
 
 export async function approve(id: string): Promise<ActionState> {
@@ -37,6 +37,17 @@ export async function reject(id: string, _prev: ActionState, fd: FormData): Prom
 const PaySchema = z.object({ cashAccountId: zStr("Kassa / hisob tanlanmagan"), note: zOpt });
 export async function pay(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireModuleWrite("mexanik", MECH_ROLES.pay);
+  const p = parseForm(PaySchema, fd);
+  if ("error" in p) return { error: p.error };
+  const r = await payMechanicRequest(id, { cashAccountId: p.data.cashAccountId, note: p.data.note }, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
+}
+
+/** Logistika so'rovi (transport, reys haqi) — ish boshqaruvchi beradi: zavod kassa/banki yoki logistika hisobidan (`L:<id>`). */
+export async function payLogi(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "fin_pay");
   const p = parseForm(PaySchema, fd);
   if ("error" in p) return { error: p.error };
   const r = await payMechanicRequest(id, { cashAccountId: p.data.cashAccountId, note: p.data.note }, s.userId);

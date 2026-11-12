@@ -20,7 +20,7 @@ import { brigDaysList, brigIssuesList, brigShiftsList, brigTasksList } from "./b
 import type { HomeRow, Tone } from "./home";
 import type { LeadStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
-import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
+import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, factoryOnly, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
 import { arendaDebtorsList, arendaJurnalList, arendaShopsList, arendaSvetList } from "./arenda";
 import { OPEN_STATUSES, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, PAYREQ_TABS, listPaymentRequests, methodsFor, payReqCounts, payReqTab, type PayReqRow } from "@/lib/payment-requests";
 import { HR_ACCESS, HR_KEY_MODULE } from "./hr-access";
@@ -386,7 +386,8 @@ async function supplyRequests(title: string, q?: string, filter?: string): Promi
 async function kirimList(user: MobileUser, q?: string, filter?: string): Promise<MobileList> {
   const own = user.role === "MECHANIC" ? user.id : null;
   const tab = mechTab(filter);
-  const [rows, c] = await Promise.all([mechanicList({ status: tab.status, createdById: own, q, take: TAKE }), mechanicCounts(own)]);
+  const fo = factoryOnly(user.role); // kassir — faqat zavod so'rovlari
+  const [rows, c] = await Promise.all([mechanicList({ status: tab.status, createdById: own, q, take: TAKE, factoryOnly: fo }), mechanicCounts(own, fo)]);
   return {
     key: "kirim", title: own ? "Mening so'rovlarim" : "Mexanik so'rovlari",
     rows: rows.map((r) => ({

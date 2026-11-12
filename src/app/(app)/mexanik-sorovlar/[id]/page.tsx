@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
 import { moduleWriteAllowed } from "@/lib/auth";
-import { MECH_ROLES, MECH_STATUS_COLOR, MECH_STATUS_LABEL, TARGET_LABEL, mechSubject, mechanicRequest, payAccounts } from "@/lib/mechanic-requests";
+import { MECH_ROLES, MECH_STATUS_COLOR, MECH_STATUS_LABEL, TARGET_LABEL, factoryOnly, mechSubject, mechanicRequest, payAccounts } from "@/lib/mechanic-requests";
+import { canLogiPay, isLogiRequest, paySources } from "@/lib/logistics-finance";
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { money, dateTime } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatusSteps } from "@/components/ui";
@@ -20,11 +21,21 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
   const r = await mechanicRequest(id);
   // Mexanik faqat o'z so'rovini ochadi
   if (!r || (s.role === "MECHANIC" && r.createdById !== s.userId)) notFound();
+  // Logistika so'rovi kassirga ko'rinmaydi — faqat zavod kassasidan berilgan bo'lsa (kassa jurnalidagi qatordan ochadi)
+  const logi = isLogiRequest(r);
+  if (logi && factoryOnly(s.role) && !r.cashTxId) notFound();
   const st = r.status;
   const canDecide = st === "NEW" && moduleWriteAllowed(s, "mexanik", MECH_ROLES.decide) === true;
-  const canPay = st === "APPROVED" && moduleWriteAllowed(s, "mexanik", MECH_ROLES.pay) === true;
+  const canPay = st === "APPROVED" && (logi ? canLogiPay(s) : moduleWriteAllowed(s, "mexanik", MECH_ROLES.pay) === true);
   const canCancel = st === "NEW" && r.createdById === s.userId;
-  const accounts = canPay ? await payAccounts() : [];
+  const sources = canPay && logi ? await paySources(true) : [];
+  const accounts = canPay
+    ? logi
+      ? sources.map((a) => ({ id: a.id, group: a.group, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }))
+      : (await payAccounts()).map((a) => ({ id: a.id, label: `${a.name} (${a.type === "CASH" ? "kassa" : "bank"}) · qoldiq ${money(a.balance)}` }))
+    : [];
+  // Ko'pincha zavod hisobidan beriladi — sukut: zavodning naqd kassasi
+  const defaultId = logi ? (sources.find((a) => a.group === "Zavod hisobi" && a.type === "CASH") ?? sources[0])?.id : undefined;
   const v = r.vehicle;
   const failed = st === "REJECTED" || st === "CANCELLED";
 
@@ -43,7 +54,7 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
 
       {st === "REJECTED" && <Callout tone="danger" title="So'rov rad etildi">{r.rejectReason} · {r.decidedBy}{r.decidedAt ? ` · ${dateTime(r.decidedAt)}` : ""}</Callout>}
       {st === "CANCELLED" && <Callout tone="warning" title="Mexanik so'rovni bekor qildi">{r.decidedAt ? dateTime(r.decidedAt) : ""}</Callout>}
-      {st === "PAID" && <Callout tone="success" title="Pul berildi">{money(r.amount)} · {r.cashAccount?.name ?? "—"} · {r.paidBy}{r.paidAt ? ` · ${dateTime(r.paidAt)}` : ""}</Callout>}
+      {st === "PAID" && <Callout tone="success" title="Pul berildi">{money(r.amount)} · {r.logistics ? `logistika hisobi: ${r.logistics.account} (${r.logistics.docNo})` : r.cashAccount?.name ?? "—"} · {r.paidBy}{r.paidAt ? ` · ${dateTime(r.paidAt)}` : ""}</Callout>}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
@@ -60,6 +71,7 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
               ...(r.decidedAt && st !== "CANCELLED" ? [{ k: st === "REJECTED" ? "Rad etdi" : "Tasdiqladi", v: `${r.decidedBy ?? "—"} · ${dateTime(r.decidedAt)}` }] : []),
               ...(r.paidAt ? [{ k: "Pul berdi", v: `${r.paidBy ?? "—"} · ${dateTime(r.paidAt)}` }] : []),
               ...(r.cashAccount ? [{ k: "Kassa", v: r.cashAccount.name }] : []),
+              ...(r.logistics ? [{ k: "Logistika hisobi", v: `${r.logistics.account} · ${r.logistics.docNo}` }] : []),
             ]} />
           </Card>
           {r.photo && (
@@ -75,17 +87,17 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
         <div className="space-y-5">
           {canDecide && (
             <Card>
-              <CardHeader title="Ish boshqaruvchi qarori" description="Tasdiqlasangiz kassa pul beradi" />
+              <CardHeader title="Ish boshqaruvchi qarori" description={logi ? "Tasdiqlagach pulni o'zingiz berasiz — zavod yoki logistika hisobidan" : "Tasdiqlasangiz kassa pul beradi"} />
               <DecidePanel id={r.id} />
             </Card>
           )}
           {canPay && (
             <Card>
-              <CardHeader title="Pul berish" description="Kirim-Chiqimga chiqim bo'lib yoziladi" />
-              <PayPanel id={r.id} amount={money(r.amount)} accounts={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.type === "CASH" ? "kassa" : "bank"}) · qoldiq ${money(a.balance)}` }))} />
+              <CardHeader title="Pul berish" description={logi ? "Logistika so'rovi — Logistika moliyada ko'rinadi" : "Kirim-Chiqimga chiqim bo'lib yoziladi"} />
+              <PayPanel id={r.id} amount={money(r.amount)} accounts={accounts} logi={logi} defaultId={defaultId} />
             </Card>
           )}
-          {st === "NEW" && !canDecide && !canCancel && <Callout tone="info">Ish boshqaruvchi tasdig&apos;i kutilmoqda — tasdiqlanmaguncha kassa pul bermaydi.</Callout>}
+          {st === "NEW" && !canDecide && !canCancel && <Callout tone="info">Ish boshqaruvchi tasdig&apos;i kutilmoqda — tasdiqlanmaguncha pul berilmaydi.</Callout>}
           {canCancel && (
             <Card>
               <CardHeader title="Bekor qilish" description="Tasdiqlanmaguncha bekor qilish mumkin" />

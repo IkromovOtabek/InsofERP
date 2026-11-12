@@ -8,6 +8,7 @@ import { money, moneyShort, qty } from "@/lib/format";
 import { Card, CardHeader, PageHeader, StatCard } from "@/components/ui";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,9 @@ function Bars({ rows, fmt = (n: number) => String(n), tone = "bg-slate-800" }: {
  * haydovchilar reytingi, kechikish taqsimoti, muammo turlari, eng band soatlar.
  */
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
+  const ses = await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
+  // 1 m³ tannarxi va xarajat — faqat Logistika moliyani ko'radiganlarga
+  const m = canSeeLogiMoney(ses);
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [rep, delivered, issues] = await Promise.all([
@@ -74,7 +77,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         <StatCard label="O'z vaqtida" value={onTimePct(t) != null ? `${onTimePct(t)}%` : "—"} hint={`${t.judged} ta baholandi`} icon={Clock} tone={(onTimePct(t) ?? 100) < 80 ? "warning" : "success"} href="#kechikish" />
         <StatCard label="O'rt. yetkazish" value={minutesLabel(avgMin(t))} hint="yuklash → topshirish" icon={Timer} href={`/logistika/hisobotlar?${qs}`} />
         <StatCard label="Transportdan foydalanish" value={avgUtil != null ? `${avgUtil}%` : "—"} hint="o'rtacha, nasossiz" icon={Gauge} href="#foydalanish" />
-        <StatCard label="1 m³ tannarxi" value={t.m3 ? money(cost(t) / t.m3) : "—"} icon={Coins} href="#xarajat-m3" />
+        {m && <StatCard label="1 m³ tannarxi" value={t.m3 ? money(cost(t) / t.m3) : "—"} icon={Coins} href="#xarajat-m3" />}
         <StatCard label="Muammolar" value={t.issues} icon={AlertTriangle} tone={t.issues ? "warning" : "default"} href="#muammo-turlari" />
       </div>
 
@@ -88,11 +91,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           <CardHeader title="Haydovchilar reytingi" description="O'z vaqtida (60%) + hajm (30%) + muammosizlik (10%)" icon={Truck} />
           <Bars rows={ranked.map((d) => ({ label: <Link href={`/logistika/haydovchilar/${d.id}`} className="hover:underline">{d.name}</Link>, value: d.score, hint: `${d.delivered} reys, ${qty(d.m3)} m³, o'z vaqtida ${onTimePct(d) ?? "—"}%` }))} fmt={(n) => `${n} ball`} tone="bg-emerald-600" />
         </Card>
-        <Card>
+        {m && <Card>
           <div id="xarajat-m3" className="scroll-mt-20" />
           <CardHeader title="Transport bo'yicha xarajat, 1 m³ ga" icon={Coins} />
           <Bars rows={rep.byVehicle.filter((v) => v.m3 > 0 && cost(v) > 0).map((v) => ({ label: v.plate, value: Math.round(cost(v) / v.m3), hint: moneyShort(cost(v)) })).sort((a, b) => b.value - a.value)} fmt={(n) => moneyShort(n)} tone="bg-amber-500" />
-        </Card>
+        </Card>}
         <Card>
           <CardHeader title="Obyektlar: eng ko'p yetkazilgan" icon={Truck} />
           <Bars rows={rep.bySite.slice(0, 10).map((s) => ({ label: <span title={s.customer}>{s.name}</span>, value: Math.round(s.m3 + s.pieces), hint: s.customer }))} fmt={(n) => qty(n)} />

@@ -17,6 +17,7 @@ import { runLeaseExpiry } from "@/lib/rent-contract";
 import { PAY_APPROVER_ROLES, PAY_SINCE, PRICER_ROLES, pendingApprovalWhere, unpricedWhere } from "@/lib/driver-trip-pay";
 import { releaseDueRequests } from "@/lib/mechanic-requests";
 import { pruneVisits } from "@/lib/visits";
+import { isLogiRequest } from "@/lib/logistics-finance";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
@@ -106,9 +107,10 @@ const RULES: Rule[] = [
     type: "REMIND_MECHANIC",
     find: async (now) => (await db.mechanicRequest.findMany({
       where: { OR: [{ status: "NEW", createdAt: { lt: ago(now, 4) } }, { status: "APPROVED", decidedAt: { lt: ago(now, 4) } }] }, take: 50,
-      select: { id: true, docNo: true, status: true, createdAt: true, decidedAt: true },
+      select: { id: true, docNo: true, status: true, createdAt: true, decidedAt: true, target: true, problem: true, tripId: true },
     })).map((r) => ({
-      id: r.id, link: { key: "kirim", id: r.id }, roles: (r.status === "NEW" ? ["SUPERVISOR"] : ["CASHIER"]) as Role[],
+      // Logistika so'rovi pulini ish boshqaruvchi beradi (`lib/logistics-finance.ts`), zavodnikini — kassa
+      id: r.id, link: { key: "kirim", id: r.id }, roles: (r.status === "NEW" || isLogiRequest(r) ? ["SUPERVISOR"] : ["CASHIER"]) as Role[],
       title: `Mexanik so'rovi kutmoqda — ${r.docNo}`, body: `${hrs(r.decidedAt ?? r.createdAt, now)} soatdan beri ${r.status === "NEW" ? "tasdiqlanmagan" : "pul berilmagan"}`,
     })),
   },

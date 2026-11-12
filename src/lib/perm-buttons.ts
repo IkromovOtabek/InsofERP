@@ -86,6 +86,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "nakladnoy", label: "Nakladnoylar va yetkazish", paths: ["/logistika/nakladnoylar", "/logistika/yetkazish"], actions: [] },
     { key: "hisobot", label: "Hisobotlar va analitika", paths: ["/logistika/hisobotlar", "/logistika/analitika"], actions: [] },
     { key: "sozlamalar", label: "Logistika sozlamalari", paths: ["/logistika/sozlamalar"], actions: ["settings"] },
+    { key: "moliya", label: "Logistika moliya", paths: ["/logistika/moliya"], actions: ["money", "fin_write", "fin_pay"] },
   ],
   stock: [
     { key: "sklad", label: "Sklad (xomashyo qoldiqlari)", paths: ["/stock"], actions: ["price", "import"] },

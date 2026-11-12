@@ -657,7 +657,9 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       if (r.error) fail(r.error);
       return { ok: true, message: r.note ?? "So'rov rad etildi" };
     }
-    case "kirim.pay": {
+    case "kirim.pay":
+    case "kirim.logipay": {
+      // Logistika so'rovi va logistika hisobi qoidasi `payMechanicRequest` ichida ham tekshiriladi
       const r = await payMechanicRequest(id, { cashAccountId: textOf(payload, "cashAccountId"), note: textOf(payload, "note") || null }, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: r.note ?? "Pul berildi" };

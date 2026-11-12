@@ -122,6 +122,10 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "real_auto", label: "Realizatsiya: reysdan tushgan qatorni to'ldirish (ortilgan joy, manzil, izoh)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Qatorlar reyslardan (TTN) o'zi tushadi; miqdor, narx va mijoz zayavkadan — ular o'zgarmaydi" },
     { key: "real_manual", label: "Realizatsiya: qo'lda qator kiritish, tuzatish, bekor qilish", roles: ["LOGISTICS", "DISPATCHER"], hint: "Tizimga reys bo'lib tushmagan jo'natma. Faqat reestr — mijoz qarzi, kassa va skladga ta'sir qilmaydi" },
     { key: "settings", label: "Logistika sozlamalari",           roles: ["LOGISTICS"] },
+    // Logistika moliyasi — alohida hisob (`lib/logistics-finance.ts`). Summalar faqat direktor, ish boshqaruvchi va mexanikka
+    { key: "money",     label: "Logistika summalarini ko'rish (jami xarajat, daromad, foyda)", roles: ["SUPERVISOR", "MECHANIC"], hint: "Logistika moliya oynasi; tabel, transport va hisobotlarda jami xarajat, daromad va foyda faqat shu huquq bilan ko'rinadi" },
+    { key: "fin_write", label: "Logistika moliya: kirim, chiqim va o'tkazma yozish", roles: ["SUPERVISOR"], explicit: true, hint: "Logistika hisobidan yoki zavod kassa/bankidan" },
+    { key: "fin_pay",   label: "Logistika pulini berish (naqd reys haqi, usta puli, ta'mir, oylik reys haqi)", roles: ["SUPERVISOR"], explicit: true, hint: "Zavod kassa/bankidan yoki logistika hisobidan — tanlab. Kassir bu so'rovlarni ko'rmaydi" },
   ],
   stock: [
     { key: "receipt",   label: "Kirim (xomashyo qabul qilish)",  roles: ["PROCUREMENT", "WAREHOUSE"] },

@@ -315,7 +315,7 @@ export async function approveLogisticsEntries(ids: string[], userId: string): Pr
     if (e.payType === "CASH") { cashN++; cashSum += amount; } else { payrollN++; payrollSum += amount; }
   }
   notifyAfter(async () => {
-    if (cashN) await notifyRoles(["CASHIER"], { type: "KIRIM_APPROVED", title: `Haydovchiga naqd haq (qo'lda yozuv): ${cashN} ta`, body: `Jami ${money(cashSum)} — ish boshqaruvchi tasdiqladi, Mexanik so'rovlari → «Tasdiqlangan»` }, { except: userId });
+    if (cashN) await notifyRoles(["SUPERVISOR"], { type: "KIRIM_APPROVED", title: `Haydovchiga naqd haq (qo'lda yozuv): ${cashN} ta`, body: `Jami ${money(cashSum)} — ish boshqaruvchi tasdiqlandi, pulni bering: Logistika moliya → «To'lovlar» (zavod yoki logistika hisobidan)` }, { except: userId });
     if (payrollN) await notifyRoles(["ACCOUNTING"], { type: "TRIP_PAY_PAYROLL", title: `Oylikka haydovchi haqi (qo'lda yozuv): ${payrollN} ta`, body: `Jami ${money(payrollSum)} — tasdiqlandi, oy yakuni vedomostiga tushadi`, channel: "oddiy" }, { except: userId });
   });
   return { done, failed: ids.length - done };

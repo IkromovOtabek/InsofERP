@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Ban, CheckCircle2, HandCoins, XCircle } from "lucide-react";
-import { approve, cancel, pay, reject } from "./actions";
+import { approve, cancel, pay, payLogi, reject } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
 
 /* ═══════════ Ish boshqaruvchi: tasdiqlash yoki rad etish ═══════════ */
@@ -39,13 +39,17 @@ export function DecidePanel({ id }: { id: string }) {
 
 export type PayAccount = { id: string; label: string };
 
-export function PayPanel({ id, amount, accounts }: { id: string; amount: string; accounts: PayAccount[] }) {
-  const [state, action, pending] = useActionState(pay.bind(null, id), undefined);
+/** `logi` — logistika so'rovi: ish boshqaruvchi beradi, manba — zavod hisobi yoki logistika hisobi (`group` bo'yicha). */
+export function PayPanel({ id, amount, accounts, logi = false, defaultId }: { id: string; amount: string; accounts: (PayAccount & { group?: string })[]; logi?: boolean; defaultId?: string }) {
+  const [state, action, pending] = useActionState((logi ? payLogi : pay).bind(null, id), undefined);
+  const groups = [...new Set(accounts.map((a) => a.group ?? ""))];
   return (
     <form action={action} className="space-y-3">
-      <Field label="Qaysi kassadan *" hint={`${amount} shu hisobdan chiqim bo'lib yoziladi`}>
-        <Select name="cashAccountId" required defaultValue={accounts[0]?.id}>
-          {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+      <Field label={logi ? "Qaysi hisobdan *" : "Qaysi kassadan *"} hint={logi ? `${amount} — zavod hisobidan bo'lsa kassada qisqa qator, logistika hisobidan bo'lsa kassaga tushmaydi. Ikkalasi ham Logistika moliyada ko'rinadi` : `${amount} shu hisobdan chiqim bo'lib yoziladi`}>
+        <Select name="cashAccountId" required defaultValue={defaultId ?? accounts[0]?.id}>
+          {groups.length > 1
+            ? groups.map((g) => <optgroup key={g} label={g}>{accounts.filter((a) => (a.group ?? "") === g).map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}</optgroup>)
+            : accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
         </Select>
       </Field>
       <Field label="Izoh"><Input name="note" placeholder="Ixtiyoriy" /></Field>

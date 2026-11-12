@@ -26,7 +26,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/moliya": BadgeDollarSign, "/settings/boshlangich-qoldiq": Scale, "/settings/davomat": SlidersHorizontal, "/settings/ish-tartibi": CalendarDays,
   "/logistika/buyurtmalar": PackageCheck, "/logistika/kalendar": CalendarClock, "/logistika/transport": Container, "/logistika/haydovchilar": IdCard, "/logistika/tabel": TableProperties, "/logistika/realizatsiya": Sheet,
   "/logistika/obyektlar": MapPin, "/logistika/monitoring": Radar, "/logistika/nakladnoylar": FileText, "/logistika/yetkazish": PackageCheck,
-  "/logistika/yoqilgi": Fuel, "/logistika/xarajatlar": Wallet, "/logistika/hisobotlar": FileChartColumn, "/logistika/analitika": ChartPie, "/logistika/sozlamalar": SlidersHorizontal,
+  "/logistika/yoqilgi": Fuel, "/logistika/xarajatlar": Wallet, "/logistika/hisobotlar": FileChartColumn, "/logistika/analitika": ChartPie, "/logistika/sozlamalar": SlidersHorizontal, "/logistika/moliya": Landmark,
   // Ichki bandlar (BI)
   "/bi-tahlil/sotuvlar/bekor": Ban, "/bi-tahlil/marketing/reja": CalendarRange, "/bi-tahlil/marketing/malumotlar": Database,
   "/bi-tahlil/ml/anomaliyalar": TriangleAlert, "/bi-tahlil/ml/churn": UserMinus, "/bi-tahlil/ml/klasterlar": Boxes, "/bi-tahlil/ai/chat": MessageSquare, "/bi-tahlil/ai/telegram": Send,

@@ -98,7 +98,8 @@ function Timeline({ orders, now, isToday }: { orders: DashOrder[]; now: Date; is
   );
 }
 
-export async function LogisticsHome({ day }: { day?: Date }) {
+/** `money` — transport xarajati summasi faqat Logistika moliyani ko'radiganlarga (`canSeeLogiMoney`). */
+export async function LogisticsHome({ day, money: showMoney = false }: { day?: Date; money?: boolean }) {
   const d = await logisticsDashboard(day);
   const k = d.kpi;
   const now = new Date();
@@ -135,7 +136,7 @@ export async function LogisticsHome({ day }: { day?: Date }) {
         <StatCard label="Kechikayotgan reyslar" value={k.late} hint={k.onTimePct != null ? `o'z vaqtida: ${k.onTimePct}%` : `chegara ${d.settings.lateWarnMin} daq`} icon={AlertTriangle} tone={k.late ? "danger" : "default"} href="/trips?status=ON_ROAD" />
         <StatCard label="Bo'sh transport" value={`${k.freeVehicles} / ${k.totalVehicles}`} hint="reysga biriktirilmagan" icon={Gauge} tone={k.freeVehicles ? "success" : "warning"} href="/logistika/transport" />
         <StatCard label="Bugungi beton" value={`${qty(k.concreteM3)} m³`} hint={k.pieceQty ? `+ ${fmtNum(k.pieceQty)} dona mahsulot` : `rejadan ${k.planM3 ? Math.round((k.concreteM3 / k.planM3) * 100) : 0}%`} icon={Truck} tone="brand" href="/logistika/yetkazish" />
-        <StatCard label="Transport xarajati" value={moneyShort(k.cost)} hint={k.cost ? `yoqilg'i ${moneyShort(k.fuelCost)}` : "bugun kiritilmagan"} icon={Coins} href="/logistika/xarajatlar?period=day" />
+        {showMoney && <StatCard label="Transport xarajati" value={moneyShort(k.cost)} hint={k.cost ? `yoqilg'i ${moneyShort(k.fuelCost)}` : "bugun kiritilmagan"} icon={Coins} href="/logistika/xarajatlar?period=day" />}
         <StatCard label="O'rtacha yetkazish" value={minutesLabel(k.avgDeliveryMin)} hint="yuklashdan topshirishgacha" icon={Timer} href="/logistika/analitika" />
       </div>
 
@@ -241,7 +242,7 @@ export async function LogisticsHome({ day }: { day?: Date }) {
             </ul>
           )}
           {d.pumps.length > pumpFleet.filter((v) => v.live === "FREE" || v.live === "IDLE").length && <p className="mt-2 text-xs font-medium text-amber-700">Nasos yetishmasligi mumkin — ijaraga oling yoki vaqtni suring.</p>}
-          <p className="mt-3 text-xs text-slate-500">Xarajat bugun: {money(k.cost)}</p>
+          {showMoney && <p className="mt-3 text-xs text-slate-500">Xarajat bugun: {money(k.cost)}</p>}
         </Card>
       </div>
     </div>

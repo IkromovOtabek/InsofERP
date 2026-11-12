@@ -51,7 +51,8 @@ import { canDo } from "@/lib/permissions";
 import { pctText } from "./fmt";
 import { lineTotal, receiptAmounts } from "@/lib/receipt-vat";
 import type { Role, SupplyStatus } from "@/generated/prisma";
-import { MECH_REF, MECH_STATUS_LABEL, MECH_STATUS_TONE, TARGET_LABEL, mechSubject, mechanicRequest, payAccounts } from "@/lib/mechanic-requests";
+import { MECH_REF, MECH_STATUS_LABEL, MECH_STATUS_TONE, TARGET_LABEL, factoryOnly, mechSubject, mechanicRequest, payAccounts } from "@/lib/mechanic-requests";
+import { isLogiRequest, paySources } from "@/lib/logistics-finance";
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { OPEN_STATUSES, PAY_METHOD_LABEL, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, getPaymentRequest, methodsFor, receiveAccounts } from "@/lib/payment-requests";
 import { accountBalances } from "@/lib/payments";
@@ -381,6 +382,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "kirim.approve": ["SUPERVISOR", "DIRECTOR"],
   "kirim.reject": ["SUPERVISOR", "DIRECTOR"],
   "kirim.pay": ["CASHIER", "DIRECTOR"],
+  // Logistika so'rovi (transport, reys haqi) — ish boshqaruvchi beradi, zavod yoki logistika hisobidan (`lib/logistics-finance.ts`)
+  "kirim.logipay": ["SUPERVISOR", "DIRECTOR"],
   "kirim.cancel": ["MECHANIC"],
   // Arenda (`lib/permissions.ts` → arenda: storno / shops): storno — yozuv chizilgan holda qoladi; oy hisobi va do'kon holati
   "arenda.storno": ["SECRETARY"],
@@ -529,6 +532,7 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   ...SKLAD_PERM_EXACT,
   ...LOGI_PERM,
   ...SOTUV_PERM_EXACT,
+  "kirim.logipay": { module: "logistika", action: "fin_pay" },
 };
 const PERM_PREFIX: [string, { module: string; action?: string }][] = [
   ["lead.", { module: "sales", action: "leads" }],
@@ -1753,18 +1757,36 @@ async function kirimDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   const r = await mechanicRequest(id);
   if (!r) throw new ListError("NOT_FOUND", "So'rov topilmadi", 404);
   if (user.role === "MECHANIC" && r.createdById !== user.id) throw new ListError("FORBIDDEN", "Bu so'rov sizniki emas", 403);
+  const logi = isLogiRequest(r);
+  // Logistika so'rovi kassirga ko'rinmaydi — faqat zavod kassasidan berilgan bo'lsa
+  if (logi && factoryOnly(user.role) && !r.cashTxId) throw new ListError("FORBIDDEN", "Bu logistika so'rovi — ish boshqaruvchi beradi", 403);
   const st = r.status;
   const amount = sum(r.amount);
   const subject = mechSubject(r);
 
   const actions: DetailAction[] = [];
   if (st === "NEW" && can(user, "kirim.approve")) {
-    actions.push({ id: "kirim.approve", label: "Tasdiqlash", tone: "success", confirm: `${money(amount)} so'rovni tasdiqlaysizmi? Kassa pul beradi` });
+    actions.push({ id: "kirim.approve", label: "Tasdiqlash", tone: "success", confirm: `${money(amount)} so'rovni tasdiqlaysizmi? ${logi ? "Keyin pulni o'zingiz berasiz" : "Kassa pul beradi"}` });
   }
   if (st === "NEW" && can(user, "kirim.reject")) {
     actions.push({ id: "kirim.reject", label: "Rad etish", tone: "danger", form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega rad etilmoqda" }] });
   }
-  if (st === "APPROVED" && can(user, "kirim.pay")) {
+  if (st === "APPROVED" && logi && can(user, "kirim.logipay")) {
+    const src = await paySources(true);
+    const def = src.find((a) => a.group === "Zavod hisobi" && a.type === "CASH") ?? src[0];
+    actions.push({
+      id: "kirim.logipay", label: "Pul berish", tone: "success",
+      form: [
+        {
+          name: "cashAccountId", label: "Qaysi hisobdan", type: "select", required: true, value: def?.id,
+          options: src.map((a) => ({ value: a.id, label: `${a.group}: ${a.name}`, hint: `${a.type === "CASH" ? "naqd" : "bank"} · qoldiq ${money(a.balance)}` })),
+          hint: `${money(amount)} — logistika hisobidan bo'lsa kassaga tushmaydi; ikkalasi ham Logistika moliyada`,
+        },
+        { name: "note", label: "Izoh", type: "text" },
+      ],
+    });
+  }
+  if (st === "APPROVED" && !logi && can(user, "kirim.pay")) {
     const accounts = await payAccounts();
     actions.push({
       id: "kirim.pay", label: "Pul berish", tone: "success",
@@ -1807,6 +1829,7 @@ async function kirimDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       ...(r.rejectReason ? [{ label: "Rad sababi", value: r.rejectReason, tone: "danger" as Tone }] : []),
       ...(r.paidAt ? [{ label: "Pul berdi", value: `${r.paidBy ?? "—"} · ${dt(r.paidAt)}`, tone: "success" as Tone }] : []),
       ...(r.cashAccount ? [{ label: "Kassa", value: r.cashAccount.name }] : []),
+      ...(r.logistics ? [{ label: "Logistika hisobi", value: `${r.logistics.account} · ${r.logistics.docNo}` }] : []),
       ...(r.photo ? [{ label: "Surat", value: "Biriktirilgan" }] : []),
     ],
     sections: [

@@ -14,8 +14,12 @@ const N = ({ v, frac = 0 }: { v: number; frac?: number }) => (Math.abs(v) < (fra
  * Transport kartasi → «Faoliyat va xarajat»: tanlangan davrda necha reys / zayavka, qancha yuk, qayerga va kimga,
  * qanday xarajat yozilgan, daromad va foyda (`lib/vehicle-report.ts`, pul — Tahlil → Avtotransport bilan bitta manba).
  */
-export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpen }: {
-  r: VehicleReport; period: DayRange; base: string; plate: string; tripsClosed: boolean; ordersOpen: boolean;
+/**
+ * `money` — pul jamlari (jami xarajat, daromad, foyda, turi bo'yicha xarajat) faqat logistika moliyasini ko'radiganlarga
+ * (`canSeeLogiMoney`: direktor, ish boshqaruvchi, mexanik). Qolganlar reys, yuk, probeg va alohida yozuvlarni ko'radi.
+ */
+export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpen, money: showMoney }: {
+  r: VehicleReport; period: DayRange; base: string; plate: string; tripsClosed: boolean; ordersOpen: boolean; money: boolean;
 }) {
   const a = r.row;
   const fuelText = [a.dtGiven ? `${fmtNum(a.dtGiven, 1)} l` : "", a.gasGiven ? `${fmtNum(a.gasGiven, 1)} m³` : ""].filter(Boolean).join(" · ");
@@ -27,8 +31,8 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
     <div className="space-y-5">
       <DayRangeBar base={base} range={period}>
         <ExcelButton file={file} sheets={[
-          { name: "Reyslar", rows: r.trips.map((t) => ({ Sana: date(t.date), Nakladnoy: t.noteNo, Zayavka: t.orderNo, Mijoz: t.customer, Obyekt: t.place, Haydovchi: t.driver, "Beton, m3": t.load.m3 || null, Dona: t.load.dona || null, "Og'irlik, t": t.load.t ? Math.round(t.load.t * 100) / 100 : null, "Probeg, km": Math.round(t.km), Daromad: Math.round(t.revenue), Holat: TRIP_STEP[t.status] ?? t.status })) },
-          { name: "Qayerga", rows: r.places.map((p) => ({ Obyekt: p.name, Manzil: p.address, Mijoz: p.customer, Reys: p.trips, Zayavka: p.orders, Yuk: fmtLoad(p.load), "Probeg, km": Math.round(p.km), Daromad: Math.round(p.revenue) })) },
+          { name: "Reyslar", rows: r.trips.map((t) => ({ Sana: date(t.date), Nakladnoy: t.noteNo, Zayavka: t.orderNo, Mijoz: t.customer, Obyekt: t.place, Haydovchi: t.driver, "Beton, m3": t.load.m3 || null, Dona: t.load.dona || null, "Og'irlik, t": t.load.t ? Math.round(t.load.t * 100) / 100 : null, "Probeg, km": Math.round(t.km), ...(showMoney ? { Daromad: Math.round(t.revenue) } : {}), Holat: TRIP_STEP[t.status] ?? t.status })) },
+          { name: "Qayerga", rows: r.places.map((p) => ({ Obyekt: p.name, Manzil: p.address, Mijoz: p.customer, Reys: p.trips, Zayavka: p.orders, Yuk: fmtLoad(p.load), "Probeg, km": Math.round(p.km), ...(showMoney ? { Daromad: Math.round(p.revenue) } : {}) })) },
           { name: "Xarajatlar", rows: r.ledger.map((x) => ({ Sana: date(x.date), Turi: x.label, Izoh: x.note, Summa: x.amount, "Jamiga kiradi": x.counted ? "ha" : "yo'q (xizmat jurnali)" })) },
         ]} />
       </DayRangeBar>
@@ -36,16 +40,16 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Reyslar" value={`${r.trips.length} ta`} hint={`${r.orders} ta zayavkada · ${r.days} kun ishladi`} icon={Route} tone="brand" href="#reyslar" />
         <StatCard label="Tashilgan yuk" value={fmtLoad(r.load)} hint={r.load.tApprox ? "tonna — og'irlik GOST bo'yicha taxminiy" : "beton · dona · og'irlik"} icon={Package} tone="info" href="#qayerga" />
-        <StatCard label="Jami xarajat" value={moneyShort(a.total)} hint={a.perKm != null ? `1 km ga ${fmtNum(a.perKm)} so'm · reysga ${r.trips.length ? moneyShort(a.total / r.trips.length) : "—"}` : "yoqilg'i + ish haqi + ta'mir + boshqa"} icon={Coins} href="#xarajatlar" />
-        <StatCard label="Foyda" value={moneyShort(a.profit)} hint={`daromad (dastavka) ${moneyShort(a.revenue)}`} icon={Wallet} tone={a.profit < 0 ? "danger" : a.revenue ? "success" : "default"} href="#xarajatlar" />
+        {showMoney && <StatCard label="Jami xarajat" value={moneyShort(a.total)} hint={a.perKm != null ? `1 km ga ${fmtNum(a.perKm)} so'm · reysga ${r.trips.length ? moneyShort(a.total / r.trips.length) : "—"}` : "yoqilg'i + ish haqi + ta'mir + boshqa"} icon={Coins} href="#xarajatlar" />}
+        {showMoney && <StatCard label="Foyda" value={moneyShort(a.profit)} hint={`daromad (dastavka) ${moneyShort(a.revenue)}`} icon={Wallet} tone={a.profit < 0 ? "danger" : a.revenue ? "success" : "default"} href="#xarajatlar" />}
         <StatCard label="Probeg" value={`${fmtNum(a.km)} km`} hint={a.hours ? `baraban ${fmtNum(a.hours, 1)} soat` : "zavod → obyekt → zavod"} icon={Gauge} href="#reyslar" />
-        <StatCard label="Yoqilg'i" value={moneyShort(a.fuelSum)} hint={fuelText ? `${fuelText}${fuelNorm ? ` · norma ${fuelNorm}` : ""}` : "zapravka yozilmagan"} icon={Fuel} href="#xarajatlar" />
-        <StatCard label="Ta'mir va zapchast" value={moneyShort(a.repair)} hint={r.service.count ? `${r.service.count} ta texnik xizmat · ${moneyShort(r.service.sum)}` : "texnik xizmat yozilmagan"} icon={Wrench} tone={a.repair ? "warning" : "default"} href="#yozuvlar" />
-        <StatCard label="Ish haqi" value={moneyShort(a.pay)} hint={r.drivers.length ? r.drivers.map((d) => `${d.name} (${d.trips})`).join(", ") : "reys yo'q"} icon={Users} href="#reyslar" />
+        <StatCard label="Yoqilg'i" value={showMoney ? moneyShort(a.fuelSum) : fuelText || "—"} hint={showMoney ? (fuelText ? `${fuelText}${fuelNorm ? ` · norma ${fuelNorm}` : ""}` : "zapravka yozilmagan") : fuelNorm ? `norma ${fuelNorm}` : "zapravka"} icon={Fuel} href="#yozuvlar" />
+        {showMoney && <StatCard label="Ta'mir va zapchast" value={moneyShort(a.repair)} hint={r.service.count ? `${r.service.count} ta texnik xizmat · ${moneyShort(r.service.sum)}` : "texnik xizmat yozilmagan"} icon={Wrench} tone={a.repair ? "warning" : "default"} href="#yozuvlar" />}
+        {showMoney && <StatCard label="Ish haqi" value={moneyShort(a.pay)} hint={r.drivers.length ? r.drivers.map((d) => `${d.name} (${d.trips})`).join(", ") : "reys yo'q"} icon={Users} href="#reyslar" />}
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
-        <Section id="xarajatlar" title="Xarajatlar — turi bo'yicha" className="mt-0 xl:col-span-2">
+        {showMoney && <Section id="xarajatlar" title="Xarajatlar — turi bo'yicha" className="mt-0 xl:col-span-2">
           <Table>
             <thead><tr><Th>Turi</Th><Th right>Soni</Th><Th right>Summa</Th><Th right>Ulush</Th></tr></thead>
             <tbody>
@@ -66,11 +70,11 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
             Daromad — zayavka dastavka haqi reyslarga hajm ulushida. Texnik xizmat jurnalidagi narx jamiga qo&apos;shilmaydi (ta&apos;mir xarajati alohida yoziladi).
             {a.cash > 0.5 && <> Kassadan izohida shu raqam bilan chiqqan: {money(a.cash)}.</>}
           </p>
-        </Section>
+        </Section>}
 
-        <Section id="qayerga" title="Qayerga qatnadi" className="mt-0 xl:col-span-3">
+        <Section id="qayerga" title="Qayerga qatnadi" className={showMoney ? "mt-0 xl:col-span-3" : "mt-0 xl:col-span-5"}>
           <Table>
-            <thead><tr><Th>Obyekt / manzil</Th><Th right>Reys</Th><Th right>Zayavka</Th><Th>Yuk</Th><Th right>Probeg</Th><Th right>Daromad</Th></tr></thead>
+            <thead><tr><Th>Obyekt / manzil</Th><Th right>Reys</Th><Th right>Zayavka</Th><Th>Yuk</Th><Th right>Probeg</Th>{showMoney && <Th right>Daromad</Th>}</tr></thead>
             <tbody>
               {r.places.length === 0 && <Empty text="Bu davrda reys yo'q" icon={MapPin} />}
               {r.places.map((p) => (
@@ -83,7 +87,7 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
                   <Td right className="tabular">{p.orders}</Td>
                   <Td className="whitespace-nowrap text-sm tabular">{fmtLoad(p.load)}</Td>
                   <Td right className="tabular"><N v={p.km} /></Td>
-                  <Td right className="tabular"><N v={p.revenue} /></Td>
+                  {showMoney && <Td right className="tabular"><N v={p.revenue} /></Td>}
                 </Tr>
               ))}
             </tbody>
@@ -96,7 +100,7 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
 
       <Section id="reyslar" title={`Reyslar — ${period.label}`}>
         <Table maxHeight="70vh">
-          <thead><tr><Th>Sana</Th><Th>Nakladnoy</Th><Th>Zayavka / mijoz</Th><Th>Qayerga</Th><Th>Haydovchi</Th><Th>Yuk</Th><Th right>Probeg</Th><Th right>Daromad</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Sana</Th><Th>Nakladnoy</Th><Th>Zayavka / mijoz</Th><Th>Qayerga</Th><Th>Haydovchi</Th><Th>Yuk</Th><Th right>Probeg</Th>{showMoney && <Th right>Daromad</Th>}<Th>Holat</Th></tr></thead>
           <tbody>
             {r.trips.length === 0 && <Empty text="Bu davrda reys yo'q" icon={Route} />}
             {r.trips.map((t) => (
@@ -111,7 +115,7 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
                 <Td className="whitespace-nowrap text-sm">{t.driver}</Td>
                 <Td className="whitespace-nowrap text-sm tabular">{fmtLoad(t.load)}</Td>
                 <Td right className="tabular"><N v={t.km} /></Td>
-                <Td right className="tabular"><N v={t.revenue} /></Td>
+                {showMoney && <Td right className="tabular"><N v={t.revenue} /></Td>}
                 <Td><Badge color={t.status === "DELIVERED" ? "green" : t.status === "ON_ROAD" ? "blue" : "slate"}>{TRIP_STEP[t.status] ?? t.status}</Badge></Td>
               </Tr>
             ))}

@@ -1826,6 +1826,8 @@ model Trip {
   payApprovedAt   DateTime?
   payApprovedById String?
   payRejectReason String? // rad etilsa — narx olib tashlanadi, reys yana «narx belgilanmagan»ga qaytadi
+  /// Oylik reys haqi Logistika moliyadan to'langan bo'lsa — shu yozuv (`LogisticsTx`); zavod vedomostiga tushmaydi
+  payLogiTxId     String?
 
   order     Order              @relation(fields: [orderId], references: [id])
   vehicle   Vehicle            @relation(fields: [vehicleId], references: [id])
@@ -2024,6 +2026,8 @@ model LogisticsEntry {
   revenue           Decimal?       @db.Decimal(18, 2) // kirim (daromad)
   note              String
   mechanicRequestId String?        @unique // naqd haq kassaga o'tgan so'rov
+  /// Oylik haq Logistika moliyadan to'langan bo'lsa — shu yozuv; zavod vedomostiga tushmaydi
+  payLogiTxId       String?
   clientToken       String?        @unique // ikki marta yuborilsa dublikat bo'lmasin
   createdById       String
   createdAt         DateTime       @default(now())
@@ -2046,6 +2050,56 @@ model LogisticsEntry {
   @@index([date])
   @@index([driverId, date])
   @@index([vehicleId, date])
+}
+
+/// Logistika hisobi (Logistika moliya): zavod kassa/bankidan alohida pul — logistika o'z kirim-chiqimini shu yerda yuritadi.
+/// Kassa / bank, Kirim-Chiqim va zavod hisobotlariga kirmaydi (`lib/logistics-finance.ts`).
+model LogisticsAccount {
+  id        String          @id @default(cuid())
+  name      String
+  type      CashAccountType
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+
+  txs LogisticsTx[]
+
+  @@unique([name, type])
+}
+
+/// Logistika moliya yozuvi (LM-YYYY-00001). Ikki xil:
+///  - `accountId` — logistika hisobidagi kirim/chiqim (kassaga umuman tushmaydi);
+///  - `cashTxId` — zavod kassa/bankidan berilgan logistika puli: kassada hujjatga bog'langan qator (`refType` = "LogisticsTx")
+///    qoldiq to'g'ri bo'lishi uchun turadi, tafsiloti (mashina, haydovchi, toifa) shu yerda.
+/// Ikkalasi ham bo'lsa — o'tkazma: zavod hisobidan logistika hisobiga. O'chirilmaydi — bekor qilinadi.
+model LogisticsTx {
+  id                 String     @id @default(cuid())
+  docNo              String     @unique
+  date               DateTime
+  type               CashTxType // INCOME — kirim, EXPENSE — chiqim (logistika nuqtai nazaridan)
+  amount             Decimal    @db.Decimal(18, 2)
+  category           String
+  accountId          String?
+  cashTxId           String?    @unique
+  vehicleId          String?
+  driverId           String?
+  counterparty       String?
+  note               String?
+  refType            String? // MechanicRequest | DriverMonthPay
+  refId              String?
+  /// Mashinaga yozilgan ta'mir/zapchast/yo'l xarajati — Foyda hisobiga shu orqali tushadi (bekor qilinsa — u ham)
+  transportExpenseId String?    @unique
+  clientToken        String?    @unique
+  createdById        String
+  createdAt          DateTime   @default(now())
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelReason       String?
+
+  account LogisticsAccount? @relation(fields: [accountId], references: [id])
+
+  @@index([date])
+  @@index([accountId])
+  @@index([refType, refId])
 }
 
 /// Logistika → «Realizatsiya»: tizimga reys bo'lib tushmagan jo'natma — dispetcher qo'lda kiritadi (`lib/realization-log.ts`).
@@ -3127,6 +3181,8 @@ model MechanicRequest {
   payee              String? // pul kimga: usta ismi (ta'mir, vulkanizatsiya) yoki haydovchi (naqd reys haqi)
   dueAt              DateTime? // DEFERRED: shu kuni tasdiqqa o'tadi va eslatma ketadi («N kunda berish»)
   tripId             String?               @unique // naqd reys haqi — qaysi reys (`lib/driver-trip-pay.ts`)
+  /// Logistika hisobidan berilgan bo'lsa — Logistika moliya yozuvi (kassaga tushmaydi, `cashTxId` bo'sh)
+  logisticsTxId      String?               @unique
 
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
   createdBy User     @relation("MechReqBy", fields: [createdById], references: [id])

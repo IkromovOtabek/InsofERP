@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CircleCheck, Clock, HandCoins, Wrench } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
-import { MECH_STATUS_COLOR, MECH_STATUS_SHORT, MECH_TABS, TARGET_LABEL, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
+import { MECH_STATUS_COLOR, MECH_STATUS_SHORT, MECH_TABS, TARGET_LABEL, factoryOnly, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
 import { money, dateTime } from "@/lib/format";
 import { Badge, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 
@@ -14,16 +14,18 @@ export default async function MexanikSorovlarPage({ searchParams }: { searchPara
   const { tab, q } = await searchParams;
   const t = mechTab(tab);
   const own = s.role === "MECHANIC" ? s.userId : null;
-  const [rows, c] = await Promise.all([mechanicList({ status: t.status, createdById: own, q }), mechanicCounts(own)]);
+  // Kassir — faqat zavod so'rovlari (logistika so'rovining pulini ish boshqaruvchi beradi)
+  const fo = factoryOnly(s.role);
+  const [rows, c] = await Promise.all([mechanicList({ status: t.status, createdById: own, q, factoryOnly: fo }), mechanicCounts(own, fo)]);
 
   return (
     <div>
       <PageHeader title={own ? "Mening so'rovlarim" : "Mexanik so'rovlari"}
-        subtitle="Mexanik Insof ECO ilovasidan pul so'raydi → ish boshqaruvchi tasdiqlaydi → kassa pul beradi. Tasdiqlanmagan so'rovga kassa pul bermaydi." />
+        subtitle="Mexanik Insof ECO ilovasidan pul so'raydi → ish boshqaruvchi tasdiqlaydi → pul beriladi: zavod so'rovini kassa, transport va reys haqini ish boshqaruvchi (zavod yoki logistika hisobidan)." />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Tasdiq kutmoqda" value={`${c.counts.NEW} ta`} hint={c.counts.NEW ? money(c.sums.NEW) : undefined} icon={Clock} tone={c.counts.NEW ? "warning" : "default"} href="/mexanik-sorovlar?tab=NEW" />
-        <StatCard label="Kassa kutmoqda" value={`${c.counts.APPROVED} ta`} hint={c.counts.APPROVED ? money(c.sums.APPROVED) : undefined} icon={HandCoins} tone={c.counts.APPROVED ? "info" : "default"} href="/mexanik-sorovlar?tab=APPROVED" />
+        <StatCard label="Pul berish kutmoqda" value={`${c.counts.APPROVED} ta`} hint={c.counts.APPROVED ? money(c.sums.APPROVED) : undefined} icon={HandCoins} tone={c.counts.APPROVED ? "info" : "default"} href="/mexanik-sorovlar?tab=APPROVED" />
         <StatCard label="Pul berilgan" value={`${c.counts.PAID} ta`} hint={money(c.sums.PAID)} icon={CircleCheck} tone="success" href="/mexanik-sorovlar?tab=PAID" />
         <StatCard label="Rad / bekor" value={`${c.counts.REJECTED + c.counts.CANCELLED} ta`} icon={Wrench} href="/mexanik-sorovlar?tab=REJECTED" />
       </div>

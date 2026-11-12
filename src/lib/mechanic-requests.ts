@@ -8,12 +8,18 @@ import { date, money } from "./format";
 import { accountBalances, cashOutflowError } from "./payments";
 import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
 import { removeRequestPhoto, saveRequestPhoto } from "./uploads";
+import { canDoByUserId } from "./auth";
+import { FACTORY_REQUEST_WHERE, isLogiAcc, isLogiRequest, writeLogiTx } from "./logistics-finance";
 
 /**
  * Mexanik so'rovi ("Kirim") — mexanik ta'mir / ehtiyot qism uchun pul so'raydi, Snabjeniye zanjiri kabi:
  *
  *   Mexanik so'raydi (NEW)  →  Ish boshqaruvchi tasdiqlaydi (APPROVED) yoki rad etadi (REJECTED)
  *   →  Kassa pul beradi (PAID): Kirim-Chiqimga chiqim, transport bo'lsa — transport xarajati ham.
+ *
+ * Logistika so'rovi (transport, usta puli, naqd reys haqi — `isLogiRequest`) — logistika moliyasi alohida (2026-11-12):
+ * pulni kassir emas, ish boshqaruvchi beradi (`logistika` → `fin_pay`), manba tanlab — zavod kassa/banki yoki logistika
+ * hisobi (`L:<id>`, kassaga tushmaydi). Kassir bu so'rovlarni ko'rmaydi va ular haqida xabar olmaydi (`lib/logistics-finance.ts`).
  *
  * Dispetcher ham shu oqim bilan usta pulini (ta'mir, vulkanizatsiya) so'raydi (Haydovchilar tabeli): «Joyida berish» — NEW;
  * «N kunda berish» — DEFERRED, muddat kuni NEW ga o'tadi va eslatma ketadi (`releaseDueRequests`).
@@ -44,7 +50,7 @@ export const TARGET_LABEL: Record<MechanicTarget, string> = { TRANSPORT: "Transp
 export const MECH_STATUS_LABEL: Record<MechanicRequestStatus, string> = {
   DEFERRED: "Muddat kutilmoqda",
   NEW: "Tasdiq kutilmoqda",
-  APPROVED: "Tasdiqlangan — kassa kutilmoqda",
+  APPROVED: "Tasdiqlangan — pul berish kutilmoqda",
   PAID: "Pul berildi",
   REJECTED: "Rad etildi",
   CANCELLED: "Bekor qilindi",
@@ -122,22 +128,27 @@ export async function mechanicRequest(id: string) {
   const r = await db.mechanicRequest.findUnique({ where: { id }, include: full });
   if (!r) return null;
   const ids = [r.decidedById, r.paidById].filter((x): x is string => !!x);
-  const [users, acc] = await Promise.all([
+  const [users, acc, lt] = await Promise.all([
     ids.length ? db.user.findMany({ where: { id: { in: ids } }, select: { id: true, fullName: true } }) : Promise.resolve([]),
     r.cashAccountId ? db.cashAccount.findUnique({ where: { id: r.cashAccountId }, select: { id: true, name: true, type: true } }) : Promise.resolve(null),
+    r.logisticsTxId ? db.logisticsTx.findUnique({ where: { id: r.logisticsTxId }, select: { docNo: true, account: { select: { name: true } } } }) : Promise.resolve(null),
   ]);
   const name = (uid: string | null) => (uid ? users.find((u) => u.id === uid)?.fullName ?? "—" : null);
-  return { ...r, decidedBy: name(r.decidedById), paidBy: name(r.paidById), cashAccount: acc };
+  return { ...r, decidedBy: name(r.decidedById), paidBy: name(r.paidById), cashAccount: acc, logistics: lt ? { docNo: lt.docNo, account: lt.account?.name ?? "Logistika hisobi" } : null };
 }
 export type MechDetail = NonNullable<Awaited<ReturnType<typeof mechanicRequest>>>;
 
-/** Ro'yxat: mexanik — faqat o'zinikini, qolganlar — hammasini. */
-export async function mechanicList(opts: { status?: MechanicRequestStatus[] | null; createdById?: string | null; q?: string | null; take?: number }) {
+/** Kim faqat zavod so'rovlarini ko'radi: kassir (logistika so'rovlari — ish boshqaruvchi va logistika moliyasi ishi). */
+export const factoryOnly = (role: Role) => role === "CASHIER";
+
+/** Ro'yxat: mexanik — faqat o'zinikini, kassir — faqat zavod so'rovlarini (`factoryOnly`), qolganlar — hammasini. */
+export async function mechanicList(opts: { status?: MechanicRequestStatus[] | null; createdById?: string | null; q?: string | null; take?: number; factoryOnly?: boolean }) {
   const q = opts.q?.trim();
   return db.mechanicRequest.findMany({
     where: {
       ...(opts.status ? { status: { in: opts.status } } : {}),
       ...(opts.createdById ? { createdById: opts.createdById } : {}),
+      ...(opts.factoryOnly ? FACTORY_REQUEST_WHERE : {}),
       ...(q ? { OR: [{ docNo: { contains: q, mode: "insensitive" } }, { object: { contains: q, mode: "insensitive" } }, { problem: { contains: q, mode: "insensitive" } }, { vehicle: { plate: { contains: q, mode: "insensitive" } } }] } : {}),
     },
     orderBy: { createdAt: "desc" },
@@ -147,8 +158,8 @@ export async function mechanicList(opts: { status?: MechanicRequestStatus[] | nu
 }
 
 /** Holat bo'yicha soni (chiplar uchun). */
-export async function mechanicCounts(createdById?: string | null) {
-  const g = await db.mechanicRequest.groupBy({ by: ["status"], where: createdById ? { createdById } : {}, _count: { _all: true }, _sum: { amount: true } });
+export async function mechanicCounts(createdById?: string | null, onlyFactory = false) {
+  const g = await db.mechanicRequest.groupBy({ by: ["status"], where: { ...(createdById ? { createdById } : {}), ...(onlyFactory ? FACTORY_REQUEST_WHERE : {}) }, _count: { _all: true }, _sum: { amount: true } });
   const by = (s: MechanicRequestStatus) => g.find((x) => x.status === s);
   const counts = Object.fromEntries((["DEFERRED", "NEW", "APPROVED", "PAID", "REJECTED", "CANCELLED"] as const).map((s) => [s, by(s)?._count._all ?? 0])) as Record<MechanicRequestStatus, number>;
   const sums = Object.fromEntries((["NEW", "APPROVED", "PAID"] as const).map((s) => [s, Number(by(s)?._sum.amount ?? 0)])) as Record<"NEW" | "APPROVED" | "PAID", number>;
@@ -251,7 +262,7 @@ export async function createMechanicRequest(input: MechInput, userId: string): P
   const body = `${subject} · ${problem} · ${money(amount)}${input.urgent ? " · SHOSHILINCH" : ""}`;
   notifyAfter(async () => {
     await notifyRoles(["SUPERVISOR"], { type: "KIRIM_NEW", title: `Mexanik so'rovi — ${r.docNo}`, body: `${body} — tasdiqlang yoki rad eting`, link: { key: "kirim", id: r.id } }, { except: userId });
-    await notifyRoles(["CASHIER"], { type: "KIRIM_NEW", title: `Mexanik so'rovi — ${r.docNo}`, body: `${body} — ish boshqaruvchi tasdig'i kutilmoqda`, link: { key: "kirim", id: r.id }, channel: "oddiy" }, { except: userId });
+    if (!isLogiRequest({ target: input.target, problem })) await notifyRoles(["CASHIER"], { type: "KIRIM_NEW", title: `Mexanik so'rovi — ${r.docNo}`, body: `${body} — ish boshqaruvchi tasdig'i kutilmoqda`, link: { key: "kirim", id: r.id }, channel: "oddiy" }, { except: userId });
   });
   return { id: r.id, docNo: r.docNo, note: "So'rov yuborildi — ish boshqaruvchi tasdig'ini kutmoqda" };
 }
@@ -270,11 +281,13 @@ export async function approveMechanicRequest(id: string, userId: string): Promis
   }).catch((e: Error) => { if (e instanceof MechError) return { error: e.message }; throw e; });
   if (res && "error" in res) return { error: res.error };
   const subject = mechSubject(r);
+  const logi = isLogiRequest(r);
   notifyAfter(async () => {
-    await notifyRoles(["CASHIER"], { type: "KIRIM_APPROVED", title: `Pul berish kerak — ${r.docNo}`, body: `${subject} · ${r.problem} · ${money(Number(r.amount))} — ish boshqaruvchi tasdiqladi`, link: { key: "kirim", id } }, { except: userId });
-    await notifyUsers([r.createdById === userId ? null : r.createdById], { type: "KIRIM_APPROVED", title: `So'rov tasdiqlandi — ${r.docNo}`, body: `${subject} · ${money(Number(r.amount))} — kassadan olishingiz mumkin`, link: { key: "kirim", id } });
+    // Logistika so'rovi puli — ish boshqaruvchida (direktor tasdiqlagan bo'lsa ham u beradi), zavodniki — kassada
+    await notifyRoles([logi ? "SUPERVISOR" : "CASHIER"], { type: "KIRIM_APPROVED", title: `Pul berish kerak — ${r.docNo}`, body: `${subject} · ${r.problem} · ${money(Number(r.amount))} — tasdiqlandi${logi ? ", Logistika moliya → «To'lovlar»" : ""}`, link: { key: "kirim", id } }, { except: userId });
+    await notifyUsers([r.createdById === userId ? null : r.createdById], { type: "KIRIM_APPROVED", title: `So'rov tasdiqlandi — ${r.docNo}`, body: `${subject} · ${money(Number(r.amount))} — ${logi ? "pulni ish boshqaruvchi beradi" : "kassadan olishingiz mumkin"}`, link: { key: "kirim", id } });
   });
-  return { id, docNo: r.docNo, note: "Tasdiqlandi — kassa pul beradi" };
+  return { id, docNo: r.docNo, note: logi ? "Tasdiqlandi — endi pulni bering (zavod yoki logistika hisobidan)" : "Tasdiqlandi — kassa pul beradi" };
 }
 
 export async function rejectMechanicRequest(id: string, reason: string, userId: string): Promise<MechResult> {
@@ -292,8 +305,8 @@ export async function rejectMechanicRequest(id: string, reason: string, userId: 
   notifyAfter(() => notifyUsers([r.createdById === userId ? null : r.createdById], {
     type: "KIRIM_REJECTED", title: `So'rov rad etildi — ${r.docNo}`, body: `${mechSubject(r)} · ${money(Number(r.amount))} — sabab: ${why}`, link: { key: "kirim", id },
   }));
-  // Kassaga yaratilganda «tasdiq kutilmoqda» xabari ketgan — endi pul berilmasligini bilsin
-  notifyAfter(() => notifyRoles(["CASHIER"], {
+  // Kassaga yaratilganda «tasdiq kutilmoqda» xabari ketgan — endi pul berilmasligini bilsin (logistika so'rovi kassaga bormaydi)
+  if (!isLogiRequest(r)) notifyAfter(() => notifyRoles(["CASHIER"], {
     type: "KIRIM_REJECTED", title: `So'rov rad etildi — ${r.docNo}`, body: `${mechSubject(r)} · pul berilmaydi`, link: { key: "kirim", id }, channel: "oddiy",
   }, { except: userId }));
   return { id, docNo: r.docNo, note: "So'rov rad etildi" };
@@ -310,6 +323,13 @@ export async function payMechanicRequest(id: string, input: { cashAccountId: str
   const r = await db.mechanicRequest.findUnique({ where: { id }, include: { vehicle: { select: { plate: true } }, createdBy: { select: { fullName: true } } } });
   const err = guard(r, ["APPROVED"]);
   if (err || !r) return { error: err ?? "Topilmadi" };
+  const logi = isLogiRequest(r);
+  // Logistika so'rovi puli — faqat «Logistika pulini berish» huquqi bilan (ish boshqaruvchi, direktor); kassir bera olmaydi
+  if (logi && !(await canDoByUserId(userId, "logistika", "fin_pay"))) return { error: "Logistika so'rovining pulini ish boshqaruvchi beradi" };
+  if (input.cashAccountId && isLogiAcc(input.cashAccountId)) {
+    if (!logi) return { error: "Logistika hisobidan faqat logistika so'rovi (transport, reys haqi) to'lanadi" };
+    return payFromLogistics(r, input.cashAccountId, clean(input.note, 300), userId);
+  }
   const acc = input.cashAccountId ? await db.cashAccount.findUnique({ where: { id: input.cashAccountId } }) : null;
   if (!acc || !acc.isActive) return { error: "Kassa / hisob tanlanmagan" };
   const amount = Number(r.amount);
@@ -354,6 +374,45 @@ export async function payMechanicRequest(id: string, input: { cashAccountId: str
   return { id, docNo: r.docNo, note: `Pul berildi: ${money(amount)} · ${acc.name}` };
 }
 
+/**
+ * Logistika so'rovi logistika hisobidan: kassaga hech narsa yozilmaydi, Logistika moliya yozuvi (LM-…) ochiladi.
+ * Transport ta'miri — transport xarajati ham (Foyda hisobiga); naqd reys haqi — yo'q (reys narxi orqali hisobda bor).
+ */
+async function payFromLogistics(r: NonNullable<Awaited<ReturnType<typeof db.mechanicRequest.findUnique>>> & { vehicle: { plate: string } | null; createdBy: { fullName: string } }, source: string, extra: string | null, userId: string): Promise<MechResult> {
+  const amount = Number(r.amount);
+  const subject = mechSubject(r);
+  const now = new Date();
+  const tripPay = !!r.tripId || r.problem === TRIP_PAY;
+  const driverId = r.tripId ? (await db.trip.findUnique({ where: { id: r.tripId }, select: { driverId: true } }))?.driverId ?? null : null;
+  const res = await db.$transaction(async (tx) => {
+    const u = await tx.mechanicRequest.updateMany({ where: { id: r.id, status: "APPROVED" }, data: { status: "PAID", paidById: userId, paidAt: now, cashAccountId: null } });
+    if (u.count !== 1) throw new MechError(STALE);
+    let teId: string | null = null;
+    if (r.target === "TRANSPORT" && r.vehicleId && !tripPay) {
+      const te = await tx.transportExpense.create({
+        data: { date: now, kind: EXPENSE_KIND_OF[r.problem] ?? "OTHER", vehicleId: r.vehicleId, amount, note: `${r.docNo} · ${r.problem}${r.payee ? ` · ${r.payee}` : ""}${r.note ? ` · ${r.note}` : ""}`.slice(0, 500), createdById: userId },
+      });
+      await audit(tx, userId, "CREATE", "TransportExpense", te.id, undefined, te);
+      teId = te.id;
+    }
+    const w = await writeLogiTx(tx, {
+      type: "EXPENSE", date: now, amount, category: tripPay ? "Haydovchi haqi" : r.problem === "Vulkanizatsiya" ? "Vulkanizator" : r.problem === "Ehtiyot qism" || r.problem === "Shina" || r.problem === "Akkumulyator" || r.problem === "Moy almashtirish" ? "Ehtiyot qism" : r.target === "TRANSPORT" ? "Ta'mir" : "Boshqa chiqim",
+      source, vehicleId: r.vehicleId, driverId, counterparty: r.payee ?? r.createdBy.fullName,
+      note: [`Mexanik so'rovi ${r.docNo}`, `${subject} · ${r.problem}`, extra].filter(Boolean).join(" · "),
+      refType: MECH_REF, refId: r.id, skipExpense: true,
+    }, userId).catch((e: Error) => { throw new MechError(e.message); });
+    if (teId) await tx.logisticsTx.update({ where: { id: w.id }, data: { transportExpenseId: teId } });
+    await tx.mechanicRequest.update({ where: { id: r.id }, data: { logisticsTxId: w.id, transportExpenseId: teId } });
+    await audit(tx, userId, "STATUS_CHANGE", "MechanicRequest", r.id, { status: r.status }, { status: "PAID", docNo: r.docNo, amount, logisticsTxId: w.id, logisticsDoc: w.docNo, transportExpenseId: teId });
+    return w;
+  }).catch((e: Error) => { if (e instanceof MechError) return { error: e.message }; throw e; });
+  if ("error" in res) return { error: res.error };
+  notifyAfter(() => notifyUsers([r.createdById === userId ? null : r.createdById], {
+    type: "KIRIM_PAID", title: `Pul berildi — ${r.docNo}`, body: `${subject} · ${money(amount)} · logistika hisobidan`, link: { key: "kirim", id: r.id },
+  }));
+  return { id: r.id, docNo: r.docNo, note: `Pul berildi: ${money(amount)} · logistika hisobidan (${res.docNo})` };
+}
+
 // ───────────────────────── 4. Mexanik: bekor qilish ─────────────────────────
 
 /** Faqat o'z so'rovi va faqat tasdiqdan oldin (NEW). */
@@ -371,7 +430,7 @@ export async function cancelMechanicRequest(id: string, userId: string): Promise
   notifyAfter(() => notifyRoles(["SUPERVISOR"], {
     type: "KIRIM_CANCELLED", title: `So'rov bekor qilindi — ${r.docNo}`, body: `${mechSubject(r)} · ${money(Number(r.amount))} — mexanik o'zi bekor qildi`, link: { key: "kirim", id }, channel: "oddiy",
   }, { except: userId }));
-  notifyAfter(() => notifyRoles(["CASHIER"], {
+  if (!isLogiRequest(r)) notifyAfter(() => notifyRoles(["CASHIER"], {
     type: "KIRIM_CANCELLED", title: `So'rov bekor qilindi — ${r.docNo}`, body: `${mechSubject(r)} · pul berilmaydi`, link: { key: "kirim", id }, channel: "oddiy",
   }, { except: userId }));
   return { id, docNo: r.docNo, note: "So'rov bekor qilindi" };
@@ -399,22 +458,25 @@ const DUE_ROLES: Role[] = ["DISPATCHER", "SUPERVISOR", "CASHIER", "MECHANIC"];
 export async function releaseDueRequests(now = new Date()): Promise<number> {
   const due = await db.mechanicRequest.findMany({
     where: { status: "DEFERRED", dueAt: { lte: now } }, orderBy: { createdAt: "asc" }, take: 500,
-    select: { id: true, docNo: true, amount: true, payee: true, problem: true, createdById: true, vehicle: { select: { plate: true } } },
+    select: { id: true, docNo: true, amount: true, payee: true, problem: true, target: true, tripId: true, createdById: true, vehicle: { select: { plate: true } } },
   });
-  const groups = new Map<string, { ids: string[]; sum: number; plates: Set<string>; problems: Set<string> }>();
+  const groups = new Map<string, { ids: string[]; sum: number; plates: Set<string>; problems: Set<string>; logi: boolean }>();
   for (const r of due) {
     const u = await db.mechanicRequest.updateMany({ where: { id: r.id, status: "DEFERRED" }, data: { status: "NEW" } });
     if (u.count !== 1) continue;
     await audit(db, r.createdById, "STATUS_CHANGE", "MechanicRequest", r.id, { status: "DEFERRED" }, { status: "NEW", reason: "muddat keldi" });
     const key = r.payee ?? "Usta";
-    const g = groups.get(key) ?? { ids: [], sum: 0, plates: new Set<string>(), problems: new Set<string>() };
+    const g = groups.get(key) ?? { ids: [], sum: 0, plates: new Set<string>(), problems: new Set<string>(), logi: true };
+    if (!isLogiRequest(r)) g.logi = false;
     g.ids.push(r.id); g.sum += Number(r.amount); if (r.vehicle) g.plates.add(r.vehicle.plate); g.problems.add(r.problem);
     groups.set(key, g);
   }
   for (const [payee, g] of groups) {
-    await notifyRoles(DUE_ROLES, {
+    // Usta puli — logistika ishi: kassirga xabar faqat zavod so'rovi bo'lsa (`isLogiRequest`)
+    const logi = g.logi;
+    await notifyRoles(logi ? DUE_ROLES.filter((x) => x !== "CASHIER") : DUE_ROLES, {
       type: "KIRIM_DUE", title: `${payee} ga remont puli berish vaqti keldi`,
-      body: `${g.ids.length} ta xarajat (${[...g.problems].join(", ")}${g.plates.size ? ` · ${[...g.plates].join(", ")}` : ""}) · jami ${money(g.sum)} — ish boshqaruvchi tasdiqlaydi, keyin kassa beradi`,
+      body: `${g.ids.length} ta xarajat (${[...g.problems].join(", ")}${g.plates.size ? ` · ${[...g.plates].join(", ")}` : ""}) · jami ${money(g.sum)} — ish boshqaruvchi tasdiqlaydi, keyin ${logi ? "o'zi beradi (zavod yoki logistika hisobidan)" : "kassa beradi"}`,
       link: { key: "kirim", id: g.ids[0]! },
     });
   }

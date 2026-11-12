@@ -13,12 +13,15 @@ import { costOptions } from "../cost-data";
 import { cancelFuel } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 export const dynamic = "force-dynamic";
 
 /** Yoqilg'i (TZ 12): zapravkalar, transport va haydovchi kesimida litr/summa, haqiqiy sarf. */
 export default async function FuelPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; vehicleId?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
+  const ses = await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
+  // Davr summasi va transport bo'yicha summa — faqat Logistika moliyani ko'radiganlarga; zapravka summasi qatorda qoladi
+  const m = canSeeLogiMoney(ses);
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [logs, opts, price] = await Promise.all([
@@ -56,7 +59,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
       <RangeForm base="/logistika/yoqilgi" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Quyildi" value={`${fmtNum(liters, 0)} l`} hint={`${active.length} zapravka`} icon={Droplets} tone="brand" href="#zapravkalar" />
-        <StatCard label="Summa" value={moneyShort(sum)} icon={Coins} href="#zapravkalar" />
+        {m && <StatCard label="Summa" value={moneyShort(sum)} icon={Coins} href="#zapravkalar" />}
         <StatCard label="O'rtacha narx" value={liters ? `${fmtNum(sum / liters, 0)} so'm/l` : "—"} icon={Fuel} href="#zapravkalar" />
         <StatCard label="Transport soni" value={byV.size} icon={Gauge} href="#transport-kesimida" />
       </div>
@@ -65,7 +68,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
         <Card padded={false} className="xl:col-span-2">
           <div id="transport-kesimida" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Transport kesimida" icon={Gauge} /></div>
           <Table>
-            <thead><tr><Th>Transport</Th><Th right>Litr</Th><Th right>Summa</Th><Th right>l/100 km</Th></tr></thead>
+            <thead><tr><Th>Transport</Th><Th right>Litr</Th>{m && <Th right>Summa</Th>}<Th right>l/100 km</Th></tr></thead>
             <tbody>
               {byV.size === 0 && <Empty text="Ma'lumot yo'q" />}
               {[...byV.entries()].sort((a, b) => b[1].sum - a[1].sum).map(([id, x]) => {
@@ -74,7 +77,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
                   <Tr key={id}>
                     <Td><Link href={`/logistika/transport/${x.vehicleId}`} className="font-medium tabular hover:underline">{x.plate}</Link></Td>
                     <Td right className="tabular">{fmtNum(x.liters, 0)}</Td>
-                    <Td right className="tabular">{moneyShort(x.sum)}</Td>
+                    {m && <Td right className="tabular">{moneyShort(x.sum)}</Td>}
                     <Td right className={`tabular ${per != null && x.norm && per > x.norm * 1.1 ? "font-medium text-red-700" : ""}`}>{per != null ? fmtNum(per, 1) : "—"}{x.norm ? <span className="text-xs text-slate-400"> / {fmtNum(x.norm, 1)}</span> : null}</Td>
                   </Tr>
                 );

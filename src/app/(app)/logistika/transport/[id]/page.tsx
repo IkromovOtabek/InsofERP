@@ -19,6 +19,7 @@ import { PhaseBadge, TripLink, VehicleLiveBadge } from "../../ui";
 import { VehicleStatusForm } from "../../../drivers/vehicle-status-form";
 import { cancelVehicleService } from "../../actions";
 import { ServiceForm, VehicleExpenseForm } from "./service-forms";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +89,7 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
       ]} />
 
       {report ? (
-        <VehicleActivity r={report} period={period} base={base} plate={v.plate} tripsClosed={tripsClosed} ordersOpen={pathAllowed("/orders", s.role, s.perms)} />
+        <VehicleActivity r={report} period={period} base={base} plate={v.plate} tripsClosed={tripsClosed} ordersOpen={pathAllowed("/orders", s.role, s.perms)} money={canSeeLogiMoney(s)} />
       ) : <>
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
         {dual ? (

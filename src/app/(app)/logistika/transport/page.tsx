@@ -12,6 +12,7 @@ import { Badge, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, 
 import { VehicleStatusForm } from "../../drivers/vehicle-status-form";
 import { TripLink, VehicleLiveBadge } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,8 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
   // Holatni (ta'mir / bekor) mexanik va dispetcher ham belgilaydi
   const canStatus = canManage || canDo(s, "logistika", "service");
   const tripsClosed = !pathAllowed("/trips", s.role, s.perms);
+  // Xarajat, daromad, foyda ustunlari — faqat Logistika moliyani ko'radiganlarga (direktor, ish boshqaruvchi, mexanik)
+  const showMoney = canSeeLogiMoney(s);
   const due = await vehicleServiceDue();
   const dueBy = new Map<string, typeof due>();
   for (const d of due) dueBy.set(d.vehicleId, [...(dueBy.get(d.vehicleId) ?? []), d]);
@@ -89,7 +92,7 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
 
       <Card padded={false}>
         <Table>
-          <thead><tr><Th>Transport</Th><Th>Joriy holat</Th><Th>Haydovchi</Th><Th right>Sig'im</Th><Th>GPS</Th><Th>Tex. ko'rik</Th><Th>Sug'urta</Th><Th right>Reys / zayavka</Th><Th>Tashilgan yuk</Th><Th right>Xarajat</Th><Th right>Daromad</Th><Th right>Foyda</Th><Th>Texnik holat</Th></tr></thead>
+          <thead><tr><Th>Transport</Th><Th>Joriy holat</Th><Th>Haydovchi</Th><Th right>Sig'im</Th><Th>GPS</Th><Th>Tex. ko'rik</Th><Th>Sug'urta</Th><Th right>Reys / zayavka</Th><Th>Tashilgan yuk</Th>{showMoney && <><Th right>Xarajat</Th><Th right>Daromad</Th><Th right>Foyda</Th></>}<Th>Texnik holat</Th></tr></thead>
           <tbody>
             {shown.length === 0 && <Empty text="Transport yo'q" icon={Truck} />}
             {shown.map(({ v, live }) => {
@@ -110,9 +113,11 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
                   <Td className="text-sm">{docBadge(v.insuranceUntil)}</Td>
                   <Td right className="tabular">{p?.trips ? <>{p.trips}<div className="text-xs text-slate-500">{p.orders} zayavka · {p.days} kun</div></> : "—"}</Td>
                   <Td className="whitespace-nowrap text-sm tabular">{p?.trips ? fmtLoad(p.load) : "—"}</Td>
-                  <Td right className="tabular">{p?.total ? moneyShort(p.total) : "—"}</Td>
-                  <Td right className="tabular">{p?.revenue ? moneyShort(p.revenue) : "—"}</Td>
-                  <Td right className={`tabular font-medium ${p && p.profit < 0 ? "text-red-600" : p?.profit ? "text-emerald-700" : ""}`}>{p && (p.total || p.revenue) ? moneyShort(p.profit) : "—"}</Td>
+                  {showMoney && <>
+                    <Td right className="tabular">{p?.total ? moneyShort(p.total) : "—"}</Td>
+                    <Td right className="tabular">{p?.revenue ? moneyShort(p.revenue) : "—"}</Td>
+                    <Td right className={`tabular font-medium ${p && p.profit < 0 ? "text-red-600" : p?.profit ? "text-emerald-700" : ""}`}>{p && (p.total || p.revenue) ? moneyShort(p.profit) : "—"}</Td>
+                  </>}
                   <Td>{canStatus && v.isActive ? <VehicleStatusForm vehicleId={v.id} status={v.status} note={v.statusNote} /> : <Badge>{VEHICLE_LIVE[live].label}</Badge>}</Td>
                 </Tr>
               );

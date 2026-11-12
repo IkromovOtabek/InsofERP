@@ -163,7 +163,7 @@ export function pendingApprovalWhere() {
 }
 
 /** Oylikka tushadigan reys: turi yo'q (eski) yoki oylik va tasdiqlangan. Naqd — kassadan beriladi, oylikka kirmaydi. */
-export const payrollTripWhere = { pricedAt: { not: null }, OR: [{ payType: null }, { payType: "PAYROLL" as const, payApprovedAt: { not: null } }] };
+export const payrollTripWhere = { pricedAt: { not: null }, payLogiTxId: null, OR: [{ payType: null }, { payType: "PAYROLL" as const, payApprovedAt: { not: null } }] };
 
 export async function unpricedCount(): Promise<number> {
   return db.trip.count({ where: unpricedWhere() });
@@ -302,7 +302,7 @@ export async function approveTripPays(tripIds: string[], userId: string): Promis
     if (t.payType === "CASH") { cashN++; cashSum += amount; } else { payrollN++; payrollSum += amount; }
   }
   notifyAfter(async () => {
-    if (cashN) await notifyRoles(["CASHIER"], { type: "KIRIM_APPROVED", title: `Haydovchiga naqd reys haqi: ${cashN} ta`, body: `Jami ${money(cashSum)} — ish boshqaruvchi tasdiqladi, Mexanik so'rovlari → «Tasdiqlangan»`, link: { key: "trip-pay", id: trips[0]!.id } }, { except: userId });
+    if (cashN) await notifyRoles(["SUPERVISOR"], { type: "KIRIM_APPROVED", title: `Haydovchiga naqd reys haqi: ${cashN} ta`, body: `Jami ${money(cashSum)} — ish boshqaruvchi tasdiqlandi, pulni bering: Logistika moliya → «To'lovlar» (zavod yoki logistika hisobidan)`, link: { key: "trip-pay", id: trips[0]!.id } }, { except: userId });
     if (payrollN) await notifyRoles(["ACCOUNTING"], { type: "TRIP_PAY_PAYROLL", title: `Oylikka reys haqi: ${payrollN} ta`, body: `Jami ${money(payrollSum)} — tasdiqlandi, oy yakuni vedomostiga tushadi`, link: { key: "trip-pay", id: trips[0]!.id }, channel: "oddiy" }, { except: userId });
   });
   return { done, failed: tripIds.length - done };
@@ -331,7 +331,7 @@ export async function rejectTripPay(tripId: string, reason: string, userId: stri
  * — oy yakuni vedomosti, `lib/hr/payroll.ts`. Naqd berilganlari kirmaydi.
  */
 export async function tripPayByDriver(from: Date, to: Date, employeeIds: string[]): Promise<Map<string, { trips: number; km: number; sum: number; unpriced: number }>> {
-  const entryBase = { driverId: { in: employeeIds }, cancelledAt: null, date: { gte: from, lt: to }, payType: "PAYROLL" as const, payAmount: { gt: 0 } };
+  const entryBase = { driverId: { in: employeeIds }, cancelledAt: null, date: { gte: from, lt: to }, payType: "PAYROLL" as const, payAmount: { gt: 0 }, payLogiTxId: null };
   const [priced, unpriced, manual, manualWait] = await Promise.all([
     db.trip.groupBy({ by: ["driverId"], where: { driverId: { in: employeeIds }, status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...payrollTripWhere }, _count: true, _sum: { payAmount: true, payKm: true } }),
     // Narxsiz va oylikka tasdiq kutayotganlar — vedomostda «hali tushmagan» bo'lib ogohlantiriladi

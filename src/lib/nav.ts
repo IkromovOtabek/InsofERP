@@ -101,6 +101,9 @@ export const NAV: NavItem[] = [
   { href: "/logistika/hisobotlar",  label: "Hisobotlar",         roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuHide: ["ACCOUNTING"] },
   { href: "/logistika/analitika",   label: "Analitika",          roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
+  // Logistika moliyasi alohida hisob: foyda (dastavka − tannarx), kirim-chiqim (zavod va logistika hisobidan), to'lovlar.
+  // Summalar faqat direktor, ish boshqaruvchi va mexanikka (`lib/logistics-finance.ts`); logistika va dispetcher ko'rmaydi
+  { href: "/logistika/moliya",      label: "Logistika moliya",   roles: ["SUPERVISOR", "MECHANIC"], group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi).
   // Ish boshqaruvchi — ko'rish uchun: «Sklad holati — xomashyo» va hovli bosh sahifadan shu yerga ko'chgan; amallar o'z ruxsatlari bilan yopiq
   { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC", "SUPERVISOR"], group: "Sklad", menuHide: ["LOGISTICS"] },
@@ -174,8 +177,9 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" }] },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ombor/xomashyo", label: "Xom-ashyo balansi" }, { href: "/bi-tahlil/ombor/tayyor-mahsulot", label: "Tayyor mahsulot" }] },
   // Logistika (zayavka, jo'natish, transport ehtiyoji) va Mexanik (texnika: ta'mir, ehtiyot qism, texnik xizmat) — alohida bandlar
-  { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/logistika/avtotransport", label: "Avtotransport tahlili" }] },
-  { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: BI_ROLES, group: "Tahlil" },
+  // Logistika va mexanik summalari (xarajat, daromad, foyda) — faqat direktor; ish boshqaruvchi va mexanik «Logistika moliya» da ko'radi
+  { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: ["DIRECTOR"], group: "Tahlil", children: [{ href: "/bi-tahlil/logistika/avtotransport", label: "Avtotransport tahlili" }] },
+  { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: ["DIRECTOR"], group: "Tahlil" },
   { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },

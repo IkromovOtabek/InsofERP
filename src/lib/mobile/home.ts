@@ -21,6 +21,7 @@ import { fmtNum, opAt } from "@/lib/format";
 import { prodFilter } from "@/lib/production";
 import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
 import { MECH_STATUS_SHORT, MECH_STATUS_TONE, mechSubject } from "@/lib/mechanic-requests";
+import { FACTORY_REQUEST_WHERE, LOGI_REQUEST_WHERE, canLogiPay, canSeeLogiMoney } from "@/lib/logistics-finance";
 import type { MechanicRequestStatus } from "@/generated/prisma";
 import { soleUnit } from "@/lib/unit";
 import { day, inUnit, money, num, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
@@ -290,9 +291,9 @@ async function supplySection(title: string, empty: string, status: ("NEW" | "PRI
  * Mexanik so'rovlari ("Kirim") — ish boshqaruvchida tasdiq kutayotganlar, kassada pul kutayotganlar,
  * mexanikda o'zining ochiq so'rovlari. Qator bosilsa — so'rov kartochkasi (`kirim`).
  */
-async function kirimSection(title: string, empty: string, status: MechanicRequestStatus[], createdById?: string): Promise<HomeSection> {
+async function kirimSection(title: string, empty: string, status: MechanicRequestStatus[], createdById?: string, scope?: object): Promise<HomeSection> {
   const rows = await db.mechanicRequest.findMany({
-    where: { status: { in: status }, ...(createdById ? { createdById } : {}) },
+    where: { status: { in: status }, ...(createdById ? { createdById } : {}), ...(scope ?? {}) },
     orderBy: [{ urgent: "desc" }, { createdAt: "asc" }], take: 10,
     include: { vehicle: { select: { plate: true } }, createdBy: { select: { fullName: true } } },
   });
@@ -625,6 +626,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       // Mexanik pul so'rovlari — tasdig'ingizni kutmoqda (bo'lsa — ro'yxatlar boshida)
       if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { status: "NEW" } }))) sections.push(await kirimSection("Mexanik so'rovlari — tasdiq kutilmoqda", "", ["NEW"]));
+      // Logistika so'rovlari (transport, reys haqi) — tasdiqlangan, pulni ish boshqaruvchi beradi (zavod yoki logistika hisobidan)
+      if (listAllowed(user, "kirim") && canLogiPay(user) && (await db.mechanicRequest.count({ where: { status: "APPROVED", ...LOGI_REQUEST_WHERE } }))) sections.push(await kirimSection("Logistika — pul berish kerak", "", ["APPROVED"], undefined, LOGI_REQUEST_WHERE));
       // Reys haqi tasdig'i (naqd — kassaga, oylik — vedomostga) — bildirishnoma shu kartochkani ochadi
       if (listAllowed(user, "trip-pay")) { const tp = await tripPayApproveSection(); if (tp) sections.unshift(tp); }
       sections.push(
@@ -646,7 +649,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "waiting", label: "Kutayotgan buyurtma", value: String(k.waitingOrders), hint: k.waitingQty ? `${k.waitingQty} biriktirilmagan` : undefined, tone: k.waitingOrders ? "warning" : "success", icon: "calendar", open: { key: "dash", id: "waiting.day" } },
         { key: "late", label: "Kechikmoqda", value: String(k.late), tone: k.late ? "danger" : "success", icon: "alarm" },
         { key: "m3", label: "Bugungi beton", value: `${k.concreteM3} m³`, hint: `o'rt. ${minutesLabel(k.avgDeliveryMin)}`, tone: "success", icon: "cube", open: { key: "dash", id: "delivered.day" } },
-        { key: "cost", label: "Transport xarajati", value: money(k.cost), tone: "info", icon: "wallet" },
+        // Transport xarajati summasi — faqat Logistika moliyani ko'radiganlarga (`canSeeLogiMoney`)
+        ...(canSeeLogiMoney(user) ? [{ key: "cost", label: "Transport xarajati", value: money(k.cost), tone: "info" as const, icon: "wallet" }] : []),
       );
       if (d.alerts.length) {
         // Bir reysga bir nechta ogohlantirish bo'lishi mumkin (kechikish + muammo) — qator id reys id'si,
@@ -823,7 +827,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
       if (fundWait) sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
       // Mexanik so'rovlari: ish boshqaruvchi tasdiqlagan — pul berish kerak
-      if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { status: "APPROVED" } }))) sections.push(await kirimSection("Mexanik so'rovlari — pul berish kerak", "", ["APPROVED"]));
+      // Kassir — faqat zavod so'rovlari (logistika so'rovining pulini ish boshqaruvchi beradi)
+      if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { status: "APPROVED", ...FACTORY_REQUEST_WHERE } }))) sections.push(await kirimSection("Mexanik so'rovlari — pul berish kerak", "", ["APPROVED"], undefined, FACTORY_REQUEST_WHERE));
       sections.push(
         // Kassir shu yerdan schyotni ochib to'lovni qabul qiladi
         { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: openInvoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${opAt(i.date, i.createdAt, day)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" as Tone : "danger" as Tone }; }) },

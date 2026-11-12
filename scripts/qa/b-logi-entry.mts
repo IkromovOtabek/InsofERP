@@ -29,8 +29,11 @@ const base = await avtoRow();
 // ── «Oylik hisoblash»: reysi yo'q, ECO'siz haydovchi ham ro'yxatda; transport kesimi ──
 let g = await disp.get("/logistika/tabel?bolim=oylik");
 check(g.status === 200 && g.text.includes(NAME), "oylik hisoblash: reysi yo'q ECO'siz haydovchi ham ko'rinadi", g.status);
+// Transport kesimi (kirim/chiqim/foyda) — Logistika moliya summasi: ish boshqaruvchi ko'radi, dispetcher — yo'q (2026-11-12)
+g = await prorab.get("/logistika/tabel?bolim=oylik&kesim=transport");
+check(g.status === 200 && g.text.includes(plate) && g.text.includes("Foyda"), "oylik hisoblash: transport kesimi (kirim/chiqim/foyda) ish boshqaruvchiga ochildi", g.status);
 g = await disp.get("/logistika/tabel?bolim=oylik&kesim=transport");
-check(g.status === 200 && g.text.includes(plate), "oylik hisoblash: transport kesimi (kirim/chiqim/foyda) ochildi", g.status);
+check(g.status === 200 && g.text.includes("Logistika moliyada") && !g.text.includes("Jami chiqim"), "oylik hisoblash: dispetcherga transport foydasi ko'rinmaydi", g.status);
 
 // ── Tekshiruvlar ──
 const entry = (o: Record<string, string | number> = {}) => fd({ date: today, driverId: DRV, vehicleId: veh, note: "QA zavoddan tashqari ish", clientToken: token(), ...o });
@@ -109,15 +112,18 @@ check(/allaqachon/.test(r.error ?? ""), "ikkinchi marta bekor qilinmaydi", r.err
 a = await avtoRow();
 check(Math.round(a.revenue - base.revenue) === 500000, "bekor qilingan kirim avtotransportdan chiqdi", a.revenue - base.revenue);
 
-// ── Kassa naqd haqni beradi: kategoriya «Ish haqi», transport xarajatiga qayta yozilmaydi ──
+// ── Naqd haqni ish boshqaruvchi beradi (logistika moliyasi, 2026-11-12) — zavod hisobidan tanlasa: kategoriya «Ish haqi»,
+//    transport xarajatiga qayta yozilmaydi. Kassir bu so'rovni to'lay olmaydi ──
 const mechId = q1(`select "mechanicRequestId" from "LogisticsEntry" where id=${lit(eCash)}`)!;
 const bank = q(`select id, "allowOverdraft" from "CashAccount" where type='BANK' and "isActive" order by name limit 1`)[0];
 if (bank) {
   q(`update "CashAccount" set "allowOverdraft"=true where id=${lit(bank[0]!)}`);
   r = await kassa.action("(app)/mexanik-sorovlar/actions#pay", [mechId, undefined, fd({ cashAccountId: bank[0]! })], `/mexanik-sorovlar/${mechId}`);
+  check(!r.ok, "kassir logistika naqd haqini to'lay olmaydi", r.error);
+  r = await prorab.action("(app)/mexanik-sorovlar/actions#payLogi", [mechId, undefined, fd({ cashAccountId: bank[0]! })], `/mexanik-sorovlar/${mechId}`);
   q(`update "CashAccount" set "allowOverdraft"=${bank[1] === "t"} where id=${lit(bank[0]!)}`);
   const paid = q(`select m.status, c.category, m."transportExpenseId" from "MechanicRequest" m left join "CashTransaction" c on c.id=m."cashTxId" where m.id=${lit(mechId)}`)[0];
-  check(paid?.[0] === "PAID" && paid[1] === "Ish haqi" && !paid[2], "kassa berdi: chiqim «Ish haqi», transport xarajati yozilmadi", [r.error, paid]);
+  check(paid?.[0] === "PAID" && paid[1] === "Ish haqi" && !paid[2], "ish boshqaruvchi zavod hisobidan berdi: chiqim «Ish haqi», transport xarajati yozilmadi", [r.error, paid]);
   a = await avtoRow();
   check(Math.round(a.pay - base.pay) === 450000, "to'langandan keyin ham haq bir marta sanaladi", a.pay - base.pay);
 }
