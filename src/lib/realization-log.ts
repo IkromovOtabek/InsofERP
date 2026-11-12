@@ -9,6 +9,7 @@ import { matchKey, num, numMoney, parseDate, str, valueMapper, type ValueMaps } 
 import { dayField, numIn } from "@/lib/logistics-admin";
 import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
 import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-sheet";
+import { nextCatalogCode } from "@/lib/numbering";
 
 /**
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
@@ -27,8 +28,9 @@ import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-she
  *    QQS — perechisleniyeda 12% (miqdor × narx dan, dastavkasiz). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
  *  · Summa (QQSsiz) = miqdor × narx + dastavka; Jami = Summa + QQS (`lib/realization.ts` bilan bitta qoida).
  *  · Excel'dan import: varaqdagi qatorlar qo'lda qator bo'lib tushadi. Reestrda bori (reys yoki avval kiritilgan) o'tkazib
- *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`). Ro'yxatda yo'q mijoz/mahsulot
- *    ham nomi bilan qo'shiladi; o'qib bo'lmaydigan qator (sana, to'lov turi, miqdor) o'tkazib yuboriladi — qolganini to'xtatmaydi.
+ *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`). Ro'yxatda yo'q mijoz nomi bilan
+ *    qo'shiladi, ro'yxatda yo'q mahsulot katalogga ham qo'shiladi; o'qib bo'lmaydigan qator (sana, to'lov turi, miqdor)
+ *    o'tkazib yuboriladi — qolganini to'xtatmaydi.
  */
 
 export type LogSource = "AUTO" | "MANUAL";
@@ -514,9 +516,11 @@ export async function saveRealizationLineField(key: string, field: LineCell, val
 export type ImportRow = Record<string, unknown>;
 /**
  * `problems` — o'qilmagan va qo'shilmagan qatorlar (sabab bilan); `guessedUnits` — ro'yxatda yo'q mahsulot o'lchovi
- * ko'rsatilmagan yoki tanilmagan, nomidan qo'yilgan qatorlar soni.
+ * ko'rsatilmagan yoki tanilmagan, nomidan qo'yilgan qatorlar soni; `newProducts` — katalogga qo'shilgan mahsulotlar nomi.
  */
-export type ImportResult = { ok: true; added: number; skipped: number; problems: string[]; guessedUnits: number; from: Date; to: Date } | { error: string };
+export type ImportResult =
+  | { ok: true; added: number; skipped: number; problems: string[]; guessedUnits: number; newProducts: string[]; from: Date; to: Date }
+  | { error: string };
 
 const IMPORT_MAX = 3000;
 const DAY = 86_400_000;
@@ -561,7 +565,8 @@ const sameQty = (a: Seen, b: Seen) => Math.abs(a.qty - b.qty) < 0.0005;
 /**
  * Varaqdagi jo'natmalar → qo'lda qatorlar (bitta formadagi qoidalar bilan).
  * Xato qator importni to'xtatmaydi: sana, to'lov turi, xaridor yoki miqdori o'qilmagan qator sababi bilan `problems` ga tushadi,
- * qolganlari yoziladi. Ro'yxatda yo'q xaridor/mahsulot — xato emas, nomi bilan qo'shiladi (o'lchovi tanilmasa nomidan).
+ * qolganlari yoziladi. Ro'yxatda yo'q xaridor — xato emas, nomi bilan; ro'yxatda yo'q mahsulot katalogga qo'shiladi va bog'lanadi
+ * (`addMissingProducts`; o'lchovi tanilmasa nomidan).
  * Uzun matn forma chegarasida kesiladi. Reestrda bor qator o'tkazib yuboriladi:
  *  · TTN bor — shu TTN reysdan yoki qo'lda qatorda ±1 kun ichida bor (mijoz, mahsulot, miqdor yoki mashinadan biri mos);
  *  · TTN'siz — o'sha kuni xaridor, mahsulot va miqdori bir xil qator bor (har mavjud qator bitta fayl qatoriga sanaladi).
@@ -645,10 +650,58 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
       used.add(twin);
       return false;
     });
-    if (!fresh.length) return { added: 0, skipped: data.length };
-    const created = await tx.realizationEntry.createManyAndReturn({ data: fresh.map((b) => ({ ...b, createdById: userId })) });
+    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [] };
+    const cat = await addMissingProducts(tx, fresh, userId);
+    const created = await tx.realizationEntry.createManyAndReturn({
+      data: fresh.map((b) => ({ ...b, productId: b.productId ?? cat.idOf(b.productName), createdById: userId })),
+    });
     await auditMany(tx, userId, "CREATE", "RealizationEntry", created.map((row) => ({ id: row.id, after: row })));
-    return { added: created.length, skipped: data.length - created.length };
+    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created };
   }, { timeout: 60_000 });
   return { ok: true, ...res, problems, guessedUnits, from, to };
+}
+
+/**
+ * Importda ro'yxatda yo'q mahsulot katalogga ham qo'shiladi (Otabek, 2026-11-12): faol, narxi 0, o'lchovi qatordagidek,
+ * papkasi — «Guruh» nomli mavjud papka (yangi papka ochilmaydi, topilmasa ro'yxat ildizida), izohida qayerdan kelgani.
+ * Bir xil nom (katta-kichik harfsiz) — bitta mahsulot. Import qulfi ostida qayta tekshiriladi: shu orada qo'shilgan bo'lsa
+ * yangisi ochilmaydi, o'shanga bog'lanadi. Faqat yoziladigan (reestrda yo'q) qatorlar uchun.
+ */
+async function addMissingProducts(
+  tx: Prisma.TransactionClient,
+  rows: readonly { productId: string | null; productName: string; unit: string; groupName: string }[],
+  userId: string,
+): Promise<{ idOf: (name: string) => string | null; created: string[] }> {
+  const lc = (v: string) => v.toLowerCase();
+  const want = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) if (!r.productId && !want.has(lc(r.productName))) want.set(lc(r.productName), r);
+  const idOf = new Map<string, string>();
+  const created: string[] = [];
+  const result = { idOf: (n: string) => idOf.get(lc(n)) ?? null, created };
+  if (!want.size) return result;
+
+  const ci = (v: string) => ({ equals: v, mode: "insensitive" as const });
+  const [have, groups] = await Promise.all([
+    tx.product.findMany({ where: { OR: [...want.values()].flatMap((r) => [{ name: ci(r.productName) }, { code: ci(r.productName) }]) }, orderBy: { isActive: "desc" }, select: { id: true, name: true, code: true } }),
+    tx.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
+  ]);
+  for (const p of have) if (!idOf.has(lc(p.name))) idOf.set(lc(p.name), p.id);
+  for (const p of have) if (!idOf.has(lc(p.code))) idOf.set(lc(p.code), p.id);
+  // Papka nomi `matchKey` bilan (kirill/lotin farqsiz), ildiz papka ustun
+  const groupId = (name: string) => {
+    const k = matchKey(name);
+    const hit = groups.filter((g) => matchKey(g.name) === k);
+    return (hit.find((g) => !g.parentId) ?? hit[0])?.id ?? null;
+  };
+  let seq = Number(await nextCatalogCode(tx)) - 1;
+  for (const [key, r] of want) {
+    if (idOf.has(key)) continue;
+    const p = await tx.product.create({
+      data: { code: String(++seq), name: r.productName, unit: r.unit, groupId: groupId(r.groupName), note: "Realizatsiya Excel importidan" },
+    });
+    await audit(tx, userId, "CREATE", "Product", p.id, undefined, p);
+    idOf.set(key, p.id);
+    created.push(p.name);
+  }
+  return result;
 }

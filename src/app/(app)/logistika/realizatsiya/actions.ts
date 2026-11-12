@@ -62,13 +62,15 @@ export async function importRealizationAction(_prev: ActionState, fd: FormData):
   if (res.added) refresh();
   const bad = res.problems.length;
   // Hammasi joyida — reestrga, qo'shilganlar davri bilan
-  if (res.added && !bad) redirect(`/logistika/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}`);
+  const fresh = res.newProducts.length;
+  if (res.added && !bad) redirect(`/logistika/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}-${fresh}`);
   // O'qilmagan qator bor — shu sahifada qoladi: qo'shilgani yashil, o'tkazilgani sababi bilan sariq (import to'xtamaydi)
-  const units = res.guessedUnits ? ` ${res.guessedUnits} tasida o'lchov ko'rsatilmagan yoki tanilmadi — mahsulot nomidan qo'yildi (m³ yoki dona), kerak bo'lsa reestrda katakdan tuzating.` : "";
+  const prods = fresh ? ` Katalogga ${fresh} ta yangi mahsulot qo'shildi (narxi 0): ${listProblems(res.newProducts, 10)}.` : "";
+  const units = res.guessedUnits ? ` ${res.guessedUnits} tasida o'lchov ko'rsatilmagan yoki tanilmadi — mahsulot nomidan qo'yildi (m³ yoki dona), kerak bo'lsa mahsulotlar katalogida tuzating.` : "";
   const dup = res.skipped ? `${res.skipped} tasi reestrda bor edi — o'tkazib yuborildi` : "";
   return {
     ok: true,
-    note: res.added ? `${res.added} ta qator reestrga «Qo'lda» bo'lib qo'shildi${dup ? `, ${dup}` : ""}.${units}` : undefined,
+    note: res.added ? `${res.added} ta qator reestrga «Qo'lda» bo'lib qo'shildi${dup ? `, ${dup}` : ""}.${prods}${units}` : undefined,
     warn: [
       !res.added && `Yangi qator yo'q: faylning ${res.skipped} ta qatori reestrda bor (reysdan yoki avval kiritilgan).`,
       bad && `${bad} ta qator o'qilmadi va qo'shilmadi: ${listProblems(res.problems)}. Shularni tuzatib faylni qayta yuklang — qo'shilganlari takrorlanmaydi.`,

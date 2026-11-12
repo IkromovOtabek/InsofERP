@@ -314,8 +314,15 @@ const imp = q(`select "productName", unit, "payGroup", length(coalesce(note, '')
 check(r.ok && !r.redirect && imp.length === 2 && r.text.includes("2 ta qator o'qilmadi"), "importda 2 xato qator o'tkazildi, qolgan 2 tasi qo'shildi", r.error ?? imp.length);
 check(imp[0]?.[1] === "dona" && imp[0]?.[2] === "BANK" && imp[0]?.[3] === "300" && imp[1]?.[1] === "m3" && imp[1]?.[2] === "CASH",
   "ro'yxatda yo'q mahsulot: o'lchov nomidan (blok → dona, «кг» → m³), «п-р»/«н-к» to'lov turi, uzun izoh kesildi", JSON.stringify(imp));
+const prodSql = `from "Product" where name like 'QA Imp %${tag}'`;
+const impProds = q(`select name, unit, price::text, "isActive" ${prodSql} order by name`);
+check(impProds.length === 2 && impProds.every((p) => Number(p[2]) === 0 && p[3] === "t") && impProds.find((p) => p[0].includes("FBS"))?.[1] === "dona"
+  && n1(`select count(*) from "RealizationEntry" e join "Product" p on p.id=e."productId" where e."customerName"='QA Imp ${tag}'`) === 2
+  && n1(`select count(*) from "AuditLog" where entity='Product' and action='CREATE' and "entityId" in (select id ${prodSql})`) === 2,
+  "ro'yxatda yo'q mahsulot katalogga qo'shildi (faol, narxi 0, o'lchovi bilan), qatorlar unga bog'landi, AuditLog'da", JSON.stringify(impProds));
 r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/logistika/realizatsiya/import");
-check(r.ok && n1(`select count(*) from "RealizationEntry" where "customerName"='QA Imp ${tag}'`) === 2 && r.text.includes("Yangi qator yo'q"), "o'sha faylni qayta yuklash — yangi qator yo'q, takror yozilmadi", r.error);
+check(r.ok && n1(`select count(*) from "RealizationEntry" where "customerName"='QA Imp ${tag}'`) === 2 && r.text.includes("Yangi qator yo'q")
+  && n1(`select count(*) ${prodSql}`) === 2, "o'sha faylni qayta yuklash — yangi qator va yangi mahsulot yo'q, takror yozilmadi", r.error);
 r = await logist.action(`${RA}#importRealizationAction`, [undefined, fd({ rows: JSON.stringify(impRows.slice(2)), valueMaps: "{}" })], "/logistika/realizatsiya/import");
 check(!r.ok && !!r.error?.includes("Hech bir qator qo'shilmadi"), "faqat xato qatorli fayl — qo'shilmadi deb aytildi", r.error);
 
