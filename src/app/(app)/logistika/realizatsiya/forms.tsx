@@ -86,7 +86,7 @@ export function EntryButton({ entry, clientToken }: { entry?: EntryValues; clien
   return (
     <>
       {entry
-        ? <IconButton icon={Pencil} label="Qatorni tuzatish" onClick={() => setOpen(true)} className="h-7 w-7" />
+        ? <IconButton icon={Pencil} label="Qatorni tuzatish" onClick={() => setOpen(true)} className="h-6 w-6" />
         : <Button onClick={() => setOpen(true)}><Plus size={16} /> Qo&apos;lda qator</Button>}
       {open && <EntryDialog entry={entry} clientToken={clientToken} onClose={close} />}
     </>
@@ -193,7 +193,7 @@ export function NoteButton({ refKey, title, filled, suggest }: { refKey: string;
   const close = useCallback(() => setOpen(false), []);
   return (
     <>
-      <IconButton icon={Pencil} label="Ortilgan joy, manzil, izoh" onClick={() => setOpen(true)} className="h-7 w-7" />
+      <IconButton icon={Pencil} label="Ortilgan joy, manzil, izoh" onClick={() => setOpen(true)} className="h-6 w-6" />
       {open && <NoteDialog refKey={refKey} title={title} filled={filled} suggest={suggest} onClose={close} />}
     </>
   );
@@ -252,10 +252,11 @@ export function CellEdit({ target, field, label, value, kind = "text", list, pla
 
   if (!editing) {
     return (
-      <span className={cn("group/cell flex items-start gap-1", right && "flex-row-reverse")}>
-        <span className="min-w-0 flex-1">{children}</span>
+      // Qalamcha katak ustida chiqadi va joy egallamaydi (varaq ixcham); sensorli ekranda doim ko'rinadi
+      <span className="group/cell relative block">
+        {children}
         <button type="button" onClick={open} aria-label={`${label}: tahrirlash`} title={`${label} — tahrirlash`}
-          className="mt-px shrink-0 rounded p-0.5 text-slate-300 transition group-hover/cell:text-slate-500 hover:bg-slate-200 hover:!text-slate-900 print:hidden">
+          className={cn("absolute top-1/2 -translate-y-1/2 rounded bg-white p-0.5 text-slate-500 opacity-0 shadow-sm ring-1 ring-slate-200 transition group-hover/cell:opacity-100 hover:bg-slate-100 hover:text-slate-900 focus-visible:opacity-100 print:hidden [@media(hover:none)]:opacity-100", right ? "left-0" : "right-0")}>
           <Pencil size={11} />
         </button>
       </span>

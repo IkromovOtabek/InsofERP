@@ -22,10 +22,14 @@ import { cn } from "@/lib/utils";
 type SP = { from?: string; to?: string; tur?: string; guruh?: string; manba?: string; joy?: string; q?: string; import?: string };
 
 const PAY_COLOR: Record<PayGroupKey, string> = { BANK: "text-blue-700", CASH: "text-emerald-700", DEBT: "text-red-700" };
+/** Varaqda qisqa (to'liq nomi — ustiga olib borilsa) */
+const PAY_SHORT: Record<PayGroupKey, string> = { BANK: "Perech.", CASH: "Naqd", DEBT: "Qarz" };
 const SOURCES: { key: LogSource; label: string }[] = [{ key: "AUTO", label: "Reysdan" }, { key: "MANUAL", label: "Qo'lda" }];
 const NO_PLACE = "—";
 
 const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
+/** Varaqda kun.oy (yil — davr sarlavhasida, to'liq sana — ustiga olib borilsa) */
+const dayMonth = (d: Date) => dateRu(d).slice(0, 5);
 const nq = (v: number) => fmtNum(v, 3);
 const parse = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : null);
 
@@ -86,16 +90,20 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
     "Manba": r.source === "MANUAL" ? "Qo'lda" : "Reysdan",
   }));
 
+  // Ixcham varaq: ustun mazmun kengligida, uzun matn bir qatorda kesiladi (to'liq matni — ustiga olib borilsa).
+  // Sarlavhalar qisqa, to'liq nomi `title` da; Excel eksportida to'liq nomlar qoladi.
+  const clip = (text: string | null | undefined, width: string, node?: React.ReactNode) =>
+    <span className={cn("block truncate", width)} title={text ?? undefined}>{node ?? text}</span>;
   const sheet = (
-    <Sheet lang="uz" maxHeight="75vh" className="[&_table]:min-w-[1900px] [&_table]:text-[11.5px] [&_td]:px-1.5 [&_th]:px-1.5 [&_th]:text-[11px] [&_th]:whitespace-normal">
+    <Sheet lang="uz" maxHeight="75vh" className="[&_td]:px-1 [&_td]:py-0.5 [&_td]:leading-5 [&_th]:px-1 [&_th]:py-1">
       <SheetHead>
         <tr>
-          <SheetTh tone="green">Sana</SheetTh><SheetTh tone="green">To&apos;lov turi</SheetTh><SheetTh tone="green">Sotuvchi</SheetTh>
-          <SheetTh tone="green">Xaridor</SheetTh><SheetTh tone="green">Mahsulot</SheetTh><SheetTh tone="green">TTN №</SheetTh>
-          <SheetTh tone="green">Mashina (raqami)</SheetTh><SheetTh tone="green">O&apos;lchov</SheetTh><SheetTh tone="green" right>Miqdor</SheetTh>
-          <SheetTh tone="green" right>Narx (QQSsiz)</SheetTh><SheetTh tone="yellow" right>Dostavka (so&apos;m)</SheetTh><SheetTh tone="green" right>Summa (QQSsiz)</SheetTh>
-          <SheetTh tone="green" right>QQS 12%</SheetTh><SheetTh tone="green">Guruh</SheetTh><SheetTh tone="green">Ortilgan joy (BSU / Sklad)</SheetTh>
-          <SheetTh tone="green">Boradigan manzil</SheetTh><SheetTh tone="green">Izoh (TTN, mashina, telefon)</SheetTh><SheetTh tone="green">Xaridor (spravka nomi)</SheetTh>
+          <SheetTh tone="green">Sana</SheetTh><SheetTh tone="green" title="To'lov turi">To&apos;lov</SheetTh><SheetTh tone="green">Sotuvchi</SheetTh>
+          <SheetTh tone="green">Xaridor</SheetTh><SheetTh tone="green">Mahsulot</SheetTh><SheetTh tone="green" title="TTN №">TTN</SheetTh>
+          <SheetTh tone="green" title="Mashina (raqami)">Mashina</SheetTh><SheetTh tone="green" title="O'lchov birligi">Birlik</SheetTh><SheetTh tone="green" right>Miqdor</SheetTh>
+          <SheetTh tone="green" right title="Narx (QQSsiz)">Narx</SheetTh><SheetTh tone="yellow" right title="Dostavka (so'm)">Dost.</SheetTh><SheetTh tone="green" right title="Summa (QQSsiz)">Summa</SheetTh>
+          <SheetTh tone="green" right title="QQS 12%">QQS</SheetTh><SheetTh tone="green">Guruh</SheetTh><SheetTh tone="green" title="Ortilgan joy (BSU / Sklad)">Ortilgan</SheetTh>
+          <SheetTh tone="green" title="Boradigan manzil">Manzil</SheetTh><SheetTh tone="green" title="Izoh (TTN, mashina, telefon)">Izoh</SheetTh><SheetTh tone="green" title="Xaridor (spravka nomi)">Spravka</SheetTh>
           {(canAuto || canManual) && <SheetTh tone="green"><span className="sr-only">Amal</span></SheetTh>}
         </tr>
       </SheetHead>
@@ -128,19 +136,17 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
           const ttnNode = r.tripId && tripLink ? <Link href={`/trips/${r.tripId}`} className="font-medium hover:underline">{r.ttn}</Link> : r.ttn;
           return (
             <SheetTr key={r.key} className={cn(!auto && "bg-amber-50/40")}>
-              <SheetTd className="whitespace-nowrap tabular">
-                {edit("date", "Sana", isoDate(r.date), <>
-                  {opAt(r.date, r.at, dateRu)}
-                  {!auto && <span className="block text-[10px] font-semibold text-amber-700" title="Qo'lda kiritilgan qator">qo&apos;lda</span>}
-                </>, { kind: "date" })}
+              {/* Qo'lda qator — chap chetida sariq chiziq (alohida yozuv qatorni balandlatmasin) */}
+              <SheetTd className={cn("whitespace-nowrap tabular", !auto && "shadow-[inset_3px_0_0_var(--color-amber-400)]")}>
+                <span title={`${dateRu(r.date)}${auto ? "" : " · qo'lda kiritilgan qator"}`}>{edit("date", "Sana", isoDate(r.date), opAt(r.date, r.at, dayMonth), { kind: "date" })}</span>
               </SheetTd>
-              <SheetTd className={cn("font-medium whitespace-nowrap", PAY_COLOR[r.pay])}>{edit("payGroup", "To'lov turi", r.pay, r.payLabel, { kind: "pay" })}</SheetTd>
-              <SheetTd>{edit("seller", "Sotuvchi", r.seller, r.seller, { list: "sellers" })}</SheetTd>
+              <SheetTd className={cn("font-medium whitespace-nowrap", PAY_COLOR[r.pay])}>{edit("payGroup", "To'lov turi", r.pay, <span title={r.payLabel}>{PAY_SHORT[r.pay]}</span>, { kind: "pay" })}</SheetTd>
+              <SheetTd>{edit("seller", "Sotuvchi", r.seller, clip(r.seller, "max-w-24"), { list: "sellers" })}</SheetTd>
               {/* Xaridor reysdan qatorda tuzatilmaydi — u zayavkada */}
-              <SheetTd>{auto
-                ? orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link> : <span className="font-medium text-slate-900">{r.customer}</span>
-                : edit("customerName", "Xaridor", r.customer, <span className="font-medium text-slate-900">{r.customer}</span>, { list: "customers" })}</SheetTd>
-              <SheetTd>{edit("productName", "Mahsulot", r.product, r.product, { list: "products" })}</SheetTd>
+              <SheetTd className="font-medium text-slate-900">{auto
+                ? clip(r.customer, "max-w-36", orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="hover:underline">{r.customer}</Link> : undefined)
+                : edit("customerName", "Xaridor", r.customer, clip(r.customer, "max-w-36"), { list: "customers" })}</SheetTd>
+              <SheetTd>{edit("productName", "Mahsulot", r.product, clip(r.product, "max-w-28"), { list: "products" })}</SheetTd>
               <SheetTd className="whitespace-nowrap tabular">
                 {auto && r.tripId
                   ? canTtn
@@ -148,18 +154,18 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
                     : ttnNode
                   : edit("ttn", "TTN", r.ttn ?? "", r.ttn)}
               </SheetTd>
-              <SheetTd className="whitespace-nowrap tabular">{edit("vehicle", "Mashina", r.vehicle ?? "", r.vehicle, { list: "vehicles" })}</SheetTd>
-              <SheetTd>{edit("unit", "O'lchov", r.unitKey, r.unit, { kind: "unit" })}</SheetTd>
+              <SheetTd className="whitespace-nowrap tabular">{edit("vehicle", "Mashina", r.vehicle ?? "", clip(r.vehicle, "max-w-24"), { list: "vehicles" })}</SheetTd>
+              <SheetTd className="whitespace-nowrap">{edit("unit", "O'lchov", r.unitKey, r.unit, { kind: "unit" })}</SheetTd>
               <SheetTd right strong>{edit("qty", "Miqdor", String(r.qty), nq(r.qty), { kind: "number", right: true })}</SheetTd>
               <SheetTd right>{edit("price", "Narx", r.price ? String(r.price) : "", n0(r.price), { kind: "number", right: true })}</SheetTd>
               <SheetTd right tone="yellow">{edit("delivery", "Dostavka", r.delivery ? String(r.delivery) : "", n0(r.delivery), { kind: "number", right: true })}</SheetTd>
               <SheetTd right>{n0(r.net)}</SheetTd>
               <SheetTd right muted={!r.vat}>{r.vat ? n0(r.vat) : "—"}</SheetTd>
-              <SheetTd>{edit("groupName", "Guruh", r.group, r.group, { list: "groups" })}</SheetTd>
-              <SheetTd className={cn(hint("loadPlace"))}>{extra("loadPlace", "Ortilgan joy", r.loadPlace, "loadPlaces")}</SheetTd>
-              <SheetTd className={cn(hint("destination"))}>{extra("destination", "Boradigan manzil", <span className="line-clamp-2" title={r.destination}>{r.destination}</span>, "destinations")}</SheetTd>
-              <SheetTd className={cn(hint("note"))}>{extra("note", "Izoh", <span className="line-clamp-2" title={r.note}>{r.note}</span>)}</SheetTd>
-              <SheetTd className={cn(hint("refName"))}>{extra("refName", "Spravka nomi", r.refName)}</SheetTd>
+              <SheetTd>{edit("groupName", "Guruh", r.group, clip(r.group, "max-w-24"), { list: "groups" })}</SheetTd>
+              <SheetTd className={cn(hint("loadPlace"))}>{extra("loadPlace", "Ortilgan joy", clip(r.loadPlace, "max-w-20"), "loadPlaces")}</SheetTd>
+              <SheetTd className={cn(hint("destination"))}>{extra("destination", "Boradigan manzil", clip(r.destination, "max-w-32"), "destinations")}</SheetTd>
+              <SheetTd className={cn(hint("note"))}>{extra("note", "Izoh", clip(r.note, "max-w-32"))}</SheetTd>
+              <SheetTd className={cn(hint("refName"))}>{extra("refName", "Spravka nomi", clip(r.refName, "max-w-28"))}</SheetTd>
               {(canAuto || canManual) && (
                 <SheetTd className="whitespace-nowrap">
                   {auto && canAuto && r.filled && r.suggest && (
@@ -173,7 +179,7 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
                         loadPlace: r.loadPlace, destination: r.destination, note: r.note, refName: r.refName === r.customer ? "" : r.refName,
                       }} />
                       <ConfirmButton action={cancelRealizationAction.bind(null, r.ref)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />}
-                        question={`${dateRu(r.date)} · ${r.customer} · ${r.product} qatori bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />
+                        question={`${dateRu(r.date)} · ${r.customer} · ${r.product} qatori bekor qilinsinmi?`} okText="Bekor qilindi" className="h-6 px-1" />
                     </span>
                   )}
                 </SheetTd>
@@ -265,7 +271,8 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
       {sheet}
       {canAuto && (
         <p className="mt-2 text-xs text-slate-500">
-          Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi — faqat shu reestrda (zayavka, mijoz qarzi, kassa va sklad o&apos;zgarmaydi).
+          Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi) — faqat shu reestrda (zayavka, mijoz qarzi, kassa va sklad o&apos;zgarmaydi).
+          Qo&apos;lda kiritilgan qator — sariq fonda, chap chetida sariq chiziq.
           Tuzatilgan qiymat <span className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">sariq tagchiziqli</span>, ustiga olib borilsa zayavkadagi qiymat ko&apos;rinadi; katak bo&apos;shatilsa o&apos;shanga qaytadi.
         </p>
       )}
