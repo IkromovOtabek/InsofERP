@@ -8,6 +8,7 @@ import { canDo } from "@/lib/permissions";
 import { parseInn } from "@/lib/inn";
 import { upsertRecipient } from "@/lib/stock-recipients";
 import { createCashCategory } from "@/lib/fin-report/categories";
+import { removeCashCategory, removeNote, renameCashCategory } from "@/lib/fin-report/category-edit";
 import { validDate } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 
@@ -18,7 +19,7 @@ const PNL_LINES = ["OTHER_INCOME", "MATERIALS", "PRODUCTION", "PAYROLL", "TRANSP
  * Formadagi tanlash maydoni ichidagi «+» tugmasi (`components/quick-add.tsx`): ro'yxatda yo'q yozuvni
  * forma ichidan qo'shish. Natija — yangi tanlov (`id`, `name`), forma uni darhol tanlab qo'yadi.
  */
-export type QuickAddResult = { error: string } | { id: string; name: string; vatPayer?: boolean };
+export type QuickAddResult = { error: string } | { id: string; name: string; vatPayer?: boolean; note?: string };
 
 const text = (fd: FormData, k: string, max: number) => String(fd.get(k) ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
@@ -88,6 +89,47 @@ export async function quickAddCashCategory(fd: FormData): Promise<QuickAddResult
   if ("error" in res) return res;
   revalidatePath("/cashflow"); revalidatePath("/moliya/kategoriyalar"); revalidatePath("/payments/import");
   return res;
+}
+
+/** Kirim-Chiqim formasidagi qalam / savatcha: tanlangan manba (yoki `parent` ichidagi sub manba) — nomi bo'yicha. */
+async function pickedCategory(fd: FormData) {
+  const name = text(fd, "name", 80);
+  const parentName = text(fd, "parent", 80);
+  const c = name ? await db.cashCategory.findUnique({ where: { name }, select: { id: true, parentId: true, parent: { select: { name: true } } } }) : null;
+  if (!c || (parentName ? c.parent?.name !== parentName : !!c.parentId)) return null;
+  return c;
+}
+
+const refreshCats = () => { for (const p of ["/cashflow", "/payments", "/moliya/kategoriyalar", "/payments/import"]) revalidatePath(p); revalidatePath("/moliya", "layout"); };
+
+/**
+ * Qalam: manba yoki sub manba nomini o'zgartirish. Huquq — kassa yozuvini tahrirlash (`cashflow.edit`) yoki
+ * kategoriyalarni yuritish (`moliya.categories`). Yozuvlardagi nom ham yangisiga o'tadi (`lib/fin-report/category-edit.ts`).
+ */
+export async function quickRenameCashCategory(fd: FormData): Promise<QuickAddResult> {
+  const s = await getSession();
+  if (!s || !(canDo(s, "cashflow", "edit") || canDo(s, "moliya", "categories"))) return { error: NO_RIGHT };
+  const c = await pickedCategory(fd);
+  if (!c) return { error: "Kategoriya topilmadi — sahifani yangilang" };
+  const res = await renameCashCategory(c.id, text(fd, "newName", 80), s.userId, "kirim-chiqim");
+  if ("error" in res) return res;
+  refreshCats();
+  return { id: res.id, name: res.name, note: `Nomi o'zgartirildi: «${res.name}»${res.moved ? ` — ${res.moved} ta yozuvda ham` : ""}` };
+}
+
+/**
+ * Savatcha: manba yoki sub manbani o'chirish. Ishlatilmagan bo'lsa butunlay, ishlatilgan bo'lsa ro'yxatdan olinadi (nofaol).
+ * Huquq — kassa yozuvini o'chirish (`cashflow.delete`) yoki kategoriyalarni yuritish (`moliya.categories`).
+ */
+export async function quickRemoveCashCategory(fd: FormData): Promise<QuickAddResult> {
+  const s = await getSession();
+  if (!s || !(canDo(s, "cashflow", "delete") || canDo(s, "moliya", "categories"))) return { error: NO_RIGHT };
+  const c = await pickedCategory(fd);
+  if (!c) return { error: "Kategoriya topilmadi — sahifani yangilang" };
+  const res = await removeCashCategory(c.id, s.userId, "kirim-chiqim");
+  if ("error" in res) return res;
+  refreshCats();
+  return { id: c.id, name: res.name, note: removeNote(res, !c.parentId) };
 }
 
 const LOAN_KINDS = ["BANK", "BORROWED", "LENT"] as const;

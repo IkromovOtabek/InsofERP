@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X } from "lucide-react";
+import { Pencil, Plus, Trash2, X, type LucideIcon } from "lucide-react";
 import { Button, Checkbox, Field, FormError, Input } from "@/components/ui";
 import { quickAddRecipient, quickAddSupplier, type QuickAddResult } from "@/lib/quick-add-actions";
 
-export type QuickAdded = { id: string; name: string; vatPayer?: boolean };
+export type QuickAdded = { id: string; name: string; vatPayer?: boolean; note?: string };
 
 /**
  * Tanlash (yoki yozib tanlash — `NameCombo`) maydoni + uning o'ng tomoniga yopishgan «+» tugmasi (MaterialField'dagi «…» kabi).
@@ -26,13 +26,25 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
+/** Maydon ostidagi kichik matnli tugma («Tahrirlash», «O'chirish») — tanlov kengligini yemaydi. */
+function ToolButton({ label, text, onClick, icon: Icon, danger }: { label: string; text: string; onClick: () => void; icon: LucideIcon; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} title={label} aria-label={label}
+      className={`inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium text-slate-500 transition pointer-coarse:py-1.5 ${danger ? "hover:bg-red-50 hover:text-red-600" : "hover:bg-slate-100 hover:text-slate-900"}`}>
+      <Icon size={13} /> {text}
+    </button>
+  );
+}
+
 /**
  * Kichik oyna: maydonlar + «Qo'shish». Portal orqali chiziladi, lekin React hodisalari baribir tashqi formaga
  * ko'tariladi — shuning uchun `submit` shu yerda to'xtatiladi (aks holda asosiy hujjat ham yuborilib ketardi).
  */
-function QuickAddDialog({ title, open, onClose, save, onCreated, children }: {
+function QuickAddDialog({ title, open, onClose, save, onCreated, children, submit = "Qo'shish", icon: Icon = Plus, danger }: {
   title: string; open: boolean; onClose: () => void;
   save: (fd: FormData) => Promise<QuickAddResult>; onCreated: (x: QuickAdded) => void; children: React.ReactNode;
+  /** Tasdiq tugmasi: «Qo'shish» (sukut), tahrirda «Saqlash», o'chirishda «O'chirish» (qizil) */
+  submit?: string; icon?: LucideIcon; danger?: boolean;
 }) {
   const [err, setErr] = useState("");
   const [pending, start] = useTransition();
@@ -72,7 +84,7 @@ function QuickAddDialog({ title, open, onClose, save, onCreated, children }: {
         <FormError error={err} />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>Bekor qilish</Button>
-          <Button disabled={pending}><Plus size={16} /> {pending ? "Saqlanmoqda…" : "Qo'shish"}</Button>
+          <Button disabled={pending} variant={danger ? "danger" : "primary"}><Icon size={16} /> {pending ? "Saqlanmoqda…" : submit}</Button>
         </div>
       </form>
     </div>
@@ -88,6 +100,35 @@ export function QuickAdd({ label, title, save, onCreated, children }: {
     <>
       <AddButton label={label} onClick={() => setOpen(true)} />
       <QuickAddDialog title={title} open={open} onClose={() => setOpen(false)} save={save} onCreated={onCreated}>{children}</QuickAddDialog>
+    </>
+  );
+}
+
+/**
+ * Maydon ostidagi «Tahrirlash»: tanlangan yozuvni shu yerning o'zida tahrirlash (maydonlar `children`, saqlash — `save`).
+ * `onSaved` natijani oladi (yangi nom, `note`) — forma tanlovni yangilaydi.
+ */
+export function QuickEdit({ label, title, save, onSaved, children }: {
+  label: string; title: string; save: (fd: FormData) => Promise<QuickAddResult>; onSaved: (x: QuickAdded) => void; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ToolButton label={label} text="Tahrirlash" icon={Pencil} onClick={() => setOpen(true)} />
+      <QuickAddDialog title={title} open={open} onClose={() => setOpen(false)} save={save} onCreated={onSaved} submit="Saqlash" icon={Pencil}>{children}</QuickAddDialog>
+    </>
+  );
+}
+
+/** Maydon ostidagi «O'chirish»: tasdiq oynasi (`children` — nima bo'lishi haqida matn va yashirin maydonlar), keyin `save`. */
+export function QuickDelete({ label, title, save, onDone, children }: {
+  label: string; title: string; save: (fd: FormData) => Promise<QuickAddResult>; onDone: (x: QuickAdded) => void; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ToolButton label={label} text="O'chirish" icon={Trash2} danger onClick={() => setOpen(true)} />
+      <QuickAddDialog title={title} open={open} onClose={() => setOpen(false)} save={save} onCreated={onDone} submit="O'chirish" icon={Trash2} danger>{children}</QuickAddDialog>
     </>
   );
 }

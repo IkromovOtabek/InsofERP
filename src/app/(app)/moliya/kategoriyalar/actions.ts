@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
 import { categoryNameTaken, createCashCategory, normCat, resetCategoryCache } from "@/lib/fin-report/categories";
+import { moveCategoryRefs, removeCashCategory, removeNote } from "@/lib/fin-report/category-edit";
 
 /** Kategoriyalar daraxti va loyihalar — buxgalteriya (`moliya.categories`), direktor doim. */
 const writer = () => requireAction("moliya", "categories");
@@ -54,7 +55,8 @@ const updateSchema = z.object({
 });
 
 /**
- * Kategoriyani tahrirlash. Nomi o'zgarsa eski nom alias'ga qo'shiladi — eski kassa yozuvlari shu kategoriyada qoladi.
+ * Kategoriyani tahrirlash. Nomi o'zgarsa eski nom alias'ga qo'shiladi, kassa yozuvlari (va to'lov rejasi, byudjet) ham yangi nomga
+ * o'tadi — Kirim-Chiqim formasidagi qalam bilan bir qoida (`lib/fin-report/category-edit.ts`).
  * Tizim kategoriyasining nomi va «nima so'raydi» belgisi o'zgarmaydi (kod ularga nom bo'yicha tayanadi).
  * Manbaning oqim turi / PNL qatori o'zgarsa — sub manbalariga ham o'tadi.
  */
@@ -85,10 +87,24 @@ export async function updateCategoryAction(_p: ActionState, fd: FormData): Promi
   await db.$transaction(async (tx) => {
     const u = await tx.cashCategory.update({ where: { id: c.id }, data });
     if (top && (d.flow || d.pnlLine)) await tx.cashCategory.updateMany({ where: { parentId: c.id }, data: { flow: u.flow, pnlLine: u.pnlLine } });
-    await audit(tx, s.userId, "UPDATE", "CashCategory", c.id, c, u);
+    const moved = rename ? await moveCategoryRefs(tx, c, rename) : 0;
+    await audit(tx, s.userId, "UPDATE", "CashCategory", c.id, c, moved ? { ...u, moved } : u);
   });
   refresh();
   return { ok: true };
+}
+
+/**
+ * O'chirish (qatordagi savatcha): ishlatilmagan bo'lsa butunlay, kassa yozuvi / to'lov rejasi / byudjetda ishlatilgan bo'lsa —
+ * nofaol qilinadi (eski yozuvlar hisobotda qoladi). Tizim kategoriyasi o'chirilmaydi.
+ */
+export async function deleteCategoryAction(id: string): Promise<ActionState> {
+  const s = await writer();
+  const top = !(await db.cashCategory.findUnique({ where: { id }, select: { parentId: true } }))?.parentId;
+  const res = await removeCashCategory(id, s.userId, "kategoriyalar");
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true, note: removeNote(res, top) };
 }
 
 const aliasSchema = z.object({ id: zStr("Kategoriya tanlanmagan"), alias: zStr() });

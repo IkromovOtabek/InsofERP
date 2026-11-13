@@ -180,8 +180,8 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   ],
   cashflow: [
     { key: "create", label: "Kirim-chiqim yozish",              roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
-    { key: "delete", label: "Yozuvni o'chirish",                roles: ["ACCOUNTING", "FINANCE"], hint: "Kirim/chiqimni bekor qilish yoki butunlay o'chirish, realizatsiya jurnali qatorini o'chirish — sabab bilan, AuditLog'da" },
-    { key: "edit",   label: "Yozuvni tahrirlash (Kassa / bank)", roles: ["ACCOUNTING", "FINANCE"], hint: "Kassa jurnali, to'lovlar, perekit, realizatsiya jurnali: har qator, barcha ustunlar, kirim ⇄ chiqim — AuditLog'da" },
+    { key: "delete", label: "Yozuvni o'chirish",                roles: ["ACCOUNTING", "FINANCE"], hint: "Kirim/chiqimni bekor qilish yoki butunlay o'chirish, realizatsiya jurnali qatorini o'chirish — sabab bilan, AuditLog'da. Kirim-Chiqim formasida manba / sub manbani o'chirish ham" },
+    { key: "edit",   label: "Yozuvni tahrirlash (Kassa / bank)", roles: ["ACCOUNTING", "FINANCE"], hint: "Kassa jurnali, to'lovlar, perekit, realizatsiya jurnali: har qator, barcha ustunlar, kirim ⇄ chiqim — AuditLog'da. Kirim-Chiqim formasida manba / sub manba nomini o'zgartirish ham" },
     { key: "pay",    label: "Yetkazuvchiga to'lash",            roles: ["FINANCE", "ACCOUNTING"] },
     { key: "transfer", label: "Hisoblararo o'tkazma (kassa ⇄ bank)", roles: ["CASHIER", "ACCOUNTING", "FINANCE"], hint: "Inkassatsiya, naqdlashtirish; kassa qoldig'idan oshmaydi" },
     { key: "transfer_storno", label: "O'tkazmani bekor qilish",  roles: [], delegable: false },

@@ -6,10 +6,13 @@ import { fmtNum } from "@/lib/format";
 import { loadCategories, makeResolver, toTree, FLOW_LABEL, NEEDS_LABEL, PNL_LINE_LABEL } from "@/lib/fin-report/categories";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, Table, Td, Th, Tr } from "@/components/ui";
 import { AliasForm, CategoryCreateForm, CategoryEditForm, ProjectCreateForm, ProjectToggle, type CatView } from "./forms";
+import { deleteCategoryAction } from "./actions";
+import { DeleteButton } from "@/components/delete-button";
 
 /**
  * Kirim-Chiqim kategoriyalari daraxti (Manba → Sub manba): har manbaning pul oqimi turi (DDS) va PNL qatori.
- * Kassa yozuvi kategoriyaga NOM bo'yicha bog'langani uchun nomi o'zgarsa eski nom alias bo'lib qoladi.
+ * Kassa yozuvi kategoriyaga NOM bo'yicha bog'langani uchun nomi o'zgarsa eski nom alias bo'lib qoladi, yozuvlar yangi nomga o'tadi.
+ * Savatcha: ishlatilmagan kategoriya o'chadi, ishlatilgani nofaol bo'ladi (`lib/fin-report/category-edit.ts`).
  * «Topilmagan nomlar» — daraxtda yo'q kategoriya bilan yozilgan kassa yozuvlari: PNL'da «Manbasi aniqlanmagan».
  */
 export default async function CategoriesPage() {
@@ -43,7 +46,7 @@ export default async function CategoriesPage() {
             <Td className="text-slate-600">{PNL_LINE_LABEL[t.pnlLine]}</Td>
             <Td className="text-slate-500">{t.needs ? `${NEEDS_LABEL[t.needs]}${t.loanPart ? (t.loanPart === "INTEREST" ? " · foiz" : " · asosiy qarz") : ""}` : "—"}</Td>
             <Td right className="text-slate-500">{fmtNum(usage.get(t.id) ?? 0)}</Td>
-            {canWrite && <Td right><CategoryEditForm c={view(t)} /></Td>}
+            {canWrite && <Td right><div className="flex items-start justify-end gap-1"><CategoryEditForm c={view(t)} />{!t.isSystem && !t.children.some((x) => x.isSystem) && <DeleteButton action={deleteCategoryAction} id={t.id} name={t.name} title={t.children.length ? "Manbani sub manbalari bilan o'chirish" : "Manbani o'chirish"} />}</div></Td>}
           </Tr>,
           ...t.children.map((c) => (
             <Tr key={c.id} className={c.isActive ? undefined : "opacity-60"}>
@@ -52,7 +55,7 @@ export default async function CategoriesPage() {
               <Td className="text-[13px] text-slate-400">manbadan</Td>
               <Td />
               <Td />
-              {canWrite && <Td right><CategoryEditForm c={view(c)} /></Td>}
+              {canWrite && <Td right><div className="flex items-start justify-end gap-1"><CategoryEditForm c={view(c)} />{!c.isSystem && <DeleteButton action={deleteCategoryAction} id={c.id} name={c.name} title="Sub manbani o'chirish" />}</div></Td>}
             </Tr>
           )),
         ])}

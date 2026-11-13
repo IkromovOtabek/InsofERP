@@ -83,7 +83,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const canStorno = canDo(s, "cashflow", "transfer_storno");
 
   const canPay = ["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role);
-  const [marks, unpaid, supplyTx, incomeCats, expenseCats, projects, loans] = await Promise.all([
+  const [marks, unpaid, supplyTx, incomeCats, expenseCats, projects, loans, systemCats] = await Promise.all([
     customerMarks(payments.map((p) => p.customerId)),
     unpaidReceipts(),
     // Ta'minot zanjirining chiqimlari kirimga bog'langan bo'lsa ham bu yerdan o'chirilmaydi
@@ -93,7 +93,12 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     categoryOptions("EXPENSE"),
     db.project.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.loan.findMany({ where: { cancelledAt: null, closedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true, kind: true } }),
+    // Tizim manbalari (kod nomiga tayanadi) — formada qalam / savatcha chiqmaydi
+    db.cashCategory.findMany({ where: { isSystem: true }, select: { name: true } }),
   ]);
+  // Manba / sub manba yonidagi qalam va savatcha (`lib/quick-add-actions.ts`): yozuvni tahrirlash / o'chirish huquqi yoki kategoriyalarni yuritish
+  const canEditCat = canDo(s, "cashflow", "edit") || canDo(s, "moliya", "categories");
+  const canDeleteCat = canDo(s, "cashflow", "delete") || canDo(s, "moliya", "categories");
   // Bekor qilingan yozuv jurnalda «Bekor qilingan» belgisi bilan qoladi, lekin kirim/chiqim jamiga kirmaydi
   const cNames = await cancellerNames(txs);
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
@@ -179,7 +184,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         {canCreate && (
           <Card className="lg:col-span-3">
             <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
-            <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} canAdd={canCreate} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
+            <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} canAdd={canCreate} canEditCat={canEditCat} canDeleteCat={canDeleteCat} lockedCats={systemCats.map((c) => c.name)} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
           </Card>
         )}
         <Card className="lg:col-span-2">
