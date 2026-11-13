@@ -57,7 +57,7 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
   return (
     <div>
       <PageHeader
-        back={{ href: "/payments?tab=jurnal", label: "Kassa / bank — jurnal" }}
+        back={{ href: "/payments", label: "Kassa / bank" }}
         title={<>{customer.name}{credit.blacklisted && <BlacklistMark className="text-xs" />}{contracted.has(id) && <ContractMark className="text-xs" />}</>}
         subtitle={`Realizatsiya jurnali · ${[customer.inn && `INN ${customer.inn}`, customer.phone].filter(Boolean).join(" · ") || "mijozning barcha qatorlari"}`}
         action={<LinkButton href={`/customers/${id}`} variant="secondary">Mijoz kartasi</LinkButton>}

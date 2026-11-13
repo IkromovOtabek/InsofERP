@@ -284,8 +284,9 @@ export async function prepayShortError(client: Tx | typeof db, orderId: string):
  * Kassa/bank hisoblarining haqiqiy qoldig'i (butun davr): mijoz to'lovlari + boshqa kirimlar − chiqimlar.
  * Kassa/bank sahifasidagi kartalar, Kirim-Chiqim va "kassa minusga tushmasin" tekshiruvi — bitta manba.
  */
-export async function accountBalances(client: Tx = db, ids?: string[]): Promise<Map<string, number>> {
-  const byAcc = ids ? { cashAccountId: { in: ids } } : {};
+export async function accountBalances(client: Tx = db, ids?: string[], until?: Date): Promise<Map<string, number>> {
+  // `until` — shu paytdagi qoldiq (Kassa / bank matritsasi: davr boshi va oxiri); berilmasa — hozirgi
+  const byAcc = { ...(ids ? { cashAccountId: { in: ids } } : {}), ...(until ? { date: { lte: until } } : {}) };
   const [pay, tx] = await Promise.all([
     client.payment.groupBy({ by: ["cashAccountId"], where: byAcc, _sum: { amount: true } }),
     client.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { ...byAcc, cancelledAt: null }, _sum: { amount: true } }),

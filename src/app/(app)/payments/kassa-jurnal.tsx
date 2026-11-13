@@ -9,6 +9,7 @@ import { JOURNAL_ONLY, TRANSFER_REF, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { SALES_MANBA } from "@/lib/cash-import";
 import { categoryOptions } from "@/lib/fin-report/categories";
+import { accountBalances } from "@/lib/payments";
 import { CashEditProvider } from "./cash-edit";
 import { KassaJournal, type KassaRow } from "./kassa-table";
 
@@ -44,19 +45,36 @@ const flowText = (f?: Flow) => (
   </span>
 );
 
+/** Matritsa ustunlarini ajratuvchi tik chiziq (birinchi — «Hisob» ustunidan boshqa hamma katakda) */
+const COL = "border-l border-l-slate-200";
+
 /**
  * Hisoblar matritsasi (Google jadvalidagi «Kassa» varag'i tepasi kabi): ustunlar — har bir kassa/bank hisobi va Jami,
- * qatorlar — qoldiq, bugungi va shu oydagi kirim/chiqim. Hisob nomi bosilsa — jurnal shu hisob bo'yicha ochiladi.
- * `range` (Kassa jurnali tabi, tepadagi sana) — bugun / shu oydan farq qilsa, shu davr qatori ham.
+ * qatorlar — tepadagi sana davri bo'yicha: davr boshidagi qoldiq, davrdagi kirim/chiqim va davr oxiridagi qoldiq
+ * (10–13-sana tanlansa — 13-sana oxiridagi qoldiq). Hisob nomi bosilsa — jurnal shu hisob bo'yicha ochiladi.
  */
-export async function AccountMatrix({ accounts, balances, range }: { accounts: Account[]; balances: Map<string, number>; range?: { from: Date; to: Date } }) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+export async function AccountMatrix({ accounts, range }: { accounts: Account[]; range: { from: Date; to: Date } }) {
   const ids = accounts.map((a) => a.id);
-  const own = range && isoDate(range.to) === isoDate(today) && [isoDate(today), isoDate(monthStart)].includes(isoDate(range.from)) ? undefined : range;
-  const [day, month, sel] = await Promise.all([flowsSince(today, ids), flowsSince(monthStart, ids), own ? flowsSince(own.from, ids, own.to) : null]);
-  const total = accounts.reduce((s, a) => s + (balances.get(a.id) ?? 0), 0);
+  const [opening, closing, flow] = await Promise.all([
+    accountBalances(db, ids, new Date(range.from.getTime() - 1)),
+    accountBalances(db, ids, range.to),
+    flowsSince(range.from, ids, range.to),
+  ]);
+  const sum = (m: Map<string, number>) => accounts.reduce((s, a) => s + (m.get(a.id) ?? 0), 0);
+  const sub = (text: string) => <span className="block text-[11px] font-normal text-slate-500">{text}</span>;
+  const balanceRow = (label: string, hint: string, m: Map<string, number>, strong: boolean) => {
+    const total = sum(m);
+    return (
+      <Tr className={strong ? "bg-brand-50/60" : undefined}>
+        <Td className="whitespace-nowrap">{label}{sub(hint)}</Td>
+        {accounts.map((a) => {
+          const b = m.get(a.id) ?? 0;
+          return <Td key={a.id} right className={cn(COL, strong ? "font-semibold" : "font-medium", b < 0 ? "text-red-600" : "text-slate-900")}>{money(b)}</Td>;
+        })}
+        <Td right className={cn(COL, strong ? "font-bold" : "font-semibold", total < 0 ? "text-red-600" : "text-slate-900")}>{money(total)}</Td>
+      </Tr>
+    );
+  };
 
   return (
     <div className="mb-6">
@@ -65,43 +83,25 @@ export async function AccountMatrix({ accounts, balances, range }: { accounts: A
           <tr>
             <Th>Hisob</Th>
             {accounts.map((a) => (
-              <Th key={a.id} right>
-                <Link href={`/payments?tab=kassa&account=${a.id}${range ? `&from=${isoDate(range.from)}&to=${isoDate(range.to)}` : ""}`} className="hover:underline">{a.name}</Link>
+              <Th key={a.id} right className={COL}>
+                <Link href={`/payments?account=${a.id}&from=${isoDate(range.from)}&to=${isoDate(range.to)}`} className="hover:underline">{a.name}</Link>
                 <span className="block text-[10.5px] font-medium normal-case tracking-normal text-slate-500">{a.type === "CASH" ? "naqd" : "bank"}</span>
               </Th>
             ))}
-            <Th right>Jami</Th>
+            <Th right className={COL}>Jami</Th>
           </tr>
         </thead>
         <tbody>
+          {balanceRow("Boshlang'ich qoldiq", `${date(range.from)} boshiga`, opening, false)}
           <Tr>
-            <Td>Qoldiq</Td>
-            {accounts.map((a) => {
-              const b = balances.get(a.id) ?? 0;
-              return <Td key={a.id} right className={`font-semibold ${b < 0 ? "text-red-600" : "text-slate-900"}`}>{money(b)}</Td>;
-            })}
-            <Td right className={`font-bold ${total < 0 ? "text-red-600" : "text-slate-900"}`}>{money(total)}</Td>
+            <Td className="whitespace-nowrap">Kirim / chiqim{sub(rangeLabel(range.from, range.to))}</Td>
+            {accounts.map((a) => <Td key={a.id} right className={COL}>{flowText(flow.byAcc.get(a.id))}</Td>)}
+            <Td right className={cn(COL, "font-medium")}>{flowText(flow.total)}</Td>
           </Tr>
-          {own && sel && (
-            <Tr className="bg-brand-50/60">
-              <Td className="whitespace-nowrap">{rangeLabel(own.from, own.to)}</Td>
-              {accounts.map((a) => <Td key={a.id} right>{flowText(sel.byAcc.get(a.id))}</Td>)}
-              <Td right className="font-medium">{flowText(sel.total)}</Td>
-            </Tr>
-          )}
-          <Tr>
-            <Td>Bugun</Td>
-            {accounts.map((a) => <Td key={a.id} right>{flowText(day.byAcc.get(a.id))}</Td>)}
-            <Td right className="font-medium">{flowText(day.total)}</Td>
-          </Tr>
-          <Tr>
-            <Td>Shu oy</Td>
-            {accounts.map((a) => <Td key={a.id} right>{flowText(month.byAcc.get(a.id))}</Td>)}
-            <Td right className="font-medium">{flowText(month.total)}</Td>
-          </Tr>
+          {balanceRow("Qoldiq", `${date(range.to)} oxiriga`, closing, true)}
         </tbody>
       </Table>
-      <p className="mt-1.5 text-xs text-slate-500">Hisob ustunlarida perekit ham hisobga olingan; Jami — perekitsiz (pul kompaniya ichida ko&apos;chgan). Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
+      <p className="mt-1.5 text-xs text-slate-500">Hammasi tepadagi sana bo&apos;yicha. Hisob ustunlarida perekit ham hisobga olingan; Jami — perekitsiz (pul kompaniya ichida ko&apos;chgan). Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
     </div>
   );
 }
