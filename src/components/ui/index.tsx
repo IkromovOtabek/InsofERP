@@ -102,7 +102,8 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "default", hre
       {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
     </div>
   );
-  return href ? <Link href={href} className="block h-full rounded-(--radius-card)">{body}</Link> : body;
+  // drill-link — son bosilib ochilgan sahifada (menyu sahifasi bo'lsa ham) «Ortga» chiqadi
+  return href ? <Link href={href} className="drill-link block h-full rounded-(--radius-card)">{body}</Link> : body;
 }
 
 /* ═══════════════════════ Buttons ═══════════════════════ */

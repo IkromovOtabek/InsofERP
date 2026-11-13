@@ -57,7 +57,7 @@ export function HBarList({ data, tone = "brand", formatValue = String, max: maxI
           </>
         );
         return d.href
-          ? <Link key={i} href={d.href} title="Qayerdan kelgan — bosing" className="-mx-1.5 block rounded-md px-1.5 py-0.5 hover:bg-slate-50">{body}</Link>
+          ? <Link key={i} href={d.href} title="Qayerdan kelgan — bosing" className="drill-link -mx-1.5 block rounded-md px-1.5 py-0.5 hover:bg-slate-50">{body}</Link>
           : <div key={i}>{body}</div>;
       })}
     </div>
