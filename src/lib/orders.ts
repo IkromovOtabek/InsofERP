@@ -585,6 +585,10 @@ export type EditOrderInput = {
   /** Kutilayotgan bosh to'lov; 0 — yo'q */
   prepayAmount?: number;
   payMethod?: PayMethod | null;
+  /** «HH:MM» yoki null (soatsiz); `undefined` — o'zgarmaydi (veb tahrir formasi soat yubormaydi) */
+  deliveryTime?: string | null;
+  /** AuditLog'dagi manba belgisi: sukut «order-edit», Excel ko'rinish katagidan — «order-grid-cell» */
+  via?: string;
 };
 
 /**
@@ -695,6 +699,8 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
     if (plant?.lat != null && plant?.lng != null) dist = await routeDistance({ lat: plant.lat, lng: plant.lng }, { lat, lng });
   }
   const note = input.note?.trim() || null;
+  const deliveryTime = isStock || input.deliveryTime === undefined ? o.deliveryTime : input.deliveryTime?.trim() || null;
+  if (deliveryTime !== o.deliveryTime && deliveryTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(deliveryTime)) return { changed: false, error: "Soat noto'g'ri — masalan 09:30" };
   const concreteOf = (list: { productId: string; qtyM3: number }[]) => list.reduce((s, i) => s + (unitOf.get(i.productId) === "m3" ? i.qtyM3 : 0), 0);
   const oldM3 = concreteM3(o.items);
   const newM3 = concreteOf(items);
@@ -731,7 +737,7 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
         data: {
           status, deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note,
           ...(isStock ? {} : {
-            deliveryAddress, lat, lng, needsPump: !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod,
+            deliveryAddress, lat, lng, needsPump: !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod, deliveryTime,
             ...(siteId !== o.siteId ? { siteId } : {}),
             ...(pointChanged ? { distanceKm: dist?.km ?? null, distanceSource: dist?.source ?? null } : {}),
           }),
@@ -784,13 +790,13 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
         }
       }
 
-      const pick = (x: { deliveryDate: Date; dateUnknown: boolean; isUrgent: boolean; note: string | null; deliveryAddress: string; needsPump: boolean; needsDelivery: boolean; deliveryFee: unknown; onCredit: boolean; prepayAmount: unknown; payMethod: unknown }) => ({
-        deliveryDate: x.deliveryDate, dateUnknown: x.dateUnknown, isUrgent: x.isUrgent, note: x.note, deliveryAddress: x.deliveryAddress, needsPump: x.needsPump,
+      const pick = (x: { deliveryDate: Date; dateUnknown: boolean; isUrgent: boolean; note: string | null; deliveryAddress: string; needsPump: boolean; needsDelivery: boolean; deliveryFee: unknown; onCredit: boolean; prepayAmount: unknown; payMethod: unknown; deliveryTime: string | null }) => ({
+        deliveryDate: x.deliveryDate, dateUnknown: x.dateUnknown, deliveryTime: x.deliveryTime, isUrgent: x.isUrgent, note: x.note, deliveryAddress: x.deliveryAddress, needsPump: x.needsPump,
         needsDelivery: x.needsDelivery, deliveryFee: Number(x.deliveryFee ?? 0), onCredit: x.onCredit, prepayAmount: x.prepayAmount == null ? null : Number(x.prepayAmount), payMethod: x.payMethod,
       });
       await audit(tx, userId, "UPDATE", "Order", id,
         { status: o.status, total: oldTotal, ...pick(o), items: o.items.map((i) => ({ id: i.id, productId: i.productId, qtyM3: Number(i.qtyM3), price: Number(i.price), nds: i.nds, blockId: i.blockId })) },
-        { status, total, ...pick({ deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note, deliveryAddress, needsPump: isStock ? o.needsPump : !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod }), items, via: "order-edit" });
+        { status, total, ...pick({ deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note, deliveryAddress, needsPump: isStock ? o.needsPump : !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod, deliveryTime }), items, via: input.via ?? "order-edit" });
       return { status, notifyReq };
     });
   } catch (e) {

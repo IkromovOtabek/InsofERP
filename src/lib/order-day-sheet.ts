@@ -44,6 +44,9 @@ export type DaySheetRow = {
   /** Yangi zayavka «Excel ko'rinish» varag'i uchun: holat, blok, reys soni (0 — dastavka yo'q, null — noma'lum),
    *  bosh to'lov (zayavkaning birinchi qatorida) va `first` — zayavkaning birinchi qatori */
   status: OrderStatus; block: string | null; trips: number | null; prepay: number; first: boolean;
+  /** Varaq katagidagi qalam uchun (`orders/grid-cell-action.ts`): qator id (faqat dastavka qatorida null), QQS belgisi,
+   *  mijoz va obyekt id, xom manzil va xaritadagi nuqta */
+  itemId: string | null; nds: boolean; customerId: string; siteId: string | null; address: string; lat: number | null; lng: number | null;
 };
 export type DaySheetTotals = { qty: number; delivery: number; net: number; vat: number; total: number };
 export type DaySheetGroup = { key: PayGroupKey; label: string; rows: DaySheetRow[]; totals: DaySheetTotals; qtyText: string };
@@ -70,12 +73,34 @@ function qtyText(rows: DaySheetRow[]): string {
  * Excel ko'rinishda (`lib/orders-grid.ts`) qabul qiluvchi va reys soni zayavka izohiga yoziladi:
  * «Qabul qiluvchi: Ism, +998…; …» va «Dastavka: N reys». Izohda bo'lmasa — obyekt/mijoz kontakti.
  */
-function noteInfo(note: string | null) {
+export function noteInfo(note: string | null) {
   const first = note?.match(/^Qabul qiluvchi:\s*(.+)$/m)?.[1]?.split(";")[0] ?? "";
   const parts = first.split(",").map((x) => x.trim()).filter(Boolean);
   const phone = parts.find((x) => x.replace(/\D/g, "").length >= 7) ?? null;
   const trips = note?.match(/^Dastavka:\s*(\d+)\s*reys/m)?.[1];
   return { receiver: parts.filter((x) => x !== phone).join(", ") || null, phone, trips: trips ? Number(trips) : null };
+}
+
+/** Izohdagi «Qabul qiluvchi: …» qatorining birinchi kishisini almashtiradi (qolganlari «;» dan keyin saqlanadi); ikkalasi bo'sh — o'chadi */
+export function noteWithReceiver(note: string | null, receiver: string | null, phone: string | null): string | null {
+  const who = [receiver?.replace(/[;\n]/g, " ").trim(), phone?.replace(/[;,\n]/g, " ").trim()].filter(Boolean).join(", ");
+  const lines = (note ?? "").split("\n");
+  const at = lines.findIndex((l) => /^Qabul qiluvchi:/.test(l));
+  const rest = at < 0 ? [] : lines[at]!.replace(/^Qabul qiluvchi:\s*/, "").split(";").slice(1).map((x) => x.trim()).filter(Boolean);
+  const line = [who, ...rest].filter(Boolean).join("; ");
+  if (at >= 0) { if (line) lines[at] = `Qabul qiluvchi: ${line}`; else lines.splice(at, 1); }
+  else if (line) lines.unshift(`Qabul qiluvchi: ${line}`);
+  return lines.join("\n").trim() || null;
+}
+
+/** Izohdagi «Dastavka: N reys» qatori: N > 0 — yoziladi/almashadi, aks holda o'chadi */
+export function noteWithTrips(note: string | null, trips: number | null): string | null {
+  const lines = (note ?? "").split("\n").filter((l) => !/^Dastavka:\s*\d+\s*reys/.test(l));
+  if (trips && trips > 0) {
+    const at = lines.findIndex((l) => /^Qabul qiluvchi:/.test(l));
+    lines.splice(at + 1, 0, `Dastavka: ${trips} reys`);
+  }
+  return lines.join("\n").trim() || null;
 }
 
 export async function orderDaySheet(day: Date): Promise<DaySheet> {
@@ -88,10 +113,10 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
       orderBy: [{ deliveryTime: "asc" }, { orderNo: "asc" }],
       select: {
         id: true, status: true, deliveryTime: true, deliveryAddress: true, deliveryFee: true, payMethod: true, onCredit: true,
-        note: true, needsDelivery: true, prepayAmount: true,
+        note: true, needsDelivery: true, prepayAmount: true, customerId: true, siteId: true, lat: true, lng: true,
         customer: { select: { name: true, phone: true, contactPerson: true } },
         site: { select: { name: true, contactName: true, contactPhone: true } },
-        items: { orderBy: { id: "asc" }, select: { qtyM3: true, price: true, nds: true, block: { select: { name: true } }, product: { select: { name: true, unit: true, groupId: true } } } },
+        items: { orderBy: { id: "asc" }, select: { id: true, qtyM3: true, price: true, nds: true, block: { select: { name: true } }, product: { select: { name: true, unit: true, groupId: true } } } },
       },
     }),
     db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
@@ -108,7 +133,10 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
     const ni = noteInfo(o.note);
     const receiver = ni.receiver || o.site?.contactName || o.customer.contactPerson || null;
     const phone = ni.phone || o.site?.contactPhone || o.customer.phone || null;
-    const extra = { status: o.status, trips: o.needsDelivery ? ni.trips : 0, prepay: Number(o.prepayAmount ?? 0) };
+    const extra = {
+      status: o.status, trips: o.needsDelivery ? ni.trips : 0, prepay: Number(o.prepayAmount ?? 0),
+      customerId: o.customerId, siteId: o.siteId, address: o.deliveryAddress, lat: o.lat, lng: o.lng,
+    };
     o.items.forEach((i, n) => {
       const qty = Number(i.qtyM3), price = Number(i.price);
       const line = r2(qty * price);
@@ -120,7 +148,7 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
         qty, price: i.nds ? withoutNds(price) : price, delivery,
         net: r2(line - vat + delivery), vat, total: r2(line + delivery),
         receiver, phone, site: o.site?.name || o.deliveryAddress, time: o.deliveryTime,
-        ...extra, block: i.block?.name ?? null, prepay: n === 0 ? extra.prepay : 0, first: n === 0,
+        ...extra, block: i.block?.name ?? null, prepay: n === 0 ? extra.prepay : 0, first: n === 0, itemId: i.id, nds: i.nds,
       });
       const pk = `${rootName(i.product.groupId)}|${unit}`;
       const p = products.get(pk) ?? { name: rootName(i.product.groupId), unit, qty: 0 };
@@ -131,7 +159,7 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
       rowsBy[key].push({
         orderId: o.id, customer: o.customer.name, product: "Dastavka", unit: "", qty: 0, price: 0, delivery: fee,
         net: fee, vat: 0, total: fee, receiver, phone, site: o.site?.name || o.deliveryAddress, time: o.deliveryTime,
-        ...extra, block: null, first: true,
+        ...extra, block: null, first: true, itemId: null, nds: false,
       });
     }
   }

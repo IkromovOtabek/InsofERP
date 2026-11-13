@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Save, CheckCircle2, MapPin, FileSignature, UserPlus, Building2, CalendarDays, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, X, Save, CheckCircle2, MapPin, FileSignature, UserPlus, Building2, CalendarDays, Clock, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import type { DaySheetRow } from "@/lib/order-day-sheet";
 import { ORDER_STATUS, OrderStatusBadge } from "./status";
 import { Button, Callout, Card, Field as FormField, Input, LinkButton } from "@/components/ui";
@@ -19,6 +19,7 @@ import { saveOrderGrid } from "./actions";
 import { loadOrderRowFlags } from "./row-flags-action";
 import type { OrderRowFlags } from "./row-flags";
 import { OrderRowActions } from "./order-row-actions";
+import { editOrderGridCell, type GridCellField } from "./grid-cell-action";
 
 /** Mijoz obyekti va uning bloklari (A blok, B blok…) */
 export type GridSite = SavedPlace & { blocks: string[] };
@@ -176,6 +177,12 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
   const closePop = useCallback(() => setPop(null), []);
   // Olingan zayavkalar qatorida qalam / «Bekor qilish»: ruxsat va zames/reys holati serverdan (kartadagi shart bilan bir xil)
   const [rowFlags, setRowFlags] = useState<Record<string, OrderRowFlags>>({});
+  // Olingan zayavka katagidagi qalam: kichik oyna (shu ustun) yoki «Obyekt joyi» xarita oynasi
+  const [exEdit, setExEdit] = useState<{ x: DaySheetRow; f: Exclude<GridCellField, "site">; label: string; el: HTMLElement } | null>(null);
+  const [exSite, setExSite] = useState<DaySheetRow | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const closeExEdit = useCallback(() => setExEdit(null), []);
+  const [, startEx] = useTransition();
   useEffect(() => {
     const ids = [...new Set([...existing.bank, ...existing.cash, ...existing.credit].map((x) => x.orderId))];
     let alive = true;
@@ -503,6 +510,32 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
       default: return "";
     }
   };
+  /**
+   * Olingan zayavka katagida qalam qaysi maydonni ochadi: mahsulot qatori ustunlari — shu qator, reys/dastavka/bosh to'lov — zayavkaning
+   * birinchi qatorida, qabul qiluvchi/telefon/obyekt/sana/vaqt — butun zayavka. «Kimga» — o'z qalami (to'liq tahrir sahifasi);
+   * birlik, summa va jami hisoblanadi (soni, narxi, QQS'dan).
+   */
+  const exFieldOf = (x: DaySheetRow, col: Col): GridCellField | null => {
+    const k = col.calc ?? col.f;
+    switch (k) {
+      case "product": case "block": case "qty": case "price": case "vat": return x.itemId ? k : null;
+      case "trips": case "fee": case "prepay": return x.first ? k : null;
+      case "receiver": case "phone": case "site": case "date": case "time": return k;
+      default: return null;
+    }
+  };
+  /** Katak saqlandi: varaq serverdan yangilanadi (summalar, guruh, boshqa qatorlar ham) */
+  const exSaved = (blocked: boolean) => {
+    setExEdit(null); setError(null);
+    setNotice(blocked ? "Zayavka summasi kredit limitidan oshdi — zayavka bloklandi, direktor ochadi" : null);
+    router.refresh();
+  };
+  const orderTotalOf = (orderId: string) => SECTIONS.reduce((a, { sec }) => a + existing[sec].reduce((b, y) => b + (y.orderId === orderId ? y.total : 0), 0), 0);
+  const saveExSite = (x: DaySheetRow, site: string, point: { lat: number; lng: number } | null) =>
+    startEx(async () => {
+      const r = await editOrderGridCell({ orderId: x.orderId, itemId: x.itemId, field: "site", value: site, lat: point?.lat ?? null, lng: point?.lng ?? null });
+      if ("error" in r) setError(`${x.customer}: ${r.error}`); else exSaved(!!r.blocked);
+    });
   const grand = { bank: totals("bank"), cash: totals("cash"), credit: totals("credit") };
   const all = (k: "sum" | "vat" | "total" | "prepay") => SECTIONS.reduce((a, { sec }) => a + grand[sec][k], 0);
 
@@ -531,19 +564,33 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
             )}
           </td>
         </tr>
-        {/* Shu kunga olingan zayavkalar — kulrang, kataklari tahrirlanmaydi; mijoz nomi yonida qalam (tahrirlash sahifasi) va «Bekor qilish» */}
+        {/* Shu kunga olingan zayavkalar — kulrang; har katakda qalam (shu ustunni tahrirlash), mijoz nomi yonida — to'liq tahrir va «Bekor qilish» */}
         {existing[sec].map((x, i) => {
           const g = exGroups.get(x.orderId);
+          const canEdit = !!rowFlags[x.orderId]?.edit && !loading && date === day;
           return (
             <tr key={`ex-${x.orderId}-${i}`} className={cn("h-8 bg-slate-50", (loading || date !== day) && "opacity-40")}
-              title={`Olingan zayavka · ${ORDER_STATUS[x.status].label} — tahrirlash: mijoz nomi yonidagi qalam`}>
+              title={`Olingan zayavka · ${ORDER_STATUS[x.status].label}${canEdit ? " — katakdagi qalam: shu ustunni tahrirlash" : rowFlags[x.orderId] ? " — ishlab chiqarish boshlangan yoki ruxsat yo'q, tahrirlanmaydi" : ""}`}>
               <td className={cn("w-14 min-w-14 border border-slate-300 bg-slate-100 text-center text-[11px] text-slate-500", g && g.rows > 1 && `border-l-4 ${GROUP_COLORS[(g.no - 1) % GROUP_COLORS.length]}`)}>{i + 1}</td>
               {COLS.map((col, ci) => {
-                const right = col.num || col.calc === "sum" || col.calc === "vat" || col.calc === "total";
+                const right = col.num || col.calc === "sum" || col.calc === "vat" || col.calc === "total" || col.f === "trips";
                 const v = exCell(x, col);
+                const ef = canEdit ? exFieldOf(x, col) : null;
+                const text = typeof v === "string" ? <div className="min-w-0 flex-1 truncate" title={v.length > 24 ? v : undefined}>{v}</div> : v;
                 return (
-                  <td key={ci} className={cn(exText, col.w, right && "text-right tabular-nums whitespace-nowrap", col.calc === "unit" && "text-center", col.calc === "total" && "font-semibold", col.f === "trips" && "text-right text-slate-500")}>
-                    {typeof v === "string" ? <div className="max-w-[260px] truncate" title={v.length > 24 ? v : undefined}>{v}</div> : v}
+                  <td key={ci} className={cn(exText, col.w, right && "text-right tabular-nums whitespace-nowrap", col.calc === "unit" && "text-center", col.calc === "total" && "font-semibold", col.f === "trips" && "text-slate-500")}>
+                    {ef ? (
+                      // Qalam katak chetida: son ustunida chapda (raqam o'ngda qoladi), matnda o'ngda
+                      <div className={cn("group/cell flex max-w-[260px] items-center gap-1", right && "ml-auto flex-row-reverse")}>
+                        {text}
+                        <button type="button" aria-label={`${col.label}: tahrirlash`} title={`${col.label} — tahrirlash`}
+                          onClick={(e) => (ef === "site" ? setExSite(x) : setExEdit({ x, f: ef, label: col.label, el: e.currentTarget.closest("td")! }))}
+                          className={cn("shrink-0 rounded p-0.5 transition hover:bg-slate-200 hover:!text-slate-900",
+                            exEdit?.x === x && exEdit.f === ef ? "bg-slate-200 text-slate-900" : "text-slate-300 group-hover/cell:text-slate-500")}>
+                          <Pencil size={11} />
+                        </button>
+                      </div>
+                    ) : typeof v === "string" ? <div className="max-w-[260px] truncate" title={v.length > 24 ? v : undefined}>{v}</div> : v}
                   </td>
                 );
               })}
@@ -661,6 +708,7 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
         </Callout>
       )}
       {error && <Callout tone="danger">{error}</Callout>}
+      {notice && <Callout tone="warning">{notice}</Callout>}
 
       <Card padded={false} className="overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
@@ -717,7 +765,8 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
           <Button type="button" onClick={save} disabled={pending || !dirty}><Save size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>
           <LinkButton href="/orders" variant="secondary">Zayavkalar</LinkButton>
           <p className="text-xs text-slate-500">
-            Har bo&apos;lim tepasidagi kulrang qatorlar — varaq kuniga olingan barcha zayavkalar (kun almashsa o&apos;sha kunniki); o&apos;zgartirish — mijoz nomini bosib, zayavka sahifasida.
+            Har bo&apos;lim tepasidagi kulrang qatorlar — varaq kuniga olingan barcha zayavkalar (kun almashsa o&apos;sha kunniki); har katakdagi qalam — shu ustunni
+            tahrirlash (ishlab chiqarish boshlanguncha), mijoz nomi yonidagi qalam — to&apos;liq tahrir.
             «Kimga» bosilsa ro&apos;yxat: tepada «Yangi mijoz», obyektida bloklari bor mijoz — har blok alohida («Mijoz — A blok»).
             Bir mijozga bir nechta mahsulot — qator raqami ustidagi «+»: bir mijoz + obyekt + sana + vaqt qatorlari bitta zayavka (chapda bir rangli chiziq).
             «Reys»: 0 — dastavka yo&apos;q (mijoz o&apos;zi olib ketadi), 1 va undan ko&apos;p — nechta reys. «Sana» bo&apos;sh — varaq sanasi, «aniq emas» ham tanlanadi.
@@ -785,9 +834,22 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
 
       {siteFor && (() => {
         const r = rows[siteFor.sec].find((x) => x.key === siteFor.key);
-        return r ? <SiteDialog row={r} customer={customerOf(r)} geoSearch={geoSearch} onClose={() => setSiteFor(null)}
+        return r ? <SiteDialog value={{ site: r.site, lat: r.lat, lng: r.lng, customer: r.customer }} customer={customerOf(r)} geoSearch={geoSearch} onClose={() => setSiteFor(null)}
           onApply={(site, point) => applySite(siteFor.sec, siteFor.key, site, point)} /> : null;
       })()}
+
+      {exSite && (
+        <SiteDialog value={{ site: exSite.address, lat: exSite.lat, lng: exSite.lng, customer: exSite.customer }} customer={customers.find((c) => c.id === exSite.customerId) ?? null}
+          geoSearch={geoSearch} onClose={() => setExSite(null)} onApply={(site, point) => saveExSite(exSite, site, point)} />
+      )}
+
+      {exEdit && (
+        <Popover anchor={exEdit.el} onClose={closeExEdit} width={exEdit.f === "time" ? 300 : 280}>
+          <ExCellEditor x={exEdit.x} f={exEdit.f} label={exEdit.label} day={day} total={orderTotalOf(exEdit.x.orderId)}
+            blocks={customers.find((c) => c.id === exEdit.x.customerId)?.sites.find((st) => st.id === exEdit.x.siteId)?.blocks ?? []}
+            productId={(name) => byProduct.get(flat(name))?.id ?? null} onSaved={exSaved} onClose={closeExEdit} />
+        </Popover>
+      )}
 
       {custFor && (
         <NewCustomerDialog initial={custFor.initial} geoSearch={geoSearch} exists={(name) => byCustomer.get(flat(name)) ?? null}
@@ -828,6 +890,112 @@ function Popover({ anchor, onClose, width, children }: { anchor: HTMLElement; on
       {children}
     </div>
   ), document.body);
+}
+
+/**
+ * Olingan zayavka katagidagi qalam oynasi — faqat shu ustun. Saqlash `editOrderGridCell` orqali: zayavkaning qolgan ma'lumotlari
+ * bazadagidek qoladi, tekshiruvlar to'liq tahrir bilan bir xil (limit, schyot, bosh to'lov, brigadaga berilgan qator).
+ * Vaqt va QQS — bosilishi bilan saqlanadi; qiymat o'zgarmagan bo'lsa server chaqirilmaydi.
+ */
+function ExCellEditor({ x, f, label, day, total, blocks, productId, onSaved, onClose }: {
+  x: DaySheetRow; f: Exclude<GridCellField, "site">; label: string; /** Varaq kuni «YYYY-MM-DD» */ day: string;
+  /** Zayavka jami — bosh to'lov «To'liq» tugmasi */ total: number; /** Zayavka obyektining bloklari */ blocks: string[];
+  productId: (name: string) => string | null; onSaved: (blocked: boolean) => void; onClose: () => void;
+}) {
+  const initial = (() => {
+    switch (f) {
+      case "product": return x.product;
+      case "block": return x.block ?? "";
+      case "qty": return x.qty ? fmtNum(x.qty, 3) : "";
+      case "price": return fmtNum(x.price, 2);
+      case "vat": return x.nds ? "1" : "0";
+      case "trips": return x.trips == null ? "" : String(x.trips);
+      case "fee": return x.delivery ? fmtNum(x.delivery, 2) : "";
+      case "receiver": return x.receiver ?? "";
+      case "phone": return x.phone ?? "";
+      case "date": return day;
+      case "time": return x.time ?? "";
+      case "prepay": return x.prepay ? fmtNum(x.prepay, 2) : "";
+    }
+  })();
+  const [v, setV] = useState(initial);
+  const [err, setErr] = useState("");
+  const [pending, start] = useTransition();
+  const send = (value: string) => {
+    if (pending) return;
+    if (value.trim() === initial.trim()) { onClose(); return; }
+    let out = value;
+    if (f === "product") {
+      const id = productId(value);
+      if (!id) { setErr("Bunday mahsulot ro'yxatda yo'q — ro'yxatdan tanlang"); return; }
+      out = id;
+    }
+    setErr("");
+    start(async () => {
+      const r = await editOrderGridCell({ orderId: x.orderId, itemId: x.itemId, field: f, value: out });
+      if ("error" in r) setErr(r.error); else onSaved(!!r.blocked);
+    });
+  };
+  const num = f === "qty" || f === "price" || f === "fee" || f === "prepay";
+  const hint = f === "price" && x.nds ? "QQS'siz narx — 12% ustiga qo'shiladi" : f === "trips" ? "0 — dastavka yo'q (mijoz o'zi olib ketadi), bo'sh — soni noma'lum"
+    : f === "receiver" || f === "phone" || f === "date" || f === "time" ? "Butun zayavkaga (shu mijozning barcha qatorlari)" : null;
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); send(v); }} className="space-y-2 p-1.5" aria-label={`${label}: tahrirlash`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold text-slate-900">{label}</div>
+          <div className="truncate text-[11px] text-slate-500">{x.customer}{x.itemId && f !== "date" && f !== "time" ? ` · ${x.product}` : ""}</div>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={15} /></button>
+      </div>
+      {f === "time" ? (
+        <div>
+          <div className="grid grid-cols-5 gap-1 text-xs tabular-nums">
+            {TIMES.map((t) => (
+              <button key={t} type="button" disabled={pending} onClick={() => send(t)}
+                className={cn("rounded-md px-1 py-1 hover:bg-slate-100 disabled:opacity-50", normTime(x.time ?? "") === t ? "bg-slate-900 text-white hover:bg-slate-800" : "text-slate-700")}>{t}</button>
+            ))}
+          </div>
+          <button type="button" disabled={pending} onClick={() => send("")} className="mt-1.5 w-full rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-50">Vaqtsiz</button>
+        </div>
+      ) : f === "vat" ? (
+        <div className="grid grid-cols-2 gap-1.5 text-xs">
+          {([["1", "QQS 12% bilan"], ["0", "QQS'siz"]] as const).map(([k, l]) => (
+            <button key={k} type="button" disabled={pending} onClick={() => send(k)}
+              className={cn("rounded-md border px-2 py-1.5 font-medium disabled:opacity-50", initial === k ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50")}>{l}</button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5">
+            <Input value={v} onChange={(e) => { setV(e.target.value); setErr(""); }} autoFocus onFocus={(e) => e.currentTarget.select()} aria-label={label}
+              type={f === "date" ? "date" : "text"} list={f === "product" ? "og-products" : f === "block" && blocks.length ? "og-ex-blocks" : undefined} autoComplete="off"
+              inputMode={num ? "decimal" : f === "trips" ? "numeric" : f === "phone" ? "tel" : undefined}
+              className={cn("h-9", (num || f === "trips") && "text-right tabular-nums")} />
+            {f === "prepay" && total > 0 && (
+              <button type="button" onClick={() => setV(fmtNum(total, 2))} title="Bosh to'lov = zayavka summasi"
+                className="shrink-0 rounded-md bg-slate-100 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">To&apos;liq</button>
+            )}
+          </div>
+          {f === "block" && blocks.length > 0 && <datalist id="og-ex-blocks">{blocks.map((b) => <option key={b} value={b} />)}</datalist>}
+          {f === "date" && x.status === "DRAFT" && (
+            <button type="button" disabled={pending} onClick={() => send("unknown")}
+              className="w-full rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100">Aniq emas</button>
+          )}
+        </>
+      )}
+      {hint && <p className="text-[11px] text-slate-500">{hint}</p>}
+      {err && <p role="alert" className="text-xs font-medium text-red-600">{err}</p>}
+      {f !== "time" && f !== "vat" && (
+        <div className="flex justify-end gap-1.5">
+          <Button type="button" size="sm" variant="secondary" onClick={onClose}>Bekor</Button>
+          <Button type="submit" size="sm" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+        </div>
+      )}
+      {(f === "time" || f === "vat") && pending && <p className="text-[11px] text-slate-500">Saqlanmoqda…</p>}
+    </form>
+  );
 }
 
 /**
@@ -893,8 +1061,9 @@ function NewCustomerDialog({ initial, geoSearch, exists, onClose, onSave }: {
  * «Obyekt joyi» — xarita oynasi: yozganda xaritada qidiradi, mijozning saqlangan obyektlari ro'yxati, xaritaga bosib nuqta.
  * Nuqta zayavkaga ketadi — haydovchida navigatsiya va masofa shundan (`AddressPicker`).
  */
-function SiteDialog({ row, customer, geoSearch, onClose, onApply }: {
-  row: Row; customer: GridCustomer | null; geoSearch: boolean; onClose: () => void;
+function SiteDialog({ value: row, customer, geoSearch, onClose, onApply }: {
+  /** Katakdagi manzil va nuqta (yangi qator yoki olingan zayavka), `customer` — yozilgan mijoz nomi */
+  value: { site: string; lat: number | null; lng: number | null; customer: string }; customer: GridCustomer | null; geoSearch: boolean; onClose: () => void;
   onApply: (site: string, point: { lat: number; lng: number } | null) => void;
 }) {
   // Qatorda nuqta bo'lmasa — mijozning shu manzildagi obyekti nuqtasi
