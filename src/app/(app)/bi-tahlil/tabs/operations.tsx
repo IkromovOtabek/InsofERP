@@ -9,11 +9,18 @@ import { Kpi, Panel, Why, Insight, Action, Note, Tag, Chip, ProgressBar, tabHref
 import { OrderStatusBadge } from "../../orders/status";
 import type { SP } from "../page";
 import { cn } from "@/lib/utils";
+import { DRILL_LINK, DrillPanel } from "@/components/drill-panel";
+import { OPS_DRILL_KINDS, opsDrill, type OpsDrillKind } from "@/lib/bi/ops-drill";
 
 export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
   const gran: Gran = sp.gran === "day" || sp.gran === "week" || sp.gran === "month" ? sp.gran : autoGran(range.days);
-  const d = await operationsTab(range, gran);
+  // Raqam manbasi: `drill` — reyslar / yetkazilgan / m³ / zameslar, filtr — `v` (mikser), `dr` (haydovchi), `p` (marka)
+  const kind = OPS_DRILL_KINDS.find((x) => x === sp.drill) as OpsDrillKind | undefined;
+  const [d, drill] = await Promise.all([operationsTab(range, gran), kind ? opsDrill(range, { kind, vehicle: sp.v, driver: sp.dr, product: sp.p }) : null]);
   const k = d.kpis;
+  const keep: Record<string, string> = sp.gran ? { gran: sp.gran } : {};
+  const dh = (kind: OpsDrillKind, f: Record<string, string> = {}) => tabHref(range, "operations", { ...keep, drill: kind, ...f });
+  const DL = ({ href, children }: { href: string; children: React.ReactNode }) => <Link href={href} scroll={false} title="Qayerdan kelgan — bosing" className={DRILL_LINK}>{children}</Link>;
   const top5 = d.drivers.slice(0, 5), bottom5 = d.drivers.length > 5 ? [...d.drivers].reverse().slice(0, 5) : d.drivers.filter((x) => x.tier === "PAST" || x.tier === "O'RTA").reverse();
   // Birinchi uchtasi — oltin, kumush, bronza medal ikonkasi; qolgani tartib raqami
   const MEDAL = ["text-amber-500", "text-slate-400", "text-orange-700"];
@@ -21,6 +28,7 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
 
   return (
     <div className="space-y-6">
+      {drill && <DrillPanel drill={drill} closeHref={tabHref(range, "operations", keep)} />}
       {d.signals.length > 0 && (
         <Panel title={<span className="inline-flex items-center gap-1.5"><AlertTriangle size={15} className="text-red-500" /> Ogohlantirishlar</span>} info={`${d.signals.length} ta signal`} padded={false}>
           <ul className="divide-y divide-slate-100">{d.signals.map((s, i) => <li key={i} className="flex items-start gap-3 px-5 py-2.5 text-[13px]"><span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", s.level === "danger" ? "bg-red-500" : s.level === "warning" ? "bg-amber-500" : "bg-blue-500")} /><div className="min-w-0 flex-1"><div className="font-semibold">{s.title}</div><div className="text-xs text-slate-500">{s.text}</div></div>{s.href && <Link href={s.href} className="text-xs font-medium text-blue-600 hover:underline">Ochish →</Link>}</li>)}</ul>
@@ -28,10 +36,10 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        <Kpi label="Beton ishlab chiqarildi" value={`${qty(k.produced.cur)} m³`} delta={k.produced.delta} icon={Factory} tone="brand" hint={`${fmtNum(k.perDay, 1)} m³/kun`} href="/production" />
+        <Kpi label="Beton ishlab chiqarildi" value={`${qty(k.produced.cur)} m³`} delta={k.produced.delta} icon={Factory} tone="brand" hint={`${fmtNum(k.perDay, 1)} m³/kun`} href={dh("produced")} />
         <Kpi label="Plita mahsulot" value={k.hasPieces ? k.pieces : "0"} icon={Layers} hint={`oldingi davr: ${k.piecesPrev}`} href="/bi-tahlil/ombor/tayyor-mahsulot" />
-        <Kpi label="Reyslar" value={String(k.trips.cur)} delta={k.trips.delta} icon={Truck} tone="info" hint={`${k.cancelled} ta bekor`} href="/trips" />
-        <Kpi label="Beton yetkazildi" value={`${qty(k.deliveredM3.cur)} m³`} delta={k.deliveredM3.delta} icon={PackageCheck} tone="success" href="/trips" />
+        <Kpi label="Reyslar" value={String(k.trips.cur)} delta={k.trips.delta} icon={Truck} tone="info" hint={`${k.cancelled} ta bekor`} href={dh("trips")} />
+        <Kpi label="Beton yetkazildi" value={`${qty(k.deliveredM3.cur)} m³`} delta={k.deliveredM3.delta} icon={PackageCheck} tone="success" href={dh("deliveredM3")} />
         <Kpi label="Yetkazish darajasi" value={`${fmtNum(k.deliveryRate.cur, 0)}%`} delta={k.deliveryRate.cur - k.deliveryRate.prev} deltaLabel="p.p." icon={CheckCircle2} tone={k.deliveryRate.cur >= 90 ? "success" : "warning"} href="/orders" />
         <Kpi label="O'rtacha reys vaqti" value={k.avgMinutes.cur ? `${fmtNum(k.avgMinutes.cur, 0)} daq` : "—"} delta={k.avgMinutes.delta} invert icon={Timer} hint="yuklashdan topshirishgacha" href="/trips" />
         <Kpi label="O'z vaqtida" value={`${fmtNum(k.onTime.cur, 0)}%`} icon={Target} tone={k.onTime.cur >= 90 ? "success" : "danger"} hint={`${d.late} ta kechikkan`} href="/orders" />
@@ -43,14 +51,14 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
         <Panel title="Smena va marka bo'yicha" info="Beton zameslari hajmi taqsimoti (m³).">
           {d.byShift.length ? <DonutChart data={d.byShift} formatValue={(v) => `${qty(v)} m³`} size={110} /> : <Note>Zames yo'q.</Note>}
-          <div className="mt-4 border-t border-slate-100 pt-3">{d.byProduct.length ? <HBarList data={d.byProduct.slice(0, 6).map((p) => ({ label: p.label, value: p.value, hint: `${p.batches} zames` }))} formatValue={(v) => `${qty(v)} m³`} tone="brand" /> : <Note>—</Note>}</div>
+          <div className="mt-4 border-t border-slate-100 pt-3">{d.byProduct.length ? <HBarList data={d.byProduct.slice(0, 6).map((p) => ({ label: p.label, value: p.value, hint: `${p.batches} zames`, href: dh("produced", { p: p.id }) }))} formatValue={(v) => `${qty(v)} m³`} tone="brand" /> : <Note>—</Note>}</div>
         </Panel>
       </div>
 
       <Panel title="Mikserlar — scorecard" info="Reyslar, hajm, faol kunlar, kuniga reys, to'ldirish (hajm / sig'im), o'rtacha reys vaqti. «Bo'sh» — 7 kundan beri reys yo'q." padded={false}>
         <Table className="rounded-none border-0 shadow-none">
           <thead><tr><Th>Mikser</Th><Th right>Reyslar</Th><Th right>Yetkazildi</Th><Th right>Hajm, m³</Th><Th right>Faol kun</Th><Th right>Reys/kun</Th><Th className="w-36">To'ldirish</Th><Th right>O'rt. vaqt</Th><Th>Holat</Th></tr></thead>
-          <tbody>{d.mixers.length === 0 && <Empty text="Mikser kiritilmagan" icon={Truck} />}{d.mixers.map((m) => <Tr key={m.id}><Td className="tabular">{m.plate}</Td><Td right>{m.trips}</Td><Td right>{m.delivered}</Td><Td right>{qty(m.m3)}</Td><Td right>{m.daysActive}</Td><Td right>{fmtNum(m.tripsPerDay, 1)}</Td><Td>{m.fill === null ? <span className="text-slate-400">sig'im yo'q</span> : <div><div className="text-xs tabular">{fmtNum(m.fill, 0)}%</div><ProgressBar value={m.fill} max={100} tone={m.fill >= 80 ? "success" : "warning"} /></div>}</Td><Td right>{m.avgMinutes ? `${fmtNum(m.avgMinutes, 0)} daq` : "—"}</Td><Td>{m.idle ? <Badge color="red">Bo'sh 7+ kun</Badge> : <Badge color="green">Ishlamoqda</Badge>}</Td></Tr>)}</tbody>
+          <tbody>{d.mixers.length === 0 && <Empty text="Mikser kiritilmagan" icon={Truck} />}{d.mixers.map((m) => <Tr key={m.id}><Td className="tabular">{m.plate}</Td><Td right>{m.trips ? <DL href={dh("trips", { v: m.id })}>{m.trips}</DL> : 0}</Td><Td right>{m.delivered ? <DL href={dh("delivered", { v: m.id })}>{m.delivered}</DL> : 0}</Td><Td right>{m.m3 ? <DL href={dh("m3", { v: m.id })}>{qty(m.m3)}</DL> : qty(0)}</Td><Td right>{m.daysActive}</Td><Td right>{fmtNum(m.tripsPerDay, 1)}</Td><Td>{m.fill === null ? <span className="text-slate-400">sig'im yo'q</span> : <div><div className="text-xs tabular">{fmtNum(m.fill, 0)}%</div><ProgressBar value={m.fill} max={100} tone={m.fill >= 80 ? "success" : "warning"} /></div>}</Td><Td right>{m.avgMinutes ? `${fmtNum(m.avgMinutes, 0)} daq` : "—"}</Td><Td>{m.idle ? <Badge color="red">Bo'sh 7+ kun</Badge> : <Badge color="green">Ishlamoqda</Badge>}</Td></Tr>)}</tbody>
         </Table>
         {d.others.length > 0 && <div className="border-t border-slate-100 px-5 py-2 text-xs text-slate-500">Boshqa texnika: {d.others.map((o) => `${o.plate} (${o.type}, ${o.trips} reys${o.idle ? ", bo'sh" : ""})`).join(" · ")}</div>}
       </Panel>
@@ -59,7 +67,7 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
         <Panel className="xl:col-span-2" title="Haydovchilar — scorecard" info="Score 0–100: hajm (40%), yetkazish darajasi (35%), tezlik (15%), kechikish/bekor (10%). Tier: TOP ≥80, YAXSHI ≥60, O'RTA ≥40, PAST <40." padded={false}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>#</Th><Th>Haydovchi</Th><Th right>Reys</Th><Th right>Yetkazildi</Th><Th right>Bajarish</Th><Th right>m³</Th><Th right>Kun</Th><Th right>O'rt. vaqt</Th><Th right>Kechikdi</Th><Th right>Score</Th><Th>Tier</Th></tr></thead>
-            <tbody>{d.drivers.length === 0 && <Empty text="Davrda reys yo'q" icon={Truck} />}{d.drivers.map((x, i) => <Tr key={x.id}><Td className="text-slate-400">{i + 1}</Td><Td>{x.name}</Td><Td right>{x.trips}</Td><Td right>{x.delivered}</Td><Td right className={x.rate < 70 ? "text-red-600" : ""}>{fmtNum(x.rate, 0)}%</Td><Td right>{qty(x.m3)}</Td><Td right>{x.days}</Td><Td right>{x.avgMinutes ? `${fmtNum(x.avgMinutes, 0)}` : "—"}</Td><Td right className={x.late + x.cancelled ? "text-amber-600" : ""}>{x.late}{x.cancelled ? ` +${x.cancelled} bekor` : ""}</Td><Td right className="font-semibold">{x.score}</Td><Td><Tag>{x.tier}</Tag></Td></Tr>)}</tbody>
+            <tbody>{d.drivers.length === 0 && <Empty text="Davrda reys yo'q" icon={Truck} />}{d.drivers.map((x, i) => <Tr key={x.id}><Td className="text-slate-400">{i + 1}</Td><Td>{x.name}</Td><Td right>{x.trips ? <DL href={dh("trips", { dr: x.id })}>{x.trips}</DL> : 0}</Td><Td right>{x.delivered ? <DL href={dh("delivered", { dr: x.id })}>{x.delivered}</DL> : 0}</Td><Td right className={x.rate < 70 ? "text-red-600" : ""}>{fmtNum(x.rate, 0)}%</Td><Td right>{x.m3 ? <DL href={dh("m3", { dr: x.id })}>{qty(x.m3)}</DL> : qty(0)}</Td><Td right>{x.days}</Td><Td right>{x.avgMinutes ? `${fmtNum(x.avgMinutes, 0)}` : "—"}</Td><Td right className={x.late + x.cancelled ? "text-amber-600" : ""}>{x.late}{x.cancelled ? ` +${x.cancelled} bekor` : ""}</Td><Td right className="font-semibold">{x.score}</Td><Td><Tag>{x.tier}</Tag></Td></Tr>)}</tbody>
           </Table>
         </Panel>
         <div className="space-y-6">

@@ -9,6 +9,8 @@ import { fmtNum, money, moneyShort } from "@/lib/format";
 import { Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { SkladLogistika } from "@/app/(app)/dashboard/mechanic-home";
 import { DayRangeBar, parseDayRange } from "../month-bar";
+import { DRILL_LINK, DrillPanel } from "@/components/drill-panel";
+import { LOGI_DRILL_KINDS, logiDrill, type LogiDrillKind } from "@/lib/logistics-drill";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +23,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   await requirePage("/bi-tahlil/logistika");
   const { sp, range } = await biContext(searchParams);
   const period = parseDayRange(sp);
-  const [rep, issues] = await Promise.all([
+  // Raqam manbasi: `drill` — yetkazilgan / bekor reyslar yoki transport xarajati, filtr — `dr` (haydovchi), `ob` (obyekt)
+  const kind = LOGI_DRILL_KINDS.find((k) => k === sp.drill) as LogiDrillKind | undefined;
+  const [rep, issues, drill] = await Promise.all([
     logisticsReport(period.from, period.to),
     db.tripIssue.groupBy({ by: ["kind"], where: { createdAt: { gte: period.from, lt: period.to } }, _count: true }),
+    kind ? logiDrill(period.from, period.to, period.label, { kind, driver: sp.dr, site: sp.ob }) : null,
   ]);
   const t = rep.total;
   const onTime = onTimePct(t);
@@ -40,6 +45,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   // Davr parametrlari: Avtotransport havolasi va kunlik navigatsiya davrni yo'qotmasin
   const periodQs = new URLSearchParams(Object.entries({ davr: sp.davr, dan: sp.dan, gacha: sp.gacha, oy: sp.oy }).filter((kv): kv is [string, string] => !!kv[1])).toString();
   const withPeriod = (path: string) => (periodQs ? `${path}?${periodQs}` : path);
+  const base = withPeriod("/bi-tahlil/logistika");
+  const dh = (kind: LogiDrillKind, f: Record<string, string> = {}) => `/bi-tahlil/logistika?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(periodQs)), ...(sp.date ? { date: sp.date } : {}), drill: kind, ...f })}`;
+  const DL = ({ href, children }: { href: string; children: React.ReactNode }) => <Link href={href} scroll={false} title="Qayerdan kelgan — bosing" className={DRILL_LINK}>{children}</Link>;
 
   return (
     <BiPage title="Logistika" subtitle="Davr tahlili (reys, hajm, o'z vaqtida, xarajat), bugungi va ertangi zayavkalar, jo'natish va transport ehtiyoji" tab="logistics" range={range} period={false}>
@@ -48,12 +56,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       <Section title="Davr tahlili" className="mt-0"
         action={<Link href={withPeriod("/bi-tahlil/logistika/avtotransport")} className="text-[13px] font-medium text-blue-700 hover:underline">Har bir mashina — Avtotransport tahlili</Link>}>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-          <StatCard label="Reyslar" value={`${fmtNum(t.delivered)} ta`} hint={`bekor ${fmtNum(t.cancelled)} ta`} icon={Truck} />
-          <StatCard label="Yetkazilgan hajm" value={vol(t.m3, t.pieces)} icon={Package} />
+          <StatCard label="Reyslar" value={`${fmtNum(t.delivered)} ta`} hint={`bekor ${fmtNum(t.cancelled)} ta`} icon={Truck} href={dh("delivered")} />
+          <StatCard label="Yetkazilgan hajm" value={vol(t.m3, t.pieces)} icon={Package} href={dh("delivered")} />
           <StatCard label="O'z vaqtida" value={pctLabel(onTime)} hint={`kechikkan ${fmtNum(t.late)} ta`} icon={Clock}
             tone={onTime == null ? "default" : onTime >= 90 ? "success" : onTime >= 70 ? "warning" : "danger"} />
           <StatCard label="O'rtacha yetkazish" value={minutesLabel(avgMin(t))} hint="yuklashdan topshirishgacha" icon={Timer} />
-          <StatCard label="Transport xarajati" value={moneyShort(tCost)} hint={`yoqilg'i ${moneyShort(t.fuel)} · boshqa ${moneyShort(t.other)}`} icon={Wallet} />
+          <StatCard label="Transport xarajati" value={moneyShort(tCost)} hint={`yoqilg'i ${moneyShort(t.fuel)} · boshqa ${moneyShort(t.other)}`} icon={Wallet} href={dh("cost")} />
           <StatCard label="1 m³ ga xarajat" value={t.m3 > 0 ? money(tCost / t.m3) : "—"} icon={Coins} />
           <StatCard label="Transport bandligi" value={pctLabel(avgUtil)} hint={`ish kunlari: ${rep.workDays}`} icon={Gauge} />
           <StatCard label="Muammolar" value={`${fmtNum(issueTotal)} ta`} hint="davrda ochilgan" icon={AlertTriangle} tone={issueTotal > 0 ? "danger" : "default"} />
@@ -69,8 +77,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 {drivers.map((d) => (
                   <Tr key={d.id}>
                     <Td>{d.name}</Td>
-                    <Td right>{fmtNum(d.delivered)}</Td>
-                    <Td right>{vol(d.m3, d.pieces)}</Td>
+                    <Td right><DL href={dh("delivered", { dr: d.id })}>{fmtNum(d.delivered)}</DL></Td>
+                    <Td right><DL href={dh("delivered", { dr: d.id })}>{vol(d.m3, d.pieces)}</DL></Td>
                     <Td right>{pctLabel(onTimePct(d))}</Td>
                     <Td right>{d.km ? fmtNum(d.km) : "—"}</Td>
                   </Tr>
@@ -88,8 +96,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 {sites.map((s) => (
                   <Tr key={s.id}>
                     <Td>{s.name}<div className="text-xs font-normal text-slate-500">{s.customer}</div></Td>
-                    <Td right>{fmtNum(s.delivered)}</Td>
-                    <Td right>{vol(s.m3, s.pieces)}</Td>
+                    <Td right><DL href={dh("delivered", { ob: s.id })}>{fmtNum(s.delivered)}</DL></Td>
+                    <Td right><DL href={dh("delivered", { ob: s.id })}>{vol(s.m3, s.pieces)}</DL></Td>
                     <Td right>{pctLabel(onTimePct(s))}</Td>
                   </Tr>
                 ))}
@@ -111,6 +119,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </Table>
         </Section>
       )}
+
+      {drill && <DrillPanel drill={drill} closeHref={sp.date ? `${base}${periodQs ? "&" : "?"}date=${sp.date}` : base} />}
 
       <div className="mt-10">
         <SkladLogistika day={sp.date} unit={sp.birlik} base={withPeriod("/bi-tahlil/logistika")} />

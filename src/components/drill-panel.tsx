@@ -27,7 +27,7 @@ export function DrillPanel({ drill, closeHref, partHref }: { drill: Drill; close
             <BackLink href={closeHref} scroll={false} className="mb-3" />
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400"><Search size={13} /> Raqam manbasi · {drill.period}</div>
             <h2 className="mt-1 text-[17px] font-bold leading-snug text-slate-900">{drill.title}</h2>
-            <div className={cn("mt-1 text-2xl font-semibold tabular", drill.value < 0 ? "text-red-600" : "text-slate-900")}>{fmt(drill.value)}{!drill.isQty && <span className="ml-1 text-base font-normal text-slate-400">so&apos;m</span>}</div>
+            <div className={cn("mt-1 text-2xl font-semibold tabular", drill.value < 0 ? "text-red-600" : "text-slate-900")}>{fmt(drill.value)}{(!drill.isQty || drill.unit) && <span className="ml-1 text-base font-normal text-slate-400">{drill.isQty ? drill.unit : "so'm"}</span>}</div>
           </div>
           <Link href={closeHref} scroll={false} aria-label="Yopish" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={20} /></Link>
         </div>
@@ -39,7 +39,7 @@ export function DrillPanel({ drill, closeHref, partHref }: { drill: Drill; close
             <div>
               <div className="mb-2 text-[13px] font-semibold text-slate-700">Tarkibi</div>
               <Table>
-                <thead><tr><Th>Qator</Th><Th right>Summa</Th></tr></thead>
+                <thead><tr><Th>Qator</Th><Th right>{drill.isQty ? "Miqdor" : "Summa"}</Th></tr></thead>
                 <tbody>
                   {drill.parts.map((p) => {
                     const href = partHref?.(p.key);
@@ -63,7 +63,7 @@ export function DrillPanel({ drill, closeHref, partHref }: { drill: Drill; close
               </div>
               <Table>
                 {/* Telefonda sana ustuni yo'q — manba ostida yoziladi (summa ustuni sig'sin) */}
-                <thead><tr><Th className="hidden w-24 sm:table-cell">Sana</Th><Th>Manba</Th><Th right>Summa</Th></tr></thead>
+                <thead><tr><Th className="hidden w-24 sm:table-cell">Sana</Th><Th>Manba</Th><Th right>{drill.isQty ? "Miqdor" : "Summa"}</Th></tr></thead>
                 <tbody>
                   {drill.items.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-sm text-slate-500">Bu katakka yozuv tushmagan.</td></tr>}
                   {drill.items.map((it, k) => (

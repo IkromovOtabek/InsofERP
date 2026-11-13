@@ -7,6 +7,9 @@ import { Badge, Card, CardHeader, Input, StatCard, Table, Td, Th, Tr } from "@/c
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
 import { MonthBar, monthTitle } from "../month-bar";
+import { DRILL_LINK, DrillPanel } from "@/components/drill-panel";
+import type { Drill } from "@/lib/drill";
+import type { StockDrillKind } from "@/lib/stock-drill";
 
 /** Tahlil → Ombor: «Insof 2026» sklad varaqlari (`lib/fin-report/sklad.ts`). */
 const N = ({ v, frac = 0, className }: { v: number | null; frac?: number; className?: string }) =>
@@ -15,6 +18,9 @@ const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getM
 /** «YYYY-MM» oyining oxirgi kuni (YYYY-MM-DD). */
 const monthEnd = (m: string) => isoDate(new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 0));
 const qs = (o: Record<string, string | undefined>) => { const s = new URLSearchParams(Object.entries(o).filter((kv): kv is [string, string] => !!kv[1])).toString(); return s ? `?${s}` : ""; };
+/** Son — bosilsa shu qatorning sklad harakatlari (raqam manbasi paneli, `lib/stock-drill.ts`). Nol bosilmaydi. */
+const DN = ({ v, href, className }: { v: number | null; href: string; className?: string }) =>
+  v == null || Math.abs(v) < 0.5 ? <N v={v} /> : <Link href={href} scroll={false} title="Qayerdan kelgan — bosing" className={DRILL_LINK}><N v={v} className={className} /></Link>;
 
 // ───────────────────── Xom-ashyo balansi ─────────────────────
 
@@ -30,7 +36,7 @@ const filterChip = (on: boolean, href: string, label: string, count?: number) =>
   </Link>
 );
 
-export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: string }) {
+export function RawBalanceView({ r, sp, base, drill }: { r: RawBalance; sp: SP; base: string; drill?: Drill | null }) {
   const close = new Date(r.to.getTime() - 1);
   const d1 = dm(r.from), d2 = dm(close.getTime() > Date.now() ? new Date() : close);
   const scrapKg = Math.max(0, Number(sp.otxod) || 0);
@@ -51,6 +57,7 @@ export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: s
   const diffSum = filtered ? rows.reduce((a, x) => a + (x.diffSum ?? 0), 0) : r.diffSum;
   const inGroup = r.rows.filter((x) => !group || x.group === group);
   const href = (o: Record<string, string | undefined>) => `${base}${qs({ oy: sp.oy, otxod: sp.otxod, guruh: group, holat: state, q: sp.q, ...o })}`;
+  const dh = (kind: StockDrillKind, id: string) => href({ drill: kind, mat: id });
   const worst = [...rows].filter((x) => x.diffSum != null && Math.abs(x.diffSum) >= 1).sort((a, b) => Math.abs(b.diffSum!) - Math.abs(a.diffSum!))[0];
   const sheet = (x: Omit<RawRow, "id" | "price"> & { price: number | null }) => ({
     Material: x.name, Birlik: x.unit, [`Oy boshi qoldiq (${d1})`]: x.open, "Kirim (oy davomida)": x.received, [`Oy oxiri qoldiq (${d2})`]: x.close, "Haqiqiy sarf": x.fact,
@@ -61,10 +68,17 @@ export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: s
     <Tr key={total ? `t:${x.name}` : (x as RawRow).id} className={total ? "bg-violet-50/70 font-semibold [&>td]:text-slate-900" : undefined}>
       <Td className="min-w-40">{x.name}</Td>
       <Td>{x.unit}</Td>
-      <Td right><N v={x.open} /></Td>
-      <Td right className="bg-amber-50/60"><N v={x.received} /></Td>
-      <Td right><N v={x.close} /></Td>
-      <Td right className="font-semibold text-slate-900"><N v={x.fact} /></Td>
+      {total ? <>
+        <Td right><N v={x.open} /></Td>
+        <Td right className="bg-amber-50/60"><N v={x.received} /></Td>
+        <Td right><N v={x.close} /></Td>
+        <Td right className="font-semibold text-slate-900"><N v={x.fact} /></Td>
+      </> : <>
+        <Td right><DN v={x.open} href={dh("open", (x as RawRow).id)} /></Td>
+        <Td right className="bg-amber-50/60"><DN v={x.received} href={dh("in", (x as RawRow).id)} /></Td>
+        <Td right><DN v={x.close} href={dh("close", (x as RawRow).id)} /></Td>
+        <Td right className="font-semibold text-slate-900"><DN v={x.fact} href={dh("out", (x as RawRow).id)} /></Td>
+      </>}
       <Td right><N v={x.normSold} /></Td>
       <Td right><N v={x.normStock} /></Td>
       <Td right className="font-semibold text-slate-900"><N v={x.norm} /></Td>
@@ -150,6 +164,8 @@ export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: s
         </Card>
       )}
 
+      {drill && <DrillPanel drill={drill} closeHref={href({})} />}
+
       <ul className="space-y-1 text-[13px] text-slate-500">
         <li>Norma: sotilganga — retsept × sotilgan beton (zameslar) va jo&apos;natilgan buyumlar; omborda qolgan — retsept × (ishlab chiqarilgan − jo&apos;natilgan) buyumlar.</li>
         <li>Narx — kirimlar bo&apos;yicha o&apos;rtacha tannarx (sklad bilan bir xil). Kirim va qoldiqlar Sklad aylanmasidan olinadi.</li>
@@ -160,7 +176,7 @@ export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: s
 
 // ───────────────────── Tayyor mahsulot ─────────────────────
 
-export function FinishedView({ r, sp, base }: { r: FinishedReport; sp: SP; base: string }) {
+export function FinishedView({ r, sp, base, drill }: { r: FinishedReport; sp: SP; base: string; drill?: Drill | null }) {
   const group = sp.guruh && r.groups.includes(sp.guruh) ? sp.guruh : undefined;
   const brigade = sp.brigada && r.brigades.includes(sp.brigada) ? sp.brigada : undefined;
   const rows = r.rows.filter((x) => (!group || x.group === group) && (!brigade || x.brigades.some((b) => b.name === brigade)));
@@ -171,6 +187,7 @@ export function FinishedView({ r, sp, base }: { r: FinishedReport; sp: SP; base:
     <Link key={label} href={href} className={cn("rounded-full border px-3 py-1 text-[13px] font-medium", on ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>{label}</Link>
   );
   const href = (o: Record<string, string | undefined>) => `${base}${qs({ oy: sp.oy, guruh: group, brigada: brigade, ...o })}`;
+  const dh = (kind: StockDrillKind, id: string) => href({ drill: kind, prod: id });
 
   return (
     <div className="space-y-5">
@@ -214,11 +231,11 @@ export function FinishedView({ r, sp, base }: { r: FinishedReport; sp: SP; base:
                 <Td className="min-w-44"><Link href={`/stock/products/${x.id}`} className="hover:underline">{x.name}</Link></Td>
                 <Td>{x.brigades.length ? <div className="flex flex-wrap gap-1">{x.brigades.map((b) => <Badge key={b.name} color="slate" dot={false}>{b.name} · {fmtNum(b.qty)}</Badge>)}</div> : <span className="text-slate-300">—</span>}</Td>
                 <Td className="whitespace-nowrap text-slate-600">{x.group}</Td>
-                <Td right><N v={x.open} /></Td>
-                <Td right className="bg-emerald-50/50"><N v={x.produced} /></Td>
-                <Td right className="bg-sky-50/50"><N v={x.shipped} /></Td>
-                {hasOther && <Td right><N v={x.other} className="text-amber-700" /></Td>}
-                <Td right className={cn("font-semibold", x.close < 0 ? "text-red-600" : "text-slate-900")}><N v={x.close} /></Td>
+                <Td right><DN v={x.open} href={dh("open", x.id)} /></Td>
+                <Td right className="bg-emerald-50/50"><DN v={x.produced} href={dh("produced", x.id)} /></Td>
+                <Td right className="bg-sky-50/50"><DN v={x.shipped} href={dh("shipped", x.id)} /></Td>
+                {hasOther && <Td right><DN v={x.other} href={dh("other", x.id)} className="text-amber-700" /></Td>}
+                <Td right className={cn("font-semibold", x.close < 0 ? "text-red-600" : "text-slate-900")}><DN v={x.close} href={dh("close", x.id)} /></Td>
                 <Td right>{x.cost != null ? fmtNum(x.cost) : <span className="text-xs text-amber-700">tannarx yo&apos;q</span>}</Td>
                 <Td right><N v={x.price} /></Td>
                 <Td right><N v={x.valueCost} /></Td>
@@ -239,6 +256,7 @@ export function FinishedView({ r, sp, base }: { r: FinishedReport; sp: SP; base:
           )}
         </Table>
       </div>
+      {drill && <DrillPanel drill={drill} closeHref={href({})} />}
       <p className="text-[13px] text-slate-500">Dona mahsulot (beton omborda turmaydi). Brigada — oy davomida shu mahsulot bo&apos;yicha bajarilgan topshiriqlar (miqdori bilan). Tannarx — kirim narxi, bo&apos;lmasa retsept tannarxi.</p>
     </div>
   );

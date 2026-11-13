@@ -20,6 +20,8 @@ export type Drill = {
   value: number;
   /** Miqdor qatori (dona, m³) — so'm emas */
   isQty?: boolean;
+  /** Miqdor birligi sarlavhada («ta reys», «m³», «kg») — `isQty` bilan */
+  unit?: string;
   parts: DrillPart[];
   items: DrillItem[];
   note?: string;

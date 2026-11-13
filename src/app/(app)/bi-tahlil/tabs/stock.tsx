@@ -7,6 +7,10 @@ import { Table, Th, Td, Tr, Empty } from "@/components/ui";
 import { BarChart, HBarList, LineChart, DonutChart } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Tag, ExportLink, Chip, ProgressBar, tabHref } from "../ui";
 import type { SP } from "../page";
+import { DRILL_LINK } from "@/components/drill-panel";
+
+/** Raqam manbasi: xomashyo qoldig'i — joriy oy oxiri qoldig'ining sklad harakatlari (Xom-ashyo balansi paneli). */
+const bal = (id: string) => `/bi-tahlil/ombor/xomashyo?drill=close&mat=${id}`;
 
 export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
   const gran: Gran = sp.gran === "day" || sp.gran === "week" || sp.gran === "month" ? sp.gran : autoGran(range.days);
@@ -34,7 +38,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
         {d.queue.length === 0 ? <div className="p-5"><Note>Buyurtma talab qiladigan xomashyo yo'q — zaxira yetarli.</Note></div> : (
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>#</Th><Th>Xomashyo</Th><Th>Zona</Th><Th right>Qoldiq</Th><Th right>Kunlik sarf</Th><Th right>Yetadi</Th><Th right>Rejadagi ehtiyoj</Th><Th right>Tavsiya miqdor</Th><Th right>Summa</Th></tr></thead>
-            <tbody>{d.queue.map((m, i) => <Tr key={m.id}><Td className="text-slate-400">{i + 1}</Td><Td>{m.name}{m.short && <span className="ml-1.5 text-[10px] font-semibold uppercase text-red-600">zayavkaga yetmaydi</span>}</Td><Td><Tag>{m.zone}</Tag></Td><Td right>{qty(m.balance)} {m.unit}</Td><Td right>{fmtNum(m.perDay, 1)}</Td><Td right className={m.days !== null && m.days < 7 ? "font-semibold text-red-600" : ""}>{m.days === null ? "—" : `${fmtNum(m.days, 1)} kun`}</Td><Td right>{m.planned ? qty(m.planned) : "—"}</Td><Td right className="font-semibold">{qty(m.suggestQty)} {m.unit}</Td><Td right className="font-semibold">{moneyShort(m.suggestCost)}</Td></Tr>)}</tbody>
+            <tbody>{d.queue.map((m, i) => <Tr key={m.id}><Td className="text-slate-400">{i + 1}</Td><Td>{m.name}{m.short && <span className="ml-1.5 text-[10px] font-semibold uppercase text-red-600">zayavkaga yetmaydi</span>}</Td><Td><Tag>{m.zone}</Tag></Td><Td right><Link href={bal(m.id)} title="Qayerdan kelgan — sklad harakatlari" className={DRILL_LINK}>{qty(m.balance)} {m.unit}</Link></Td><Td right>{fmtNum(m.perDay, 1)}</Td><Td right className={m.days !== null && m.days < 7 ? "font-semibold text-red-600" : ""}>{m.days === null ? "—" : `${fmtNum(m.days, 1)} kun`}</Td><Td right>{m.planned ? qty(m.planned) : "—"}</Td><Td right className="font-semibold">{qty(m.suggestQty)} {m.unit}</Td><Td right className="font-semibold">{moneyShort(m.suggestCost)}</Td></Tr>)}</tbody>
           </Table>
         )}
         <div className="border-t border-slate-100 px-5 py-3"><Action href="/receipts/new">Jami {moneyShort(d.queue.reduce((s, m) => s + m.suggestCost, 0))} so'mlik buyurtma loyihasi — sklad tasdiqlasin</Action></div>
@@ -45,7 +49,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>Xomashyo</Th><Th>ABC</Th><Th right>Qoldiq</Th><Th right>Qiymat</Th><Th right>Sarf/kun</Th><Th className="w-40">Yetadi</Th><Th right>Ehtiyoj</Th><Th>Holat</Th></tr></thead>
             <tbody>{d.materials.length === 0 && <Empty text="Xomashyo kiritilmagan" />}{d.materials.map((m) => (
-              <Tr key={m.id}><Td>{m.name} <span className="text-xs text-slate-400">{m.unit}</span></Td><Td><Tag>{m.abc}</Tag></Td><Td right className={m.balance < m.minStock ? "text-red-600" : ""}>{qty(m.balance)}</Td><Td right>{moneyShort(m.value)}</Td><Td right className="text-slate-500">{m.perDay > 0 ? fmtNum(m.perDay, 1) : "—"}</Td>
+              <Tr key={m.id}><Td>{m.name} <span className="text-xs text-slate-400">{m.unit}</span></Td><Td><Tag>{m.abc}</Tag></Td><Td right className={m.balance < m.minStock ? "text-red-600" : ""}><Link href={bal(m.id)} title="Qayerdan kelgan — sklad harakatlari" className={DRILL_LINK}>{qty(m.balance)}</Link></Td><Td right>{moneyShort(m.value)}</Td><Td right className="text-slate-500">{m.perDay > 0 ? fmtNum(m.perDay, 1) : "—"}</Td>
                 <Td>{m.days === null ? <span className="text-slate-400">—</span> : <div><div className={`text-[12.5px] font-semibold tabular ${m.zone === "Kritik" ? "text-red-600" : m.zone === "Xavfli" ? "text-amber-600" : ""}`}>{m.days > 999 ? ">999" : fmtNum(m.days, 1)} kun</div><ProgressBar value={Math.min(m.days, 30)} max={30} tone={zoneTone[m.zone]} /></div>}</Td>
                 <Td right className={m.short ? "text-red-600" : ""}>{m.planned ? qty(m.planned) : "—"}</Td><Td><Tag>{m.short ? "Kritik" : m.dead ? "Ma'lumot yo'q" : m.zone}</Tag>{m.dead && <span className="ml-1 text-[10px] text-slate-400">muzlagan</span>}</Td></Tr>
             ))}</tbody>
@@ -86,7 +90,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
         <Panel id="muzlagan" title="Omborda muzlagan kapital" info="90 kun ishlatilmagan xomashyo + hovlidagi zayavkaga band qilinmagan tayyor mahsulot (tannarx bo'yicha).">
           <div className="text-2xl font-bold tabular text-violet-600">{moneyShort(d.deadValue)} <span className="text-sm font-normal text-slate-400">so'm</span></div>
           <div className="mt-2 space-y-1 text-[13px]">
-            {d.dead.map((m) => <div key={m.id} className="flex justify-between"><span>{m.name} <span className="text-xs text-slate-400">{qty(m.balance)} {m.unit}</span></span><span className="tabular">{moneyShort(m.value)}</span></div>)}
+            {d.dead.map((m) => <div key={m.id} className="flex justify-between"><span>{m.name} <Link href={bal(m.id)} title="Qayerdan kelgan — sklad harakatlari" className={`text-xs text-slate-400 ${DRILL_LINK}`}>{qty(m.balance)} {m.unit}</Link></span><span className="tabular">{moneyShort(m.value)}</span></div>)}
             {d.finished.map((f) => <div key={f.id} className="flex justify-between"><span>{f.name} <span className="text-xs text-slate-400">{qty(f.qty)} {f.unit} · tayyor</span></span><span className="tabular">{f.cost === null ? <span className="text-xs text-slate-400">tannarx yo&apos;q</span> : moneyShort(f.value)}</span></div>)}
             {!d.dead.length && !d.finished.length && <Note>Muzlagan zaxira yo'q.</Note>}
           </div>

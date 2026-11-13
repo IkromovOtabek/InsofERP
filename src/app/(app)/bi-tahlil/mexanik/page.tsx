@@ -10,6 +10,8 @@ import { mechanicCounts, mechanicList, mechSubject, MECH_STATUS_COLOR, MECH_STAT
 import { date, dateTime, fmtNum, money, moneyShort } from "@/lib/format";
 import { Badge, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { DRILL_LINK, DrillPanel } from "@/components/drill-panel";
+import { MECH_DRILL_KINDS, mechDrill, type MechDrillKind } from "@/lib/mechanic-drill";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   await requirePage("/bi-tahlil/mexanik");
   const { sp, range } = await biContext(searchParams);
   const period = parseDayRange(sp);
-  const [r, c, open] = await Promise.all([mechanicReport(period.from, period.to), mechanicCounts(), mechanicList({ status: ["NEW", "APPROVED"], take: 10 })]);
+  // Raqam manbasi: `drill` — ta'mir / zapchast / jami / zavod / buzilish / texnik xizmat, `v` — texnika («*» — jadval jami)
+  const kind = MECH_DRILL_KINDS.find((k) => k === sp.drill) as MechDrillKind | undefined;
+  const [r, c, open, drill] = await Promise.all([
+    mechanicReport(period.from, period.to), mechanicCounts(), mechanicList({ status: ["NEW", "APPROVED"], take: 10 }),
+    kind ? mechDrill(period.from, period.to, period.label, { kind, vehicle: sp.v }) : null,
+  ]);
+  const periodQs = Object.fromEntries(Object.entries({ davr: sp.davr, dan: sp.dan, gacha: sp.gacha }).filter((kv): kv is [string, string] => !!kv[1]));
+  const dh = (k: MechDrillKind, v?: string) => `/bi-tahlil/mexanik?${new URLSearchParams({ ...periodQs, drill: k, ...(v ? { v } : {}) })}`;
+  const close = `/bi-tahlil/mexanik${Object.keys(periodQs).length ? `?${new URLSearchParams(periodQs)}` : ""}`;
+  const DL = ({ href, children }: { href: string; children: React.ReactNode }) => <Link href={href} scroll={false} title="Qayerdan kelgan — bosing" className={DRILL_LINK}>{children}</Link>;
   return (
     <BiPage title="Mexanik" subtitle="Texnika: ta'mir uchun pul so'rovlari, ehtiyot qism zayavkalari va texnik xizmat muddati" tab="mechanic" range={range} period={false}>
       <DayRangeBar base="/bi-tahlil/mexanik" range={period} />
@@ -30,10 +41,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       {/* ── Davr bo'yicha ta'mir tahlili ── */}
       <Section title="Ta'mir tahlili" className="mt-0">
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <StatCard label="Transport ta'miri" value={moneyShort(r.transport.sum)} hint={`${r.transport.count} ta yozuv · ta'mir + zapchast`} icon={Truck} tone="info" />
-          <StatCard label="Zavod / boshqa ta'mir" value={moneyShort(r.factory.sum)} hint={`${r.factory.count} ta to'langan so'rov`} icon={Factory} tone="brand" />
+          <StatCard label="Transport ta'miri" value={moneyShort(r.transport.sum)} hint={`${r.transport.count} ta yozuv · ta'mir + zapchast`} icon={Truck} tone="info" href={dh("total")} />
+          <StatCard label="Zavod / boshqa ta'mir" value={moneyShort(r.factory.sum)} hint={`${r.factory.count} ta to'langan so'rov`} icon={Factory} tone="brand" href={dh("factory")} />
           <StatCard label="Ta'mirdagi texnika" value={`${r.fleet.repair} ta`} hint={`safda ${r.fleet.active} ta · hozirgi holat`} icon={Hammer} tone={r.fleet.repair ? "warning" : "default"} />
-          <StatCard label="Buzilish / YTH" value={`${r.issues.count} ta`} hint={r.issues.open ? `${r.issues.open} tasi hal qilinmagan` : "hammasi hal qilingan"} icon={AlertTriangle} tone={r.issues.open ? "danger" : "default"} />
+          <StatCard label="Buzilish / YTH" value={`${r.issues.count} ta`} hint={r.issues.open ? `${r.issues.open} tasi hal qilinmagan` : "hammasi hal qilingan"} icon={AlertTriangle} tone={r.issues.open ? "danger" : "default"} href={dh("issues")} />
         </div>
       </Section>
 
@@ -63,21 +74,21 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             {r.byVehicle.map((v) => (
               <Tr key={v.id}>
                 <Td><Link href={`/logistika/transport/${v.id}`} className="font-medium tabular hover:underline">{v.plate}</Link></Td>
-                <Td right>{v.repair ? money(v.repair) : "—"}</Td>
-                <Td right>{v.parts ? money(v.parts) : "—"}</Td>
-                <Td right className="font-semibold text-slate-900">{money(v.total)}</Td>
-                <Td right>{v.issues ? fmtNum(v.issues) : "—"}</Td>
-                <Td right>{v.services ? fmtNum(v.services) : "—"}</Td>
+                <Td right>{v.repair ? <DL href={dh("repair", v.id)}>{money(v.repair)}</DL> : "—"}</Td>
+                <Td right>{v.parts ? <DL href={dh("parts", v.id)}>{money(v.parts)}</DL> : "—"}</Td>
+                <Td right className="font-semibold text-slate-900">{v.total ? <DL href={dh("total", v.id)}>{money(v.total)}</DL> : money(0)}</Td>
+                <Td right>{v.issues ? <DL href={dh("issues", v.id)}>{fmtNum(v.issues)}</DL> : "—"}</Td>
+                <Td right>{v.services ? <DL href={dh("services", v.id)}>{fmtNum(v.services)}</DL> : "—"}</Td>
               </Tr>
             ))}
             {r.byVehicle.length > 0 && (
               <tr className="bg-slate-50 font-semibold text-slate-900">
                 <Td>Jami</Td>
-                <Td right>{money(r.totals.repair)}</Td>
-                <Td right>{money(r.totals.parts)}</Td>
-                <Td right>{money(r.totals.total)}</Td>
-                <Td right>{fmtNum(r.totals.issues)}</Td>
-                <Td right>{fmtNum(r.totals.services)}</Td>
+                <Td right>{r.totals.repair ? <DL href={dh("repair", "*")}>{money(r.totals.repair)}</DL> : money(0)}</Td>
+                <Td right>{r.totals.parts ? <DL href={dh("parts", "*")}>{money(r.totals.parts)}</DL> : money(0)}</Td>
+                <Td right>{r.totals.total ? <DL href={dh("total", "*")}>{money(r.totals.total)}</DL> : money(0)}</Td>
+                <Td right>{r.totals.issues ? <DL href={dh("issues")}>{fmtNum(r.totals.issues)}</DL> : 0}</Td>
+                <Td right>{r.totals.services ? <DL href={dh("services")}>{fmtNum(r.totals.services)}</DL> : 0}</Td>
               </tr>
             )}
           </tbody>
@@ -126,6 +137,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </Table>
         </div>
       </Section>
+      {drill && <DrillPanel drill={drill} closeHref={close} />}
       <MechanicTech period={{ from: period.from, to: period.to, label: period.label, qs: new URLSearchParams(Object.entries({ davr: sp.davr, dan: sp.dan, gacha: sp.gacha }).filter((kv): kv is [string, string] => !!kv[1])).toString() }} />
     </BiPage>
   );
