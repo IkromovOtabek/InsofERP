@@ -350,7 +350,7 @@ export async function recentCashImports(opts: { take?: number; userId?: string }
       a.after->>'from' AS "from", a.after->>'to' AS "to", a.after->>'fileName' AS "fileName"
     FROM "AuditLog" a JOIN "User" u ON u.id = a."userId"
     WHERE a.entity = ${CASH_IMPORT_ENTITY} AND a.action = 'CREATE'
-      ${opts.userId ? Prisma.sql`AND a."userId" = ${opts.userId}` : Prisma.empty}
+      AND (${opts.userId ?? null}::text IS NULL OR a."userId" = ${opts.userId ?? null}::text)
       AND NOT EXISTS (SELECT 1 FROM "AuditLog" b WHERE b.entity = ${CASH_IMPORT_ENTITY} AND b."entityId" = a."entityId" AND b.action = 'STATUS_CHANGE')
     ORDER BY a."createdAt" DESC
     LIMIT ${take}`;
