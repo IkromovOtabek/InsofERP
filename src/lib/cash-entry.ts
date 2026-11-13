@@ -5,7 +5,7 @@ import { balanceDropError, cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 import { MAX_AMOUNT } from "@/lib/action";
-import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
+import { loadCategoriesFor, makeResolver } from "@/lib/fin-report/categories";
 
 /**
  * Qo'lda kirim/chiqim yozish — yagona joy: veb "Kirim-Chiqim" formasi ham (`cashflow/actions.ts`),
@@ -35,7 +35,7 @@ export type CashEntryInput = {
   projectId?: string | null;
   /** Kategoriya kredit so'rasa — qaysi kredit; asosiy qarz / foiz kategoriyadan olinadi. */
   loanId?: string | null;
-  /** Veb forma: manbaning sub manbalari bo'lsa — biri tanlanishi shart (`subCategoryMissing`). Mobil va avtomatik yozuvlarda berilmaydi. */
+  /** Veb forma: sub manba shart (`subCategoryMissing`). Mobil, Excel importi va avtomatik yozuvlarda berilmaydi. */
   requireSub?: boolean;
 };
 
@@ -52,7 +52,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * (avtomatik yozuvlar va eski mobil ilova); hisobotda «Manbasi aniqlanmagan» bo'lib ko'rinadi.
  */
 async function categoryLinks(d: { type: "INCOME" | "EXPENSE"; category: string; subCategory?: string | null; projectId?: string | null; loanId?: string | null }) {
-  const resolve = makeResolver(await loadCategories());
+  const resolve = makeResolver(await loadCategoriesFor([d.category, d.subCategory]));
   const base = resolve(d.category);
   if (!base) return { data: { subCategory: null, projectId: null, loanId: null, loanPart: null } };
   if (base.top.type !== d.type) return { error: `«${base.top.name}» — ${base.top.type === "INCOME" ? "kirim" : "chiqim"} kategoriyasi` };
@@ -75,16 +75,18 @@ async function categoryLinks(d: { type: "INCOME" | "EXPENSE"; category: string; 
 }
 
 /**
- * Veb formalar (Kirim-Chiqim, Kassa / bank tahriri): manbaning faol sub manbalari bo'lsa — biri tanlanishi shart.
- * Tekshirilmaydi: kredit / loyiha manbasi (o'z bog'lanishini so'raydi), sub manbasi yo'q manba, daraxtda yo'q eski nom.
- * Forma ham shu qoidada (`tx-form.tsx`, `cash-edit.tsx`): sub manbasi bor manbada «— umumiy —» tanlovi yo'q.
+ * Veb formalar (Kirim-Chiqim, Kassa / bank tahriri): har bir kirim/chiqimda sub manba shart — barcha manbalarda
+ * (kredit va loyiha manbalarida ham). Sub manbasi hali yo'q manbada avval «+» bilan qo'shiladi. Tekshirilmaydi faqat
+ * daraxtda yo'q eski erkin nom (unga sub manba qo'shib bo'lmaydi). Forma ham shu qoidada (`tx-form.tsx`, `cash-edit.tsx`).
  */
 async function subCategoryMissing(category: string): Promise<string | null> {
-  const nodes = await loadCategories();
+  const nodes = await loadCategoriesFor([category]);
   const r = makeResolver(nodes)(category);
-  if (!r || r.sub || r.top.needs === "LOAN" || r.top.needs === "PROJECT") return null;
+  if (!r || r.sub) return null;
   const top = r.top;
-  return nodes.some((n) => n.parentId === top.id && n.isActive) ? `Sub manba tanlanmagan — «${top.name}» ichidan tanlang` : null;
+  return nodes.some((n) => n.parentId === top.id && n.isActive)
+    ? `Sub manba tanlanmagan — «${top.name}» ichidan tanlang`
+    : `«${top.name}» manbasida sub manba yo'q — avval «+» bilan sub manba qo'shing (yoki Moliya → Kategoriyalar)`;
 }
 
 export async function createCashEntry(input: CashEntryInput, userId: string): Promise<{ id?: string; error?: string }> {
@@ -280,7 +282,7 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
     const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
     if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
   }
-  const top = makeResolver(await loadCategories())(d.category)?.top;
+  const top = makeResolver(await loadCategoriesFor([d.category]))(d.category)?.top;
   // Kredit / loyiha manbasiga boshqa manbadan o'tib bo'lmaydi — bog'lanish (qaysi kredit, loyiha) so'raladi
   if ((top?.needs === "LOAN" || top?.needs === "PROJECT") && d.category !== t.category) return { error: `«${top.name}» — ${top.needs === "LOAN" ? "kredit" : "loyiha"} tanlanadi: eski yozuvni bekor qilib, Kirim-Chiqim formasida kiriting` };
   const links = await categoryLinks({ type, category: d.category, subCategory: d.subCategory || null });

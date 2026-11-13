@@ -36,6 +36,20 @@ export function resetCategoryCache() {
   cache = null;
 }
 
+/**
+ * Yozishdagi tekshiruvlar uchun (`lib/cash-entry.ts`): berilgan nomlardan biri keshda topilmasa — bazadan bir marta qayta
+ * o'qiladi. Kesh har modul nusxasida alohida: «+» bilan hozirgina qo'shilgan manba / sub manba (boshqa action, boshqa
+ * jarayon) shu yerda 1 daqiqagacha ko'rinmay, yozuv «bunday sub manba yo'q» deb rad etilardi.
+ */
+export async function loadCategoriesFor(names: (string | null | undefined)[]): Promise<CatNode[]> {
+  const nodes = await loadCategories();
+  const keys = new Set<string>();
+  for (const n of nodes) { keys.add(normCat(n.name)); for (const a of n.aliases) keys.add(normCat(a)); }
+  if (names.every((x) => !x || keys.has(normCat(x)))) return nodes;
+  cache = null;
+  return loadCategories();
+}
+
 export type Resolved = { top: CatNode; sub: CatNode | null } | null;
 
 /** Nom → tugun xaritasi va topuvchi. `resolve(category, sub)` — Manba (top) va Sub manbani qaytaradi. */

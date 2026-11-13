@@ -135,8 +135,10 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
   const cur = cats.find((c) => c.name === category);
   const active = cur ? [...cur.subs, ...(addedSubs[category] ?? []).filter((x) => !cur.subs.includes(x))] : [];
   const subs = [...active, ...(cur && category === entry.category && entry.subCategory && !active.includes(entry.subCategory) ? [entry.subCategory] : [])];
-  // Sub manba majburiy — manbaning sub manbalari bo'lsa (kredit / loyiha manbasidan tashqari); qoida serverda (`lib/cash-entry.ts`)
-  const subNeeded = !!cur && active.length > 0 && cur.needs !== "LOAN" && cur.needs !== "PROJECT";
+  // Sub manba majburiy — barcha manbalarda (sub manbasi yo'q bo'lsa «+» bilan qo'shiladi); qoida serverda (`lib/cash-entry.ts`).
+  // Istisno — daraxtda yo'q eski erkin nom: unga sub manba qo'shib bo'lmaydi
+  const legacy = sameType && category === entry.category && !list.some((c) => c.name === entry.category);
+  const subNeeded = !!cur && !legacy;
   // Kredit / loyiha so'raydigan manbaga tahrirda o'tilmaydi (bog'lanish kerak) — yozuvning o'z manbasi qoladi
   const shown = cats.filter((c) => (sameType && c.name === entry.category) || (c.needs !== "LOAN" && c.needs !== "PROJECT"));
   const L = entry.lock;
@@ -170,8 +172,9 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
           </Select>
           {L.category && <Locked name="category" value={entry.category} />}
         </Field>
-        <Field label={subNeeded ? "Sub manba *" : "Sub manba"}>
-          <WithAdd add={o.canAddSub && !!cur && (
+        <Field label={subNeeded ? "Sub manba *" : "Sub manba"}
+          hint={subNeeded && !active.length ? (o.canAddSub ? "bu manbada sub manba yo'q — «+» bilan qo'shing" : "bu manbada sub manba yo'q — Moliya → Kategoriyalarda qo'shing") : undefined}>
+          <WithAdd add={o.canAddSub && subNeeded && (
             <QuickAdd label="Yangi sub manba qo'shish" title={`«${category}» ichida yangi sub manba`} save={quickAddCashCategory}
               onCreated={(x: QuickAdded) => { setAddedSubs((a) => ({ ...a, [category]: [...(a[category] ?? []), x.name] })); setSub(x.name); }}>
               <input type="hidden" name="parent" value={category} />

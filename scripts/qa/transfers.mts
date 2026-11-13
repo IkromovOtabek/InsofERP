@@ -64,7 +64,9 @@ console.log("\nTayyorlov");
 for (const [name, type] of [[`QA O Kassa ${T}`, "CASH"], [`QA O Kassa2 ${T}`, "CASH"], [`QA O Bank ${T}`, "BANK"], [`QA O Bank OD ${T}`, "BANK"]]) await saveAcc(null, { name, type });
 const K = accId(`QA O Kassa ${T}`), K2 = accId(`QA O Kassa2 ${T}`), B = accId(`QA O Bank ${T}`), BOD = accId(`QA O Bank OD ${T}`);
 await saveAcc(BOD, { name: `QA O Bank OD ${T}`, type: "BANK", allowOverdraft: "on" });
-let r = await cashTx({ type: "INCOME", cashAccountId: K, amount: "1000000", category: "Ta'sischi kiritmasi" });
+// Veb formada sub manba majburiy — seed'dagi «Ta'sischi kiritmasi» da sub manba yo'q, «+» bilan qo'shiladi
+await dir.action("lib/quick-add-actions#quickAddCashCategory", [fd({ name: `QA kiritma ${T}`, parent: "Ta'sischi kiritmasi" })], "/cashflow");
+let r = await cashTx({ type: "INCOME", cashAccountId: K, amount: "1000000", category: "Ta'sischi kiritmasi", subCategory: `QA kiritma ${T}` });
 check("S1 kassaga 1 000 000 kirim", r.result?.ok === true && eq2(await bal(K), 1000000), r.result);
 const f0 = await flow();
 const total0 = await mobileTotal();

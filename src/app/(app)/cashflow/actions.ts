@@ -43,7 +43,7 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   }
   const s = await requireAction("cashflow", "create");
   // Qoida `lib/cash-entry.ts` da — mobil ilovadagi kassa ham shuni chaqiradi
-  // Veb formada sub manba majburiy (manbaning sub manbalari bo'lsa); mobil ilova va avtomatik yozuvlar — `requireSub`siz
+  // Veb formada sub manba majburiy (barcha manbalarda); mobil ilova, Excel importi va avtomatik yozuvlar — `requireSub`siz
   const res = await createCashEntry({ ...r.data, date: new Date(r.data.date), requireSub: true }, s.userId);
   if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");

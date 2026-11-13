@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, type CashMethod } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
-import { QuickAdd, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
-import { quickAddCashCategory, quickAddLoan, quickAddProject } from "@/lib/quick-add-actions";
+import { QuickAdd, QuickDelete, QuickEdit, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
+import { quickAddCashCategory, quickAddLoan, quickAddProject, quickRemoveCashCategory, quickRenameCashCategory } from "@/lib/quick-add-actions";
 
 type Opt = { id: string; name: string };
 type LoanOpt = Opt & { kind: "BANK" | "BORROWED" | "LENT" };
@@ -24,10 +24,12 @@ type Acc = Opt & { type?: CashMethod };
  * Kategoriya — «Manba → Sub manba» daraxti (`CashCategory`); manba loyiha yoki kredit so'rasa, qo'shimcha tanlov chiqadi.
  * `canAdd` — manba, sub manba, loyiha, kredit / qarz va yetkazuvchi tanlovlari yonida «+»: ro'yxatda yo'g'i shu yerning o'zida qo'shiladi
  * va darhol tanlanadi (sahifa yangilanguncha mahalliy ro'yxatga ham qo'shib turiladi).
+ * `canEditCat` / `canDeleteCat` — tanlangan manba va sub manba yonida qalam (nomini o'zgartirish) va savatcha (o'chirish;
+ * ishlatilgani ro'yxatdan olinadi). `lockedCats` — tizim kategoriyalari: ularda qalam / savatcha yo'q.
  */
-export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, clientToken = "" }: {
+export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, canEditCat = false, canDeleteCat = false, lockedCats = [], clientToken = "" }: {
   accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: CategoryOption[]; expenseCats: CategoryOption[];
-  projects?: Opt[]; loans?: LoanOpt[]; canPerekit?: boolean; canAdd?: boolean; clientToken?: string;
+  projects?: Opt[]; loans?: LoanOpt[]; canPerekit?: boolean; canAdd?: boolean; canEditCat?: boolean; canDeleteCat?: boolean; lockedCats?: string[]; clientToken?: string;
 }) {
   const [state, action, pending] = useActionState(createCashTx, undefined);
   const formRef = useRef<HTMLFormElement>(null);
@@ -42,6 +44,12 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   // «+» bilan qo'shilganlar — sahifa ma'lumoti yangilanguncha ham ro'yxatda tursin
   const [added, setAdded] = useState<{ cats: (CategoryOption & { type: "INCOME" | "EXPENSE" })[]; subs: Record<string, string[]>; projects: Opt[]; suppliers: Opt[]; loans: LoanOpt[] }>({ cats: [], subs: {}, projects: [], suppliers: [], loans: [] });
   const merge = <T,>(base: T[], extra: T[], key: (x: T) => string) => [...base, ...extra.filter((x) => !base.some((b) => key(b) === key(x)))];
+  // Qalam / savatcha natijasi — sahifa ma'lumoti yangilanguncha ham ro'yxatda aks etsin (eski nom → yangi, o'chirilganlar)
+  const [edits, setEdits] = useState<{ renamed: Record<string, string>; removed: string[] }>({ renamed: {}, removed: [] });
+  const [catNote, setCatNote] = useState("");
+  const ren = (n: string) => { let x = n; for (let i = 0; i < 5 && edits.renamed[x]; i++) x = edits.renamed[x]; return x; };
+  const live = (n: string) => !edits.removed.includes(n);
+  const fixCat = (c: CategoryOption): CategoryOption => ({ ...c, name: ren(c.name), subs: c.subs.map(ren).filter(live) });
   const pickCategory = (v: string) => { setCategory(v); setSub(""); setLoanId(""); };
   const [method, setMethod] = useState<CashMethod>(accounts.some((a) => a.type === "CASH") || !accounts.some((a) => a.type === "BANK") ? "CASH" : "BANK");
   const [fromId, setFromId] = useState(accounts[0]?.id ?? "");
@@ -49,16 +57,16 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   const [token, setToken] = useState(clientToken);
   useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setSupplierId(""); setCategory(""); setSub(""); setProjectId(""); setLoanId(""); setToken(crypto.randomUUID()); } }, [state]);
   const perekitOpt: CategoryOption = { name: PEREKIT_CATEGORY, needs: null, loanPart: null, subs: [] };
-  const typeCats = merge(type === "INCOME" ? incomeCats : expenseCats, added.cats.filter((c) => c.type === type), (c) => c.name);
+  const typeCats = merge(type === "INCOME" ? incomeCats : expenseCats, added.cats.filter((c) => c.type === type), (c) => c.name).map(fixCat).filter((c) => live(c.name));
   const cats = type === "EXPENSE" && canPerekit && accounts.length >= 2 ? [...typeCats, perekitOpt] : typeCats;
   const cur = cats.find((c) => c.name === category) ?? cats[0];
-  const subs = cur ? merge(cur.subs, added.subs[cur.name] ?? [], (x) => x) : [];
+  const subs = cur ? merge(cur.subs, (added.subs[cur.name] ?? []).map(ren).filter(live), (x) => x) : [];
   const projectList = merge(projects, added.projects, (p) => p.id);
   const supplierList = merge(suppliers, added.suppliers, (p) => p.id);
   const cat = cur?.name ?? "";
   const perekit = type === "EXPENSE" && cat === PEREKIT_CATEGORY;
-  // Sub manba majburiy — manbaning sub manbalari bo'lsa (kredit / loyiha manbasidan tashqari); qoida serverda ham (`lib/cash-entry.ts`)
-  const subNeeded = !perekit && subs.length > 0 && cur?.needs !== "LOAN" && cur?.needs !== "PROJECT";
+  // Sub manba har bir kirim/chiqimda majburiy (perekitdan tashqari); sub manbasi yo'q manbada «+» bilan qo'shiladi. Qoida serverda ham (`lib/cash-entry.ts`)
+  const subNeeded = !perekit && !!cur;
   // Perekitda hamma hisob (kassa ⇄ bank); oddiy kirim/chiqimda — tanlangan usuldagi hisoblar
   const shownAccounts = perekit ? accounts : accounts.filter((a) => !a.type || a.type === method);
   const accId = shownAccounts.some((a) => a.id === fromId) ? fromId : shownAccounts[0]?.id ?? "";
@@ -120,8 +128,8 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
             <Select name="category" value={cat} onChange={(e) => pickCategory(e.target.value)}>{cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</Select>
           </WithAdd>
         </Field>
-        {!perekit && cur && (subs.length > 0 || canAdd) && (
-          <Field label={subNeeded ? "Sub manba *" : "Sub manba"} hint={subNeeded ? "majburiy — hisobotda manba ichida ko'rinadi" : subs.length ? "tafsilot — hisobotda manba ichida ko'rinadi" : "bu manbada sub manba yo'q — kerak bo'lsa «+» bilan qo'shing"}>
+        {subNeeded && (
+          <Field label="Sub manba *" hint={subs.length ? "majburiy — hisobotda manba ichida ko'rinadi" : canAdd ? "bu manbada sub manba yo'q — «+» bilan qo'shing" : "bu manbada sub manba yo'q — Moliya → Kategoriyalarda qo'shing"}>
             <WithAdd add={canAdd && (
               <QuickAdd label="Yangi sub manba qo'shish" title={`«${cat}» ichida yangi sub manba`} save={quickAddCashCategory}
                 onCreated={(x: QuickAdded) => { setAdded((a) => ({ ...a, subs: { ...a.subs, [cat]: [...(a.subs[cat] ?? []), x.name] } })); setSub(x.name); }}>
@@ -129,7 +137,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                 <Field label="Nomi *"><Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder="Masalan: Ovqat (non, suv)" /></Field>
               </QuickAdd>
             )}>
-              <Select name="subCategory" value={sub} required={subNeeded} onChange={(e) => setSub(e.target.value)}>{subNeeded ? <option value="" disabled>— tanlang —</option> : <option value="">— umumiy —</option>}{subs.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
+              <Select name="subCategory" value={sub} required onChange={(e) => setSub(e.target.value)}><option value="" disabled>— tanlang —</option>{subs.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
             </WithAdd>
           </Field>
         )}

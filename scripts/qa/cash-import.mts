@@ -24,8 +24,10 @@ await Promise.all([dir.login("test.direktor"), buh.login("test.buh"), kassa.logi
 const accId = (name: string) => q1(`select id from "CashAccount" where name=${lit(name)}`).id as string;
 const K = accId("Kassa"), B = accId("Asosiy hisob raqam");
 const n = (sql: string) => Number(q1(sql).c);
-// Qoldiq yetsin: kassaga va bankka boshlang'ich kirim
-for (const id of [K, B]) await dir.action("cashflow/actions#createCashTx", [undefined, fd({ type: "INCOME", date: d1, cashAccountId: id, amount: "1000000", category: "Boshqa tushum", note: `QA ${T} qoldiq` })], "/cashflow");
+// Qoldiq yetsin: kassaga va bankka boshlang'ich kirim (veb formada sub manba majburiy — «Boshqa tushum» ostiga «+» bilan qo'shiladi)
+const tushum = `QA tushum ${T}`;
+await dir.action("lib/quick-add-actions#quickAddCashCategory", [fd({ name: tushum, parent: "Boshqa tushum" })], "/cashflow");
+for (const id of [K, B]) await dir.action("cashflow/actions#createCashTx", [undefined, fd({ type: "INCOME", date: d1, cashAccountId: id, amount: "1000000", category: "Boshqa tushum", subCategory: tushum, note: `QA ${T} qoldiq` })], "/cashflow");
 
 type Row = Record<string, string>;
 const imp = (c: typeof dir, rows: Row[]) => c.action("payments/actions#importCashJournalFromExcel", [undefined, fd({ rows: JSON.stringify(rows), valueMaps: "{}", cashAccountId: K })], "/payments/import");
@@ -88,12 +90,14 @@ const { transferSig } = await import("../../src/lib/cash-transfer");
 const { registerSig } = await import("../../src/lib/sales-register");
 const f = await db.cashTransaction.findFirstOrThrow({ where: { note: `QA ${T} F` } });
 r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "INCOME", date: d1, cashAccountId: K, amount: "2000", category: "Boshqa tushum", note: `QA ${T} F`, sig: cashEntrySig(f) })], "/payments");
-check("C16a chiqim kirimga aylandi (tur, manba, sub manba tozalandi)", r.result?.ok === true && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME' and category='Boshqa tushum' and "subCategory" is null`) === 1, r.result);
+check("C16a0 kirimga aylantirishda sub manbasiz — rad (sub manba majburiy)", /Sub manba tanlanmagan/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='EXPENSE'`) === 1, r.result);
+r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "INCOME", date: d1, cashAccountId: K, amount: "2000", category: "Boshqa tushum", subCategory: tushum, note: `QA ${T} F`, sig: cashEntrySig(f) })], "/payments");
+check("C16a chiqim kirimga aylandi (tur, manba, sub manba yangilandi)", r.result?.ok === true && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME' and category='Boshqa tushum' and "subCategory"=${lit(tushum)}`) === 1, r.result);
 const f2 = await db.cashTransaction.findUniqueOrThrow({ where: { id: f.id } });
 r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "900000000", category: "Pitaniya", subCategory: sub, note: `QA ${T} F`, sig: cashEntrySig(f2) })], "/payments");
 check("C16b kirim katta chiqimga aylansa kassa minusga tushadi — rad, yozuv o'zgarmadi", /yetarli pul yo'q/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME' and amount=2000`) === 1, r.result);
 r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "2000", category: "Pitaniya", note: `QA ${T} F`, sig: cashEntrySig(f2) })], "/payments");
-check("C16d sub manbasi bor manbaga sub manbasiz — rad (sub manba majburiy)", /Sub manba tanlanmagan/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME'`) === 1, r.result);
+check("C16b2 sub manbasi bor manbaga sub manbasiz — rad (sub manba majburiy)", /Sub manba tanlanmagan/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME'`) === 1, r.result);
 r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "2000", category: "Boshqa tushum", sig: cashEntrySig(f2) })], "/payments");
 check("C16c chiqimga kirim manbasi — rad", /kirim kategoriyasi/.test(r.result?.error ?? ""), r.result);
 
@@ -164,8 +168,13 @@ r = await kassa.action(`${QA}#quickAddCashCategory`, [fd({ name: manba, type: "E
 check("C17 kassir «+» bilan yangi chiqim manbasi qo'shdi (PNL qatori bilan)", !!r.result?.id && n(`select count(*)::int c from "CashCategory" where name=${lit(manba)} and type='EXPENSE' and "pnlLine"='ADMIN' and flow='OPERATING' and "parentId" is null`) === 1, r.result);
 r = await kassa.action(`${QA}#quickAddCashCategory`, [fd({ name: manba, type: "EXPENSE" })], "/cashflow");
 check("C18 bir xil nom — rad", /allaqachon/.test(r.result?.error ?? ""), r.result);
+const subsiz = (o: Row = {}) => kassa.action("cashflow/actions#createCashTx", [undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "1000", category: manba, note: `QA ${T} yangi manba`, ...o })], "/cashflow");
+r = await subsiz();
+check("C18a sub manbasi yo'q manbaga sub manbasiz chiqim — rad («+» bilan qo'shish taklifi)", /sub manba yo'q/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where note=${lit(`QA ${T} yangi manba`)}`) === 0, r.result);
 r = await kassa.action(`${QA}#quickAddCashCategory`, [fd({ name: `QA sub ${T}`, parent: manba })], "/cashflow");
 check("C19 shu manba ostiga sub manba", !!r.result?.id && n(`select count(*)::int c from "CashCategory" c join "CashCategory" p on p.id=c."parentId" where c.name=${lit(`QA sub ${T}`)} and p.name=${lit(manba)} and c."pnlLine"='ADMIN'`) === 1, r.result);
+r = await subsiz({ subCategory: `QA sub ${T}` });
+check("C19a «+» bilan qo'shilgan sub manba bilan chiqim yozildi", r.result?.ok === true && n(`select count(*)::int c from "CashTransaction" where note=${lit(`QA ${T} yangi manba`)} and "subCategory"=${lit(`QA sub ${T}`)}`) === 1, r.result);
 r = await kassa.action(`${QA}#quickAddSupplier`, [fd({ name: `QA yetkazuvchi ${T}`, vatPayer: "0" })], "/cashflow");
 check("C20 kassir Kirim-Chiqimdan yangi yetkazuvchi qo'shdi", !!r.result?.id && n(`select count(*)::int c from "Supplier" where name=${lit(`QA yetkazuvchi ${T}`)}`) === 1, r.result);
 r = await sotuv.action(`${QA}#quickAddCashCategory`, [fd({ name: `QA sotuv ${T}`, type: "EXPENSE" })], "/cashflow");
