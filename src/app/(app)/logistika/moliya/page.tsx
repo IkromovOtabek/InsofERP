@@ -12,6 +12,7 @@ import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard,
 import { AvtoView } from "@/app/(app)/bi-tahlil/logistika/avto-view";
 import { DayRangeBar, MonthBar, monthTitle, parseDayRange, parseMonth } from "@/app/(app)/bi-tahlil/month-bar";
 import { CancelTx, LinkCashForm, MonthPayForm, TxForm, type SourceOpt } from "./forms";
+import { LogiOverview } from "./umumiy";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSt
 
 /**
  * Logistika moliya — logistikaning alohida hisobi (`lib/logistics-finance.ts`). Faqat direktor, ish boshqaruvchi va mexanik:
+ *  · Umumiy — hamma muhim raqam bitta joyda: kirim, chiqim, foyda, kassa qoldig'i, pul harakati, to'lovlar, mashinalar (`umumiy.tsx`);
  *  · Foyda — dastavka haqi (avtomatik daromad) − tannarx (yoqilg'i, haydovchi haqi, ta'mir, boshqa), mashina va kun bo'yicha;
  *  · Kirim-chiqim — pul harakati: logistika hisobidan, zavod kassa/bankidan berilgani va o'tkazmalar (qayerdan bo'lmasin);
  *  · To'lovlar — tasdiqlangan logistika so'rovlari (naqd reys haqi, usta puli, ta'mir) va oylik reys haqi.
@@ -29,12 +31,13 @@ const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSt
 export default async function LogistikaMoliyaPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requirePage(BASE);
   const sp = await searchParams;
-  const tab = sp.tab === "jurnal" || sp.tab === "tolov" ? sp.tab : "foyda";
+  const tab = sp.tab === "jurnal" || sp.tab === "tolov" || sp.tab === "foyda" ? sp.tab : "umumiy";
   const [accounts, toPay] = await Promise.all([logiAccounts(), logiRequestsToPay()]);
 
   const tabs = (
     <Tabs current={tab} items={[
-      { key: "foyda", label: "Foyda", href: BASE },
+      { key: "umumiy", label: "Umumiy", href: BASE },
+      { key: "foyda", label: "Foyda", href: `${BASE}?tab=foyda` },
       { key: "jurnal", label: "Kirim-chiqim", href: `${BASE}?tab=jurnal` },
       { key: "tolov", label: <>To&apos;lovlar{toPay.length ? <Badge color="amber">{toPay.length}</Badge> : null}</>, href: `${BASE}?tab=tolov` },
     ]} />
@@ -44,6 +47,21 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
       subtitle="Logistikaning alohida hisobi: daromad (dastavka), xarajat, foyda va pul harakati. Faqat direktor, ish boshqaruvchi va mexanik ko'radi." />
   );
 
+  // Umumiy — logistikaning hamma muhim raqami bitta joyda (kirim, chiqim, qoldiq, foyda, to'lovlar, mashinalar)
+  if (tab === "umumiy") {
+    const period = parseDayRange(sp);
+    return (
+      <div>
+        {header}
+        {tabs}
+        <div className="mt-4">
+          <DayRangeBar base={BASE} range={period} />
+          <LogiOverview period={period} accounts={accounts} toPay={toPay} />
+        </div>
+      </div>
+    );
+  }
+
   if (tab === "foyda") {
     const period = parseDayRange(sp);
     const r = await avtoReport(period.from, period.to);
@@ -52,7 +70,7 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
         {header}
         {tabs}
         <div className="mt-4">
-          <AvtoView r={r} period={period} base={BASE} />
+          <AvtoView r={r} period={period} base={BASE} keep={{ tab: "foyda" }} />
         </div>
       </div>
     );

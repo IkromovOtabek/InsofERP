@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { DriverPayType, FuelType, Prisma, TransportExpenseKind } from "@/generated/prisma";
+import type { DriverPayType, FuelType, LedgerRevenueType, Prisma, TransportExpenseKind } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { driverLedger, type LedgerKind, type LedgerRefs, type LedgerRow } from "@/lib/driver-ledger";
@@ -42,7 +42,7 @@ export type LedgerEditData = {
   /** Haq qotgan (kassaga o'tgan naqd / yopilgan oy) — sababi */
   payLock: string | null;
   repair: number; parts: number; vulc: number; other: number;
-  revenue: number; revenueType: "BANK" | "CASH" | "OBJECT" | null; revBank: number; revCash: number; revOther: number;
+  revenue: number; revenueType: LedgerRevenueType | null; revBank: number; revCash: number; revDebt: number; svcBank: number; svcCash: number; revOther: number;
   note: string; ownCosts: boolean;
 };
 
@@ -111,7 +111,8 @@ export async function ledgerEditData(kind: LedgerKind, id: string): Promise<Ledg
     refuel: r.refuel, fuelPrice: r.refuelPrice, lastPrice,
     pay: r.kind === "trip" ? (r.src.priced ? r.amount : null) : r.amount, suggested: r.src.suggested, payType: r.payType, priced: r.src.priced, approved: !!r.approvedAt, payLock,
     repair: r.repair, parts: r.parts, vulc: r.vulc, other: r.other,
-    revenue: r.revenue, revenueType: r.src.revenueType, revBank: r2(r.revBank), revCash: r2(r.revCash), revOther: r2(r.revOther),
+    revenue: r.revenue, revenueType: r.src.revenueType, revBank: r2(r.revBank), revCash: r2(r.revCash), revDebt: r2(r.revDebt),
+    svcBank: r2(r.svcBank), svcCash: r2(r.svcCash), revOther: r2(r.revOther),
     note: r.kind === "entry" && r.src.note === autoNote ? "" : r.src.note ?? "", ownCosts: r.ownCosts,
   };
 }

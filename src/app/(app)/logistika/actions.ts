@@ -17,6 +17,7 @@ import { createMechanicRequest, MASTER_PROBLEMS } from "@/lib/mechanic-requests"
 import { approveLogisticsEntries, cancelLogisticsEntry, createLogisticsEntry, entrySchema, rejectLogisticsEntry, updateLogisticsEntry } from "@/lib/logistics-entry";
 import { isLedgerKind, ledgerEditData, ledgerEditSchema, updateLedgerRow, type LedgerEditData } from "@/lib/ledger-edit";
 import { driverTempLoginCore } from "@/lib/kadr-employee";
+import { LEDGER_REVENUE_REQUIRED } from "@/lib/ledger-revenue";
 
 /**
  * Logistika kabineti amallari: transport, obyekt, haydovchi kartasi, yoqilg'i, xarajat, sozlamalar.
@@ -300,7 +301,7 @@ export async function createLedgerRowAction(_prev: ActionState, fd: FormData): P
   const r = parseForm(entrySchema, fd);
   if ("error" in r) return { error: r.error };
   if (!r.data.vehicleId) return { error: "Transportni tanlang" };
-  if ((r.data.revenue ?? 0) > 0 && !r.data.revenueType) return { error: "Kirim turini tanlang: P/R, N/L yoki obyekt" };
+  if ((r.data.revenue ?? 0) > 0 && !r.data.revenueType) return { error: LEDGER_REVENUE_REQUIRED };
   const res = await createLogisticsEntry(r.data, s.userId);
   if ("error" in res) return { error: res.error };
   refresh();

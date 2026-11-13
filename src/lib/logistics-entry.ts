@@ -8,6 +8,7 @@ import { monthLocked, PAY_APPROVER_ROLES, PAY_TYPE_LABEL, PAY_TYPES, TRIP_PAY_PR
 import { dayField, numIn } from "@/lib/logistics-admin";
 import { lastFuelPrice } from "@/lib/logistics-costs";
 import { money } from "@/lib/format";
+import { LEDGER_REVENUE_REQUIRED, LEDGER_REVENUE_TYPES } from "@/lib/ledger-revenue";
 
 /**
  * Dispetcherning qo'lda yozuvi (Haydovchilar tabeli → «Qo'lda yozuvlar»): tizimga reys bo'lib tushmagan ish —
@@ -39,7 +40,7 @@ export const entrySchema = z.object({
   payAmount: numIn(0, 100_000_000),
   payType: z.enum(PAY_TYPES).optional().or(z.literal("").transform(() => undefined)),
   revenue: numIn(0, 1_000_000_000),
-  revenueType: z.enum(["BANK", "CASH", "OBJECT"]).optional().or(z.literal("").transform(() => undefined)),
+  revenueType: z.enum(LEDGER_REVENUE_TYPES).optional().or(z.literal("").transform(() => undefined)),
   // Hisob varag'i qatori
   pickup: z.string().trim().max(120).optional().transform((v) => v || null),
   dropoff: z.string().trim().max(160).optional().transform((v) => v || null),
@@ -214,7 +215,7 @@ export async function updateLogisticsEntry(id: string, d: EntryInput, userId: st
   if (pay > 0 && !d.driverId) return { error: "Haq kimga — haydovchini tanlang" };
   if (pay > 0 && !d.payType) return { error: "To'lov turini tanlang: naqd yoki oylik" };
   if (revenue > 0 && !d.vehicleId) return { error: "Kirim qaysi transportniki — transportni tanlang" };
-  if (sheet && revenue > 0 && !d.revenueType) return { error: "Kirim turini tanlang: P/R, N/L yoki obyekt" };
+  if (sheet && revenue > 0 && !d.revenueType) return { error: LEDGER_REVENUE_REQUIRED };
   if (sheet && ((d.km ?? 0) > 0 || drum > 0 || sheet.costs) && !d.vehicleId) return { error: "Transportni tanlang — km, zapravka va xarajat mashinaga yoziladi" };
   if ((d.km ?? 0) > 0 && !d.vehicleId) return { error: "Transportni tanlang — km mashinaga yoziladi" };
   if (linked && d.vehicleId !== e.vehicleId) return { error: sheet

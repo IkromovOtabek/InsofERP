@@ -1,12 +1,12 @@
 import { db } from "@/lib/db";
-import type { DriverPayType } from "@/generated/prisma";
+import type { DriverPayType, LedgerRevenueType } from "@/generated/prisma";
 import { PAY_SINCE, payTrips, tripFuelNorm } from "@/lib/driver-trip-pay";
 import { fmtNum } from "@/lib/format";
 
 /**
  * Haydovchi tabelining «hisob varag'i» (dispetcher Excel'i ko'rinishida, mashina bo'yicha varaq): har qator —
  * qayerdan/qayerga, yuk, probeg, baraban soati, gaz (qoldiq → zapravka → sarf → qoldiq), yoqilg'i summasi,
- * haydovchi haqi, ta'mir/zapchast/vulkanizator/boshqa xarajat, jami xarajat, dastavka daromadi (P/R, N/L, obyekt) va foyda.
+ * haydovchi haqi, ta'mir/zapchast/vulkanizator/boshqa xarajat, jami xarajat, bajarilgan ish (dostavka va usluga — naqd / perech., «Obyekt» — zavodning o'zi uchun ish) va foyda.
  *
  * Qator uch xil:
  *  - `trip` — yetkazilgan reys, o'zi tushadi: km — ECO/ERP GPS izi (bo'lmasa zayavka masofasi), baraban soati —
@@ -56,10 +56,15 @@ export type LedgerRow = {
   /** Haydovchi haqi: narxlangan / qo'lda yozilgan, bo'lmasa taklif */
   pay: number; amount: number | null; suggestText: string | null; payType: DriverPayType | null; approvedAt: Date | null;
   repair: number; parts: number; vulc: number; other: number; total: number;
-  revBank: number; revCash: number; revOther: number; revenue: number; profit: number;
+  /**
+   * Bajarilgan ish (summada): dostavka — perechisleniye (`revBank`), naqd (`revCash`), qarzga (`revDebt`: zayavkada to'lov turi
+   * yo'q — mijoz keyin to'laydi); usluga prixodi — perechisleniye / naqd (`svcBank`, `svcCash`); «Obyekt» — zavodning o'zi uchun
+   * ish (`revOther`, zavodga olib kelingan narsa). Hammasi logistika daromadi — foydaga kiradi.
+   */
+  revBank: number; revCash: number; revDebt: number; svcBank: number; svcCash: number; revOther: number; revenue: number; profit: number;
   remarks: string[];
   /** Tahrir oynasi uchun xom qiymatlar (ko'rinishdagi «—» va yig'ma izohsiz) */
-  src: { pickup: string | null; dropoff: string | null; cargo: string | null; note: string | null; revenueType: "BANK" | "CASH" | "OBJECT" | null; priced: boolean; suggested: number | null };
+  src: { pickup: string | null; dropoff: string | null; cargo: string | null; note: string | null; revenueType: LedgerRevenueType | null; priced: boolean; suggested: number | null };
   refs: LedgerRefs;
   /** Zapravka narxi (qatordagi zapravkalar o'rtachasi) */
   refuelPrice: number | null;
@@ -67,7 +72,7 @@ export type LedgerRow = {
   ownCosts: boolean;
 };
 
-export type LedgerTotals = Pick<LedgerRow, "km" | "refuel" | "fuelSum" | "pay" | "repair" | "parts" | "vulc" | "other" | "total" | "revBank" | "revCash" | "revOther" | "revenue" | "profit"> & {
+export type LedgerTotals = Pick<LedgerRow, "km" | "refuel" | "fuelSum" | "pay" | "repair" | "parts" | "vulc" | "other" | "total" | "revBank" | "revCash" | "revDebt" | "svcBank" | "svcCash" | "revOther" | "revenue" | "profit"> & {
   rows: number; trips: number; hours: number; useGas: number; useDt: number; drumUse: number;
 };
 
@@ -253,7 +258,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         cargo: `${names.join(", ") || "—"} · ${fmtNum(Number(t.qtyM3), 2)} ${unit}`.trim(),
         trips: 1, km: r.km, workHours: r.workHours,
         pay: r.amount ?? r.suggested, amount: r.amount, suggestText: r.suggestText, payType: r.payType, approvedAt: r.approvedAt,
-        revBank: pm === "BANK" ? revenue : 0, revCash: pm === "CASH" ? revenue : 0, revOther: pm ? 0 : revenue, revenue: r2(revenue),
+        revBank: pm === "BANK" ? revenue : 0, revCash: pm === "CASH" ? revenue : 0, revDebt: pm ? 0 : revenue, svcBank: 0, svcCash: 0, revOther: 0, revenue: r2(revenue),
         remarks: [hr >= 20 || hr < 6 ? `Tun ${String(hr).padStart(2, "0")}:${String(r.deliveredAt.getMinutes()).padStart(2, "0")}` : null, r.note, t.deliveryComment, ...e.notes].filter((x): x is string => !!x),
         src: { pickup: t.pickupAddress?.trim() || null, dropoff: null, cargo: null, note: t.deliveryComment, revenueType: null, priced: !!r.pricedAt, suggested: r.suggested },
       };
@@ -268,7 +273,10 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         pickup: q.pickup || "—", dropoff: q.dropoff || q.note, address: null, cargo: q.cargo || "—",
         trips: q.trips, km, workHours: hours,
         pay, amount: pay > 0 ? pay : null, suggestText: null, payType: q.payType, approvedAt: q.payApprovedAt,
-        revBank: q.revenueType === "BANK" ? rev : 0, revCash: q.revenueType === "CASH" ? rev : 0, revOther: q.revenueType === "BANK" || q.revenueType === "CASH" ? 0 : rev, revenue: rev,
+        // Turi yozilmagan eski qator — «Obyekt» (avvalgi qoida)
+        revBank: q.revenueType === "BANK" ? rev : 0, revCash: q.revenueType === "CASH" ? rev : 0, revDebt: 0,
+        svcBank: q.revenueType === "SERVICE_BANK" ? rev : 0, svcCash: q.revenueType === "SERVICE_CASH" ? rev : 0,
+        revOther: q.revenueType === "OBJECT" || !q.revenueType ? rev : 0, revenue: rev,
         // Izoh yozilmagan qatorda `note` = «yuklash → tushirish» (logistics-entry) — takrorlanmasin
         remarks: [q.dropoff && q.note !== [q.pickup, q.dropoff].filter(Boolean).join(" → ") ? q.note : null, ...e.notes].filter((x): x is string => !!x),
         src: { pickup: q.pickup, dropoff: q.dropoff, cargo: q.cargo, note: q.note, revenueType: q.revenueType, priced: pay > 0, suggested: null },
@@ -280,7 +288,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         kind: "cost", id: s.id, no: "", at, driverId: null, driver: null, vehicleId: v.id, plate: v.plate,
         pickup: "—", dropoff: "Reyssiz kun", address: null, cargo: "—", trips: 0, km: 0, workHours: null,
         pay: 0, amount: null, suggestText: null, payType: null, approvedAt: null,
-        revBank: 0, revCash: 0, revOther: 0, revenue: 0, remarks: e.notes,
+        revBank: 0, revCash: 0, revDebt: 0, svcBank: 0, svcCash: 0, revOther: 0, revenue: 0, remarks: e.notes,
         src: { pickup: null, dropoff: null, cargo: null, note: null, revenueType: null, priced: false, suggested: null },
       };
     }
@@ -316,14 +324,15 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
 export function ledgerTotals(rows: LedgerRow[]): LedgerTotals {
   const total: LedgerTotals = {
     rows: rows.length, trips: 0, km: 0, hours: 0, useGas: 0, useDt: 0, drumUse: 0, refuel: 0, fuelSum: 0, pay: 0, repair: 0, parts: 0, vulc: 0, other: 0, total: 0,
-    revBank: 0, revCash: 0, revOther: 0, revenue: 0, profit: 0,
+    revBank: 0, revCash: 0, revDebt: 0, svcBank: 0, svcCash: 0, revOther: 0, revenue: 0, profit: 0,
   };
   for (const r of rows) {
     total.trips += r.trips; total.km += r.km; total.hours += r.workHours ?? 0; total.refuel += r.refuel; total.fuelSum += r.fuelSum; total.drumUse += r.drumUse ?? 0;
     if (r.unit === "m³") total.useGas += r.use ?? 0; else total.useDt += r.use ?? 0;
     total.useDt += r.useExtra ?? 0;
     total.pay += r.pay; total.repair += r.repair; total.parts += r.parts; total.vulc += r.vulc; total.other += r.other; total.total += r.total;
-    total.revBank += r.revBank; total.revCash += r.revCash; total.revOther += r.revOther; total.revenue += r.revenue; total.profit += r.profit;
+    total.revBank += r.revBank; total.revCash += r.revCash; total.revDebt += r.revDebt; total.svcBank += r.svcBank; total.svcCash += r.svcCash;
+    total.revOther += r.revOther; total.revenue += r.revenue; total.profit += r.profit;
   }
   return total;
 }

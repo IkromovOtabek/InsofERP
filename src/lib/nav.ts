@@ -41,6 +41,8 @@ export const NAV: NavItem[] = [
   // Umumiy vazifalar — har bir xodim (o'ziga / rahbar beradi), `lib/hr/tasks.ts`
   // Menyuda ko'rinmaydi — sahifa ruxsati qoladi, havola orqali ochiladi
   { href: "/vazifalar",   label: "Vazifalar",          roles: "all", group: "Asosiy", hidden: true },
+  // Bo'lim yig'ma sahifalari — bo'limning hamma muhim ko'rsatkichi bitta joyda (`lib/overview/*`)
+  { href: "/sales/umumiy", label: "Umumiy ko'rinish",  roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["PRODUCTION", "LOGISTICS"] },
   // Realizatsiya reestri (reys/TTN bo'yicha): Sotuv va Zayavkalar sahifasidagi tugmadan; ish boshqaruvchi menyusida ham (Sotuv sahifasi unga yopiq)
@@ -67,6 +69,8 @@ export const NAV: NavItem[] = [
   { href: "/marketing/media",      label: "Media kutubxona", roles: ["SALES"], group: "Marketing" },
   { href: "/marketing/target",     label: "Target",          roles: ["SALES"], group: "Marketing" },
   { href: "/marketing/sozlamalar", label: "Sozlamalar",      roles: ["SALES"], group: "Marketing" },
+  // Bo'limning hamma muhim ko'rsatkichi bitta joyda (`lib/overview/production.ts`)
+  { href: "/production/umumiy", label: "Umumiy ko'rinish", roles: ["PRODUCTION", "SUPERVISOR"], group: "Ishlab chiqarish" },
   { href: "/production",  label: "Ishlab chiqarish",   roles: ["PRODUCTION", "SUPERVISOR"], group: "Ishlab chiqarish" },
   { href: "/recipes",     label: "Retseptlar",         roles: ["PRODUCTION"], group: "Ishlab chiqarish" },
   // Sotuv, Logistika va Otdel kadr kabinetida Ishlab chiqarish guruhi yo'q (ruxsat ECO ilovasi va havolalar uchun)
@@ -106,7 +110,11 @@ export const NAV: NavItem[] = [
   { href: "/logistika/moliya",      label: "Logistika moliya",   roles: ["SUPERVISOR", "MECHANIC"], group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi).
   // Ish boshqaruvchi — ko'rish uchun: «Sklad holati — xomashyo» va hovli bosh sahifadan shu yerga ko'chgan; amallar o'z ruxsatlari bilan yopiq
+  { href: "/stock/umumiy", label: "Sklad — umumiy", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SUPERVISOR", "MECHANIC"], group: "Sklad" },
   { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC", "SUPERVISOR"], group: "Sklad", menuHide: ["LOGISTICS"] },
+  // Dispetcher ombori: skladdagi avto zapchast va yoqilg'ini ko'radi (qo'sha olmaydi), keraklisini o'ziga oladi va mashinaga beradi —
+  // zapravka / transport xarajati bo'lib tushadi (`lib/dispatcher-stock.ts`). Sklad, ish boshqaruvchi va mexanik ko'radi (menyusida yo'q)
+  { href: "/stock/dispetcher", label: "Dispetcher ombori", roles: ["DISPATCHER", "WAREHOUSE", "SUPERVISOR", "MECHANIC"], group: "Sklad", menuFor: ["DISPATCHER", "DIRECTOR"] },
   // Oluvchi kartasi (brigada / xodim / erkin oluvchi): skladdan nima olgan, qo'lida nima bor, samaradorlik. Menyuda yo'q —
   // Chiqim jurnalidagi «Kimga» nomidan ochiladi. Ish boshqaruvchi ham ko'radi
   { href: "/oluvchi",     label: "Oluvchi kartasi",    roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR", "ACCOUNTING"], group: "Sklad", hidden: true },
@@ -127,6 +135,7 @@ export const NAV: NavItem[] = [
   // Schyotlar menyudan olib tashlandi — sahifa va eski schyotlar joyida (to'lovlar shularga bog'langan)
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
   // Zayavka bosh to'lovi so'rovlari (PS-…): naqd — kassir, perechisleniye — buxgalter qabul qiladi; Finance faqat ko'radi
+  { href: "/moliya/umumiy", label: "Moliya — umumiy",  roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/pul-qabul",   label: "Pul qabul qilish",   roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Ish boshqaruvchi ko'radi (`SUPERVISOR_FIN` — menyuda o'z nomi bilan), shu sabab bu bandlar uning menyusida yashirin
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Moliya", menuHide: ["SUPERVISOR"] },
@@ -146,6 +155,7 @@ export const NAV: NavItem[] = [
   // Otdel kadr bo'limi: sahifaning tablari bevosita menyuda turadi — ichida yana "Otdel kadr" bandi bo'lmaydi.
   // Birinchisi sahifaning o'zi (`?tab` siz ochilganda xodimlar ro'yxati chiqadi) — middleware ruxsatni shu yo'ldan tekshiradi.
   { href: "/otdel-kadr",                label: "Xodimlar ro'yxati", roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr/umumiy",         label: "Umumiy ko'rinish",  roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=bolimlar",   label: "Bo'limlar",         roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=davomat",    label: "Davomat",           roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=ish-vaqti",  label: "Ish vaqti",         roles: ["HR"], group: "Otdel kadr" },

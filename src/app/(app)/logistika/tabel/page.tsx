@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import Link from "next/link";
-import { BellRing, Calculator, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, PencilLine, Route, Settings2, ShieldCheck, Timer, TrendingUp, Truck, Undo2, Users, Wrench } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, BellRing, Calculator, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Landmark, PencilLine, Route, Settings2, ShieldCheck, Timer, TrendingUp, Truck, Undo2, Users, Wrench } from "lucide-react";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
@@ -9,11 +9,11 @@ import { normMonth } from "@/lib/attendance-report";
 import { monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { driverTariff, fuelNormText, PAY_TYPE_LABEL, payTrips, pendingApprovalWhere, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
 import { MASTER_PROBLEMS, MECH_STATUS_COLOR, MECH_STATUS_LABEL } from "@/lib/mechanic-requests";
-import { driverLedger, fuelBalances, ledgerTotals } from "@/lib/driver-ledger";
+import { driverLedger, fuelBalances, ledgerTotals, type LedgerTotals } from "@/lib/driver-ledger";
 import { driverEmployees, mainDriverOf } from "@/lib/logistics";
 import { avtoReport } from "@/lib/fin-report/avto";
 import { entryRows, pendingEntryWhere, type EntryRow } from "@/lib/logistics-entry";
-import { date, dateTime, fmtNum, isoDate, money, opAt } from "@/lib/format";
+import { date, dateTime, fmtNum, isoDate, money, moneyShort, opAt } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { AllCheck, ApproveButton, EntryEditButton, EntryEditProvider, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
@@ -22,7 +22,8 @@ import { ConfirmButton } from "../../payments/confirm-button";
 import { ExpenseForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
 import { cancelEntryAction } from "../actions";
-import { canSeeLogiMoney } from "@/lib/logistics-finance";
+import { canSeeLogiMoney, logiAccounts } from "@/lib/logistics-finance";
+import { DayRangeBar, parseDayRange } from "@/app/(app)/bi-tahlil/month-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -143,7 +144,7 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
 const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "qolda", "tarif"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
-export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string }> }) {
+export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string; davr?: string; dan?: string; gacha?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
   // Jami xarajat, daromad, foyda — faqat direktor, ish boshqaruvchi, mexanik (Logistika moliya); qolganlarga hisoblanmaydi ham
   const showMoney = canSeeLogiMoney(s);
@@ -188,16 +189,24 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   ]);
   const liveEntries = monthEntries.filter((e) => !e.cancelledAt);
 
-  // Hisob varag'i: mashina varag'i (tab) — butun hisobdan filtr (qoldiq baribir mashina bo'yicha hisoblangan)
-  const ledgerRows = view === "hisob" ? full.rows.filter((r) => (!sp.transport || r.vehicleId === sp.transport) && (!sp.driver || r.driverId === sp.driver)) : [];
+  // Hisob varag'i: sana filtri (ro'yxat tepasida) — tayyor davr yoki dan/gacha; bo'lmasa tanlangan oy. Oydan boshqa davr
+  // bo'lsa varaq shu davr uchun alohida hisoblanadi (gaz qoldig'i baribir mashina bo'yicha PAY_SINCE dan)
+  const ranged = view === "hisob" && !!(sp.davr || sp.dan || sp.gacha);
+  const hisobRange = parseDayRange({ davr: sp.davr, dan: sp.dan, gacha: sp.gacha, oy: month });
+  const [hisobFull, logiAcc] = await Promise.all([
+    ranged ? driverLedger(hisobRange.from, hisobRange.to) : Promise.resolve(full),
+    view === "hisob" && showMoney ? logiAccounts() : Promise.resolve([]),
+  ]);
+  // Mashina varag'i (tab) — butun hisobdan filtr (qoldiq baribir mashina bo'yicha hisoblangan)
+  const ledgerRows = view === "hisob" ? hisobFull.rows.filter((r) => (!sp.transport || r.vehicleId === sp.transport) && (!sp.driver || r.driverId === sp.driver)) : [];
   const ledger = view === "hisob" ? { rows: ledgerRows, total: ledgerTotals(ledgerRows) } : null;
   const ledgerOpts: LedgerOptions | null = view === "hisob" ? await ledgerOptions(canLedger) : null;
-  // Tablar: faol o'z transporti va shu oyda qatori borlari (ko'chadan mashina ham)
+  // Tablar: faol o'z transporti va shu davrda qatori borlari (ko'chadan mashina ham)
   const sheetCount = new Map<string, number>();
-  for (const r of full.rows) if (!sp.driver || r.driverId === sp.driver) sheetCount.set(r.vehicleId, (sheetCount.get(r.vehicleId) ?? 0) + 1);
+  for (const r of hisobFull.rows) if (!sp.driver || r.driverId === sp.driver) sheetCount.set(r.vehicleId, (sheetCount.get(r.vehicleId) ?? 0) + 1);
   const sheetTabs = ledgerOpts ? [...new Map([
     ...ledgerOpts.vehicles.map((v) => [v.id, v.plate] as const),
-    ...full.rows.filter((r) => sheetCount.has(r.vehicleId)).map((r) => [r.vehicleId, r.plate] as const),
+    ...hisobFull.rows.filter((r) => sheetCount.has(r.vehicleId)).map((r) => [r.vehicleId, r.plate] as const),
   ])].sort((a, b) => a[1].localeCompare(b[1])) : [];
   const balOf: BalMap = new Map(full.rows.map((r) => [r.id, { after: r.balAfter, unit: r.unit }]));
   const balances = fuelBalances(full.rows);
@@ -233,6 +242,8 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     const k = o.kesim === undefined ? (kesim === "transport" ? "transport" : null) : o.kesim;
     if (driver) p.set("driver", driver);
     if (b === "hisob" && tr) p.set("transport", tr);
+    // Hisob varag'i ichida (mashina tablari) sana filtri saqlanadi; oy almashtirilsa — tushib qoladi
+    if (b === "hisob" && bolim === "hisob" && o.oy === undefined) for (const k of ["davr", "dan", "gacha"] as const) if (sp[k]) p.set(k, sp[k]!);
     if (b === "oylik" && k) p.set("kesim", k);
     return `/logistika/tabel?${p}`;
   };
@@ -474,7 +485,10 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       </Section>}
 
       {/* ── Hisob varag'i (dispetcher Excel'i ko'rinishida): har mashina — alohida varaq ── */}
-      {bolim === "hisob" && ledger && ledgerOpts && <Section title={monthTitleText} className="mt-0" action={monthNav}>
+      {bolim === "hisob" && ledger && ledgerOpts && <Section title={ranged ? `${picked ? `${picked.name} — ` : ""}${hisobRange.label}` : monthTitleText} className="mt-0" action={monthNav}>
+        {/* Eng tepada — kirim va chiqim: logistika moliyasi zavod kassasidan alohida (summalar faqat `canSeeLogiMoney`) */}
+        <LedgerSummary total={ledger.total} money={showMoney} kassa={logiAcc.reduce((a, x) => a + x.balance, 0)} hasKassa={logiAcc.length > 0} label={ranged ? hisobRange.label : monthTitle(month)} />
+        <DayRangeBar base="/logistika/tabel" range={hisobRange} keep={{ bolim: "hisob", transport: sp.transport, driver: sp.driver }} />
         <Tabs scroll={false} current={sp.transport ?? "all"} className="[&_a]:tabular" items={[
           { key: "all", label: "Hammasi", href: qs({ transport: null }), count: [...sheetCount.values()].reduce((a, n) => a + n, 0) },
           ...sheetTabs.map(([id, plate]) => ({ key: id, label: plate, href: qs({ transport: id }), ...(sheetCount.get(id) ? { count: sheetCount.get(id) } : {}) })),
@@ -482,7 +496,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         {/* Qator qo'shish va qatorni tahrirlash oynasi ro'yxatlarni bitta joydan oladi */}
         <LedgerFormsProvider options={ledgerOpts} canPay={canPrice}>
           <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger} money={showMoney} openTrip={sp.tahrir ?? null}
-            file={`Hisob varag'i ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
+            file={`Hisob varag'i ${ranged ? hisobRange.label : month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
           {canLedger && <div className="mt-3"><LedgerRowForm vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
         </LedgerFormsProvider>
       </Section>}
@@ -728,6 +742,38 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             : <p className="text-sm text-slate-600">Reys: {money(tariff.trip)} · 1 km: {money(tariff.km)} · kutish: {money(tariff.waitHour)} / soat. Tarifni dispetcher o&apos;zgartiradi.</p>}
         </Card>
       </Section>}
+    </div>
+  );
+}
+
+/**
+ * Hisob varag'i tepasidagi yig'ma: logistika moliyasini ko'radiganlarga (direktor, ish boshqaruvchi, mexanik) — kirim (bajarilgan ish:
+ * dostavka, usluga, obyekt), chiqim (jami xarajat), foyda va logistika kassasi qoldig'i; qolganlarga (dispetcher) — summasiz
+ * ko'rsatkichlar: reys, km, yoqilg'i, haydovchi haqi. Raqamlar varaqdagi filtr (davr, mashina, haydovchi) bo'yicha.
+ */
+function LedgerSummary({ total: t, money: showMoney, kassa, hasKassa, label }: { total: LedgerTotals; money: boolean; kassa: number; hasKassa: boolean; label: string }) {
+  const join = (xs: [string, number][]) => xs.filter(([, v]) => Math.abs(v) >= 1).map(([k, v]) => `${k} ${moneyShort(v)}`).join(" · ");
+  if (!showMoney) {
+    return (
+      <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
+        <StatCard label="Reys" value={fmtNum(t.trips, 0)} hint={`${t.rows} qator · ${label}`} icon={Route} tone="info" />
+        <StatCard label="Probeg" value={`${fmtNum(t.km, 0)} km`} hint={t.hours ? `baraban ${fmtNum(t.hours, 1)} soat` : undefined} icon={Truck} />
+        <StatCard label="Yoqilg'i" value={[t.useGas ? `${fmtNum(t.useGas, 0)} m³` : null, t.useDt ? `${fmtNum(t.useDt, 0)} l` : null].filter(Boolean).join(" + ") || "—"} hint={`sarf (norma) · zapravka ${fmtNum(t.refuel, 0)}`} icon={Fuel} />
+        <StatCard label="Haydovchi haqi" value={money(t.pay)} icon={Coins} tone="success" />
+      </div>
+    );
+  }
+  const delivery = t.revBank + t.revCash + t.revDebt, service = t.svcBank + t.svcCash;
+  return (
+    <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
+      <StatCard label="Kirim (bajarilgan ish)" value={moneyShort(t.revenue)} icon={ArrowDownLeft} tone="success"
+        hint={join([["dostavka", delivery], ["usluga", service], ["obyekt", t.revOther]]) || label} />
+      <StatCard label="Chiqim (xarajat)" value={moneyShort(t.total)} icon={ArrowUpRight} tone="warning"
+        hint={join([["yoqilg'i", t.fuelSum], ["haq", t.pay], ["ta'mir", t.repair + t.vulc], ["zapchast", t.parts], ["boshqa", t.other]]) || label} />
+      <StatCard label="Foyda" value={moneyShort(t.profit)} hint={`kirim − chiqim · ${label}`} icon={Calculator} tone={t.profit < 0 ? "danger" : "info"} />
+      {hasKassa
+        ? <StatCard label="Logistika kassasi — qoldiq" value={moneyShort(kassa)} hint="hozirgi · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href="/logistika/moliya?tab=jurnal" />
+        : <StatCard label="Logistika moliya" value="Ochish" hint="kirim-chiqim jurnali" icon={Landmark} href="/logistika/moliya" />}
     </div>
   );
 }

@@ -910,6 +910,8 @@ enum StockMoveType {
   /// Tayyor dona mahsulot bir brigada omboridan boshqasiga (yoki umumiy hovliga) ko'chdi — juft yozuv (−/+),
   /// sklad jami o'zgarmaydi (`lib/brigade-products.ts`)
   OWNER_TRANSFER
+  /// Ombordan omborga ko'chirish (masalan asosiy skladdan «Dispetcher ombori» ga) — juft yozuv (−/+), sklad jami o'zgarmaydi
+  TRANSFER
 }
 
 /// Har bir qator o'zgarmas. qty ishorali: kirim (+), chiqim (−).
@@ -3200,10 +3202,13 @@ enum DriverPayType {
 }
 
 /// Qo'lda yozuv kirimi qayerga tushgan — hisob varag'idagi «Bajarilgan» ustunlari
+/// Hisob varag'idagi qo'lda qator kirimi: dostavka (P/R, N/L), usluga (xizmat) prixodi va zavodning o'zi uchun ish
 enum LedgerRevenueType {
-  BANK // P/R — perechisleniye
-  CASH // N/L — naqd
-  OBJECT // obyektda olingan
+  BANK // dostavka — perechisleniye (P/R)
+  CASH // dostavka — naqd (N/L)
+  OBJECT // «Obyekt»: zavodning o'zi uchun ish (zavodga olib kelingan narsa) — logistika daromadi sifatida foydaga kiradi
+  SERVICE_BANK // usluga prixodi — perechisleniye
+  SERVICE_CASH // usluga prixodi — naqd
 }
 
 enum MechanicTarget {

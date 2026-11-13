@@ -10,6 +10,7 @@ import type { LedgerKind } from "@/lib/driver-ledger";
 import type { LedgerEditData } from "@/lib/ledger-edit";
 import { today } from "@/lib/davomat";
 import { fmtNum } from "@/lib/format";
+import { LEDGER_REVENUE_LABEL, LEDGER_REVENUE_TYPES } from "@/lib/ledger-revenue";
 import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,9 @@ const submitWith = (action: (fd: FormData) => void) => (e: React.FormEvent<HTMLF
   const fd = new FormData(e.currentTarget);
   startTransition(() => action(fd));
 };
+
+/** Kirim turi: dostavka / usluga (perech. yoki naqd) va «Obyekt» — zavodning o'zi uchun ish. */
+const REVENUE_OPTIONS = <><option value="">—</option>{LEDGER_REVENUE_TYPES.map((t) => <option key={t} value={t}>{LEDGER_REVENUE_LABEL[t]}</option>)}</>;
 
 export type LedgerVehicle = {
   id: string; plate: string; driverId: string | null; unit: string;
@@ -131,7 +135,7 @@ function RowFields({ options, v, vid, setVid, date, setDate, token, action, pend
         </Field>
         <Field label="Kirim (bajarilgan)"><Input name="revenue" type="number" min="0" step="1000" value={revenue} onChange={(e) => setRevenue(e.target.value)} className="text-right tabular" /></Field>
         <Field label={`Kirim turi${num(revenue) > 0 ? " *" : ""}`}>
-          <Select name="revenueType" defaultValue="" required={num(revenue) > 0}><option value="">—</option><option value="BANK">P/R</option><option value="CASH">N/L</option><option value="OBJECT">Obyekt</option></Select>
+          <Select name="revenueType" defaultValue="" required={num(revenue) > 0}>{REVENUE_OPTIONS}</Select>
         </Field>
         <Field label="Izoh" className="col-span-2"><Input name="note" placeholder="Tun 22:30, 3 soat kutdi…" maxLength={300} /></Field>
       </div>
@@ -369,7 +373,7 @@ function CellFields({ x, field, o, payEditable, canPay }: { x: LedgerEditData; f
         <div className="grid grid-cols-2 gap-2">
           <Field label="Kirim (bajarilgan)">{num("revenue", val(x.revenue))}</Field>
           <Field label="Kirim turi">
-            <Select name="revenueType" defaultValue={x.revenueType ?? ""}><option value="">—</option><option value="BANK">P/R</option><option value="CASH">N/L</option><option value="OBJECT">Obyekt</option></Select>
+            <Select name="revenueType" defaultValue={x.revenueType ?? ""}>{REVENUE_OPTIONS}</Select>
           </Field>
         </div>
       );
@@ -458,7 +462,10 @@ function LedgerEditForm({ x, onClose }: { x: LedgerEditData; onClose: () => void
   // Summa maydoni: step="any" — oldingi qiymat 1000 ga karrali bo'lmasa ham brauzer rad etmasin
   const money = (name: string, n: number) => <Input name={name} type="number" min="0" step="any" defaultValue={val(n)} className="text-right tabular" />;
   const fromTrip = "reys / zayavkadan";
-  const revText = [x.revBank ? `P/R ${fmtNum(x.revBank, 0)}` : null, x.revCash ? `N/L ${fmtNum(x.revCash, 0)}` : null, x.revOther ? `Obyekt ${fmtNum(x.revOther, 0)}` : null].filter(Boolean).join(" · ") || "—";
+  const revText = [
+    x.revBank ? `Dostavka perech. ${fmtNum(x.revBank, 0)}` : null, x.revCash ? `Dostavka naqd ${fmtNum(x.revCash, 0)}` : null, x.revDebt ? `Dostavka qarzga ${fmtNum(x.revDebt, 0)}` : null,
+    x.svcBank ? `Usluga perech. ${fmtNum(x.svcBank, 0)}` : null, x.svcCash ? `Usluga naqd ${fmtNum(x.svcCash, 0)}` : null, x.revOther ? `Obyekt ${fmtNum(x.revOther, 0)}` : null,
+  ].filter(Boolean).join(" · ") || "—";
 
   return (
     <form onSubmit={submitWith(action)} className="space-y-4">
@@ -510,7 +517,7 @@ function LedgerEditForm({ x, onClose }: { x: LedgerEditData; onClose: () => void
           {entry ? <>
             <Field label="Kirim (bajarilgan)">{money("revenue", x.revenue)}</Field>
             <Field label="Kirim turi">
-              <Select name="revenueType" defaultValue={x.revenueType ?? ""}><option value="">—</option><option value="BANK">P/R</option><option value="CASH">N/L</option><option value="OBJECT">Obyekt</option></Select>
+              <Select name="revenueType" defaultValue={x.revenueType ?? ""}>{REVENUE_OPTIONS}</Select>
             </Field>
           </> : <ReadOnly label="Kirim (bajarilgan)" value={revText} className="col-span-2" hint="zayavka dastavka haqidan" />}
           <Field label={trip ? "Izoh (yetkazishdagi)" : "Izoh"} className="col-span-2">

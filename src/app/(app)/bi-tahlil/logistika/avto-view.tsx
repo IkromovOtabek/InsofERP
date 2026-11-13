@@ -13,7 +13,7 @@ const N = ({ v, frac = 0, className }: { v: number | null; frac?: number; classN
 const diffCls = (v: number | null) => (v == null ? "" : v > 0.5 ? "font-semibold text-red-600" : v < -0.5 ? "text-emerald-700" : "");
 const sticky = "sticky left-0 z-[1] bg-white";
 
-export function AvtoView({ r, period, base }: { r: AvtoReport; period: DayRange; base: string }) {
+export function AvtoView({ r, period, base, keep }: { r: AvtoReport; period: DayRange; base: string; keep?: Record<string, string | undefined> }) {
   const file = `Avtotransport tahlili ${period.label.replace(/[:/]/g, "")}`;
   const t = r.total;
   const hasDt = r.rows.some((x) => x.dtNorm != null || x.dtGiven), hasGas = r.rows.some((x) => x.gasNorm != null || x.gasGiven);
@@ -39,7 +39,7 @@ export function AvtoView({ r, period, base }: { r: AvtoReport; period: DayRange;
         <h2 className="text-[17px] font-bold text-slate-900">Avtotransport tahlili — {period.label}</h2>
         <span className="text-[13px] text-slate-500">Har bir mashina va kunlik solishtirish</span>
       </div>
-      <DayRangeBar base={base} range={period}>
+      <DayRangeBar base={base} range={period} keep={keep}>
         <ExcelButton file={file} sheets={[
           { name: "Har bir mashina", rows: [...r.rows, t].map(sheet) },
           { name: "Kunlik", rows: r.days.map((d) => ({ Sana: date(d.date), Reys: d.trips, "Probeg (km)": d.km, "DT berilgan (l)": d.dtGiven, "Gaz zapravka (m3)": d.gasGiven, "Yoqilg'i summasi": d.fuelSum, "Ish haqi": d.pay, "Remont + zapchast": d.repair, "Mexanik naqd": d.mechanic, Kassa: d.cash, "Farq: kassa − mexanik": d.cashDiff, Daromad: d.revenue, Foyda: d.profit })) },

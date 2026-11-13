@@ -36,6 +36,7 @@ import { ForYouParts } from "./for-you-parts";
 import { RawStockStatus } from "@/components/raw-stock-status";
 import { YardStatus } from "@/components/yard-status";
 import { BrigadeWarehouses } from "@/components/brigade-warehouses";
+import { DISPATCH_WH } from "@/lib/dispatcher-stock";
 
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
@@ -485,7 +486,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 return (
                   <Link key={w?.id ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
                     className={cn("inline-flex h-8 items-center rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
-                    {w ? `${w.name}${w.isActive ? "" : " (yopilgan)"}` : "Barcha skladlar"}
+                    {/* Dispetcher ombori ataylab nofaol (umumiy formalarda tanlovga chiqmasin) — «yopilgan» emas */}
+                    {w ? `${w.name}${w.isActive || w.id === DISPATCH_WH ? "" : " (yopilgan)"}` : "Barcha skladlar"}
                   </Link>
                 );
               })}

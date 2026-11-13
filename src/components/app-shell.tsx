@@ -15,6 +15,7 @@ import { AiPanel, AiTrigger } from "@/components/ai-panel";
 import { Tour, TourTrigger } from "@/components/tour";
 import { NotificationStack } from "@/components/notification-stack";
 import { NavProgress } from "@/components/nav-progress";
+import { StickyHScroll } from "@/components/sticky-hscroll";
 import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -398,6 +399,8 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
           {/* Sahifa ekran eniga yoyiladi (ikki yonda bo'sh joy qolmasin); faqat juda keng monitorda o'rtada cheklanadi */}
           <div className="mx-auto max-w-[2200px] has-[[data-wide]]:max-w-none">{children}</div>
         </main>
+        {/* Keng jadval pasti ekrandan tashqarida bo'lsa — gorizontal scroll ekran pastida */}
+        <StickyHScroll />
       </div>
 
       {/* Instruksiya: qobiq ichida turadi — bo'limdan bo'limga o'tganda bosqich yo'qolmaydi */}

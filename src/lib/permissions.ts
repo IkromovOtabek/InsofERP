@@ -141,6 +141,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "products",  label: "Tayyor mahsulot qo'shish (qatorlar, yangi mahsulot, nomini tahrirlash)", roles: ["WAREHOUSE", "PRODUCTION", "SUPERVISOR"] },
     { key: "import",    label: "Xomashyo import",                roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"] },
     { key: "suppliers", label: "Yetkazuvchilar",                 roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
+    { key: "dispatch",  label: "Dispetcher ombori: avto zapchast / yoqilg'ini skladdan o'ziga olish, mashinaga berish, qaytarish", roles: ["DISPATCHER"], hint: "Skladga qo'sha olmaydi: asosiy skladdan oladi, mashinaga bergani zapravka yoki transport xarajati bo'lib tushadi" },
   ],
   // Ta'minot zanjiri va mexanik so'rovlari: qadamlar rol bo'yicha (`requireModuleWrite`). «write» — direktor bergan
   // yozish huquqi: belgilansa rol ro'yxatida bo'lmasa ham yozadi, faqat oyna berilsa — ko'radi (`moduleWriteAllowed`)

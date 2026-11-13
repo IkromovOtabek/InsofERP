@@ -606,6 +606,22 @@ table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="numbe
 *::-webkit-scrollbar-thumb { background: #c6d3e6; border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
+/* ───────── Jadvallar: gorizontal scroll doim ko'rinsin ─────────
+   macOS scroll'ni (overlay) yashiradi — keng jadval yon tomonga surilishi bilinmay qolardi. Jadval qobig'ida (jadvalning
+   bevosita ota bloki) scroll klassik ko'rinishda chiziladi va doim turadi. Chrome 121+ da standart `scrollbar-width/color`
+   webkit uslubini o'chiradi — shu sabab qobiqda ular `auto` ga qaytariladi; Firefox — o'z ingichka scroll'i.
+   Jadval pasti ekrandan tashqarida bo'lsa — ekran pastidagi yopishqoq scroll (`components/sticky-hscroll.tsx`). */
+:root { --hscroll-track: #e9eef5; --hscroll-thumb: #9fb0c8; --hscroll-thumb-hover: #7b8ea9; }
+.dark { --hscroll-track: #1b2028; --hscroll-thumb: #4b5563; --hscroll-thumb-hover: #64708a; }
+.app-main :is(div, section, form):has(> table), .hscroll-bar { scrollbar-width: auto; scrollbar-color: auto; }
+.app-main :is(div, section, form):has(> table)::-webkit-scrollbar, .hscroll-bar::-webkit-scrollbar { height: 12px; width: 10px; background: var(--hscroll-track); }
+.app-main :is(div, section, form):has(> table)::-webkit-scrollbar-thumb, .hscroll-bar::-webkit-scrollbar-thumb { background: var(--hscroll-thumb); border-radius: 8px; border: 2px solid var(--hscroll-track); }
+.app-main :is(div, section, form):has(> table)::-webkit-scrollbar-thumb:hover, .hscroll-bar::-webkit-scrollbar-thumb:hover { background: var(--hscroll-thumb-hover); }
+.app-main :is(div, section, form):has(> table)::-webkit-scrollbar-corner { background: var(--hscroll-track); }
+@supports (-moz-appearance: none) {
+  .app-main :is(div, section, form):has(> table), .hscroll-bar { scrollbar-width: thin; scrollbar-color: var(--hscroll-thumb) var(--hscroll-track); }
+}
+
 /* Fokus — klaviatura uchun aniq, sichqoncha uchun tinch */
 :focus-visible { outline: 2px solid var(--color-brand-500); outline-offset: 2px; border-radius: 6px; }
 
