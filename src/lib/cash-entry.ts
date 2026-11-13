@@ -35,6 +35,8 @@ export type CashEntryInput = {
   projectId?: string | null;
   /** Kategoriya kredit so'rasa — qaysi kredit; asosiy qarz / foiz kategoriyadan olinadi. */
   loanId?: string | null;
+  /** Veb forma: manbaning sub manbalari bo'lsa — biri tanlanishi shart (`subCategoryMissing`). Mobil va avtomatik yozuvlarda berilmaydi. */
+  requireSub?: boolean;
 };
 
 class CashError extends Error {}
@@ -72,6 +74,19 @@ async function categoryLinks(d: { type: "INCOME" | "EXPENSE"; category: string; 
   return { data: { category: r.top.name, subCategory: r.sub?.name ?? null, projectId, loanId, loanPart: loanId ? r.top.loanPart ?? "PRINCIPAL" : null } };
 }
 
+/**
+ * Veb formalar (Kirim-Chiqim, Kassa / bank tahriri): manbaning faol sub manbalari bo'lsa — biri tanlanishi shart.
+ * Tekshirilmaydi: kredit / loyiha manbasi (o'z bog'lanishini so'raydi), sub manbasi yo'q manba, daraxtda yo'q eski nom.
+ * Forma ham shu qoidada (`tx-form.tsx`, `cash-edit.tsx`): sub manbasi bor manbada «— umumiy —» tanlovi yo'q.
+ */
+async function subCategoryMissing(category: string): Promise<string | null> {
+  const nodes = await loadCategories();
+  const r = makeResolver(nodes)(category);
+  if (!r || r.sub || r.top.needs === "LOAN" || r.top.needs === "PROJECT") return null;
+  const top = r.top;
+  return nodes.some((n) => n.parentId === top.id && n.isActive) ? `Sub manba tanlanmagan — «${top.name}» ichidan tanlang` : null;
+}
+
 export async function createCashEntry(input: CashEntryInput, userId: string): Promise<{ id?: string; error?: string }> {
   const { receiptId, subCategory, projectId, loanId, ...d } = { ...input, amount: r2(input.amount) };
   if (!(d.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
@@ -82,6 +97,10 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
   if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
   const links = await categoryLinks({ type: d.type, category: d.category, subCategory, projectId, loanId });
   if ("error" in links) return { error: links.error };
+  if (d.requireSub && !links.data.subCategory) {
+    const miss = await subCategoryMissing(d.category);
+    if (miss) return { error: miss };
+  }
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + d.cashAccountId}))`;
     // Kirim hujjatiga bog'langan to'lov: kirim qulfi ostida qolgan summa tekshiriladi — "To'lash" tugmasi
@@ -227,6 +246,8 @@ export type CashEntryEdit = {
   type?: "INCOME" | "EXPENSE" | null;
   date: Date; cashAccountId: string; amount: number; category: string; subCategory?: string | null;
   counterparty?: string | null; note?: string | null; sig: string;
+  /** Kassa / bank tahriri: sub manba majburiy (`subCategoryMissing`) */
+  requireSub?: boolean;
 };
 
 const effect = (type: string, amount: number) => (type === "INCOME" ? amount : -amount);
@@ -264,6 +285,10 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
   if ((top?.needs === "LOAN" || top?.needs === "PROJECT") && d.category !== t.category) return { error: `«${top.name}» — ${top.needs === "LOAN" ? "kredit" : "loyiha"} tanlanadi: eski yozuvni bekor qilib, Kirim-Chiqim formasida kiriting` };
   const links = await categoryLinks({ type, category: d.category, subCategory: d.subCategory || null });
   if ("error" in links) return { error: links.error };
+  if (d.requireSub && !links.data.subCategory) {
+    const miss = await subCategoryMissing(d.category);
+    if (miss) return { error: miss };
+  }
   const data = {
     type, date: d.date, cashAccountId: d.cashAccountId, amount, category: links.data.category ?? d.category, subCategory: links.data.subCategory,
     counterparty: d.counterparty?.trim() || null, note: d.note?.trim() || null,

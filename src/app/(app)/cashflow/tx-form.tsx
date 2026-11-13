@@ -57,6 +57,8 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   const supplierList = merge(suppliers, added.suppliers, (p) => p.id);
   const cat = cur?.name ?? "";
   const perekit = type === "EXPENSE" && cat === PEREKIT_CATEGORY;
+  // Sub manba majburiy — manbaning sub manbalari bo'lsa (kredit / loyiha manbasidan tashqari); qoida serverda ham (`lib/cash-entry.ts`)
+  const subNeeded = !perekit && subs.length > 0 && cur?.needs !== "LOAN" && cur?.needs !== "PROJECT";
   // Perekitda hamma hisob (kassa ⇄ bank); oddiy kirim/chiqimda — tanlangan usuldagi hisoblar
   const shownAccounts = perekit ? accounts : accounts.filter((a) => !a.type || a.type === method);
   const accId = shownAccounts.some((a) => a.id === fromId) ? fromId : shownAccounts[0]?.id ?? "";
@@ -119,7 +121,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
           </WithAdd>
         </Field>
         {!perekit && cur && (subs.length > 0 || canAdd) && (
-          <Field label="Sub manba" hint="tafsilot — hisobotda manba ichida ko'rinadi">
+          <Field label={subNeeded ? "Sub manba *" : "Sub manba"} hint={subNeeded ? "majburiy — hisobotda manba ichida ko'rinadi" : subs.length ? "tafsilot — hisobotda manba ichida ko'rinadi" : "bu manbada sub manba yo'q — kerak bo'lsa «+» bilan qo'shing"}>
             <WithAdd add={canAdd && (
               <QuickAdd label="Yangi sub manba qo'shish" title={`«${cat}» ichida yangi sub manba`} save={quickAddCashCategory}
                 onCreated={(x: QuickAdded) => { setAdded((a) => ({ ...a, subs: { ...a.subs, [cat]: [...(a.subs[cat] ?? []), x.name] } })); setSub(x.name); }}>
@@ -127,7 +129,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                 <Field label="Nomi *"><Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder="Masalan: Ovqat (non, suv)" /></Field>
               </QuickAdd>
             )}>
-              <Select name="subCategory" value={sub} onChange={(e) => setSub(e.target.value)}><option value="">— umumiy —</option>{subs.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
+              <Select name="subCategory" value={sub} required={subNeeded} onChange={(e) => setSub(e.target.value)}>{subNeeded ? <option value="" disabled>— tanlang —</option> : <option value="">— umumiy —</option>}{subs.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
             </WithAdd>
           </Field>
         )}

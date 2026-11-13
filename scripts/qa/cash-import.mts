@@ -90,8 +90,10 @@ const f = await db.cashTransaction.findFirstOrThrow({ where: { note: `QA ${T} F`
 r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "INCOME", date: d1, cashAccountId: K, amount: "2000", category: "Boshqa tushum", note: `QA ${T} F`, sig: cashEntrySig(f) })], "/payments");
 check("C16a chiqim kirimga aylandi (tur, manba, sub manba tozalandi)", r.result?.ok === true && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME' and category='Boshqa tushum' and "subCategory" is null`) === 1, r.result);
 const f2 = await db.cashTransaction.findUniqueOrThrow({ where: { id: f.id } });
-r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "900000000", category: "Pitaniya", note: `QA ${T} F`, sig: cashEntrySig(f2) })], "/payments");
+r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "900000000", category: "Pitaniya", subCategory: sub, note: `QA ${T} F`, sig: cashEntrySig(f2) })], "/payments");
 check("C16b kirim katta chiqimga aylansa kassa minusga tushadi — rad, yozuv o'zgarmadi", /yetarli pul yo'q/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME' and amount=2000`) === 1, r.result);
+r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "2000", category: "Pitaniya", note: `QA ${T} F`, sig: cashEntrySig(f2) })], "/payments");
+check("C16d sub manbasi bor manbaga sub manbasiz — rad (sub manba majburiy)", /Sub manba tanlanmagan/.test(r.result?.error ?? "") && n(`select count(*)::int c from "CashTransaction" where id=${lit(f.id)} and type='INCOME'`) === 1, r.result);
 r = await buh.action("cashflow/actions#updateCashTx", [f.id, undefined, fd({ type: "EXPENSE", date: d1, cashAccountId: K, amount: "2000", category: "Boshqa tushum", sig: cashEntrySig(f2) })], "/payments");
 check("C16c chiqimga kirim manbasi — rad", /kirim kategoriyasi/.test(r.result?.error ?? ""), r.result);
 

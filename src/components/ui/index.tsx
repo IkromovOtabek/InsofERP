@@ -10,6 +10,7 @@ export { PasswordInput } from "./password-input";
 export { BackLink, NavHistoryTracker } from "./back-link";
 import { BackLink } from "./back-link";
 export { Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot, type SheetTone } from "./sheet";
+export { ColumnFilter, type FilterOption, type SortDir } from "./column-filter";
 
 /* ═══════════════════════ Layout ═══════════════════════ */
 

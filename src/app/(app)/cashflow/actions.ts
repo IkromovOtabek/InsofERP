@@ -43,7 +43,8 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   }
   const s = await requireAction("cashflow", "create");
   // Qoida `lib/cash-entry.ts` da — mobil ilovadagi kassa ham shuni chaqiradi
-  const res = await createCashEntry({ ...r.data, date: new Date(r.data.date) }, s.userId);
+  // Veb formada sub manba majburiy (manbaning sub manbalari bo'lsa); mobil ilova va avtomatik yozuvlar — `requireSub`siz
+  const res = await createCashEntry({ ...r.data, date: new Date(r.data.date), requireSub: true }, s.userId);
   if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
   return { ok: true, note: r.data.category === ASSET_PURCHASE_CATEGORY ? "Saqlandi. Endi Moliya → Asosiy vositalar sahifasida shu xarid uchun kartochka oching (amortizatsiya shundan hisoblanadi)" : undefined };
@@ -74,7 +75,7 @@ export async function updateCashTx(id: string, _prev: ActionState, fd: FormData)
   const s = await requireAction("cashflow", "edit");
   const r = parseForm(editSchema, fd);
   if ("error" in r) return { error: r.error };
-  const res = await updateCashEntry(id, { ...r.data, date: new Date(r.data.date) }, s.userId);
+  const res = await updateCashEntry(id, { ...r.data, date: new Date(r.data.date), requireSub: true }, s.userId);
   if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
   return { ok: true, note: "Saqlandi" };

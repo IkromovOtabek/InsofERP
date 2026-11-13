@@ -7,6 +7,8 @@ import { updateCashTx } from "../cashflow/actions";
 import { updatePaymentRow, updateTransferRow } from "./actions";
 import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
+import { QuickAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
+import { quickAddCashCategory } from "@/lib/quick-add-actions";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import type { ActionState } from "@/lib/action";
 
@@ -16,6 +18,8 @@ export type CashEditOptions = {
   income: CategoryOption[]; expense: CategoryOption[];
   /** Mijoz to'lovi va realizatsiya qatorida mijozni almashtirish uchun */
   customers?: { id: string; name: string }[];
+  /** Sub manba yonida «+» (Kirim-Chiqim formasidagi kabi): `cashflow.create` yoki `moliya.categories` */
+  canAddSub?: boolean;
 };
 const Options = createContext<CashEditOptions | null>(null);
 export function CashEditProvider({ options, children }: { options: CashEditOptions; children: React.ReactNode }) {
@@ -120,6 +124,8 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
   const [type, setType] = useState(entry.type);
   const [category, setCategory] = useState(entry.category);
   const [sub, setSub] = useState(entry.subCategory);
+  // «+» bilan qo'shilgan sub manbalar — sahifa yangilanguncha ham ro'yxatda tursin
+  const [addedSubs, setAddedSubs] = useState<Record<string, string[]>>({});
   const action = useCallback<Act>((p, fd) => updateCashTx(entry.id, p, fd), [entry.id]);
 
   const sameType = type === entry.type;
@@ -127,7 +133,10 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
   // Eski yozuvdagi erkin nom (daraxtda yo'q) ham tanlovda tursin — tur o'zgarmagan bo'lsa
   const cats = sameType && !list.some((c) => c.name === entry.category) ? [{ name: entry.category, needs: null, loanPart: null, subs: [] }, ...list] : list;
   const cur = cats.find((c) => c.name === category);
-  const subs = cur ? [...cur.subs, ...(category === entry.category && entry.subCategory && !cur.subs.includes(entry.subCategory) ? [entry.subCategory] : [])] : [];
+  const active = cur ? [...cur.subs, ...(addedSubs[category] ?? []).filter((x) => !cur.subs.includes(x))] : [];
+  const subs = [...active, ...(cur && category === entry.category && entry.subCategory && !active.includes(entry.subCategory) ? [entry.subCategory] : [])];
+  // Sub manba majburiy — manbaning sub manbalari bo'lsa (kredit / loyiha manbasidan tashqari); qoida serverda (`lib/cash-entry.ts`)
+  const subNeeded = !!cur && active.length > 0 && cur.needs !== "LOAN" && cur.needs !== "PROJECT";
   // Kredit / loyiha so'raydigan manbaga tahrirda o'tilmaydi (bog'lanish kerak) — yozuvning o'z manbasi qoladi
   const shown = cats.filter((c) => (sameType && c.name === entry.category) || (c.needs !== "LOAN" && c.needs !== "PROJECT"));
   const L = entry.lock;
@@ -161,11 +170,19 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
           </Select>
           {L.category && <Locked name="category" value={entry.category} />}
         </Field>
-        <Field label="Sub manba">
-          <Select name="subCategory" value={sub} onChange={(e) => setSub(e.target.value)}>
-            <option value="">— umumiy —</option>
-            {subs.map((x) => <option key={x} value={x}>{x}</option>)}
-          </Select>
+        <Field label={subNeeded ? "Sub manba *" : "Sub manba"}>
+          <WithAdd add={o.canAddSub && !!cur && (
+            <QuickAdd label="Yangi sub manba qo'shish" title={`«${category}» ichida yangi sub manba`} save={quickAddCashCategory}
+              onCreated={(x: QuickAdded) => { setAddedSubs((a) => ({ ...a, [category]: [...(a[category] ?? []), x.name] })); setSub(x.name); }}>
+              <input type="hidden" name="parent" value={category} />
+              <Field label="Nomi *"><Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder="Masalan: Ovqat (non, suv)" /></Field>
+            </QuickAdd>
+          )}>
+            <Select name="subCategory" value={sub} required={subNeeded} onChange={(e) => setSub(e.target.value)}>
+              {subNeeded ? <option value="" disabled>— tanlang —</option> : <option value="">— umumiy —</option>}
+              {subs.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </WithAdd>
         </Field>
         <Field label={type === "INCOME" ? "Kimdan" : "Kimga"} className="sm:col-span-1"><Input name="counterparty" defaultValue={entry.counterparty} maxLength={200} autoComplete="off" /></Field>
         <Field label="Izoh" className="sm:col-span-2"><Input name="note" defaultValue={entry.note} maxLength={500} /></Field>

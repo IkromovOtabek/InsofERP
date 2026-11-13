@@ -73,7 +73,7 @@ export function SheetTr({ children, className }: { children: React.ReactNode; cl
   return <tr className={cn("ui-str", className)}>{children}</tr>;
 }
 
-/** Pastki «Итого» qatori — yopishqoq emas, qalin, kulrang fon. */
-export function SheetFoot({ children }: { children: React.ReactNode }) {
-  return <tfoot className="[&_td]:bg-slate-50 [&_td]:font-semibold [&_td]:text-slate-900">{children}</tfoot>;
+/** Pastki «Итого» qatori — qalin, kulrang fon. `sticky` — jadval qobig'ining pastiga yopishadi (uzun ro'yxatda jami doim ko'rinadi). */
+export function SheetFoot({ children, sticky }: { children: React.ReactNode; sticky?: boolean }) {
+  return <tfoot className={cn("[&_td]:bg-slate-50 [&_td]:font-semibold [&_td]:text-slate-900", sticky && "sticky bottom-0 z-10 [&_td]:border-t-2 [&_td]:border-t-slate-300")}>{children}</tfoot>;
 }

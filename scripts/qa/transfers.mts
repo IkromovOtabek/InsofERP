@@ -154,7 +154,7 @@ check("T51 buxgalter ham storno qila olmaydi (faqat direktor)", r.status === 403
 r = await storno(dir, t2.id, "");
 check("T52 sababsiz storno — rad", /sabab/.test(r.result?.error ?? ""), r.result);
 // Kassa2 dagi 50 000 dan 30 000 sarflanadi — overdraftli bankdan kelgan o'tkazmani storno qilish kassa2 ni minusga tushiradi
-await cashTx({ type: "EXPENSE", cashAccountId: K2, amount: "30000", category: "Ofis / xo'jalik" });
+await cashTx({ type: "EXPENSE", cashAccountId: K2, amount: "30000", category: "Ofis / xo'jalik", subCategory: "Xo'jalik mollari" });
 r = await storno(dir, t3.id);
 check("T53 qabul qiluvchi (kassa2) minusga tushsa — storno rad", /minusga tushadi/.test(r.result?.error ?? "") && !q1(`select "cancelledAt" from "CashTransfer" where id=${lit(t3.id)}`).cancelledAt, r.result);
 const fBefore = await flow();

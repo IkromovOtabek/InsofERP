@@ -13,7 +13,7 @@ import { deleteImportBatch } from "./actions";
 import { ConfirmButton } from "./confirm-button";
 import { CashEditProvider } from "./cash-edit";
 import { CashRow } from "./cash-detail";
-import { AccountMatrix, KassaJurnalTab } from "./kassa-jurnal";
+import { AccountMatrix, KassaDateBar, KassaJurnalTab, kassaRange } from "./kassa-jurnal";
 import { canDo } from "@/lib/permissions";
 import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance } from "@/lib/payments";
 import { orderTotal } from "@/lib/order-total";
@@ -36,6 +36,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   // Qator tafsilotidagi «Tahrirlash» (Kassa jurnali, To'lovlar, Realizatsiya jurnali) — bitta amal; tugmalarni server
   // har qator uchun alohida hal qiladi (`row-detail.ts`), bu yerda faqat tahrir oynasi ro'yxatlari yuklanadimi
   const canEdit = !!s && canDo(s, "cashflow", "edit");
+  // Tahrirdagi sub manba yonida «+» — Kirim-Chiqim formasidagi qoida (`lib/quick-add-actions.ts` → canCashAdd)
+  const canAddSub = !!s && (canDo(s, "cashflow", "create") || canDo(s, "moliya", "categories"));
   // Excel importidan qaytganda (batch) — realizatsiya jurnali; aks holda sukut bo'yicha kassa jurnali
   const tab = sp.tab === "jurnal" || (!sp.tab && sp.batch) ? "jurnal" : sp.tab === "tolovlar" ? "tolovlar" : "kassa";
   const batch = sp.batch || undefined;
@@ -68,8 +70,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         ) : undefined}
       />
 
+      {/* Kassa jurnali: sana — eng tepada (matritsada shu davr qatori, jurnal pastida shu davr jami) */}
+      {tab === "kassa" && <KassaDateBar sp={sp} />}
+
       {/* Hisob ustuni nomi bosilsa — kassa jurnali shu hisob bo'yicha; to'liq hisob ko'chirmasi (davr boshi-oxiri qoldig'i) — Kirim-Chiqimda */}
-      <AccountMatrix accounts={accounts} balances={balances} />
+      <AccountMatrix accounts={accounts} balances={balances} range={tab === "kassa" ? kassaRange(sp) : undefined} />
 
       <Tabs current={tab} items={[
         { key: "kassa", label: "Kassa jurnali", href: "/payments?tab=kassa", icon: BookOpen },
@@ -77,7 +82,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         { key: "jurnal", label: "Realizatsiya jurnali", href: qs("jurnal"), icon: Receipt, count: regCount },
       ]} />
 
-      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
+      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} canAddSub={canAddSub} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
         <JurnalTab where={regWhere} canEdit={canEdit} accounts={accounts} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={role === "CASHIER"} from={from} to={to}
           totals={{ rows: regTotals._count._all, qty: Number(regTotals._sum.qty ?? 0), sum: Number(regTotals._sum.sum ?? 0), nds: Number(regTotals._sum.nds ?? 0), total: Number(regTotals._sum.total ?? 0) }} />
       )}
