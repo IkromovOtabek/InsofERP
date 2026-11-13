@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DRILL_LINK } from "@/components/drill-panel";
 import { Package, Award, Percent, FlaskConical, Snowflake, TrendingUp } from "lucide-react";
 import { productsTab } from "@/lib/bi/products";
 import type { Range } from "@/lib/bi/core";
@@ -78,7 +79,9 @@ export async function ProductsTab({ range }: { range: Range }) {
               <Tr key={p.id}>
                 <Td><span className="font-semibold">{p.name}</span>{!p.isActive && <span className="ml-1 text-[10px] text-slate-400">nofaol</span>}</Td>
                 <Td className="text-xs">{p.cluster}</Td><Td><Tag>{p.abc}</Tag></Td><Td><Tag>{p.xyz}</Tag></Td>
-                <Td right>{moneyShort(p.revenue)}</Td><Td right>{qty(p.qty)} {p.unit}</Td><Td right>{fmtNum(p.share, 1)}%</Td>
+                {/* Raqam manbasi — shu davrning shu mahsulot tranzaksiyalari (Sotuvlar) */}
+                <Td right><Link href={`${tabHref(range, "sales", { product: p.id })}#tranzaksiyalar`} title="Qayerdan kelgan — bosing" className={DRILL_LINK}>{moneyShort(p.revenue)}</Link></Td>
+                <Td right><Link href={`${tabHref(range, "sales", { product: p.id })}#tranzaksiyalar`} title="Qayerdan kelgan — bosing" className={DRILL_LINK}>{qty(p.qty)} {p.unit}</Link></Td><Td right>{fmtNum(p.share, 1)}%</Td>
                 <Td right>{moneyShort(p.price)}</Td><Td right>{p.cost === null ? <Link href="/recipes" className="text-amber-600 hover:underline" title="Faol retsept yo'q yoki retseptdagi xomashyo narxi kiritilmagan">tannarx yo'q</Link> : moneyShort(p.cost)}</Td>
                 <Td right className={p.cmUnit !== null && p.cmUnit < 0 ? "text-red-600" : ""}>{p.cmUnit === null ? "—" : moneyShort(p.cmUnit)}</Td>
                 <Td right className={p.revenue > 0 && p.cost !== null ? (p.margin < 10 ? "text-red-600" : p.margin < 20 ? "text-amber-600" : "text-emerald-700") : "text-slate-400"}>{p.revenue > 0 && p.cost !== null ? `${fmtNum(p.margin, 1)}%` : "—"}</Td>

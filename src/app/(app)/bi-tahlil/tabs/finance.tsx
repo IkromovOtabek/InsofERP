@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { TrendingUp, Wallet, Landmark, Percent, FileWarning, Users, ShoppingCart, PiggyBank } from "lucide-react";
 import { financeTab } from "@/lib/bi/finance";
-import { type Range, type Gran, autoGran } from "@/lib/bi/core";
-import { money, moneyShort, fmtNum, dateTime } from "@/lib/format";
+import { type Range, type Gran, autoGran, addDays } from "@/lib/bi/core";
+import { money, moneyShort, fmtNum, dateTime, isoDate } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select } from "@/components/ui";
 import { BarChart, DonutChart, HBarList, LineChart, Waterfall } from "@/components/ui/charts";
 import { Kpi, Delta, Panel, Why, Insight, Action, Note, Tag, Pager, ExportLink, Chip, tabHref } from "../ui";
 import { ROUTES } from "../ui";
+import { DRILL_LINK } from "@/components/drill-panel";
 import type { SP } from "../page";
 import { cn } from "@/lib/utils";
 
@@ -113,7 +114,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
         <Panel id="kassalar" title="Kassa balanslari" info="Har kassa/hisob bo'yicha: davr ichidagi mijoz to'lovlari va hozirgi qoldiq." padded={false}>
-          <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Kassa / hisob</Th><Th right>Davr</Th><Th right>Jami</Th></tr></thead><tbody>{d.accountRows.length === 0 && <Empty text="Kassa yo'q" />}{d.accountRows.map((a) => <Tr key={a.id}><Td>{a.name} <span className="text-xs text-slate-400">{a.type === "CASH" ? "naqd" : "bank"}</span></Td><Td right>{moneyShort(a.period)}</Td><Td right className="font-semibold">{moneyShort(a.total)}</Td></Tr>)}</tbody></Table>
+          <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Kassa / hisob</Th><Th right>Davr</Th><Th right>Jami</Th></tr></thead><tbody>{d.accountRows.length === 0 && <Empty text="Kassa yo'q" />}{d.accountRows.map((a) => <Tr key={a.id}><Td>{a.name} <span className="text-xs text-slate-400">{a.type === "CASH" ? "naqd" : "bank"}</span></Td><Td right><Link href={`/payments?tab=kassa&account=${a.id}&from=${isoDate(range.from)}&to=${isoDate(addDays(range.to, -1))}`} title="Qayerdan kelgan — davr yozuvlari" className={DRILL_LINK}>{moneyShort(a.period)}</Link></Td><Td right className="font-semibold"><Link href={`/payments?tab=kassa&account=${a.id}`} title="Qayerdan kelgan — hisob jurnali" className={DRILL_LINK}>{moneyShort(a.total)}</Link></Td></Tr>)}</tbody></Table>
         </Panel>
         <Panel title="Top 10 to'lov" info="Davr ichidagi eng katta tranzaksiyalar." padded={false}>
           <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th right>Summa</Th></tr></thead><tbody>{d.topPayments.length === 0 && <Empty text="To'lov yo'q" />}{d.topPayments.map((p) => <Tr key={p.id}><Td className="whitespace-nowrap text-slate-500">{dateTime(p.date)}</Td><Td className="truncate">{p.customer.name}</Td><Td right className="font-semibold">{moneyShort(Number(p.amount))}</Td></Tr>)}</tbody></Table>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DRILL_LINK } from "@/components/drill-panel";
 import { Users, CheckCircle2, Star, AlertTriangle, Receipt, FileWarning, PhoneCall } from "lucide-react";
 import { customersTab, SEGMENT_COLOR, SEGMENT_ORDER } from "@/lib/bi/customers";
 import type { Range } from "@/lib/bi/core";
@@ -78,7 +79,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
           <div className="mt-3 text-xs text-slate-500">Jami: <b className="text-slate-800">{money(Object.values(d.aging).reduce((a, b) => a + b, 0))}</b></div>
         </Panel>
         <Panel id="qarzdorlar" className="xl:col-span-2" title="Eng katta qarzdorlar — aging bo'yicha" padded={false}>
-          <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Mijoz</Th><Th right>0–30</Th><Th right>31–60</Th><Th right>61–90</Th><Th right>90+</Th><Th right>Jami</Th></tr></thead><tbody>{d.agingTop.length === 0 && <Empty text="Qarzdor yo'q" />}{d.agingTop.map((x) => <Tr key={x.id}><Td><Link href={`/customers/${x.id}`} className="hover:underline">{x.name}</Link></Td>{x.b.map((v, i) => <Td key={i} right className={i === 3 && v ? "text-red-600" : ""}>{v ? moneyShort(v) : "·"}</Td>)}<Td right className="font-semibold">{moneyShort(x.total)}</Td></Tr>)}</tbody></Table>
+          <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Mijoz</Th><Th right>0–30</Th><Th right>31–60</Th><Th right>61–90</Th><Th right>90+</Th><Th right>Jami</Th></tr></thead><tbody>{d.agingTop.length === 0 && <Empty text="Qarzdor yo'q" />}{d.agingTop.map((x) => <Tr key={x.id}><Td><Link href={`/customers/${x.id}`} className="hover:underline">{x.name}</Link></Td>{x.b.map((v, i) => <Td key={i} right className={i === 3 && v ? "text-red-600" : ""}>{v ? moneyShort(v) : "·"}</Td>)}<Td right className="font-semibold"><Link href={`/customers/${x.id}`} title="Qayerdan kelgan — mijoz kartasi" className={DRILL_LINK}>{moneyShort(x.total)}</Link></Td></Tr>)}</tbody></Table>
         </Panel>
       </div>
 
@@ -119,8 +120,9 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
                 <Td><span className="rounded-full px-2 py-0.5 text-[11px] font-medium text-white" style={{ background: SEGMENT_COLOR[x.segment] }}>{x.segment}</span></Td>
                 <Td><Tag>{x.risk}</Tag></Td><Td right>{x.riskScore}</Td>
                 <Td right className="whitespace-nowrap text-slate-500">{x.lastOrder ? `${fmtDate(x.lastOrder)} · ${x.recency} k` : "—"}</Td>
-                <Td right>{x.frequency}</Td><Td right>{moneyShort(x.monetary)}</Td>
-                <Td right className={x.overdueDebt > 0 ? "font-semibold text-red-600" : x.debt > 0 ? "text-amber-600" : ""}>{x.debt ? moneyShort(x.debt) : "—"}</Td>
+                {/* Raqam manbasi — mijoz kartasi (zayavkalar, schyotlar, to'lovlar, akt sverka) */}
+                <Td right>{x.frequency}</Td><Td right><Link href={`/customers/${x.id}`} title="Qayerdan kelgan — mijoz kartasi" className={DRILL_LINK}>{moneyShort(x.monetary)}</Link></Td>
+                <Td right className={x.overdueDebt > 0 ? "font-semibold text-red-600" : x.debt > 0 ? "text-amber-600" : ""}>{x.debt ? <Link href={`/customers/${x.id}`} title="Qayerdan kelgan — mijoz kartasi" className={DRILL_LINK}>{moneyShort(x.debt)}</Link> : "—"}</Td>
                 <Td right>{moneyShort(x.expectedLoss)}</Td>
                 <Td className="text-xs text-slate-600">{x.action}</Td>
               </Tr>

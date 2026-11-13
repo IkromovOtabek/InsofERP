@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 const barTone = { brand: "bg-brand-500", success: "bg-emerald-500", info: "bg-blue-500", warning: "bg-amber-500", danger: "bg-red-500", slate: "bg-slate-700", violet: "bg-violet-500" };
@@ -33,8 +34,9 @@ export function BarChart({ data, tone = "brand", height = 160, formatValue = Str
 }
 
 /** Gorizontal bar ro'yxat — reyting / taqsimot. */
+/** `href` — qator bosilsa ochiladigan manba (masalan shu mijozning tranzaksiyalari). */
 export function HBarList({ data, tone = "brand", formatValue = String, max: maxIn }: {
-  data: { label: string; value: number; hint?: string; tone?: ChartTone; sub?: string }[];
+  data: { label: string; value: number; hint?: string; tone?: ChartTone; sub?: string; href?: string }[];
   tone?: ChartTone;
   formatValue?: (v: number) => string;
   max?: number;
@@ -42,17 +44,22 @@ export function HBarList({ data, tone = "brand", formatValue = String, max: maxI
   const max = maxIn ?? Math.max(1, ...data.map((d) => Math.abs(d.value)));
   return (
     <div className="space-y-3">
-      {data.map((d, i) => (
-        <div key={i}>
-          <div className="mb-1 flex items-baseline justify-between gap-3 text-[13px]">
-            <span className="truncate font-medium text-slate-800">{d.label}{d.sub && <span className="ml-1.5 text-xs font-normal text-slate-400">{d.sub}</span>}</span>
-            <span className="shrink-0 tabular text-slate-600">{formatValue(d.value)}{d.hint && <span className="ml-1.5 text-xs text-slate-400">{d.hint}</span>}</span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className={cn("h-full rounded-full", barTone[d.tone ?? tone])} style={{ width: `${Math.max(1, (Math.abs(d.value) / max) * 100)}%` }} />
-          </div>
-        </div>
-      ))}
+      {data.map((d, i) => {
+        const body = (
+          <>
+            <div className="mb-1 flex items-baseline justify-between gap-3 text-[13px]">
+              <span className="truncate font-medium text-slate-800">{d.label}{d.sub && <span className="ml-1.5 text-xs font-normal text-slate-400">{d.sub}</span>}</span>
+              <span className={cn("shrink-0 tabular text-slate-600", d.href && "underline decoration-slate-300 decoration-dotted underline-offset-4")}>{formatValue(d.value)}{d.hint && <span className="ml-1.5 text-xs text-slate-400">{d.hint}</span>}</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className={cn("h-full rounded-full", barTone[d.tone ?? tone])} style={{ width: `${Math.max(1, (Math.abs(d.value) / max) * 100)}%` }} />
+            </div>
+          </>
+        );
+        return d.href
+          ? <Link key={i} href={d.href} title="Qayerdan kelgan — bosing" className="-mx-1.5 block rounded-md px-1.5 py-0.5 hover:bg-slate-50">{body}</Link>
+          : <div key={i}>{body}</div>;
+      })}
     </div>
   );
 }

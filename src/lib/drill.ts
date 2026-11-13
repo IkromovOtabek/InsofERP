@@ -49,15 +49,19 @@ type RowLike = { key: string; label: string; kind: string; values: (number | nul
  * Hisobot katagidan panel ma'lumoti: qator qiymati, tarkibi (`parts` — bola yoki qo'shiluvchi qatorlar kalitlari) va yozuvlar.
  * `virtual` — jadvalda qatori yo'q, faqat tarkibdan yig'iladigan ko'rsatkich (statistika kartasi). `col` — ustun, null — davr jami.
  */
-export function finDrill(rows: RowLike[], period: string, key: string, col: number | null, o: { parts: string[]; items: DrillItem[]; compose?: boolean; virtual?: string; isQty?: boolean }): Drill | null {
+export function finDrill(rows: RowLike[], period: string, key: string, col: number | null, o: { parts: string[]; items: DrillItem[]; compose?: boolean; virtual?: string; isQty?: boolean; note?: string }): Drill | null {
   const row = rows.find((r) => r.key === key);
   if (!o.virtual && (!row || row.kind === "pct" || row.kind === "head")) return null;
   const at = (r: RowLike) => (col === null ? r.total : r.values[col]) ?? 0;
-  const parts = o.parts.map((k) => rows.find((r) => r.key === k)).filter((r): r is RowLike => !!r).map((r) => ({ key: r.key, label: r.label, value: at(r) }));
+  // «-kalit» — ayiriluvchi qator (Kapital = Aktiv − Qarzlar): qiymati teskari ishora bilan
+  const parts = o.parts.flatMap((k) => {
+    const minus = k.startsWith("-"), r = rows.find((x) => x.key === (minus ? k.slice(1) : k));
+    return r ? [{ key: r.key, label: minus ? `ayiriladi: ${r.label}` : r.label, value: minus ? -at(r) : at(r) }] : [];
+  });
   const value = row ? at(row) : Math.round(parts.reduce((s, p) => s + p.value, 0) * 100) / 100;
   const items = sortDrill(o.items.filter((it) => Math.abs(it.amount) >= 0.005));
-  const note = o.compose
+  const note = o.note ? o.note : o.compose
     ? "Jami qator — quyidagi qatorlar yig'indisi (chiqim va xarajat manfiy). Har birini bosib ichiga kiring."
-    : items.length > DRILL_LIMIT ? `${items.length} ta yozuvdan eng so'nggi ${DRILL_LIMIT} tasi ko'rsatildi — jami summaga hammasi kirgan.` : undefined;
+    : items.length > DRILL_LIMIT ? `${items.length} ta yozuvdan ${DRILL_LIMIT} tasi ko'rsatildi (yangilari / kattalari) — jami summaga hammasi kirgan.` : undefined;
   return { title: row?.label ?? o.virtual!, period, value, isQty: o.isQty, parts, items: items.slice(0, DRILL_LIMIT), note };
 }

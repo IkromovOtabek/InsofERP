@@ -5,6 +5,9 @@ import { date, fmtNum } from "@/lib/format";
 import { Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
+/** Bosiladigan son ko'rinishi (nuqtali tagchiziq) — raqam manbasiga olib boradigan havolalar uchun. */
+export const DRILL_LINK = "underline decoration-slate-300 decoration-dotted underline-offset-4 hover:decoration-slate-500";
+
 /**
  * Raqam manbasi paneli (drill-down): hisobotdagi son bosilganda o'ng tomondan ochiladi — son qaysi qatorlardan
  * (jami qatorlarda) va qaysi yozuvlardan (kassa, reys, vedomost, sklad…) yig'ilgani. Holat URL'da (`?drill=…`),

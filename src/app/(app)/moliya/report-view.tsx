@@ -2,7 +2,7 @@ import Link from "next/link";
 import { goLiveDate } from "@/lib/bi/core";
 import { pnlDrill, pnlReport, type PnlMode } from "@/lib/fin-report/pnl";
 import { ddsDrill, ddsDrillable, ddsReport } from "@/lib/fin-report/dds";
-import { balanceReport } from "@/lib/fin-report/balance";
+import { balanceDrill, balanceDrillable, balanceReport } from "@/lib/fin-report/balance";
 import { type MonthKey, addMonths, isMonthKey, monthDiff, monthKeyOf, monthLabel, monthRange } from "@/lib/fin-report/period";
 import { Callout, Section, Select, Tabs } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
@@ -39,9 +39,15 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
   const pnlDrillP = pnl && sp.drill ? pnlDrill(months, mode, sp.drill, drillCol) : null;
   const dds = tab === "dds" ? await ddsReport(months) : null;
   const bal = tab === "balans" ? await balanceReport(months) : null;
-  const drill = sp.drill ? (pnlDrillP ? await pnlDrillP : dds ? await ddsDrill(months, sp.drill, drillCol) : null) : null;
+  // Balans ustunlari — sanalar: 0 — davr boshi (oldingi oy oxiri), i — i-oy oxiri; `m` — shu oy (oxiri)
+  const prevM = addMonths(from, -1);
+  const balCol = isMonthKey(sp.m) ? (sp.m === prevM ? 0 : months.includes(sp.m) ? months.indexOf(sp.m) + 1 : null) : null;
+  const balHref = (key: string, col: number | null) => (col !== null && balanceDrillable(key) ? q({ drill: key, m: col === 0 ? prevM : months[col - 1]! }) : null);
+  const drill = sp.drill
+    ? pnlDrillP ? await pnlDrillP : dds ? await ddsDrill(months, sp.drill, drillCol) : bal && balCol !== null ? await balanceDrill(months, sp.drill, balCol) : null
+    : null;
   const ddsHref = (key: string, col: number | null) => (ddsDrillable(key) ? drillHref(key, col) : null);
-  const drillPanel = drill && <DrillPanel drill={drill} closeHref={q({})} partHref={(k) => drillHref(k, drillCol)} />;
+  const drillPanel = drill && <DrillPanel drill={drill} closeHref={q({})} partHref={(k) => (bal ? balHref(k, balCol) : drillHref(k, drillCol))} />;
   const cols = months.map(monthLabel);
   const sheets = pnl
     ? [{ name: mode === "cash" ? "PNL (pul asosida)" : "PNL", rows: finSheetRows(cols, pnl.rows) }]
@@ -117,10 +123,10 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
 
       {bal && (
         <>
-          <FinTable months={months} labels={bal.labels} rows={bal.rows} totalLabel={null} firstHeader="Sana" />
+          <FinTable months={months} labels={bal.labels} rows={bal.rows} totalLabel={null} firstHeader="Sana" drill={balHref} />
           <ul className="mt-3 space-y-1 text-[13px] text-slate-500">{bal.notes.slice(0, 2).map((t) => <li key={t}>{t}</li>)}</ul>
           <Section title="KAPITALNI TEKSHIRISH (moliyaviy nazorat)">
-            <FinTable months={months} labels={bal.labels} rows={bal.capitalRows} totalLabel={null} firstHeader="Ko'rsatkich" />
+            <FinTable months={months} labels={bal.labels} rows={bal.capitalRows} totalLabel={null} firstHeader="Ko'rsatkich" drill={balHref} />
             <p className="mt-2 text-[13px] text-slate-500">{bal.notes[2]}</p>
           </Section>
         </>

@@ -11,6 +11,9 @@ import { loanBalances } from "./loans";
 import { pnlReport } from "./pnl";
 import { loadCategories, makeResolver } from "./categories";
 import { type MonthKey, monthStart, monthEnd, addMonths, monthKeyOf } from "./period";
+import { fmtNum } from "@/lib/format";
+import { finDrill, own, type Drill, type DrillItem } from "@/lib/drill";
+import { LOAN_KIND_LABEL } from "./loans";
 import { type FinRow, row, plus, neg, r2 } from "./rows";
 
 /**
@@ -192,4 +195,108 @@ async function buildBalance(months: MonthKey[]): Promise<BalanceReport> {
   const fmt = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
   const labels = [fmt(monthStart(months[0]!)), ...months.map((m) => fmt(new Date(monthEnd(m).getTime() - 86_400_000)))];
   return { months, labels, rows, capitalRows, notes };
+}
+
+// ───────────────────────── Raqam manbasi (drill-down) ─────────────────────────
+
+/** Jami qatorlar tarkibi («-kalit» — ayiriladi). Pul — hisoblar qatorlari (`cash:<id>`), pastda qo'shiladi. */
+const BAL_COMPOSE: Record<string, string[]> = {
+  "a:head": ["fixed", "current"], "a:total": ["fixed", "current"],
+  current: ["stock", "debtors", "cash"],
+  stock: ["stock:mat", "stock:fin"],
+  debtors: ["deb:cust", "deb:sup", "deb:lent"],
+  "p:head": ["equity", "liab"], "p:total": ["equity", "liab"],
+  equity: ["a:total", "-liab"],
+  liab: ["liab:sup", "liab:adv", "liab:tranzit", "liab:bank", "liab:borrow"],
+  "cap:exp": ["cap:start", "cap:pnl", "cap:owner"],
+  "cap:diff": ["equity", "-cap:exp"],
+};
+/** Yozuvlarga yoyiladigan qatorlar (mijoz, ta'minotchi, material, kredit, vosita bo'yicha). */
+const BAL_ITEMS = new Set(["fixed", "stock:mat", "stock:fin", "deb:cust", "deb:sup", "deb:lent", "liab:sup", "liab:adv", "liab:bank", "liab:borrow", "cap:owner"]);
+
+/** Balans katagi bosiladimi: tarkibi yoki yozuvlari bor qatorlar (oy natijasi — PNL'da, kapital oy boshida — oldingi ustunda). */
+export const balanceDrillable = (key: string) => Object.hasOwn(BAL_COMPOSE, key) || BAL_ITEMS.has(key) || key === "cash" || /^cash:[^:]+$/.test(key);
+
+const KIND_OF: Record<string, "BANK" | "BORROWED" | "LENT"> = { "liab:bank": "BANK", "liab:borrow": "BORROWED", "deb:lent": "LENT" };
+
+/**
+ * Balans katagining manbasi `col`-ustun sanasiga (0 — davr boshi, i — i-oy oxiri): jami qatorlar — tarkibi; qolganlari — kimdan /
+ * nimadan iborat: har mijoz qarzi yoki avansi, har ta'minotchi, har material va mahsulot qoldig'i (miqdor × narx), har kredit,
+ * har asosiy vosita; hisob qoldig'i — kirim, chiqim, mijoz to'lovlari va o'tkazmalar yig'indisi. Manbalar `snapshot` niki.
+ */
+export async function balanceDrill(months: MonthKey[], key: string, col: number): Promise<Drill | null> {
+  if (col < 0 || col > months.length || !balanceDrillable(key)) return null;
+  const rep = await balanceReport(months);
+  const rows = [...rep.rows, ...rep.capitalRows];
+  const month = col === 0 ? addMonths(months[0]!, -1) : months[col - 1]!;
+  const asOf = monthEnd(month);
+  const period = `${rep.labels[col]} holatiga`;
+  const compose = own(BAL_COMPOSE, key) ?? (key === "cash" ? rep.rows.filter((r) => r.key.startsWith("cash:")).map((r) => r.key) : null);
+  if (compose) return finDrill(rows, period, key, col, { parts: compose, items: [], compose: true, note: "Quyidagi qatorlar yig'indisi (ayiriladigani manfiy). Har birini bosib ichiga kiring." });
+
+  const items: DrillItem[] = [];
+  let note: string | undefined;
+  if (key === "fixed") {
+    for (const a of await activeAssets()) {
+      const st = assetStateAt(a, month);
+      if (st.net) items.push({ date: a.acquiredAt, title: a.name, sub: `${a.group} · narxi ${fmtNum(a.cost)} · amortizatsiya ${fmtNum(st.accumulated)}`, amount: st.net, href: "/moliya/asosiy-vositalar" });
+    }
+  } else if (key === "stock:mat" || key === "stock:fin") {
+    const mat = key === "stock:mat";
+    const [stock, cost] = await Promise.all([
+      db.$queryRaw<{ materialId: string | null; productId: string | null; qty: unknown }[]>`
+        SELECT "materialId", "productId", SUM("qty") AS "qty" FROM "StockMove" WHERE "date" < ${asOf} GROUP BY "materialId", "productId"`,
+      mat ? avgUnitCosts() : finishedUnitCosts(),
+    ]);
+    const lines = stock.filter((x) => Number(x.qty) > 0 && (mat ? !!x.materialId : !x.materialId && !!x.productId));
+    const ids = [...new Set(lines.map((x) => (mat ? x.materialId! : x.productId!)))];
+    const names = new Map((mat
+      ? await db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } })
+      : await db.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } })).map((x) => [x.id, x]));
+    for (const x of lines) {
+      const id = mat ? x.materialId! : x.productId!, q = Number(x.qty), price = cost.get(id) ?? 0, nm = names.get(id);
+      items.push({ date: null, title: nm?.name ?? "—", sub: `${fmtNum(q, 3)} ${nm?.unit ?? ""} × ${fmtNum(price)}${price ? "" : " (narxi yo'q — hisobga kirmaydi)"}`, amount: q * price, href: mat ? "/stock" : "/stock/products" });
+    }
+    note = "Miqdor — sklad jurnalidan shu sanagacha, narx — joriy o'rtacha tannarx (o'tgan oylar uchun taxminiy).";
+  } else if (key === "deb:cust" || key === "liab:adv") {
+    const bal = await customerBalances({ asOf });
+    const list = [...bal.values()].filter((c) => (key === "deb:cust" ? c.debt : c.advance) > 0);
+    const names = new Map((await db.customer.findMany({ where: { id: { in: list.map((c) => c.customerId) } }, select: { id: true, name: true } })).map((c) => [c.id, c.name]));
+    for (const c of list) items.push({ date: null, title: names.get(c.customerId) ?? "—", sub: `schyot ${fmtNum(c.invoiced)} · to'langan ${fmtNum(c.paid)}`, amount: key === "deb:cust" ? c.debt : c.advance, href: `/customers/${c.customerId}` });
+  } else if (key === "deb:sup" || key === "liab:sup") {
+    const pos = await supplierPositions(asOf);
+    const list = [...pos.entries()].filter(([, v]) => (key === "liab:sup" ? v > 0 : v < 0));
+    const names = new Map((await db.supplier.findMany({ where: { id: { in: list.map(([id]) => id) } }, select: { id: true, name: true } })).map((x) => [x.id, x.name]));
+    for (const [id, v] of list) items.push({ date: null, title: names.get(id) ?? "—", sub: key === "liab:sup" ? "kirim hujjatlari − to'langan" : "to'langan − kelgan mol", amount: Math.abs(v), href: `/suppliers/${id}` });
+  } else if (own(KIND_OF, key)) {
+    const kind = KIND_OF[key];
+    for (const l of (await loanBalances(asOf)).filter((x) => x.kind === kind)) {
+      items.push({ date: l.openingDate, title: l.name, sub: `${LOAN_KIND_LABEL[l.kind]} · ${l.counterparty} · boshlang'ich ${fmtNum(l.opening)}`, amount: l.balance, href: "/moliya/kreditlar" });
+    }
+  } else if (key === "cap:owner") {
+    if (col === 0) return null;
+    const nodes = makeResolver(await loadCategories());
+    const txs = await db.cashTransaction.findMany({
+      where: { type: "INCOME", cancelledAt: null, date: { gte: monthStart(month), lt: asOf } },
+      select: { date: true, amount: true, category: true, subCategory: true, counterparty: true, note: true, cashAccount: { select: { name: true } } },
+    });
+    for (const t of txs) {
+      const r = nodes(t.category, t.subCategory);
+      if (r?.top.flow !== "FINANCING" || r.top.needs) continue;
+      items.push({ date: t.date, title: t.counterparty?.trim() || t.category, sub: [t.cashAccount.name, t.category, t.note?.trim()].filter(Boolean).join(" · "), amount: Number(t.amount) });
+    }
+  } else if (key.startsWith("cash:")) {
+    // Hisob qoldig'i — shu sanagacha barcha harakatlar: kirim, chiqim, o'tkazmalar, boshlang'ich qoldiq va mijoz to'lovlari
+    const id = key.slice(5);
+    const [tx, pay] = await Promise.all([
+      db.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId: id, cancelledAt: null, date: { lt: asOf } }, _sum: { amount: true }, _count: { _all: true } }),
+      db.payment.aggregate({ where: { cashAccountId: id, date: { lt: asOf } }, _sum: { amount: true }, _count: { _all: true } }),
+    ]);
+    const LABEL: Record<string, string> = { OPENING: "Boshlang'ich qoldiq", INCOME: "Kirim (kassa yozuvlari)", EXPENSE: "Chiqim (kassa yozuvlari)", TRANSFER_IN: "Ichki o'tkazma — kirdi", TRANSFER_OUT: "Ichki o'tkazma — chiqdi" };
+    const href = `/payments?tab=kassa&account=${id}`;
+    for (const g of tx) items.push({ date: null, title: LABEL[g.type] ?? g.type, sub: `${g._count._all} ta yozuv`, amount: txSign(g.type) * Number(g._sum.amount ?? 0), href });
+    if (pay._count._all) items.push({ date: null, title: "Mijozlar to'lovi", sub: `${pay._count._all} ta to'lov`, amount: Number(pay._sum.amount ?? 0), href });
+    note = "Hisob qoldig'i — shu sanagacha bo'lgan barcha harakatlar yig'indisi.";
+  }
+  return finDrill(rows, period, key, col, { parts: [], items, note });
 }

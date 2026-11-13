@@ -53,6 +53,9 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
   const period = months.length > 1 ? `${monthLabel(months[0]!)} — ${monthLabel(months[months.length - 1]!)}` : monthLabel(months[0]!);
   const grid = "grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6 [&>*]:min-w-0";
 
+  /** Karta bosilsa — jadval qatorining manba paneli (`m` — oy; berilmasa davr jami). */
+  const dq = (t: ReportTab, key: string, m?: MonthKey) => `${BASE}/${t}?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), ...(sp.mode === "cash" ? { mode: "cash" } : {}), drill: key, ...(m ? { m } : {}) })}`;
+
   if (tab === "pnl") {
     const cash = sp.mode === "cash";
     const { rows } = await pnlReport(months, cash ? "cash" : "accrual");
@@ -60,15 +63,13 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
     const expenses = -["prod", "admin", "comm", "unknown", "tax", "interest"].reduce((s, k) => s + totalOf(rows, k), 0);
     const netPct = rowOf(rows, "net-pct")?.total ?? null, grossPct = rowOf(rows, "gross-pct")?.total ?? null, cogsPct = rowOf(rows, "cogs-pct")?.total ?? null;
     const uncosted = totalOf(rows, "uncosted");
-    // Karta bosilsa — jadval qatorining manba paneli (davr jami)
-    const dq = (key: string) => `${BASE}/pnl?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), ...(cash ? { mode: "cash" } : {}), drill: key })}`;
     return (
       <div className={grid}>
-        <Kpi label="Daromad" value={moneyShort(income)} icon={TrendingUp} tone="brand" hint={`${period} · ${cash ? "pul asosida" : "QQSsiz"}`} href={dq("income")} />
-        <Kpi label="Sotuv tannarxi" value={moneyShort(cogs)} icon={Calculator} tone="info" hint={cogsPct !== null ? `daromadning ${pct(cogsPct)}` : "daromad yo'q"} href={dq("cogs")} />
-        <Kpi label="Yalpi foyda" value={moneyShort(gross)} icon={Wallet} tone={signTone(gross)} hint={grossPct !== null ? `marja ${pct(grossPct)}` : undefined} href={dq("gross")} />
-        <Kpi label="Xarajatlar" value={moneyShort(expenses)} icon={Receipt} tone="warning" hint="ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz" href={dq("expenses")} />
-        <Kpi label="Zavod sof foydasi" value={moneyShort(net)} icon={PiggyBank} tone={signTone(net)} hint={period} href={dq("net")} />
+        <Kpi label="Daromad" value={moneyShort(income)} icon={TrendingUp} tone="brand" hint={`${period} · ${cash ? "pul asosida" : "QQSsiz"}`} href={dq("pnl", "income")} />
+        <Kpi label="Sotuv tannarxi" value={moneyShort(cogs)} icon={Calculator} tone="info" hint={cogsPct !== null ? `daromadning ${pct(cogsPct)}` : "daromad yo'q"} href={dq("pnl", "cogs")} />
+        <Kpi label="Yalpi foyda" value={moneyShort(gross)} icon={Wallet} tone={signTone(gross)} hint={grossPct !== null ? `marja ${pct(grossPct)}` : undefined} href={dq("pnl", "gross")} />
+        <Kpi label="Xarajatlar" value={moneyShort(expenses)} icon={Receipt} tone="warning" hint="ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz" href={dq("pnl", "expenses")} />
+        <Kpi label="Zavod sof foydasi" value={moneyShort(net)} icon={PiggyBank} tone={signTone(net)} hint={period} href={dq("pnl", "net")} />
         <Kpi label="Sof rentabellik" value={netPct !== null ? pct(netPct) : "–"} icon={Percent} tone={netPct === null ? "default" : signTone(netPct)} hint={uncosted > 0 ? `tannarxsiz tushum ${moneyShort(uncosted)} — foyda oshib ko'rinadi` : "sof foyda ÷ daromad"} />
       </div>
     );
@@ -80,10 +81,10 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
     return (
       <div className={grid}>
         <Kpi label="Davr boshi qoldig'i" value={moneyShort(open)} icon={Landmark} hint={`${monthLabel(months[0]!)} boshida, barcha hisoblar`} />
-        <Kpi label="Kirim" value={moneyShort(totalOf(accountRows, "all:in"))} icon={ArrowDownCircle} tone="success" hint="barcha hisoblarga, ichki o'tkazmalarsiz" />
-        <Kpi label="Chiqim" value={moneyShort(-totalOf(accountRows, "all:out"))} icon={ArrowUpCircle} tone="danger" hint="barcha hisoblardan, ichki o'tkazmalarsiz" />
-        <Kpi label="Sof pul oqimi" value={moneyShort(net)} icon={Scale} tone={signTone(net)} hint={`moliyaviy ${moneyShort(totalOf(rows, "FINANCING:net"))} · investitsion ${moneyShort(totalOf(rows, "INVESTING:net"))}`} />
-        <Kpi label="Joriy pul oqimi" value={moneyShort(totalOf(rows, "OPERATING:net"))} icon={Wallet} tone={signTone(totalOf(rows, "OPERATING:net"))} hint="savdo tushumi − joriy chiqimlar" />
+        <Kpi label="Kirim" value={moneyShort(totalOf(accountRows, "all:in"))} icon={ArrowDownCircle} tone="success" hint="barcha hisoblarga, ichki o'tkazmalarsiz" href={dq("dds", "all:in")} />
+        <Kpi label="Chiqim" value={moneyShort(-totalOf(accountRows, "all:out"))} icon={ArrowUpCircle} tone="danger" hint="barcha hisoblardan, ichki o'tkazmalarsiz" href={dq("dds", "all:out")} />
+        <Kpi label="Sof pul oqimi" value={moneyShort(net)} icon={Scale} tone={signTone(net)} hint={`moliyaviy ${moneyShort(totalOf(rows, "FINANCING:net"))} · investitsion ${moneyShort(totalOf(rows, "INVESTING:net"))}`} href={dq("dds", "net")} />
+        <Kpi label="Joriy pul oqimi" value={moneyShort(totalOf(rows, "OPERATING:net"))} icon={Wallet} tone={signTone(totalOf(rows, "OPERATING:net"))} hint="savdo tushumi − joriy chiqimlar" href={dq("dds", "OPERATING:net")} />
         <Kpi label="Davr oxiri qoldig'i" value={moneyShort(close)} icon={Banknote} tone="brand" delta={delta(close, open)} deltaLabel="davr boshidan" hint={period} />
       </div>
     );
@@ -94,14 +95,15 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
   const at = (key: string) => valueAt(rows, key, last);
   const ch = (key: string) => delta(at(key), valueAt(rows, key, 0));
   const equity = at("equity"), diff = valueAt(capitalRows, "cap:diff", last);
+  const bq = (key: string) => dq("balans", key, months[months.length - 1]);
   return (
     <div className={grid}>
-      <Kpi label="Aktivlar" value={moneyShort(at("a:total"))} icon={Landmark} tone="brand" delta={ch("a:total")} deltaLabel="davr boshidan" hint={`${labels[last]} holatiga`} />
-      <Kpi label="Majburiyatlar" value={moneyShort(at("liab"))} icon={FileWarning} tone="warning" delta={ch("liab")} invert deltaLabel="davr boshidan" hint="ta'minotchi, avans, kredit, qarz" />
-      <Kpi label="Shaxsiy kapital" value={moneyShort(equity)} icon={Scale} tone={signTone(equity)} delta={ch("equity")} deltaLabel="davr boshidan" hint={Math.abs(diff) >= 1 ? `kapital tekshiruvi farqi ${moneyShort(diff)}` : "aktiv − majburiyatlar"} />
-      <Kpi label="Debitorka (xaridorlar)" value={moneyShort(at("deb:cust"))} icon={Receipt} tone="info" delta={ch("deb:cust")} invert deltaLabel="davr boshidan" />
-      <Kpi label="Kreditorka (ta'minotchilar)" value={moneyShort(at("liab:sup"))} icon={ArrowUpCircle} tone="danger" delta={ch("liab:sup")} invert deltaLabel="davr boshidan" />
-      <Kpi label="Pul mablag'lari" value={moneyShort(at("cash"))} icon={Banknote} tone="success" delta={ch("cash")} deltaLabel="davr boshidan" />
+      <Kpi label="Aktivlar" value={moneyShort(at("a:total"))} icon={Landmark} tone="brand" delta={ch("a:total")} deltaLabel="davr boshidan" hint={`${labels[last]} holatiga`} href={bq("a:total")} />
+      <Kpi label="Majburiyatlar" value={moneyShort(at("liab"))} icon={FileWarning} tone="warning" delta={ch("liab")} invert deltaLabel="davr boshidan" hint="ta'minotchi, avans, kredit, qarz" href={bq("liab")} />
+      <Kpi label="Shaxsiy kapital" value={moneyShort(equity)} icon={Scale} tone={signTone(equity)} delta={ch("equity")} deltaLabel="davr boshidan" hint={Math.abs(diff) >= 1 ? `kapital tekshiruvi farqi ${moneyShort(diff)}` : "aktiv − majburiyatlar"} href={bq("equity")} />
+      <Kpi label="Debitorka (xaridorlar)" value={moneyShort(at("deb:cust"))} icon={Receipt} tone="info" delta={ch("deb:cust")} invert deltaLabel="davr boshidan" href={bq("deb:cust")} />
+      <Kpi label="Kreditorka (ta'minotchilar)" value={moneyShort(at("liab:sup"))} icon={ArrowUpCircle} tone="danger" delta={ch("liab:sup")} invert deltaLabel="davr boshidan" href={bq("liab:sup")} />
+      <Kpi label="Pul mablag'lari" value={moneyShort(at("cash"))} icon={Banknote} tone="success" delta={ch("cash")} deltaLabel="davr boshidan" href={bq("cash")} />
     </div>
   );
 }

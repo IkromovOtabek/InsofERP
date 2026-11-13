@@ -7,6 +7,7 @@ import { Table, Th, Td, Tr, Empty, Select } from "@/components/ui";
 import { BarChart, DonutChart, HBarList, LineChart } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Pager, ExportLink, Chip, Tag, tabHref } from "../ui";
 import { ROUTES } from "../ui";
+import { DRILL_LINK } from "@/components/drill-panel";
 import type { SP } from "../page";
 
 export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
@@ -19,6 +20,9 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
   const up = d.prodMovers.filter((m) => m.diff > 0).slice(0, 5), down = [...d.prodMovers].reverse().filter((m) => m.diff < 0).slice(0, 5);
   const cUp = d.custMovers.filter((m) => m.diff > 0).slice(0, 5), cDown = [...d.custMovers].reverse().filter((m) => m.diff < 0).slice(0, 5);
   const top10 = d.productRows.slice(0, 10), bottom10 = [...d.productRows].reverse().slice(0, 10);
+  // Raqam manbasi: marka yoki mijoz summasi bosilsa — shu davrning o'sha marka / mijoz tranzaksiyalari (pastdagi jadval, filtr bilan)
+  const tx = (f: { product?: string; customer?: string }) => `${href({ ...f, page: "1" })}#tranzaksiyalar`;
+  const num = DRILL_LINK;
 
   return (
     <div className="space-y-6">
@@ -51,7 +55,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
           {d.productRows.length ? <DonutChart data={d.productRows.slice(0, 8).map((p) => ({ label: p.name, value: p.revenue }))} formatValue={(v) => moneyShort(v)} center={{ value: String(d.productRows.length), label: "marka" }} /> : <Note>Ma'lumot yo'q.</Note>}
         </Panel>
         <Panel id="top-mijozlar" title="Top mijozlar" info="Davr ichidagi tushum bo'yicha." action={<Link href={tabHref(range, "customers")} className="font-medium text-blue-600 hover:underline">Barchasini ko'rish →</Link>}>
-          {d.byCustomer.length ? <HBarList data={d.byCustomer.slice(0, 8).map((c) => ({ label: c.name, value: c.revenue, hint: `${c.orders} zayavka`, sub: c.qty ? `${qty(c.qty)} m³ beton` : undefined }))} formatValue={(v) => moneyShort(v)} /> : <Note>Ma'lumot yo'q.</Note>}
+          {d.byCustomer.length ? <HBarList data={d.byCustomer.slice(0, 8).map((c) => ({ label: c.name, value: c.revenue, hint: `${c.orders} zayavka`, sub: c.qty ? `${qty(c.qty)} m³ beton` : undefined, href: tx({ customer: c.id }) }))} formatValue={(v) => moneyShort(v)} /> : <Note>Ma'lumot yo'q.</Note>}
         </Panel>
       </div>
 
@@ -67,7 +71,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
                 <div className="px-4 pt-3 text-xs font-semibold text-slate-500">{title as string}</div>
                 <table className="w-full text-[13px]">
                   <thead><tr><Th>#</Th><Th>Marka</Th><Th>ABC</Th><Th right>Sotuv</Th><Th right>Foyda</Th><Th right>Ulush</Th></tr></thead>
-                  <tbody>{(rows as typeof top10).map((p, i) => <Tr key={p.id}><Td className="text-slate-400">{i + 1}</Td><Td>{p.name}</Td><Td><Tag>{p.abc}</Tag></Td><Td right>{moneyShort(p.revenue)}</Td><Td right className={p.gross < 0 ? "text-red-600" : ""}>{p.costKnown ? moneyShort(p.gross) : <span className="text-xs text-slate-400">tannarx yo&apos;q</span>}</Td><Td right>{fmtNum(p.share, 1)}%</Td></Tr>)}</tbody>
+                  <tbody>{(rows as typeof top10).map((p, i) => <Tr key={p.id}><Td className="text-slate-400">{i + 1}</Td><Td><Link href={tx({ product: p.id })} className="hover:underline">{p.name}</Link></Td><Td><Tag>{p.abc}</Tag></Td><Td right><Link href={tx({ product: p.id })} title="Qayerdan kelgan — bosing" className={num}>{moneyShort(p.revenue)}</Link></Td><Td right className={p.gross < 0 ? "text-red-600" : ""}>{p.costKnown ? moneyShort(p.gross) : <span className="text-xs text-slate-400">tannarx yo&apos;q</span>}</Td><Td right>{fmtNum(p.share, 1)}%</Td></Tr>)}</tbody>
                 </table>
               </div>
             ))}
@@ -88,15 +92,15 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <Panel title="Nima o'sdi, nima pasaydi — markalar" info="Joriy davr vs oldingi davr, tushum farqi bo'yicha.">
             <div className="grid grid-cols-2 gap-4 text-[13px]">
-              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Top 5 o'sgan</div>{up.length ? up.map((m) => <div key={m.id} className="flex justify-between border-b border-slate-50 py-1"><span>{m.name}</span><span className="tabular text-emerald-600">+{moneyShort(m.diff)}</span></div>) : <Note>—</Note>}</div>
-              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-red-600">Top 5 pasaygan</div>{down.length ? down.map((m) => <div key={m.id} className="flex justify-between border-b border-slate-50 py-1"><span>{m.name}</span><span className="tabular text-red-600">−{moneyShort(Math.abs(m.diff))}</span></div>) : <Note>—</Note>}</div>
+              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Top 5 o'sgan</div>{up.length ? up.map((m) => <div key={m.id} className="flex justify-between border-b border-slate-50 py-1"><Link href={tx({ product: m.id })} className="hover:underline">{m.name}</Link><Link href={tx({ product: m.id })} className={`tabular text-emerald-600 ${num}`}>+{moneyShort(m.diff)}</Link></div>) : <Note>—</Note>}</div>
+              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-red-600">Top 5 pasaygan</div>{down.length ? down.map((m) => <div key={m.id} className="flex justify-between border-b border-slate-50 py-1"><Link href={tx({ product: m.id })} className="hover:underline">{m.name}</Link><Link href={tx({ product: m.id })} className={`tabular text-red-600 ${num}`}>−{moneyShort(Math.abs(m.diff))}</Link></div>) : <Note>—</Note>}</div>
             </div>
             <Why>{up[0] && <p>Eng katta o'sish — <b>{up[0].name}</b>: {moneyShort(up[0].prev)} → {moneyShort(up[0].cur)}.</p>}{down[0] && <p>Eng katta pasayish — <b>{down[0].name}</b>: {moneyShort(down[0].prev)} → {moneyShort(down[0].cur)}. Sabab: talab, narx yoki xomashyo yetishmasligi — Ombor va Mijozlar bo'limlarini tekshiring.</p>}</Why>
           </Panel>
           <Panel title="Nima o'sdi, nima pasaydi — mijozlar" info="Joriy davr vs oldingi davr, mijoz kesimida.">
             <div className="grid grid-cols-2 gap-4 text-[13px]">
-              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Top 5 o'sgan</div>{cUp.length ? cUp.map((m) => <div key={m.id} className="flex justify-between gap-2 border-b border-slate-50 py-1"><span className="truncate">{m.name}</span><span className="shrink-0 tabular text-emerald-600">+{moneyShort(m.diff)}</span></div>) : <Note>—</Note>}</div>
-              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-red-600">Top 5 pasaygan</div>{cDown.length ? cDown.map((m) => <div key={m.id} className="flex justify-between gap-2 border-b border-slate-50 py-1"><span className="truncate">{m.name}</span><span className="shrink-0 tabular text-red-600">−{moneyShort(Math.abs(m.diff))}</span></div>) : <Note>—</Note>}</div>
+              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Top 5 o'sgan</div>{cUp.length ? cUp.map((m) => <div key={m.id} className="flex justify-between gap-2 border-b border-slate-50 py-1"><Link href={tx({ customer: m.id })} className="truncate hover:underline">{m.name}</Link><Link href={tx({ customer: m.id })} className={`shrink-0 tabular text-emerald-600 ${num}`}>+{moneyShort(m.diff)}</Link></div>) : <Note>—</Note>}</div>
+              <div><div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-red-600">Top 5 pasaygan</div>{cDown.length ? cDown.map((m) => <div key={m.id} className="flex justify-between gap-2 border-b border-slate-50 py-1"><Link href={tx({ customer: m.id })} className="truncate hover:underline">{m.name}</Link><Link href={tx({ customer: m.id })} className={`shrink-0 tabular text-red-600 ${num}`}>−{moneyShort(Math.abs(m.diff))}</Link></div>) : <Note>—</Note>}</div>
             </div>
             {cDown[0] && <div className="mt-3"><Action href={tabHref(range, "customers", { q: cDown[0].name })}>{cDown[0].name} bilan bog'laning — {moneyShort(Math.abs(cDown[0].diff))} so'm kamaygan</Action></div>}
           </Panel>
@@ -108,7 +112,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
             <div className="mt-3"><Action href="/orders?status=BLOCKED">Bloklangan zayavkalarni ko'rib chiqing — direktor limitni ochsin yoki mijoz oldindan to'lasin</Action></div>
           </Panel>
           <Panel id="imkoniyat" title="Sales Opportunity — qaysi markani sotish foydali" info="Marja × tushum bo'yicha eng foydali markalar. Chegirma — bazaviy narxdan past sotilgan summa.">
-            {d.opportunity.length ? <HBarList data={d.opportunity.map((p) => ({ label: p.name, value: p.margin, hint: `marja · ${moneyShort(p.revenue)} sotuv`, tone: "success" as const }))} formatValue={(v) => `${fmtNum(v, 1)}%`} max={100} /> : <Note>Retsept tannarxi kiritilmagan — marja hisoblanmaydi.</Note>}
+            {d.opportunity.length ? <HBarList data={d.opportunity.map((p) => ({ label: p.name, value: p.margin, hint: `marja · ${moneyShort(p.revenue)} sotuv`, tone: "success" as const, href: tx({ product: p.id }) }))} formatValue={(v) => `${fmtNum(v, 1)}%`} max={100} /> : <Note>Retsept tannarxi kiritilmagan — marja hisoblanmaydi.</Note>}
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">Chegirma: <b>{moneyShort(d.discount)} so'm</b> ({d.discountCount} ta pozitsiya bazaviy narxdan past). O'lchanmagan chegirma — nazorat qilinmaydigan foyda teshigi.</div>
           </Panel>
         </div>
