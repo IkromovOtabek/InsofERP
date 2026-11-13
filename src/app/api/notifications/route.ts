@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, renewSession } from "@/lib/auth";
 import { markNotificationsRead } from "@/lib/notify";
 import { webNotifications } from "@/lib/web-notifications";
 import { dataVersion } from "@/lib/data-version";
@@ -9,12 +9,13 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/notifications — vebdagi kartochkalar oqimi: o'qilmaganlar soni va eng yangilari (cookie sessiya).
  * `v` — ma'lumot versiyasi (`lib/data-version.ts`): shu so'rov har 20 soniyada ketadi, `LiveRefresh` sahifani
- * alohida so'rovsiz faqat versiya o'zgarganda yangilaydi.
+ * alohida so'rovsiz faqat versiya o'zgarganda yangilaydi. Shu so'rov sessiyani ham uzaytiradi (`renewSession`):
+ * oyna ochiq turgan xodim ish paytida qayta kirishga majbur bo'lmaydi.
  */
 export async function GET() {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const [data, v] = await Promise.all([webNotifications(s), dataVersion().catch(() => null)]);
+  const [data, v] = await Promise.all([webNotifications(s), dataVersion().catch(() => null), renewSession().catch(() => undefined)]);
   return NextResponse.json({ ...data, v }, { headers: { "Cache-Control": "no-store" } });
 }
 

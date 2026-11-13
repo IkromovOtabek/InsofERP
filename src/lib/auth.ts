@@ -181,6 +181,36 @@ export const getSession = cache(async (): Promise<Session | null> => {
   return { userId: user.id, login: user.login, fullName: user.fullName, role: effectiveRole(user.role), perms: parsePerms(user.perms), superadmin: superadmin || undefined };
 });
 
+/** Token shundan eski bo'lsa yangisi beriladi (har 20 soniyalik so'rovda emas). */
+const RENEW_AFTER_SEC = 30 * 60;
+
+/**
+ * Sirpanuvchi sessiya: ishlab turgan xodim 12 soat o'tib ham /login ga otilmasin.
+ * Sahifa ochiq va ko'rinib turganda `/api/notifications` har 20 soniyada chaqiriladi — shu yerdan
+ * token ~30 daqiqada bir yangi 12 soatlik muddat bilan qayta imzolanadi. Umumiy chegara yo'q:
+ * kirish faqat 12 soat harakatsizlikdan (brauzer yopiq/oyna yashirin) keyin so'raladi.
+ * Avval `getSession` to'liq tekshiradi ("Chiqish" bosilgan token, nofaol hisob, sessionVersion,
+ * to'xtatilgan korxona) — bekor qilingan sessiya uzaytirilmaydi. Cookie faqat route handler/server
+ * action'da yoziladi, shuning uchun bu funksiya sahifa (RSC) ichida chaqirilmaydi.
+ */
+export async function renewSession(): Promise<void> {
+  const token = (await cookies()).get(COOKIE)?.value;
+  if (!token) return;
+  let claims: Claims & { iat?: number };
+  try {
+    claims = (await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS })).payload as unknown as Claims & { iat?: number };
+  } catch {
+    return;
+  }
+  if (typeof claims.iat !== "number" || Date.now() / 1000 - claims.iat < RENEW_AFTER_SEC) return;
+  const s = await getSession();
+  if (!s) return;
+  const user = await db.user.findUnique({ where: { id: s.userId }, select: { id: true, login: true, fullName: true, role: true, sessionVersion: true } });
+  // Tekshiruv bilan shu orada parol/rol almashgan bo'lsa — eski versiyani qayta imzolamaymiz
+  if (!user || user.sessionVersion !== (claims.sv ?? 0)) return;
+  await issueSession(user);
+}
+
 /**
  * Amal huquqi — `userId` (sessiya emas) bilan, shuning uchun `lib/orders.ts` kabi domen funksiyalari
  * (veb va mobil bitta joydan o'tadi) ham chaqira oladi. Qoida — `lib/permissions.ts` → `canDo`.
