@@ -48,6 +48,9 @@ const flowText = (f?: Flow) => (
 
 /** Matritsa ustunlarini ajratuvchi tik chiziq (birinchi — «Hisob» ustunidan boshqa hamma katakda) */
 const COL = "border-l border-l-slate-200";
+// Ixcham matritsa: kataklar kichik, jadval mazmun kengligida (butun ekranga cho'zilmaydi)
+const CELL = "px-3 py-1.5 text-[13px]";
+const HEAD = "px-3 py-2 text-[11px]";
 
 /**
  * Hisoblar matritsasi (Google jadvalidagi «Kassa» varag'i tepasi kabi): ustunlar — har bir kassa/bank hisobi va Jami,
@@ -62,42 +65,42 @@ export async function AccountMatrix({ accounts, range }: { accounts: Account[]; 
     flowsSince(range.from, ids, range.to),
   ]);
   const sum = (m: Map<string, number>) => accounts.reduce((s, a) => s + (m.get(a.id) ?? 0), 0);
-  const sub = (text: string) => <span className="block text-[11px] font-normal text-slate-500">{text}</span>;
+  const sub = (text: string) => <span className="block text-[10.5px] leading-tight font-normal text-slate-500">{text}</span>;
   const balanceRow = (label: string, hint: string, m: Map<string, number>, strong: boolean) => {
     const total = sum(m);
     return (
       <Tr className={strong ? "bg-brand-50/60" : undefined}>
-        <Td className="whitespace-nowrap">{label}{sub(hint)}</Td>
+        <Td className={cn(CELL, "whitespace-nowrap")}>{label}{sub(hint)}</Td>
         {accounts.map((a) => {
           const b = m.get(a.id) ?? 0;
-          return <Td key={a.id} right className={cn(COL, strong ? "font-semibold" : "font-medium", b < 0 ? "text-red-600" : "text-slate-900")}>{money(b)}</Td>;
+          return <Td key={a.id} right className={cn(COL, CELL, strong ? "font-semibold" : "font-medium", b < 0 ? "text-red-600" : "text-slate-900")}>{money(b)}</Td>;
         })}
-        <Td right className={cn(COL, strong ? "font-bold" : "font-semibold", total < 0 ? "text-red-600" : "text-slate-900")}>{money(total)}</Td>
+        <Td right className={cn(COL, CELL, strong ? "font-bold" : "font-semibold", total < 0 ? "text-red-600" : "text-slate-900")}>{money(total)}</Td>
       </Tr>
     );
   };
 
   return (
     <div className="mb-6">
-      <Table>
+      <Table className="w-fit">
         <thead>
           <tr>
-            <Th>Hisob</Th>
+            <Th className={HEAD}>Hisob</Th>
             {accounts.map((a) => (
-              <Th key={a.id} right className={COL}>
+              <Th key={a.id} right className={cn(COL, HEAD)}>
                 <Link href={`/payments?account=${a.id}&from=${isoDate(range.from)}&to=${isoDate(range.to)}`} className="hover:underline">{a.name}</Link>
-                <span className="block text-[10.5px] font-medium normal-case tracking-normal text-slate-500">{a.type === "CASH" ? "naqd" : "bank"}</span>
+                <span className="block text-[10px] font-medium normal-case tracking-normal text-slate-500">{a.type === "CASH" ? "naqd" : "bank"}</span>
               </Th>
             ))}
-            <Th right className={COL}>Jami</Th>
+            <Th right className={cn(COL, HEAD)}>Jami</Th>
           </tr>
         </thead>
         <tbody>
           {balanceRow("Boshlang'ich qoldiq", `${date(range.from)} boshiga`, opening, false)}
           <Tr>
-            <Td className="whitespace-nowrap">Kirim / chiqim{sub(rangeLabel(range.from, range.to))}</Td>
-            {accounts.map((a) => <Td key={a.id} right className={COL}>{flowText(flow.byAcc.get(a.id))}</Td>)}
-            <Td right className={cn(COL, "font-medium")}>{flowText(flow.total)}</Td>
+            <Td className={cn(CELL, "whitespace-nowrap")}>Kirim / chiqim{sub(rangeLabel(range.from, range.to))}</Td>
+            {accounts.map((a) => <Td key={a.id} right className={cn(COL, CELL)}>{flowText(flow.byAcc.get(a.id))}</Td>)}
+            <Td right className={cn(COL, CELL, "font-medium")}>{flowText(flow.total)}</Td>
           </Tr>
           {balanceRow("Qoldiq", `${date(range.to)} oxiriga`, closing, true)}
         </tbody>
