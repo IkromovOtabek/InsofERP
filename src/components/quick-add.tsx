@@ -27,7 +27,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
 }
 
 /** Maydon ostidagi kichik matnli tugma («Tahrirlash», «O'chirish») — tanlov kengligini yemaydi. */
-function ToolButton({ label, text, onClick, icon: Icon, danger }: { label: string; text: string; onClick: () => void; icon: LucideIcon; danger?: boolean }) {
+export function ToolButton({ label, text, onClick, icon: Icon, danger }: { label: string; text: string; onClick: () => void; icon: LucideIcon; danger?: boolean }) {
   return (
     <button type="button" onClick={onClick} title={label} aria-label={label}
       className={`inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium text-slate-500 transition pointer-coarse:py-1.5 ${danger ? "hover:bg-red-50 hover:text-red-600" : "hover:bg-slate-100 hover:text-slate-900"}`}>

@@ -12,6 +12,7 @@ import type { CategoryOption } from "@/lib/fin-report/categories";
 import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
 import { QuickAdd, QuickDelete, QuickEdit, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
 import { quickAddCashCategory, quickAddLoan, quickAddProject, quickRemoveCashCategory, quickRenameCashCategory } from "@/lib/quick-add-actions";
+import { CategoryManager } from "./category-manager";
 
 type Opt = { id: string; name: string };
 type LoanOpt = Opt & { kind: "BANK" | "BORROWED" | "LENT" };
@@ -26,6 +27,7 @@ type Acc = Opt & { type?: CashMethod };
  * va darhol tanlanadi (sahifa yangilanguncha mahalliy ro'yxatga ham qo'shib turiladi).
  * `canEditCat` / `canDeleteCat` — tanlangan manba va sub manba yonida qalam (nomini o'zgartirish) va savatcha (o'chirish;
  * ishlatilgani ro'yxatdan olinadi). `lockedCats` — tizim kategoriyalari: ularda qalam / savatcha yo'q.
+ * Manba ostidagi «Ro'yxatni tahrirlash» — shu turdagi barcha manba va sub manbalar bitta oynada (`category-manager.tsx`).
  */
 export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, canEditCat = false, canDeleteCat = false, lockedCats = [], clientToken = "" }: {
   accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: CategoryOption[]; expenseCats: CategoryOption[];
@@ -70,16 +72,22 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   // Qalam / savatcha: tanlangan haqiqiy manba / sub manbada (perekit va tizim kategoriyalarida emas)
   const catTools = !!cur && !perekit && !lockedCats.includes(cat);
   const subTools = subNeeded && !!sub && subs.includes(sub) && !lockedCats.includes(sub);
-  const renameDone = (old: string, apply: (name: string) => void) => (x: QuickAdded) => {
+  // Qalam / savatcha (tanlov ostida ham, «Ro'yxatni tahrirlash» oynasida ham): ro'yxat va formadagi tanlov yangi holatga o'tadi
+  const onRenamed = (old: string, x: QuickAdded, top: boolean) => {
     setEdits((e) => ({ ...e, renamed: { ...e.renamed, [old]: x.name } }));
-    apply(x.name);
+    if (top) {
+      setAdded((a) => ({ ...a, subs: { ...a.subs, [x.name]: a.subs[old] ?? [] } }));
+      if (category === old) setCategory(x.name);
+    } else if (sub === old) setSub(x.name);
     setCatNote(x.note ?? "");
   };
-  const removeDone = (old: string, apply: () => void) => (x: QuickAdded) => {
+  const onRemoved = (old: string, x: QuickAdded, top: boolean) => {
     setEdits((e) => ({ ...e, removed: [...e.removed, old] }));
-    apply();
+    if (top) { if (cat === old) pickCategory(""); } else if (sub === old) setSub("");
     setCatNote(x.note ?? "");
   };
+  // «Ro'yxatni tahrirlash» oynasi uchun: shu turdagi barcha manbalar, «+» bilan qo'shilgan sub manbalari bilan (perekitsiz)
+  const allCats = typeCats.map((c) => ({ name: c.name, subs: merge(c.subs, (added.subs[c.name] ?? []).map(ren).filter(live), (x) => x) }));
   // Perekitda hamma hisob (kassa ⇄ bank); oddiy kirim/chiqimda — tanlangan usuldagi hisoblar
   const shownAccounts = perekit ? accounts : accounts.filter((a) => !a.type || a.type === method);
   const accId = shownAccounts.some((a) => a.id === fromId) ? fromId : shownAccounts[0]?.id ?? "";
@@ -143,11 +151,11 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
               <Select name="category" value={cat} onChange={(e) => pickCategory(e.target.value)}>{cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</Select>
             </WithAdd>
           </Field>
-          {catTools && (canEditCat || canDeleteCat) && (
+          {(canEditCat || canDeleteCat) && (
             <div className="mt-1 flex flex-wrap gap-1">
               {catTools && canEditCat && (
                 <QuickEdit label="Manba nomini tahrirlash" title={`«${cat}» manbasini tahrirlash`} save={quickRenameCashCategory}
-                  onSaved={renameDone(cat, (n) => { setAdded((a) => ({ ...a, subs: { ...a.subs, [n]: a.subs[cat] ?? [] } })); setCategory(n); })}>
+                  onSaved={(x) => onRenamed(cat, x, true)}>
                   <input type="hidden" name="name" value={cat} />
                   <Field label="Nomi *" hint="Shu manbadagi eski yozuvlar ham yangi nomga o'tadi. PNL qatori va oqim turi — Moliya → Kategoriyalarda">
                     <Input name="newName" required maxLength={80} defaultValue={cat} autoFocus autoComplete="off" />
@@ -155,7 +163,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                 </QuickEdit>
               )}
               {catTools && canDeleteCat && (
-                <QuickDelete label="Manbani o'chirish" title={`«${cat}» manbasini o'chirish`} save={quickRemoveCashCategory} onDone={removeDone(cat, () => pickCategory(""))}>
+                <QuickDelete label="Manbani o'chirish" title={`«${cat}» manbasini o'chirish`} save={quickRemoveCashCategory} onDone={(x) => onRemoved(cat, x, true)}>
                   <input type="hidden" name="name" value={cat} />
                   <p className="text-sm text-slate-600">
                     Manba{subs.length ? ` va uning ${subs.length} ta sub manbasi` : ""} ro&apos;yxatdan o&apos;chiriladi. Kirim / chiqim yozuvlarida ishlatilgan bo&apos;lsa butunlay
@@ -163,6 +171,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                   </p>
                 </QuickDelete>
               )}
+              <CategoryManager type={type} cats={allCats} locked={lockedCats} canEdit={canEditCat} canDelete={canDeleteCat} onRenamed={onRenamed} onRemoved={onRemoved} />
             </div>
           )}
         </div>
@@ -182,7 +191,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
             {subTools && (canEditCat || canDeleteCat) && (
               <div className="mt-1 flex flex-wrap gap-1">
                 {subTools && canEditCat && (
-                  <QuickEdit label="Sub manba nomini tahrirlash" title={`«${sub}» sub manbasini tahrirlash`} save={quickRenameCashCategory} onSaved={renameDone(sub, setSub)}>
+                  <QuickEdit label="Sub manba nomini tahrirlash" title={`«${sub}» sub manbasini tahrirlash`} save={quickRenameCashCategory} onSaved={(x) => onRenamed(sub, x, false)}>
                     <input type="hidden" name="parent" value={cat} />
                     <input type="hidden" name="name" value={sub} />
                     <Field label="Nomi *" hint="Shu sub manbadagi eski yozuvlar ham yangi nomga o'tadi">
@@ -191,7 +200,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                   </QuickEdit>
                 )}
                 {subTools && canDeleteCat && (
-                  <QuickDelete label="Sub manbani o'chirish" title={`«${sub}» sub manbasini o'chirish`} save={quickRemoveCashCategory} onDone={removeDone(sub, () => setSub(""))}>
+                  <QuickDelete label="Sub manbani o'chirish" title={`«${sub}» sub manbasini o'chirish`} save={quickRemoveCashCategory} onDone={(x) => onRemoved(sub, x, false)}>
                     <input type="hidden" name="parent" value={cat} />
                     <input type="hidden" name="name" value={sub} />
                     <p className="text-sm text-slate-600">
