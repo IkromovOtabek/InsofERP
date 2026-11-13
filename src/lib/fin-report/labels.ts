@@ -4,7 +4,7 @@ import type { CashCategoryNeeds, CashFlowKind, PnlLine } from "@/generated/prism
 export const FLOW_LABEL: Record<CashFlowKind, string> = { OPERATING: "Joriy faoliyat", FINANCING: "Moliyaviy faoliyat", INVESTING: "Investitsion faoliyat" };
 
 export const PNL_LINE_LABEL: Record<PnlLine, string> = {
-  OTHER_INCOME: "Boshqa tushumlar", MATERIALS: "Xom-ashyo (tannarx)", PRODUCTION: "Ishlab chiqarish xarajatlari", PAYROLL: "Ish haqi",
+  OTHER_INCOME: "Boshqa tushumlar", CUSTOMER_REFUND: "Sotib oluvchi pulini qaytarish", MATERIALS: "Xom-ashyo (tannarx)", PRODUCTION: "Ishlab chiqarish xarajatlari", PAYROLL: "Ish haqi",
   TRANSPORT: "Avtotransport", ADMIN: "Ma'muriy xarajatlar", COMMERCIAL: "Tijoriy xarajatlar", TAX: "Soliqlar", INTEREST: "Kredit foizi",
   PROJECT: "Loyihalar", DIVIDEND: "Divident", NONE: "Foyda-zararga kirmaydi",
 };

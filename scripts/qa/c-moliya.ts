@@ -152,6 +152,19 @@ async function main() {
   // musbat tuzatish boshlang'ich qoldiq ham bo'lishi mumkin — kapital); kirim to'lovi ham, sarf ham farq qo'shmadi
   check("balans: kapital farqi faqat inventarizatsiya ortig'i (+2 000)", near((capB[1] ?? 0) - (capA[1] ?? 0), 2_000), [capA, capB]);
 
+  section("Sotib oluvchi pulini qaytarish (PNL qatori CUSTOMER_REFUND)");
+  // 2020-09: boshqa yozuvlarga tegmaydigan oy. Qaytarilgan 80 000 — xarajat emas, Daromaddan ayiriladi
+  const R = "2020-09";
+  await db.cashCategory.create({ data: { name: `QA qaytarish ${tag}`, type: "EXPENSE", flow: "OPERATING", pnlLine: "CUSTOMER_REFUND", sort: 500 } });
+  resetCategoryCache();
+  const [pnlR0, pnlRc0] = await Promise.all([pnlReport([R]), pnlReport([R], "cash")]);
+  await db.cashTransaction.create({ data: { type: "EXPENSE", date: new Date(2020, 8, 10, 12), cashAccountId: acc.id, amount: 80_000, category: `QA qaytarish ${tag}`, createdById: U } });
+  const [pnlR1, pnlRc1] = await Promise.all([pnlReport([R]), pnlReport([R], "cash")]);
+  const dr = (k: string) => val(pnlR1.rows, k) - val(pnlR0.rows, k), drc = (k: string) => val(pnlRc1.rows, k) - val(pnlRc0.rows, k);
+  check("qaytarish qatori −80 000, Daromad −80 000", near(dr("refund"), -80_000) && near(dr("income"), -80_000), [dr("refund"), dr("income")]);
+  check("xarajat qatorlariga tushmadi, operatsion foyda −80 000", ["prod", "admin", "comm", "unknown"].every((k) => near(dr(k), 0)) && near(dr("operating"), -80_000), ["prod", "admin", "comm", "unknown", "operating"].map(dr));
+  check("pul asosida ham Daromaddan ayirildi", near(drc("refund"), -80_000) && near(drc("income"), -80_000), [drc("refund"), drc("income")]);
+
   section("Ish haqi: vedomost to'lovi o'z oyiga (ikki marta sanalmaydi)");
   // 2020-06 yakuniy vedomost tasdiqlangan (1 000 000), puli 2020-07-05 da to'landi; 2020-08 da faqat avans (300 000), yakuniy yo'q
   const pr = (month: string, kind: "FINAL" | "ADVANCE", status: "APPROVED" | "PAID", gross: number) =>

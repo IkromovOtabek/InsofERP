@@ -2392,6 +2392,7 @@ enum CashFlowKind {
 /// Kassa kategoriyasining PNL'dagi qatori. NONE — foyda-zararga kirmaydi (kredit tanasi, asosiy vosita, qarz berish…).
 enum PnlLine {
   OTHER_INCOME // boshqa tushumlar
+  CUSTOMER_REFUND // sotib oluvchiga qaytarilgan pul — xarajat emas, Daromaddan ayiriladi
   MATERIALS // xom-ashyo to'lovi: hisoblangan PNL'da tannarx retseptdan olinadi, bu qator faqat pul asosida
   PRODUCTION // ishlab chiqarish (zavod) xarajatlari
   PAYROLL // ish haqi: tasdiqlangan vedomost bo'lsa hisoblangan summa olinadi

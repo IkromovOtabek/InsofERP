@@ -14,7 +14,7 @@ const writer = () => requireAction("moliya", "categories");
 const refresh = () => { resetCategoryCache(); for (const p of ["/moliya/kategoriyalar", "/moliya", "/cashflow", "/moliya/kreditlar", "/moliya/asosiy-vositalar"]) revalidatePath(p); };
 
 const FLOWS = ["OPERATING", "FINANCING", "INVESTING"] as const;
-const LINES = ["OTHER_INCOME", "MATERIALS", "PRODUCTION", "PAYROLL", "TRANSPORT", "ADMIN", "COMMERCIAL", "TAX", "INTEREST", "PROJECT", "DIVIDEND", "NONE"] as const;
+const LINES = ["OTHER_INCOME", "CUSTOMER_REFUND", "MATERIALS", "PRODUCTION", "PAYROLL", "TRANSPORT", "ADMIN", "COMMERCIAL", "TAX", "INTEREST", "PROJECT", "DIVIDEND", "NONE"] as const;
 const NEEDS = ["", "PROJECT", "LOAN", "ASSET"] as const;
 const PARTS = ["", "PRINCIPAL", "INTEREST"] as const;
 

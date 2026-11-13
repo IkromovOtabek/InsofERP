@@ -123,6 +123,7 @@ function cashRowKey(line: PnlLine | "UNKNOWN", name: string): string {
     case "COMMERCIAL": return `comm:${name}`;
     case "PROJECT": return `PROJECT:${name}`;
     case "OTHER_INCOME": return "other-income";
+    case "CUSTOMER_REFUND": return "refund";
     case "MATERIALS": return "cogs";
     case "TAX": return "tax";
     case "INTEREST": return "interest";
@@ -307,7 +308,9 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
 
   const salesTotal = plus(zeros(n), ...sales.values());
   const otherIncome = lineSum("OTHER_INCOME");
-  const income = plus(salesTotal, otherIncome);
+  // Sotib oluvchiga qaytarilgan pul — xarajat emas, tushumni kamaytiradi (Daromaddan ayiriladi)
+  const refund = lineSum("CUSTOMER_REFUND");
+  const income = plus(salesTotal, otherIncome, neg(refund));
   const cogsTotal = mode === "accrual" ? cogs : lineSum("MATERIALS");
   const gross = plus(income, neg(cogsTotal));
   const prodLines: PnlLine[] = ["PRODUCTION", "PAYROLL", "TRANSPORT"];
@@ -330,6 +333,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
     row("income", "Daromad", "total", income),
     ...groupOrder.map((g) => { fixed.add(`sales:${g}`); return row(`sales:${g}`, g, "sub", sales.get(g)!); }),
     row("other-income", "Boshqa tushumlar", "sub", otherIncome),
+    row("refund", "Sotib oluvchiga qaytarilgan pul", "sub", neg(refund)),
     ...(mode === "accrual" && uncosted.some((v) => v > 0) ? [row("uncosted", "shundan tannarxi noma'lum tushum", "sub", uncosted, { hint: "Retsepti yoki xomashyo narxi yo'q mahsulotlar" })] : []),
     row("cogs", mode === "accrual" ? "Sotuv tannarxi (xom-ashyo)" : "Sotuv tannarxi (xom-ashyoga to'langan)", "line", neg(cogsTotal), { hint: mode === "accrual" ? "Retsept bo'yicha xom-ashyo × o'rtacha narx (QQSsiz)" : undefined }),
     pctRow("cogs-pct", "Tannarx ulushi, %", cogsTotal, income),
@@ -364,7 +368,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
 
 /** Qatorning bolalari: ota qator kaliti → bola kaliti shu qatorga kiradimi (Daromad ← mahsulot guruhlari + boshqa tushumlar). */
 const CHILDREN: Record<string, (key: string) => boolean> = {
-  income: (k) => k.startsWith("sales:") || k === "other-income",
+  income: (k) => k.startsWith("sales:") || k === "other-income" || k === "refund",
   qty: (k) => k.startsWith("qty:"),
   prod: (k) => k.startsWith("prod:"),
   admin: (k) => k.startsWith("admin:"),

@@ -13,7 +13,7 @@ import { validDate } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 
 /** PNL qatorlari (`PnlLine`) — yangi manba uchun tanlov; klient ro'yxati `PNL_LINE_LABEL` dan. */
-const PNL_LINES = ["OTHER_INCOME", "MATERIALS", "PRODUCTION", "PAYROLL", "TRANSPORT", "ADMIN", "COMMERCIAL", "TAX", "INTEREST", "DIVIDEND", "NONE"] as const;
+const PNL_LINES = ["OTHER_INCOME", "CUSTOMER_REFUND", "MATERIALS", "PRODUCTION", "PAYROLL", "TRANSPORT", "ADMIN", "COMMERCIAL", "TAX", "INTEREST", "DIVIDEND", "NONE"] as const;
 
 /**
  * Formadagi tanlash maydoni ichidagi «+» tugmasi (`components/quick-add.tsx`): ro'yxatda yo'q yozuvni
