@@ -15,7 +15,8 @@ import { isoDate } from "@/lib/format";
 import { cancelReceipt } from "@/lib/storno";
 import { Prisma } from "@/generated/prisma";
 import { companyVatPayer, supplierVatRate, vatLine, type VatRate } from "@/lib/receipt-vat";
-import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
+import { createGoodsReceipt, receiptTokenOf, updateReceiptInfo } from "@/lib/receipts";
+import { canDo } from "@/lib/permissions";
 import { queueAvtoReceipt } from "@/lib/avto-parts";
 
 /** Formadagi bir martalik kalit (brauzer yaratadi): bo'sh yoki g'alati bo'lsa — e'tiborga olinmaydi. */
@@ -188,5 +189,40 @@ export async function stornoReceipt(id: string, reason: string): Promise<ActionS
   const r = await cancelReceipt(id, String(reason ?? "").slice(0, 300), s.userId);
   if ("error" in r) return { error: r.error };
   revalidatePath("/receipts"); revalidatePath(`/receipts/${id}`); revalidatePath("/stock"); revalidatePath("/cashflow"); revalidatePath("/suppliers"); revalidatePath("/");
+  return { ok: true, note: r.note };
+}
+
+const infoSchema = z.object({
+  waybillNo: zOpt, address: zOpt, purpose: zOpt, carrier: zOpt, loadedFrom: zOpt, note: zOpt, buyerId: zOpt, recipientId: zOpt,
+});
+
+/**
+ * Kirim rekvizitlarini tahrirlash (TTN, manzil, maqsad, mashina, qayerdan, izoh, snabjenets, «Kimga» yozuvi) —
+ * sklad qoldig'i va yetkazuvchi qarziga ta'sir qilmaydi. Kim: `stock` → `receipt`. Qoida — `lib/receipts.ts#updateReceiptInfo`.
+ */
+export async function editReceiptInfo(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("stock", "receipt");
+  const r = parseForm(infoSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await updateReceiptInfo(String(id ?? ""), r.data, s.userId);
+  if ("error" in res) return { error: res.error };
+  if (!res.changed.length) return { ok: true, note: "O'zgarish yo'q" };
+  revalidatePath("/receipts"); revalidatePath(`/receipts/${id}`); revalidatePath("/stock/prixod");
+  return { ok: true, note: `${res.docNo}: rekvizitlar saqlandi` };
+}
+
+/**
+ * «Tuzatish»: kirim bekor qilinadi (`cancelReceipt` — o'sha storno qoidasi: to'lov, ta'minot zanjiri, qoldiq tekshiruvi),
+ * keyin forma eski qatorlar va rekvizitlar bilan ochiladi (`/stock/prixod/new?copy=<id>`) — yangi kirimni foydalanuvchi saqlaydi.
+ * Kim: `stock` → `receipt_storno` (odatda direktor) va yangi kirim yozish huquqi (`receipt`).
+ */
+export async function fixReceipt(id: string, reason: string): Promise<ActionState> {
+  const s = await requireAction("stock", "receipt_storno");
+  if (!canDo(s, "stock", "receipt")) return { error: "Yangi kirim yozishga ruxsatingiz yo'q — faqat «Bekor qilish» mumkin" };
+  const why = String(reason ?? "").trim();
+  if (why.length < 3) return { error: "Tuzatish sababini yozing" };
+  const r = await cancelReceipt(id, `Tuzatish: ${why}`.slice(0, 300), s.userId);
+  if ("error" in r) return { error: r.error };
+  for (const p of ["/receipts", `/receipts/${id}`, "/stock", "/stock/prixod", "/stock/rasxod", "/brigades", "/cashflow", "/suppliers", "/"]) revalidatePath(p);
   return { ok: true, note: r.note };
 }

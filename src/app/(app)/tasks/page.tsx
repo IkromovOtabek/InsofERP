@@ -12,6 +12,7 @@ import { TASK_STATUS, TaskStatusBadge } from "./status";
 import { ProgressForm } from "./progress-form";
 import { cancelTask } from "./actions";
 import { ConfirmButton } from "../payments/confirm-button";
+import { ProgressHistory, type ProgressRow } from "./progress-history";
 import type { TaskStatus } from "@/generated/prisma";
 
 /** «Bajarildi» yorlig'i — tugatilgan sana bo'yicha davr (server mahalliy vaqti, TZ=Asia/Tashkent). */
@@ -62,7 +63,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   // «Qolganini boshqa o'lchamda bajardim» — o'rinbosar uchun dona mahsulotlar (beton zames orqali yuritiladi)
   const subProducts = canProgress ? await db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, select: { id: true, name: true, unit: true }, orderBy: { name: "asc" } }) : [];
   const subBrigades = brigades.map((b) => ({ id: b.id, name: b.name }));
-  const [marks, defects] = await Promise.all([customerMarks(tasks.map((t) => t.order.customerId)), taskDefectTotals(tasks.map((t) => t.id))]);
+  const [marks, defects, progress] = await Promise.all([
+    customerMarks(tasks.map((t) => t.order.customerId)), taskDefectTotals(tasks.map((t) => t.id)),
+    // Qaydlar tarixi — «Qaydlar (N)» ochiladigan ro'yxat, yagona qaydni bekor qilish shu yerda
+    db.taskProgress.findMany({ where: { taskId: { in: tasks.map((t) => t.id) } }, orderBy: { date: "asc" }, select: { id: true, taskId: true, qty: true, date: true, note: true, createdBy: { select: { fullName: true } } } }),
+  ]);
+  const progBy = new Map<string, ProgressRow[]>();
+  for (const p of progress) progBy.set(p.taskId, [...(progBy.get(p.taskId) ?? []), { id: p.id, qty: Number(p.qty), date: p.date, note: p.note, by: p.createdBy.fullName }]);
   const q = (k: string) => `${k}${brigade ? `${k.includes("?") ? "&" : "?"}brigade=${brigade}` : ""}`;
   // Davr havolalari: holat va brigada saqlanadi, ixtiyoriy oraliq tushib qoladi
   const pHref = (k: string) => `/tasks?status=DONE${brigade ? `&brigade=${brigade}` : ""}${k !== "all" ? `&period=${k}` : ""}`;
@@ -124,10 +131,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <Td right className={rem > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(rem)}<div className="mt-1 w-20"><Progress value={done} max={total} tone={rem === 0 ? "success" : "default"} /></div></Td>
                 <Td><TaskStatusBadge status={t.status} /></Td>
                 <Td>
-                  <div className="flex items-start gap-2">
-                    {open && canProgress && <ProgressForm taskId={t.id} remaining={rem} unit={unit} product={t.orderItem.product.name} productId={t.orderItem.productId} brigadeId={t.brigadeId} products={subProducts} brigades={subBrigades} />}
-                    {open && canCancel && <ConfirmButton action={cancelTask.bind(null, t.id)} label="Bekor" okText="Bekor qilindi" className="h-8 px-2 text-xs"
-                      question={`${t.brigade.name}: «${t.orderItem.product.name}» topshirig'i bekor qilinsinmi? Brigadirga xabar boradi`} />}
+                  <div className="flex flex-col items-start gap-1.5">
+                    <div className="flex items-start gap-2">
+                      {open && canProgress && <ProgressForm taskId={t.id} remaining={rem} unit={unit} product={t.orderItem.product.name} productId={t.orderItem.productId} brigadeId={t.brigadeId} products={subProducts} brigades={subBrigades} />}
+                      {open && canCancel && <ConfirmButton action={cancelTask.bind(null, t.id)} label="Bekor" okText="Bekor qilindi" className="h-8 px-2 text-xs"
+                        question={`${t.brigade.name}: «${t.orderItem.product.name}» topshirig'i bekor qilinsinmi? Brigadirga xabar boradi`} />}
+                    </div>
+                    {progBy.has(t.id) && <ProgressHistory rows={progBy.get(t.id)!} unit={unit} product={t.orderItem.product.name} brigade={t.brigade.name} canUndo={canCancel} />}
                   </div>
                 </Td>
               </Tr>

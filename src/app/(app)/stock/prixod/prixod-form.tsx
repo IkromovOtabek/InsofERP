@@ -38,6 +38,16 @@ type Row = {
 };
 const VATS: Vat[] = ["12", "6", "0"];
 
+/**
+ * «Tuzatish» / nusxa: eski kirimdan to'ldirilgan forma (`/stock/prixod/new?copy=<id>`). Saqlansa — yangi kirim, eskisi
+ * o'zgarmaydi (tuzatishda u oldinroq bekor qilingan). `recipientId` — jurnaldagi «Kimga» yozuvi (formada maydoni yo'q).
+ */
+export type PrixodInitial = {
+  date: string; supplier: NameComboValue; warehouseId: string; payment: Payment; waybillNo: string; autoKey: string;
+  address: string; loadedFrom: string; carrier: string; purpose: string; note: string; recipientId: string;
+  rows: { materialId: string; qty: string; price: string; delivery: string; vat: Vat; category: MaterialCategory }[];
+};
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: string) => { const n = Number(v.replace(/\s+/g, "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 const money = (v: number) => fmtNum(v, 2);
@@ -82,7 +92,7 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * yo'q — shuning uchun ko'rish rejimida ham ochiq. Mavjud xomashyo kategoriyasini spravochnikni yuritadiganlar
  * (`canCreate`) o'zgartiradi; boshqalarda u faqat ko'rinadi, yangi xomashyoga esa hamma tanlaydi.
  */
-export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, targets, holdings, defaultBuyerId, accounts, clientToken, companyVatPayer = true, scan }: {
+export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, targets, holdings, defaultBuyerId, accounts, clientToken, companyVatPayer = true, scan, initial }: {
   today: string;
   suppliers: SupplierOpt[];
   warehouses: Opt[];
@@ -97,21 +107,22 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   clientToken: string;
   companyVatPayer?: boolean;
   scan?: { enabled: boolean; autoOpen?: boolean };
+  initial?: PrixodInitial;
 }) {
   const [state, action, pending] = useActionState(createPrixod, undefined);
   // <form action> o'rniga qo'lda yuboriladi: React 19 action tugagach formani reset qiladi — server xato qaytarganda
   // narx/dostavka (MoneyInput), sana, sklad va boshqa maydonlar bo'shab qolardi. Muvaffaqiyatda server redirect qiladi.
   const [, startTransition] = useTransition();
   const [suppliers, setSuppliers] = useState(initSuppliers);
-  const [supplier, setSupplier] = useState<NameComboValue>(NONE);
+  const [supplier, setSupplier] = useState<NameComboValue>(initial?.supplier ?? NONE);
   // «Kimga» — darhol chiqim kaliti ("b:" / "e:" / "r:"), bo'sh — skladda qoladi
-  const [autoKey, setAutoKey] = useState("");
-  const [payment, setPayment] = useState<Payment>("BANK");
+  const [autoKey, setAutoKey] = useState(initial?.autoKey ?? "");
+  const [payment, setPayment] = useState<Payment>(initial?.payment ?? "BANK");
   const [accountId, setAccountId] = useState("");
-  const [rows, setRows] = useState<Row[]>([newRow(1)]);
-  const [date, setDate] = useState(today);
-  const [waybillNo, setWaybillNo] = useState("");
-  const [note, setNote] = useState("");
+  const [rows, setRows] = useState<Row[]>(() => (initial?.rows.length ? initial.rows.map((r, i) => ({ key: i + 1, ...r })) : [newRow(1)]));
+  const [date, setDate] = useState(initial?.date ?? today);
+  const [waybillNo, setWaybillNo] = useState(initial?.waybillNo ?? "");
+  const [note, setNote] = useState(initial?.note ?? "");
   // Nakladnoydan to'ldirilgan: `locked` — ko'rish rejimi, `scanned` — nakladnoydagi yetkazuvchi yozuvi va sana o'qildimi
   const [scanned, setScanned] = useState<{ supplier: string; dateFromDoc: boolean } | null>(null);
   const [locked, setLocked] = useState(false);
@@ -196,6 +207,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
         <FormError error={state?.error} />
         <input type="hidden" name="clientToken" value={clientToken} />
         {defaultBuyerId && <input type="hidden" name="buyerId" value={defaultBuyerId} />}
+        {initial?.recipientId && <input type="hidden" name="recipientId" value={initial.recipientId} />}
 
         {scan?.enabled && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -237,7 +249,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
             </WithAdd>
           </Field>
           <Field label="Sklad *">
-            <Select name="warehouseId" defaultValue={warehouses[0]?.id} required>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
+            <Select name="warehouseId" defaultValue={warehouses.find((w) => w.id === initial?.warehouseId)?.id ?? warehouses[0]?.id} required>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
           </Field>
           <Field label="To'lov turi *" hint={payment === "CASH" ? "Naqd pul — barcha qatorlarda QQS 0" : "Bank o'tkazma — QQS 12% yoki 6% (qatorlar bo'yicha)"}>
             <div role="radiogroup" aria-label="To'lov turi" className="grid h-10 grid-cols-2 gap-0.5 rounded-lg border border-slate-300 bg-slate-50 p-0.5 pointer-coarse:h-11">
@@ -254,10 +266,10 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
           <Field label="Kimga (darhol chiqim)" className="sm:col-span-2" hint={autoKey ? "Kirim bilan birga shu yerga chiqim yoziladi — mol skladda qolmaydi" : "Bo'sh — mol skladda qoladi"}>
             <TargetSelect targets={targets} value={autoKey} onChange={setAutoKey} name="autoIssueKey" required={false} emptyLabel="— Skladga (chiqimsiz) —" />
           </Field>
-          <Field label="Manzil"><Input name="address" placeholder="Yetkazilgan manzil" autoComplete="off" maxLength={300} /></Field>
-          <Field label="Qayerdan yuklandi"><Input name="loadedFrom" placeholder="Zavod, bozor, sklad…" autoComplete="off" maxLength={300} /></Field>
-          <Field label="Mashina (kim olib keldi)"><Input name="carrier" placeholder="Ta'minotchi o'zi / mashina raqami" autoComplete="off" maxLength={120} /></Field>
-          <Field label="Maqsad" className="sm:col-span-2"><Input name="purpose" placeholder="Nima uchun sotib olindi" autoComplete="off" maxLength={300} /></Field>
+          <Field label="Manzil"><Input name="address" defaultValue={initial?.address} placeholder="Yetkazilgan manzil" autoComplete="off" maxLength={300} /></Field>
+          <Field label="Qayerdan yuklandi"><Input name="loadedFrom" defaultValue={initial?.loadedFrom} placeholder="Zavod, bozor, sklad…" autoComplete="off" maxLength={300} /></Field>
+          <Field label="Mashina (kim olib keldi)"><Input name="carrier" defaultValue={initial?.carrier} placeholder="Ta'minotchi o'zi / mashina raqami" autoComplete="off" maxLength={120} /></Field>
+          <Field label="Maqsad" className="sm:col-span-2"><Input name="purpose" defaultValue={initial?.purpose} placeholder="Nima uchun sotib olindi" autoComplete="off" maxLength={300} /></Field>
           <Field label="Izoh" className="sm:col-span-2 lg:col-span-4"><Input name="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Holati, qo'shimcha ma'lumot…" autoComplete="off" maxLength={1000} /></Field>
         </div>
         {autoKey && <TargetHoldings holdings={holdings} targetKey={autoKey} />}

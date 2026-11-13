@@ -8,7 +8,7 @@ import { getSession, requireAction } from "@/lib/auth";
 import { notSignedIn } from "@/lib/access-denied";
 import { audit } from "@/lib/audit";
 import { parseForm, type ActionState } from "@/lib/action";
-import { approveRun, calculateRun, cancelRun, payRun, recalculateRun, returnRun, submitRun } from "@/lib/hr/payroll";
+import { approveRun, calculateRun, cancelRun, payRun, recalculateRun, returnRun, submitRun, unpayRun } from "@/lib/hr/payroll";
 import type { PayrollKind } from "@/generated/prisma";
 
 /* Ish haqi vedomostlari — qoidalar `lib/hr/payroll.ts` da (veb va mobil bir xil). */
@@ -65,6 +65,14 @@ export async function cancelAction(id: string, _prev: ActionState, fd: FormData)
 export async function payAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const lineIds = fd.getAll("line").map(String).filter(Boolean);
   const r = await payRun(id, { cashAccountId: String(fd.get("cashAccountId") ?? ""), lineIds: lineIds.length ? lineIds : null, note: String(fd.get("note") ?? "") }, await who());
+  refresh(id);
+  return asState(r);
+}
+/** To'lovni bekor qilish — faqat direktor (`payroll.approve`, topshirilmaydi); chiqim kassada bekor qilinadi. */
+export async function unpayAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("payroll", "approve");
+  const lineIds = fd.getAll("line").map(String).filter(Boolean);
+  const r = await unpayRun(id, { lineIds: lineIds.length ? lineIds : null, reason: String(fd.get("reason") ?? "").slice(0, 300) }, s);
   refresh(id);
   return asState(r);
 }

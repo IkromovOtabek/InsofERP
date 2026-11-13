@@ -14,13 +14,14 @@ import { ElecBill, ElecRow } from "./elec-forms";
 import { elecSheet } from "@/lib/rent-elec";
 import { LEASE_SOON_DAYS, leaseDaysLeft, leaseTerm, rentCollection, rentOccupancy } from "@/lib/rent-contract";
 import {
-  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_SHOP_STATUS, currentMonth, rentPerM2, rentShopStates, type RentPayStatus, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth,
+  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_SHOP_STATUS, currentMonth, rentPerM2, rentShopStates, type RentPayStatus, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, rentTxEditData, shiftMonth,
 } from "@/lib/rent";
 import { Badge, type BadgeColor, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Progress, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmButton } from "../payments/confirm-button";
 import { ExcelButton } from "../logistika/excel-button";
 import { ChargeRow, RentTxPanel, ShopForm } from "./arenda-forms";
+import { RentTxEditButton } from "./tx-edit";
 import { openRentMonth, sendRentReminderNow, stornoRentTx, toggleRentShop } from "./actions";
 
 const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
@@ -107,7 +108,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
 
       {tab === "jadval" && <SheetTab sheet={sheet} month={key} monthName={monthLabel(month)} canShops={canShops} hasShops={shops.length > 0} shopsHref={href({ tab: "dokonlar" })} />}
       {tab === "svet" && <ElecTab month={month} monthName={monthLabel(month)} canShops={canShops} shopsHref={href({ tab: "dokonlar" })} />}
-      {tab === "jurnal" && <JournalTab month={month} canStorno={canStorno} />}
+      {tab === "jurnal" && <JournalTab month={month} canStorno={canStorno} months={months} />}
       {tab === "qarzdorlar" && <DebtorsTab canShops={canShops} canCreate={canCreate} />}
       {tab === "dokonlar" && <ShopsTab mode="dokonlar" shops={shops} month={key} editId={sp.edit} canShops={canShops} href={href} />}
       {tab === "filter" && <ShopsTab mode="filter" shops={shops} month={key} holat={holat} canShops={canShops} href={href} />}
@@ -186,10 +187,10 @@ function SheetTab({ sheet, month, monthName, canShops, hasShops, shopsHref }: {
 
 /* ───────────────────────── Kirim-chiqim jurnali ───────────────────────── */
 
-async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolean }) {
+async function JournalTab({ month, canStorno, months }: { month: Date; canStorno: boolean; months: { key: string; label: string }[] }) {
   const txs = await db.rentTx.findMany({
     where: { date: monthRange(month) },
-    include: { shop: { select: { name: true, location: true } }, createdBy: { select: { fullName: true } } },
+    include: { shop: { select: { name: true, location: true, period: true } }, createdBy: { select: { fullName: true } } },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
   });
   const live = txs.filter((x) => !x.cancelledAt);
@@ -198,7 +199,7 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
   return (
     <Card padded={false}>
       <div className="p-4 pb-2">
-        <CardHeader title="Kirim-chiqim jurnali" description={`Shu oy sanasi bilan yozilgan yozuvlar: kirim ${money(inc)}, chiqim ${money(exp)}. Xato yozuv o'chirilmaydi — sabab bilan bekor qilinadi.`} />
+        <CardHeader title="Kirim-chiqim jurnali" description={`Shu oy sanasi bilan yozilgan yozuvlar: kirim ${money(inc)}, chiqim ${money(exp)}. Xato yozuv o'chirilmaydi — qalam bilan tuzatiladi yoki sabab bilan bekor qilinadi.`} />
       </div>
       {txs.length === 0 ? <div className="p-6 text-center text-sm text-slate-500">Bu oyda kirim-chiqim yo&apos;q</div> : (
         <Table>
@@ -221,7 +222,8 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
                   <Td>
                     <div className="flex items-center gap-3">
                       {x.type === "INCOME" && x.shop && <Link href={`/arenda/kvitansiya/${x.id}`} title="Kvitansiyani chop etish" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900"><Printer size={13} /> Kvitansiya</Link>}
-                      {canStorno && !off && <ConfirmButton action={stornoRentTx.bind(null, x.id)} label={<><Undo2 size={13} className="mr-1 inline" />Bekor qilish</>} question="Bekor qilinsinmi?" reason="required" okText="Bekor qilindi" className="text-xs text-slate-500 hover:text-red-600" />}
+                      {canStorno && !off && <RentTxEditButton tx={rentTxEditData(x)} months={months} expenseCats={RENT_EXPENSE_CATEGORIES} />}
+                      {canStorno && !off && <ConfirmButton action={stornoRentTx.bind(null, x.id)} label={<><Undo2 size={13} className="mr-1 inline" />Bekor qilish</>} question={x.batchId ? "Bir necha oyga bo'lingan to'lov — hamma qismi bekor qilinsinmi?" : "Bekor qilinsinmi?"} reason="required" okText="Bekor qilindi" className="text-xs text-slate-500 hover:text-red-600" />}
                     </div>
                   </Td>
                 </Tr>

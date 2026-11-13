@@ -1,3 +1,4 @@
+import type { CashTransaction, Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { isoDate, money } from "@/lib/format";
@@ -159,20 +160,33 @@ export async function cancelCashEntry(id: string, reason: string, userId: string
   const locked = await cashEntryLocked(t);
   if (locked) return { error: locked };
   return db.$transaction(async (tx) => {
-    // Hisob bo'yicha navbat (yozish bilan bir xil) — qoldiq tekshiruvi parallel chiqim bilan to'qnashmasin
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + t.cashAccountId}))`;
-    if (t.refType === "GoodsReceipt" && t.refId) await lockReceipt(tx, t.refId);
-    // Kirimni bekor qilish ham naqd kassani minusga tushirishi mumkin
-    if (t.type === "INCOME") {
-      const err = await cashOutflowError(tx, t.cashAccountId, Number(t.amount));
-      if (err) throw new CashError(`Bu kirim bekor qilinsa kassa minusga tushadi. ${err}`);
-    }
-    const cancelledAt = new Date();
-    const r = await tx.cashTransaction.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt, cancelledById: userId, cancelReason: why.slice(0, 300) } });
-    if (r.count === 0) throw new CashError("Bu yozuv allaqachon bekor qilingan");
-    await audit(tx, userId, "STATUS_CHANGE", "CashTransaction", id, { cancelledAt: null, record: t }, { cancelledAt, reason: why.slice(0, 300) });
+    const err = await cancelCashTxIn(tx, t, why, userId);
+    if (err) throw new CashError(err);
     return {};
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
+}
+
+/**
+ * Bekor qilishning o'zi — chaqiruvchining tranzaksiyasi ichida: hisob navbati, kirim bo'lsa qoldiq tekshiruvi, shartli
+ * yozish, AuditLog STATUS_CHANGE. `cancelCashEntry` ham, hujjat o'z chiqimini qaytarganda ham (ish haqi to'lovini bekor
+ * qilish — `lib/hr/payroll.ts` → `unpayRun`) shu bilan. Qo'lda bekor qilish qulfi (`cashEntryLocked`) bu yerda
+ * tekshirilmaydi — uni chaqiruvchi (hujjat egasi) hal qiladi. Qaytaradi: xato matni yoki null (xato bo'lsa — rollback qiling).
+ */
+export async function cancelCashTxIn(tx: Prisma.TransactionClient, t: CashTransaction, reason: string, userId: string): Promise<string | null> {
+  const why = reason.trim().slice(0, 300);
+  // Hisob bo'yicha navbat (yozish bilan bir xil) — qoldiq tekshiruvi parallel chiqim bilan to'qnashmasin
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + t.cashAccountId}))`;
+  if (t.refType === "GoodsReceipt" && t.refId) await lockReceipt(tx, t.refId);
+  // Kirimni bekor qilish ham naqd kassani minusga tushirishi mumkin
+  if (t.type === "INCOME") {
+    const err = await cashOutflowError(tx, t.cashAccountId, Number(t.amount));
+    if (err) return `Bu kirim bekor qilinsa kassa minusga tushadi. ${err}`;
+  }
+  const cancelledAt = new Date();
+  const r = await tx.cashTransaction.updateMany({ where: { id: t.id, cancelledAt: null }, data: { cancelledAt, cancelledById: userId, cancelReason: why } });
+  if (r.count === 0) return "Bu yozuv allaqachon bekor qilingan";
+  await audit(tx, userId, "STATUS_CHANGE", "CashTransaction", t.id, { cancelledAt: null, record: t }, { cancelledAt, reason: why });
+  return null;
 }
 
 /**

@@ -55,7 +55,11 @@ async function checkNoNegative(tx: Prisma.TransactionClient, moves: Move[], name
   if (short.length) throw new StornoError(`Bekor qilinsa qoldiq minusga tushadi (allaqachon sarflangan yoki jo'natilgan): ${short.join("; ")}`);
 }
 
-async function reverseMoves(tx: Prisma.TransactionClient, moves: Move[], refType: string, refId: string, note: string, userId: string) {
+/** `reverseMoves`/`cancelBatchTx` rad etgani — xabari foydalanuvchiga boradi (boshqa hujjat stornosi bilan bitta tranzaksiyada). */
+export const isStornoError = (e: unknown): e is Error => e instanceof StornoError;
+
+/** Har harakatga teskarisi (o'sha tur, sklad, ombor, tannarx, ishorasi teskari). Reys yuklashini qaytarish ham shuni ishlatadi (`lib/trips.ts`). */
+export async function reverseMoves(tx: Prisma.TransactionClient, moves: Move[], refType: string, refId: string, note: string, userId: string) {
   if (!moves.length) return;
   // Brigadaga berilgani (kirimdagi «Kimga» = brigada): teskari StockMove + brigada qoldig'idan ayirish (BrigadeMove ISSUE −)
   const toBrigade = moves.filter((m) => m.type === "BRIGADE_ISSUE" && m.brigadeId && m.materialId);
@@ -137,32 +141,40 @@ export async function cancelBatch(id: string, reason: string, userId: string): P
   if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   return db.$transaction(async (tx): Promise<StornoResult> => {
     await lockStock(tx);
-    const b = await tx.productionBatch.findUnique({ where: { id }, include: { product: { select: { id: true, name: true } } } });
-    if (!b) throw new StornoError("Zames topilmadi");
-    if (b.cancelledAt) throw new StornoError("Zames allaqachon bekor qilingan");
-    const moves = await tx.stockMove.findMany({ where: { refType: "ProductionBatch", refId: id }, include: { material: { select: { name: true } }, product: { select: { name: true } } } });
-    const names = new Map<string, string>();
-    for (const m of moves) {
-      if (m.materialId && m.material) names.set(m.materialId, m.material.name);
-      if (m.productId && m.product) names.set(m.productId, m.product.name);
-    }
-    await checkNoNegative(tx, moves, names);
-    await reverseMoves(tx, moves, "ProductionBatch", id, `Bekor qilish ${b.batchNo}: ${why}`, userId);
-    const r = await tx.productionBatch.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelReason: why, cancelledById: userId } });
-    if (r.count !== 1) throw new StornoError("Zames shu payt boshqa joyda o'zgardi — sahifani yangilang");
-    // Zayavka faqat shu zames tufayli "Ishlab chiqarilmoqda" bo'lgan bo'lsa — "Tasdiqlangan" ga qaytadi
-    if (b.orderId) {
-      const [batches, trips, progress] = await Promise.all([
-        tx.productionBatch.count({ where: { orderId: b.orderId, cancelledAt: null } }),
-        tx.trip.count({ where: { orderId: b.orderId, status: { not: "CANCELLED" } } }),
-        tx.brigadeTask.count({ where: { orderId: b.orderId, doneQty: { gt: 0 } } }),
-      ]);
-      if (!batches && !trips && !progress) {
-        const o = await tx.order.updateMany({ where: { id: b.orderId, status: "IN_PRODUCTION" }, data: { status: "CONFIRMED" } });
-        if (o.count) await audit(tx, userId, "STATUS_CHANGE", "Order", b.orderId, { status: "IN_PRODUCTION" }, { status: "CONFIRMED", by: "batch-storno", batchId: id });
-      }
-    }
-    await audit(tx, userId, "STATUS_CHANGE", "ProductionBatch", id, { status: "ACTIVE" }, { status: "CANCELLED", reason: why, reversedMoves: moves.length, qty: Number(b.qtyM3), product: b.product.name });
-    return { ok: true, note: `${b.batchNo} bekor qilindi: ${moves.length} ta sklad harakati teskari yozildi` };
+    return { ok: true, note: await cancelBatchTx(tx, id, why, userId) };
   }).catch((e: Error) => { if (e instanceof StornoError) return { error: e.message }; throw e; });
+}
+
+/**
+ * Zames stornosi tranzaksiya ichida — boshqa amal bilan birga (reys yuklashini qaytarish: avtomatik zames, `lib/trips.ts`).
+ * Sklad qulfi (`lockStock`) chaqiruvchida olingan bo'ladi. Rad etilsa xato tashlanadi (`isStornoError`), natija — izoh matni.
+ */
+export async function cancelBatchTx(tx: Prisma.TransactionClient, id: string, why: string, userId: string): Promise<string> {
+  const b = await tx.productionBatch.findUnique({ where: { id }, include: { product: { select: { id: true, name: true } } } });
+  if (!b) throw new StornoError("Zames topilmadi");
+  if (b.cancelledAt) throw new StornoError("Zames allaqachon bekor qilingan");
+  const moves = await tx.stockMove.findMany({ where: { refType: "ProductionBatch", refId: id }, include: { material: { select: { name: true } }, product: { select: { name: true } } } });
+  const names = new Map<string, string>();
+  for (const m of moves) {
+    if (m.materialId && m.material) names.set(m.materialId, m.material.name);
+    if (m.productId && m.product) names.set(m.productId, m.product.name);
+  }
+  await checkNoNegative(tx, moves, names);
+  await reverseMoves(tx, moves, "ProductionBatch", id, `Bekor qilish ${b.batchNo}: ${why}`, userId);
+  const r = await tx.productionBatch.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelReason: why, cancelledById: userId } });
+  if (r.count !== 1) throw new StornoError("Zames shu payt boshqa joyda o'zgardi — sahifani yangilang");
+  // Zayavka faqat shu zames tufayli "Ishlab chiqarilmoqda" bo'lgan bo'lsa — "Tasdiqlangan" ga qaytadi
+  if (b.orderId) {
+    const [batches, trips, progress] = await Promise.all([
+      tx.productionBatch.count({ where: { orderId: b.orderId, cancelledAt: null } }),
+      tx.trip.count({ where: { orderId: b.orderId, status: { not: "CANCELLED" } } }),
+      tx.brigadeTask.count({ where: { orderId: b.orderId, doneQty: { gt: 0 } } }),
+    ]);
+    if (!batches && !trips && !progress) {
+      const o = await tx.order.updateMany({ where: { id: b.orderId, status: "IN_PRODUCTION" }, data: { status: "CONFIRMED" } });
+      if (o.count) await audit(tx, userId, "STATUS_CHANGE", "Order", b.orderId, { status: "IN_PRODUCTION" }, { status: "CONFIRMED", by: "batch-storno", batchId: id });
+    }
+  }
+  await audit(tx, userId, "STATUS_CHANGE", "ProductionBatch", id, { status: "ACTIVE" }, { status: "CANCELLED", reason: why, reversedMoves: moves.length, qty: Number(b.qtyM3), product: b.product.name });
+  return `${b.batchNo} bekor qilindi: ${moves.length} ta sklad harakati teskari yozildi`;
 }

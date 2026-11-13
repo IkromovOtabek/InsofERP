@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
-import { taskCancel, taskProgress, taskSubstitute } from "@/lib/tasks";
+import { taskCancel, taskProgress, taskProgressCancel, taskSubstitute } from "@/lib/tasks";
 import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
 
 const schema = z.object({
@@ -32,6 +32,19 @@ export async function cancelTask(taskId: string): Promise<ActionState> {
   if (res.error) return { error: res.error };
   revalidatePath("/tasks"); revalidatePath("/brigades"); revalidatePath(`/orders/${res.orderId}`);
   return { ok: true, note: "Bekor qilindi" };
+}
+
+/**
+ * Bajarilgan hajm qaydini bekor qilish (`ConfirmButton`, sabab majburiy): hovli kirimi, xomashyo sarfi va
+ * avtomatik berish teskari yoziladi, qayd o'chadi. Faqat topshiriqda yagona qayd bo'lsa — qoida `lib/tasks.ts` da.
+ */
+export async function cancelProgress(progressId: string, reason: string): Promise<ActionState> {
+  const s = await requireAction("tasks", "cancel");
+  const res = await taskProgressCancel(progressId, reason, s.userId);
+  if (res.error) return { error: res.error };
+  revalidatePath("/tasks"); revalidatePath("/brigades"); revalidatePath("/stock"); revalidatePath("/production");
+  if (res.orderId) revalidatePath(`/orders/${res.orderId}`);
+  return { ok: true, note: res.note };
 }
 
 const subSchema = z.object({

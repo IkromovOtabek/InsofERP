@@ -4,10 +4,12 @@ import { consumeForTask } from "@/lib/brigade-stock";
 import { orderLabel, qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
-import type { Role } from "@/generated/prisma";
+import type { Role, TaskStatus } from "@/generated/prisma";
 import { defaultWarehouse } from "@/lib/warehouse";
 import { itemTasks } from "@/lib/production";
 import { nextNo } from "@/lib/numbering";
+import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
+import { ownerBalances } from "@/lib/brigade-products";
 
 /**
  * Topshiriq va brigada amallari — yagona rol matritsasi (veb sahifa, server action va mobil
@@ -161,6 +163,205 @@ export async function taskCancel(taskId: string, userId: string): Promise<TaskRe
     await notifyEmployees([b?.leaderId], { type: "TASK_CANCELLED", title: `Topshiriq bekor qilindi — ${b?.name ?? "brigada"}`, body: "Ishni to'xtating", link: { key: "tasks", id: taskId } });
   });
   return { changed: true, orderId: t.orderId, status: "CANCELLED" };
+}
+
+/**
+ * Bajarilgan hajm qaydini bekor qilish («60 o'rniga 600 yozildi»). Faqat topshiriqda YAGONA qayd bo'lsa:
+ * `taskProgress` yozgan harakatlar qaydga emas, topshiriqqa bog'langan (`refType "BrigadeTask"`, `refId` = topshiriq) —
+ * qayd bir nechta bo'lsa qaysi harakat qaysi qaydniki ekanini aniq ajratib bo'lmaydi, shuning uchun rad etiladi.
+ *
+ * Bitta tranzaksiyada (avval topshiriq qatori, keyin sklad qulfi — `taskProgress` bilan bir tartib):
+ *  1) topshiriq belgisidagi harakatlar kalit bo'yicha jamlanadi va qoldig'iga teskari harakat yoziladi — o'sha tur,
+ *     o'sha sklad/ombor/tannarx, ishorasi teskari (`storno.ts` qoidasi), belgisi ham o'sha. Jamlash sababi: avval
+ *     bekor qilingan qaydning harakati va teskarisi ham shu belgida qoladi — ularning yig'indisi 0:
+ *      · tayyor mahsulot (PRODUCTION_OUTPUT) o'sha brigada omboridan chiqariladi — hovlida yetmasa rad;
+ *      · retsept sarfi (BrigadeMove CONSUME) brigadaga qaytadi;
+ *      · yetmagani uchun skladdan avtomatik berilgani (BRIGADE_ISSUE + BrigadeMove ISSUE) skladga qaytadi;
+ *  2) doneQty kamayadi; bajarilgani qolmasa holat NEW (bekor qilingan topshiriq CANCELLED qoladi);
+ *  3) zaxira zayavkasi shu qayd bilan yopilgan bo'lsa qayta ochiladi; zayavkada boshqa ish qolmasa — "Tasdiqlangan"
+ *     (`cancelBatch` qoidasi);
+ *  4) qayd o'chiriladi — sdelka fondi (`brigade-pay.ts`) `TaskProgress` yig'indisidan; oldingi holati va sabab auditda.
+ * Topshiriqqa brak yozilgan bo'lsa rad etiladi — avval brak o'chiriladi (`deleteProductDefect`, hovli qoldig'i qaytadi).
+ */
+class ProgressCancelError extends Error {}
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+const key = (...p: (string | null | undefined)[]) => p.map((x) => x ?? "").join("|");
+const addTo = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
+
+export async function taskProgressCancel(progressId: string, reason: string, userId: string): Promise<TaskResult> {
+  const why = reason.trim().slice(0, 300);
+  const first = await db.taskProgress.findUnique({ where: { id: progressId }, select: { taskId: true, task: { select: { orderId: true } } } });
+  if (!first) return { changed: false, orderId: "", error: "Qayd topilmadi — sahifani yangilang" };
+  if (why.length < 3) return { changed: false, orderId: first.task.orderId, error: "Bekor qilish sababini yozing" };
+  const taskId = first.taskId;
+
+  const res = await db.$transaction(async (tx) => {
+    // Qatorni qulflash: shu payt yangi qayd (`taskProgress`) yoki brak kelsa — navbat bilan
+    await tx.$queryRaw`SELECT id FROM "BrigadeTask" WHERE id = ${taskId} FOR UPDATE`;
+    await lockStock(tx);
+    const t = await tx.brigadeTask.findUniqueOrThrow({
+      where: { id: taskId },
+      include: { orderItem: { include: { product: { select: { name: true, unit: true } } } }, order: { select: { kind: true, status: true } }, brigade: { select: { name: true, leaderId: true } } },
+    });
+    const unit = unitLabel(t.orderItem.product.unit);
+    const p = await tx.taskProgress.findUnique({ where: { id: progressId } });
+    if (!p) throw new ProgressCancelError("Qayd shu payt bekor qilindi — sahifani yangilang");
+    // Sdelka fondi qayd sanasining oyidan hisoblanadi (`brigadeOutput`): shu oy vedomosti tasdiqlangan / to'langan bo'lsa,
+    // bekor qilish yopilgan oylikni orqaga qarab o'zgartirib yuborardi
+    const ym = `${p.date.getFullYear()}-${String(p.date.getMonth() + 1).padStart(2, "0")}`;
+    const run = await tx.payrollRun.findFirst({ where: { month: ym, kind: "FINAL", status: { in: ["SUBMITTED", "APPROVED", "PAID"] }, cancelledAt: null }, select: { docNo: true } });
+    if (run) throw new ProgressCancelError(`${ym} oyining ish haqi vedomosti (${run.docNo}) tasdiqqa yuborilgan yoki tasdiqlangan — sdelka fondi o'zgarib qoladi. Qaydni bekor qilish uchun avval vedomost qoralamaga qaytarilsin`);
+    const count = await tx.taskProgress.count({ where: { taskId } });
+    if (count !== 1) throw new ProgressCancelError(`Topshiriqda ${count} ta qayd bor — sklad harakatlari topshiriqqa umumiy yozilgan, bittasini aniq ajratib bekor qilib bo'lmaydi`);
+    const def = await tx.productDefect.aggregate({ where: { taskId }, _sum: { qty: true }, _count: { _all: true } });
+    if (def._count._all > 0) throw new ProgressCancelError(`Bu topshiriqqa brak yozilgan (${def._count._all} ta, ${fq(Number(def._sum.qty ?? 0))} ${unit}) — avval brakni o'chiring, keyin qaydni bekor qiling`);
+    const pq = Number(p.qty);
+    const left = Number(t.doneQty) - pq;
+    if (left < -STOCK_EPS) throw new ProgressCancelError("Topshiriqdagi bajarilgan miqdor qayddan kam — ma'lumot mos emas, bekor qilinmadi");
+
+    const [moves, consumes] = await Promise.all([
+      tx.stockMove.findMany({ where: { refType: "BrigadeTask", refId: taskId }, include: { product: { select: { name: true } } } }),
+      tx.brigadeMove.findMany({ where: { refType: "BrigadeTask", refId: taskId } }),
+    ]);
+    // Bu belgini faqat `taskProgress` (tayyor mahsulot) va `consumeForTask` (sarf, avtomatik berish) yozadi — boshqasi chiqsa to'xtaymiz
+    const odd = moves.some((m) => m.type === "PRODUCTION_OUTPUT" ? !m.productId : m.type === "BRIGADE_ISSUE" ? !m.materialId || !m.brigadeId : true)
+      || consumes.some((m) => m.type !== "CONSUME");
+    if (odd) throw new ProgressCancelError("Topshiriqda kutilmagan sklad harakati bor — qaydni avtomatik bekor qilib bo'lmaydi");
+    const issueIds = moves.filter((m) => m.type === "BRIGADE_ISSUE").map((m) => m.id);
+    const issueLinks = issueIds.length ? await tx.brigadeMove.findMany({ where: { refType: "StockMove", refId: { in: issueIds } } }) : [];
+
+    // ── Jamlash: kalit bo'yicha qoldiq (avval bekor qilingan qaydlar va teskarisi 0 beradi) ──
+    type Net = { qty: number; m: (typeof moves)[number] };
+    const outNet = new Map<string, Net>(), issueNet = new Map<string, Net>();
+    for (const m of moves) {
+      const isOut = m.type === "PRODUCTION_OUTPUT";
+      const kk = isOut ? key(m.warehouseId, m.productId, m.ownerBrigadeId, m.brigadeId) : key(m.warehouseId, m.materialId, m.brigadeId, m.unitCost?.toString());
+      const map = isOut ? outNet : issueNet;
+      const cur = map.get(kk) ?? { qty: 0, m };
+      cur.qty = r3(cur.qty + Number(m.qty));
+      map.set(kk, cur);
+    }
+    const consumeNet = new Map<string, { qty: number; brigadeId: string; materialId: string }>();
+    for (const m of consumes) {
+      const kk = key(m.brigadeId, m.materialId);
+      const cur = consumeNet.get(kk) ?? { qty: 0, brigadeId: m.brigadeId, materialId: m.materialId };
+      cur.qty = r3(cur.qty + Number(m.qty));
+      consumeNet.set(kk, cur);
+    }
+    // Ishorasi kutilganidek bo'lmasa (kirim manfiy, sarf musbat) yoki avtomatik berishning sklad va brigada tomoni
+    // bir-biriga teng bo'lmasa — harakatlar shu qaydga mos emas, taxmin qilmaymiz
+    const issueSide = new Map<string, number>(), linkSide = new Map<string, number>();
+    for (const n of issueNet.values()) addTo(issueSide, key(n.m.brigadeId, n.m.materialId), -n.qty);
+    for (const l of issueLinks) addTo(linkSide, key(l.brigadeId, l.materialId), Number(l.qty));
+    const outTotal = r3([...outNet.values()].reduce((s, n) => s + n.qty, 0));
+    const mismatch = [...outNet.values()].some((n) => n.qty < -STOCK_EPS)
+      || [...issueNet.values()].some((n) => n.qty > STOCK_EPS)
+      || [...consumeNet.values()].some((n) => n.qty > STOCK_EPS)
+      || [...new Set([...issueSide.keys(), ...linkSide.keys()])].some((kk) => Math.abs((issueSide.get(kk) ?? 0) - (linkSide.get(kk) ?? 0)) > STOCK_EPS)
+      || (Math.abs(outTotal) > STOCK_EPS && Math.abs(outTotal - pq) > STOCK_EPS);
+    if (mismatch) throw new ProgressCancelError(`Sklad harakatlari qaydga mos kelmadi (hovliga kirim ${fq(outTotal)}, qayd ${fq(pq)} ${unit}) — avtomatik bekor qilinmadi, sklad bilan qo'lda tekshiring`);
+
+    // ── Hovli qoldig'i: tayyor mahsulot hali o'sha omborda bo'lishi shart ──
+    const needOwner = new Map<string, number>(), needTotal = new Map<string, number>();
+    for (const n of outNet.values()) {
+      if (n.qty <= STOCK_EPS) continue;
+      addTo(needOwner, key(n.m.warehouseId, n.m.productId, n.m.ownerBrigadeId), n.qty);
+      addTo(needTotal, key(n.m.warehouseId, n.m.productId), n.qty);
+    }
+    const short: string[] = [];
+    const checked = new Set<string>();
+    for (const n of outNet.values()) {
+      const tk = key(n.m.warehouseId, n.m.productId), ownKey = key(n.m.warehouseId, n.m.productId, n.m.ownerBrigadeId);
+      if (n.qty <= STOCK_EPS || checked.has(ownKey)) continue;
+      checked.add(ownKey);
+      const bal = await ownerBalances(tx, n.m.warehouseId, n.m.productId!);
+      const total = [...bal.values()].reduce((s, v) => s + v, 0);
+      const own = bal.get(n.m.ownerBrigadeId) ?? 0;
+      const name = n.m.product?.name ?? t.orderItem.product.name;
+      const owner = n.m.ownerBrigadeId === t.brigadeId ? `${t.brigade.name} omborida` : n.m.ownerBrigadeId ? "brigada omborida" : "umumiy hovlida";
+      if (total < needTotal.get(tk)! - STOCK_EPS) short.push(`${name}: hovlida ${fq(Math.max(0, total))} ${unit}, chiqarish kerak ${fq(needTotal.get(tk)!)} — jo'natilgan yoki hisobdan chiqarilgan`);
+      else if (own < needOwner.get(ownKey)! - STOCK_EPS) short.push(`${name}: ${owner} ${fq(Math.max(0, own))} ${unit}, chiqarish kerak ${fq(needOwner.get(ownKey)!)} — qolgani boshqa omborga ko'chirilgan, avval qaytarib ko'chiring`);
+    }
+    if (short.length) throw new ProgressCancelError(`Bekor qilib bo'lmaydi — tayyor mahsulot qoldig'i minusga tushadi: ${short.join("; ")}`);
+
+    // ── Teskari harakatlar (o'sha belgi bilan — keyingi jamlashda 0 bo'lib qoladi) ──
+    const note = `Qayd bekor qilindi: ${why}`;
+    let reversed = 0, consumed = 0, issued = 0;
+    for (const n of outNet.values()) {
+      if (n.qty <= STOCK_EPS) continue;
+      await tx.stockMove.create({
+        data: { type: "PRODUCTION_OUTPUT", warehouseId: n.m.warehouseId, productId: n.m.productId, brigadeId: n.m.brigadeId, ownerBrigadeId: n.m.ownerBrigadeId, qty: -n.qty, refType: "BrigadeTask", refId: taskId, note, createdById: userId },
+      });
+      reversed++;
+    }
+    for (const n of issueNet.values()) {
+      if (n.qty >= -STOCK_EPS) continue;
+      const back = await tx.stockMove.create({
+        data: { type: "BRIGADE_ISSUE", warehouseId: n.m.warehouseId, materialId: n.m.materialId, brigadeId: n.m.brigadeId, qty: -n.qty, unitCost: n.m.unitCost, refType: "BrigadeTask", refId: taskId, note, createdById: userId },
+      });
+      await tx.brigadeMove.create({
+        data: { type: "ISSUE", brigadeId: n.m.brigadeId!, materialId: n.m.materialId!, qty: n.qty, unitCost: n.m.unitCost, refType: "StockMove", refId: back.id, note, createdById: userId },
+      });
+      reversed += 2; issued++;
+    }
+    for (const n of consumeNet.values()) {
+      if (n.qty >= -STOCK_EPS) continue;
+      await tx.brigadeMove.create({ data: { type: "CONSUME", brigadeId: n.brigadeId, materialId: n.materialId, qty: -n.qty, refType: "BrigadeTask", refId: taskId, note, createdById: userId } });
+      reversed++; consumed++;
+    }
+
+    // ── Topshiriq ──
+    const done = left > STOCK_EPS ? r3(left) : 0;
+    const status: TaskStatus = t.status === "CANCELLED" ? "CANCELLED" : done <= 0 ? "NEW" : done >= Number(t.qty) - 0.0005 ? "DONE" : "IN_PROGRESS";
+    const u = await tx.brigadeTask.updateMany({ where: { id: taskId, doneQty: t.doneQty, status: t.status }, data: { doneQty: done, status } });
+    if (u.count !== 1) throw new ProgressCancelError(TASK_STALE);
+
+    // ── Zayavka holati ──
+    // Zaxira zayavkasi shu topshiriq bajarilgani bilan yopilgan bo'lsa (`taskProgress`) — qayta ochiladi
+    let reopened = false, unconfirmed = false;
+    if (t.order.kind === "STOCK" && t.order.status === "CLOSED" && status !== "DONE") {
+      const o = await tx.order.updateMany({ where: { id: t.orderId, status: "CLOSED" }, data: { status: "IN_PRODUCTION" } });
+      if (o.count) { reopened = true; await audit(tx, userId, "STATUS_CHANGE", "Order", t.orderId, { status: "CLOSED" }, { status: "IN_PRODUCTION", by: "progress-cancel", progressId }); }
+    }
+    // Zayavkada boshqa ish (zames, reys, qayd) qolmasa — "Tasdiqlangan" ga qaytadi (zames storno qoidasi)
+    if (t.order.status === "IN_PRODUCTION" || reopened) {
+      const [batches, trips, progress] = await Promise.all([
+        tx.productionBatch.count({ where: { orderId: t.orderId, cancelledAt: null } }),
+        tx.trip.count({ where: { orderId: t.orderId, status: { not: "CANCELLED" } } }),
+        tx.brigadeTask.count({ where: { orderId: t.orderId, doneQty: { gt: 0 } } }),
+      ]);
+      if (!batches && !trips && !progress) {
+        const o = await tx.order.updateMany({ where: { id: t.orderId, status: "IN_PRODUCTION" }, data: { status: "CONFIRMED" } });
+        if (o.count) { unconfirmed = true; await audit(tx, userId, "STATUS_CHANGE", "Order", t.orderId, { status: "IN_PRODUCTION" }, { status: "CONFIRMED", by: "progress-cancel", progressId }); }
+      }
+    }
+
+    // ── Qayd o'chiriladi (teskari harakatlardan keyin) — to'liq nusxasi va sababi auditda ──
+    await tx.taskProgress.delete({ where: { id: progressId } });
+    await audit(tx, userId, "DELETE", "TaskProgress", progressId, p, { cancelled: true, reason: why, taskNo: t.taskNo, reversedMoves: reversed });
+    await audit(tx, userId, "UPDATE", "BrigadeTask", taskId, { doneQty: t.doneQty, status: t.status }, {
+      doneQty: done, status, progressCancelled: progressId, removed: pq, reason: why, output: -outTotal, reversedMoves: reversed, orderReopened: reopened, orderConfirmed: unconfirmed,
+    });
+    return { status, pq, unit, outTotal, consumed, issued, reopened, unconfirmed, product: t.orderItem.product.name, brigade: t.brigade.name, leaderId: t.brigade.leaderId };
+  }).catch((e: Error) => { if (e instanceof ProgressCancelError) return { error: e.message }; throw e; });
+  if ("error" in res) return { changed: false, orderId: first.task.orderId, error: res.error };
+
+  const hints = [
+    `${fq(res.pq)} ${res.unit} qayd bekor qilindi`,
+    res.outTotal > STOCK_EPS ? `hovlidan ${fq(res.outTotal)} ${res.unit} chiqarildi` : null,
+    res.consumed ? "sarflangan xomashyo brigadaga qaytdi" : null,
+    res.issued ? "avtomatik berilgan xomashyo skladga qaytdi" : null,
+    res.reopened ? "zaxira zayavkasi qayta ochildi" : null,
+    res.unconfirmed ? "zayavka «Tasdiqlangan» ga qaytdi" : null,
+  ].filter(Boolean);
+  // Brigadir ilovadagi bajarilgan miqdor kamayganini bilsin
+  notifyAfter(() => notifyEmployees([res.leaderId], {
+    type: "TASK_CANCELLED",
+    title: `Bajarilgan qayd bekor qilindi — ${res.brigade}`,
+    body: `${fq(res.pq)} ${res.unit} ${res.product} · ${why}`,
+    link: { key: "tasks", id: taskId },
+  }));
+  return { changed: true, orderId: first.task.orderId, status: res.status, note: hints.join(" · ") };
 }
 
 /**

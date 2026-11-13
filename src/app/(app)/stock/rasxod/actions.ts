@@ -5,9 +5,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { cancelIssue, issueStock, IssueError, parseIssueTarget } from "@/lib/stock-issue";
+import { cancelIssue, issueStock, IssueError, ISSUE_STORNO, parseIssueTarget } from "@/lib/stock-issue";
 import { upsertRecipient, setRecipientActive } from "@/lib/stock-recipients";
-import { isoDate } from "@/lib/format";
+import { dateRu, isoDate } from "@/lib/format";
+import { db } from "@/lib/db";
+import { canDo } from "@/lib/permissions";
+import type { BulkStornoResult } from "../prixod/actions";
 
 /**
  * Sklad → «Chiqim» (avval «Расход»). Xato matnlari o'zbekcha, «Рус» rejimida lug'atdan.
@@ -26,6 +29,8 @@ const schema = z.object({
   date: zOpt,
   note: zOpt,
   clientToken: zOpt,
+  // «Tuzatish»: bekor qilingan chiqim hujjati (`ref`) — o'sha sanada qayta yozishga ruxsat (31 kunlik chegaradan tashqari)
+  copyOf: zOpt,
   materialId: z.array(z.string(), { message: "Kamida bitta qator qo'shing" }).min(1, "Kamida bitta qator qo'shing"),
   qty: z.array(z.string(), { message: "Miqdorni kiriting" }),
 });
@@ -48,9 +53,19 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
   }
   if (!items.length) return { error: "Kamida bitta qator qo'shing: nomi va miqdori" };
 
+  // Tuzatishda eski sana saqlanadi: faqat bekor qilingan hujjatning AYNAN o'z sanasi uchun 31 kunlik chegara ochiladi
+  let anyPastDate = false;
+  if (d.copyOf && d.date) {
+    const [orig, stornoed] = await Promise.all([
+      db.stockMove.findFirst({ where: { refType: "Issue", refId: d.copyOf }, select: { date: true } }),
+      db.stockMove.count({ where: { refType: ISSUE_STORNO, refId: d.copyOf } }),
+    ]);
+    anyPastDate = !!orig && stornoed > 0 && isoDate(orig.date) === d.date;
+  }
+
   let res;
   try {
-    res = await issueStock({ warehouseId: d.warehouseId, date: d.date, to, items, note: d.note, clientToken: d.clientToken }, { userId: s.userId, role: s.role });
+    res = await issueStock({ warehouseId: d.warehouseId, date: d.date, to, items, note: d.note, clientToken: d.clientToken, anyPastDate }, { userId: s.userId, role: s.role });
   } catch (e) {
     if (e instanceof IssueError) return { error: e.message };
     throw e;
@@ -82,6 +97,56 @@ export async function cancelRasxod(ref: string, reason: string): Promise<ActionS
     if (e instanceof IssueError) return { error: e.message };
     throw e;
   }
+}
+
+/**
+ * «Tuzatish»: chiqim bekor qilinadi (`cancelIssue` — o'sha storno qoidasi, brigada qoldig'i tekshiruvi bilan), keyin forma
+ * eski qatorlar bilan ochiladi (`/stock/rasxod/new?copy=<ref>`) — yangi chiqimni foydalanuvchi yozadi.
+ * Kim: `stock` → `issue_storno` (odatda direktor) va chiqim yozish huquqi (`issue`).
+ */
+export async function fixRasxod(ref: string, reason: string): Promise<ActionState> {
+  const s = await requireAction("stock", "issue_storno");
+  if (!canDo(s, "stock", "issue")) return { error: "Yangi chiqim yozishga ruxsatingiz yo'q — faqat «Bekor qilish» mumkin" };
+  const why = String(reason ?? "").trim();
+  if (why.length < 3) return { error: "Tuzatish sababini yozing (kamida 3 belgi)" };
+  try {
+    const r = await cancelIssue(String(ref ?? ""), `Tuzatish: ${why}`, { userId: s.userId, role: s.role });
+    refresh();
+    return { ok: true, note: `Chiqim bekor qilindi: ${r.count} qator` };
+  } catch (e) {
+    if (e instanceof IssueError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Bir chaqiruvda ko'pi bilan shuncha hujjat — so'rov uzoq osilib qolmasin (Kirimdagi kabi). */
+const BULK_STORNO_MAX = 20;
+
+/**
+ * Chiqim jurnali → «Ro'yxatdagi chiqimlarni bekor qilish»: har hujjat alohida `cancelIssue` bilan (o'z tranzaksiyasi,
+ * brigada qoldig'i tekshiruvi, AuditLog). Bo'lmaganlari sababi bilan qaytadi. Kim: `stock` → `issue_storno`. Sabab majburiy.
+ */
+export async function stornoRasxods(refs: string[], reason: string): Promise<BulkStornoResult> {
+  const s = await requireAction("stock", "issue_storno");
+  const why = String(reason ?? "").trim().slice(0, 300);
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing", done: 0, failed: [] };
+  const list = [...new Set((Array.isArray(refs) ? refs : []).map(String))].filter((x) => /^[A-Za-z0-9_-]{1,64}$/.test(x)).slice(0, BULK_STORNO_MAX);
+  const res: BulkStornoResult = { done: 0, failed: [] };
+  for (const ref of list) {
+    try {
+      await cancelIssue(ref, why, { userId: s.userId, role: s.role });
+      res.done++;
+    } catch (e) {
+      const m = await db.stockMove.findFirst({
+        where: { refType: "Issue", refId: ref },
+        select: { date: true, recipient: { select: { name: true } }, brigade: { select: { name: true } }, employee: { select: { fullName: true } } },
+      });
+      const label = m ? `${dateRu(m.date)} — ${m.recipient?.name ?? m.brigade?.name ?? m.employee?.fullName ?? "?"}` : ref;
+      res.failed.push({ docNo: label, error: e instanceof IssueError ? e.message : "Bajarilmadi — qayta urinib ko'ring" });
+    }
+  }
+  if (res.done) refresh();
+  return res;
 }
 
 const recipientSchema = z.object({

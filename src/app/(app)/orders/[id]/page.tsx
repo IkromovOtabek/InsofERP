@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays, FileBadge2, Printer, Pencil } from "lucide-react";
+import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays, FileBadge2, Printer, Pencil, PackageCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { BlockTag } from "@/components/site-blocks";
 import { requirePage } from "@/lib/page-guard";
@@ -30,7 +30,8 @@ import { PAY_METHOD_LABEL, PAYREQ_STATUS_COLOR, PAYREQ_STATUS_LABEL } from "@/li
 import { ConfirmButton } from "../../payments/confirm-button";
 import { ActionButton } from "@/components/action-button";
 import { orderTotal } from "@/lib/order-total";
-import { isEditable } from "@/lib/orders";
+import { closeAtDeliveredPlan, isEditable } from "@/lib/orders";
+import { closeOrderAtDelivered } from "./close-actions";
 import { lastEdits } from "@/lib/audit";
 import { orderActivity } from "@/lib/activity";
 import { ActivityLog } from "@/components/activity-log";
@@ -119,6 +120,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const canEditDate = o.status === "DRAFT" && (isStock ? canStock : can("create"));
   // To'liq tahrirlash — ishlab chiqarish boshlanguncha (zames, reys yo'q); mijoz zayavkasi «edit», sklad zayavkasi «stock»
   const canEdit = isEditable(o) && (isStock ? canStock : can("edit"));
+  // Yetkazilganicha yopish: kamida bitta reys yetkazilgan va qoldiq bor (mijoz qolganidan voz kechdi). Yo'ldagi reys bo'lsa —
+  // tugma chiqadi, server sababini aytadi (avval yetkazilsin yoki bekor qilinsin). Ruxsat bekor qilish bilan bir xil
+  const closePlan = ["CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.trips.some((t) => t.status === "DELIVERED") ? closeAtDeliveredPlan(o) : null;
+  const canCloseDelivered = !!closePlan && closePlan.hasRest && closePlan.deliveredQty > 0.0005 && (isStock ? canStock : can("cancel"));
   const noDate = o.dateUnknown;
   const dateText = noDate ? "Aniq emas" : date(o.deliveryDate);
 
@@ -141,6 +146,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {!isStock && canDo(s, "offers", "create") && <LinkButton href={`/takliflar/new?order=${id}`} variant="secondary"><FileBadge2 size={16} /> Tijorat taklifi</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
+            {canCloseDelivered && closePlan && <ConfirmButton action={closeOrderAtDelivered.bind(null, id)} label="Yetkazilganicha yopish" icon={<PackageCheck size={16} />} question={`Zayavka yetkazilgan miqdorda yopilsinmi? Qolgan ${closePlan.restText} olib tashlanadi, summa ${money(closePlan.oldTotal)} → ${money(closePlan.newTotal)}, ochiq brigada topshiriqlari yopiladi.`} reason="required" okText="Yopildi" className="h-10 px-4 text-amber-700 hover:bg-amber-50" />}
             {canCancel && <ConfirmButton action={cancelOrder.bind(null, id)} label="Bekor qilish" icon={<XCircle size={16} />} question={`${isStock ? "Sklad zayavkasi" : `Zayavka (${o.customer.name})`} bekor qilinsinmi? Zayavka tizimdan butunlay o'chiriladi.`} reason="required" okText="Bekor qilindi" goTo={isStock ? "/orders?tur=sklad" : "/orders"} className="h-10 px-4" />}
           </>
         }

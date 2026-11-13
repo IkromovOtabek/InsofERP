@@ -5,13 +5,14 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { db } from "@/lib/db";
-import { requireAction } from "@/lib/auth";
+import { requireAction, requireSession } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { createTrip as createTripDomain, hideExternalCar, reportTripIssue, resolveTripIssue, setTripTtn, tripCancelled, tripClosed, tripLoaded, tripPickup, type DeliveryQty } from "@/lib/trips";
+import { createTrip as createTripDomain, ECO_EDITABLE, hideExternalCar, reportTripIssue, resolveTripIssue, revertTripLoad, setTripTtn, tripCancelled, tripClosed, tripLoaded, tripPickup, updatePlannedTrip, type DeliveryQty, type TripEditInput } from "@/lib/trips";
 import { addTripCostRecord, dispatchDelivered, dispatchOnRoad, dispatchStep, DRIVER_STEPS, type DriverStep } from "@/lib/trip-dispatch";
 import type { TripIssueKind } from "@/generated/prisma";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
+import { ecoLabel } from "@/lib/eco/labels";
 import { purgeCancelledTrip } from "@/lib/purge-cancelled";
 
 const schema = z.object({
@@ -33,6 +34,9 @@ const schema = z.object({
   extDriverPhone: zOpt,
 });
 
+/** Tahrir formasi: zayavka va TTN o'zgarmaydi (TTN — reys sahifasidagi alohida forma). */
+const editSchema = schema.omit({ orderId: true, ttn: true });
+
 function refresh(id: string, orderId: string) {
   revalidatePath(`/trips/${id}`); revalidatePath("/trips"); revalidatePath(`/orders/${orderId}`); revalidatePath("/drivers");
   revalidatePath("/dashboard"); revalidatePath("/logistika", "layout");
@@ -51,25 +55,35 @@ const qtyFrom = (fd: FormData): DeliveryQty => ({
   comment: String(fd.get("comment") ?? "").trim() || null,
 });
 
-export async function createTrip(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireAction("trips", "create");
-  const r = parseForm(schema, fd);
-  if ("error" in r) return { error: r.error };
-  const d = r.data;
+/**
+ * Forma → reys ma'lumoti: o'z texnikamiz yoki ko'chadan mashina. «Yangi reys» va rejadagi reys tahriri uchun bitta;
+ * qolgan qoidalar — `lib/trips.ts` (`checkTrip`).
+ */
+function tripFields(d: z.infer<typeof editSchema>): TripEditInput | { error: string } {
   const ext = d.external === "1";
   if (ext && !d.extType) return { error: "Ko'chadan mashina: kategoriyasini tanlang" };
   if (!ext && !d.vehicleId) return { error: "Texnika tanlanmagan" };
   if (!ext && !d.driverId) return { error: "Haydovchi tanlanmagan" };
   const extCapacity = numOrNull(d.extCapacity);
   if (ext && d.extCapacity && extCapacity == null) return { error: "Ko'chadan mashina: sig'imi raqam bo'lsin" };
+  return {
+    vehicleId: d.vehicleId ?? "", driverId: d.driverId ?? "", qtyM3: d.qtyM3, note: d.note, plannedAt: d.plannedAt ? new Date(d.plannedAt) : null, bru: d.bru, driverReason: d.driverReason,
+    external: ext ? { type: d.extType!, plate: d.extPlate ?? "", capacity: extCapacity, driverName: d.extDriverName ?? "", driverPhone: d.extDriverPhone ?? "" } : null,
+  };
+}
+
+export async function createTrip(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("trips", "create");
+  const r = parseForm(schema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  const f = tripFields(d);
+  if ("error" in f) return { error: f.error };
 
   let created;
   try {
     // Qoida `lib/trips.ts` da — mobil ilovadagi "Yangi reys" ham shuni chaqiradi
-    created = await createTripDomain({
-      orderId: d.orderId, vehicleId: d.vehicleId ?? "", driverId: d.driverId ?? "", qtyM3: d.qtyM3, note: d.note, plannedAt: d.plannedAt ? new Date(d.plannedAt) : null, bru: d.bru, driverReason: d.driverReason, ttn: d.ttn,
-      external: ext ? { type: d.extType!, plate: d.extPlate ?? "", capacity: extCapacity, driverName: d.extDriverName ?? "", driverPhone: d.extDriverPhone ?? "" } : null,
-    }, s.userId);
+    created = await createTripDomain({ ...f, orderId: d.orderId, ttn: d.ttn }, s.userId);
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -80,6 +94,64 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   if (ecoEnabled()) await pushTripToEco(created.id);
   revalidatePath("/trips"); revalidatePath(`/orders/${d.orderId}`);
   redirect(`/trips/${created.id}`);
+}
+
+/**
+ * Rejadagi reysni tahrirlash (reys sahifasi → «Tahrirlash»): texnika, haydovchi, miqdor, vaqt, BRU, izoh.
+ * Qoidalar — `lib/trips.ts` (`updatePlannedTrip`). Keyin reys haydovchi ilovasiga yaratishdagi kabi qayta yuboriladi.
+ */
+export async function updateTrip(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("trips", "create");
+  const r = parseForm(editSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const f = tripFields(r.data);
+  if ("error" in f) return { error: f.error };
+  let res;
+  try {
+    res = await updatePlannedTrip(id, f, s.userId);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  // Yaratishdagi kabi kutamiz — reys sahifasida ECO holati darhol ko'rinsin (ko'chadan mashinani `pushTripToEco` o'tkazib yuboradi)
+  if (res.changed && ecoEnabled()) {
+    await pushTripToEco(id);
+    await flagEcoKept(id);
+  }
+  refresh(id, res.orderId);
+  redirect(`/trips/${id}`);
+}
+
+/**
+ * ECO reysni haydovchi qabul qilgandan keyin yangilamaydi. Tahrir shu orada qabul qilingan reysga tushgan bo'lsa
+ * (ERP'dagi ECO holati eskirgan edi) — ilovada eski ma'lumot qolganini reys kartasida ko'rsatamiz.
+ */
+async function flagEcoKept(id: string) {
+  const t = await db.trip.findUnique({ where: { id }, select: { ecoDeliveryId: true, ecoStatus: true, ecoError: true } });
+  if (!t?.ecoDeliveryId || !t.ecoStatus || ECO_EDITABLE.includes(t.ecoStatus) || t.ecoError) return;
+  const st = ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus;
+  await db.trip.update({ where: { id }, data: { ecoError: `Tahrir haydovchi ilovasiga bormadi: ECO'da reys «${st}». Haydovchiga qo'ng'iroq qiling yoki reysni o'chirib, yangisini oching` } });
+}
+
+/**
+ * Yuklashni bekor qilish (storno) — faqat direktor: yuklangan, hali yo'lga chiqmagan reys rejaga qaytadi, skladdan chiqim
+ * (va yuklashda yozilgan avtomatik zames) teskari yoziladi. Qoidalar — `lib/trips.ts` (`revertTripLoad`).
+ *
+ * ECO'da orqaga yo'l yo'q (ECO `setStatus` faqat oldinga yuradi, `upsertTrip` boshlangan reysni o'zgartirmaydi) —
+ * ilovada reys «Yuklanmoqda» bo'lib qoladi. Buni reys kartasida ko'rsatamiz; haydovchiga bildirishnoma `lib/trips.ts` da.
+ */
+export async function revertLoad(id: string, reason = ""): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = await revertTripLoad(id, s.userId, reason);
+  if (r.error) return { error: r.error };
+  if (r.changed && ecoEnabled()) {
+    const t = await db.trip.findUnique({ where: { id }, select: { ecoDeliveryId: true, ecoStatus: true, vehicle: { select: { external: true } } } });
+    if (t?.ecoDeliveryId && !t.vehicle.external && t.ecoStatus && !["ASSIGNED", "ACCEPTED", "DECLINED"].includes(t.ecoStatus)) {
+      const st = ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus;
+      await db.trip.update({ where: { id }, data: { ecoError: `Yuklash bekor qilindi, lekin haydovchi ilovasida reys «${st}» bo'lib qoldi — ECO'da orqaga qaytarib bo'lmaydi. Ilovada keyingi bosqich bosilsa yoki «ECO'dan yangilash» bosilsa, reys qayta yuklanadi (skladdan yana chiqim). Reys kerak bo'lmasa — o'chiring, ECO'da ham yopiladi` } });
+    }
+  }
+  refresh(id, r.orderId); revalidatePath("/stock"); revalidatePath("/production", "layout");
+  return { ok: true, note: r.note };
 }
 
 /** Reys TTN raqami — reysni ochgan kishi yozadi/tuzatadi (reys sahifasi va Logistika → Realizatsiya katagi). */

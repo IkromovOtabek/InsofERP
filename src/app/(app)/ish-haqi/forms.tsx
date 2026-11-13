@@ -3,8 +3,8 @@
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, Check, RefreshCw, Send, Undo2, Wallet, XCircle } from "lucide-react";
-import { approveAction, calculateAction, cancelAction, payAction, recalcAction, returnAction, saveSettingsAction, savePieceRatesAction, submitAction } from "./actions";
-import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { approveAction, calculateAction, cancelAction, payAction, recalcAction, returnAction, saveSettingsAction, savePieceRatesAction, submitAction, unpayAction } from "./actions";
+import { Button, Card, CardHeader, Checkbox, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { money } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
 
@@ -112,6 +112,62 @@ export function PayForm({ id, lines, accounts }: { id: string; lines: PayLine[];
       <FormError error={state?.error} />
       <FormSuccess text={state?.ok ? state.note : undefined} />
     </form>
+  );
+}
+
+/** Bitta to'lov — bitta kassa chiqimi va u yopgan qatorlar (chiqim bo'linmaydi, shuning uchun butunligicha tanlanadi). */
+export type UnpayGroup = { key: string; label: string; amount: number; lines: { id: string; fullName: string }[] };
+
+/** To'lovni bekor qilish (faqat direktor): hammasi yoki belgilangan to'lovlar, sabab majburiy. */
+export function UnpayForm({ id, groups }: { id: string; groups: UnpayGroup[] }) {
+  const [open, setOpen] = useState(false);
+  const [state, act, pending] = useActionState(unpayAction.bind(null, id), undefined);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  useRefresh(state);
+  if (!groups.length) return state?.ok ? <FormSuccess text={state.note} /> : null;
+  // Belgilangani yangilangan ro'yxatda qolmagan bo'lsa (bekor qilingandan keyin) — «hammasi» deb ko'rsatiladi va yuboriladi
+  const sel = groups.filter((g) => picked.has(g.key));
+  const chosen = sel.length ? sel : groups;
+  const sum = chosen.reduce((s, g) => s + g.amount, 0);
+  const people = chosen.reduce((s, g) => s + g.lines.length, 0);
+  if (!open) {
+    return (
+      <div className="space-y-1">
+        <Button variant="ghost" onClick={() => setOpen(true)}><Undo2 size={15} /> To&apos;lovni bekor qilish</Button>
+        <FormSuccess text={state?.ok ? state.note : undefined} />
+      </div>
+    );
+  }
+  return (
+    <Card>
+      <CardHeader title="To'lovni bekor qilish" description="Noto'g'ri to'lov: kassadagi «Ish haqi» chiqimi sabab bilan bekor qilinadi, qatorlar yana to'lanmagan bo'ladi — kassir qayta to'laydi" />
+      <form action={act} className="space-y-3"
+        onSubmit={(e) => { if (!window.confirm(`${people} xodim to'lovi (${money(sum)}) bekor qilinsinmi? Chiqim kassada bekor qilinadi, qatorlar yana to'lanmagan bo'ladi`)) e.preventDefault(); }}>
+        {chosen.flatMap((g) => g.lines).map((l) => <input key={l.id} type="hidden" name="line" value={l.id} />)}
+        <div className="grid max-h-60 grid-cols-1 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-sm">
+          {groups.map((g) => (
+            <label key={g.key} className="flex items-start justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50">
+              <span className="flex items-start gap-2">
+                <input type="checkbox" checked={picked.has(g.key)} onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(g.key); else n.delete(g.key); return n; })} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+                <span>
+                  {g.lines.map((l) => l.fullName).join(", ")}
+                  <span className="block text-xs text-slate-500">{g.label}</span>
+                </span>
+              </span>
+              <span className="tabular whitespace-nowrap text-slate-600">{money(g.amount)}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500">Belgilanmasa — barcha to&apos;lovlar. Bitta to&apos;lov (kassa chiqimi) bir nechta xodimni birga yopgan bo&apos;lsa, u butunligicha bekor qilinadi.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input name="reason" required minLength={3} maxLength={300} placeholder="Bekor qilish sababi (majburiy)" className="w-72" />
+          <Button variant="danger" disabled={pending}><Undo2 size={15} /> {pending ? "Bajarilmoqda…" : `${sel.length ? `${people} xodim` : "Hammasi"} · ${money(sum)} bekor qilish`}</Button>
+          <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Yopish</Button>
+        </div>
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? state.note : undefined} />
+      </form>
+    </Card>
   );
 }
 

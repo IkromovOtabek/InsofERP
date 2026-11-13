@@ -9,8 +9,12 @@ import { isAccessDenied } from "@/lib/access-denied";
 /**
  * Chiqim jurnalidagi «Storno» tugmasi — `payments/confirm-button.tsx` (ConfirmButton, reason="required") uslubida:
  * birinchi bosishda savol va sabab maydoni, sababsiz (3 belgidan kam) yuborilmaydi.
+ * «Tuzatish» ham shu tugma: `goTo` — muvaffaqiyatdan keyin o'tiladigan sahifa (eski qatorlar bilan yangi chiqim formasi).
  */
-export function StornoButton({ action, question }: { action: (reason: string) => Promise<ActionState>; question: string }) {
+export function StornoButton({ action, question, label = "Bekor qilish", title = "Chiqimni bekor qilish", icon = <Undo2 size={13} />, goTo }: {
+  action: (reason: string) => Promise<ActionState>; question: string;
+  label?: string; title?: string; icon?: React.ReactNode; goTo?: string;
+}) {
   const router = useRouter();
   const [armed, setArmed] = useState(false);
   const [why, setWhy] = useState("");
@@ -21,6 +25,7 @@ export function StornoButton({ action, question }: { action: (reason: string) =>
     try {
       const res = await action(why.trim());
       if (res?.error) { setState(res); return; }
+      if (goTo) { router.push(goTo); return; }
       setState({ ok: true, note: res?.note });
       setArmed(false); setWhy("");
       router.refresh();
@@ -53,9 +58,9 @@ export function StornoButton({ action, question }: { action: (reason: string) =>
     );
   }
   return (
-    <button type="button" onClick={() => { setState(undefined); setArmed(true); }} title="Chiqimni bekor qilish"
+    <button type="button" onClick={() => { setState(undefined); setArmed(true); }} title={title}
       className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-red-600 transition hover:bg-red-50">
-      <Undo2 size={13} /> Bekor qilish
+      {icon} {label}
     </button>
   );
 }

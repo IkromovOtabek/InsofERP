@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zOpt, zStr, validDate, type ActionState } from "@/lib/action";
 import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
+import { ASSET_COST_CASH_LOCK, assetValueLock } from "@/lib/fin-report/assets";
 
 /** Asosiy vositalar kartochkasi — buxgalteriya (`moliya.assets`), direktor doim. O'chirilmaydi: chiqarish yoki bekor qilish. */
 const writer = () => requireAction("moliya", "assets");
@@ -86,4 +87,73 @@ export async function cancelAssetAction(_p: ActionState, fd: FormData): Promise<
   if (!n) return { error: "Vosita topilmadi yoki allaqachon bekor qilingan" };
   refresh();
   return { ok: true };
+}
+
+const updateSchema = z.object({
+  id: zStr(),
+  name: zStr("Nomi kerak").pipe(z.string().max(160, "Nomi juda uzun")),
+  group: zStr("Guruh tanlanmagan"),
+  note: zOpt,
+  // Qulflangan maydonlar formada `disabled` — yuborilmaydi (o'zgarmaydi)
+  acquiredAt: zStr("Sana kerak").refine(validDate, "Sana noto'g'ri").optional(),
+  cost: zDec(1).optional(),
+  lifeYears: z.coerce.number({ message: "Muddat raqam bo'lsin" }).min(0.25, "Muddat kamida 3 oy").max(100, "Muddat juda katta").optional(),
+});
+
+/**
+ * Kartochkani tuzatish: nomi, guruh, izoh — doim; qiymat, olingan sana va muddat — amortizatsiya hali boshlanmagan va
+ * chiqarilmagan bo'lsa (`assetValueLock`), qiymat esa kassa chiqimiga bog'lanmagan bo'lsa ham (`ASSET_COST_CASH_LOCK`).
+ */
+export async function updateAssetAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const r = parseForm(updateSchema, fd);
+  if ("error" in r) return { error: r.error, field: r.field };
+  const d = r.data;
+  const res = await db.$transaction(async (tx) => {
+    const a = await tx.fixedAsset.findUnique({ where: { id: d.id } });
+    if (!a || a.cancelledAt) return { error: "Vosita topilmadi yoki bekor qilingan" };
+    const acquiredAt = d.acquiredAt ? new Date(d.acquiredAt) : a.acquiredAt;
+    const lifeMonths = d.lifeYears !== undefined ? Math.round(d.lifeYears * 12) : a.lifeMonths;
+    const cost = d.cost !== undefined ? Math.round(d.cost * 100) / 100 : Number(a.cost);
+    const costChanged = Math.abs(cost - Number(a.cost)) >= 0.005;
+    const valueChanged = costChanged || acquiredAt.getTime() !== a.acquiredAt.getTime() || lifeMonths !== a.lifeMonths;
+    if (valueChanged) {
+      const lock = assetValueLock(a);
+      if (lock) return { error: lock };
+      if (costChanged && a.cashTxId) return { error: ASSET_COST_CASH_LOCK, field: "cost" };
+    }
+    const before = { name: a.name, group: a.group, note: a.note, acquiredAt: a.acquiredAt, cost: Number(a.cost), lifeMonths: a.lifeMonths };
+    const after = { name: d.name, group: d.group, note: d.note, acquiredAt, cost, lifeMonths };
+    if (!valueChanged && before.name === after.name && before.group === after.group && before.note === after.note) return { same: true };
+    // Shart bilan: o'qilgandan keyin boshqa xodim o'zgartirmagan / chiqarmagan / bekor qilmagan bo'lsin
+    const u = await tx.fixedAsset.updateMany({
+      where: { id: a.id, cancelledAt: null, updatedAt: a.updatedAt, ...(valueChanged ? { disposedAt: null } : {}) },
+      data: { name: d.name, group: d.group, note: d.note, ...(valueChanged ? { acquiredAt, cost, lifeMonths } : {}) },
+    });
+    if (!u.count) return { error: "Kartochka hozirgina o'zgardi — sahifani yangilab qayta urining" };
+    await audit(tx, s.userId, "UPDATE", "FixedAsset", a.id, before, after);
+    return {};
+  });
+  if ("error" in res && res.error) return { error: res.error, field: "field" in res ? res.field : undefined };
+  refresh();
+  return { ok: true, note: "same" in res ? "O'zgarish yo'q" : "Saqlandi" };
+}
+
+/**
+ * Chiqarishni bekor qilish (xato chiqarilgan vosita): chiqarish faqat holat va sana — pul harakati yo'q, shuning uchun
+ * `disposedAt` tozalanadi; chiqarishda izohga qo'shilgan «Chiqarildi: …» qismi olib tashlanadi. Amortizatsiya davom etadi.
+ */
+export async function undisposeAssetAction(id: string, reason: string): Promise<ActionState> {
+  const s = await writer();
+  const n = await db.$transaction(async (tx) => {
+    const a = await tx.fixedAsset.findUnique({ where: { id } });
+    if (!a || a.cancelledAt || !a.disposedAt) return 0;
+    const note = a.note?.replace(/(?:^| · )Chiqarildi: [^·]*$/, "").trim() || null;
+    const u = await tx.fixedAsset.updateMany({ where: { id, cancelledAt: null, disposedAt: a.disposedAt }, data: { disposedAt: null, note } });
+    if (u.count) await audit(tx, s.userId, "STATUS_CHANGE", "FixedAsset", id, { disposedAt: a.disposedAt, note: a.note }, { disposedAt: null, note, reason: reason.trim() || undefined });
+    return u.count;
+  });
+  if (!n) return { error: "Vosita topilmadi yoki chiqarilmagan" };
+  refresh();
+  return { ok: true, note: "Chiqarish bekor qilindi" };
 }

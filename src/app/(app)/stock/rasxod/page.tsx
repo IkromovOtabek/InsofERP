@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileUp, Plus, Search } from "lucide-react";
+import { FileUp, Plus, Search, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
 import { RasxodFilters } from "./rasxod-filters";
 import { RecipientsManager } from "./recipients-manager";
 import { StornoButton } from "./storno-button";
-import { cancelRasxod } from "./actions";
+import { BulkStorno } from "../prixod/bulk-storno";
+import { cancelRasxod, fixRasxod, stornoRasxods } from "./actions";
 
 /**
  * Sklad → «Chiqim» (avval «Расход») — skladdan chiqim jurnali, foydalanuvchi Excel'idagi ustunlar bilan. Matn o'zbekcha,
@@ -48,6 +49,8 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   const period = stockPeriod(sp);
   const canIssue = canDo(s, "stock", "issue");
   const canStorno = canDo(s, "stock", "issue_storno");
+  // «Tuzatish» = storno + shu qatorlar bilan yangi chiqim formasi: chiqim yozish huquqi ham kerak
+  const canFix = canStorno && canIssue;
 
   const [warehouses, recipients, brigades, employees, vatPayer] = await Promise.all([
     db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true, isActive: true } }),
@@ -73,6 +76,11 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   const stornoAt = new Map<string, RasxodRow[]>(); // qator id → shu hujjat qatorlari (tugma shu qatorda)
   if (canStorno) for (const list of refRows.values()) if (!list[0].cancelled) stornoAt.set(list[0].id, list);
   const cols = canStorno ? 13 : 12;
+  // «Ro'yxatdagi chiqimlarni bekor qilish» — ko'rinib turgan faol hujjatlar (yangilari birinchi), har biri barcha qatorlari bilan
+  const activeRefs = [...refRows.entries()].filter(([, list]) => !list[0].cancelled).map(([ref]) => ref).reverse();
+  const activeSet = new Set(activeRefs);
+  const activeTotal = rows.filter((r) => r.ref && activeSet.has(r.ref) && (r.kind === "issue" || r.kind === "brigade")).reduce((a, r) => a + r.total, 0);
+  const anyCancelled = [...refRows.values()].some((list) => list[0].cancelled);
 
   const hidden: Record<string, string> = {};
   if (wh) hidden.wh = wh;
@@ -142,6 +150,19 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
         <StatCard label="Jami" value={money(t.total)} tone="brand" hint="Summa + QQS" href="#jurnal" />
       </div>
 
+      {/* Ro'yxat bo'shab qolsa ham joyida turadi — natija xabari yo'qolmasin (faol hujjat bo'lmasa o'zi hech narsa chizmaydi) */}
+      {canStorno && (activeRefs.length > 0 || anyCancelled) && (
+        <div className="mb-3">
+          <BulkStorno ids={activeRefs} action={stornoRasxods} noun="chiqim"
+            summary={`${period.label}${wh ? ` · ${warehouses.find((w) => w.id === wh)?.name ?? ""}` : ""}${komu ? " · «Kimga» filtri" : ""}${q ? ` · qidiruv «${q}»` : ""}: ${fmtNum(activeRefs.length)} ta hujjat (barcha qatorlari bilan), jami ${money(activeTotal)}.`}
+            details={<>
+              Har chiqim bekor qilinadi: xomashyo skladga qaytadi, brigadaga berilgani brigada qoldig&apos;idan ayiriladi. Yozuvlar o&apos;chmaydi —
+              minusli «Bekor qilish» qatori chiqadi. Zames, spisanie va kirim bilan yozilgan avto chiqim bu yerda bekor qilinmaydi.
+              Brigada sarflagan yoki qaytargan chiqimlar bekor bo&apos;lmaydi — ro&apos;yxatda sababi chiqadi.
+            </>} />
+        </div>
+      )}
+
       <div id="jurnal" className="scroll-mt-20" />
       <Sheet>
         <SheetHead>
@@ -169,7 +190,15 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
             const docRows = stornoAt.get(r.id);
             return (
               <Row key={r.id} r={r} storno={canStorno ? (docRows
-                ? <StornoButton action={cancelRasxod.bind(null, docRows[0].ref!)} question={stornoQuestion(docRows)} />
+                ? (
+                  <span className="inline-flex flex-wrap items-center justify-center gap-0.5">
+                    {canFix && (
+                      <StornoButton action={fixRasxod.bind(null, docRows[0].ref!)} question={fixQuestion(docRows)} label="Tuzatish" icon={<Wrench size={13} />}
+                        title="Chiqimni bekor qilib, shu qatorlar bilan yangisini yozish" goTo={`/stock/rasxod/new?copy=${encodeURIComponent(docRows[0].ref!)}`} />
+                    )}
+                    <StornoButton action={cancelRasxod.bind(null, docRows[0].ref!)} question={stornoQuestion(docRows)} />
+                  </span>
+                )
                 : null) : undefined} />
             );
           })}
@@ -264,6 +293,12 @@ function TargetCard({ g }: { g: RasxodTarget }) {
 function stornoQuestion(list: RasxodRow[]): string {
   const r = list[0];
   return `${dateRu(r.date)} sanadagi chiqim — ${r.to}${list.length > 1 ? ` (${list.length} qator)` : ""} bekor qilinsinmi? Xomashyo skladga qaytadi`;
+}
+
+/** «Tuzatish» savoli: eski chiqim bekor bo'ladi, yangisini formada saqlash kerak. */
+function fixQuestion(list: RasxodRow[]): string {
+  const r = list[0];
+  return `${dateRu(r.date)} sanadagi chiqim — ${r.to}${list.length > 1 ? ` (${list.length} qator)` : ""} bekor qilinadi (xomashyo skladga qaytadi) va forma shu qatorlar bilan ochiladi. Yangi chiqim faqat «Chiqimni yozish» bosilganda yoziladi. Davom etasizmi?`;
 }
 
 /** «Kimga» nomi: brigada / xodim / oluvchi — kartasiga havola; zames, spisanie, inventarizatsiya — oddiy matn. */

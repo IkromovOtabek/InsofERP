@@ -15,8 +15,14 @@ const CHUNK = 10;
  * Kirim jurnali: ro'yxatdagi (davr, sklad, qidiruv bo'yicha) faol kirimlarni birdan bekor qilish — masalan, Excel'dan
  * xato yuklangan daftarni qaytarib, tozalangan faylni qayta yuklash uchun. Har kirim alohida storno qilinadi
  * (`stornoReceipts`), bo'lmaganlari sababi bilan ro'yxatda qoladi. Sabab majburiy.
+ * Chiqim jurnali ham shu komponentni ishlatadi: `action` — `stornoRasxods`, `noun` — «chiqim», `details` — o'z izohi.
  */
-export function BulkStorno({ ids, summary }: { ids: string[]; summary: string }) {
+export function BulkStorno({ ids, summary, action = stornoReceipts, noun = "kirim", details }: {
+  ids: string[]; summary: string;
+  action?: (ids: string[], reason: string) => Promise<BulkStornoResult>;
+  noun?: string;
+  details?: React.ReactNode;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [why, setWhy] = useState("");
@@ -31,7 +37,7 @@ export function BulkStorno({ ids, summary }: { ids: string[]; summary: string })
     for (let i = 0; i < ids.length; i += CHUNK) {
       const part = ids.slice(i, i + CHUNK);
       try {
-        const r = await stornoReceipts(part, why.trim());
+        const r = await action(part, why.trim());
         if (r.error) { acc.stopped = r.error; break; }
         acc.done += r.done; acc.failed.push(...r.failed);
       } catch (e) {
@@ -49,27 +55,27 @@ export function BulkStorno({ ids, summary }: { ids: string[]; summary: string })
     if (!ids.length) return null;
     return (
       <Button type="button" variant="secondary" onClick={() => setOpen(true)} className="text-red-700">
-        <Undo2 size={16} /> Ro&apos;yxatdagi kirimlarni bekor qilish
+        <Undo2 size={16} /> {`Ro'yxatdagi ${noun}larni bekor qilish`}
       </Button>
     );
   }
 
   return (
     <Callout tone={result ? (result.stopped || result.failed.length ? "warning" : "success") : "danger"}
-      title={result ? (result.stopped ? "Bekor qilish to'xtadi" : "Bekor qilish tugadi") : `${fmtNum(ids.length)} ta kirim bekor qilinadi`}>
+      title={result ? (result.stopped ? "Bekor qilish to'xtadi" : "Bekor qilish tugadi") : `${fmtNum(ids.length)} ta ${noun} bekor qilinadi`}>
       {!result && (
         <>
           <div>{summary}</div>
-          <div className="mt-1">
+          <div className="mt-1">{details ?? <>
             Har kirim storno qilinadi: sklad qoldig&apos;i kamayadi, kirim bilan birga yozilgan avto chiqim ham qaytariladi. Hujjatlar o&apos;chmaydi,
             «bekor qilingan» bo&apos;lib qoladi. Shundan keyin tozalangan faylni «Excel&apos;dan yuklash» orqali qayta yuklash mumkin.
             To&apos;lov bog&apos;langan, ta&apos;minot zayavkasidan kelgan yoki moli sarflangan kirimlar bekor bo&apos;lmaydi — ro&apos;yxatda sababi chiqadi.
-          </div>
+          </>}</div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Sabab (majburiy)" aria-label="Bekor qilish sababi"
               maxLength={300} disabled={busy} className="w-full sm:w-80" autoFocus />
             <Button type="button" variant="danger" onClick={run} disabled={busy || why.trim().length < 3}>
-              <Undo2 size={16} /> {busy ? `Bekor qilinmoqda… ${fmtNum(done)} / ${fmtNum(ids.length)}` : `${fmtNum(ids.length)} ta kirimni bekor qilish`}
+              <Undo2 size={16} /> {busy ? `Bekor qilinmoqda… ${fmtNum(done)} / ${fmtNum(ids.length)}` : `${fmtNum(ids.length)} ta ${noun}ni bekor qilish`}
             </Button>
             {!busy && <Button type="button" variant="secondary" onClick={() => { setOpen(false); setWhy(""); }}>Yo&apos;q</Button>}
           </div>

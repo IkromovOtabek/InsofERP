@@ -7,11 +7,12 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, dateTime, fmtNum, money, opAt } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
-import { RENT_ELEC_CATEGORY, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, leaseDebts, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
+import { RENT_ELEC_CATEGORY, RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, leaseDebts, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, rentTxEditData, shiftMonth, today, type RentDay } from "@/lib/rent";
 import { elecLedger } from "@/lib/rent-elec";
 import { LEASE_SOON_DAYS, RENT_FILE_ACCEPT, RENT_FILE_KINDS, RENT_FILE_MAX_MB, leaseDaysLeft } from "@/lib/rent-contract";
 import { ConfirmButton } from "../../../payments/confirm-button";
 import { ShopTxForm } from "../../arenda-forms";
+import { RentTxEditButton } from "../../tx-edit";
 import { EndLeaseForm, FileUploadForm, LeaseForm, PriceChangeForm } from "../../contract-forms";
 import { reminderText, shopLedger } from "@/lib/rent-tenant";
 import { botEnabled, botUsername } from "@/lib/telegram/api";
@@ -34,7 +35,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
   if (!shop) notFound();
   const canShops = canDo(s, "arenda", "shops");
   const canCreate = canDo(s, "arenda", "create");
-  // To'lovlar tarixidagi «Bekor qilish» — Arenda → Jurnal tabidagi bilan bir amal (`stornoRentTx`)
+  // To'lovlar tarixidagi «Bekor qilish» va qalam (tuzatish) — Arenda → Jurnal tabidagi bilan bir amal (`stornoRentTx`, `editRentTx`)
   const canStorno = canDo(s, "arenda", "storno");
   const daily = shop.period === "DAILY";
   // Shartnomalar: joriy (amaldagi, bo'lmasa oxirgi) — karta shu bo'yicha; qolganlari «Oldingi ijarachilar»
@@ -152,7 +153,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
           )}
 
           <div id="tolovlar" className="scroll-mt-20"><Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" description="Ijarachidan arenda kassasiga tushgan pul. Bekor qilingan yozuv chizilgan holda qoladi." /></div>
+            <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" description="Ijarachidan arenda kassasiga tushgan pul. Xato yozuv qalam bilan tuzatiladi; bekor qilingan yozuv chizilgan holda qoladi." /></div>
             {txs.length === 0 ? <div className="p-5 pt-0"><EmptyState title="To'lov yo'q" text="Arenda sahifasidagi «Kirim» tugmasi bilan yoziladi." /></div> : (
               <Table>
                 <thead><tr><Th>Sana</Th><Th>Qaysi oy / kun uchun</Th><Th>Usul</Th><Th right>Summa</Th><Th>Kim yozdi</Th><Th></Th></tr></thead>
@@ -167,6 +168,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                       <Td>
                         <div className="flex items-center gap-3">
                           {t.type === "INCOME" && <Link href={`/arenda/kvitansiya/${t.id}`} title="Kvitansiyani chop etish" className="inline-flex items-center gap-1 text-xs text-slate-500 no-underline hover:text-slate-900"><Printer size={13} /> Kvitansiya</Link>}
+                          {canStorno && !t.cancelledAt && <RentTxEditButton tx={rentTxEditData({ ...t, shop: { name: shop.name, period: shop.period } })} months={months} expenseCats={RENT_EXPENSE_CATEGORIES} />}
                           {canStorno && !t.cancelledAt && <ConfirmButton action={stornoRentTx.bind(null, t.id)} label={<><Undo2 size={13} className="mr-1 inline" />Bekor qilish</>} question={t.batchId ? "Bir necha oyga bo'lingan to'lov — hamma qismi bekor qilinsinmi?" : "Bekor qilinsinmi?"} reason="required" okText="Bekor qilindi" className="text-xs text-slate-500 no-underline hover:text-red-600" />}
                         </div>
                       </Td>

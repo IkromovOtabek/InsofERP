@@ -18,6 +18,12 @@ type Opt = { id: string; name: string };
 type Mat = { id: string; name: string; code: string; unit: string; groupId: string | null; price: number | null; approx: boolean };
 type Line = { key: string; materialId: string; qty: string };
 
+/**
+ * «Tuzatish» / nusxa: eski chiqimdan to'ldirilgan forma (`/stock/rasxod/new?copy=<ref>`). `copyOf` — faqat bekor qilingan
+ * hujjatda: server shu hujjat sanasida yozishga ruxsat beradi (31 kunlik chegaradan eski bo'lsa ham).
+ */
+export type RasxodInitial = { warehouseId: string; to: string; date: string; note: string; lines: { materialId: string; qty: string }[]; copyOf: string | null };
+
 const EPS = 0.0005;
 const num = (v: string) => Number(v.replace(/\s+/g, "").replace(",", ".")) || 0;
 
@@ -40,7 +46,7 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * Tez tanlash (`hints`, `issueHints`): oxirgi 90 kunda ko'p olganlar tugmacha bo'lib turadi; oluvchi tanlangach — unga oxirgi
  * berilgan tovarlar: bosilsa qator oxirgi miqdori bilan qo'shiladi (miqdor tahrirlanadi). Sklad — oxirgi chiqimdagi sklad.
  */
-export function RasxodForm({ warehouses, targets, hints, materials, groups, balances, flows, holdings, clientToken, today, minDate, defaultTo }: {
+export function RasxodForm({ warehouses, targets, hints, materials, groups, balances, flows, holdings, clientToken, today, minDate, defaultTo, initial }: {
   warehouses: Opt[]; targets: TargetGroups; hints: IssueHints; materials: Mat[]; groups: MaterialGroup[];
   balances: Record<string, Record<string, number>>;
   /** Sklad → xomashyo → jami kirim va jami chiqim (nom tanlashda «Kirim · Chiqim · Qoldi») */
@@ -48,15 +54,18 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
   /** «Kimga» tanlanganda — unda hozir nima bor (brigada qo'lida / xodim jami olgani) */
   holdings: Holding[];
   clientToken: string; today: string; minDate: string; defaultTo: string;
+  initial?: RasxodInitial;
 }) {
   const [state, action, pending] = useActionState(createRasxod, undefined);
   // «Qayerdan» eslab qolinadi: oxirgi chiqim yozilgan sklad (faol bo'lsa), bo'lmasa birinchisi
-  const [whId, setWhId] = useState(warehouses.find((w) => w.id === hints.warehouseId)?.id ?? warehouses[0]?.id ?? "");
-  const [to, setTo] = useState(defaultTo);
-  const [date, setDate] = useState(today);
-  const [note, setNote] = useState("");
-  const seq = useRef(1);
-  const [lines, setLines] = useState<Line[]>([{ key: "l0", materialId: "", qty: "" }]);
+  const [whId, setWhId] = useState(warehouses.find((w) => w.id === (initial?.warehouseId ?? hints.warehouseId))?.id ?? warehouses[0]?.id ?? "");
+  const [to, setTo] = useState(initial?.to ?? defaultTo);
+  const [date, setDate] = useState(initial?.date ?? today);
+  const [note, setNote] = useState(initial?.note ?? "");
+  const seq = useRef(initial?.lines.length || 1);
+  const [lines, setLines] = useState<Line[]>(() => (initial?.lines.length
+    ? initial.lines.map((l, i) => ({ key: `l${i}`, ...l }))
+    : [{ key: "l0", materialId: "", qty: "" }]));
 
   const bal = useMemo(() => balances[whId] ?? {}, [balances, whId]);
   const meta = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
@@ -107,6 +116,7 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
   return (
     <form onSubmit={submit} className="space-y-5">
       <input type="hidden" name="clientToken" value={clientToken} />
+      {initial?.copyOf && <input type="hidden" name="copyOf" value={initial.copyOf} />}
       {filled.map((l) => (
         <span key={l.key} hidden>
           <input type="hidden" name="materialId[]" value={l.materialId} />

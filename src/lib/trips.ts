@@ -7,7 +7,7 @@ import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/no
 import { randomBytes } from "node:crypto";
 import { soleUnit, unitLabel } from "@/lib/unit";
 import { ISSUE_KIND, logisticsSettings, VEHICLE_ISSUE_KINDS } from "@/lib/logistics";
-import { lockStock } from "@/lib/stock-lock";
+import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
 import { driverPositionNames } from "@/lib/positions";
 import { defaultWarehouse, pickProductWarehouse } from "@/lib/warehouse";
 import { brigadeNames, ownerLabel, takeFromOwners, type Owner } from "@/lib/brigade-products";
@@ -16,7 +16,9 @@ import { prepayShortError } from "@/lib/payments";
 import { decodePolyline, summarizeTrack } from "@/lib/trip-track";
 import { saveEcoTrackSummarySafe, saveTripSummarySafe, tripStats } from "@/lib/trip-summary";
 import { snapshotTripPay } from "@/lib/driver-trip-pay";
-import { normalizePhone } from "@/lib/eco/client";
+import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
+import { ecoLabel } from "@/lib/eco/labels";
+import { cancelBatchTx, isStornoError, reverseMoves } from "@/lib/storno";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -104,6 +106,9 @@ class StockShort extends Error {}
 
 const fq = (n: number) => String(Math.round(n * 1000) / 1000);
 
+/** Yuklashda yozilgan avtomatik zames izohi — yuklash bekor qilinganda zames shu bo'yicha topiladi (`revertTripLoad`). */
+const autoBatchNote = (deliveryNoteNo: string) => `Avtomatik: reys ${deliveryNoteNo} yuklandi`;
+
 /**
  * Beton (m³) ishlab chiqarishdan o'tmaydi — RBU uni mikserga yuklash paytida quyadi. Shuning uchun hech bir skladda
  * yetarli tayyor beton bo'lmasa, asosiy skladda yetmagan hajmga zames avtomatik yoziladi (retsept bo'yicha xomashyo
@@ -114,7 +119,7 @@ async function pourConcrete(tx: Prisma.TransactionClient, t: { id: string; order
   if (!main) throw new StockShort("Faol sklad yo'q — sklad ochilmagan");
   const have = await tx.stockMove.aggregate({ where: { productId: line.productId, warehouseId: main.id }, _sum: { qty: true } });
   const need = Math.round((qty - Math.max(0, Number(have._sum.qty ?? 0))) * 1000) / 1000;
-  const b = await autoBatchForTrip(tx, { orderId: t.orderId, productId: line.productId, warehouseId: main.id, qtyM3: need, note: `Avtomatik: reys ${t.deliveryNoteNo} yuklandi` }, userId);
+  const b = await autoBatchForTrip(tx, { orderId: t.orderId, productId: line.productId, warehouseId: main.id, qtyM3: need, note: autoBatchNote(t.deliveryNoteNo) }, userId);
   if ("error" in b) throw new StockShort(`${line.name ?? "Beton"} ${fq(need)} m³ ga zames avtomatik yozilmadi: ${b.error}`);
   return { ...main, balance: qty };
 }
@@ -226,8 +231,9 @@ async function returnToStock(tx: Prisma.TransactionClient, tripId: string, line:
   // Manfiy — yopishda qaytgan miqdor kamaytirildi (5 → 2): ortiqcha kirim qilingan 3 dona skladdan qaytariladi
   if (!Number.isFinite(returned) || Math.abs(returned) < 0.0005) return;
   if ("error" in line || line.unit === "m3") return;
-  // Qaytgan mahsulot qaysi skladdan yuklangan bo'lsa — o'sha skladga (bo'lmasa asosiy skladga)
-  const shipped = await tx.stockMove.findFirst({ where: { refType: "Trip", refId: tripId, type: "SHIPMENT" }, select: { warehouseId: true } });
+  // Qaytgan mahsulot qaysi skladdan yuklangan bo'lsa — o'sha skladga (bo'lmasa asosiy skladga). Yuklash bekor qilinib
+  // qayta yuklangan reysda teskari (musbat) qator ham bor — oxirgi haqiqiy chiqim olinadi
+  const shipped = await tx.stockMove.findFirst({ where: { refType: "Trip", refId: tripId, type: "SHIPMENT", qty: { lt: 0 } }, orderBy: { createdAt: "desc" }, select: { warehouseId: true } });
   const whId = shipped?.warehouseId ?? (await defaultWarehouse(tx))?.id;
   if (!whId) throw new Error("Faol sklad yo'q — qaytgan mahsulotni kirim qilib bo'lmaydi");
   const note = returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)";
@@ -892,27 +898,42 @@ export async function hideExternalCar(id: string, userId: string): Promise<void>
   if (!v?.external) throw new Error("Ko'chadan chaqirilgan mashina topilmadi");
 }
 
+/** Zayavka tekshiruvi uchun: reyslar id bilan — tahrirda reysning o'zi qoldiqdan chiqariladi (`withoutTrip`). */
+const CHECK_INCLUDE = { ...READINESS_INCLUDE, trips: { select: { id: true, ...READINESS_INCLUDE.trips.select } } } as const;
+
+/** Tahrirlanayotgan reysning miqdori zayavka qoldig'iga qaytarib hisoblanadi — o'zi bilan solishtirilmasin. */
+function withoutTrip<T extends { trips: { id: string }[] }>(o: T, tripId?: string): T {
+  return tripId ? { ...o, trips: o.trips.filter((x) => x.id !== tripId) } : o;
+}
+
+/** Tekshiruvdan o'tgan reys ma'lumoti — yozish va bildirishnoma uchun kerakli qismlar. */
+type CheckedTrip = {
+  line: TripLine; mixed: boolean; plate: string; deliveryAddress: string;
+  ext: ExternalCar | null; extPhone: string;
+  driverName: string; driverPhone: string | null; driverReason: string | null; bru: string | null;
+};
+
 /**
- * Reys (nakladnoy) ochish — veb "Yangi reys" formasi ham, mobil ilova ham shu yerdan.
- * Tekshiruvlar: zayavka tasdiqlanganmi, qoldiq yetadimi, mikser sig'imi oshmaydimi.
- * ECO'ga yuborish chaqiruvchida (u yerda kutish/kutmaslik farq qiladi).
+ * Reys ma'lumotlari qoidalari — «Yangi reys» (`createTrip`) ham, rejadagi reys tahriri (`updatePlannedTrip`) ham shu yerdan:
+ * zayavka holati va tayyor qoldig'i, (yangi reysda) bosh to'lov, ko'chadan mashina ma'lumoti, texnika (faol, ta'mirda emas,
+ * turi mahsulotga mos, sig'imi), hujjat muddatlari, haydovchi (lavozimi, guvohnomasi, boshqa haydovchi sababi), BRU.
+ * `exceptTripId` — tahrirlanayotgan reys: uning miqdori qoldiqqa qaytarib hisoblanadi.
  */
-export async function createTrip(input: NewTripInput, userId: string): Promise<{ id: string; deliveryNoteNo: string }> {
+async function checkTrip(input: NewTripInput, opts: { exceptTripId?: string; prepay?: boolean } = {}): Promise<CheckedTrip> {
   if (!(input.qtyM3 > 0)) throw new Error("Miqdor 0 dan katta bo'lsin");
   // Noto'g'ri sana (qo'lda yozilgan "2026-13-40") bazaga Invalid Date bo'lib borib, Prisma matni chiqardi
   if (input.plannedAt && !Number.isFinite(input.plannedAt.getTime())) throw new Error("Rejadagi vaqt noto'g'ri");
-  if ((input.ttn?.trim().length ?? 0) > 40) throw new Error("TTN ko'pi bilan 40 belgi");
-  const ttn = cleanTtn(input.ttn);
-  const o = await db.order.findUnique({ where: { id: input.orderId }, include: READINESS_INCLUDE });
+  const o = await db.order.findUnique({ where: { id: input.orderId }, include: CHECK_INCLUDE });
   if (!o || !["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Zayavka tasdiqlanmagan yoki yopilgan");
 
   // Faqat brigada tayyorlab bergani jo'natiladi — qolgani hali sexda
-  const rd = orderReadiness(o);
-  const notReady = readinessError(rd, input.qtyM3);
+  const notReady = readinessError(orderReadiness(withoutTrip(o, opts.exceptTripId)), input.qtyM3);
   if (notReady) throw new Error(notReady);
-  // Naqd to'lovli zayavka: bosh to'lov kassaga tushmaguncha reys ochilmaydi
-  const unpaid = await prepayShortError(db, input.orderId);
-  if (unpaid) throw new Error(unpaid);
+  // Naqd to'lovli zayavka: bosh to'lov kassaga tushmaguncha reys ochilmaydi (tahrirda so'ralmaydi — yuklashda baribir tekshiriladi)
+  if (opts.prepay) {
+    const unpaid = await prepayShortError(db, input.orderId);
+    if (unpaid) throw new Error(unpaid);
+  }
 
   const ext = input.external ?? null;
   let extPhone = "";
@@ -954,6 +975,8 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   if (expired(v.insuranceUntil)) throw new Error(`${v.plate}: sug'urta muddati o'tgan (${dmy(v.insuranceUntil!)}) — Transport kartasida yangilang`);
 
   let driverReason: string | null = null;
+  let driverName = ext ? ext.driverName.trim() : "";
+  let driverPhone: string | null = ext ? extPhone : null;
   if (!ext) {
     const d = await db.employee.findUnique({ where: { id: input.driverId } });
     if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
@@ -966,36 +989,63 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
       driverReason = input.driverReason?.trim().slice(0, 200) || null;
       if (!driverReason || driverReason.length < 3) throw new Error(`${d.fullName} ${v.plate} ga biriktirilmagan — boshqa haydovchi berish sababini yozing`);
     }
+    driverName = d.fullName;
+    driverPhone = normalizePhone(d.phone);
   }
 
   const mixed = new Set(items.map((i) => i.productId)).size > 1;
   // BRU faqat betonga tegishli (dona mahsulot sex/hovlidan chiqadi)
   const bru = line.unit === "m3" ? input.bru?.trim().slice(0, 80) || null : null;
+  return { line, mixed, plate: v.plate, deliveryAddress: o.deliveryAddress, ext, extPhone, driverName, driverPhone, driverReason, bru };
+}
+
+/**
+ * Tranzaksiya ichida, zayavka qatori qulfi ostida qoldiq qayta tekshiriladi: ikki dispetcher bir vaqtda oxirgi 8 m³ ga
+ * reys ochsa (yoki tahrirda miqdorni oshirsa) — ikkinchisi to'xtaydi. `exceptTripId` — tahrirlanayotgan reys.
+ */
+async function recheckLeft(tx: Prisma.TransactionClient, orderId: string, qty: number, c: Pick<CheckedTrip, "line" | "mixed">, exceptTripId?: string) {
+  await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+  const fresh = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: CHECK_INCLUDE });
+  const again = readinessError(orderReadiness(withoutTrip(fresh, exceptTripId)), qty);
+  if (again) throw new Error(again);
+  if (!c.mixed) return;
+  // Aralash zayavka: shu qatorga (beton yoki dona) yozilgan reyslar texnika turidan ajratiladi —
+  // umumiy qoldiq yetsa ham bitta qatorning miqdoridan oshib ketmasin
+  const prev = await tx.trip.findMany({
+    where: { orderId, status: { not: "CANCELLED" }, ...(exceptTripId ? { id: { not: exceptTripId } } : {}) },
+    select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true, vehicle: { select: { type: true } } },
+  });
+  const sameLine = prev.filter((x) => (x.vehicle.type === "MIXER") === (c.line.unit === "m3"));
+  const left = r3(c.line.qty - sameLine.reduce((s, x) => s + tripCoveredQty(x), 0));
+  if (qty > left + 0.001) throw new Error(left > 0.001 ? `${c.line.name ?? "Bu mahsulot"} bo'yicha faqat ${left} ${unitLabel(c.line.unit)} qoldi` : `${c.line.name ?? "Bu mahsulot"} to'liq jo'natilgan`);
+}
+
+/** Haydovchiga boradigan reys qisqachasi: miqdor, (aralashda) mahsulot, mashina, manzil. */
+const tripBody = (qty: number, c: CheckedTrip) => `${qty} ${unitLabel(c.line.unit)}${c.mixed && c.line.name ? ` ${c.line.name}` : ""} · ${c.plate} · ${c.deliveryAddress}`;
+
+/**
+ * Reys (nakladnoy) ochish — veb "Yangi reys" formasi ham, mobil ilova ham shu yerdan.
+ * Tekshiruvlar (`checkTrip`): zayavka tasdiqlanganmi, qoldiq yetadimi, mikser sig'imi oshmaydimi.
+ * ECO'ga yuborish chaqiruvchida (u yerda kutish/kutmaslik farq qiladi).
+ */
+export async function createTrip(input: NewTripInput, userId: string): Promise<{ id: string; deliveryNoteNo: string }> {
+  if ((input.ttn?.trim().length ?? 0) > 40) throw new Error("TTN ko'pi bilan 40 belgi");
+  const ttn = cleanTtn(input.ttn);
+  const c = await checkTrip(input, { prepay: true });
   // Ko'chadan mashina hamma tekshiruvdan o'tgandan keyin yoziladi; reys tranzaksiyasi yiqilsa ham qoladi —
   // keyingi safar raqami/telefoni bo'yicha qayta ishlatiladi
-  const ids = ext ? await upsertExternalCar(ext, extPhone, userId) : { vehicleId: input.vehicleId, driverId: input.driverId };
+  const ids = c.ext ? await upsertExternalCar(c.ext, c.extPhone, userId) : { vehicleId: input.vehicleId, driverId: input.driverId };
 
   const created = await db.$transaction(async (tx) => {
     // Qoldiq qulf ostida qayta tekshiriladi: ikki dispetcher bir vaqtda oxirgi 8 m³ ga reys ochsa, ikkinchisi to'xtaydi
-    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
-    const fresh = await tx.order.findUniqueOrThrow({ where: { id: input.orderId }, include: READINESS_INCLUDE });
-    const again = readinessError(orderReadiness(fresh), input.qtyM3);
-    if (again) throw new Error(again);
+    await recheckLeft(tx, input.orderId, input.qtyM3, c);
     const unpaidNow = await prepayShortError(tx, input.orderId);
     if (unpaidNow) throw new Error(unpaidNow);
     const taken = ttn ? await ttnTaken(tx, ttn) : null;
     if (taken) throw new Error(taken);
-    if (mixed) {
-      // Aralash zayavka: shu qatorga (beton yoki dona) yozilgan reyslar texnika turidan ajratiladi —
-      // umumiy qoldiq yetsa ham bitta qatorning miqdoridan oshib ketmasin
-      const prev = await tx.trip.findMany({ where: { orderId: input.orderId, status: { not: "CANCELLED" } }, select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true, vehicle: { select: { type: true } } } });
-      const sameLine = prev.filter((x) => (x.vehicle.type === "MIXER") === (line.unit === "m3"));
-      const left = r3(line.qty - sameLine.reduce((s, x) => s + tripCoveredQty(x), 0));
-      if (input.qtyM3 > left + 0.001) throw new Error(left > 0.001 ? `${line.name ?? "Bu mahsulot"} bo'yicha faqat ${left} ${unitLabel(line.unit)} qoldi` : `${line.name ?? "Bu mahsulot"} to'liq jo'natilgan`);
-    }
     const t = await tx.trip.create({
       data: {
-        deliveryNoteNo: await nextNo(tx, "trip", "N"), ttn, orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru, driverReason,
+        deliveryNoteNo: await nextNo(tx, "trip", "N"), ttn, orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru: c.bru, driverReason: c.driverReason,
         // QR havolasidagi kalit: raqam ketma-ket, kalitsiz ochiq sahifadan mijozlar ro'yxatini yig'ib bo'lmasin
         verifyToken: randomBytes(18).toString("base64url"),
       },
@@ -1006,11 +1056,155 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
 
   // Haydovchi reys biriktirilganini BILISHI kerak — u ro'yxatni kutib o'tirmaydi,
   // mashinada yoki hovlida bo'ladi. Shu sababli bu eng muhim bildirishnoma. Ko'chadan haydovchida ilova yo'q
-  if (!ext) notifyAfter(() => notifyEmployees([input.driverId], {
+  if (!c.ext) notifyAfter(() => notifyEmployees([input.driverId], {
     type: "TRIP_ASSIGNED",
     title: `Yangi reys — ${created.deliveryNoteNo}`,
-    body: `${input.qtyM3} ${unitLabel(line.unit)}${mixed && line.name ? ` ${line.name}` : ""} · ${v.plate} · ${o.deliveryAddress}`,
+    body: tripBody(input.qtyM3, c),
     link: { key: "trips", id: created.id },
   }));
   return created;
+}
+
+// ───────────────────────── Rejadagi reysni tahrirlash ─────────────────────────
+
+/** Rejadagi reys tahriri: zayavka, nakladnoy raqami va TTN o'zgarmaydi (TTN — reys sahifasidagi alohida forma). */
+export type TripEditInput = Omit<NewTripInput, "orderId" | "ttn">;
+
+/**
+ * ECO reysni faqat haydovchi qabul qilguncha yangilaydi (ECO `upsertTrip`: ASSIGNED / DECLINED) — keyin ilovada
+ * eski ma'lumot qoladi. Tahrir formasi ham, server ham shu ro'yxatga qaraydi.
+ */
+export const ECO_EDITABLE: readonly string[] = ["ASSIGNED", "DECLINED"];
+
+/** Tahrirda qiymat o'zgardimi. Vaqt daqiqa aniqligida — forma soniyasiz qaytaradi (mobil ochgan reysda soniya bo'lishi mumkin). */
+const sameVal = (a: unknown, b: unknown) => {
+  const v = (x: unknown) => (x instanceof Date ? Math.floor(x.getTime() / 60_000) : x ?? null);
+  return v(a) === v(b);
+};
+
+/**
+ * Rejadagi (hali yuklanmagan) reysni tahrirlash: texnika, haydovchi (boshqa haydovchi sababi bilan), miqdor, rejadagi vaqt,
+ * BRU, izoh. Qoidalar «Yangi reys» bilan bir xil (`checkTrip`), reysning o'z miqdori qoldiqqa qaytarib hisoblanadi.
+ * Holat shartli `updateMany` bilan: shu payt «Yuklandi» bosilgan bo'lsa tahrir yozilmaydi (chiqim eski miqdorda bo'lardi).
+ *
+ * Haydovchi ilovasi (ECO): reys u yerga yuborilgan bo'lsa, ilovaga boradigan maydonlar (texnika, haydovchi, miqdor, vaqt,
+ * izoh) faqat haydovchi hali qabul qilmagan reysda o'zgaradi (`ECO_EDITABLE`); ko'chadan mashinaga o'tkazilmaydi
+ * (ECO'dagi reys eski haydovchida qolib ketardi). ECO'ga qayta yuborish chaqiruvchida (`pushTripToEco`).
+ */
+export async function updatePlannedTrip(id: string, input: TripEditInput, userId: string): Promise<{ changed: boolean; orderId: string; external: boolean }> {
+  const t = await db.trip.findUnique({ where: { id }, include: { vehicle: { select: { plate: true, external: true } }, driver: { select: { fullName: true } } } });
+  if (!t) throw new Error("Reys topilmadi");
+  if (t.status !== "PLANNED") throw new Error(t.status === "CANCELLED" ? "Reys bekor qilingan" : "Reys yuklangan — faqat rejalashtirilgan reys tahrirlanadi");
+  const c = await checkTrip({ ...input, orderId: t.orderId }, { exceptTripId: id });
+
+  const plannedAt = input.plannedAt ?? null;
+  const note = input.note?.trim() || null;
+  const qtyM3 = r3(input.qtyM3);
+  const ecoSent = ecoEnabled() && !!t.ecoDeliveryId && !t.vehicle.external;
+  if (ecoSent) {
+    if (c.ext) throw new Error("Reys haydovchi ilovasiga (ECO) yuborilgan — ko'chadan mashinaga o'tkazib bo'lmaydi. Reysni o'chirib, ko'chadan mashina bilan yangisini oching");
+    const ecoChange = t.vehicleId !== input.vehicleId || t.driverId !== input.driverId || !sameVal(Number(t.qtyM3), qtyM3) || !sameVal(t.plannedAt, plannedAt) || !sameVal(t.note, note);
+    if (ecoChange && t.ecoStatus && !ECO_EDITABLE.includes(t.ecoStatus)) {
+      throw new Error(`Haydovchi ilovasida reys «${ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}» — u yerdagi reys endi o'zgarmaydi. Bu reysda faqat BRU ni o'zgartirish mumkin; boshqasi uchun reysni o'chirib, yangisini oching`);
+    }
+    // ECO haydovchini telefon bo'yicha topadi: raqamsiz haydovchi berilsa, ilovadagi reys eski haydovchida qolib ketadi
+    if (t.driverId !== input.driverId && !c.driverPhone) throw new Error(`${c.driverName}: telefon raqami yo'q — reys haydovchi ilovasida eski haydovchida qolib ketadi. Avval Xodimlar sahifasida +998… raqamini kiriting`);
+  }
+
+  // Ko'chadan mashina hamma tekshiruvdan keyin yoziladi (yangi reysdagi kabi, raqami/telefoni bo'yicha avvalgisi)
+  const ids = c.ext ? await upsertExternalCar(c.ext, c.extPhone, userId) : { vehicleId: input.vehicleId, driverId: input.driverId };
+  const data = { vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3, plannedAt, bru: c.bru, driverReason: c.driverReason, note };
+  const before = { vehicleId: t.vehicleId, driverId: t.driverId, qtyM3: Number(t.qtyM3), plannedAt: t.plannedAt, bru: t.bru, driverReason: t.driverReason, note: t.note };
+  const keys = (Object.keys(data) as (keyof typeof data)[]).filter((k) => !sameVal(before[k], data[k]));
+  if (!keys.length) return { changed: false, orderId: t.orderId, external: !!c.ext };
+  const vehicleChanged = keys.includes("vehicleId"), driverChanged = keys.includes("driverId");
+  // Audit: faqat o'zgargan maydonlar; texnika/haydovchi nomi bilan — tarixda id emas, raqam va ism ko'rinsin
+  const pick = (o: Record<string, unknown>) => Object.fromEntries(keys.map((k) => [k, o[k]]));
+  const patch = pick(data) as Partial<typeof data>;
+  const auditBefore = { ...pick(before), ...(vehicleChanged ? { vehicle: t.vehicle.plate } : {}), ...(driverChanged ? { driver: t.driver.fullName } : {}) };
+  const auditAfter = { ...pick(data), ...(vehicleChanged ? { vehicle: c.plate } : {}), ...(driverChanged ? { driver: c.driverName } : {}) };
+
+  await db.$transaction(async (tx) => {
+    await recheckLeft(tx, t.orderId, qtyM3, c, id);
+    const r = await tx.trip.updateMany({ where: { id, status: "PLANNED" }, data: patch });
+    if (r.count !== 1) throw new Error("Reys shu payt yuklandi yoki o'chirildi — sahifani yangilang");
+    await audit(tx, userId, "UPDATE", "Trip", id, auditBefore, auditAfter);
+  });
+
+  // Yangi haydovchi reysni bilsin, eskisi zavodga kelib o'tirmasin. Ko'chadan haydovchida ilova yo'q
+  if (!c.ext) notifyAfter(() => notifyEmployees([ids.driverId], {
+    type: "TRIP_ASSIGNED",
+    title: driverChanged ? `Yangi reys — ${t.deliveryNoteNo}` : `Reys o'zgardi — ${t.deliveryNoteNo}`,
+    body: tripBody(qtyM3, c),
+    link: { key: "trips", id },
+  }));
+  if (driverChanged && !t.vehicle.external) notifyAfter(() => notifyEmployees([t.driverId], {
+    type: "TRIP_CANCELLED", title: `Reys sizdan olindi — ${t.deliveryNoteNo}`, body: "Dispetcher reysni boshqa haydovchiga berdi",
+  }));
+  return { changed: true, orderId: t.orderId, external: !!c.ext };
+}
+
+// ───────────────────────── Yuklashni bekor qilish (storno) ─────────────────────────
+
+/** ECO holatlari: haydovchi zavoddan chiqib ketgan. */
+const ECO_ON_ROAD: readonly string[] = ["EN_ROUTE", "ARRIVED", "UNLOADING", "COMPLETED", "DISPUTED"];
+
+/** Yuklashni qaytarish rad etildi — xabari foydalanuvchiga boradi. */
+class LoadRevertError extends Error {}
+
+/**
+ * Yuklashni bekor qilish (storno): yuklangan, hali yo'lga chiqmagan reys rejaga (PLANNED) qaytadi — keyin uni tahrirlash,
+ * qayta yuklash yoki o'chirish mumkin. Yozuvlar o'chirilmaydi: reys bo'yicha hali qaytarilmagan sklad chiqimi (SHIPMENT,
+ * refType "Trip") teskari yoziladi — o'sha sklad, o'sha brigada ombori, ishorasi teskari (`reverseMoves`, `lib/storno.ts`).
+ * Yuklash betonga avtomatik zames yozgan bo'lsa (`pourConcrete`) — u ham storno qilinadi (`cancelBatchTx`: xomashyo
+ * skladga qaytadi, beton qoldiqdan chiqadi). Hammasi bitta tranzaksiyada, sklad qulfi ostida; holat shartli `updateMany`
+ * bilan — shu payt «Yo'lga chiqdim» bosilgan bo'lsa hech narsa yozilmaydi. Ruxsat (faqat direktor) va ECO — chaqiruvchida.
+ */
+export async function revertTripLoad(id: string, userId: string, reason: string): Promise<TripResult & { note?: string }> {
+  const why = reason.trim().slice(0, 300);
+  const t = await db.trip.findUnique({ where: { id }, select: { orderId: true, status: true, departedAt: true, loadedAt: true, deliveryNoteNo: true, driverId: true, ecoStatus: true, vehicle: { select: { external: true } } } });
+  if (!t) return { changed: false, orderId: "", error: "Reys topilmadi" };
+  if (why.length < 3) return { changed: false, orderId: t.orderId, error: "Bekor qilish sababini yozing" };
+  if (t.status !== "LOADED" || t.departedAt) {
+    const error = t.status === "PLANNED" ? "Reys hali yuklanmagan" : t.status === "CANCELLED" ? "Reys bekor qilingan" : "Reys yo'lga chiqqan — yuklashni bekor qilib bo'lmaydi";
+    return { changed: false, orderId: t.orderId, error };
+  }
+  // Haydovchi ilovasida reys yo'lda (ECO hodisasi ERP'ga yetmagan) — mashina zavoddan chiqib ketgan, chiqimni qaytarib bo'lmaydi
+  if (t.ecoStatus && ECO_ON_ROAD.includes(t.ecoStatus)) {
+    return { changed: false, orderId: t.orderId, error: `Haydovchi ilovasida reys «${ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}» — mashina yo'lga chiqqan, yuklashni bekor qilib bo'lmaydi. Avval «ECO'dan yangilash» ni bosing` };
+  }
+  const label = `Yuklash bekor qilindi (${t.deliveryNoteNo}): ${why}`;
+  try {
+    const done = await once(() => db.$transaction(async (tx) => {
+      await lockStock(tx);
+      claimed(await tx.trip.updateMany({ where: { id, status: "LOADED", departedAt: null }, data: { status: "PLANNED", loadedAt: null } }));
+      // Reys bo'yicha hali qaytarilmagan harakatlar — sof qoldig'i (avval yuklash bekor qilinib, qayta yuklangan bo'lishi mumkin)
+      const moves = await tx.stockMove.findMany({ where: { refType: "Trip", refId: id }, orderBy: { createdAt: "asc" } });
+      const net = new Map<string, (typeof moves)[number] & { left: number }>();
+      for (const m of moves) {
+        const k = [m.type, m.warehouseId, m.materialId, m.productId, m.ownerBrigadeId, m.brigadeId, m.unitCost?.toString()].join("|");
+        const cur = net.get(k);
+        if (cur) cur.left += Number(m.qty); else net.set(k, { ...m, left: Number(m.qty) });
+      }
+      const open = [...net.values()].filter((m) => Math.abs(m.left) >= STOCK_EPS).map((m) => ({ ...m, qty: r3(m.left) }));
+      // Yetkazilmagan reysda faqat yuklash chiqimi bo'ladi; boshqa harakat (qaytgan mahsulot) bo'lsa — qo'lda hal qilinadi
+      if (open.some((m) => m.type !== "SHIPMENT" || m.qty > 0)) throw new LoadRevertError("Reysda yuklashdan boshqa sklad harakati bor — yuklashni avtomatik bekor qilib bo'lmaydi, sklad bilan hal qiling");
+      await reverseMoves(tx, open, "Trip", id, label, userId);
+      // Yuklash paytida betonga yozilgan avtomatik zames — xomashyo skladga qaytadi, beton qoldiqdan chiqadi
+      const batches = await tx.productionBatch.findMany({ where: { orderId: t.orderId, note: autoBatchNote(t.deliveryNoteNo), cancelledAt: null }, select: { id: true, batchNo: true } });
+      for (const b of batches) await cancelBatchTx(tx, b.id, label, userId);
+      await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "LOADED", loadedAt: t.loadedAt }, { status: "PLANNED", note: label, reason: why, reversedMoves: open.length, batches: batches.map((b) => b.batchNo) });
+      return { moves: open.length, batches: batches.map((b) => b.batchNo) };
+    }));
+    if (!done) return { changed: false, orderId: t.orderId, error: "Reys shu payt yo'lga chiqdi yoki o'zgardi — sahifani yangilang" };
+    // Haydovchi mashinani yuklangan deb o'ylab yo'lga chiqmasin
+    if (!t.vehicle.external) notifyAfter(() => notifyEmployees([t.driverId], {
+      type: "TRIP_CANCELLED", title: `Yuklash bekor qilindi — ${t.deliveryNoteNo}`, body: `Sabab: ${why}. Reys rejaga qaytdi — dispetcher bilan bog'laning`, link: { key: "trips", id },
+    }));
+    const batchNote = done.batches.length ? `, zames ${done.batches.join(", ")} storno qilindi` : "";
+    return { changed: true, orderId: t.orderId, note: `Yuklash bekor qilindi: ${done.moves} ta sklad harakati teskari yozildi${batchNote}. Reys rejaga qaytdi` };
+  } catch (e) {
+    if (e instanceof LoadRevertError || isStornoError(e)) return { changed: false, orderId: t.orderId, error: (e as Error).message };
+    throw e;
+  }
 }

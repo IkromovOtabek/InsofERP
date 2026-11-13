@@ -7,9 +7,12 @@ import { requireRoles } from "@/lib/page-guard";
 import { customerCredit, contractedIds } from "@/lib/finance";
 import { siteDebts } from "@/lib/customer-sites";
 import { SitesPanel } from "./sites-panel";
-import { money, date, opAt } from "@/lib/format";
+import { money, date, isoDate, opAt } from "@/lib/format";
 import { Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Td, Th, Tr } from "@/components/ui";
 import { InvoiceStatusBadge } from "../../invoices/status";
+import { InvoiceEditButton } from "../../invoices/invoice-edit";
+import { cancelInvoice } from "../../invoices/actions";
+import { ConfirmButton } from "../../payments/confirm-button";
 import { CustomerForm } from "../customer-form";
 import { deleteCustomer } from "../actions";
 import { DeleteButton } from "@/components/delete-button";
@@ -20,6 +23,7 @@ import { AppAccount } from "../app-account";
 import { receivablesReport } from "@/lib/receivables";
 import { orderTotal } from "@/lib/order-total";
 import { geoSearchEnabled } from "@/lib/geo";
+import { MergePanel } from "./merge-panel";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -29,7 +33,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const [{ limit, debt, advance, open, used, free, blacklisted }, contracted, appStatus, invoices, payments, sites, recv] = await Promise.all([
     customerCredit(id), contractedIds([id]), c.isInternal ? null : customerAppStatus(id),
     // Schyot va to'lov tarixi — mijoz kartasida (to'liq hisob — Akt sverki)
-    db.invoice.findMany({ where: { customerId: id }, orderBy: { date: "desc" }, take: 15, include: { payments: { select: { amount: true } }, order: { select: { id: true } } } }),
+    db.invoice.findMany({ where: { customerId: id }, orderBy: { date: "desc" }, take: 15, include: { payments: { select: { amount: true } }, order: { select: { id: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } } } } } }),
     db.payment.findMany({ where: { customerId: id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 15, include: { invoice: { select: { invoiceNo: true } }, order: { select: { deliveryDate: true } }, cashAccount: { select: { name: true } }, createdBy: { select: { fullName: true } }, register: { select: { id: true } } } }),
     siteDebts(id),
     // Muddati o'tgan qism — yagona debitorka (to'lovlar FIFO bilan eng eski schyotlarga)
@@ -41,6 +45,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const canEditSites = canDo(s, "customers", "sites");
   // «Ma'lumotlar» formasi va o'chirish — `saveCustomer`/`deleteCustomer` bilan bir xil ruxsat; ruxsatsiz xodim faqat ko'radi
   const canEdit = canDo(s, "customers", "edit");
+  // Schyot tahriri va bekor qilish — /invoices dagi bilan bir qoida (`sales.invoice_cancel`)
+  const canInvoice = canDo(s, "sales", "invoice_cancel");
 
   return (
     <div>
@@ -112,11 +118,12 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           <div className="px-5 pt-5"><CardHeader title="Schyotlar" icon={FileText} action={<Link href={`/customers/${id}/akt`} className="text-sm text-slate-500 hover:text-slate-900">Akt sverki</Link>} /></div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-sm">
-              <thead><tr><Th>№</Th><Th>Sana</Th><Th right>Summa</Th><Th right>Qoldiq</Th><Th>Holat</Th></tr></thead>
+              <thead><tr><Th>№</Th><Th>Sana</Th><Th right>Summa</Th><Th right>Qoldiq</Th><Th>Holat</Th>{canInvoice && <Th />}</tr></thead>
               <tbody>
                 {invoices.length === 0 && <Empty text="Schyot yo'q" icon={FileText} />}
                 {invoices.map((i) => {
-                  const left = Number(i.amount) - i.payments.reduce((x, p) => x + Number(p.amount), 0);
+                  const paid = i.payments.reduce((x, p) => x + Number(p.amount), 0);
+                  const left = Number(i.amount) - paid;
                   return (
                     <Tr key={i.id}>
                       <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{i.invoiceNo}</Link> : i.invoiceNo}</Td>
@@ -124,6 +131,14 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
                       <Td right className="whitespace-nowrap">{money(i.amount)}</Td>
                       <Td right className={`whitespace-nowrap ${left > 0.005 && i.status !== "CANCELLED" ? "text-red-600" : "text-slate-400"}`}>{i.status === "CANCELLED" ? "—" : money(left)}</Td>
                       <Td><InvoiceStatusBadge status={i.status} /></Td>
+                      {canInvoice && (
+                        <Td>
+                          <div className="flex items-center gap-1">
+                            {!i.isOpening && (i.status === "OPEN" || i.status === "PARTIAL") && <InvoiceEditButton inv={{ id: i.id, invoiceNo: i.invoiceNo, amount: Number(i.amount), date: isoDate(i.date), paid, max: i.order ? orderTotal(i.order) : null }} />}
+                            {i.status === "OPEN" && paid === 0 && !i.isOpening && <ConfirmButton action={cancelInvoice.bind(null, i.id)} label="Bekor" question={`${i.invoiceNo} bekor qilinsinmi?`} reason="optional" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}
+                          </div>
+                        </Td>
+                      )}
                     </Tr>
                   );
                 })}
@@ -152,6 +167,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           </div>
         </Card>
       </div>
+      {/* Takror kartani asosiy kartaga birlashtirish — faqat direktor (server ham `requireSession(["DIRECTOR"])`) */}
+      {s.role === "DIRECTOR" && !c.isInternal && <MergePanel sourceId={id} sourceName={c.name} />}
     </div>
   );
 }

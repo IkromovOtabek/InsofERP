@@ -9,7 +9,7 @@ import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 import {
   RENT_AREA_MAX, RENT_ELEC_CATEGORY, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_MAX_MONTHS, cancelRentTx, createRentTx, endRentLease, monthKey, monthLabel, openMonth, parseMonth,
-  saveRentChargeData, saveRentShopData, startRentLease, toggleRentShopActive,
+  saveRentChargeData, saveRentShopData, startRentLease, toggleRentShopActive, updateRentTx,
 } from "@/lib/rent";
 import { addPriceChange, addPriceChangeBulk, addRentFiles, cancelPriceChange, removeRentFile } from "@/lib/rent-contract";
 import { saveElecBill, saveRentElecData } from "@/lib/rent-elec";
@@ -84,6 +84,34 @@ export async function stornoRentTx(id: string, reason: string): Promise<ActionSt
   if (res.error) return { error: res.error };
   done();
   return { ok: true, note: "Bekor qilindi" };
+}
+
+const txEditSchema = z.object({
+  method: z.enum(["CASH", "BANK"], { message: "To'lov usulini tanlang" }),
+  date: zStr("Sana kerak").refine(validDate, "sana noto'g'ri"),
+  // «Necha oyga» guruhida summa va oy formada yo'q (o'zgarmaydi)
+  amount: z.coerce.number().positive("summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "summa juda katta").optional(),
+  month: zOpt,
+  day: zOpt.refine((v) => !v || validDate(v), "kun noto'g'ri"),
+  category: zOpt,
+  note: zOpt,
+});
+
+/** Kirim/chiqimni tuzatish — bekor qilish huquqi bilan (kim bekor qila olsa, o'sha tuzatadi). Qoida — `updateRentTx`. */
+export async function editRentTx(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "storno");
+  const r = parseForm(txEditSchema, fd);
+  if ("error" in r) return { error: r.error, field: r.field };
+  const d = r.data;
+  const month = d.month ? parseMonth(d.month) : null;
+  if (d.month && !month) return { error: "Oy noto'g'ri", field: "month" };
+  const res = await updateRentTx(id, {
+    method: d.method, date: new Date(d.date), amount: d.amount ?? 0, month, day: d.day ? new Date(d.day) : null, category: d.category, note: d.note,
+  }, s.userId);
+  if (res.error) return { error: res.error };
+  if (res.shopId) shopDone(res.shopId); else done();
+  if (!res.changed) return { ok: true, note: "O'zgarish yo'q" };
+  return { ok: true, note: res.sameDay ? `Saqlandi. Diqqat: bu kun uchun yana ${res.sameDay} ta kirim bor — ikki marta yozilmaganini tekshiring` : "Saqlandi" };
 }
 
 /** Oyni ochish — faol do'konlarga o'tgan oy hisobidan (bo'lmasa andozadan) nusxa. */

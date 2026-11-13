@@ -4,18 +4,55 @@ import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { avgUnitCosts } from "@/lib/stock";
 import { issueTargetOptions } from "@/lib/stock-recipients";
-import { ISSUE_BACK_DAYS, issueHints, parseIssueTarget } from "@/lib/stock-issue";
-import { isoDate } from "@/lib/format";
+import { ISSUE_BACK_DAYS, ISSUE_STORNO, issueHints, parseIssueTarget } from "@/lib/stock-issue";
+import { dateRu, isoDate } from "@/lib/format";
 import { Callout, Card, PageHeader } from "@/components/ui";
 import { HoldingsPanel } from "@/components/holdings-panel";
 import { holdingsOverview } from "@/lib/holdings";
-import { RasxodForm } from "../rasxod-form";
+import type { TargetGroups } from "@/lib/issue-target";
+import { RasxodForm, type RasxodInitial } from "../rasxod-form";
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * «Tuzatish» / nusxa (`?copy=<ref>`): chiqim hujjatining (`refType "Issue"`) sklad, «Kimga», sana, izoh va qatorlari.
+ * Bir xomashyo bir necha harakatda bo'lsa — bitta qatorga qo'shiladi. Yopilgan xomashyo tushirilmaydi (`skipped`),
+ * nofaol oluvchi / brigada / xodim — «Kimga» bo'sh qoladi. Brigada izohidagi «… brigadasiga berildi · » olib tashlanadi.
+ */
+async function loadCopy(ref: string, materialIds: Set<string>, all: TargetGroups) {
+  const [moves, stornoed] = await Promise.all([
+    db.stockMove.findMany({
+      where: { refType: "Issue", refId: ref }, orderBy: { createdAt: "asc" },
+      select: { date: true, warehouseId: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true, qty: true, note: true, brigade: { select: { name: true } }, material: { select: { name: true } } },
+    }),
+    db.stockMove.count({ where: { refType: ISSUE_STORNO, refId: ref } }),
+  ]);
+  const first = moves[0];
+  if (!first) return null;
+  const sum = new Map<string, number>();
+  for (const m of moves) if (m.materialId) sum.set(m.materialId, r3((sum.get(m.materialId) ?? 0) - Number(m.qty)));
+  const key = first.brigadeId ? `b:${first.brigadeId}` : first.employeeId ? `e:${first.employeeId}` : first.recipientId ? `r:${first.recipientId}` : "";
+  const t = parseIssueTarget(key);
+  const employee = t?.kind === "employee" ? all.employees.find((e) => e.id === t.id) ?? null : null;
+  const known = !!t && (t.kind === "brigade" ? all.brigades : t.kind === "employee" ? all.employees : all.recipients).some((x) => x.id === t.id);
+  const brigadePrefix = first.brigade ? `${first.brigade.name} brigadasiga berildi` : null;
+  const note = brigadePrefix && first.note?.startsWith(brigadePrefix) ? first.note.slice(brigadePrefix.length).replace(/^\s*·\s*/, "") : first.note ?? "";
+  const initial: RasxodInitial = {
+    warehouseId: first.warehouseId, to: known ? key : "", date: isoDate(first.date), note,
+    lines: [...sum.entries()].filter(([id, q]) => materialIds.has(id) && q > 0).map(([materialId, q]) => ({ materialId, qty: String(q) })),
+    copyOf: stornoed > 0 ? ref : null,
+  };
+  return {
+    date: first.date, cancelled: stornoed > 0, initial, targetLost: !known, employee,
+    skipped: [...new Set(moves.filter((m) => m.materialId && !materialIds.has(m.materialId)).map((m) => m.material?.name ?? "?"))],
+  };
+}
 
 /**
  * Sklad → «Chiqim» → Yangi chiqim: skladdan oluvchiga yoki brigadaga xomashyo berish.
  * Narx — «Dona narxi» («Дона сўм») (Snabjeniye belgilagan; bo'lmasa o'rtacha tannarx, «≈»). Qoldiq — tanlangan sklad bo'yicha.
  */
-export default async function NewRasxodPage({ searchParams }: { searchParams: Promise<{ to?: string }> }) {
+export default async function NewRasxodPage({ searchParams }: { searchParams: Promise<{ to?: string; copy?: string }> }) {
   const s = await requireRoles(["WAREHOUSE", "PROCUREMENT"], { module: "stock", actions: ["issue"] });
   // Rol mos, lekin direktor bu amalni olib qo'ygan bo'lsa — forma ochilmaydi (saqlashda baribir rad bo'lardi)
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
@@ -46,10 +83,20 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
     else if (x.type === "ISSUE" || x.type === "BRIGADE_ISSUE" || x.type === "BRIGADE_RETURN") f.issued = r3(f.issued - q);
   }
   for (const b of Object.values(balances)) for (const [id, q] of Object.entries(b)) if (Math.abs(q) < 0.0005) delete b[id];
-  // «Kimga» ro'yxatida xodimlar ko'rsatilmaydi — faqat brigadalar va oluvchilar (Tez tanlash va ?to=e: ham tushib qoladi)
-  const targets = { ...allTargets, employees: [] };
+  // «Tuzatish» / nusxa: ?copy=<ref> (chiqim hujjati — UUID)
+  const copyRef = sp.copy && /^[A-Za-z0-9_-]{1,64}$/.test(sp.copy) ? sp.copy : null;
+  const copy = copyRef ? await loadCopy(copyRef, new Set(materials.map((m) => m.id)), allTargets) : null;
+  // «Kimga» ro'yxatida xodimlar ko'rsatilmaydi — faqat brigadalar va oluvchilar (Tez tanlash va ?to=e: ham tushib qoladi);
+  // nusxadagi xodim bundan mustasno — tanlangan holda ko'rinsin
+  const targets = { ...allTargets, employees: copy?.employee ? [copy.employee] : [] };
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
+  // Bekor qilingan hujjat sanasi 31 kundan eski bo'lsa — faqat shu sana qo'shimcha ochiladi (server ham `copyOf` bo'yicha tekshiradi)
+  const copyDay = copy?.initial.copyOf ? new Date(copy.date) : null;
+  if (copyDay) copyDay.setHours(0, 0, 0, 0);
+  const minDate = copyDay && copyDay < min ? copyDay : min;
+  // Bekor qilinmagan hujjat nusxasida eski sana 31 kunlik oynadan tashqarida bo'lsa — bugungi sana
+  if (copy && !copy.initial.copyOf && copy.initial.date < isoDate(min)) copy.initial.date = isoDate(today);
   // ?to=b:<id> | e:<id> | r:<id> (oluvchi kartasidan «Shu oluvchiga chiqim») — faqat ro'yxatda bor bo'lsa
   const t = parseIssueTarget(sp.to);
   const known = t && (t.kind === "brigade" ? targets.brigades : t.kind === "employee" ? targets.employees : targets.recipients).some((x) => x.id === t.id);
@@ -57,8 +104,19 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
-      <PageHeader back={{ href: "/stock/rasxod", label: "Chiqim" }} title="Yangi chiqim"
+      <PageHeader back={{ href: "/stock/rasxod", label: "Chiqim" }} title={copy?.cancelled ? "Tuzatish: yangi chiqim" : "Yangi chiqim"}
         subtitle="Skladdan xomashyo berish. Qoldiq darhol kamayadi; narx — ta'minot belgilagan «Dona narxi»." />
+      {copy && (
+        <div className="mb-4">
+          <Callout tone={copy.cancelled ? "warning" : "info"} title={copy.cancelled ? `${dateRu(copy.date)} sanadagi chiqim bekor qilingan` : `${dateRu(copy.date)} sanadagi chiqimdan nusxa`}>
+            {copy.cancelled
+              ? "Forma eski chiqim qatorlari bilan to'ldirildi, xomashyo skladga qaytgan. Xatoni to'g'rilab, «Chiqimni yozish» ni bosing — yangi chiqim yoziladi. Yozmasangiz, bu chiqim umuman qolmaydi."
+              : "Forma eski chiqim qatorlari bilan to'ldirildi. Yozilsa — yangi, alohida chiqim bo'ladi; eskisi o'zgarmaydi."}
+            {copy.targetLost && <div className="mt-1 font-medium">Eski «Kimga» ro&apos;yxatda yo&apos;q (nofaol) — qaytadan tanlang.</div>}
+            {copy.skipped.length > 0 && <div className="mt-1 font-medium">{`Yopilgan xomashyo qatorlari tushirilmadi: ${copy.skipped.join(", ")}`}</div>}
+          </Callout>
+        </div>
+      )}
       {warehouses.length === 0 ? (
         <Callout tone="warning" title="Sklad yo'q">Avval Sozlamalarda sklad oching.</Callout>
       ) : (
@@ -78,8 +136,9 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
             holdings={holdings}
             clientToken={crypto.randomUUID()}
             today={isoDate(today)}
-            minDate={isoDate(min)}
+            minDate={isoDate(minDate)}
             defaultTo={defaultTo}
+            initial={copy?.initial}
           />
         </Card>
       )}

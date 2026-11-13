@@ -2,12 +2,13 @@ import type { PayAdjKind, PayRule, PayType, PayrollKind, PayrollSettings, Payrol
 import { db } from "@/lib/db";
 import type { Perms } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
-import { audit } from "@/lib/audit";
+import { audit, auditMany } from "@/lib/audit";
 import { money } from "@/lib/format";
 import { dayUtc, isoDay, monthDays, monthTitle, today, toMinutes, workedMinutes } from "@/lib/davomat";
 import { earlyBy, lateBy } from "@/lib/attendance-time";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { cashOutflowError } from "@/lib/payments";
+import { cancelCashTxIn } from "@/lib/cash-entry";
 import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
 import { normDaysOf, plansInRange, type DayPlan } from "./shifts";
 import { excusedDays } from "./excused";
@@ -22,7 +23,8 @@ import { brigadeDefectSums, brigadeOutput, dayEnd, dayStart, type PieceUnit } fr
  * Oqim: otdel kadr hisoblaydi (DRAFT, istalgancha qayta hisoblanadi) → direktor tasdig'iga yuboradi (SUBMITTED) →
  * direktor tasdiqlaydi (APPROVED) yoki qaytaradi → kassa to'laydi (qator yoki hammasi; har to'lov — Kirim-Chiqimda
  * "Ish haqi" chiqimi, refType "Payroll") → hamma qator to'langach PAID. Hech narsa o'chirilmaydi: bekor qilish —
- * holat (faqat hali to'lanmagan vedomost), auditda qoladi.
+ * holat (faqat hali to'lanmagan vedomost), auditda qoladi. Noto'g'ri to'lov — direktor «To'lovni bekor qilish» (`unpayRun`):
+ * chiqim kassada bekor qilinadi, qatorlar yana to'lanmagan, vedomost APPROVED.
  *
  * Hisob (oy yakuni, bir xodim):
  *   asosiy = oklad: stavka × kelgan kun / oy normasi · kunbay: stavka × kelgan kun · soatbay: stavka × soat ·
@@ -487,6 +489,84 @@ export async function payRun(id: string, input: { cashAccountId: string; lineIds
     });
     notifyAfter(() => notifyEmployees(res.employees, { type: "PAYROLL_PAID", title: `Ish haqi berildi — ${monthTitle(run.month)}`, body: `${PAYROLL_KIND_LABEL[run.kind]} · ${run.docNo}`, link: { key: "oyligim", id: run.id }, channel: "oddiy" }));
     return { ok: true as const, note: `${res.count} xodimga ${money(res.total)} to'landi${res.left ? ` · yana ${res.left} ta qator qoldi` : " · vedomost yopildi"}` };
+  });
+}
+
+/**
+ * To'lovni bekor qilish (faqat direktor, sabab bilan) — noto'g'ri to'langan qatorlar uchun. Kassa bunday chiqimni
+ * qo'lda bekor qilmaydi («hujjat orqali»), shuning uchun shu yerda, bitta tranzaksiyada:
+ *  · qatorlarning «Ish haqi» chiqimi kassadagi oddiy bekor qilish kabi bekor qilinadi (`cancelCashTxIn`): yozuv sabab bilan
+ *    jurnalda kulrang qoladi, qoldiq va hisobotlarga kirmaydi;
+ *  · qatorlar yana to'lanmagan (paid 0, paidAt / cashTxId bo'sh), vedomost PAID → APPROVED — kassir qayta to'lay oladi;
+ *  · bitta chiqim bir nechta qatorni birga to'lagan bo'lsa — chiqim bo'linmaydi: o'sha qatorlarning hammasi belgilanishi kerak,
+ *    aks holda rad etiladi (qaysi xodimlar ekani aytiladi);
+ *  · avans / alohida to'lov boshqa vedomostda (oy yakuni) allaqachon ushlangan bo'lsa — o'sha vedomost hali qoralama
+ *    bo'lmasa rad etiladi (ikki marta ushlanib qolmasin); qoralama bo'lsa — qayta hisoblash eslatiladi.
+ * `lineIds` bo'sh — vedomostdagi barcha to'langan qatorlar.
+ */
+export async function unpayRun(id: string, input: { lineIds?: string[] | null; reason: string }, user: PayrollWho) {
+  if (!canPayroll(user, "approve")) return { error: "Ish haqi to'lovini faqat direktor bekor qiladi" };
+  const why = input.reason.trim();
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing (kamida 3 belgi)" };
+  const run = await db.payrollRun.findUnique({ where: { id }, select: { id: true, docNo: true, status: true, month: true, kind: true } });
+  if (!run) return { error: "Vedomost topilmadi" };
+  if (run.status !== "APPROVED" && run.status !== "PAID") return { error: "Bu vedomostda to'lov yo'q" };
+
+  return wrap(async () => {
+    const res = await db.$transaction(async (tx) => {
+      const lines = await tx.payrollLine.findMany({
+        where: { runId: id, paidAt: { not: null }, ...(input.lineIds?.length ? { id: { in: input.lineIds } } : {}) },
+        select: { id: true, paid: true, paidAt: true, paidById: true, cashTxId: true, employeeId: true, employee: { select: { fullName: true } } },
+      });
+      if (!lines.length) throw new PayrollError("Bekor qilinadigan to'lov yo'q — qatorlar to'lanmagan yoki allaqachon qaytarilgan");
+      const noTx = lines.filter((l) => !l.cashTxId);
+      if (noTx.length) throw new PayrollError(`${noTx.map((l) => l.employee.fullName).join(", ")}: to'lov chiqimi bog'lanmagan — bekor qilib bo'lmaydi`);
+      const txIds = [...new Set(lines.map((l) => l.cashTxId!))];
+      // Bitta chiqim bo'linmaydi: shu chiqimdagi qolgan qatorlar ham tanlangan bo'lsin
+      const picked = new Set(lines.map((l) => l.id));
+      const rest = await tx.payrollLine.findMany({ where: { cashTxId: { in: txIds }, id: { notIn: [...picked] } }, select: { employee: { select: { fullName: true } } } });
+      if (rest.length) throw new PayrollError(`Bitta to'lov (chiqim) bo'linmaydi — u bilan birga to'langan: ${rest.map((l) => l.employee.fullName).join(", ")}. Ularni ham belgilang`);
+      const cts = await tx.cashTransaction.findMany({ where: { id: { in: txIds } }, orderBy: { cashAccountId: "asc" } });
+      if (cts.length !== txIds.length || cts.some((c) => c.refType !== PAYROLL_REF || c.refId !== id)) throw new PayrollError("To'lov chiqimi topilmadi yoki boshqa hujjatga tegishli — sahifani yangilang");
+
+      // Avans / alohida to'lov boshqa vedomostda ushlangan bo'lsa (`calculate` → advances): o'sha vedomost qoralama bo'lsin
+      let recalc: string[] = [];
+      if (run.kind !== "FINAL") {
+        const used = (await tx.payrollLine.findMany({
+          where: { employeeId: { in: lines.map((l) => l.employeeId) }, runId: { not: id }, run: { month: run.month, status: { not: "CANCELLED" } } },
+          select: { breakdown: true, employee: { select: { fullName: true } }, run: { select: { docNo: true, status: true } } },
+        })).filter((l) => breakdownOf(l.breakdown)?.advances.some((a) => a.docNo === run.docNo));
+        const fixed = used.filter((l) => l.run.status !== "DRAFT");
+        if (fixed.length) throw new PayrollError(`Bu to'lov ${[...new Set(fixed.map((l) => l.run.docNo))].join(", ")} vedomostida ushlangan (${fixed.map((l) => l.employee.fullName).join(", ")}) — avval o'sha vedomost qoralamaga qaytarilsin yoki bekor qilinsin`);
+        recalc = [...new Set(used.map((l) => l.run.docNo))];
+      }
+
+      for (const c of cts) {
+        // Allaqachon bekor qilingan chiqim (pul kassaga qaytgan) — faqat qatorlar bo'shatiladi
+        if (!c.cancelledAt) {
+          const err = await cancelCashTxIn(tx, c, `Ish haqi to'lovi bekor qilindi (${run.docNo}): ${why}`, user.userId);
+          if (err) throw new PayrollError(err);
+        }
+        const mine = lines.filter((l) => l.cashTxId === c.id);
+        const n = await tx.payrollLine.updateMany({ where: { id: { in: mine.map((l) => l.id) }, cashTxId: c.id, paidAt: { not: null } }, data: { paid: 0, paidAt: null, paidById: null, cashTxId: null } });
+        if (n.count !== mine.length) throw new PayrollError(STALE);
+      }
+      const paidSum = await tx.payrollLine.aggregate({ where: { runId: id }, _sum: { paid: true } });
+      const paid = paidSum._sum.paid ?? 0;
+      // Qator yana to'lanmagan — vedomost to'liq to'langan bo'lolmaydi: PAID → APPROVED (shartli, poyga bo'lmasin)
+      const u = await tx.payrollRun.updateMany({ where: { id, status: { in: ["APPROVED", "PAID"] } }, data: { paid, status: "APPROVED" } });
+      if (u.count !== 1) throw new PayrollError(STALE);
+      await auditMany(tx, user.userId, "UPDATE", "PayrollLine", lines.map((l) => ({
+        id: l.id, before: { paid: l.paid, paidAt: l.paidAt, paidById: l.paidById, cashTxId: l.cashTxId }, after: { paid: 0, paidAt: null, cashTxId: null, reason: why },
+      })));
+      const total = lines.reduce((s, l) => s + num(l.paid), 0);
+      await audit(tx, user.userId, "STATUS_CHANGE", "PayrollRun", id, { status: run.status }, { status: "APPROVED", action: "unpay", reason: why, qaytarildi: lines.length, summa: total, cashTxIds: txIds, paid });
+      return { count: lines.length, total, txs: txIds.length, recalc };
+    }, { timeout: 30_000 });
+    return {
+      ok: true as const,
+      note: `${res.count} xodim to'lovi bekor qilindi (${money(res.total)}, ${res.txs} ta chiqim kassada bekor qilindi) — qatorlar yana to'lanmagan${res.recalc.length ? ` · ${res.recalc.join(", ")} qoralamasini qayta hisoblang (avans ushlanmasin)` : ""}`,
+    };
   });
 }
 

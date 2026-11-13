@@ -7,7 +7,9 @@ import { categoryOptions } from "@/lib/fin-report/categories";
 import { PEREKIT_CATEGORY, SALES_CATEGORY } from "@/lib/cash-categories";
 import { matchKey } from "@/lib/excel";
 import { SALES_MANBA } from "@/lib/cash-import";
+import { canDo } from "@/lib/permissions";
 import { importCashJournalFromExcel } from "../actions";
+import { RecentImports } from "./recent";
 
 /** Hisob nomining o'zagi va jadvaldagi ko'rinishlari: «Hamkor Bank» → hamkor, hamkor mchj, hamkor bank, hamkor aj (`matchKey` ko'rinishida). */
 const aliasesOf = (name: string) => {
@@ -21,7 +23,7 @@ const aliasesOf = (name: string) => {
  * Hisob va Manba qiymatlari tizimdagi hisob / kategoriyaga moslanadi.
  */
 export default async function CashJournalImport() {
-  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "payments", actions: ["import"] });
+  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "payments", actions: ["import"] });
   const [accounts, incomeCats, expenseCats] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),
     categoryOptions("INCOME"),
@@ -92,11 +94,13 @@ export default async function CashJournalImport() {
               jurnalning o&apos;zidan yuklab olingan faylni ham yuklash mumkin. Kredit va loyiha manbalari Kirim-Chiqim formasida kiritiladi.
               Tizimda yo&apos;q manba qator turi bilan yangi manba bo&apos;lib qo&apos;shiladi (PNL qatorini keyin Moliya → Kategoriyalarda tuzating).
               Tizimda yo&apos;q sub manba o&apos;sha manba ostiga yangi bo&apos;lib qo&apos;shiladi (nomi boshqa manbada band bo&apos;lsa — «Nom (Manba)»).
-              Naqd kassa minusga tushsa yoki biror qatorda xato bo&apos;lsa hech narsa yozilmaydi. Noto&apos;g&apos;ri yozuv Kirim-Chiqim jadvalida sabab bilan bekor qilinadi.
+              Naqd kassa minusga tushsa yoki biror qatorda xato bo&apos;lsa hech narsa yozilmaydi. Noto&apos;g&apos;ri yozuv Kirim-Chiqim jadvalida sabab bilan bekor qilinadi,
+              butun fayl noto&apos;g&apos;ri bo&apos;lsa — pastdagi «Oxirgi importlar»dan qaytariladi.
             </p>
           </ExcelImport>
         )}
       </Card>
+      <RecentImports userId={s.userId} canAny={canDo(s, "cashflow", "delete")} />
     </div>
   );
 }

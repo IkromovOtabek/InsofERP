@@ -5,11 +5,13 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { money, date, opAt } from "@/lib/format";
+import { money, date, isoDate, opAt } from "@/lib/format";
+import { orderTotal } from "@/lib/order-total";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
 import { ConfirmButton } from "../payments/confirm-button";
 import { INVOICE_STATUS, InvoiceStatusBadge } from "./status";
 import { cancelInvoice } from "./actions";
+import { InvoiceEditButton } from "./invoice-edit";
 import type { InvoiceStatus } from "@/generated/prisma";
 import { receivablesReport } from "@/lib/receivables";
 
@@ -21,7 +23,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
       // «Hammasi» — bekor qilinganlarsiz; ular faqat «Bekor» tabida
       where: status && status in INVOICE_STATUS ? { status: status as InvoiceStatus } : { status: { not: "CANCELLED" } },
       orderBy: { date: "desc" }, take: 300,
-      include: { customer: true, order: true, payments: true },
+      include: { customer: true, order: { include: { items: { select: { qtyM3: true, price: true } } } }, payments: true },
     }),
     // Jami debitorka — yagona hisob: schyotlar − barcha to'lovlar (schyotga bog'lanmagan avans ham ayiriladi)
     receivablesReport(),
@@ -29,7 +31,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const marks = await customerMarks(invoices.map((i) => i.customerId));
   const receivable = recv.total;
   const tabs: Array<[string, string]> = [["", "Hammasi"], ...Object.entries(INVOICE_STATUS).map(([k, v]) => [k, v.label] as [string, string])];
-  // Tugmalar server action'lari bilan bir qoidadan: bekor qilish — sales.invoice_cancel, schyot yozish — sales.invoice
+  // Tugmalar server action'lari bilan bir qoidadan: bekor qilish va tahrirlash — sales.invoice_cancel, schyot yozish — sales.invoice
   const canCancel = canDo(s, "sales", "invoice_cancel");
   const canCreate = canDo(s, "sales", "invoice");
 
@@ -52,7 +54,13 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                 <Td right>{money(i.amount)}</Td><Td right>{money(paid)}</Td>
                 <Td right className={Number(i.amount) - paid > 0 && i.status !== "CANCELLED" ? "text-red-600" : ""}>{i.status === "CANCELLED" ? "—" : money(Number(i.amount) - paid)}</Td>
                 <Td><InvoiceStatusBadge status={i.status} /></Td>
-                <Td>{i.status === "OPEN" && paid === 0 && canCancel && !i.isOpening && <ConfirmButton action={cancelInvoice.bind(null, i.id)} label="Bekor" question={`${i.invoiceNo} bekor qilinsinmi?`} reason="optional" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}</Td>
+                <Td>
+                  <div className="flex items-center gap-1">
+                    {/* Tahrir: ochiq yoki qisman to'langan, boshlang'ich qoldiq emas — `updateInvoice` qoidasi */}
+                    {canCancel && !i.isOpening && (i.status === "OPEN" || i.status === "PARTIAL") && <InvoiceEditButton inv={{ id: i.id, invoiceNo: i.invoiceNo, amount: Number(i.amount), date: isoDate(i.date), paid, max: i.order ? orderTotal(i.order) : null }} />}
+                    {i.status === "OPEN" && paid === 0 && canCancel && !i.isOpening && <ConfirmButton action={cancelInvoice.bind(null, i.id)} label="Bekor" question={`${i.invoiceNo} bekor qilinsinmi?`} reason="optional" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}
+                  </div>
+                </Td>
               </Tr>
             );
           })}

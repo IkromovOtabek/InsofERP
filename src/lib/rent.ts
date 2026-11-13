@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Prisma, type RentMethod, type RentPeriod, type RentShop, type RentTxType } from "@/generated/prisma";
 import { db } from "./db";
 import { audit } from "./audit";
-import { date, money } from "./format";
+import { date, isoDate, money } from "./format";
 import { notifyAfter } from "./notify";
 import { nextNo } from "./numbering";
 
@@ -325,6 +325,120 @@ export async function cancelRentTx(id: string, reason: string, userId: string): 
       }
     });
     return {};
+  } catch (e) {
+    if (e instanceof RentError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Kirim/chiqimni tuzatish formasi: yozuv turi (kirim/chiqim, ijara/svet), do'kon va shartnoma o'zgarmaydi. */
+export type RentTxEdit = { method: RentMethod; date: Date; amount: number; month: Date | null; day: Date | null; category: string | null; note: string | null };
+
+/** Jurnal / do'kon kartasi qatoridan tahrirlash oynasiga (`arenda/tx-edit.tsx`): sana va kun — "yyyy-mm-dd", oy — "yyyy-mm". */
+export type RentTxEditData = {
+  id: string; type: RentTxType; method: RentMethod; date: string; month: string | null; monthLabel: string | null; day: string | null;
+  amount: number; category: string; note: string | null;
+  /** Svet to'lovi kirimi (ijara emas) */
+  elec: boolean;
+  /** «Necha oyga» guruhi — summa va oy o'zgarmaydi, sana/usul/izoh butun guruhga */
+  batch: boolean;
+  /** Kunlik ijara kirimi — oy o'rniga «qaysi kun uchun» (`updateRentTx` dagi qoida) */
+  daily: boolean;
+  /** Oyna sarlavhasi: do'kon nomi yoki chiqim turi */
+  label: string;
+};
+
+export function rentTxEditData(t: {
+  id: string; type: RentTxType; method: RentMethod; date: Date; month: Date | null; day: Date | null; amount: Prisma.Decimal | number;
+  category: string; note: string | null; batchId: string | null; shop: { name: string; period: RentPeriod } | null;
+}): RentTxEditData {
+  const elec = t.type === "INCOME" && t.category === RENT_ELEC_CATEGORY;
+  return {
+    id: t.id, type: t.type, method: t.method, date: isoDate(t.date), month: t.month ? monthKey(t.month) : null, monthLabel: t.month ? monthLabel(t.month) : null,
+    day: t.day ? isoDate(t.day) : null, amount: n(t.amount), category: t.category, note: t.note, elec, batch: !!t.batchId,
+    daily: t.type === "INCOME" && !elec && t.shop?.period === "DAILY", label: t.shop?.name ?? t.category,
+  };
+}
+
+const txSnap = (t: { date: Date; method: RentMethod; amount: Prisma.Decimal | number; month: Date | null; day: Date | null; category: string; note: string | null }) =>
+  ({ date: t.date, method: t.method, amount: n(t.amount), month: t.month, day: t.day, category: t.category, note: t.note });
+
+/**
+ * Kirim/chiqimni tuzatish (bekor qilish huquqi bor xodim — xatoni storno qilmasdan to'g'rilaydi).
+ * Qoidalar `createRentTx` bilan bir xil: kunlik ijara kirimida «qaysi kun uchun» shart (oy shu kundan olinadi),
+ * qolgan kirimda — oy; chiqim turi ro'yxatdan, «Boshqa» bo'lsa izoh shart.
+ * Arenda kassasi minusga tushmasin (`lockKassa` ostida): kirim kamaysa yoki usuli o'zgarsa — eski usul qoldig'i,
+ * chiqim ko'paysa yoki usuli o'zgarsa — yangi usul qoldig'i tekshiriladi.
+ * «Necha oyga» guruhi (bitta kvitansiya): sana, usul va izoh butun guruhga yoziladi; summa va oylar o'zgarmaydi —
+ * ular oylarga bo'lingan, noto'g'ri bo'lsa guruh bekor qilinib qayta kiritiladi.
+ */
+export async function updateRentTx(id: string, input: RentTxEdit, userId: string): Promise<{ error?: string; changed?: number; sameDay?: number; shopId?: string | null }> {
+  try {
+    const res = await db.$transaction(async (tx) => {
+      await lockKassa(tx);
+      const t = await tx.rentTx.findUnique({ where: { id }, include: { shop: { select: { period: true } } } });
+      if (!t) throw new RentError("Yozuv topilmadi");
+      if (t.cancelledAt) throw new RentError("Bekor qilingan yozuv tahrirlanmaydi");
+
+      if (t.batchId) {
+        const group = await tx.rentTx.findMany({ where: { batchId: t.batchId, cancelledAt: null } });
+        // Usul o'zgarsa guruh summasi eski usul qoldig'idan chiqib ketadi
+        for (const method of ["CASH", "BANK"] as const) {
+          const out = r2(group.filter((g) => g.method === method && input.method !== method && g.type === "INCOME").reduce((a, g) => a + n(g.amount), 0));
+          const err = out > 0.005 ? await outflowError(tx, method, out) : null;
+          if (err) throw new RentError(`Usul o'zgarsa kassa minusga tushadi. ${err}`);
+        }
+        let changed = 0;
+        for (const g of group) {
+          const data = { date: input.date, method: input.method, note: input.note };
+          if (g.date.getTime() === data.date.getTime() && g.method === data.method && g.note === data.note) continue;
+          const u = await tx.rentTx.updateMany({ where: { id: g.id, cancelledAt: null }, data });
+          if (u.count) { changed++; await audit(tx, userId, "UPDATE", "RentTx", g.id, { date: g.date, method: g.method, note: g.note, batchId: g.batchId }, data); }
+        }
+        return { changed, day: null, shopId: t.shopId };
+      }
+
+      const amount = r2(input.amount);
+      if (!(amount > 0)) throw new RentError("Summa 0 dan katta bo'lsin");
+      let month = t.month, day: Date | null = t.day, category = t.category;
+      if (t.type === "INCOME") {
+        const elec = t.category === RENT_ELEC_CATEGORY;
+        if (t.shop?.period === "DAILY" && !elec) {
+          if (!input.day) throw new RentError("Kunlik ijara — qaysi kun uchun to'lov ekanini tanlang");
+          day = input.day;
+          month = monthOf(day);
+        } else {
+          if (!input.month) throw new RentError("Qaysi oy uchun to'lov — oyni tanlang");
+          month = input.month;
+          day = null;
+        }
+      } else {
+        if (!(RENT_EXPENSE_CATEGORIES as readonly string[]).includes(input.category ?? "")) throw new RentError("Chiqim turini tanlang");
+        if (input.category === "Boshqa" && !input.note) throw new RentError("«Boshqa» chiqim uchun izoh yozing");
+        category = input.category!;
+      }
+      const before = txSnap(t);
+      const after = { date: input.date, method: input.method, amount, month, day, category, note: input.note };
+      const same = before.date.getTime() === after.date.getTime() && before.method === after.method && Math.abs(before.amount - amount) < 0.005
+        && (before.month?.getTime() ?? null) === (month?.getTime() ?? null) && (before.day?.getTime() ?? null) === (day?.getTime() ?? null)
+        && before.category === category && before.note === after.note;
+      if (same) return { changed: 0, day: null, shopId: t.shopId };
+
+      // Kassa qoldig'i: kirim — eski usuldan chiqib ketadigan qism; chiqim — yangi usuldan qo'shimcha chiqadigan qism
+      const old = before.amount;
+      const out = t.type === "INCOME" ? (input.method !== t.method ? old : r2(old - amount)) : (input.method !== t.method ? amount : r2(amount - old));
+      if (out > 0.005) {
+        const err = await outflowError(tx, t.type === "INCOME" ? t.method : input.method, out);
+        if (err) throw new RentError(t.type === "INCOME" ? `Kirim o'zgarsa kassa minusga tushadi. ${err}` : err);
+      }
+      const u = await tx.rentTx.updateMany({ where: { id, cancelledAt: null }, data: after });
+      if (!u.count) throw new RentError("Yozuv hozirgina bekor qilindi");
+      await audit(tx, userId, "UPDATE", "RentTx", id, before, after);
+      return { changed: 1, day: day && day.getTime() !== t.day?.getTime() ? day : null, shopId: t.shopId };
+    });
+    // Kun o'zgarsa — shu kunga boshqa kirim ham bo'lsa ogohlantirish (`createRentTx` dagidek)
+    const sameDay = res.day ? await db.rentTx.count({ where: { ...RENT_PAID, shopId: res.shopId, day: res.day, id: { not: id } } }) : 0;
+    return { changed: res.changed, sameDay, shopId: res.shopId };
   } catch (e) {
     if (e instanceof RentError) return { error: e.message };
     throw e;

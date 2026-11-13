@@ -4,11 +4,14 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { date, fmtNum, isoDate, money, opAt } from "@/lib/format";
-import { activeAssets, assetStateAt, depreciationIn, monthlyDepreciation } from "@/lib/fin-report/assets";
+import { ASSET_COST_CASH_LOCK, activeAssets, assetStateAt, assetValueLock, depreciationIn, monthlyDepreciation } from "@/lib/fin-report/assets";
 import { loadCategories } from "@/lib/fin-report/categories";
 import { addMonths, monthKeyOf, monthLabel, monthRange } from "@/lib/fin-report/period";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { AssetCreateForm, AssetRowActions, type AssetPrefill } from "./forms";
+import { AssetEditButton } from "./edit";
+import { undisposeAssetAction } from "./actions";
+import { ConfirmButton } from "../../payments/confirm-button";
 
 /**
  * Asosiy vositalar — bino, uskuna, mashinalar. Amortizatsiya teng ulushda, olingan oydan keyingi oydan (`lib/fin-report/assets`);
@@ -85,7 +88,18 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
                   <Td right>{fmtNum(monthlyDepreciation(a))}</Td>
                   <Td right className="text-slate-500">{fmtNum(st.accumulated)}</Td>
                   <Td right className="font-semibold">{fmtNum(st.net)}</Td>
-                  {canWrite && <Td right>{!a.disposedAt && <AssetRowActions id={a.id} today={today} />}</Td>}
+                  {canWrite && (
+                    <Td right>
+                      <div className="flex items-start justify-end gap-2">
+                        <AssetEditButton asset={{ id: a.id, name: a.name, group: a.group, note: a.note, acquiredAt: isoDate(a.acquiredAt), cost: a.cost, lifeYears: Math.round((a.lifeMonths / 12) * 10000) / 10000 }}
+                          valueLock={assetValueLock(a)} costLock={a.cashTxId ? ASSET_COST_CASH_LOCK : null} />
+                        {/* Chiqarish — faqat holat va sana (pul harakati yo'q), shuning uchun bekor qilish mumkin */}
+                        {a.disposedAt
+                          ? <ConfirmButton action={undisposeAssetAction.bind(null, a.id)} label="Chiqarishni bekor qilish" question={`«${a.name}» yana hisobga qaytarilsinmi? Amortizatsiya va balans qiymati davom etadi.`} reason="optional" okText="Hisobga qaytarildi" className="whitespace-nowrap pt-1 text-[13px] font-medium text-slate-500 hover:text-slate-900" />
+                          : <AssetRowActions id={a.id} today={today} />}
+                      </div>
+                    </Td>
+                  )}
                 </Tr>
               );
             })}

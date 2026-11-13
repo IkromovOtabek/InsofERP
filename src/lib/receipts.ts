@@ -528,3 +528,86 @@ export async function resolveRecipient(input: { id?: string | null; name?: strin
   const r = await upsertRecipient({ name }, userId);
   return "error" in r ? r : { id: r.id };
 }
+
+// ───────────────────────── Rekvizitlarni tahrirlash ─────────────────────────
+
+/**
+ * Kirimning sklad qoldig'i, tannarx va yetkazuvchi qarziga ta'sir qilmaydigan maydonlari — tahrirlanadi.
+ * Sana, sklad, yetkazuvchi, to'lov turi, qatorlar (miqdor, narx, QQS, dostavka) va «Kimga (darhol chiqim)» bu yerda
+ * o'zgarmaydi: ular sklad harakatlari yoki pul bilan bog'langan — xato bo'lsa «Tuzatish» (storno + yangi kirim).
+ */
+export type ReceiptInfoInput = {
+  waybillNo?: string | null; address?: string | null; purpose?: string | null; carrier?: string | null;
+  loadedFrom?: string | null; note?: string | null; buyerId?: string | null; recipientId?: string | null;
+};
+
+const INFO_LIMITS: [keyof ReceiptInfoInput, number, string][] = [
+  ["waybillNo", 60, "TTN"], ["address", 300, "Manzil"], ["purpose", 300, "Maqsad"], ["carrier", 120, "Mashina (kim olib keldi)"],
+  ["loadedFrom", 300, "Qayerdan yuklandi"], ["note", 1000, "Izoh"], ["buyerId", 64, "Snabjenets"], ["recipientId", 64, "Kimga"],
+];
+
+/**
+ * Izoh boshidagi «Nakladnoy № X» (`receiptNote`) TTN bilan birga yangilanadi: aks holda izohda eski raqam qolib,
+ * eski kirimlarda (`waybillNo` bo'sh) `waybillFromNote` ham eskisini ko'rsatardi. `newNo` = null — prefiks olib tashlanadi
+ * (kirim nusxasida: `createGoodsReceipt` uni TTN dan qayta qo'shadi).
+ */
+export function syncWaybillInNote(note: string | null, oldNo: string | null, newNo: string | null): string | null {
+  if (!note || !oldNo || oldNo === newNo) return note;
+  const m = /^Nakladnoy № ([^·]+?)\s*(?:·\s*|$)/.exec(note);
+  if (!m || m[1].trim() !== oldNo) return note;
+  const rest = note.slice(m[0].length).trim();
+  return newNo ? (rest ? `Nakladnoy № ${newNo} · ${rest}` : `Nakladnoy № ${newNo}`) : rest || null;
+}
+
+/**
+ * Kirim rekvizitlarini o'zgartirish (TTN, manzil, maqsad, mashina, qayerdan, izoh, snabjenets, «Kimga» yozuvi).
+ * Bekor qilingan kirim tahrirlanmaydi — shartli `updateMany` (cancelledAt: null). Faqat o'zgargan maydonlar yoziladi,
+ * AuditLog'ga avvalgi va yangi qiymatlari bilan. Ruxsat (`stock` → `receipt`) — chaqiruvchida.
+ */
+export async function updateReceiptInfo(id: string, input: ReceiptInfoInput, userId: string): Promise<{ ok: true; changed: string[]; docNo: string } | { error: string }> {
+  for (const [k, max, label] of INFO_LIMITS) {
+    const v = input[k];
+    if (typeof v === "string" && v.trim().length > max) return { error: `«${label}»: ${max} belgidan oshmasin` };
+  }
+  const rec = await db.goodsReceipt.findUnique({
+    where: { id },
+    select: { docNo: true, cancelledAt: true, waybillNo: true, address: true, purpose: true, carrier: true, loadedFrom: true, note: true, buyerId: true, recipientId: true },
+  });
+  if (!rec) return { error: "Kirim topilmadi — sahifani yangilang" };
+  if (rec.cancelledAt) return { error: "Bekor qilingan kirim tahrirlanmaydi" };
+
+  // TTN: eski kirimlarda raqam izohda turadi — forma uni ko'rsatadi; o'zgartirilmasa ustun bo'shligicha qoladi
+  const oldNo = rec.waybillNo ?? waybillFromNote(rec.note);
+  const wantNo = clean(input.waybillNo, 60);
+  const waybillNo = wantNo === oldNo ? rec.waybillNo : wantNo;
+  const next = {
+    waybillNo, address: clean(input.address), purpose: clean(input.purpose), carrier: clean(input.carrier, 120),
+    loadedFrom: clean(input.loadedFrom), note: syncWaybillInNote(clean(input.note, 1000), oldNo, wantNo),
+    buyerId: clean(input.buyerId, 64), recipientId: clean(input.recipientId, 64),
+  };
+  const keys = (Object.keys(next) as (keyof typeof next)[]).filter((k) => next[k] !== rec[k]);
+  if (!keys.length) return { ok: true, changed: [], docNo: rec.docNo };
+
+  // Yangi tanlangan snabjenets / oluvchi faol bo'lsin (eski qiymat o'zgarmasa — tekshirilmaydi)
+  if (keys.includes("buyerId") && next.buyerId && !(await db.user.findFirst({ where: { id: next.buyerId, isActive: true }, select: { id: true } }))) {
+    return { error: "Snabjenets topilmadi yoki ishdan bo'shagan" };
+  }
+  if (keys.includes("recipientId") && next.recipientId && !(await db.stockRecipient.findFirst({ where: { id: next.recipientId, isActive: true }, select: { id: true } }))) {
+    return { error: "Oluvchi («Kimga») topilmadi yoki yopilgan" };
+  }
+
+  const before = Object.fromEntries(keys.map((k) => [k, rec[k]]));
+  const after: Prisma.GoodsReceiptUncheckedUpdateManyInput = {};
+  for (const k of keys) after[k] = next[k];
+  try {
+    await db.$transaction(async (tx) => {
+      const r = await tx.goodsReceipt.updateMany({ where: { id, cancelledAt: null }, data: after });
+      if (r.count !== 1) throw new ReceiptError("Kirim shu payt bekor qilindi — sahifani yangilang");
+      await audit(tx, userId, "UPDATE", "GoodsReceipt", id, before, { ...after, via: "rekvizit" });
+    });
+  } catch (e) {
+    if (e instanceof ReceiptError) return { error: e.message };
+    throw e;
+  }
+  return { ok: true, changed: keys, docNo: rec.docNo };
+}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowUpFromLine, FileUp, HardHat, Plus, Rows3, Wallet, Percent, Sigma, Search, ScanText } from "lucide-react";
+import { ArrowUpFromLine, FileUp, HardHat, Pencil, Plus, Rows3, Wallet, Percent, Sigma, Search, ScanText } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -185,7 +185,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
         </SheetHead>
         <tbody>
           {shown.length === 0 && <Empty text={q || wh ? "Hech narsa topilmadi — qidiruv yoki davrni o'zgartiring" : "Tanlangan davrda kirimlar yo'q"} />}
-          {shown.map((r) => <Row key={r.id} r={r} canOpen={canOpen} />)}
+          {shown.map((r) => <Row key={r.id} r={r} canOpen={canOpen} canEdit={canOpen && canCreate} />)}
         </tbody>
         {rows.length > 0 && (
           <SheetFoot>
@@ -205,7 +205,8 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
   );
 }
 
-function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
+/** `canEdit` — qalamcha: kirim sahifasida rekvizitlarni (TTN, manzil, izoh…) tahrirlash oynasi ochiladi. */
+function Row({ r, canOpen, canEdit }: { r: PrixodRow; canOpen: boolean; canEdit: boolean }) {
   // Storno qilingan asl qator — kulrang, ustidan chizilgan; storno qatori (manfiy) — och qizil fon, qizil matn
   const tone = r.storno ? ("red" as const) : undefined;
   return (
@@ -216,6 +217,12 @@ function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
           ? <span className="ml-1.5 text-[11px] font-semibold">{`Bekor qilish ${r.docNo}`}</span>
           : <span className="ml-1.5 text-[11px] text-slate-400">{r.docNo}</span>}
         {r.cancelled && <span className="ml-1.5" title="Kirim bekor qilingan"><Badge color="red" dot={false}>bekor qilingan</Badge></span>}
+        {canEdit && !r.cancelled && !r.storno && (
+          <Link href={`/receipts/${r.receiptId}?tahrir=1#rekvizit`} title={`${r.docNo}: rekvizitlarni tahrirlash (TTN, manzil, izoh…)`} aria-label={`${r.docNo} rekvizitlarini tahrirlash`}
+            className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-slate-400 hover:bg-slate-100 hover:text-slate-900">
+            <Pencil size={13} />
+          </Link>
+        )}
       </SheetTd>
       <SheetTd tone={tone} className="sticky left-0 z-[1] min-w-[180px] bg-white font-medium text-slate-900 group-hover:bg-slate-50">{r.material}</SheetTd>
       <SheetTd tone={tone} center className="whitespace-nowrap">{r.waybillNo ?? <span className="text-slate-400">—</span>}</SheetTd>

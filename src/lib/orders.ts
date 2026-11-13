@@ -11,12 +11,14 @@ import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/no
 import { syncCustomerLater } from "@/lib/eco/customers";
 import { expectedAdvance } from "@/lib/payments";
 import type { PayMethod, Prisma, Role } from "@/generated/prisma";
-import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest, syncPaymentRequest } from "@/lib/payment-requests";
+import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest, OPEN_STATUSES, syncPaymentRequest } from "@/lib/payment-requests";
 import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
 import { linkOrderTx, syncDealLater } from "@/lib/amocrm/sync";
 import { orderTotal } from "@/lib/order-total";
 import { purgeOrderTx } from "@/lib/purge-cancelled";
+import { orderLines, TRIP_STEP } from "@/lib/trips";
+import { fmtUnitTotals } from "@/lib/unit";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -909,4 +911,184 @@ export async function orderDeliveryEdit(id: string, input: DeliveryEditInput, us
     if (o.createdById !== userId) await notifyUsers([o.createdById], n);
   });
   return { changed: true, status: o.status };
+}
+
+// ───────────────────────── Yetkazilganicha yopish ─────────────────────────
+
+/** Hali yetkazilmagan (rejada / yuklangan / yo'lda) reys holatlari — bunday reys bo'lsa zayavka yetkazilganicha yopilmaydi. */
+const TRIP_IN_FLIGHT = ["PLANNED", "LOADED", "ON_ROAD"] as const;
+
+type NumLike = number | string | { toString(): string };
+type CloseAtDeliveredInput = {
+  items: { id: string; productId: string; qtyM3: NumLike; price: NumLike; product: { unit: string; name: string } }[];
+  trips: { status: string; qtyM3: unknown; acceptedQty?: unknown; returnedQty?: unknown; vehicle: { type: string } }[];
+  deliveryFee: NumLike;
+};
+
+export type CloseAtDeliveredPlan = {
+  /** Qator id → yetkazilgan miqdor (yangi miqdor) */
+  delivered: Map<string, number>;
+  /** Jami yetkazilgan (birliklar aralash bo'lsa ham — faqat 0 dan kattaligini bilish uchun) */
+  deliveredQty: number;
+  /** Olib tashlanadigan qoldiq, birlik bo'yicha («20 dona · 3 m³») */
+  restText: string;
+  /** Olib tashlanadigan qoldiq bormi */
+  hasRest: boolean;
+  oldTotal: number;
+  newTotal: number;
+};
+
+/**
+ * Har zayavka qatorining yetkazilgan miqdori — faqat DELIVERED reyslardan (`tripCoveredQty`: mijoz qabul qilgani, qaytgani ayirilib).
+ * Qatorlarga taqsimlash «Yangi reys» jamlanmasidagi qoida bilan (`orderLines`): aralash zayavkada beton — mikser reyslaridan,
+ * dona — boshqa texnikadan; bir turdagi bir nechta qatorda navbat bilan. Navbat qator id tartibida — sahifadagi oldindan
+ * ko'rsatish ham, server ham bir xil natija bersin. Summa `orderTotal` bilan (tahrirdagi qoida), dastavka o'zgarmaydi.
+ */
+export function closeAtDeliveredPlan(o: CloseAtDeliveredInput): CloseAtDeliveredPlan {
+  const items = [...o.items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const lines = orderLines({
+    items: items.map((i) => ({ productId: i.productId, qtyM3: i.qtyM3, product: i.product, tasks: [] })),
+    trips: o.trips.filter((t) => t.status === "DELIVERED"),
+  });
+  const delivered = new Map(items.map((i, n) => [i.id, lines[n]!.shipped]));
+  const rest = items
+    .map((i) => ({ unit: i.product.unit, qty: Math.max(0, Math.round((Number(i.qtyM3) - (delivered.get(i.id) ?? 0)) * 1000) / 1000) }))
+    .filter((r) => r.qty > 0.0005);
+  return {
+    delivered,
+    deliveredQty: [...delivered.values()].reduce((s, q) => s + q, 0),
+    restText: fmtUnitTotals(rest),
+    hasRest: rest.length > 0,
+    oldTotal: orderTotal(o),
+    newTotal: orderTotal({ items: items.map((i) => ({ qtyM3: delivered.get(i.id) ?? 0, price: i.price })), deliveryFee: o.deliveryFee }),
+  };
+}
+
+/** Tranzaksiya ichidagi rad etish — hammasi orqaga qaytadi, matn foydalanuvchiga boradi. */
+class CloseError extends Error {}
+
+/**
+ * «Yetkazilganicha yopish»: mijoz qolgan qismidan voz kechdi — zayavka yetkazilgan miqdorda yopiladi.
+ * Aks holda zayavka abadiy IN_PRODUCTION bo'lib qolar, to'liq summasi kredit limiti va obyekt qarzida «ochiq zayavka» bo'lib turardi.
+ * Bitta tranzaksiyada, zayavka qatori qulfi ostida (`createTrip`, `tripDelivered` ham shu qatorni qulflaydi):
+ *  · yo'ldagi / rejadagi reys bo'lsa — rad etiladi (avval yetkazilsin yoki bekor qilinsin);
+ *  · har qator miqdori yetkazilganiga tushadi; 0 bo'lib qolgan topshiriqsiz qator o'chadi (tahrirdagi kabi),
+ *    topshiriqli qator 0 bo'lib qoladi (topshiriq va brigada qaydlari qatorga bog'liq);
+ *  · ochiq brigada topshiriqlari yopiladi: bajarilgani bor — shu miqdorda DONE, hech narsa bajarilmagan — CANCELLED
+ *    (`taskSubstitute` dagi qoida; brigada oyligi qaydlardan — o'zgarmaydi). Ortiqcha chiqarilgani hovlida erkin qoldiq;
+ *  · schyot yangi summadan katta bo'lsa — rad etiladi (avval schyot tuzatiladi yoki bekor qilinadi);
+ *  · bosh to'lov va uning so'rovi yangi summadan oshmaydi;
+ *  · holat DELIVERED (schyotlar yangi summani to'liq qoplab, hammasi to'langan bo'lsa — CLOSED, `tripDelivered` dagi kabi).
+ * Ruxsat chaqiruvchida («orders → cancel», sklad zayavkasi — «stock»).
+ */
+export async function orderCloseAtDelivered(id: string, reason: string, userId: string): Promise<OrderResult & { note?: string }> {
+  const why = String(reason ?? "").trim().slice(0, 300);
+  if (why.length < 3) return { changed: false, error: "Yopish sababini yozing" };
+
+  let res: { status: "DELIVERED" | "CLOSED"; customer: string; createdById: string; units: string[]; restText: string; oldTotal: number; newTotal: number; leaders: string[]; invoiced: boolean; amo: boolean };
+  try {
+    res = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${id} FOR UPDATE`;
+      const o = await tx.order.findUnique({
+        where: { id },
+        include: {
+          customer: { select: { name: true } },
+          items: { include: { product: { select: { name: true, unit: true } }, tasks: { select: { id: true, qty: true, doneQty: true, status: true, brigade: { select: { leaderId: true } } } } } },
+          trips: { where: { status: { not: "CANCELLED" } }, select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true, deliveryNoteNo: true, vehicle: { select: { type: true } } } },
+          invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true, amount: true, status: true } },
+        },
+      });
+      if (!o) throw new CloseError("Zayavka topilmadi");
+      if (o.status !== "CONFIRMED" && o.status !== "IN_PRODUCTION") throw new CloseError("Faqat ishlab chiqarish / yetkazish jarayonidagi zayavka yetkazilganicha yopiladi");
+      const inFlight = o.trips.filter((t) => (TRIP_IN_FLIGHT as readonly string[]).includes(t.status));
+      if (inFlight.length) {
+        throw new CloseError(`Yetkazilmagan reys bor: ${inFlight.map((t) => `${t.deliveryNoteNo} — ${TRIP_STEP[t.status] ?? t.status}`).join(", ")}. Avval uni yetkazing yoki bekor qiling`);
+      }
+      if (!o.trips.some((t) => t.status === "DELIVERED")) throw new CloseError("Hali yetkazilgan reys yo'q — yopib bo'lmaydi");
+      const plan = closeAtDeliveredPlan(o);
+      if (plan.deliveredQty <= 0.0005) throw new CloseError("Yetkazilgan miqdor 0 (yuk to'liq qaytgan) — yetkazilganicha yopib bo'lmaydi");
+      if (!plan.hasRest) throw new CloseError("Zayavka to'liq yetkazilgan — olib tashlanadigan qoldiq yo'q");
+      const invoiced = o.invoices.reduce((s, i) => s + Number(i.amount), 0);
+      if (invoiced > plan.newTotal + 0.005) {
+        throw new CloseError(`Schyot (${o.invoices.map((i) => i.invoiceNo).join(", ")}) ${money(invoiced)} — yetkazilgan summa ${money(plan.newTotal)} dan katta. Avval schyotni tuzating yoki bekor qiling`);
+      }
+
+      // Holat — shartli: zayavka shu payt boshqa holatga o'tgan yoki yangi reys ochilgan bo'lsa yozilmaydi
+      const paidUp = o.invoices.length > 0 && o.invoices.every((i) => i.status === "PAID") && invoiced >= plan.newTotal - 0.005;
+      const status = paidUp ? "CLOSED" as const : "DELIVERED" as const;
+      const prepayAmount = o.prepayAmount != null && Number(o.prepayAmount) > plan.newTotal + 0.005 ? Math.round(plan.newTotal * 100) / 100 : null;
+      const r = await tx.order.updateMany({
+        where: { id, status: o.status, trips: { none: { status: { in: [...TRIP_IN_FLIGHT] } } } },
+        data: { status, ...(prepayAmount != null ? { prepayAmount } : {}) },
+      });
+      if (r.count !== 1) throw new CloseError("Zayavka shu payt o'zgardi — sahifani yangilang");
+
+      // ── Qatorlar: yetkazilgan miqdorga ──
+      const itemsAfter: { id: string; productId: string; qtyM3: number; deleted?: boolean }[] = [];
+      for (const i of o.items) {
+        const was = Number(i.qtyM3);
+        const now = plan.delivered.get(i.id) ?? 0;
+        if (now >= was - 0.0005) { itemsAfter.push({ id: i.id, productId: i.productId, qtyM3: was }); continue; }
+        if (now <= 0.0005 && i.tasks.length === 0) {
+          // Shart bilan: shu orada brigada tayinlangan bo'lsa qator o'chmaydi (topshiriqlari kaskad bilan ketardi)
+          const d = await tx.orderItem.deleteMany({ where: { id: i.id, orderId: id, tasks: { none: {} } } });
+          if (d.count !== 1) throw new CloseError("Qatorga shu payt brigada tayinlandi — sahifani yangilab qayta urining");
+          itemsAfter.push({ id: i.id, productId: i.productId, qtyM3: 0, deleted: true });
+        } else {
+          await tx.orderItem.update({ where: { id: i.id }, data: { qtyM3: now } });
+          itemsAfter.push({ id: i.id, productId: i.productId, qtyM3: now });
+        }
+      }
+
+      // ── Ochiq brigada topshiriqlari: qolgan ish endi kerak emas ──
+      const open = o.items.flatMap((i) => i.tasks).filter((t) => t.status === "NEW" || t.status === "IN_PROGRESS");
+      for (const t of open) {
+        const done = Number(t.doneQty);
+        const next = done > 0.0005 ? { qty: done, status: "DONE" as const } : { qty: Number(t.qty), status: "CANCELLED" as const };
+        // doneQty sharti: shu payt brigada qayd qilgan bo'lsa (`taskProgress`) eski qiymat bilan yopilmaydi
+        const u = await tx.brigadeTask.updateMany({ where: { id: t.id, status: t.status, doneQty: t.doneQty }, data: next });
+        if (u.count !== 1) throw new CloseError("Brigada topshirig'i shu payt yangilandi — sahifani yangilab qayta urining");
+        await audit(tx, userId, "UPDATE", "BrigadeTask", t.id, { qty: Number(t.qty), doneQty: done, status: t.status }, { ...next, reason: why, via: "order-close-delivered" });
+      }
+      // Shu orada yangi topshiriq qo'shilgan bo'lsa — yopilgan zayavkada ochiq ish qolmasin
+      const late = await tx.brigadeTask.count({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } } });
+      if (late) throw new CloseError("Zayavkaga shu payt brigada tayinlandi — sahifani yangilab qayta urining");
+
+      // ── Bosh to'lov so'rovi yangi summadan oshmasin ──
+      const req = await tx.paymentRequest.findUnique({ where: { orderId: id } });
+      if (req && OPEN_STATUSES.includes(req.status) && Number(req.amount) > plan.newTotal + 0.005) {
+        const amount = Math.round(plan.newTotal * 100) / 100;
+        await tx.paymentRequest.update({ where: { id: req.id }, data: { amount } });
+        await audit(tx, userId, "UPDATE", "PaymentRequest", req.id, { amount: Number(req.amount) }, { amount, via: "order-close-delivered" });
+        await syncPaymentRequest(tx, id, userId);
+      }
+
+      await audit(tx, userId, "STATUS_CHANGE", "Order", id,
+        { status: o.status, total: plan.oldTotal, prepayAmount: o.prepayAmount == null ? null : Number(o.prepayAmount), items: o.items.map((i) => ({ id: i.id, productId: i.productId, qtyM3: Number(i.qtyM3) })) },
+        { status, total: plan.newTotal, ...(prepayAmount != null ? { prepayAmount } : {}), items: itemsAfter, removed: plan.restText, tasksClosed: open.length, reason: why, via: "close-delivered" });
+
+      return {
+        status, customer: o.customer.name, createdById: o.createdById, units: o.items.map((i) => i.product.unit),
+        restText: plan.restText, oldTotal: plan.oldTotal, newTotal: plan.newTotal,
+        leaders: [...new Set(open.map((t) => t.brigade.leaderId).filter((x): x is string => !!x))],
+        invoiced: o.invoices.length > 0, amo: !!o.amoDealId,
+      };
+    });
+  } catch (e) {
+    if (e instanceof CloseError) return { changed: false, error: e.message };
+    throw e;
+  }
+
+  const link = { key: "orders", id };
+  notifyAfter(async () => {
+    const n = { type: "ORDER_CHANGED", title: `Zayavka yetkazilganicha yopildi — ${res.customer}`, body: `Qolgan ${res.restText} olib tashlandi · ${money(res.oldTotal)} → ${money(res.newTotal)} · sabab: ${why}`, link };
+    // Sex va logistika qolganini rejalashtirmasin; zayavkani ochgan sotuvchi mijozga javob beradi
+    await notifyRoles(crewRoles(res.units), n, { except: userId });
+    if (res.createdById !== userId) await notifyUsers([res.createdById], n);
+    if (res.leaders.length) await notifyEmployees(res.leaders, { type: "TASK_CANCELLED", title: `Topshiriq yopildi — ${res.customer}`, body: "Mijoz qolganidan voz kechdi — ishni to'xtating" });
+    // Schyot yo'q — buxgalteriya yozmasa zayavka hech qachon yopilmaydi (`tripDelivered` dagi kabi)
+    if (!res.invoiced) await notifyRoles(["ACCOUNTING"], { type: "ORDER_DELIVERED", title: `Yetkazildi, schyot kerak — ${res.customer}`, body: `Zayavka yetkazilgan miqdorda yopildi: ${money(res.newTotal)}`, link }, { except: userId });
+  });
+  if (res.amo) syncDealLater();
+  return { changed: true, status: res.status, note: `Zayavka yetkazilganicha yopildi: qolgan ${res.restText} olib tashlandi, summa ${money(res.newTotal)}${res.status === "CLOSED" ? " — schyot to'langan, zayavka yopildi" : ""}` };
 }

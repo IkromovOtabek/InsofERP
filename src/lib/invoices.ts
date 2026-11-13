@@ -4,6 +4,7 @@ import { date, money } from "./format";
 import { notifyAfter, notifyRoles } from "./notify";
 import { nextNo } from "./numbering";
 import { customerBalance } from "./receivables";
+import { recalcInvoice } from "./payments";
 import { orderTotal } from "@/lib/order-total";
 
 /**
@@ -71,6 +72,42 @@ export async function cancelInvoice(id: string, reason: string, userId: string):
   if (!r.count) return { error: "Schyotga hozirgina to'lov tushdi — bekor qilib bo'lmaydi" };
   await audit(db, userId, "STATUS_CHANGE", "Invoice", id, { status: "OPEN" }, { status: "CANCELLED", reason: String(reason ?? "").trim().slice(0, 300) || undefined });
   return { orderId: inv.orderId };
+}
+
+/**
+ * Schyot summasi va sanasini tuzatish — veb Schyotlar jadvali va mijoz kartasidagi qalam (`invoices/actions.ts`).
+ * Ochiq schyot — erkin; qisman to'langan — yangi summa to'langandan kam bo'lmasin; to'langan va bekor qilingan —
+ * tahrirlanmaydi. Zayavka schyoti zayavka summasidan oshmaydi (`createInvoice` dagi qoida). Boshlang'ich qoldiq —
+ * faqat o'z bo'limidan. Holat (va zayavkaning CLOSED/DELIVERED holati) to'lovlardagi kabi `recalcInvoice` bilan.
+ */
+export async function updateInvoice(id: string, input: { amount: number; date: Date }, userId: string): Promise<{ error?: string; changed?: boolean; status?: string; orderId?: string | null; customerId?: string }> {
+  const amount = Math.round(input.amount * 100) / 100;
+  if (!(amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
+  const head = await db.invoice.findUnique({ where: { id }, select: { customerId: true, orderId: true } });
+  if (!head) return { error: "Schyot topilmadi" };
+  return db.$transaction(async (tx) => {
+    // To'lov qabul qilish (`addPayment`) bilan bir navbat — mijoz qulfi; zayavka qulfi — `createInvoice` dagidek
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${head.customerId}))`;
+    if (head.orderId) await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${head.orderId} FOR UPDATE`;
+    const inv = await tx.invoice.findUnique({ where: { id }, include: { payments: { select: { amount: true } }, order: { select: { deliveryFee: true, items: { select: { qtyM3: true, price: true } } } } } });
+    if (!inv) return { error: "Schyot topilmadi" };
+    if (inv.isOpening) return { error: "Bu boshlang'ich qoldiq — uni «Boshlang'ich qoldiqlar» bo'limidan tahrirlang" };
+    if (inv.status !== "OPEN" && inv.status !== "PARTIAL") return { error: inv.status === "PAID" ? "To'langan schyot tahrirlanmaydi" : "Bekor qilingan schyot tahrirlanmaydi" };
+    const paid = inv.payments.reduce((x, p) => x + Number(p.amount), 0);
+    if (amount < paid - 0.005) return { error: `Schyotga ${money(paid)} to'langan — summa undan kam bo'lolmaydi` };
+    if (inv.order) {
+      const total = orderTotal(inv.order);
+      if (amount > total + 0.005) return { error: `Schyot zayavka summasidan (${Math.round(total).toLocaleString("ru-RU")} so'm) ko'p bo'lolmaydi` };
+    }
+    const before = { amount: Number(inv.amount), date: inv.date };
+    if (Math.abs(before.amount - amount) < 0.005 && before.date.getTime() === input.date.getTime()) return { changed: false, status: inv.status, orderId: inv.orderId, customerId: inv.customerId };
+    // Shart bilan: o'qilgandan keyin holat o'zgarmagan bo'lsin
+    const u = await tx.invoice.updateMany({ where: { id, status: inv.status, isOpening: false }, data: { amount, date: input.date } });
+    if (!u.count) return { error: "Schyot hozirgina o'zgardi — sahifani yangilab qayta urining" };
+    await audit(tx, userId, "UPDATE", "Invoice", id, before, { amount, date: input.date });
+    const status = await recalcInvoice(tx, id, userId);
+    return { changed: true, status, orderId: inv.orderId, customerId: inv.customerId };
+  });
 }
 
 // ───────────────────────── Akt sverki (mijoz bilan solishtirma dalolatnoma) ─────────────────────────

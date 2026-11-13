@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Package, Trash2, Truck } from "lucide-react";
-import { createTrip, hideExternalVehicle } from "./actions";
+import { createTrip, hideExternalVehicle, updateTrip } from "./actions";
 import { Button, Callout, Card, CardHeader, Checkbox, Field, FormActions, FormError, Input, LinkButton, Select, Textarea } from "@/components/ui";
 
 /** Zayavka qatori (mahsulot birligida): jami, tayyor, jo'natilgan, hozir reysga mumkin. mixer — beton qatori (mikserda ketadi). */
@@ -27,14 +27,25 @@ type Driver = { id: string; fullName: string; vehicleId: string | null; phoneOk:
 /** Avval chaqirilgan ko'cha mashinasi — ro'yxatdan tanlansa yoki raqami yozilsa haydovchisi va sig'imi o'zi to'ladi. */
 type External = { id: string; plate: string; type: "MIXER" | "TRUCK"; capacity: number | null; driverName: string; driverPhone: string };
 type ExtForm = { type: "MIXER" | "TRUCK"; plate: string; capacity: string; driverName: string; driverPhone: string };
+/**
+ * Rejadagi reys tahriri (`/trips/[id]/edit`): forma shu reys qiymatlari bilan ochiladi, zayavka va TTN o'zgarmaydi.
+ * external — reys ko'chadan mashinada bo'lsa uning ma'lumoti; externalLocked — ko'chadan mashinaga o'tkazib bo'lmasligi sababi.
+ */
+type Edit = {
+  tripId: string; vehicleId: string; driverId: string; qty: number; bru: string; note: string; driverReason: string;
+  external: ExtForm | null; externalLocked?: string;
+};
 
 const normPlate = (v: string) => v.toUpperCase().replace(/\s+/g, "");
 const sum = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) * 1000) / 1000;
 
-export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, externals, initialOrderId }: {
-  orders: Order[]; waiting?: Waiting[]; vehicles: Vehicle[]; drivers: Driver[]; bruNames: string[]; externals: External[]; initialOrderId?: string;
+export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, externals, initialOrderId, edit }: {
+  orders: Order[]; waiting?: Waiting[]; vehicles: Vehicle[]; drivers: Driver[]; bruNames: string[]; externals: External[]; initialOrderId?: string; edit?: Edit;
 }) {
-  const [state, action, pending] = useActionState(createTrip, undefined);
+  // Tahrirda — shu reysning `updateTrip` i (qoidalar «Yangi reys» bilan bir xil, `lib/trips.ts`)
+  const editId = edit?.tripId;
+  const submit = useMemo(() => (editId ? updateTrip.bind(null, editId) : createTrip), [editId]);
+  const [state, action, pending] = useActionState(submit, undefined);
   const [orderId, setOrderId] = useState(orders.find((o) => o.id === initialOrderId)?.id ?? orders[0]?.id ?? "");
   const firstOrder = orders.find((o) => o.id === orderId);
   // Rejadagi yetkazish vaqti — zayavkadan olinadi, dispetcher o'zgartira oladi (kalendar va kechikish shunga qaraydi)
@@ -44,17 +55,19 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   const wantType = (o?: Order): "MIXER" | "TRUCK" => (o && o.unit !== "m³" && !o.mixed ? "TRUCK" : "MIXER");
   const fits = (o?: Order, type?: string) => !o || !type || (o.mixed ? type === "MIXER" || type === "TRUCK" : type === wantType(o));
   const firstOfType = (t: string) => vehicles.find((v) => v.type === t) ?? vehicles[0];
-  const [vehicleId, setVehicleId] = useState(firstOfType(wantType(firstOrder))?.id ?? "");
+  // Tahrirda reysning o'z texnikasi va haydovchisi (ko'chadan mashinada — ro'yxatdagi birinchi mos texnika, belgi olinsa)
+  const ownEdit = edit && !edit.external ? edit : null;
+  const [vehicleId, setVehicleId] = useState(ownEdit?.vehicleId ?? firstOfType(wantType(firstOrder))?.id ?? "");
   // Texnikaga biriktirilgan haydovchi — Xodimlar kartasidagi "biriktirilgan texnika". Smenali transportda bir nechta:
   // avval kartadagi asosiy haydovchi, u bo'lmasa birinchisi (smenadoshni dispetcher ro'yxatdan tanlaydi)
   const driverOfVehicle = (vid: string) => {
     const main = vehicles.find((v) => v.id === vid)?.mainDriverId;
     return drivers.find((d) => d.vehicleId === vid && d.id === main) ?? drivers.find((d) => d.vehicleId === vid);
   };
-  const [driverId, setDriverId] = useState(driverOfVehicle(firstOfType(wantType(firstOrder))?.id ?? "")?.id ?? drivers[0]?.id ?? "");
+  const [driverId, setDriverId] = useState(ownEdit?.driverId ?? driverOfVehicle(firstOfType(wantType(firstOrder))?.id ?? "")?.id ?? drivers[0]?.id ?? "");
   // Ko'chadan chaqirilgan mashina: o'z parkimiz hammasi band bo'lganda ish to'xtab qolmasin
-  const [external, setExternal] = useState(false);
-  const [ext, setExt] = useState<ExtForm>({ type: wantType(firstOrder), plate: "", capacity: "", driverName: "", driverPhone: "" });
+  const [external, setExternal] = useState(!!edit?.external);
+  const [ext, setExt] = useState<ExtForm>(edit?.external ?? { type: wantType(firstOrder), plate: "", capacity: "", driverName: "", driverPhone: "" });
   // Saqlangan ko'cha mashinalari: ro'yxatdan olingani server javobini kutmay yo'qoladi
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const saved = externals.filter((x) => !hiddenIds.includes(x.id));
@@ -81,10 +94,14 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   const inProd = !order ? 0 : order.mixed ? sum(lineOf(order, vType).map((l) => l.inProduction)) : order.inProduction;
   // Biriktirilgani ro'yxat boshida tursin
   const driverList = [...drivers].sort((a, b) => Number(b.vehicleId === vehicleId) - Number(a.vehicleId === vehicleId));
-  const [qty, setQty] = useState(firstOrder ? String(Math.min(vehicle?.capacityM3 ?? availOf(firstOrder, vehicle?.type), availOf(firstOrder, vehicle?.type))) : "");
-  const [bru, setBru] = useState(bruNames.length === 1 ? bruNames[0]! : "");
-  // Boshqariladigan: xato bilan qaytganda (`<form action>` formani tozalaydi) yozilgan TTN yo'qolmasin
+  const [qty, setQty] = useState(edit ? String(edit.qty) : firstOrder ? String(Math.min(vehicle?.capacityM3 ?? availOf(firstOrder, vehicle?.type), availOf(firstOrder, vehicle?.type))) : "");
+  const [bru, setBru] = useState(edit ? edit.bru : bruNames.length === 1 ? bruNames[0]! : "");
+  // Reysdagi BRU ro'yxatdan olib tashlangan bo'lsa ham tanlovda ko'rinsin (aks holda forma uni jimgina bo'shatardi)
+  const bruList = edit?.bru && !bruNames.includes(edit.bru) ? [...bruNames, edit.bru] : bruNames;
+  // Boshqariladigan: xato bilan qaytganda (`<form action>` formani tozalaydi) yozilgan TTN, izoh va sabab yo'qolmasin
   const [ttn, setTtn] = useState("");
+  const [note, setNote] = useState(edit?.note ?? "");
+  const [driverReason, setDriverReason] = useState(edit?.driverReason ?? "");
   // Tayyor qoldiqdan ko'p yozilsa — serverdagi bilan bir xil sabab, yuborishdan oldin
   const qtyNum = Number(qty);
   const overReady = !order || qtyNum <= avail + 0.001
@@ -96,7 +113,9 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   const suggest = (o: Order | undefined, type: string | undefined, cap: number | null | undefined) => {
     if (!o) return;
     const a = availOf(o, type);
-    setQty(String(Math.min(cap ?? a, a)));
+    // Tahrirda yozilgan miqdor oshirilmaydi — faqat sig'im va qoldiqqa sig'diriladi
+    const cur = edit ? Number(qty) || a : a;
+    setQty(String(Math.min(cap ?? cur, cur, a)));
   };
 
   // Texnika almashtirilsa — o'sha mashinaning haydovchisiga o'tamiz (biriktirilmagan bo'lsa tanlov qoladi)
@@ -110,7 +129,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   // Haydovchi tanlansa — uning biriktirilgan texnikasi o'zi tushadi (teskari bog'lanish), lekin faqat
   // dispetcher texnikani hali qo'lda tanlamagan va tanlangan texnikaning o'z haydovchisi yo'q bo'lsa.
   // O'z haydovchisi bor texnikaga boshqa haydovchi berish mumkin — texnika joyida qoladi, sababi yoziladi
-  const [vehicleManual, setVehicleManual] = useState(false);
+  const [vehicleManual, setVehicleManual] = useState(!!edit);
   const pickDriver = (did: string) => {
     setDriverId(did);
     if (vehicleManual || driverOfVehicle(vehicleId)) return;
@@ -182,7 +201,8 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
         <Card>
           <CardHeader icon={Truck} title="Transport" description={external ? "Ko'chadan chaqirilgan mashina va haydovchi" : "O'z texnikamiz va haydovchimiz"} />
           <div className="mb-4">
-            <Checkbox label="Ko'chadan mashina chaqirildi" checked={external} onChange={(e) => toggleExternal(e.target.checked)} />
+            <Checkbox label="Ko'chadan mashina chaqirildi" checked={external} onChange={(e) => toggleExternal(e.target.checked)} disabled={!!edit?.externalLocked && !external} />
+            {edit?.externalLocked && !external && <p className="mt-1 text-xs text-slate-500">{edit.externalLocked}</p>}
           </div>
           {external ? (
             <>
@@ -263,7 +283,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
               </Field>
               {otherDriver && (
                 <Field label="Boshqa haydovchi sababi *" hint="Reys kartasida va jurnalda saqlanadi" className="sm:col-span-2">
-                  <Input name="driverReason" placeholder="Masalan: asosiy haydovchi kasal" minLength={3} maxLength={200} autoComplete="off" required />
+                  <Input name="driverReason" value={driverReason} onChange={(e) => setDriverReason(e.target.value)} placeholder="Masalan: asosiy haydovchi kasal" minLength={3} maxLength={200} autoComplete="off" required />
                 </Field>
               )}
               {drivers.length === 0 && <p className="text-sm text-amber-700 sm:col-span-2">Haydovchi lavozimidagi faol xodim yo&apos;q — Otdel kadrda lavozimni &quot;haydovchi&quot; deb belgilang yoki ko&apos;chadan mashina chaqiring.</p>}
@@ -272,9 +292,9 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
         </Card>
 
         <Card>
-          <CardHeader icon={Package} title="Yuk" description="Jo'natishga tayyor zayavka va miqdor" />
+          <CardHeader icon={Package} title="Yuk" description={edit ? "Zayavka o'zgarmaydi — miqdor, BRU, vaqt va izohni tahrirlang" : "Jo'natishga tayyor zayavka va miqdor"} />
           <Field label="Zayavka *" className="mb-3">
-            <Select name="orderId" value={orderId} onChange={(e) => pickOrder(e.target.value)}>
+            <Select name="orderId" value={orderId} onChange={(e) => pickOrder(e.target.value)} disabled={!!edit}>
               {orders.map((o) => <option key={o.id} value={o.id}>{o.customer} · {o.date} · tayyor {o.remainingM3} {o.unit}{o.inProduction > 0 ? ` · sexda ${o.inProduction} ${o.unit}` : ""}{o.mixed ? " · aralash" : ""}</option>)}
             </Select>
           </Field>
@@ -297,27 +317,30 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
                 {bruNames.length ? (
                   <Select name="bru" value={bru} onChange={(e) => setBru(e.target.value)} required>
                     <option value="">— tanlang —</option>
-                    {bruNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                    {bruList.map((n) => <option key={n} value={n}>{n}</option>)}
                   </Select>
                 ) : (
                   <Input name="bru" value={bru} onChange={(e) => setBru(e.target.value)} placeholder="Masalan: BRU-1" maxLength={80} />
                 )}
               </Field>
             )}
-            <Field label="TTN raqami" hint="Nakladnoy blankasidagi raqam — nakladnoyda va Realizatsiyada shu ko'rinadi. Bo'sh qolsa tizim raqami (N-…)">
-              <Input name="ttn" value={ttn} onChange={(e) => setTtn(e.target.value)} maxLength={40} autoComplete="off" placeholder="Masalan: 000161" className="tabular" />
-            </Field>
+            {/* Tahrirda TTN reys sahifasidagi alohida formada (band raqam tekshiruvi bilan) */}
+            {!edit && (
+              <Field label="TTN raqami" hint="Nakladnoy blankasidagi raqam — nakladnoyda va Realizatsiyada shu ko'rinadi. Bo'sh qolsa tizim raqami (N-…)">
+                <Input name="ttn" value={ttn} onChange={(e) => setTtn(e.target.value)} maxLength={40} autoComplete="off" placeholder="Masalan: 000161" className="tabular" />
+              </Field>
+            )}
             <Field label="Rejadagi yetkazish vaqti" hint="Zayavkadan olinadi. Dispetcher kalendari va kechikish hisobi shu vaqtga qaraydi" className={concrete ? undefined : "sm:col-span-2"}>
               <Input name="plannedAt" type="datetime-local" value={plannedAt} onChange={(e) => setPlannedAt(e.target.value)} />
             </Field>
-            <Field label="Izoh" className="sm:col-span-2"><Textarea name="note" /></Field>
+            <Field label="Izoh" className="sm:col-span-2"><Textarea name="note" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
           </div>
         </Card>
       </div>
 
       <FormActions>
-        <Button disabled={pending || orders.length === 0 || !order || !!overReady}>{pending ? "Yaratilmoqda…" : "Reys yaratish"}</Button>
-        <LinkButton href="/trips" variant="secondary">Bekor</LinkButton>
+        <Button disabled={pending || orders.length === 0 || !order || !!overReady}>{pending ? (edit ? "Saqlanmoqda…" : "Yaratilmoqda…") : edit ? "Saqlash" : "Reys yaratish"}</Button>
+        <LinkButton href={edit ? `/trips/${edit.tripId}` : "/trips"} variant="secondary">Bekor</LinkButton>
       </FormActions>
       {orders.length === 0 && <p className="text-sm text-amber-700">Jo&apos;natishga tayyor zayavka yo&apos;q — brigada tasdiqlagan mahsulot bo&apos;lishi kerak.</p>}
       {waiting.length > 0 && (

@@ -12,6 +12,7 @@ import { categoryOptions } from "@/lib/fin-report/categories";
 import { accountBalances } from "@/lib/payments";
 import { CashEditProvider } from "./cash-edit";
 import { KassaJournal, type KassaRow } from "./kassa-table";
+import { LastImportUndo } from "./import/recent";
 
 type Account = { id: string; name: string; type: "CASH" | "BANK" };
 
@@ -237,6 +238,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub 
       {sp.import && (
         <Callout tone="success" title="Excel importi">
           {imported} ta qator Kassa jurnaliga yozildi.{transfers > 0 && ` ${transfers} ta perekit o'tkazma hujjati bo'lib yozildi.`}{newTops > 0 && ` ${newTops} ta yangi manba qo'shildi — PNL qatorini Moliya → Kategoriyalarda tekshiring.`}{newSubs > 0 && ` ${newSubs} ta yangi sub manba kategoriyalarga qo'shildi.`}{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
+          <LastImportUndo added={imported} transfers={transfers} />
         </Callout>
       )}
       {editOptions ? <CashEditProvider options={editOptions}>{table}</CashEditProvider> : table}

@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
+import { db } from "@/lib/db";
 import { dateTime, money } from "@/lib/format";
 import { hoursShort, monthTitle } from "@/lib/davomat";
 import { breakdownOf, canPayroll, runWithLines } from "@/lib/hr/payroll";
 import { payAccounts } from "@/lib/mechanic-requests";
 import { PAY_TYPE_LABEL, PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
 import { Badge, Callout, Card, CardHeader, PageHeader, StatCard, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
-import { PayForm, RunActions } from "../forms";
+import { PayForm, RunActions, UnpayForm, type UnpayGroup } from "../forms";
 
 const STEPS = [{ key: "DRAFT", label: "Hisoblandi" }, { key: "SUBMITTED", label: "Direktor tasdig'ida" }, { key: "APPROVED", label: "Tasdiqlandi" }, { key: "PAID", label: "To'landi" }];
 
@@ -22,6 +23,27 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
   const unpaid = run.lines.filter((l) => !l.paidAt && Number(l.net) > 0);
   const n = (v: unknown) => Number(v ?? 0);
   const final = run.kind === "FINAL";
+  // To'lovni bekor qilish (direktor): to'langan qatorlar to'lov (kassa chiqimi) bo'yicha guruhlanadi — chiqim bo'linmaydi
+  const canUndo = canPayroll(s, "approve") && (run.status === "APPROVED" || run.status === "PAID");
+  const paidLines = canUndo ? run.lines.filter((l) => l.paidAt) : [];
+  const payTxs = paidLines.length
+    ? new Map((await db.cashTransaction.findMany({
+      where: { id: { in: [...new Set(paidLines.flatMap((l) => (l.cashTxId ? [l.cashTxId] : [])))] } },
+      select: { id: true, date: true, cancelledAt: true, cashAccount: { select: { name: true } } },
+    })).map((c) => [c.id, c]))
+    : new Map<string, never>();
+  const undoGroups: UnpayGroup[] = [];
+  for (const l of paidLines) {
+    const key = l.cashTxId ?? `line:${l.id}`;
+    let g = undoGroups.find((x) => x.key === key);
+    if (!g) {
+      const ct = l.cashTxId ? payTxs.get(l.cashTxId) : undefined;
+      g = { key, amount: 0, lines: [], label: ct ? `${dateTime(ct.date)} · ${ct.cashAccount.name}${ct.cancelledAt ? " · chiqim kassada bekor qilingan" : ""}` : `${dateTime(l.paidAt!)} · kassa chiqimi bog'lanmagan` };
+      undoGroups.push(g);
+    }
+    g.amount += n(l.paid);
+    g.lines.push({ id: l.id, fullName: l.employee.fullName });
+  }
   const sum = (k: "base" | "leavePay" | "sickPay" | "bonus" | "penalty" | "gross" | "incomeTax" | "inps" | "advanceDeducted" | "employerTax") => run.lines.reduce((x, l) => x + n(l[k]), 0);
 
   return (
@@ -40,6 +62,7 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
       </div>
 
       <RunActions id={run.id} status={run.status} kind={run.kind} net={n(run.net) - n(run.paid)} canCalc={canPayroll(s, "calc")} canApprove={canPayroll(s, "approve")} />
+      {canUndo && <UnpayForm id={run.id} groups={undoGroups} />}
 
       {canPay && unpaid.length > 0 && (
         <Card>
