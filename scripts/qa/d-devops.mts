@@ -124,6 +124,13 @@ section("relizlar holati (git fetch → release:info)");
   const row = checks.get(C.RELEASE_CHECK_KEY) as { data: { commits: { subject: string }[] }; status: string } | undefined;
   check("ServiceCheck release:info yozildi (OK)", row?.status === "OK", row);
   check("commit xabaridagi sir yashirildi", !!row && !JSON.stringify(row.data).includes("SUPERSECRET123"), row?.data.commits);
+  // To'liq sha scrubSecrets'da "***" bo'lib qolmasin: bazada 12 belgili sha, panel versiyani solishtira oladi
+  const stored = row?.data as unknown as { current: string | null; originMain: string | null; releases: { sha: string }[]; commits: { sha: string }[] } | undefined;
+  check("bazada current = 12 belgili SHA1 (*** emas)", stored?.current === SHA1.slice(0, 12), stored?.current);
+  check("bazada origin/main, relizlar va commitlar sha'si yashirilmagan",
+    stored?.originMain === SHA3.slice(0, 12) && stored.releases[0]?.sha === SHA1.slice(0, 12) && stored.commits[0]?.sha === SHA3.slice(0, 12),
+    { originMain: stored?.originMain, releases: stored?.releases, commits: stored?.commits });
+  check("panel: /api/health versiyasi (12 belgi) joriy reliz bilan mos", C.sameSha(SHA1.slice(0, 12), stored?.current), stored?.current);
 }
 
 /* ───────── DEPLOY (detached) ───────── */

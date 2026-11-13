@@ -417,10 +417,12 @@ fi
 step "Tekshiruv"
 if [ "$HAS_CONTROL" = 1 ]; then
   (cd "$CURRENT" && CONTROL_ENV_FILE="$APP_DIR/control.env" npm run -s tenant -- stats) || warn "tenant stats xato"
-  # Agent heartbeat (AgentHeartbeat "main") — necha soniya oldin yozilgan
+  # Agent heartbeat (AgentHeartbeat "main") — necha soniya oldin yozilgan.
+  # lastSeenAt — Prisma DateTime: vaqt mintaqasisiz, UTC'da. `now() - lastSeenAt` sessiya TimeZone'i (Toshkent) bilan
+  # +5 soat ko'rsatardi — shuning uchun now() ham UTC'ga o'tkaziladi.
   HB=""
   if command -v psql >/dev/null && [ -n "${CTRL_URL:-}" ]; then
-    HB="$(psql "${CTRL_URL%%\?*}" -qAtX -c "SELECT version || ', ' || EXTRACT(EPOCH FROM now() - \"lastSeenAt\")::int || ' s oldin' FROM \"AgentHeartbeat\" WHERE id = 'main'" 2>/dev/null || true)"
+    HB="$(psql "${CTRL_URL%%\?*}" -qAtX -c "SELECT version || ', ' || EXTRACT(EPOCH FROM (now() AT TIME ZONE 'UTC') - \"lastSeenAt\")::int || ' s oldin' FROM \"AgentHeartbeat\" WHERE id = 'main'" 2>/dev/null || true)"
   fi
   echo "insof-agent: $AGENT_STATUS${HB:+ (heartbeat: $HB)}"
 fi

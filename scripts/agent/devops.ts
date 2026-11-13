@@ -458,11 +458,23 @@ export async function collectReleaseInfo(fetch = true): Promise<ReleaseInfo> {
   return info;
 }
 
+/** 12 belgili sha: to'liq sha (40 belgi) scrubSecrets'da «uzun kalit» deb "***" bo'lib qolardi — panel versiyani
+ *  solishtira olmas va «Shu commitgacha» Ref'ga "***" qo'yardi. 12 belgi deploy.sh/git uchun yetarli (DEPLOY_REF 7–40). */
+const shortSha = (s: string | null) => (s && SHA_RE.test(s) ? s.slice(0, 12) : s);
+const releaseInfoForStorage = (info: ReleaseInfo): ReleaseInfo => ({
+  ...info,
+  current: shortSha(info.current),
+  releaseFile: shortSha(info.releaseFile),
+  originMain: shortSha(info.originMain),
+  releases: info.releases.map((r) => ({ ...r, sha: shortSha(r.sha) ?? r.sha })),
+  commits: info.commits.map((c) => ({ ...c, sha: shortSha(c.sha) ?? c.sha })),
+});
+
 async function writeReleaseCheck(info: ReleaseInfo) {
   const now = new Date();
   const status = info.fetchError ? "UNKNOWN" : "OK";
   const message = scrubSecrets(`joriy ${info.current?.slice(0, 12) ?? "—"}; origin/main ${info.originMain?.slice(0, 12) ?? "—"}${info.ahead != null ? ` (+${info.ahead} commit)` : ""}${info.fetchError ? `; ${info.fetchError}` : ""}`).slice(0, 500);
-  const data = JSON.parse(JSON.stringify(scrubJson(info))) as Prisma.InputJsonValue;
+  const data = JSON.parse(JSON.stringify(scrubJson(releaseInfoForStorage(info)))) as Prisma.InputJsonValue;
   const prev = await ctx.control.serviceCheck.findUnique({ where: { key: RELEASE_CHECK_KEY }, select: { status: true, changedAt: true } });
   const row = { kind: "release", target: "Relizlar", tenantId: null, status, message, latencyMs: null, data, checkedAt: now, changedAt: prev && prev.status === status ? prev.changedAt : now } as const;
   await ctx.control.serviceCheck.upsert({ where: { key: RELEASE_CHECK_KEY }, create: { key: RELEASE_CHECK_KEY, ...row }, update: row });
