@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, Trash2, Truck, Package, Clock, MapPin, MapPinned, Smartphone, Route, AlertTriangle, Coins, UserRoundCheck, FileSpreadsheet } from "lucide-react";
+import { Printer, PackageCheck, Trash2, Truck, Package, Clock, MapPin, MapPinned, Smartphone, Route, AlertTriangle, Coins, UserRoundCheck, FileSpreadsheet, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -12,6 +12,7 @@ import { PriceForm } from "../../logistika/tabel/tabel-forms";
 import { qty, date, dateTime, opAt } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
 import { cancelTrip } from "../actions";
+import { cancelExpense, cancelFuel } from "../../logistika/actions";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, VEHICLE_TYPE, DRUM_MAX_MIN, isConcreteTrip, PHASE_STEPS, TRIP_PHASE, tripPhase, tripPlannedAt, tripDelayMin, delayLevel, logisticsSettings, minutesLabel } from "@/lib/logistics";
 import { lastFuelPrice } from "@/lib/logistics-costs";
@@ -90,9 +91,11 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const openIssues = t.issues.filter((i) => !i.resolvedAt);
   // Bekor qilingan xarajat ro'yxatda belgisi bilan qoladi, jamiga kirmaydi
   const cNames = await cancellerNames([...t.fuelLogs, ...t.expenses]);
-  const costs = [...t.fuelLogs.map((f) => ({ id: f.id, date: f.date, createdAt: f.createdAt, label: `Yoqilg'i · ${FUEL_TYPE[f.fuelType]} ${Number(f.liters)} l`, note: f.note, amount: Number(f.amount), cancel: cancelNote(f, cNames) })),
-    ...t.expenses.map((e) => ({ id: e.id, date: e.date, createdAt: e.createdAt, label: EXPENSE_KIND[e.kind], note: e.note, amount: Number(e.amount), cancel: cancelNote(e, cNames) }))].sort((a, b) => b.date.getTime() - a.date.getTime());
+  const costs = [...t.fuelLogs.map((f) => ({ id: f.id, fuel: true, date: f.date, createdAt: f.createdAt, label: `Yoqilg'i · ${FUEL_TYPE[f.fuelType]} ${Number(f.liters)} l`, note: f.note, amount: Number(f.amount), cancel: cancelNote(f, cNames) })),
+    ...t.expenses.map((e) => ({ id: e.id, fuel: false, date: e.date, createdAt: e.createdAt, label: EXPENSE_KIND[e.kind], note: e.note, amount: Number(e.amount), cancel: cancelNote(e, cNames) }))].sort((a, b) => b.date.getTime() - a.date.getTime());
   const costSum = costs.filter((c) => !c.cancel).reduce((a, c) => a + c.amount, 0);
+  // Xarajatni bekor qilish — Yoqilg'i / Transport xarajatlari sahifalari bilan bir xil (`cancelFuel` / `cancelExpense` → `logistika` → `fuel`)
+  const canCancelCost = canDo(s, "logistika", "fuel");
   const price = await lastFuelPrice(t.vehicle.fuelType);
   const mins = (a: Date | null, b: Date | null) => (a && b ? Math.round((b.getTime() - a.getTime()) / 60000) : null);
   // Baraban vaqti: yuklangan beton yetkazilmasdan qancha turibdi (faqat mikserdagi beton)
@@ -269,10 +272,10 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           <CardHeader title="Reys xarajatlari" description={costSum ? `Jami: ${money(costSum)}${Number(t.qtyM3) ? ` · 1 birlikka ${money(costSum / Number(t.qtyM3))}` : ""}` : "Yoqilg'i, haydovchi haqi, yo'l to'lovi…"} icon={Coins} />
           {costs.length > 0 && (
             <ul className="mb-3 divide-y divide-slate-100 text-sm">
-              {costs.map((c) => <li key={c.id} className={`flex justify-between py-1.5 ${c.cancel ? "text-slate-400" : ""}`}><span>{c.label}{c.note ? <span className="text-slate-500"> · {c.note}</span> : null}<span className="ml-2 text-xs text-slate-400">{opAt(c.date, c.createdAt)}</span>{c.cancel && <span className="mt-0.5 block"><Badge color="red">Bekor qilingan</Badge> <span className="text-xs text-slate-500">{c.cancel}</span></span>}</span><span className={`tabular ${c.cancel ? "line-through" : ""}`}>{money(c.amount)}</span></li>)}
+              {costs.map((c) => <li key={c.id} className={`flex justify-between gap-3 py-1.5 ${c.cancel ? "text-slate-400" : ""}`}><span>{c.label}{c.note ? <span className="text-slate-500"> · {c.note}</span> : null}<span className="ml-2 text-xs text-slate-400">{opAt(c.date, c.createdAt)}</span>{c.cancel && <span className="mt-0.5 block"><Badge color="red">Bekor qilingan</Badge> <span className="text-xs text-slate-500">{c.cancel}</span></span>}</span><span className="flex flex-wrap items-start justify-end gap-1"><span className={`whitespace-nowrap tabular ${c.cancel ? "line-through" : ""}`}>{money(c.amount)}</span>{!c.cancel && canCancelCost && <ConfirmButton action={(c.fuel ? cancelFuel : cancelExpense).bind(null, c.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${c.label} (${money(c.amount)}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-6 px-1.5" />}</span></li>)}
             </ul>
           )}
-          {(canLog || s.role === "ACCOUNTING") && <TripCostForm tripId={id} lastPrice={price} dualFuel={t.vehicle.fuelType === "DIESEL_METHANE"} />}
+          {canDo(s, "trips", "cost") && <TripCostForm tripId={id} lastPrice={price} dualFuel={t.vehicle.fuelType === "DIESEL_METHANE"} />}
         </Card>
       )}
 

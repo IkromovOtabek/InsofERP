@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
@@ -8,9 +8,8 @@ import { canDo } from "@/lib/permissions";
 import { fmtNum } from "@/lib/format";
 import { MONTHS } from "@/lib/fin-report/realizatsiya";
 import { WEEKDAY_NAMES, countWorkDays, dayHours, dbDate, dbDateKey, monthKey, monthWorkDays, weekLabel, workCalendar } from "@/lib/work-calendar";
-import { Badge, Card, CardHeader, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
-import { deleteCalendarDayAction } from "./actions";
-import { CalendarDayForm, UzHolidaysButton, WorkWeekForm } from "./forms";
+import { Card, CardHeader, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { CalendarDayForm, CalendarDayRow, UzHolidaysButton, WorkWeekForm } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -70,13 +69,10 @@ export default async function IshTartibiPage({ searchParams }: { searchParams: P
               {days.map((d) => {
                 const k = dbDateKey(d.date), local = new Date(`${k}T00:00:00`);
                 return (
-                  <Tr key={d.id}>
-                    <Td className="tabular">{`${k.slice(8)}.${k.slice(5, 7)}.${k.slice(0, 4)}`}</Td>
-                    <Td>{WEEKDAY_NAMES[local.getDay()]}</Td>
-                    <Td>{d.kind === "HOLIDAY" ? <Badge color="red">Bayram / dam olish</Badge> : <Badge color="green">Ko&apos;chirilgan ish kuni</Badge>}</Td>
-                    <Td>{d.name ?? "—"}</Td>
-                    {canEdit && <Td right><form action={deleteCalendarDayAction}><input type="hidden" name="id" value={d.id} /><button title="O'chirish" aria-label="O'chirish" className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button></form></Td>}
-                  </Tr>
+                  <CalendarDayRow key={d.id} canEdit={canEdit} day={{
+                    id: d.id, date: k, label: `${k.slice(8)}.${k.slice(5, 7)}.${k.slice(0, 4)}`,
+                    weekday: WEEKDAY_NAMES[local.getDay()]!, kind: d.kind, name: d.name,
+                  }} />
                 );
               })}
             </tbody>

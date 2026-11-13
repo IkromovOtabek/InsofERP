@@ -10,6 +10,7 @@ import { Badge, Button, Card, Empty, Input, PageHeader, Select, Table, Td, Th, T
 import { EmployeeForm, GrantLoginForm } from "./employee-form";
 import { ToggleLoginButton } from "./login-forms";
 import { toggleEmployee } from "./actions";
+import { ConfirmButton } from "../payments/confirm-button";
 import { AccessRequests } from "./access-requests";
 import { pendingAccessRequests } from "@/lib/access-request";
 import type { Prisma } from "@/generated/prisma";
@@ -157,7 +158,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
                         <code className="rounded bg-slate-100 px-1.5 py-0.5">{e.user.login}</code>
                         <span className="text-slate-500">· {ROLE_LABELS[e.user.role]}</span>
                         {!e.user.isActive && <Badge color="red">bloklangan</Badge>}
-                        {/* Kirishni bloklash — xodim ro'yxatda faol qoladi; ishdan bo'shatish "O'chirish" tugmasida */}
+                        {/* Kirishni bloklash — xodim ro'yxatda faol qoladi; nofaol qilish oxirgi ustunda, ishdan bo'shatish — kartada */}
                         {isHR && e.isActive && e.userId !== s.userId && <ToggleLoginButton employeeId={e.id} blocked={!e.user.isActive} compact />}
                       </span>
                     )
@@ -167,7 +168,12 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
                 </Td>
                 <Td right>{e._count.trips}</Td>
                 <Td>{e.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</Td>
-                <Td>{isHR && e.userId !== s.userId && !e.firedAt && <form action={toggleEmployee.bind(null, e.id)}><Button variant="secondary" className="px-2 py-1 text-xs">{e.isActive ? "O'chirish" : "Yoqish"}</Button></form>}</Td>
+                <Td>
+                  {/* Nofaol qilish — ishdan bo'shatish emas (u kartada): login bloklanadi, xodim ro'yxatda «Nofaol» bo'lib qoladi */}
+                  {isHR && e.userId !== s.userId && !e.firedAt && (e.isActive
+                    ? <ConfirmButton key="off" action={toggleEmployee.bind(null, e.id)} label="Nofaol qilish" question={`«${e.fullName}» nofaol qilinsinmi? Logini ham bloklanadi`} okText="Nofaol qilindi" className="whitespace-nowrap text-xs" />
+                    : <ConfirmButton key="on" action={toggleEmployee.bind(null, e.id)} label="Yoqish" question={`«${e.fullName}» qayta faol qilinsinmi? Logini ham ochiladi`} okText="Faollashtirildi" className="whitespace-nowrap text-xs text-emerald-700 hover:bg-emerald-50" />)}
+                </Td>
               </Tr>
             );
           })}

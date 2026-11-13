@@ -30,6 +30,16 @@ const zDate = z.string().trim().optional().transform((v, ctx) => {
 
 const KINDS = HIRING_DOCS.map((d) => d.kind).concat("BOSHATISH", "BOSHATISH_BUYRUQ") as [HrDocKind, ...HrDocKind[]];
 
+/**
+ * Imzolangan hujjat (qog'oz nusxasi yuklangan yoki E-IMZO bilan imzolangan) kuchga kirgan: tuzatilmaydi va o'chirilmaydi.
+ * E-IMZO imzosi hujjat matniga bog'langan (`signPayload`) — maydon o'zgarsa imzo boshqa matnga tegishli bo'lib qolardi.
+ */
+function signedLock(d: { file: string | null; signedAt: Date | null; eSignedAt: Date | null }, what: "o'zgartirilmaydi" | "o'chirilmaydi") {
+  if (!d.file && !d.signedAt && !d.eSignedAt) return null;
+  return `${d.eSignedAt ? "E-IMZO bilan imzolangan" : "Imzolangan"} hujjat ${what} — xato bo'lsa yangi hujjat tayyorlang`;
+}
+const UNSIGNED = { file: null, signedAt: null, eSignedAt: null } satisfies Prisma.HrDocumentWhereInput;
+
 const docSchema = z.object({
   docId: zOpt,
   kind: z.enum(KINDS),
@@ -84,9 +94,15 @@ export async function saveHrDoc(employeeId: string, _prev: ActionState, fd: Form
     const dup = await orderNoProblem(tx, d.kind, data.no, data.docDate, d.docId ?? undefined);
     if (dup) return dup;
     if (d.docId) {
-      const before = await tx.hrDocument.findUniqueOrThrow({ where: { id: d.docId } });
+      const before = await tx.hrDocument.findUnique({ where: { id: d.docId } });
+      if (!before) return "Hujjat topilmadi";
       if (before.employeeId !== employeeId) throw new Error("FORBIDDEN");
-      const after = await tx.hrDocument.update({ where: { id: d.docId }, data });
+      const locked = signedLock(before, "o'zgartirilmaydi");
+      if (locked) return locked;
+      // Shartli yozuv: shu orada nusxa yuklangan yoki E-IMZO bilan imzolangan bo'lsa — tegilmaydi
+      const n = await tx.hrDocument.updateMany({ where: { id: d.docId, ...UNSIGNED }, data });
+      if (!n.count) return "Hujjat shu orada imzolandi — o'zgartirilmaydi, sahifani yangilang";
+      const after = await tx.hrDocument.findUniqueOrThrow({ where: { id: d.docId } });
       await audit(tx, s.userId, "UPDATE", "HrDocument", d.docId, before, after);
     } else {
       const created = await tx.hrDocument.create({ data: { ...data, employeeId, createdById: s.userId } });
@@ -202,13 +218,17 @@ export async function deleteHrDocScan(docId: string): Promise<ActionState> {
   const before = await db.hrDocument.findUnique({ where: { id: docId } });
   if (!before) return { error: "Hujjat topilmadi" };
   if (!before.file) return { error: "Bu hujjatda imzolangan nusxa yo'q" };
-  await db.$transaction(async (tx) => {
-    const after = await tx.hrDocument.update({
-      where: { id: docId },
+  // E-IMZO bilan imzolangan hujjat nusxasiz qolsa ham imzolangan — nusxa olinsa u "qoralama" bo'lib o'chirilib ketardi
+  if (before.eSignedAt) return { error: "E-IMZO bilan imzolangan hujjatning nusxasi olib tashlanmaydi — noto'g'ri fayl bo'lsa «Almashtirish» bilan yangisini yuklang" };
+  const n = await db.$transaction(async (tx) => {
+    const x = await tx.hrDocument.updateMany({
+      where: { id: docId, eSignedAt: null },
       data: { file: null, fileName: null, fileType: null, signedAt: null },
     });
-    await audit(tx, s.userId, "UPDATE", "HrDocument", docId, before, after);
+    if (x.count) await audit(tx, s.userId, "UPDATE", "HrDocument", docId, before, await tx.hrDocument.findUnique({ where: { id: docId } }));
+    return x.count;
   });
+  if (!n) return { error: "Hujjat shu orada E-IMZO bilan imzolandi — nusxa olib tashlanmaydi" };
   revalidatePath(`/employees/${before.employeeId}`);
   return { ok: true, note: "Nusxa olib tashlandi" };
 }
@@ -221,14 +241,15 @@ export async function deleteHrDoc(docId: string): Promise<ActionState> {
   const s = await hr();
   const before = await db.hrDocument.findUnique({ where: { id: docId } });
   if (!before) return { error: "Hujjat topilmadi" };
-  if (before.file || before.signedAt) return { error: "Imzolangan hujjat o'chirilmaydi — xato bo'lsa yangisini tayyorlang" };
+  const locked = signedLock(before, "o'chirilmaydi");
+  if (locked) return { error: locked };
   const n = await db.$transaction(async (tx) => {
-    // Shu orada imzolangan nusxa yuklangan bo'lsa — o'chirilmaydi
-    const del = await tx.hrDocument.deleteMany({ where: { id: docId, file: null, signedAt: null } });
+    // Shu orada imzolangan nusxa yuklangan yoki E-IMZO bilan imzolangan bo'lsa — o'chirilmaydi
+    const del = await tx.hrDocument.deleteMany({ where: { id: docId, ...UNSIGNED } });
     if (del.count) await audit(tx, s.userId, "DELETE", "HrDocument", docId, before, undefined);
     return del.count;
   });
-  if (!n) return { error: "Imzolangan hujjat o'chirilmaydi — xato bo'lsa yangisini tayyorlang" };
+  if (!n) return { error: "Hujjat shu orada imzolandi — o'chirilmaydi, xato bo'lsa yangi hujjat tayyorlang" };
   revalidatePath(`/employees/${before.employeeId}`);
   return { ok: true };
 }

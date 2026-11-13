@@ -16,6 +16,9 @@ import { parseInn } from "@/lib/inn";
 import { blockName } from "@/lib/site-blocks";
 import { cn } from "@/lib/utils";
 import { saveOrderGrid } from "./actions";
+import { loadOrderRowFlags } from "./row-flags-action";
+import type { OrderRowFlags } from "./row-flags";
+import { OrderRowActions } from "./order-row-actions";
 
 /** Mijoz obyekti va uning bloklari (A blok, B blok…) */
 export type GridSite = SavedPlace & { blocks: string[] };
@@ -171,6 +174,14 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
   const tableRef = useRef<HTMLDivElement>(null);
   const clean = useMemo(() => scriptCleaner(scripts), [scripts]);
   const closePop = useCallback(() => setPop(null), []);
+  // Olingan zayavkalar qatorida qalam / «Bekor qilish»: ruxsat va zames/reys holati serverdan (kartadagi shart bilan bir xil)
+  const [rowFlags, setRowFlags] = useState<Record<string, OrderRowFlags>>({});
+  useEffect(() => {
+    const ids = [...new Set([...existing.bank, ...existing.cash, ...existing.credit].map((x) => x.orderId))];
+    let alive = true;
+    (ids.length ? loadOrderRowFlags(ids) : Promise.resolve({})).then((f) => { if (alive) setRowFlags(f); }).catch(() => { if (alive) setRowFlags({}); });
+    return () => { alive = false; };
+  }, [existing]);
 
   const byCustomer = useMemo(() => {
     const m = new Map<string, GridCustomer>();
@@ -470,6 +481,7 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
         <div className="flex items-center justify-between gap-1.5">
           <Link href={`/orders/${x.orderId}`} className="min-w-0 truncate font-medium text-slate-900 underline-offset-2 hover:text-sky-700 hover:underline">{x.customer}</Link>
           {x.first && <OrderStatusBadge status={x.status} />}
+          {x.first && rowFlags[x.orderId] && <OrderRowActions id={x.orderId} edit={rowFlags[x.orderId].edit} cancel={rowFlags[x.orderId].cancel} subject={`Zayavka (${x.customer})`} className="shrink-0" />}
         </div>
       );
       case "product": return x.product;
@@ -519,12 +531,12 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
             )}
           </td>
         </tr>
-        {/* Shu kunga olingan zayavkalar — kulrang, faqat ko'rish (o'zgartirish — mijoz nomi orqali zayavka sahifasida) */}
+        {/* Shu kunga olingan zayavkalar — kulrang, kataklari tahrirlanmaydi; mijoz nomi yonida qalam (tahrirlash sahifasi) va «Bekor qilish» */}
         {existing[sec].map((x, i) => {
           const g = exGroups.get(x.orderId);
           return (
             <tr key={`ex-${x.orderId}-${i}`} className={cn("h-8 bg-slate-50", (loading || date !== day) && "opacity-40")}
-              title={`Olingan zayavka · ${ORDER_STATUS[x.status].label} — o'zgartirish uchun mijoz nomini bosing`}>
+              title={`Olingan zayavka · ${ORDER_STATUS[x.status].label} — tahrirlash: mijoz nomi yonidagi qalam`}>
               <td className={cn("w-14 min-w-14 border border-slate-300 bg-slate-100 text-center text-[11px] text-slate-500", g && g.rows > 1 && `border-l-4 ${GROUP_COLORS[(g.no - 1) % GROUP_COLORS.length]}`)}>{i + 1}</td>
               {COLS.map((col, ci) => {
                 const right = col.num || col.calc === "sum" || col.calc === "vat" || col.calc === "total";

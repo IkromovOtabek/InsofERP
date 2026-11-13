@@ -1,13 +1,13 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { Building2, Plus, Pencil, Trash2, MapPin, Phone, Clock, Wallet, ClipboardList } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, MapPin, Phone, Clock, Wallet, ClipboardList, Archive, ArchiveRestore } from "lucide-react";
 import { Badge, Button, Field, FormError, Input, LinkButton, Textarea, Checkbox, Empty } from "@/components/ui";
 import { AddressPicker } from "@/components/address-picker";
 import { BlockTag, BlocksEditor } from "@/components/site-blocks";
 import { money } from "@/lib/format";
 import type { SiteDebt } from "@/lib/customer-sites";
-import { saveSite, deleteSite } from "../site-actions";
+import { saveSite, deleteSite, setSiteActive } from "../site-actions";
 
 /**
  * Mijoz kartasidagi "Obyektlar" bo'limi: mijozning obyektlari ro'yxati, har biriga qo'shish/tahrirlash,
@@ -66,6 +66,16 @@ function SiteRow({ row, customerId, canEdit, canOrder, onEdit }: { row: SiteDebt
     });
   };
 
+  // Zayavkasi bor obyekt o'chirilmaydi — «Nofaol qilish»: yangi zayavkada tanlanmaydi, tarix joyida qoladi
+  const onActive = (active: boolean) => {
+    if (!row.site) return;
+    setError(null);
+    start(async () => {
+      const r = await setSiteActive(customerId, row.site!.id, active);
+      if (r?.error) setError(r.error);
+    });
+  };
+
   return (
     <div className="rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-xs">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -115,8 +125,12 @@ function SiteRow({ row, customerId, canEdit, canOrder, onEdit }: { row: SiteDebt
             {row.canDelete ? (
               <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50" disabled={pending} onClick={onDelete}><Trash2 size={14} /> O'chirish</Button>
             ) : (
-              <span className="text-xs text-slate-400">{row.orders} ta zayavka — o'chirib bo'lmaydi</span>
+              <>
+                <span className="text-xs text-slate-400">{row.orders} ta zayavka — o'chirib bo'lmaydi</span>
+                {row.site!.isActive && <Button size="sm" variant="ghost" disabled={pending} onClick={() => onActive(false)} title="Yangi zayavkada tanlanmaydi, eski zayavkalar va qarz joyida qoladi"><Archive size={14} /> Nofaol qilish</Button>}
+              </>
             )}
+            {!row.site!.isActive && <Button size="sm" variant="ghost" disabled={pending} onClick={() => onActive(true)}><ArchiveRestore size={14} /> Faol qilish</Button>}
           </>}
         </div>
       )}

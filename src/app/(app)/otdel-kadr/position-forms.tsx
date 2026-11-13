@@ -1,13 +1,14 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
-import { Check, KeyRound, Plus, Trash2, Wand2 } from "lucide-react";
+import { Check, KeyRound, Plus, Wand2 } from "lucide-react";
 import { deleteWorkPosition, savePositionTemplate, saveWorkPosition, syncEmployeePositions, toggleWorkPosition } from "./actions";
 import { PermsTree } from "../settings/perms-tree";
 import { permModules } from "@/lib/perm-modules";
 import { describeWriteScripts, SCRIPT_PERM } from "@/lib/permissions";
 import type { Role } from "@/generated/prisma";
 import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { DeleteButton } from "@/components/delete-button";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionState } from "@/lib/action";
@@ -114,11 +115,8 @@ export function PositionRow({ p, used, logins, roles, canTemplate }: { p: Pos; u
             </Button>
           )}
           <Button size="sm" variant="ghost" type="button" disabled={pending} onClick={() => toggleWorkPosition(p.id)}>{p.isActive ? "Yashirish" : "Qaytarish"}</Button>
-          {used === 0 && (
-            <Button size="sm" variant="ghost" type="button" className="text-red-600" disabled={pending} onClick={() => deleteWorkPosition(p.id)} title="O'chirish">
-              <Trash2 size={14} />
-            </Button>
-          )}
+          {/* Faqat hech kimga berilmagan lavozim o'chadi (server ham tekshiradi); bandi bor — «Yashirish» */}
+          {used === 0 && <DeleteButton action={deleteWorkPosition} id={p.id} name={p.name} title="Lavozimni o'chirish" />}
         </div>
         {roleLabel && (
           <div className="text-xs text-sky-800 sm:col-span-full">

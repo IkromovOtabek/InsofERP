@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
 import { money, date, opAt } from "@/lib/format";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
 import { ConfirmButton } from "../payments/confirm-button";
@@ -28,9 +29,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const marks = await customerMarks(invoices.map((i) => i.customerId));
   const receivable = recv.total;
   const tabs: Array<[string, string]> = [["", "Hammasi"], ...Object.entries(INVOICE_STATUS).map(([k, v]) => [k, v.label] as [string, string])];
-  const canCancel = ["ACCOUNTING", "DIRECTOR"].includes(s?.role ?? "");
-  // Schyot yozish — server ruxsatiga mos (buxgalteriya, sotuv, direktor); moliya faqat ko'radi
-  const canCreate = ["ACCOUNTING", "SALES", "DIRECTOR"].includes(s?.role ?? "");
+  // Tugmalar server action'lari bilan bir qoidadan: bekor qilish — sales.invoice_cancel, schyot yozish — sales.invoice
+  const canCancel = canDo(s, "sales", "invoice_cancel");
+  const canCreate = canDo(s, "sales", "invoice");
 
   return (
     <div>

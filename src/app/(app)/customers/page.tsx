@@ -6,13 +6,18 @@ import { ContractMark } from "@/components/customer-name";
 import { money } from "@/lib/format";
 import { Badge, Callout, Empty, Input, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
+import { DeleteButton } from "@/components/delete-button";
+import { deleteCustomer } from "./actions";
 
 /** Ro'yxat sukut bo'yicha shuncha qator: 700+ mijozning hammasi sahifani 2–3 MB qilardi. Qidiruv natijasi — to'liq. */
 const LIMIT = 200;
 
 export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; tab?: string; hammasi?: string }> }) {
-  await requirePage("/customers");
+  const s = await requirePage("/customers");
   const { q, tab = "all", hammasi } = await searchParams;
+  // Qatordagi o'chirish — `deleteCustomer` bilan bir xil ruxsat (ishlatilgan mijoz o'chmaydi, nofaol qilinadi)
+  const del = canDo(s, "customers", "edit") ? deleteCustomer.bind(null, false) : null;
   // Boshqa nomlari bo'yicha ham (kassada «Dumbirabod 998865055» deb yozilgan mijoz) — massiv ichida qisman moslik
   const aliasIds = q
     ? (await db.$queryRaw<{ id: string }[]>`SELECT id FROM "Customer" WHERE EXISTS (SELECT 1 FROM unnest(aliases) a WHERE a ILIKE ${`%${q}%`})`).map((r) => r.id)
@@ -48,7 +53,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       ]} />
       <form className="relative mb-4 max-w-md"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input name="q" aria-label="Qidirish" placeholder="Qidirish: nomi, INN, telefon" defaultValue={q} className="pl-9" /></form>
       <Table>
-        <thead><tr><Th>Nomi</Th><Th>INN</Th><Th>Telefon</Th><Th right>Qarz / avans</Th><Th right>Limit</Th><Th right>Ishlatilgan</Th><Th right>Bo'sh limit</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>Nomi</Th><Th>INN</Th><Th>Telefon</Th><Th right>Qarz / avans</Th><Th right>Limit</Th><Th right>Ishlatilgan</Th><Th right>Bo'sh limit</Th><Th>Holat</Th>{del && <Th />}</tr></thead>
         <tbody>
           {shown.length === 0 && <Empty text={tab === "black" ? "Qora ro'yxat bo'sh" : tab === "contract" ? "Shartnomali mijoz yo'q" : "Mijozlar yo'q"} />}
           {visible.map(({ c, cr, contract }) => (
@@ -61,6 +66,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               <Td right className={cr.used > 0 ? "text-amber-700" : "text-slate-400"}>{money(cr.used)}</Td>
               <Td right className={cr.free <= 0 ? "font-semibold text-red-600" : "text-emerald-700"}>{money(cr.free)}</Td>
               <Td>{!c.isActive ? <Badge>Nofaol</Badge> : cr.blacklisted ? <Badge color="red">Qora ro'yxat</Badge> : <Badge color="green">Faol</Badge>}</Td>
+              {del && <Td className="py-1.5"><DeleteButton action={del} id={c.id} name={c.name} title="O'chirish (hujjatlarda ishlatilgan bo'lsa — nofaol qilinadi)" /></Td>}
             </Tr>
           ))}
         </tbody>

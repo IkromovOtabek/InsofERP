@@ -22,8 +22,8 @@ const STATUS = {
  */
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const s = await requireRoles(["SALES"], { module: "sales", actions: ["leads"] });
-  // Bog'lanish/izoh — sotuvchi va direktor
-  const canAct = ["SALES", "DIRECTOR"].includes(s.role);
+  // Bog'lanish/izoh/mijozga aylantirish — server amallari bilan bir xil ruxsat («sales → leads»: sotuvchi, direktor yoki ruxsat berilgan xodim)
+  const canAct = canDo(s, "sales", "leads");
   const canOffer = canDo(s, "offers", "create");
   const { tab = "new" } = await searchParams;
 

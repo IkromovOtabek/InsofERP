@@ -32,7 +32,8 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
       include: {
         user: true, vehicle: true,
         documents: { orderBy: { createdAt: "asc" } },
-        hrDocs: { orderBy: { docDate: "desc" } },
+        // Bir kunda imzolangan hujjat o'rniga yangisi tayyorlansa — qatorda yangisi chiqsin
+        hrDocs: { orderBy: [{ docDate: "desc" }, { createdAt: "desc" }] },
         _count: { select: { trips: true, brigades: true } },
       },
     }),
@@ -244,7 +245,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
                     <span className="ml-2 text-xs text-slate-400">{d.fileType}</span>
                   </Td>
                   <Td className="whitespace-nowrap">{dateTime(d.createdAt)}</Td>
-                  <Td><DeleteDocument docId={d.id} /></Td>
+                  <Td right><DeleteDocument docId={d.id} name={d.kind} /></Td>
                 </Tr>
               ))}
             </tbody>

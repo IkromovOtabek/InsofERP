@@ -412,17 +412,24 @@ export async function driverTempLoginCore(s: KadrActor, employeeId: string, fd: 
 
 /** Xodimni o'chirish/yoqish — bog'langan login ham birga bloklanadi/ochiladi. */
 export async function toggleEmployeeCore(s: KadrActor, id: string): Promise<KadrResult> {
-  const cur = await db.employee.findUniqueOrThrow({ where: { id } });
+  const cur = await db.employee.findUnique({ where: { id } });
+  if (!cur) return { error: "Xodim topilmadi" };
   const denied = await directorGuard(cur.userId, s.role);
   if (denied) return { error: denied };
-  if (cur.userId && cur.userId === s.userId) return { error: "O'zingizni o'chira olmaysiz" }; // UI tugmani ko'rsatmaydi
+  if (cur.userId && cur.userId === s.userId) return { error: "O'zingizni nofaol qila olmaysiz" }; // UI tugmani ko'rsatmaydi
   // Ishdan bo'shatilgan xodim faqat kartadagi "Ishga qaytarish" orqali qaytadi (sana va sabab ham tozalanadi) —
   // aks holda bo'shatilgan holicha logini va ECO kirishi ochilib qolardi
   if (cur.firedAt) return { error: "Bo'shatilgan xodim kartadagi «Ishga qaytarish» tugmasi orqali qaytariladi" };
+  // Yo'ldagi reys egasiz qolmasin (bo'shatishdagi kabi): avval reys yakunlanadi yoki bekor qilinadi
+  if (cur.isActive) {
+    const trips = await openTripsProblem(id);
+    if (trips) return { error: trips };
+  }
   try {
     await db.$transaction(async (tx) => {
       const n = await tx.employee.updateMany({ where: { id, isActive: cur.isActive, firedAt: null }, data: { isActive: !cur.isActive } });
       if (n.count === 0) throw new Error("Xodim holati o'zgargan — sahifani yangilang");
+      if (cur.isActive) { const late = await openTripsProblem(id, tx); if (late) throw new Error(late); }
       if (cur.userId && !cur.isActive) { const limit = await userLimitError(tx); if (limit) throw new Error(limit); }
       if (cur.userId) await tx.user.update({ where: { id: cur.userId }, data: { isActive: !cur.isActive } });
       await audit(tx, s.userId, "UPDATE", "Employee", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
@@ -807,11 +814,14 @@ export async function deleteEmployeePhotoCore(s: KadrActor, employeeId: string):
 
 /** Hujjat nusxasini kartadan olib tashlash (`id` — xodim, sahifa yangilanishi uchun). */
 export async function deleteEmployeeDocumentCore(s: KadrActor, docId: string): Promise<KadrResult> {
-  const doc = await db.employeeDocument.findUniqueOrThrow({ where: { id: docId } });
-  await db.$transaction(async (tx) => {
-    await tx.employeeDocument.delete({ where: { id: docId } });
-    await audit(tx, s.userId, "DELETE", "EmployeeDocument", docId, doc, undefined);
+  const doc = await db.employeeDocument.findUnique({ where: { id: docId } });
+  if (!doc) return { error: "Hujjat nusxasi topilmadi — allaqachon olib tashlangan bo'lishi mumkin" };
+  const n = await db.$transaction(async (tx) => {
+    const x = await tx.employeeDocument.deleteMany({ where: { id: docId } });
+    if (x.count) await audit(tx, s.userId, "DELETE", "EmployeeDocument", docId, doc, undefined);
+    return x.count;
   });
+  if (!n) return { error: "Hujjat nusxasi allaqachon olib tashlangan — sahifani yangilang" };
   // Nusxa faylining o'zi diskda qoladi (hujjatlar o'chirilmaydi): nomi auditda, kerak bo'lsa tiklanadi
   return { ok: true, id: doc.employeeId, note: `${doc.kind} olib tashlandi` };
 }

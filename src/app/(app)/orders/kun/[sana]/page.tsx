@@ -8,6 +8,9 @@ import { PageHeader, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot, typ
 import { PrintButton } from "@/components/print-button";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
+import { db } from "@/lib/db";
+import { ROW_FLAGS_SELECT, orderRowFlags, type OrderRowFlags } from "../../row-flags";
+import { OrderRowActions } from "../../order-row-actions";
 
 /**
  * Kunlik «Realizatsiya zayavkasi» — foydalanuvchining Excel varag'i ko'rinishida: to'lov turi bo'yicha
@@ -27,13 +30,17 @@ const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
 const nq = (v: number) => fmtNum(v, 3);
 
 export default async function OrderDayPage({ params }: { params: Promise<{ sana: string }> }) {
-  await requirePage("/orders");
+  const s = await requirePage("/orders");
   const { sana } = await params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(sana)) notFound();
   const day = new Date(`${sana}T00:00:00`);
   if (Number.isNaN(day.getTime()) || isoDate(day) !== sana) notFound();
 
   const sheet = await orderDaySheet(day);
+  // Har zayavka qatorida qalam va «Bekor qilish» — kartadagi shart bilan (`row-flags.ts`)
+  const ids = [...new Set(sheet.groups.flatMap((g) => g.rows.map((r) => r.orderId)))];
+  const flagRows = ids.length ? await db.order.findMany({ where: { id: { in: ids } }, select: { id: true, ...ROW_FLAGS_SELECT } }) : [];
+  const flags = new Map(flagRows.map((o) => [o.id, orderRowFlags(s, o)]));
   const shift = (n: number) => { const d = new Date(day); d.setDate(d.getDate() + n); return isoDate(d); };
   const title = `${dateRu(day)}`;
 
@@ -64,7 +71,7 @@ export default async function OrderDayPage({ params }: { params: Promise<{ sana:
       />
 
       <div className="space-y-4">
-        {sheet.groups.map((g) => <GroupSheet key={g.key} g={g} />)}
+        {sheet.groups.map((g) => <GroupSheet key={g.key} g={g} flags={flags} />)}
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:items-start">
           <Sheet lang="uz" maxHeight="none">
@@ -88,7 +95,7 @@ export default async function OrderDayPage({ params }: { params: Promise<{ sana:
   );
 }
 
-function GroupSheet({ g }: { g: DaySheetGroup }) {
+function GroupSheet({ g, flags }: { g: DaySheetGroup; flags: Map<string, OrderRowFlags> }) {
   const tone = GROUP_TONE[g.key];
   return (
     <Sheet lang="uz" maxHeight="none" className="[&_table]:min-w-[960px] [&_table]:table-fixed [&_table]:text-[12px] [&_td]:px-1.5 [&_td]:break-words [&_th]:px-1.5 [&_th]:text-[12px] [&_th]:whitespace-normal">
@@ -115,7 +122,11 @@ function GroupSheet({ g }: { g: DaySheetGroup }) {
           const same = i > 0 && g.rows[i - 1].orderId === r.orderId;
           return (
             <SheetTr key={`${r.orderId}-${i}`}>
-              <SheetTd>{same ? "" : <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link>}</SheetTd>
+              <SheetTd>{same ? "" : <>
+                <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link>
+                {/* Qalam va «Bekor qilish» — ustun tor: bekor qilish so'rovi katak ichida qatorlanadi */}
+                {flags.has(r.orderId) && <div className="mt-0.5 [&_input]:w-full"><OrderRowActions id={r.orderId} edit={flags.get(r.orderId)!.edit} cancel={flags.get(r.orderId)!.cancel} subject={`Zayavka (${r.customer})`} /></div>}
+              </>}</SheetTd>
               <SheetTd>{r.product}</SheetTd>
               <SheetTd center>{r.unit}</SheetTd>
               <SheetTd right strong>{r.qty ? nq(r.qty) : ""}</SheetTd>

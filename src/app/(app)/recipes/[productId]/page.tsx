@@ -2,14 +2,18 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { qty, dateTime, money } from "@/lib/format";
-import { Badge, Card, DL, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, DL, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { RecipeForm } from "../recipe-form";
 import { unitLabel } from "@/lib/unit";
 import { ingredientOf } from "@/lib/recipe";
 import { productCatalog } from "@/lib/product-catalog";
-import { canEditMaterials, canEditProducts } from "@/lib/catalog";
+import { canEditMaterials, canEditProducts, PRODUCT_CATALOG_ROLES } from "@/lib/catalog";
 import type { IngredientGroup, IngredientRow } from "@/components/ingredient-picker";
-import { Pencil } from "lucide-react";
+import { moduleWriteAllowed } from "@/lib/auth";
+import { canDo } from "@/lib/permissions";
+import { pathAllowed } from "@/lib/nav";
+import { fmtVolume, unitVolume } from "@/lib/volume";
+import { ProductCardHeader } from "./product-rename";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
@@ -53,12 +57,13 @@ export default async function RecipePage({ params }: { params: Promise<{ product
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="space-y-4">
-          {/* Mahsulotning o'z ma'lumotlari — 1C dagi tovar kartasi tepasidagi kabi; tahrirlash Sozlamalarda */}
+          {/* Mahsulotning o'z ma'lumotlari — 1C dagi tovar kartasi tepasidagi kabi. Nomi va hajmi shu yerda
+              (`renameCatalogProduct` huquqi bilan), narx/birlik/tur — Sozlamalarda (faqat ruxsati borga havola) */}
           <Card>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">Mahsulot</h2>
-              <LinkButton href="/settings?tab=products" variant="ghost" size="sm"><Pencil size={13} /> Tahrirlash</LinkButton>
-            </div>
+            <ProductCardHeader
+              product={{ id: p.id, name: p.name, unit: unitLabel(p.unit), volumeM3: p.volumeM3 != null ? Number(p.volumeM3) : null, m3: fmtVolume(unitVolume(p)) }}
+              canRename={canDo(s, "stock", "products") || moduleWriteAllowed(s, "production", PRODUCT_CATALOG_ROLES) === true}
+              settingsHref={pathAllowed("/settings", s.role, s.perms) ? "/settings?tab=products" : null} />
             <DL items={[
               { k: "Tovar turi", v: p.kind ?? "—" },
               { k: "Bo'lim", v: p.group?.name ?? "Ro'yxat ildizi" },

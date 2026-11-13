@@ -54,6 +54,30 @@ export async function createRecurringAction(_p: ActionState, fd: FormData): Prom
   return { ok: true };
 }
 
+const recurringEditSchema = recurringSchema.extend({ id: zStr("Yozuv tanlanmagan") });
+
+/** Doimiy to'lovni tahrirlash (nomi, kategoriya, kuni, summa, kredit, izoh) — bekor qilinmaganini. Oldingi qiymatlar AuditLog'da. */
+export async function updateRecurringAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const r = parseForm(recurringEditSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const { id, ...d } = r.data;
+  const res = makeResolver(await loadCategories())(d.category);
+  if (!res || res.top.type !== "EXPENSE") return { error: "Chiqim kategoriyasini tanlang" };
+  const data = { ...d, category: res.top.name, loanId: res.top.needs === "LOAN" ? d.loanId : null };
+  const n = await db.$transaction(async (tx) => {
+    const before = await tx.recurringPayment.findFirst({ where: { id, cancelledAt: null } });
+    if (!before) return 0;
+    // Shartli yangilash: shu orada bekor qilingan bo'lsa — o'zgarmaydi
+    const u = await tx.recurringPayment.updateMany({ where: { id, cancelledAt: null }, data });
+    if (u.count) await audit(tx, s.userId, "UPDATE", "RecurringPayment", id, before, { ...before, ...data });
+    return u.count;
+  });
+  if (!n) return { error: "To'lov topilmadi yoki bekor qilingan" };
+  refresh();
+  return { ok: true };
+}
+
 const idSchema = z.object({ id: zStr(), reason: zOpt });
 
 /** Faol / nofaol (vaqtincha to'xtatish) — qayta yoqsa bo'ladi. */
@@ -109,7 +133,30 @@ export async function createPlannedAction(_p: ActionState, fd: FormData): Promis
   return { ok: true };
 }
 
-const closeSchema = z.object({ id: zStr(), status: z.enum(["DONE", "CANCELLED"]) });
+const plannedEditSchema = plannedSchema.extend({ id: zStr("Yozuv tanlanmagan") });
+
+/** Bir martalik to'lov / tushumni tahrirlash — faqat ochiq (rejadagi) yozuv; bajarilgan yoki bekor qilingani o'zgarmaydi. */
+export async function updatePlannedAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const r = parseForm(plannedEditSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const { id, ...d } = r.data;
+  const date = new Date(d.date);
+  if (date.getTime() > Date.now() + 366 * 86_400_000) return { error: "Sana bir yildan uzoq bo'lmasin" };
+  const data = { ...d, date };
+  const n = await db.$transaction(async (tx) => {
+    const before = await tx.plannedFlow.findFirst({ where: { id, status: "PLANNED" } });
+    if (!before) return 0;
+    const u = await tx.plannedFlow.updateMany({ where: { id, status: "PLANNED" }, data });
+    if (u.count) await audit(tx, s.userId, "UPDATE", "PlannedFlow", id, before, { ...before, ...data });
+    return u.count;
+  });
+  if (!n) return { error: "Yozuv topilmadi yoki allaqachon yopilgan (bajarildi / bekor)" };
+  refresh();
+  return { ok: true };
+}
+
+const closeSchema = z.object({ id: zStr(), status: z.enum(["DONE", "CANCELLED"]), reason: zOpt });
 
 /** Bajarildi (pul keldi / to'landi — kassaga alohida yoziladi) yoki bekor — kalendardan chiqadi. */
 export async function closePlannedAction(_p: ActionState, fd: FormData): Promise<ActionState> {
@@ -118,7 +165,7 @@ export async function closePlannedAction(_p: ActionState, fd: FormData): Promise
   if ("error" in r) return { error: r.error };
   const n = await db.$transaction(async (tx) => {
     const u = await tx.plannedFlow.updateMany({ where: { id: r.data.id, status: "PLANNED" }, data: { status: r.data.status, closedAt: new Date(), closedById: s.userId } });
-    if (u.count) await audit(tx, s.userId, "STATUS_CHANGE", "PlannedFlow", r.data.id, { status: "PLANNED" }, { status: r.data.status });
+    if (u.count) await audit(tx, s.userId, "STATUS_CHANGE", "PlannedFlow", r.data.id, { status: "PLANNED" }, { status: r.data.status, ...(r.data.reason ? { reason: r.data.reason } : {}) });
     return u.count;
   });
   if (!n) return { error: "Yozuv topilmadi yoki allaqachon yopilgan" };

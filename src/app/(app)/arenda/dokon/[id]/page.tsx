@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileSignature, FileText, History, Link2Off, MessageCircle, Paperclip, Pencil, Phone, Printer, QrCode, Send, Trash2, TrendingUp, Wallet, Zap } from "lucide-react";
+import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileSignature, FileText, History, Link2Off, MessageCircle, Paperclip, Pencil, Phone, Printer, QrCode, Send, Trash2, TrendingUp, Undo2, Wallet, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -17,7 +17,7 @@ import { reminderText, shopLedger } from "@/lib/rent-tenant";
 import { botEnabled, botUsername } from "@/lib/telegram/api";
 import { Badge, Callout, Card, CardHeader, DL, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
-import { cancelRentPriceChange, createRentTgLink, removeRentFileAction, sendRentReminderNow, unlinkRentTg } from "../../actions";
+import { cancelRentPriceChange, createRentTgLink, removeRentFileAction, sendRentReminderNow, stornoRentTx, unlinkRentTg } from "../../actions";
 import { CopyButton } from "../../tenant-forms";
 
 const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
@@ -34,6 +34,8 @@ export default async function RentShopPage({ params, searchParams }: { params: P
   if (!shop) notFound();
   const canShops = canDo(s, "arenda", "shops");
   const canCreate = canDo(s, "arenda", "create");
+  // To'lovlar tarixidagi «Bekor qilish» — Arenda → Jurnal tabidagi bilan bir amal (`stornoRentTx`)
+  const canStorno = canDo(s, "arenda", "storno");
   const daily = shop.period === "DAILY";
   // Shartnomalar: joriy (amaldagi, bo'lmasa oxirgi) — karta shu bo'yicha; qolganlari «Oldingi ijarachilar»
   const leases = await db.rentLease.findMany({ where: { shopId: id }, orderBy: [{ startDate: "desc" }, { createdAt: "desc" }] });
@@ -162,7 +164,12 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                       <Td>{RENT_METHOD_LABEL[t.method]}</Td>
                       <Td right className={t.type === "INCOME" ? "font-semibold text-emerald-700" : "font-semibold text-red-600"}>{t.type === "INCOME" ? "+" : "−"}{fmtNum(t.amount)}</Td>
                       <Td className="text-xs text-slate-500">{t.createdBy.fullName}{t.lease && t.leaseId !== curLease?.id && t.lease.tenantName ? ` · ${t.lease.tenantName} (sobiq)` : ""}{t.batchId ? " · bir necha oyga" : ""}{t.note ? ` · ${t.note}` : ""}{t.cancelReason ? ` · bekor: ${t.cancelReason}` : ""}</Td>
-                      <Td>{t.type === "INCOME" && <Link href={`/arenda/kvitansiya/${t.id}`} title="Kvitansiyani chop etish" className="inline-flex items-center gap-1 text-xs text-slate-500 no-underline hover:text-slate-900"><Printer size={13} /> Kvitansiya</Link>}</Td>
+                      <Td>
+                        <div className="flex items-center gap-3">
+                          {t.type === "INCOME" && <Link href={`/arenda/kvitansiya/${t.id}`} title="Kvitansiyani chop etish" className="inline-flex items-center gap-1 text-xs text-slate-500 no-underline hover:text-slate-900"><Printer size={13} /> Kvitansiya</Link>}
+                          {canStorno && !t.cancelledAt && <ConfirmButton action={stornoRentTx.bind(null, t.id)} label={<><Undo2 size={13} className="mr-1 inline" />Bekor qilish</>} question={t.batchId ? "Bir necha oyga bo'lingan to'lov — hamma qismi bekor qilinsinmi?" : "Bekor qilinsinmi?"} reason="required" okText="Bekor qilindi" className="text-xs text-slate-500 no-underline hover:text-red-600" />}
+                        </div>
+                      </Td>
                     </Tr>
                   ))}
                 </tbody>

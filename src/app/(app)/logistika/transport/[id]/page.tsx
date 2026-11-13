@@ -17,7 +17,7 @@ import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { VehicleForm } from "../vehicle-form";
 import { PhaseBadge, TripLink, VehicleLiveBadge } from "../../ui";
 import { VehicleStatusForm } from "../../../drivers/vehicle-status-form";
-import { cancelVehicleService } from "../../actions";
+import { cancelExpense, cancelFuel, cancelVehicleService } from "../../actions";
 import { ServiceForm, VehicleExpenseForm } from "./service-forms";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
@@ -71,6 +71,8 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
   const fuelOpen = !isMechanic && pathAllowed("/logistika/yoqilgi", s.role, s.perms);
   const tripsClosed = !pathAllowed("/trips", s.role, s.perms);
   const expenseOpen = !isMechanic && pathAllowed("/logistika/xarajatlar", s.role, s.perms);
+  // Zapravka / xarajatni bekor qilish — server `cancelFuel` / `cancelExpense` tekshiradigan ruxsat (`logistika` → `fuel`)
+  const canCancelCost = canDo(s, "logistika", "fuel");
 
   return (
     <div>
@@ -126,11 +128,11 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
           <Card padded={false}>
             <div id="yoqilgi" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Yoqilg'i" icon={Fuel} action={!fuelOpen ? undefined : <Link href={`/logistika/yoqilgi?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
             <Table>
-              <thead><tr><Th>Sana</Th><Th right>Litr</Th><Th right>Summa</Th><Th right>Probeg</Th></tr></thead>
+              <thead><tr><Th>Sana</Th><Th right>Litr</Th><Th right>Summa</Th><Th right>Probeg</Th>{canCancelCost && <Th />}</tr></thead>
               <tbody>
                 {v.fuelLogs.length === 0 && <Empty text="Zapravka yozilmagan" />}
                 {v.fuelLogs.slice(0, 10).map((f) => (
-                  <Tr key={f.id} className={f.cancelledAt ? "text-slate-400" : undefined}><Td className="text-sm"><span className="whitespace-nowrap">{opAt(f.date, f.createdAt)}</span><div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.driver ? ` · ${f.driver.fullName}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td><Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td><Td right className={`tabular ${f.cancelledAt ? "line-through" : ""}`}>{moneyShort(Number(f.amount))}</Td><Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td></Tr>
+                  <Tr key={f.id} className={f.cancelledAt ? "text-slate-400" : undefined}><Td className="text-sm"><span className="whitespace-nowrap">{opAt(f.date, f.createdAt)}</span><div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.driver ? ` · ${f.driver.fullName}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td><Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td><Td right className={`tabular ${f.cancelledAt ? "line-through" : ""}`}>{moneyShort(Number(f.amount))}</Td><Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td>{canCancelCost && <Td>{!f.cancelledAt && <ConfirmButton action={cancelFuel.bind(null, f.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`Zapravka ${date(f.date)} (${money(Number(f.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>}</Tr>
                 ))}
               </tbody>
             </Table>
@@ -139,10 +141,10 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
             <div className="px-5 pt-5"><CardHeader title="Boshqa xarajatlar" icon={Coins} action={!expenseOpen ? undefined : <Link href={`/logistika/xarajatlar?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
             {isMechanic && <VehicleExpenseForm vehicleId={v.id} />}
             <Table>
-              <thead><tr><Th>Sana</Th><Th>Turi</Th><Th right>Summa</Th></tr></thead>
+              <thead><tr><Th>Sana</Th><Th>Turi</Th><Th right>Summa</Th>{canCancelCost && <Th />}</tr></thead>
               <tbody>
                 {v.expenses.length === 0 && <Empty text="Xarajat yozilmagan" />}
-                {v.expenses.slice(0, 10).map((e) => <Tr key={e.id} className={e.cancelledAt ? "text-slate-400" : undefined}><Td className="whitespace-nowrap text-sm">{opAt(e.date, e.createdAt)}</Td><Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note ? <div className="text-xs text-slate-500">{e.note}</div> : null}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td><Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td></Tr>)}
+                {v.expenses.slice(0, 10).map((e) => <Tr key={e.id} className={e.cancelledAt ? "text-slate-400" : undefined}><Td className="whitespace-nowrap text-sm">{opAt(e.date, e.createdAt)}</Td><Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note ? <div className="text-xs text-slate-500">{e.note}</div> : null}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td><Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td>{canCancelCost && <Td>{!e.cancelledAt && <ConfirmButton action={cancelExpense.bind(null, e.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${EXPENSE_KIND[e.kind]} ${date(e.date)} (${money(Number(e.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>}</Tr>)}
               </tbody>
             </Table>
           </Card>

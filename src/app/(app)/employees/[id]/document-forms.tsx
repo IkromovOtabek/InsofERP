@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Trash2, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { addEmployeeDocument, deleteEmployeeDocument } from "../../otdel-kadr/actions";
 import { DOC_KINDS, OTHER_DOC_KIND, oversizeFiles } from "@/lib/kadr";
 import { Button, FormError, Input, Select } from "@/components/ui";
+import { DeleteButton } from "@/components/delete-button";
 
 const fileCls =
   "block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700";
@@ -44,11 +45,7 @@ export function DocumentForms({ employeeId, accept }: { employeeId: string; acce
   );
 }
 
-/** Hujjat nusxasini o'chirish tugmasi. */
-export function DeleteDocument({ docId }: { docId: string }) {
-  return (
-    <form action={deleteEmployeeDocument.bind(null, docId)}>
-      <Button variant="ghost" size="sm" className="text-red-600" title="O'chirish"><Trash2 size={14} /></Button>
-    </form>
-  );
+/** Hujjat nusxasini kartadan olib tashlash — «o'chirilsinmi?» tasdig'i bilan (fayl diskda qoladi, nomi auditda). */
+export function DeleteDocument({ docId, name }: { docId: string; name: string }) {
+  return <DeleteButton action={deleteEmployeeDocument} id={docId} name={name} title="Nusxani olib tashlash" />;
 }

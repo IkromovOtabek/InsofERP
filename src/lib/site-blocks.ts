@@ -46,6 +46,38 @@ export async function ensureBlocks(tx: Prisma.TransactionClient, siteId: string,
   return out;
 }
 
+export type BlockRename = { id: string; from: string; to: string };
+
+/**
+ * Blokni qayta nomlash (obyekt formasidagi chip qalami): blok o'sha id bilan qoladi — zayavka qatorlari unga bog'liqligicha,
+ * matritsada ustun ikkiga bo'linmaydi (o'chirib yangi nom qo'shilsa eski blok «faol emas» bo'lib, yangisi alohida ustun bo'lardi).
+ * `from` — bazadagi joriy nom. Yangi nom shu obyektdagi boshqa blokda (faol emasida ham) bo'lsa — xato.
+ * Tranzaksiya ichida chaqiriladi; audit — chaqiruvchida (bu modul klientda ham ishlatiladi, `db`/`audit` import qilinmaydi).
+ */
+export async function renameSiteBlocks(tx: Prisma.TransactionClient, siteId: string, pairs: { from: string; to: string }[]): Promise<{ ok: true; renamed: BlockRename[] } | { ok: false; error: string }> {
+  const list = pairs.map((p) => ({ from: blockName(p.from), to: blockName(p.to) })).filter((p): p is { from: string; to: string } => !!p.from && !!p.to && p.from !== p.to);
+  if (!list.length) return { ok: true, renamed: [] };
+  const have = await tx.siteBlock.findMany({ where: { siteId }, select: { id: true, name: true, isActive: true } });
+  const byKey = new Map(have.map((b) => [b.name.toLocaleLowerCase("uz"), b]));
+  const renamed: BlockRename[] = [];
+  for (const p of list) {
+    const fromKey = p.from.toLocaleLowerCase("uz"), toKey = p.to.toLocaleLowerCase("uz");
+    const b = byKey.get(fromKey);
+    if (!b) continue; // shu orada o'chirilgan — ro'yxat sinxroni (`syncSiteBlocks`) yangi nomni o'zi qo'shadi
+    const other = byKey.get(toKey);
+    if (other && other.id !== b.id) {
+      return { ok: false, error: other.isActive
+        ? `«${p.to}» nomli blok bu obyektda allaqachon bor — boshqa nom bering`
+        : `«${p.to}» nomli eski (faol emas) blok bor — boshqa nom bering yoki shu nomni «Blok qo'shish» bilan qaytaring` };
+    }
+    await tx.siteBlock.update({ where: { id: b.id }, data: { name: p.to } });
+    byKey.delete(fromKey);
+    byKey.set(toKey, { ...b, name: p.to });
+    renamed.push({ id: b.id, from: b.name, to: p.to });
+  }
+  return { ok: true, renamed };
+}
+
 /**
  * Mijoz kartasidagi obyekt formasi: obyekt bloklari aynan shu ro'yxat bo'lsin (tartibi ham). Yangisi qo'shiladi;
  * ro'yxatdan olingani — zayavkada ishlatilmagan bo'lsa o'chadi, ishlatilgan bo'lsa «faol emas» bo'ladi (tarix uzilmasin).

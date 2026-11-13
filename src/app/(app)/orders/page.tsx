@@ -16,6 +16,8 @@ import type { OrderStatus } from "@/generated/prisma";
 import { orderTotal } from "@/lib/order-total";
 import { lastEdits } from "@/lib/audit";
 import { EditedMark } from "@/components/edited-mark";
+import { ROW_FLAGS_SELECT, orderRowFlags } from "./row-flags";
+import { OrderRowActions } from "./order-row-actions";
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string; imported?: string; tur?: string }> }) {
   const { status, customer, kun, imported, tur } = await searchParams;
@@ -40,7 +42,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         : { status: st ?? { in: OPEN_STATUSES }, ...(customer ? { customerId: customer } : {}) }),
     },
     orderBy: [{ createdAt: "desc" }],
-    include: { customer: true, createdBy: true, items: { include: { product: true } } },
+    // batches/trips — qatordagi qalam va «Bekor qilish» sharti uchun (kartadagi bilan bir xil)
+    include: { customer: true, createdBy: true, items: { include: { product: true } }, batches: ROW_FLAGS_SELECT.batches, trips: ROW_FLAGS_SELECT.trips },
     take: 200,
   });
   const [marks, edits] = await Promise.all([customerMarks(orders.map((o) => o.customerId)), lastEdits("Order", orders.map((o) => o.id))]);
@@ -109,7 +112,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       )}
       {/* Ixcham: odatiy noutbukda (≈1000px) ham gorizontal scrollsiz sig'adi — sarlavhalar qatorlanadi, soat sana ostida */}
       <Table className="[&_td]:px-2 [&_td]:py-2 [&_td]:text-[13px] [&_th]:px-2 [&_th]:py-2 [&_th]:whitespace-normal">
-        <thead><tr><Th>Kiritildi</Th><Th>Yetkazish</Th><Th className="min-w-52">Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa, so&apos;m</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>Kiritildi</Th><Th>Yetkazish</Th><Th className="min-w-52">Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa, so&apos;m</Th><Th>Kim</Th><Th>Holat</Th><Th /></tr></thead>
         <tbody>
           {orders.length === 0 && <Empty text="Bu tabda zayavka yo'q" />}
           {groups.flatMap((g) => g.map((o, idx) => {
@@ -121,6 +124,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             // Guruhning birinchi qatori — mijoz nomi, obyekt manzili va nechta zayavka ekani;
             // qolganlari o'sha guruhga tegishli ekani ko'rinib tursin deb ichkariroq chiziladi.
             const first = idx === 0;
+            const acts = orderRowFlags(s, o);
             return (
               <Tr key={o.id} className={first && g.length > 1 ? "[&>td]:border-t-2 [&>td]:border-t-slate-200" : ""}>
                 <Td className="whitespace-nowrap"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{enteredDay}</Link>{enteredTime && <div className="text-xs text-slate-500">{enteredTime}</div>}</Td>
@@ -155,6 +159,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <Td right>{o.kind === "STOCK" ? <span className="text-slate-300">—</span> : fmtNum(sum)}</Td>
                 <Td className="text-slate-500">{o.createdBy.fullName}</Td>
                 <Td className="whitespace-nowrap"><OrderStatusBadge status={o.status} />{edits.has(o.id) && <div className="mt-1"><EditedMark edit={edits.get(o.id)} /></div>}</Td>
+                {/* Kartaga kirmasdan: qalam — tahrirlash, X — bekor qilish (sabab so'raladi) */}
+                <Td><OrderRowActions id={o.id} edit={acts.edit} cancel={acts.cancel} subject={o.kind === "STOCK" ? "Sklad zayavkasi" : `Zayavka (${o.customer.name})`} /></Td>
               </Tr>
             );
           }))}

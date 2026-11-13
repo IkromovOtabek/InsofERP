@@ -147,11 +147,14 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
 export async function taskCancel(taskId: string, userId: string): Promise<TaskResult> {
   const t = await db.brigadeTask.findUniqueOrThrow({ where: { id: taskId } });
   if (t.status === "DONE" || t.status === "CANCELLED") return { changed: false, orderId: t.orderId, error: "Topshiriq allaqachon yopilgan" };
-  await db.$transaction(async (tx) => {
+  const ok = await db.$transaction(async (tx) => {
     const r = await tx.brigadeTask.updateMany({ where: { id: taskId, status: { notIn: ["DONE", "CANCELLED"] } }, data: { status: "CANCELLED" } });
-    if (r.count !== 1) return;
+    if (r.count !== 1) return false;
     await audit(tx, userId, "STATUS_CHANGE", "BrigadeTask", taskId, { status: t.status }, { status: "CANCELLED" });
+    return true;
   });
+  // Shu payt boshqa joyda yopilgan bo'lsa — «bekor qilindi» deb aldamaymiz va brigadirga ortiqcha xabar ketmaydi
+  if (!ok) return { changed: false, orderId: t.orderId, error: "Topshiriq shu payt boshqa joyda yopildi — sahifani yangilang" };
   // Brigadir sexda ishni davom ettirmasin
   notifyAfter(async () => {
     const b = await db.brigade.findUnique({ where: { id: t.brigadeId }, select: { name: true, leaderId: true } });

@@ -62,16 +62,19 @@ export async function saveCalendarDayAction(_p: ActionState, fd: FormData): Prom
   return { ok: true };
 }
 
-export async function deleteCalendarDayAction(fd: FormData): Promise<void> {
+/** Bayram / ko'chirilgan kunni olib tashlash (jadvaldagi tasdiqli `DeleteButton`dan). */
+export async function deleteCalendarDayAction(id: string): Promise<ActionState> {
   const s = await writer();
-  const id = String(fd.get("id") ?? "");
   const before = await db.workCalendarDay.findUnique({ where: { id } });
-  if (!before) return;
-  await db.$transaction(async (tx) => {
-    await tx.workCalendarDay.delete({ where: { id } });
-    await audit(tx, s.userId, "DELETE", "WorkCalendarDay", id, before, undefined);
+  if (!before) return { error: "Bu sana allaqachon o'chirilgan — sahifani yangilang" };
+  const n = await db.$transaction(async (tx) => {
+    const x = await tx.workCalendarDay.deleteMany({ where: { id } });
+    if (x.count) await audit(tx, s.userId, "DELETE", "WorkCalendarDay", id, before, undefined);
+    return x.count;
   });
+  if (!n) return { error: "Bu sana allaqachon o'chirilgan — sahifani yangilang" };
   refresh();
+  return { ok: true };
 }
 
 /** Yil uchun sanasi o'zgarmaydigan bayramlar; mavjud sanalarga tegmaydi. */

@@ -6,10 +6,12 @@ import { money, opAt } from "@/lib/format";
 import { receiptAmounts } from "@/lib/receipt-vat";
 import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { canDo } from "@/lib/permissions";
 
 export default async function ReceiptsPage() {
   const s = await requirePage("/receipts");
-  const canCreate = ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"].includes(s?.role ?? "");
+  // Kirim kiritish — `receipts/actions.ts` dagi bilan bir xil huquq (stock → receipt; direktor bergan ruxsat ham)
+  const canCreate = canDo(s, "stock", "receipt");
   const receipts = await db.goodsReceipt.findMany({ orderBy: { date: "desc" }, take: 200, include: { supplier: true, warehouse: true, createdBy: true, buyer: { select: { fullName: true } }, items: { include: { material: true } } } });
   // To'lov turi (Деньги): kirimda belgilangani, bo'lmasa bog'langan to'lov hisobining turi — «Приход» jurnali bilan bir xil
   const pays = await resolveReceiptPayments(receipts.map((r) => ({ id: r.id, payment: r.payment })));

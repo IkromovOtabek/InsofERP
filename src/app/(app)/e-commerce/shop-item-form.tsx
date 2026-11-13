@@ -8,6 +8,8 @@ import { SHOP_PHOTO_ACCEPT } from "@/lib/shop-upload";
 import { suggestShopTemplate } from "@/lib/shop-templates";
 import { TemplatePicker } from "./template-picker";
 import { deleteShopPhoto, saveShopItem, toggleShopItem } from "./actions";
+import { deleteCatalogProduct } from "@/lib/catalog-actions";
+import { DeleteButton } from "@/components/delete-button";
 
 export type ShopRowProduct = {
   id: string;
@@ -35,8 +37,11 @@ export type ShopRowProduct = {
  * Vitrina qatori: chap tomonda surat va tez "chiqarish" tugmasi, o'ngda ilovada
  * ko'rinadigan maydonlar. Bo'sh qoldirilgan nom/narx — mahsulotniki olinadi
  * (Sozlamalar → Beton markalari o'zgarsa do'kon ham o'zgaradi).
+ *
+ * `canDelete` — mahsulotni katalogdan o'chirish (`deleteCatalogProduct`): sahifa server'da xuddi o'sha tekshiruv bilan beradi —
+ * `moduleWriteAllowed(s, "production", PRODUCT_CATALOG_ROLES) === true`. Hujjatda ishlatilgan mahsulot o'chmaydi, arxivga olinadi.
  */
-export function ShopItemForm({ p }: { p: ShopRowProduct }) {
+export function ShopItemForm({ p, canDelete = false }: { p: ShopRowProduct; canDelete?: boolean }) {
   const [state, action, pending] = useActionState(saveShopItem.bind(null, p.id), undefined);
   const [open, setOpen] = useState(false);
   const [toggling, startToggle] = useTransition();
@@ -82,6 +87,7 @@ export function ShopItemForm({ p }: { p: ShopRowProduct }) {
             {published ? <><EyeOff size={14} /> Yashirish</> : <><Eye size={14} /> Chiqarish</>}
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setOpen((v) => !v)}>{open ? "Yopish" : "Tahrirlash"}</Button>
+          {canDelete && <DeleteButton action={deleteCatalogProduct} id={p.id} name={p.name} title="Mahsulotni o'chirish (hujjatda ishlatilgan bo'lsa — arxivga olinadi)" />}
         </div>
       </div>
 

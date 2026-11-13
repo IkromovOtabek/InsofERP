@@ -58,6 +58,32 @@ export async function createProductGroup(_prev: ActionState, fd: FormData): Prom
   return { ok: true };
 }
 
+const groupRenameSchema = z.object({ name: zStr("Papka nomi kerak").pipe(z.string().max(120, "Nom juda uzun")) });
+
+/**
+ * Papka nomini tuzatish — spravochnik oynasidagi papka qatorining qalami. Huquq papka ochish bilan bir xil.
+ * Bitta papka ichida bir xil nomli ikki papka bo'lmaydi.
+ */
+export async function renameProductGroup(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireCatalogWrite(PRODUCT_ADD_ROLES);
+  const r = parseForm(groupRenameSchema, fd);
+  if ("error" in r) return { error: r.error, field: r.field };
+  const name = r.data.name.replace(/\s+/g, " ");
+  const res = await db.$transaction(async (tx): Promise<ActionState> => {
+    const g = await tx.productGroup.findUnique({ where: { id } });
+    if (!g) return { error: "Papka topilmadi" };
+    if (g.name === name) return { ok: true, note: "O'zgarish yo'q" };
+    const flat = flatName(name);
+    const twin = flat ? (await tx.productGroup.findMany({ where: { parentId: g.parentId, id: { not: id } }, select: { name: true } })).find((x) => flatName(x.name) === flat) : undefined;
+    if (twin) return { error: `Shu joyda «${twin.name}» papkasi bor — boshqa nom yozing`, field: "name" };
+    await tx.productGroup.update({ where: { id }, data: { name } });
+    await audit(tx, s.userId, "UPDATE", "ProductGroup", id, { name: g.name }, { name });
+    return { ok: true, note: `Papka nomi o'zgardi: «${g.name}» → «${name}»` };
+  });
+  if (res?.ok && res.note !== "O'zgarish yo'q") refresh();
+  return res;
+}
+
 /**
  * «1 dona hajmi, m³» — plitadan necha kub chiqadi (`lib/volume.ts`). Vergul ham qabul qilinadi; bo'sh — null
  * (tanlagichda og'irlikdan taxminiy ko'rinadi).

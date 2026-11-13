@@ -5,18 +5,19 @@ import { requireRoles } from "@/lib/page-guard";
 import { qty, money } from "@/lib/format";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { unitLabel } from "@/lib/unit";
-import { canTask } from "@/lib/tasks";
 import { canDo, canSeeStaffAttendance } from "@/lib/permissions";
 import { brigadeDefectsMonth, brigadePayMonth, brigadeProducts } from "@/lib/brigade-pay";
+import { canDeleteDefect } from "@/lib/defects";
 import { MonthBar, parseMonth } from "../bi-tahlil/month-bar";
 import { BrigadeProductsView } from "./brigade-products";
 import { BrigadePayView, BrigadeDefectsView } from "./pay-view";
 import { BrigadeStaffView } from "./staff-view";
 import { productionStaff } from "@/lib/production-staff";
 import { ROLE_LABELS } from "@/lib/nav";
-import { Badge, Button, Card, LinkButton, PageHeader, Progress, Tabs } from "@/components/ui";
+import { Badge, Card, LinkButton, PageHeader, Progress, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
+import { BrigadeCardActions } from "./card-actions";
 
 /**
  * Brigadalar: ro'yxat (brigadir, topshiriq, xomashyo), «Xodimlar» — brigadaga xodim tayinlash, «Mahsulotlar» — qaysi brigadada qanday mahsulot va necha pullik,
@@ -25,7 +26,8 @@ import { saveBrigade, toggleBrigade } from "./actions";
 export default async function BrigadesPage({ searchParams }: { searchParams: Promise<{ tab?: string; oy?: string; brigada?: string }> }) {
   const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "HR", "SALES"], { module: "tasks" });
   const sp = await searchParams;
-  const canEdit = canTask(s.role, "brigadeEdit"); // rol matritsasi — `lib/tasks.ts`
+  // Server `saveBrigade` / `toggleBrigade` bilan bir xil qoida (`tasks` → `brigade`) — direktor bergan ruxsat ham hisobga olinadi
+  const canEdit = canDo(s, "tasks", "brigade");
   // Pul (oylik, brak summasi) — sotuv bo'limiga kerak emas; summani tahrirlash — `tasks` → `pay` (ish boshqaruvchi)
   const showPay = s.role !== "SALES";
   const canPay = canDo(s, "tasks", "pay");
@@ -55,10 +57,17 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
     if (tab === "mahsulotlar") return <div>{title}{tabs}<BrigadeProductsView data={await brigadeProducts()} /></div>;
     const brigadaId = sp.brigada || null;
     if (tab === "oylik") return <div>{title}{tabs}<MonthBar base="/brigades" month={month} keep={{ tab }} /><BrigadePayView data={await brigadePayMonth(month)} /></div>;
+    const defects = await brigadeDefectsMonth(month);
+    // Brakni o'chirish — bosh sahifadagi «Brak» bilan bir xil qoida: `production` → `report` ruxsati va
+    // `canDeleteDefect` (direktor — har doim, boshqalar — bugun o'zi yozganini)
+    const deletable = canDo(s, "production", "report")
+      ? new Set((await db.productDefect.findMany({ where: { id: { in: defects.list.map((d) => d.id) } }, select: { id: true, createdById: true, createdAt: true } }))
+        .filter((d) => canDeleteDefect(d, s)).map((d) => d.id))
+      : new Set<string>();
     return (
       <div>{title}{tabs}
         <MonthBar base="/brigades" month={month} keep={{ tab, brigada: brigadaId ?? undefined }} />
-        <BrigadeDefectsView data={await brigadeDefectsMonth(month)} month={month} brigadeId={brigadaId} canEdit={canPay} />
+        <BrigadeDefectsView data={defects} month={month} brigadeId={brigadaId} canEdit={canPay} deletable={deletable} />
       </div>
     );
   }
@@ -71,6 +80,7 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
     undistributedMaterials(),
   ]);
   const stockOf = new Map(stocks.map((x) => [x.id, x]));
+  const leaderOptions: [string, string][] = [["", "—"], ...employees.map((e) => [e.id, `${e.fullName} · ${e.position}`] as [string, string])];
 
   return (
     <div>
@@ -84,7 +94,7 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
           <h2 className="mb-3 font-semibold">Yangi brigada</h2>
           <RowForm action={saveBrigade.bind(null, null)} mode="create" cols={5} submit="Qo'shish" fields={[
             { name: "name", label: "Nomi *", placeholder: "1-brigada", required: true },
-            { name: "leaderId", label: "Brigadir", type: "select", options: [["", "—"], ...employees.map((e) => [e.id, `${e.fullName} · ${e.position}`] as [string, string])] },
+            { name: "leaderId", label: "Brigadir", type: "select", options: leaderOptions },
             { name: "phone", label: "Telefon" },
             { name: "note", label: "Izoh", className: "sm:col-span-2" },
           ]} />
@@ -157,11 +167,14 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
                 </div>
 
                 {canEdit && (
-                  <div className="mt-auto pt-3">
-                    <div className="flex justify-end border-t border-slate-100 pt-3">
-                      <form action={toggleBrigade.bind(null, b.id)}><Button variant="secondary" size="sm">{b.isActive ? "Nofaol qilish" : "Faollashtirish"}</Button></form>
-                    </div>
-                  </div>
+                  <BrigadeCardActions save={saveBrigade.bind(null, b.id)} toggle={toggleBrigade.bind(null, b.id)} active={b.isActive} fields={[
+                    { name: "name", label: "Nomi *", defaultValue: b.name, required: true },
+                    // Eski brigadir ro'yxatda bo'lmasa (nofaol) ham tanlangan turadi — jimgina «—» ga tushib qolmasin
+                    { name: "leaderId", label: "Brigadir", type: "select", defaultValue: b.leaderId ?? "",
+                      options: b.leader && !employees.some((e) => e.id === b.leaderId) ? [...leaderOptions, [b.leader.id, `${b.leader.fullName} (nofaol)`]] : leaderOptions },
+                    { name: "phone", label: "Telefon", defaultValue: b.phone ?? "" },
+                    { name: "note", label: "Izoh", defaultValue: b.note ?? "" },
+                  ]} />
                 )}
               </Card>
             );

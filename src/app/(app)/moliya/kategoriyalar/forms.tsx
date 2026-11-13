@@ -5,7 +5,7 @@ import { Plus, Save, Tag } from "lucide-react";
 import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import type { CashCategoryNeeds, CashFlowKind, LoanPart, PnlLine } from "@/generated/prisma";
 import { FLOW_LABEL, NEEDS_LABEL, PNL_LINE_LABEL } from "@/lib/fin-report/labels";
-import { addAliasAction, createCategoryAction, createProjectAction, toggleProjectAction, updateCategoryAction } from "./actions";
+import { addAliasAction, createCategoryAction, createProjectAction, toggleProjectAction, updateCategoryAction, updateProjectAction } from "./actions";
 
 export type CatView = {
   id: string; name: string; type: "INCOME" | "EXPENSE"; parentId: string | null; flow: CashFlowKind; pnlLine: PnlLine;
@@ -123,6 +123,24 @@ export function ProjectCreateForm() {
       <Button disabled={pending}><Plus size={16} /> Qo&apos;shish</Button>
       <div className="w-full"><FormError error={state?.error} /></div>
     </form>
+  );
+}
+
+/** Loyiha nomi va izohi — qatordagi «Tahrir» ichida. */
+export function ProjectEditForm({ id, name, note }: { id: string; name: string; note: string | null }) {
+  const [state, action, pending] = useActionState(updateProjectAction, undefined);
+  return (
+    <details className="text-left">
+      <summary className="cursor-pointer select-none text-[13px] font-medium text-slate-500 hover:text-slate-900">Tahrir</summary>
+      <form action={action} className="mt-2 grid w-72 gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-(--shadow-pop)">
+        <input type="hidden" name="id" value={id} />
+        <Field label="Nomi *"><Input name="name" defaultValue={name} required maxLength={80} /></Field>
+        <Field label="Izoh"><Input name="note" defaultValue={note ?? ""} maxLength={200} /></Field>
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
+        <Button size="sm" disabled={pending}><Save size={14} /> Saqlash</Button>
+      </form>
+    </details>
   );
 }
 

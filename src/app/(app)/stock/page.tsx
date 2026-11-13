@@ -12,12 +12,15 @@ import { canSee, pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Gauge, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse, Search } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Gauge, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse, Search, RotateCcw } from "lucide-react";
 import { visionEnabled } from "@/lib/ai/vision";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
 import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
 import { MaterialBulkBar } from "./material-bulk";
+import { MaterialEditButton, MaterialEditProvider } from "./material-edit";
+import { ConfirmButton } from "../payments/confirm-button";
+import { restoreCatalogMaterial } from "@/lib/material-actions";
 import { FillPricesButton, PriceCell } from "./price-cell";
 import { filterTurnover, turnoverTotals } from "./balance-excel";
 import { stockBalanceExcel } from "./actions";
@@ -96,6 +99,14 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     ? await Promise.all([materialTurnover({ from: period.from, to: period.to, warehouseId: wh?.id }), lastInboundMoves()])
     : [[], null] as [Awaited<ReturnType<typeof materialTurnover>>, null];
   const { seen: turnoverSeen, rows: turnover } = filterTurnover(turnoverAll, { cats, kat, q });
+  // Qatordagi qalam (xomashyo kartasini tahrirlash) — spravochnik huquqi bo'lsa: papkalar va har xomashyoning papkasi
+  const [matGroups, matFolders] = canDelete && turnover.length > 0
+    ? await Promise.all([
+        db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
+        db.material.findMany({ where: { id: { in: turnover.map((r) => r.id) } }, select: { id: true, groupId: true } }),
+      ])
+    : [[], []];
+  const groupOf = new Map(matFolders.map((m) => [m.id, m.groupId]));
   // Mexanik «Siz uchun» — faqat Avto zapchastlar: joriy qoldiq va oxirgi kelganlari
   const forYou = tab === "balance" && s?.role === "MECHANIC" ? await avtoPartsFeed(30) : null;
   const activeRows = turnover.filter((r) => r.isActive).length;
@@ -217,7 +228,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <Link href="/stock" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span>Qoldiqlar</span></Link>
       )}
       {added != null && (
-        <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`}</Callout>
+        <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi. Pastdagi jadvalda nom yonidagi qalam bilan tuzating; boshlang'ich qoldig'i yozilgan bo'lsa birlik o'zgarmaydi — u holda xomashyoni o'chirib, to'g'ri birlik bilan qayta qo'shing.`}</Callout>
       )}
       {/* «Tayyor mahsulot qo'shish» saqlangandan keyin (`stock/products/actions.ts` → addStock) */}
       {Number(sp.qoshildi) > 0 && (
@@ -481,6 +492,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             </div>
           )}
           {canDelete && <MaterialBulkBar formId={MATERIAL_FORM} total={activeRows} categories={MATERIAL_CATEGORY_OPTIONS} />}
+          {/* Qatordagi qalam shu bitta oynani ochadi (papkalar ro'yxati bir marta yuboriladi) */}
+          <MaterialEditProvider groups={matGroups}>
           <Sheet>
             <SheetHead>
               <tr>
@@ -527,8 +540,14 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                         title={l ? `Oxirgi kirim: ${l.by} · ${dateTime(l.date)} — davrdagi harakatlar` : "Davrdagi harakatlar"}
                         className={cn("font-medium hover:underline", r.isActive ? "text-slate-900" : "text-slate-500")}>{r.name}</Link>
                       <span className="ml-1.5 text-[11px] text-slate-400">{r.code}</span>
+                      {/* Nomi, birligi (harakati bo'lmasa), minimal qoldig'i, papkasi — Sozlamalarga (faqat direktor) bormasdan */}
+                      {canDelete && <MaterialEditButton material={{ id: r.id, name: r.name, code: r.code, unit: r.unit, minStock: r.minStock, groupId: groupOf.get(r.id) ?? null, unitLocked: mb.has(r.id) }} />}
                       {r.category !== "XOMASHYO" && <span className="ml-1.5 inline-block align-middle"><Badge color={r.category === "AVTO_ZAPCHAST" ? "blue" : "violet"} dot={false}>{MATERIAL_CATEGORY_LABEL[r.category]}</Badge></span>}
                       {!r.isActive && <span className="ml-1.5 inline-block align-middle"><Badge dot={false}>arxiv</Badge></span>}
+                      {!r.isActive && canDelete && (
+                        <ConfirmButton action={restoreCatalogMaterial.bind(null, r.id)} label="Tiklash" question={`«${r.name}» ro'yxatga qaytarilsinmi?`} okText="Tiklandi"
+                          icon={<RotateCcw size={13} />} className="ml-1 px-1.5 py-0.5 align-middle text-xs text-emerald-700 hover:bg-emerald-50" />
+                      )}
                     </SheetTd>
                     <SheetTd center tone="blue" className="text-slate-600">{unitShort(r.unit)}</SheetTd>
                     <SheetTd right tone="blue"><PriceCell materialId={r.id} name={r.name} price={r.unitPrice} avg={r.avgCost} canEdit={canPrice && r.isActive} /></SheetTd>
@@ -563,6 +582,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               </SheetFoot>
             )}
           </Sheet>
+          </MaterialEditProvider>
           <p className="text-xs text-slate-500">
             Summa = miqdor × harakat narxi: kirim — xarid narxida (yetkazib berish bilan), chiqim — berilgan paytdagi «Dona narxi» bo&apos;yicha.
             «≈» — narxsiz eski harakatlar bor, ular joriy narx bo&apos;yicha baholangan («Dona narxi» yoki o&apos;rtacha tannarx).

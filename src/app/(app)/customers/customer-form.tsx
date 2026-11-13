@@ -7,8 +7,11 @@ import { MoneyInput } from "@/components/money-input";
 
 type C = { id: string; name: string; inn: string | null; phone: string | null; address: string | null; contactPerson?: string | null; aliases?: string[]; creditLimit: string; isActive: boolean } | null;
 
-/** `defaultLimit` — yangi mijoz formasidagi boshlang'ich limit (Sozlamalar → Limitlar, sahifa server'da o'qiydi). */
-export function CustomerForm({ customer, canEditLimit, defaultLimit = 0 }: { customer: C; canEditLimit: boolean; defaultLimit?: number }) {
+/**
+ * `defaultLimit` — yangi mijoz formasidagi boshlang'ich limit (Sozlamalar → Limitlar, sahifa server'da o'qiydi).
+ * `readOnly` — «customers → edit» ruxsati yo'q xodim kartani faqat ko'radi (saqlash serverda baribir rad etilardi).
+ */
+export function CustomerForm({ customer, canEditLimit, defaultLimit = 0, readOnly = false }: { customer: C; canEditLimit: boolean; defaultLimit?: number; readOnly?: boolean }) {
   const [state, action, pending] = useActionState(saveCustomer.bind(null, customer?.id ?? null), undefined);
   const limitHint = [
     canEditLimit ? "0 = faqat oldindan to'lov (naqd / avans). Qarz berish uchun limit kiriting" : "Faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi",
@@ -17,6 +20,8 @@ export function CustomerForm({ customer, canEditLimit, defaultLimit = 0 }: { cus
   return (
     <form action={action} className="max-w-xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
+      {readOnly && <p className="text-xs text-slate-500">Faqat ko&apos;rish: mijoz ma&apos;lumotini o&apos;zgartirish uchun «Mijoz qo&apos;shish / tahrirlash» ruxsati kerak.</p>}
+      <fieldset disabled={readOnly} className="min-w-0 space-y-5">
       <Field label="Nomi *"><Input name="name" defaultValue={customer?.name} required /></Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="INN"><Input name="inn" defaultValue={customer?.inn ?? ""} /></Field>
@@ -34,10 +39,13 @@ export function CustomerForm({ customer, canEditLimit, defaultLimit = 0 }: { cus
         {customer && <input type="hidden" name="creditLimitWas" value={customer.creditLimit} />}
       </Field>
       <Checkbox name="isActive" defaultChecked={customer?.isActive ?? true} label="Faol" />
-      <FormActions>
-        <Button disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
-        <LinkButton href="/customers" variant="secondary">Bekor</LinkButton>
-      </FormActions>
+      </fieldset>
+      {!readOnly && (
+        <FormActions>
+          <Button disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+          <LinkButton href="/customers" variant="secondary">Bekor</LinkButton>
+        </FormActions>
+      )}
     </form>
   );
 }

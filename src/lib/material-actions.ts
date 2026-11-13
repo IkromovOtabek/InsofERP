@@ -5,10 +5,10 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireModuleWrite } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { parseForm, zDec, zStr, zOpt, type ActionState } from "@/lib/action";
 import { codeFromName, flatName } from "@/lib/excel";
 import { nextMaterialGroupCode } from "@/lib/material-groups";
-import { normalizeUnit, UNIT_FALLBACK } from "@/lib/unit";
+import { normalizeUnit, unitLabel, UNIT_FALLBACK } from "@/lib/unit";
 import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
 import type { MaterialCategory, Prisma } from "@/generated/prisma";
 import { MATERIAL_CATEGORIES, MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
@@ -102,6 +102,114 @@ export async function createCatalogMaterial(_prev: ActionState, fd: FormData): P
     : { ok: true };
 }
 
+/* ───────── Tahrirlash va arxivdan tiklash ───────── */
+
+const editSchema = z.object({
+  name: zStr("Xomashyo nomi kerak").pipe(z.string().max(200, "Nom juda uzun")),
+  unit: zOpt,
+  minStock: zDec(0).optional(),
+  groupId: zOpt,
+});
+
+/**
+ * Xomashyo kartasini tuzatish (nomi, birligi, minimal qoldig'i, papkasi) — Sklad → Qoldiqlar qatoridagi va spravochnik
+ * oynasidagi qalam. Sozlamalardagi forma faqat direktorda: sklad xodimi xato yozilgan nomni shu yerda tuzatadi.
+ * Formada bo'lmagan maydon o'zgarmaydi (`fd.has`): tanlagich minimal qoldiq yoki papkani bilmasa — ular tegilmaydi.
+ * Nom ro'yxatda yagona (`flatName`, arxivdagilar ham): bir xil nom bo'lsa rad etiladi — dublikat ochilmasin.
+ * Birlik faqat sklad harakati ham, retsept qatori ham yo'q bo'lsa o'zgaradi (Sozlamalardagi qoida): aks holda tarix
+ * va normalar boshqa birlikda o'qilib ketadi (kg → t: 1000 barobar). Hujjatlar xomashyoga id bilan bog'langan —
+ * yangi nom eski kirim, chiqim va hisobotlarda ham ko'rinadi.
+ */
+export async function updateCatalogMaterial(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
+  const r = parseForm(editSchema, fd);
+  if ("error" in r) return { error: r.error, field: r.field };
+  const d = r.data;
+  const name = d.name.replace(/\s+/g, " ");
+  const unit = fd.has("unit") ? normalizeUnit(d.unit) : undefined;
+  if (unit === null) return { error: "O'lchov birligi ro'yxatda yo'q", field: "unit" };
+  const res = await db.$transaction(async (tx): Promise<ActionState> => {
+    // FOR UPDATE: birlik tekshiruvi bilan saqlash orasida shu xomashyoga harakat yoki retsept qatori qo'shilib qolmasin
+    const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Material" WHERE id = ${id} FOR UPDATE`;
+    if (!locked.length) return { error: "Xomashyo topilmadi" };
+    const before = await tx.material.findUniqueOrThrow({ where: { id } });
+    const data: Prisma.MaterialUncheckedUpdateInput = {};
+    if (before.name !== name) {
+      const flat = flatName(name);
+      const same = flat ? (await tx.material.findMany({ where: { id: { not: id } }, select: { name: true, isActive: true } })).find((m) => flatName(m.name) === flat) : undefined;
+      if (same) return { error: `«${same.name}» ro'yxatda bor${same.isActive ? "" : " (arxivda)"} — ikkinchi bir xil nom ochilmaydi`, field: "name" };
+      data.name = name;
+    }
+    if (unit && unit !== before.unit) {
+      const [moves, recipes] = await Promise.all([
+        tx.stockMove.count({ where: { materialId: id } }),
+        tx.recipeItem.count({ where: { materialId: id } }),
+      ]);
+      if (moves || recipes) {
+        return { error: `Birlikni o'zgartirib bo'lmaydi: ${moves} ta sklad harakati va ${recipes} ta retsept qatori «${unitLabel(before.unit)}» da. Yangi birlik bilan alohida xomashyo oching`, field: "unit" };
+      }
+      data.unit = unit;
+    }
+    if (fd.has("minStock") && d.minStock !== undefined && Number(before.minStock) !== d.minStock) data.minStock = d.minStock;
+    if (fd.has("groupId") && d.groupId !== before.groupId) {
+      if (d.groupId && !(await tx.materialGroup.findUnique({ where: { id: d.groupId }, select: { id: true } }))) return { error: "Papka topilmadi — sahifani yangilang", field: "groupId" };
+      data.groupId = d.groupId;
+    }
+    if (Object.keys(data).length === 0) return { ok: true, note: "O'zgarish yo'q" };
+    const after = await tx.material.update({ where: { id }, data });
+    await audit(tx, s.userId, "UPDATE", "Material", id, before, { ...after, by: "edit" });
+    return { ok: true, note: data.name ? `Nomi o'zgardi: «${before.name}» → «${after.name}»` : `«${after.name}» saqlandi` };
+  });
+  if (res?.ok && res.note !== "O'zgarish yo'q") refresh();
+  return res;
+}
+
+/**
+ * Arxivdagi xomashyoni ro'yxatga qaytarish — Sklad → Qoldiqlar jadvalidagi «arxiv» qatorining «Tiklash» tugmasi.
+ * Shu nomli faol xomashyo bo'lsa qaytarilmaydi (ro'yxatda ikkita bir xil nom bo'lib qolmasin).
+ */
+export async function restoreCatalogMaterial(id: string): Promise<ActionState> {
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
+  const res = await db.$transaction(async (tx): Promise<ActionState> => {
+    const m = await tx.material.findUnique({ where: { id }, select: { id: true, name: true, isActive: true } });
+    if (!m) return { error: "Xomashyo topilmadi" };
+    if (m.isActive) return { error: `«${m.name}» arxivda emas — sahifani yangilang` };
+    const flat = flatName(m.name);
+    const twin = flat ? (await tx.material.findMany({ where: { isActive: true, id: { not: id } }, select: { name: true } })).find((x) => flatName(x.name) === flat) : undefined;
+    if (twin) return { error: `Ro'yxatda «${twin.name}» bor — ikkita bir xil nom bo'lmasin. Avval shu xomashyo nomini o'zgartiring` };
+    // Shartli yangilash: parallel bosishda ikkinchisi «arxivda emas» deb to'xtaydi
+    const u = await tx.material.updateMany({ where: { id, isActive: false }, data: { isActive: true } });
+    if (u.count !== 1) return { error: `«${m.name}» arxivda emas — sahifani yangilang` };
+    await audit(tx, s.userId, "UPDATE", "Material", id, { isActive: false }, { isActive: true, reason: "arxivdan tiklandi" });
+    return { ok: true, note: `«${m.name}» ro'yxatga qaytarildi` };
+  });
+  if (res?.ok) refresh();
+  return res;
+}
+
+const groupRenameSchema = z.object({ name: zStr("Papka nomi kerak").pipe(z.string().max(120, "Nom juda uzun")) });
+
+/** Papka nomini tuzatish — spravochnik oynasidagi papka qatorining qalami. Bitta papka ichida bir xil nomli ikki papka bo'lmaydi. */
+export async function renameMaterialGroup(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
+  const r = parseForm(groupRenameSchema, fd);
+  if ("error" in r) return { error: r.error, field: r.field };
+  const name = r.data.name.replace(/\s+/g, " ");
+  const res = await db.$transaction(async (tx): Promise<ActionState> => {
+    const g = await tx.materialGroup.findUnique({ where: { id } });
+    if (!g) return { error: "Papka topilmadi" };
+    if (g.name === name) return { ok: true, note: "O'zgarish yo'q" };
+    const flat = flatName(name);
+    const twin = flat ? (await tx.materialGroup.findMany({ where: { parentId: g.parentId, id: { not: id } }, select: { name: true } })).find((x) => flatName(x.name) === flat) : undefined;
+    if (twin) return { error: `Shu joyda «${twin.name}» papkasi bor — boshqa nom yozing`, field: "name" };
+    await tx.materialGroup.update({ where: { id }, data: { name } });
+    await audit(tx, s.userId, "UPDATE", "MaterialGroup", id, { name: g.name }, { name });
+    return { ok: true, note: `Papka nomi o'zgardi: «${g.name}» → «${name}»` };
+  });
+  if (res?.ok && res.note !== "O'zgarish yo'q") refresh();
+  return res;
+}
+
 /* ───────── Ro'yxatdan o'chirish ───────── */
 
 /** Bitta xomashyoni o'chirish — Sozlamalar, spravochnik oynalari (`DeleteButton`). Qoida — `removeMaterial`. */
@@ -176,21 +284,26 @@ export async function deleteMaterials(_prev: ActionState, fd: FormData): Promise
   return { ok: true, note: parts.join(" ") };
 }
 
-/** Papkani o'chirish — faqat bo'sh papka (ichida papka ham, xomashyo ham bo'lmasa). */
+/**
+ * Papkani o'chirish — faqat bo'sh papka (ichida papka ham, faol xomashyo ham bo'lmasa). Ichida faqat arxivdagi
+ * xomashyo qolgan bo'lsa (ro'yxatda ko'rinmaydi, foydalanuvchi ularni ko'chira olmaydi) — ular yuqori papkaga o'tadi.
+ */
 export async function deleteMaterialGroup(id: string): Promise<ActionState> {
   const s = await requireModuleWrite("stock", MATERIAL_ROLES);
   const g = await db.materialGroup.findUnique({ where: { id } });
   if (!g) return { error: "Papka topilmadi" };
-  const [children, materials] = await Promise.all([
+  const [children, materials, archived] = await Promise.all([
     db.materialGroup.count({ where: { parentId: id } }),
-    db.material.count({ where: { groupId: id } }),
+    db.material.count({ where: { groupId: id, isActive: true } }),
+    db.material.findMany({ where: { groupId: id, isActive: false }, select: { id: true } }),
   ]);
   if (children || materials) {
-    return { error: `«${g.name}» bo'sh emas: ${materials} xomashyo, ${children} papka. Avval ichidagini boshqa papkaga o'tkazing.` };
+    return { error: `«${g.name}» bo'sh emas: ${materials} xomashyo, ${children} papka. Xomashyoni qatoridagi qalam (Tahrirlash → Papka) bilan boshqa papkaga o'tkazing yoki o'chiring, ichki papkalarni ham avval bo'shatib o'chiring.` };
   }
   await db.$transaction(async (tx) => {
+    if (archived.length) await tx.material.updateMany({ where: { id: { in: archived.map((m) => m.id) }, groupId: id }, data: { groupId: g.parentId } });
     await tx.materialGroup.delete({ where: { id } });
-    await audit(tx, s.userId, "DELETE", "MaterialGroup", id, g, undefined);
+    await audit(tx, s.userId, "DELETE", "MaterialGroup", id, g, archived.length ? { archivedMovedTo: g.parentId, materials: archived.map((m) => m.id) } : undefined);
   });
   refresh();
   return { ok: true, note: `«${g.name}» papkasi o'chirildi.` };

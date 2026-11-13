@@ -81,7 +81,7 @@ export async function deleteDefect(id: string): Promise<ActionState> {
   const s = await requireAction("production", "report");
   const r = await deleteProductDefect(id, s);
   if ("error" in r) return { error: r.error };
-  revalidatePath("/stock");
+  revalidatePath("/stock"); revalidatePath("/brigades"); // Brigadalar → «Brak (kunlik)» va «Oylik» ham shu yozuvdan
   return done();
 }
 

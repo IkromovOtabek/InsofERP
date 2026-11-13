@@ -172,6 +172,79 @@ export async function taskAction(id: string, act: "start" | "done" | "accept" | 
   return { ok: true, note: msg };
 }
 
+const OPEN: WorkTaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW"];
+
+/**
+ * Vazifani tahrirlash: nomi, tavsif, muddat, muhimlik, bajaruvchi. Kim: beruvchi yoki `view_all` (qabul/qaytarish bilan bir xil),
+ * faqat ochiq vazifada. Bajaruvchini almashtirish — berish qoidasi bilan bir xil (boshqaga — `vazifalar.assign`, o'ziga — har kim);
+ * yangi bajaruvchi vazifani boshidan oladi ("Berildi"), tekshiruvdagi vazifa esa avval qabul qilinadi yoki qaytariladi.
+ */
+export async function updateWorkTask(id: string, input: Omit<TaskInput, "clientToken">, who: Who): Promise<{ ok?: true; note?: string; error?: string }> {
+  const t = await db.workTask.findUnique({ where: { id }, include: INCLUDE });
+  if (!t) return { error: "Vazifa topilmadi" };
+  if (t.createdById !== who.userId && !canViewAllTasks(who)) return { error: "Vazifani beruvchi tahrirlaydi" };
+  if (!OPEN.includes(t.status)) return { error: "Yopilgan yoki bekor qilingan vazifa tahrirlanmaydi" };
+  const title = (input.title ?? "").trim().slice(0, 200);
+  if (title.length < 3) return { error: "Vazifa nomini yozing (kamida 3 belgi)" };
+  const due = input.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate) ? input.dueDate : null;
+  if (input.dueDate && !due) return { error: "Muddat sanasi noto'g'ri" };
+  const time = input.dueTime && /^([01]\d|2[0-3]):[0-5]\d$/.test(input.dueTime) ? input.dueTime : null;
+  if (input.dueTime && !time) return { error: "Soat noto'g'ri — SS:DD ko'rinishida kiriting" };
+  const priority = input.priority && PRIORITIES.includes(input.priority) ? input.priority : t.priority;
+
+  const assigneeId = input.assigneeId?.trim() || t.assigneeId;
+  const reassign = assigneeId !== t.assigneeId;
+  const mine = reassign ? await myEmployeeId(who.userId) : null;
+  if (reassign) {
+    if (assigneeId !== mine && !canAssignOthers(who)) return { error: "Boshqa xodimga vazifa berish huquqingiz yo'q — o'zingizga olishingiz mumkin" };
+    if (t.status === "REVIEW") return { error: "Tekshiruvdagi vazifaning bajaruvchisi almashtirilmaydi — avval qabul qiling yoki qaytaring" };
+    const emp = await db.employee.findUnique({ where: { id: assigneeId }, select: { isActive: true } });
+    if (!emp || !emp.isActive) return { error: "Bajaruvchi topilmadi yoki ishlamaydi" };
+  }
+
+  const pick = (x: { title: string; description: string | null; assigneeId: string; dueDate: Date | null; dueTime: string | null; priority: WorkTaskPriority }) => ({
+    title: x.title, description: x.description, assigneeId: x.assigneeId, dueDate: x.dueDate ? isoDay(x.dueDate) : null, dueTime: x.dueTime, priority: x.priority,
+  });
+  const next = { title, description: input.description?.trim().slice(0, 3000) || null, assigneeId, dueDate: due ? dayUtc(due) : null, dueTime: time, priority };
+  const before = pick(t), after = pick(next);
+  if (JSON.stringify(before) === JSON.stringify(after)) return { ok: true, note: "O'zgarish yo'q" };
+
+  const data: Prisma.WorkTaskUncheckedUpdateManyInput = {
+    ...next,
+    // Yangi bajaruvchi boshidan boshlaydi — oldingisining "boshlandi" belgisi unga o'tmasin
+    ...(reassign ? { status: "TODO", startedAt: null, doneAt: null, returnNote: null } : {}),
+  };
+  const n = await db.$transaction(async (tx) => {
+    // Shartli yozuv: shu orada holat yoki bajaruvchi o'zgargan bo'lsa — tegilmaydi
+    const x = await tx.workTask.updateMany({ where: { id, status: t.status, assigneeId: t.assigneeId }, data });
+    if (x.count) await audit(tx, who.userId, "UPDATE", "WorkTask", id, { ...before, status: t.status }, { ...after, status: reassign ? "TODO" : t.status });
+    return x.count;
+  });
+  if (!n) return { error: STALE };
+
+  notifyAfter(async () => {
+    if (reassign) {
+      if (assigneeId !== mine) {
+        await notifyEmployees([assigneeId], {
+          type: "WORK_TASK_NEW", title: `Yangi vazifa — ${t.docNo}`,
+          body: `${title}${due ? ` · muddat ${due.slice(8, 10)}.${due.slice(5, 7)}` : ""}${priority === "URGENT" || priority === "HIGH" ? ` · ${PRIORITY_LABEL[priority].toLowerCase()}` : ""}`,
+          link: { key: "vazifalarim", id }, channel: priority === "URGENT" ? "muhim" : "oddiy",
+        });
+      }
+      if (t.assignee.userId !== who.userId) {
+        await notifyEmployees([t.assigneeId], { type: "WORK_TASK_UPDATE", title: `${t.docNo}: boshqa xodimga o'tkazildi`, body: t.title, link: { key: "vazifalarim", id }, channel: "oddiy" });
+      }
+    } else if (t.assignee.userId !== who.userId) {
+      await notifyEmployees([t.assigneeId], {
+        type: "WORK_TASK_UPDATE", title: `${t.docNo}: vazifa o'zgartirildi`,
+        body: `${title}${due ? ` · muddat ${due.slice(8, 10)}.${due.slice(5, 7)}${time ? ` ${time}` : ""}` : ""}`,
+        link: { key: "vazifalarim", id }, channel: "oddiy",
+      });
+    }
+  });
+  return { ok: true, note: reassign ? "Saqlandi — vazifa yangi bajaruvchiga berildi" : "Saqlandi" };
+}
+
 export async function addTaskComment(id: string, text: string, who: Who): Promise<{ ok?: true; error?: string }> {
   const t = await getTask(id, who);
   if (!t) return { error: "Vazifa topilmadi" };

@@ -1,9 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Ban, CheckCircle2, HandCoins, XCircle } from "lucide-react";
-import { approve, cancel, pay, payLogi, reject } from "./actions";
+import { Ban, CheckCircle2, HandCoins, Pencil, Save, XCircle } from "lucide-react";
+import { approve, cancel, pay, payLogi, reject, update } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
+import { MoneyInput } from "@/components/money-input";
+import type { ActionState } from "@/lib/action";
 
 /* ═══════════ Ish boshqaruvchi: tasdiqlash yoki rad etish ═══════════ */
 
@@ -56,6 +58,37 @@ export function PayPanel({ id, amount, accounts, logi = false, defaultId }: { id
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Pul berildi"} />}
       <Button className="w-full" disabled={pending || !accounts.length}><HandCoins size={16} /> {pending ? "Yozilmoqda…" : "Pul berish"}</Button>
+    </form>
+  );
+}
+
+/* ═══════════ Mexanik: o'z so'rovini tahrirlash (tasdiqdan oldin) ═══════════ */
+
+export function EditPanel({ id, amount, note }: { id: string; amount: number; note: string }) {
+  const [open, setOpen] = useState(false);
+  // Saqlangach forma yopiladi, natija («So'rov yangilandi») tugma ustida qoladi
+  const [state, action, pending] = useActionState(async (prev: ActionState, fd: FormData) => {
+    const r = await update(id, prev, fd);
+    if (r?.ok) setOpen(false);
+    return r;
+  }, undefined);
+  if (!open) {
+    return (
+      <div className="space-y-2">
+        {state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}
+        <Button type="button" variant="secondary" className="w-full" onClick={() => setOpen(true)}><Pencil size={16} /> Summa va tavsifni tahrirlash</Button>
+      </div>
+    );
+  }
+  return (
+    <form action={action} className="space-y-3">
+      <Field label="Summa *"><MoneyInput name="amount" required defaultValue={String(amount)} /></Field>
+      <Field label="Tavsif *" hint="Nima buzildi, nima kerak"><Textarea name="note" rows={3} required minLength={3} maxLength={500} defaultValue={note} /></Field>
+      <FormError error={state?.error} />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Qaytish</Button>
+        <Button disabled={pending}><Save size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+      </div>
     </form>
   );
 }

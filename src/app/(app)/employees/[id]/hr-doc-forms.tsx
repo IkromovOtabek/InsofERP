@@ -168,6 +168,8 @@ function DocRow({ employeeId, row, defaults, positions, accept }: {
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const printHref = `/employees/${employeeId}/hujjat/chop/${row.slug}${row.id ? `?doc=${row.id}&print=1` : "?print=1"}`;
+  // Imzolangan hujjat (nusxa yuklangan yoki E-IMZO) kuchga kirgan — tuzatilmaydi va o'chirilmaydi, xato bo'lsa yangisi tayyorlanadi
+  const signed = !!row.id && !!(row.signedAt || row.fileName || row.eSign);
 
   return (
     <li className="px-5 py-3">
@@ -199,21 +201,29 @@ function DocRow({ employeeId, row, defaults, positions, accept }: {
               <Link href={`/employees/${employeeId}/kadr-hujjat/${row.id}?download=1`} className="text-slate-400 hover:text-slate-700" title="Yuklab olish">
                 <Download size={13} />
               </Link>
-              <DeleteButton
-                action={deleteHrDocScan}
-                id={row.id!}
-                name={`${row.label} — imzolangan nusxa`}
-                title="Nusxani olib tashlash"
-                className="h-6 w-6"
-              />
+              {/* E-IMZO bilan imzolangan hujjat nusxasi olinmaydi — faqat «Almashtirish» */}
+              {!row.eSign && (
+                <DeleteButton
+                  action={deleteHrDocScan}
+                  id={row.id!}
+                  name={`${row.label} — imzolangan nusxa`}
+                  title="Nusxani olib tashlash"
+                  className="h-6 w-6"
+                />
+              )}
             </div>
           )}
           {row.id && <div className="mt-1"><EimzoButton docId={row.id} signed={row.eSign} /></div>}
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          <Button variant="ghost" size="sm" onClick={() => { setEditing((v) => !v); setUploading(false); }}>
-            {row.id ? <><Pencil size={14} /> Tuzatish</> : <><FileSignature size={14} /> Tayyorlash</>}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setEditing((v) => !v); setUploading(false); }}
+            title={signed ? "Imzolangan hujjat o'zgartirilmaydi — maydonlari shu hujjatdan olingan yangi hujjat tayyorlanadi" : undefined}
+          >
+            {signed ? <><FileSignature size={14} /> Yangi hujjat</> : row.id ? <><Pencil size={14} /> Tuzatish</> : <><FileSignature size={14} /> Tayyorlash</>}
           </Button>
           <Link
             href={printHref}
@@ -228,8 +238,8 @@ function DocRow({ employeeId, row, defaults, positions, accept }: {
               <Upload size={14} /> {row.signedAt ? "Almashtirish" : "Nusxa yuklash"}
             </Button>
           )}
-          {/* Imzolangan hujjat o'chirilmaydi — faqat imzolanmagan qoralama */}
-          {row.id && !row.signedAt && !row.fileName && (
+          {/* Imzolangan hujjat (nusxa yoki E-IMZO) o'chirilmaydi — faqat imzolanmagan qoralama */}
+          {row.id && !signed && (
             <DeleteButton action={deleteHrDoc} id={row.id} name={row.label} title="Tayyorlangan hujjatni o'chirish" />
           )}
         </div>
@@ -239,6 +249,7 @@ function DocRow({ employeeId, row, defaults, positions, accept }: {
         <DocForm
           employeeId={employeeId}
           row={row}
+          asNew={signed}
           defaults={defaults}
           positions={positions}
           onDone={() => setEditing(false)}
@@ -251,14 +262,17 @@ function DocRow({ employeeId, row, defaults, positions, accept }: {
 
 /* ───────── Hujjat maydonlari ───────── */
 
-function DocForm({ employeeId, row, defaults, positions, onDone }: {
+function DocForm({ employeeId, row, asNew = false, defaults, positions, onDone }: {
   employeeId: string;
   row: HrDocRow;
+  /** Imzolangan hujjat o'rniga yangisi: maydonlar undan olinadi, sana va buyruq raqami — yangi */
+  asNew?: boolean;
   defaults: HrDocDefaults;
   positions: string[];
   onDone: () => void;
 }) {
   const [state, action, pending] = useActionState(saveHrDoc.bind(null, employeeId), undefined);
+  const docId = asNew ? null : row.id;
   const [fixed, setFixed] = useState(row.fixedTerm);
   const has = (f: HrDocField) => row.fields.includes(f);
   const dismissal = isDismissalDoc(row.kind);
@@ -268,11 +282,16 @@ function DocForm({ employeeId, row, defaults, positions, onDone }: {
   return (
     <form action={action} className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
       <input type="hidden" name="kind" value={row.kind} />
-      {row.id && <input type="hidden" name="docId" value={row.id} />}
+      {docId && <input type="hidden" name="docId" value={docId} />}
+      {asNew && (
+        <p className="mb-3 text-xs text-slate-600">
+          Imzolangan hujjat o&apos;zgartirilmaydi — maydonlari shundan olingan yangi hujjat tayyorlanadi, eskisi tarixda qoladi.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Hujjat sanasi">
-          <Input name="docDate" type="date" defaultValue={row.docDate ?? defaults.today} required />
+          <Input name="docDate" type="date" defaultValue={asNew ? defaults.today : row.docDate ?? defaults.today} required />
         </Field>
 
         {has("effectiveAt") && (
@@ -288,7 +307,7 @@ function DocForm({ employeeId, row, defaults, positions, onDone }: {
 
         {has("no") && (
           <Field label="Buyruq raqami" hint="Blankada «БУЙРУҚ №216 K» bo'lib chiqadi">
-            <Input name="no" defaultValue={row.no ?? defaults.nextNo} />
+            <Input name="no" defaultValue={asNew ? defaults.nextNo : row.no ?? defaults.nextNo} />
           </Field>
         )}
 
@@ -345,7 +364,7 @@ function DocForm({ employeeId, row, defaults, positions, onDone }: {
 
       <FormError error={state?.error} />
       <div className="mt-3 flex items-center gap-3">
-        <Button disabled={pending}>{pending ? "Saqlanmoqda…" : row.id ? "Saqlash" : "Tayyorlash"}</Button>
+        <Button disabled={pending}>{pending ? "Saqlanmoqda…" : docId ? "Saqlash" : "Tayyorlash"}</Button>
         <Button type="button" variant="ghost" onClick={onDone}>Bekor qilish</Button>
         {row.fields.length === 0 && (
           <span className="text-xs text-slate-500">Bu shakl kartadagi ma&apos;lumotlar bilan to&apos;ldiriladi.</span>

@@ -6,7 +6,7 @@ import { canLogiPay, isLogiRequest, paySources } from "@/lib/logistics-finance";
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { money, dateTime } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatusSteps } from "@/components/ui";
-import { CancelPanel, DecidePanel, PayPanel } from "../panels";
+import { CancelPanel, DecidePanel, EditPanel, PayPanel } from "../panels";
 
 const STEPS = [
   { key: "NEW", label: "So'rov" },
@@ -27,7 +27,11 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
   const st = r.status;
   const canDecide = st === "NEW" && moduleWriteAllowed(s, "mexanik", MECH_ROLES.decide) === true;
   const canPay = st === "APPROVED" && (logi ? canLogiPay(s) : moduleWriteAllowed(s, "mexanik", MECH_ROLES.pay) === true);
-  const canCancel = st === "NEW" && r.createdById === s.userId;
+  // Egasi tasdiqdan oldin bekor qiladi (muddatli DEFERRED ham — `cancelMechanicRequest` ikkalasini oladi) va NEW da
+  // summa/tavsifni tuzatadi. Huquq — server action'dagi bilan bir xil (aks holda tugma bosilganda 403 chiqardi)
+  const own = r.createdById === s.userId && moduleWriteAllowed(s, "mexanik", MECH_ROLES.create) === true;
+  const canCancel = (st === "NEW" || st === "DEFERRED") && own;
+  const canEdit = st === "NEW" && own;
   const sources = canPay && logi ? await paySources(true) : [];
   const accounts = canPay
     ? logi
@@ -98,6 +102,12 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
             </Card>
           )}
           {st === "NEW" && !canDecide && !canCancel && <Callout tone="info">Ish boshqaruvchi tasdig&apos;i kutilmoqda — tasdiqlanmaguncha pul berilmaydi.</Callout>}
+          {canEdit && (
+            <Card>
+              <CardHeader title="Tahrirlash" description="Tasdiqlanmaguncha summa va tavsifni tuzatish mumkin" />
+              <EditPanel id={r.id} amount={Number(r.amount)} note={r.note ?? ""} />
+            </Card>
+          )}
           {canCancel && (
             <Card>
               <CardHeader title="Bekor qilish" description="Tasdiqlanmaguncha bekor qilish mumkin" />

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
 import { notSignedIn } from "@/lib/access-denied";
 import type { ActionState } from "@/lib/action";
-import { addTaskComment, createTask, taskAction } from "@/lib/hr/tasks";
+import { addTaskComment, createTask, taskAction, updateWorkTask } from "@/lib/hr/tasks";
 import type { WorkTaskPriority } from "@/generated/prisma";
 
 /* Vazifalar — har bir xodim (qoida `lib/hr/tasks.ts`). */
@@ -26,6 +26,19 @@ export async function createTaskAction(_prev: ActionState, fd: FormData): Promis
   if (r.error) return { error: r.error };
   refresh(r.id);
   return { ok: true, note: r.existed ? `${r.docNo} allaqachon saqlangan` : `${r.docNo} berildi` };
+}
+
+/** Vazifani tahrirlash — beruvchi yoki hammasini ko'ruvchi, faqat ochiq holatda (qoida `updateWorkTask`). */
+export async function updateTaskAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await who();
+  const str = (k: string) => { const v = String(fd.get(k) ?? "").trim(); return v || null; };
+  const r = await updateWorkTask(id, {
+    title: str("title") ?? "", description: str("description"), assigneeId: str("assigneeId"), dueDate: str("dueDate"), dueTime: str("dueTime"),
+    priority: str("priority") as WorkTaskPriority | null,
+  }, s);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
 }
 
 export async function taskStatusAction(id: string, act: "start" | "done" | "accept" | "return" | "cancel", _prev: ActionState, fd: FormData): Promise<ActionState> {

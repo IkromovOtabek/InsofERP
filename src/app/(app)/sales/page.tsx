@@ -6,6 +6,7 @@ import { lastEdits } from "@/lib/audit";
 import { EditedMark } from "@/components/edited-mark";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
 import { money, deliveryAt, isoDate } from "@/lib/format";
 import { fmtUnitTotals } from "@/lib/unit";
 import { Button, Empty, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
@@ -69,7 +70,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const count = Number(totalRow[0]?.n ?? 0);
   const paid = Number(paidAgg._sum.amount ?? 0);
   const receivable = recv.total;
-  const canInvoice = ["ACCOUNTING", "SALES", "DIRECTOR"].includes(s?.role ?? "");
+  const canInvoice = canDo(s, "sales", "invoice"); // `createInvoice` bilan bir qoida
   const canSeeDebt = ["ACCOUNTING", "FINANCE", "SALES", "DIRECTOR"].includes(s?.role ?? ""); // Mijozlar bo'limi ruxsati
   const period = (k: string) => `${k ? `status=${k}&` : ""}from=${isoDate(from)}&to=${isoDate(to)}${customer ? `&customer=${customer}` : ""}`;
 

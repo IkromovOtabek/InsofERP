@@ -6,12 +6,12 @@ import { requireRoles } from "@/lib/page-guard";
 import { qty, deliveryAt, date } from "@/lib/format";
 import { fmtUnitTotals, unitLabel } from "@/lib/unit";
 import { taskDefectTotals } from "@/lib/defects";
-import { canTask } from "@/lib/tasks";
+import { canDo } from "@/lib/permissions";
 import { Badge, Button, Empty, Input, PageHeader, Progress, Select, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { TASK_STATUS, TaskStatusBadge } from "./status";
 import { ProgressForm } from "./progress-form";
 import { cancelTask } from "./actions";
-import { CancelTaskButton } from "./cancel-button";
+import { ConfirmButton } from "../payments/confirm-button";
 import type { TaskStatus } from "@/generated/prisma";
 
 /** «Bajarildi» yorlig'i — tugatilgan sana bo'yicha davr (server mahalliy vaqti, TZ=Asia/Tashkent). */
@@ -42,9 +42,9 @@ const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ status?: string; brigade?: string; period?: string; from?: string; to?: string }> }) {
   const { status, brigade, period = "all", from, to } = await searchParams;
   const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"], { module: "tasks" });
-  // Rol matritsasi `lib/tasks.ts` da — server action va mobil ilova ham shundan foydalanadi
-  const canProgress = canTask(s.role, "progress");
-  const canCancel = canTask(s.role, "cancel");
+  // Server action'lar bilan bir xil qoida (`requireAction("tasks", …)`) — direktor bergan ruxsat ham hisobga olinadi
+  const canProgress = canDo(s, "tasks", "progress");
+  const canCancel = canDo(s, "tasks", "cancel");
   const st = status && status in TASK_STATUS ? (status as TaskStatus) : undefined;
   // «Bajarildi»: tugatilgan vaqt — topshiriq DONE ga o'tgan payt (shundan keyin u o'zgarmaydi)
   const isDone = st === "DONE";
@@ -126,7 +126,8 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <Td>
                   <div className="flex items-start gap-2">
                     {open && canProgress && <ProgressForm taskId={t.id} remaining={rem} unit={unit} product={t.orderItem.product.name} productId={t.orderItem.productId} brigadeId={t.brigadeId} products={subProducts} brigades={subBrigades} />}
-                    {open && canCancel && <CancelTaskButton action={cancelTask.bind(null, t.id)} />}
+                    {open && canCancel && <ConfirmButton action={cancelTask.bind(null, t.id)} label="Bekor" okText="Bekor qilindi" className="h-8 px-2 text-xs"
+                      question={`${t.brigade.name}: «${t.orderItem.product.name}» topshirig'i bekor qilinsinmi? Brigadirga xabar boradi`} />}
                   </div>
                 </Td>
               </Tr>

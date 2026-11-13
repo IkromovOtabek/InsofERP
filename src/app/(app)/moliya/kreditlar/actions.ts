@@ -35,6 +35,37 @@ export async function createLoanAction(_p: ActionState, fd: FormData): Promise<A
   return { ok: true };
 }
 
+const updateSchema = createSchema.omit({ kind: true }).extend({ id: zStr("Kredit tanlanmagan") });
+
+/**
+ * Kreditni tahrirlash: nomi, kontragent, boshlang'ich qoldiq va uning sanasi, foiz, izoh. Turi o'zgarmaydi (qoldiq ishorasi undan).
+ * Qoldiq = boshlang'ich + shu sanadan keyingi kassa harakatlari (`lib/fin-report/loans`): boshlang'ich summa o'zgarsa qoldiq shuncha
+ * siljiydi. Sana o'zgarsa — eski va yangi sana orasidagi kassa yozuvlari hisobga kirib/chiqib qolardi, shuning uchun ular bo'lsa rad.
+ */
+export async function updateLoanAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const r = parseForm(updateSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const { id, ...d } = r.data;
+  const data = { ...d, openingDate: new Date(d.openingDate) };
+  const res = await db.$transaction(async (tx) => {
+    const before = await tx.loan.findFirst({ where: { id, cancelledAt: null } });
+    if (!before) return { error: "Kredit topilmadi yoki bekor qilingan" };
+    if (before.openingDate.getTime() !== data.openingDate.getTime()) {
+      const [from, to] = before.openingDate < data.openingDate ? [before.openingDate, data.openingDate] : [data.openingDate, before.openingDate];
+      const between = await tx.cashTransaction.count({ where: { loanId: id, cancelledAt: null, type: { in: ["INCOME", "EXPENSE"] }, date: { gte: from, lt: to } } });
+      if (between) return { error: `Eski va yangi qoldiq sanasi orasida bu kreditga bog'langan ${between} ta kassa yozuvi bor — sana o'zgarsa ular qoldiqqa kirib/chiqib qoladi. Sanani o'zgartirmasdan saqlang` };
+    }
+    const u = await tx.loan.updateMany({ where: { id, cancelledAt: null }, data });
+    if (!u.count) return { error: "Kredit topilmadi yoki bekor qilingan" };
+    await audit(tx, s.userId, "UPDATE", "Loan", id, before, { ...before, ...data });
+    return {};
+  });
+  if (res.error) return { error: res.error };
+  refresh();
+  return { ok: true };
+}
+
 const stateSchema = z.object({ id: zStr(), reason: zOpt });
 
 /** Kredit yopildi (to'liq to'landi) — reyestrda qoladi, kassa formasida tanlovdan chiqadi. */

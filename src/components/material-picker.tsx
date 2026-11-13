@@ -1,26 +1,114 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Minus } from "lucide-react";
-import { deleteCatalogMaterial, deleteMaterialGroup } from "@/lib/material-actions";
+import { Minus, Pencil, Save } from "lucide-react";
+import { deleteCatalogMaterial, deleteMaterialGroup, renameMaterialGroup, updateCatalogMaterial } from "@/lib/material-actions";
 import { FolderPicker, type PickerGroup } from "@/components/folder-picker";
 import { DeleteButton } from "@/components/delete-button";
 import { MaterialPanelBody, MaterialTools, type MaterialPanel } from "@/components/catalog-tools";
+import type { ActionState } from "@/lib/action";
 import { fmtNum } from "@/lib/format";
-import { unitLabel } from "@/lib/unit";
-import { Button, inputCls } from "@/components/ui";
+import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
+import { Button, Field, FormError, IconButton, Input, Select, inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { MaterialCategory } from "@/generated/prisma";
 
 export type MaterialRow = {
+  /** `groupId` berilmasa (undefined) — papka noma'lum: tahrirlash oynasida «Papka» maydoni chiqmaydi */
   id: string; name: string; code: string; unit: string; price?: number; balance?: number; groupId?: string | null;
   /** Chiqim formasi: shu skladga jami kirim va jami chiqim — ro'yxatda «Kirim · Chiqim · Qoldi» bo'lib ko'rinadi */
   received?: number; issued?: number;
   /** Kirim formasi: qatorda kategoriya ko'rsatiladi va o'zgartiriladi */
   category?: MaterialCategory;
+  /** Tahrirlash oynasi: minimal qoldiq — berilmasa maydon chiqmaydi (qiymat o'zgarmaydi) */
+  minStock?: number;
 };
 export type MaterialGroup = PickerGroup;
+
+/** Papkalar to'liq yo'li bilan («Inertlar / Qum») — tahrirlash oynasidagi «Papka» tanlovi uchun. */
+function folderOptions(groups: MaterialGroup[]) {
+  const by = new Map(groups.map((g) => [g.id, g]));
+  const path = (g: MaterialGroup) => {
+    const parts = [g.name];
+    for (let p = g.parentId ? by.get(g.parentId) : undefined, i = 0; p && i < 20; p = p.parentId ? by.get(p.parentId) : undefined, i++) parts.unshift(p.name);
+    return parts.join(" / ");
+  };
+  return groups.map((g) => ({ id: g.id, label: path(g) })).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * Xomashyo kartasini tahrirlash (nomi, birligi, minimal qoldig'i, papkasi) — spravochnik oynasidagi va
+ * Sklad → Qoldiqlar qatoridagi qalam (`updateCatalogMaterial`). Noma'lum maydon (`minStock`, `groupId` berilmagan)
+ * formada chiqmaydi — server uni tegmaydi. `unitLocked` — sklad harakati bor: birlik maydoni o'chiq (yuborilmaydi).
+ */
+export function EditMaterialForm({ material, groups, unitLocked = false, onDone, onCancel }: {
+  material: Pick<MaterialRow, "id" | "name" | "code" | "unit" | "minStock" | "groupId">;
+  groups: MaterialGroup[];
+  unitLocked?: boolean;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [state, action, pending] = useActionState(updateCatalogMaterial.bind(null, material.id), undefined);
+  useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
+  const folders = useMemo(() => folderOptions(groups), [groups]);
+  const units: string[] = (MATERIAL_UNITS as readonly string[]).includes(material.unit) ? [...MATERIAL_UNITS] : [material.unit, ...MATERIAL_UNITS];
+  return (
+    <form action={action} className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <Field label="Xomashyo nomi *" hint={`Kod: ${material.code}`} className="sm:col-span-4">
+          <Input name="name" required autoComplete="off" maxLength={200} defaultValue={material.name} autoFocus />
+        </Field>
+        <Field label="O'lchov birligi" hint={unitLocked ? "sklad harakati bor — o'zgarmaydi" : "harakat yoki retsept bo'lsa o'zgarmaydi"}>
+          <Select name="unit" defaultValue={material.unit} disabled={unitLocked}>{units.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}</Select>
+        </Field>
+        {material.minStock !== undefined && (
+          <Field label="Minimal qoldiq" hint="kam qolsa signal"><Input name="minStock" type="number" step="0.001" min="0" defaultValue={String(material.minStock)} /></Field>
+        )}
+        {material.groupId !== undefined && (
+          <Field label="Papka" className="sm:col-span-2">
+            <Select name="groupId" defaultValue={material.groupId ?? ""}>
+              <option value="">Ro&apos;yxat ildizi</option>
+              {/* Joriy papka yopilgan (ro'yxatda yo'q) bo'lsa ham tanlovda qolsin — saqlanganda jimgina ildizga tushmasin */}
+              {material.groupId && !folders.some((f) => f.id === material.groupId) && <option value={material.groupId}>Joriy papka</option>}
+              {folders.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </Select>
+          </Field>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={pending}><Save size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
+        <span className="text-xs text-slate-600">Yangi nom eski kirim, chiqim va hisobotlarda ham ko&apos;rinadi (hujjatlar xomashyoga bog&apos;langan, nomga emas).</span>
+      </div>
+      <FormError error={state?.error} />
+    </form>
+  );
+}
+
+/**
+ * Papka nomini tuzatish — spravochnik oynasidagi papka qatorining qalami. `action` — papka turi bo'yicha
+ * (`renameMaterialGroup`, mahsulot papkasi uchun `renameProductGroup`).
+ */
+export function RenameFolderForm({ group, action: save, onDone, onCancel }: {
+  group: { id: string; name: string };
+  action: (id: string, prev: ActionState, fd: FormData) => Promise<ActionState>;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [state, action, pending] = useActionState(save.bind(null, group.id), undefined);
+  useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
+  return (
+    <form action={action} className="space-y-2">
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Papka nomi *" className="min-w-52 flex-1"><Input name="name" required autoComplete="off" maxLength={120} defaultValue={group.name} autoFocus /></Field>
+        <Button size="sm" disabled={pending}><Save size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
+      </div>
+      <FormError error={state?.error} />
+    </form>
+  );
+}
 
 /** Nom yoki kod bo'yicha filtr: avval nomi shu harflar bilan boshlanadiganlar. */
 function filterMaterials(list: MaterialRow[], term: string) {
@@ -49,10 +137,13 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
 }) {
   const router = useRouter();
   const [panel, setPanel] = useState<MaterialPanel>(null);
-  useEffect(() => { if (!open) setPanel(null); }, [open]);
+  // Qatordagi qalam: xomashyo kartasi yoki papka nomi tahrirlanmoqda (panel o'rnida chiqadi)
+  const [editing, setEditing] = useState<{ kind: "item"; m: MaterialRow } | { kind: "group"; g: MaterialGroup } | null>(null);
+  useEffect(() => { if (!open) { setPanel(null); setEditing(null); } }, [open]);
 
-  const toggle = (p: MaterialPanel) => setPanel((cur) => (cur === p ? null : p));
+  const toggle = (p: MaterialPanel) => { setEditing(null); setPanel((cur) => (cur === p ? null : p)); };
   const afterCreate = () => { setPanel(null); router.refresh(); };
+  const afterEdit = () => { setEditing(null); router.refresh(); };
   /** Qidiruvga yozilgan nom ro'yxatda bormi — bo'lmasa "«X» ni yangi qo'shish" taklif qilinadi. */
   const isNew = (name: string) => !!name && !materials.some((m) => m.name.trim().toLowerCase() === name.toLowerCase());
   const flow = materials.some((m) => m.received != null);
@@ -84,15 +175,27 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
       footerHint="Papkani ochish yoki xomashyoni tanlash — ikki marta bosing"
       onPick={(id) => { const m = materials.find((x) => x.id === id); if (m) onPick(m); }}
       onClose={onClose}
-      /* O'chirish: hujjatlarda ishlatilmagan xomashyo butunlay o'chadi, ishlatilgani arxivga olinadi */
-      rowAction={canCreate ? (row) => (
-        <DeleteButton
-          action={row.kind === "group" ? deleteMaterialGroup : deleteCatalogMaterial}
-          id={row.id}
-          name={row.name}
-          title={row.kind === "group" ? "Papkani o'chirish" : "Xomashyoni o'chirish"}
-        />
-      ) : undefined}
+      /* Qalam — xomashyo kartasi / papka nomini tahrirlash. O'chirish: hujjatlarda ishlatilmagan xomashyo butunlay o'chadi,
+         ishlatilgani arxivga olinadi */
+      rowAction={canCreate ? (row) => {
+        const m = row.kind === "item" ? materials.find((x) => x.id === row.id) : undefined;
+        const g = row.kind === "group" ? groups.find((x) => x.id === row.id) : undefined;
+        return (
+          <span className="inline-flex items-center gap-0.5">
+            {(m || g) && (
+              <IconButton icon={Pencil} type="button" label={m ? `${row.name} — tahrirlash` : `${row.name} — papka nomini tahrirlash`}
+                onClick={() => { setPanel(null); setEditing(m ? { kind: "item", m } : { kind: "group", g: g! }); }}
+                className="h-7 w-7 text-slate-400" />
+            )}
+            <DeleteButton
+              action={row.kind === "group" ? deleteMaterialGroup : deleteCatalogMaterial}
+              id={row.id}
+              name={row.name}
+              title={row.kind === "group" ? "Papkani o'chirish" : "Xomashyoni o'chirish"}
+            />
+          </span>
+        );
+      } : undefined}
       tools={(ctx) => (
         <>
           {canCreate && <MaterialTools toggle={toggle} />}
@@ -104,7 +207,11 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
           )}
         </>
       )}
-      panel={(ctx) => (canCreate ? <MaterialPanelBody panel={panel} ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} /> : null)}
+      panel={(ctx) => (editing?.kind === "item"
+        ? <EditMaterialForm key={editing.m.id} material={editing.m} groups={groups} onDone={afterEdit} onCancel={() => setEditing(null)} />
+        : editing?.kind === "group"
+          ? <RenameFolderForm key={editing.g.id} group={editing.g} action={renameMaterialGroup} onDone={afterEdit} onCancel={() => setEditing(null)} />
+          : canCreate ? <MaterialPanelBody panel={panel} ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} /> : null)}
     />
   );
 }

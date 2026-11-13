@@ -1,12 +1,13 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Ban, Check, Pause, Play, Plus, Save, X } from "lucide-react";
+import { Ban, Check, Pause, Pencil, Play, Plus, Save, X } from "lucide-react";
 import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
+import { ConfirmButton } from "../../payments/confirm-button";
 import {
   cancelRecurringAction, closePlannedAction, createPlannedAction, createRecurringAction, saveCashPlanSettingsAction, saveDailyFlagAction, saveSalesPlanAction,
-  saveSupplierTermAction, toggleRecurringAction,
+  saveSupplierTermAction, toggleRecurringAction, updatePlannedAction, updateRecurringAction,
 } from "./actions";
 
 type Opt = { id: string; name: string };
@@ -50,6 +51,40 @@ export function RecurringCreateForm({ cats, loans }: { cats: CatOpt[]; loans: Op
       <FormSuccess text={state?.ok ? "Doimiy to'lov qo'shildi" : undefined} />
       <Button disabled={pending}><Plus size={16} /> Qo&apos;shish</Button>
     </form>
+  );
+}
+
+const EDIT_SUMMARY = "inline-flex cursor-pointer select-none items-center gap-1 rounded-lg px-2 py-1 text-[13px] font-medium text-slate-500 hover:bg-slate-100";
+const EDIT_PANEL = "mt-2 grid w-72 gap-2 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-(--shadow-pop)";
+
+export type RecurringEdit = { id: string; name: string; category: string; dayOfMonth: number; amount: number; loanId: string | null; note: string | null };
+
+/** Doimiy to'lov tahriri — qatordagi «Tahrir» ichida (nomi, kategoriya, kuni, summa, kredit, izoh). */
+export function RecurringEditForm({ r, cats, loans }: { r: RecurringEdit; cats: CatOpt[]; loans: Opt[] }) {
+  const [state, action, pending] = useActionState(updateRecurringAction, undefined);
+  const [cat, setCat] = useState(r.category);
+  // Nofaol bo'lib qolgan kategoriya / yopilgan kredit ham tanlovda tursin — saqlaganda jim almashib ketmasin
+  const catList = cats.some((c) => c.name === r.category) ? cats : [{ name: r.category, loan: false }, ...cats];
+  const loanList = !r.loanId || loans.some((l) => l.id === r.loanId) ? loans : [{ id: r.loanId, name: "Joriy kredit (yopilgan)" }, ...loans];
+  const isLoan = catList.find((c) => c.name === cat)?.loan;
+  return (
+    <details className="text-left">
+      <summary className={EDIT_SUMMARY} title="Tahrirlash"><Pencil size={13} /> Tahrir</summary>
+      <form action={action} className={EDIT_PANEL}>
+        <input type="hidden" name="id" value={r.id} />
+        <Field label="Nomi *"><Input name="name" defaultValue={r.name} required maxLength={120} /></Field>
+        <Field label="Kategoriya *"><Select name="category" value={cat} onChange={(e) => setCat(e.target.value)}>{catList.map((c) => <option key={c.name}>{c.name}</option>)}</Select></Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Oyning kuni *"><Input name="dayOfMonth" type="number" min={1} max={31} required defaultValue={r.dayOfMonth} /></Field>
+          <Field label="Summa *"><MoneyInput name="amount" defaultValue={String(r.amount)} required /></Field>
+        </div>
+        {isLoan && <Field label="Kredit"><Select name="loanId" defaultValue={r.loanId ?? ""}><option value="">—</option>{loanList.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select></Field>}
+        <Field label="Izoh"><Input name="note" defaultValue={r.note ?? ""} maxLength={200} /></Field>
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
+        <Button size="sm" disabled={pending}><Save size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+      </form>
+    </details>
   );
 }
 
@@ -97,14 +132,47 @@ export function PlannedCreateForm({ today, cats }: { today: string; cats: string
   );
 }
 
+export type PlannedEdit = { id: string; type: "INCOME" | "EXPENSE"; date: string; amount: number; counterparty: string; category: string | null; note: string | null };
+
+/** Bir martalik to'lov / tushum tahriri — faqat ochiq (rejadagi) yozuvda; qatordagi «Tahrir» ichida. */
+export function PlannedEditForm({ p, cats }: { p: PlannedEdit; cats: string[] }) {
+  const [state, action, pending] = useActionState(updatePlannedAction, undefined);
+  const catList = !p.category || cats.includes(p.category) ? cats : [p.category, ...cats];
+  return (
+    <details className="text-left">
+      <summary className={EDIT_SUMMARY} title="Tahrirlash"><Pencil size={13} /> Tahrir</summary>
+      <form action={action} className={EDIT_PANEL}>
+        <input type="hidden" name="id" value={p.id} />
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Turi *"><Select name="type" defaultValue={p.type}><option value="EXPENSE">To&apos;lov (chiqim)</option><option value="INCOME">Kutilayotgan tushum</option></Select></Field>
+          <Field label="Sana *"><Input name="date" type="date" defaultValue={p.date} required /></Field>
+        </div>
+        <Field label="Summa *"><MoneyInput name="amount" defaultValue={String(p.amount)} required /></Field>
+        <Field label="Kimga / kimdan *"><Input name="counterparty" defaultValue={p.counterparty} required maxLength={160} /></Field>
+        <Field label="Kategoriya"><Select name="category" defaultValue={p.category ?? ""}><option value="">—</option>{catList.map((c) => <option key={c}>{c}</option>)}</Select></Field>
+        <Field label="Izoh"><Input name="note" defaultValue={p.note ?? ""} maxLength={200} /></Field>
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
+        <Button size="sm" disabled={pending}><Save size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+      </form>
+    </details>
+  );
+}
+
 export function PlannedRowActions({ id }: { id: string }) {
   const [ds, done, dp] = useActionState(closePlannedAction, undefined);
-  const [cs, cancel, cp] = useActionState(closePlannedAction, undefined);
+  // Bekor qilish qaytarib bo'lmaydi (kalendardan chiqadi) — avval savol; sabab ixtiyoriy, AuditLog'ga yoziladi
+  const cancel = (why: string) => {
+    const fd = new FormData();
+    fd.set("id", id); fd.set("status", "CANCELLED");
+    if (why) fd.set("reason", why);
+    return closePlannedAction(undefined, fd);
+  };
   return (
     <div className="flex items-center justify-end gap-1">
       <form action={done}><input type="hidden" name="id" value={id} /><input type="hidden" name="status" value="DONE" /><Button size="sm" variant="ghost" disabled={dp} title="Bajarildi"><Check size={14} /></Button></form>
-      <form action={cancel}><input type="hidden" name="id" value={id} /><input type="hidden" name="status" value="CANCELLED" /><Button size="sm" variant="ghost" disabled={cp} title="Bekor qilish"><X size={14} /></Button></form>
-      {(ds?.error || cs?.error) && <span className="text-[13px] text-red-600">{ds?.error ?? cs?.error}</span>}
+      <ConfirmButton action={cancel} label="" title="Bekor qilish" icon={<X size={14} />} question="Bekor qilinsinmi? Yozuv kalendardan chiqadi." reason="optional" okText="Bekor qilindi" className="h-8 px-2 text-slate-500 hover:text-red-600" />
+      {ds?.error && <span className="text-[13px] text-red-600">{ds.error}</span>}
     </div>
   );
 }

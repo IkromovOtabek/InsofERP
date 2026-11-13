@@ -343,17 +343,25 @@ export async function setScheduleBulk(_prev: ActionState, fd: FormData): Promise
   return { ok: true, note: `${changes.length} ta xodimga ish vaqti ${start}–${end} belgilandi` };
 }
 
-/** Hech kimga berilmagan lavozimni butunlay o'chirish. */
-export async function deleteWorkPosition(id: string) {
+/**
+ * Hech kimga berilmagan lavozimni butunlay o'chirish (ro'yxatdagi tasdiqli `DeleteButton`dan).
+ * Xodimga berilgan lavozim o'chirilmaydi — «Yashirish»: yangi xodimga tanlanmaydi, eskilari joyida qoladi.
+ */
+export async function deleteWorkPosition(id: string): Promise<ActionState> {
   const s = await hr();
-  const cur = await db.workPosition.findUniqueOrThrow({ where: { id } });
-  const used = (await employeesWithPosition(db, cur.name)).length;
-  if (used > 0) return; // bandi bor — faqat o'chirib qo'yish mumkin
-  await db.$transaction(async (tx) => {
+  const cur = await db.workPosition.findUnique({ where: { id } });
+  if (!cur) return { error: "Lavozim topilmadi — sahifani yangilang" };
+  const used = await db.$transaction(async (tx) => {
+    // Bandlik tranzaksiya ichida tekshiriladi — shu orada xodimga berilgan bo'lsa o'chmaydi
+    const n = (await employeesWithPosition(tx, cur.name)).length;
+    if (n > 0) return n;
     await tx.workPosition.delete({ where: { id } });
     await audit(tx, s.userId, "DELETE", "WorkPosition", id, cur, undefined);
+    return 0;
   });
+  if (used > 0) return { error: `«${cur.name}» ${used} ta xodimga berilgan — o'chirilmaydi. «Yashirish» bosing: yangi xodimga tanlanmaydi, eskilari joyida qoladi` };
   refresh();
+  return { ok: true, note: `«${cur.name}» o'chirildi` };
 }
 
 // ───────────────────────── Xodim kartasi (hujjatlari bilan) ─────────────────────────
@@ -469,12 +477,14 @@ export async function deleteEmployeePhoto(employeeId: string): Promise<void> {
   revalidatePath(`/employees/${employeeId}`);
 }
 
-/** Hujjat nusxasini o'chirish — fayl ham diskdan ketadi. */
-export async function deleteEmployeeDocument(docId: string) {
+/** Hujjat nusxasini kartadan olib tashlash (xodim kartasidagi tasdiqli `DeleteButton`dan). */
+export async function deleteEmployeeDocument(docId: string): Promise<ActionState> {
   const s = await hr();
   const r = await deleteEmployeeDocumentCore(s, docId);
+  if ("error" in r) return { error: r.error };
   // Nusxa faylining o'zi diskda qoladi (hujjatlar o'chirilmaydi): nomi auditda, kerak bo'lsa tiklanadi
-  if ("id" in r && r.id) revalidatePath(`/employees/${r.id}`);
+  if (r.id) revalidatePath(`/employees/${r.id}`);
+  return { ok: true, note: r.note };
 }
 
 

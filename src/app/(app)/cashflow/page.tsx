@@ -24,11 +24,15 @@ import { listTransfers, transferKind } from "@/lib/cash-transfer";
 import { JOURNAL_ONLY, TRANSFER_REF, txSign } from "@/lib/cash-tx";
 import { canDo } from "@/lib/permissions";
 import { CASH_METHOD_LABEL, type CashMethod } from "@/lib/cash-categories";
+import { pathAllowed } from "@/lib/nav";
+import { CashRow } from "../payments/cash-detail";
+import { CashEditProvider } from "../payments/cash-edit";
 
 // TRANSFER — hisoblararo o'tkazma: kirim ham, chiqim ham emas (Kirim/Chiqim jamiga kirmaydi), faqat qoldiqni o'zgartiradi.
 // `sign` — hisob ko'chirmasida (hisob tanlanganda) shu hisobga ta'siri: +1 kirdi, −1 chiqdi; 0 — umumiy ko'rinish.
 // `method` — to'lov usuli, hisob turidan (naqd kassa / bank); o'tkazmada — qatordagi hisob tomoni.
-type Row = { id: string; date: Date; createdAt: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; method: CashMethod; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean; cancelled?: string | null };
+// `src` — qator tafsiloti (`payments/cash-detail.tsx`) uchun yozuv turi: mijoz to'lovi yoki kassa yozuvi (perekit oyog'i ham — hujjati ochiladi)
+type Row = { id: string; src: "pay" | "tx"; date: Date; createdAt: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; method: CashMethod; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean; cancelled?: string | null };
 
 /** Hisob qoldig'i berilgan sanagacha: mijoz to'lovlari + barcha yozuvlar (kirim, chiqim, boshlang'ich, o'tkazma) ishorasi bilan. */
 async function statementBalance(cashAccountId: string, date: { lt: Date } | { lte: Date }) {
@@ -44,7 +48,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   // Yozish formasi modul ruxsati bilan: direktor faqat ko'rishni bergan xodimga chiqmaydi
   const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "cashflow" });
   const canCreate = canDo(s, "cashflow", "create");
-  const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
+  // Tugmalar server action'lari bilan bir qoidadan (`cancelCashTx` → cashflow.delete): direktor bergan ruxsat ham hisobga olinadi
+  const canDelete = canDo(s, "cashflow", "delete");
   const sp = await searchParams;
   const tab = sp.tab ?? "all";
   const now = new Date();
@@ -82,7 +87,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   }));
   const canStorno = canDo(s, "cashflow", "transfer_storno");
 
-  const canPay = ["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role);
+  const canPay = canDo(s, "cashflow", "pay"); // `payReceipt` bilan bir qoida
   const [marks, unpaid, supplyTx, incomeCats, expenseCats, projects, loans, systemCats] = await Promise.all([
     customerMarks(payments.map((p) => p.customerId)),
     unpaidReceipts(),
@@ -101,17 +106,24 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const canDeleteCat = canDo(s, "cashflow", "delete") || canDo(s, "moliya", "categories");
   // Bekor qilingan yozuv jurnalda «Bekor qilingan» belgisi bilan qoladi, lekin kirim/chiqim jamiga kirmaydi
   const cNames = await cancellerNames(txs);
+  // Jurnal qatori bosilsa — Kassa / bank dagi tafsilot oynasi: Tahrirlash, Bekor qilish, O'chirish (ruxsatni server har qatorga hal qiladi,
+  // `payments/row-detail.ts`). Oyna `/payments` huquqi bilan o'qiladi — u yopiq xodimga oddiy qator (faqat bekor qilish tugmasi) qoladi
+  const canDetail = pathAllowed("/payments", s.role, s.perms);
+  const editCustomers = canDetail && canDo(s, "cashflow", "edit")
+    ? await db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } })
+    : [];
+  const editOptions = { accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })), income: incomeCats, expense: expenseCats, customers: editCustomers, canAddSub: canCreate || canDo(s, "moliya", "categories") };
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
 
   const rows: Row[] = [
-    ...payments.map((p): Row => ({ id: p.id, date: p.date, createdAt: p.createdAt, kind: "INCOME", account: p.cashAccount.name, method: p.cashAccount.type, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
+    ...payments.map((p): Row => ({ id: p.id, src: "pay", date: p.date, createdAt: p.createdAt, kind: "INCOME", account: p.cashAccount.name, method: p.cashAccount.type, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
     // Hujjatdan avtomatik yozilgan chiqim (kirim hujjati / sklad kirimi) — ustiga bosilsa batafsili ochiladi
     // O'tkazma: umumiy ko'rinishda bitta qator (chiqish tomoni "Kassa → Bank"); hisob tanlansa — shu hisob tomoni (+/−)
     ...txs.filter((t) => acc || t.type !== "TRANSFER_IN").map((t): Row => t.type === "TRANSFER_OUT" || t.type === "TRANSFER_IN" ? {
-      id: t.id, date: t.date, createdAt: t.createdAt, kind: "TRANSFER", sign: acc ? txSign(t.type) : 0, account: `${t.cashAccount.name} ${t.counterparty ?? ""}`.trim(), method: t.cashAccount.type,
+      id: t.id, src: "tx", date: t.date, createdAt: t.createdAt, kind: "TRANSFER", sign: acc ? txSign(t.type) : 0, account: `${t.cashAccount.name} ${t.counterparty ?? ""}`.trim(), method: t.cashAccount.type,
       category: acc ? (t.type === "TRANSFER_OUT" ? "Perekit · chiqdi" : "Perekit · kirdi") : "Perekit (hisoblararo)", who: "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), deletable: false,
     } : {
-      id: t.id, date: t.date, createdAt: t.createdAt, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name, method: t.cashAccount.type,
+      id: t.id, src: "tx", date: t.date, createdAt: t.createdAt, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name, method: t.cashAccount.type,
       category: t.refType && t.refType !== TRANSFER_REF ? `Kirim · ${t.category}` : t.category,
       who: t.supplier?.name ?? t.counterparty ?? "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), cancelled: cancelNote(t, cNames),
       href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
@@ -242,12 +254,14 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
           <Button variant="secondary" className="h-9 text-sm">Ko&apos;rsatish</Button>
         </form>
       </div>
+      {canDetail && <p className="mb-2 text-xs text-slate-500">Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash, bekor qilish va o&apos;chirish (ruxsatga qarab)</p>}
+      <CashEditProvider options={editOptions}>
       <Table>
         <thead><tr><Th>Sana</Th><Th>Turi</Th><Th>Kategoriya</Th><Th>Kimdan / kimga</Th><Th>Hisob</Th><Th right>Summa</Th><Th>Izoh</Th><Th></Th></tr></thead>
         <tbody>
           {rows.length === 0 && <Empty text="Davrda harakat yo'q" />}
-          {rows.map((r) => (
-            <Tr key={r.id} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
+          {rows.map((r) => {
+            const cells = (<>
               <Td className="whitespace-nowrap">{opAt(r.date, r.createdAt)}</Td>
               <Td>{r.kind === "TRANSFER" ? <Badge color="blue">Perekit</Badge> : r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}{r.cancelled && <span className="mt-1 block"><Badge color="slate">Bekor qilingan</Badge></span>}</Td>
               <Td>{r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.category} →</Link> : r.category}</Td>
@@ -258,10 +272,15 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
                 : <Td right className={r.cancelled ? "font-medium text-slate-400 line-through" : r.kind === "INCOME" ? "font-medium text-emerald-700" : "font-medium text-red-600"}>{r.kind === "INCOME" ? "+" : "−"}{money(r.amount)}</Td>}
               <Td className="text-slate-500">{r.note ?? ""}{r.cancelled && <span className="block text-xs text-red-600">Bekor qilindi: {r.cancelled}</span>}</Td>
               <Td>{r.deletable && canDelete && <ConfirmButton action={cancelCashTx.bind(null, r.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${r.kind === "INCOME" ? "Kirim" : "Chiqim"} ${money(r.amount)} bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
-            </Tr>
-          ))}
+            </>);
+            const cls = r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined;
+            return canDetail
+              ? <CashRow key={r.id} kind={r.src} id={r.id} className={cls}>{cells}</CashRow>
+              : <Tr key={r.id} className={cls}>{cells}</Tr>;
+          })}
         </tbody>
       </Table>
+      </CashEditProvider>
     </div>
   );
 }

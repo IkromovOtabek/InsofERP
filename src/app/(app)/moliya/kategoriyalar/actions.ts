@@ -145,6 +145,54 @@ export async function createProjectAction(_p: ActionState, fd: FormData): Promis
   return { ok: true };
 }
 
+const projectEditSchema = projectSchema.extend({ id: zStr("Loyiha tanlanmagan") });
+
+/** Loyiha nomi va izohini tahrirlash. Kassa yozuvlari loyihaga id bilan bog'langan — hisobotlarda yangi nom bilan chiqadi. */
+export async function updateProjectAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const r = parseForm(projectEditSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const { id, ...d } = r.data;
+  try {
+    const found = await db.$transaction(async (tx) => {
+      const before = await tx.project.findUnique({ where: { id } });
+      if (!before) return false;
+      const after = await tx.project.update({ where: { id }, data: d });
+      await audit(tx, s.userId, "UPDATE", "Project", id, before, after);
+      return true;
+    });
+    if (!found) return { error: "Loyiha topilmadi — sahifani yangilang" };
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") return { error: "Bunday loyiha bor" };
+    throw e;
+  }
+  refresh();
+  return { ok: true };
+}
+
+/** Loyihani o'chirish — faqat kassa yozuvi bog'lanmagan bo'lsa; bog'langan bo'lsa «Yopish» (eski yozuvlar hisobotda qoladi). */
+export async function deleteProjectAction(id: string): Promise<ActionState> {
+  const s = await writer();
+  try {
+    const res = await db.$transaction(async (tx) => {
+      const p = await tx.project.findUnique({ where: { id } });
+      if (!p) return { error: "Loyiha topilmadi — sahifani yangilang" };
+      // Bekor qilingan yozuv ham loyihaga bog'langan (FK) — u ham hisoblanadi
+      const used = await tx.cashTransaction.count({ where: { projectId: id } });
+      if (used) return { error: `Loyihada ${used} ta kassa yozuvi bor — o'chirib bo'lmaydi${p.isActive ? ", «Yopish» bilan yoping" : " (yopilgan holda qoladi)"}` };
+      await tx.project.delete({ where: { id } });
+      await audit(tx, s.userId, "DELETE", "Project", id, p);
+      return {};
+    });
+    if (res.error) return { error: res.error };
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2003") return { error: "Loyihaga kassa yozuvi bog'langan — «Yopish» bilan yoping" };
+    throw e;
+  }
+  refresh();
+  return { ok: true, note: "O'chirildi" };
+}
+
 const toggleSchema = z.object({ id: zStr(), isActive: z.enum(["1", "0"]) });
 
 export async function toggleProjectAction(_p: ActionState, fd: FormData): Promise<ActionState> {

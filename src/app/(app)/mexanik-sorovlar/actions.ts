@@ -2,13 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
 import { requireAction, requireModuleWrite } from "@/lib/auth";
-import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
+import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
 import { MECH_ROLES, approveMechanicRequest, cancelMechanicRequest, payMechanicRequest, rejectMechanicRequest } from "@/lib/mechanic-requests";
 
 /**
  * Mexanik so'rovi amallari (veb). Qoida `lib/mechanic-requests.ts` da — mobil ilova ham shuni chaqiradi.
- * Tasdiq/rad — ish boshqaruvchi, pul — kassa, bekor — so'rov egasi (mexanik); direktor `requireModuleWrite` dan har doim o'tadi.
+ * Tasdiq/rad — ish boshqaruvchi, pul — kassa, bekor va tahrir (tasdiqdan oldin) — so'rov egasi (mexanik);
+ * direktor `requireModuleWrite` dan har doim o'tadi.
  */
 function refresh(id: string) {
   revalidatePath("/mexanik-sorovlar"); revalidatePath(`/mexanik-sorovlar/${id}`);
@@ -54,6 +57,38 @@ export async function payLogi(id: string, _prev: ActionState, fd: FormData): Pro
   if (r.error) return { error: r.error };
   refresh(id);
   return { ok: true, note: r.note };
+}
+
+const EditSchema = z.object({
+  amount: zDec(0),
+  note: zStr("Muammo tavsifini yozing — nima buzildi, nima kerak").pipe(z.string().min(3, "Muammo tavsifini yozing — nima buzildi, nima kerak")),
+});
+
+/**
+ * So'rov egasi summa va tavsifni tuzatadi — faqat tasdiqdan oldin (NEW). Shartli `updateMany` (holat + egasi): tasdiq
+ * bilan bir vaqtda kelsa ikkinchisi «boshqa joyda o'zgartirildi» deb to'xtaydi. Eski va yangi qiymat AuditLog'da.
+ */
+export async function update(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireModuleWrite("mexanik", MECH_ROLES.create);
+  const p = parseForm(EditSchema, fd);
+  if ("error" in p) return { error: p.error, field: p.field };
+  const amount = Math.round(p.data.amount * 100) / 100;
+  if (!(amount > 0)) return { error: "Summa 0 dan katta bo'lsin", field: "amount" };
+  const note = p.data.note.slice(0, 500);
+  const r = await db.mechanicRequest.findUnique({ where: { id }, select: { docNo: true, status: true, createdById: true, amount: true, note: true } });
+  if (!r) return { error: "So'rov topilmadi" };
+  if (r.createdById !== s.userId) return { error: "Faqat o'z so'rovingizni tahrirlay olasiz" };
+  if (r.status !== "NEW") return { error: "So'rov tasdiqlangan yoki yopilgan — tahrirlab bo'lmaydi, sahifani yangilang" };
+  if (Number(r.amount) === amount && (r.note ?? "") === note) return { ok: true, note: "O'zgarish yo'q" };
+  const saved = await db.$transaction(async (tx) => {
+    const u = await tx.mechanicRequest.updateMany({ where: { id, status: "NEW", createdById: s.userId }, data: { amount, note } });
+    if (u.count !== 1) return false;
+    await audit(tx, s.userId, "UPDATE", "MechanicRequest", id, { amount: Number(r.amount), note: r.note }, { amount, note, docNo: r.docNo });
+    return true;
+  });
+  if (!saved) return { error: "So'rov boshqa joyda o'zgartirildi — sahifani yangilang" };
+  refresh(id);
+  return { ok: true, note: "So'rov yangilandi" };
 }
 
 export async function cancel(id: string): Promise<ActionState> {

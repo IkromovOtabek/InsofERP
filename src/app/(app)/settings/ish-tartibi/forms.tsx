@@ -1,10 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
-import { CalendarPlus, Plus, Save } from "lucide-react";
-import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { useActionState, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { CalendarPlus, Pencil, Plus, Save } from "lucide-react";
+import { Badge, Button, Field, FormError, FormSuccess, Input, Select, Td, Tr } from "@/components/ui";
+import { DeleteButton } from "@/components/delete-button";
 import { WEEKDAY_NAMES, WEEK_ORDER } from "@/lib/work-calendar-days";
-import { addUzHolidaysAction, saveCalendarDayAction, saveWorkWeekAction } from "./actions";
+import { addUzHolidaysAction, deleteCalendarDayAction, saveCalendarDayAction, saveWorkWeekAction } from "./actions";
 
 /** Haftalik dam olish kunlari va ish vaqti (zavod standarti). */
 export function WorkWeekForm({ restDays, workStart, workEnd, lunchStart, lunchEnd, disabled }: {
@@ -63,6 +65,75 @@ export function CalendarDayForm({ year }: { year: number }) {
       <FormError error={state?.error} />
       <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
     </form>
+  );
+}
+
+type CalendarDay = { id: string; date: string; label: string; weekday: string; kind: "HOLIDAY" | "WORKDAY"; name: string | null };
+
+/**
+ * Bayramlar jadvalidagi qator: qalamcha — turi va nomini joyida tuzatish (sana o'zgarmaydi, o'sha `saveCalendarDayAction`
+ * sana bo'yicha yangilaydi), savatcha — tasdiq bilan o'chirish.
+ */
+export function CalendarDayRow({ day, canEdit }: { day: CalendarDay; canEdit: boolean }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [kind, setKind] = useState(day.kind);
+  const [name, setName] = useState(day.name ?? "");
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  const cancel = () => { setEditing(false); setKind(day.kind); setName(day.name ?? ""); setError(undefined); };
+  const save = () => start(async () => {
+    const fd = new FormData();
+    fd.set("date", day.date); fd.set("kind", kind); fd.set("name", name);
+    const res = await saveCalendarDayAction(undefined, fd);
+    if (res?.error) { setError(res.error); return; }
+    setError(undefined); setEditing(false); router.refresh();
+  });
+  return (
+    <Tr>
+      <Td className="tabular">{day.label}</Td>
+      <Td>{day.weekday}</Td>
+      <Td>
+        {editing ? (
+          <Select value={kind} onChange={(e) => setKind(e.target.value as CalendarDay["kind"])} aria-label="Turi" className="w-56">
+            <option value="HOLIDAY">Bayram / dam olish kuni</option>
+            <option value="WORKDAY">Ko&apos;chirilgan ish kuni</option>
+          </Select>
+        ) : day.kind === "HOLIDAY" ? <Badge color="red">Bayram / dam olish</Badge> : <Badge color="green">Ko&apos;chirilgan ish kuni</Badge>}
+      </Td>
+      <Td>
+        {editing ? (
+          <>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") cancel(); }}
+              aria-label="Nomi"
+              placeholder="Ramazon hayiti"
+              autoFocus
+            />
+            {error && <div className="mt-1 text-xs text-red-600">{error}</div>}
+          </>
+        ) : day.name ?? "—"}
+      </Td>
+      {canEdit && (
+        <Td right>
+          {editing ? (
+            <span className="inline-flex items-center gap-1">
+              <Button size="sm" onClick={save} disabled={pending}><Save size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+              <Button size="sm" variant="ghost" onClick={cancel} disabled={pending}>Bekor</Button>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <Button size="sm" variant="ghost" type="button" onClick={() => setEditing(true)} title="Tahrirlash" aria-label={`${day.label} — tahrirlash`}>
+                <Pencil size={15} />
+              </Button>
+              <DeleteButton action={deleteCalendarDayAction} id={day.id} name={day.name ?? day.label} />
+            </span>
+          )}
+        </Td>
+      )}
+    </Tr>
   );
 }
 

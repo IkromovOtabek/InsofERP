@@ -55,17 +55,34 @@ export function RuleForm({ rule, positions, onDone }: { rule?: RuleRow; position
   );
 }
 
+/** Qoida qatoridagi tugmalar — faqat qoida yozish huquqi borlarga (`employees.payrules`); server xatosi qator ostida. */
 export function RuleActions({ rule, positions, editable }: { rule: RuleRow; positions: string[]; editable: boolean }) {
   const [edit, setEdit] = useState(false);
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string>();
   const router = useRouter();
+  if (!editable) return null;
   if (edit) return <div className="min-w-[320px] text-left"><RuleForm rule={rule} positions={positions} onDone={() => setEdit(false)} /></div>;
+  const toggle = async () => {
+    setPending(true); setError(undefined);
+    try {
+      const res = await togglePayRule(rule.id);
+      if (res?.error) setError(res.error); else router.refresh();
+    } catch {
+      setError("Amal bajarilmadi — ruxsatingizni tekshiring yoki sahifani yangilab qayta urining");
+    } finally {
+      setPending(false);
+    }
+  };
   return (
-    <div className="flex justify-end gap-1">
-      {editable && <Button size="sm" variant="ghost" onClick={() => setEdit(true)}>Tahrirlash</Button>}
-      <Button size="sm" variant="ghost" disabled={pending} onClick={async () => { setPending(true); await togglePayRule(rule.id); setPending(false); router.refresh(); }}>
-        {rule.isActive ? "O'chirish" : "Yoqish"}
-      </Button>
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex justify-end gap-1">
+        <Button size="sm" variant="ghost" onClick={() => setEdit(true)}>Tahrirlash</Button>
+        <Button size="sm" variant="ghost" disabled={pending} onClick={toggle}>
+          {rule.isActive ? "O'chirish" : "Yoqish"}
+        </Button>
+      </div>
+      {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
   );
 }

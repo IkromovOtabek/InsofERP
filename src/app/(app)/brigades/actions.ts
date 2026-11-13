@@ -27,14 +27,28 @@ export async function saveBrigade(id: string | null, _prev: ActionState, fd: For
   return { ok: true };
 }
 
-export async function toggleBrigade(id: string) {
+/**
+ * Brigadani nofaol qilish / qayta yoqish. Ochiq (yangi yoki bajarilayotgan) topshirig'i bor brigada nofaol
+ * qilinmaydi — aks holda topshiriqlar egasiz qolib, brigadir ilovada ularni ko'rmay qoladi.
+ */
+export async function toggleBrigade(id: string): Promise<ActionState> {
   const s = await requireAction("tasks", "brigade");
-  const b = await db.brigade.findUniqueOrThrow({ where: { id } });
-  await db.$transaction(async (tx) => {
-    await tx.brigade.update({ where: { id }, data: { isActive: !b.isActive } });
+  const b = await db.brigade.findUnique({ where: { id } });
+  if (!b) return { error: "Brigada topilmadi" };
+  if (b.isActive) {
+    const open = await db.brigadeTask.count({ where: { brigadeId: id, status: { in: ["NEW", "IN_PROGRESS"] } } });
+    if (open > 0) return { error: `«${b.name}» da ${open} ta ochiq topshiriq bor — avval Topshiriqlar bo'limida ularni bajaring yoki bekor qiling` };
+  }
+  // Shartli yangilash: shu payt boshqa joyda o'zgargan bo'lsa ikki marta almashmasin
+  const changed = await db.$transaction(async (tx) => {
+    const r = await tx.brigade.updateMany({ where: { id, isActive: b.isActive }, data: { isActive: !b.isActive } });
+    if (r.count !== 1) return false;
     await audit(tx, s.userId, "UPDATE", "Brigade", id, { isActive: b.isActive }, { isActive: !b.isActive });
+    return true;
   });
+  if (!changed) return { error: "Brigada holati shu payt boshqa joyda o'zgardi — sahifani yangilang" };
   revalidatePath("/brigades"); revalidatePath("/orders/new");
+  return { ok: true, note: b.isActive ? "Nofaol qilindi" : "Faollashtirildi" };
 }
 
 /** Brak summasini tahrirlash — brigada oyligidan ushlanadigan pul (`lib/defects.ts`). */

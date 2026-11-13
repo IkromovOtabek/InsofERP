@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
-import { Ban, CheckCircle2, Link2, Plus } from "lucide-react";
+import { Ban, CheckCircle2, Link2, Pencil, Plus, Save } from "lucide-react";
 import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
-import { cancelLoanAction, closeLoanAction, createLoanAction, linkLoanTxAction } from "./actions";
+import { cancelLoanAction, closeLoanAction, createLoanAction, linkLoanTxAction, updateLoanAction } from "./actions";
 
 export function LoanCreateForm({ today }: { today: string }) {
   const [state, action, pending] = useActionState(createLoanAction, undefined);
@@ -33,6 +33,33 @@ export function LoanCreateForm({ today }: { today: string }) {
       <FormSuccess text={state?.ok ? "Kredit qo'shildi" : undefined} />
       <Button disabled={pending}><Plus size={16} /> {pending ? "Saqlanmoqda…" : "Qo'shish"}</Button>
     </form>
+  );
+}
+
+export type LoanEdit = { id: string; name: string; counterparty: string; opening: number; openingDate: string; rate: number | null; note: string | null };
+
+/** Kredit tahriri — qatordagi «Tahrir» ichida. Turi o'zgarmaydi; qoldiq sanasi kassa yozuvlari orasidan o'tsa server rad etadi. */
+export function LoanEditForm({ l }: { l: LoanEdit }) {
+  const [state, action, pending] = useActionState(updateLoanAction, undefined);
+  return (
+    <details className="text-left">
+      <summary className="inline-flex cursor-pointer select-none items-center gap-1 text-[13px] font-medium text-slate-500 hover:text-slate-900" title="Tahrirlash"><Pencil size={13} /> Tahrir</summary>
+      <form action={action} className="mt-2 grid w-72 gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-(--shadow-pop)">
+        <input type="hidden" name="id" value={l.id} />
+        <Field label="Nomi *"><Input name="name" defaultValue={l.name} required maxLength={160} /></Field>
+        <Field label="Bank / kontragent *"><Input name="counterparty" defaultValue={l.counterparty} required maxLength={160} /></Field>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Boshlang'ich qoldiq *"><MoneyInput name="openingBalance" defaultValue={String(l.opening)} required /></Field>
+          <Field label="Qoldiq sanasi *"><Input name="openingDate" type="date" defaultValue={l.openingDate} required /></Field>
+        </div>
+        <Field label="Yillik foiz, %"><Input name="rate" inputMode="decimal" defaultValue={l.rate === null ? "" : String(l.rate).replace(".", ",")} /></Field>
+        <Field label="Izoh"><Input name="note" defaultValue={l.note ?? ""} maxLength={300} /></Field>
+        <p className="text-[12px] text-slate-500">Qoldiq = boshlang&apos;ich + shu sanadan keyingi kassa harakatlari. Oldingi qiymatlar Amallar tarixida qoladi.</p>
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
+        <Button size="sm" disabled={pending}><Save size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+      </form>
+    </details>
   );
 }
 

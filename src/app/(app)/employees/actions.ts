@@ -38,12 +38,16 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
   return state(r);
 }
 
-/** Xodimni o'chirish/yoqish — bog'langan login ham birga bloklanadi/ochiladi. */
-export async function toggleEmployee(id: string) {
+/**
+ * Xodimni nofaol qilish / qaytarish — bog'langan login ham birga bloklanadi/ochiladi. Ro'yxatdagi tasdiqli tugmadan
+ * (`ConfirmButton`); xato (ochiq reys va h.k.) tugma yonida ko'rinadi.
+ */
+export async function toggleEmployee(id: string): Promise<ActionState> {
   const s = await requireAction("employees", "edit");
   const r = await toggleEmployeeCore(s, id);
-  if ("error" in r) throw new Error(r.error); // UI tugmani bunday holatda ko'rsatmaydi
+  if ("error" in r) return { error: r.error };
   revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers");
+  return state(r);
 }
 
 /* ───────── Ishdan bo'shatish ───────── */

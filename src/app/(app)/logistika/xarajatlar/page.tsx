@@ -14,6 +14,7 @@ import { cancelExpense } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
+import { canDo } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const ses = await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   // Jami tannarx, turlar va transport bo'yicha jamlar — faqat Logistika moliyani ko'radiganlarga; alohida yozuv summasi qoladi
   const m = canSeeLogiMoney(ses);
+  // Tugmalar server tekshiradigan ruxsat bo'yicha: qo'shish — `addExpense` (`logistika` → `expense`), bekor — `cancelExpense` (`logistika` → `fuel`)
+  const canAdd = canDo(ses, "logistika", "expense");
+  const canCancel = canDo(ses, "logistika", "fuel");
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [rows, costs, opts, delivered, vehicles] = await Promise.all([
@@ -59,7 +63,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           <StatCard label="1 m³ ga" value={m3 ? money(costs.total / m3) : "—"} hint={`${qty(m3)} m³ yetkazildi`} icon={Route} href="#transport-boyicha" />
         </> : <StatCard label="Yetkazildi" value={`${qty(m3)} m³`} hint="jami summalar — Logistika moliyada" icon={Route} />}
       </div>
-      <Card className="mb-5"><CardHeader title="Xarajat qo'shish" description="Yoqilg'i — alohida bo'limda" icon={Coins} /><ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} vehicleId={sp.vehicleId} /></Card>
+      {canAdd && <Card className="mb-5"><CardHeader title="Xarajat qo'shish" description="Yoqilg'i — alohida bo'limda" icon={Coins} /><ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} vehicleId={sp.vehicleId} /></Card>}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         {m && <div className="space-y-5 xl:col-span-2">
           <Card>
@@ -96,7 +100,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
                   <Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note && <div className="text-xs text-slate-500">{e.note}</div>}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td>
                   <Td className="text-sm">{e.vehicle?.plate ?? ""}{e.driver && <span className="text-slate-500"> · {e.driver.fullName}</span>}{e.trip && <> · <Link href={`/trips/${e.trip.id}`} className="hover:underline">{e.trip.deliveryNoteNo}</Link></>}</Td>
                   <Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td>
-                  <Td>{!e.cancelledAt && <ConfirmButton action={cancelExpense.bind(null, e.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${EXPENSE_KIND[e.kind]} ${date(e.date)} (${money(Number(e.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
+                  <Td>{!e.cancelledAt && canCancel && <ConfirmButton action={cancelExpense.bind(null, e.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${EXPENSE_KIND[e.kind]} ${date(e.date)} (${money(Number(e.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
                 </Tr>
               ))}
             </tbody>

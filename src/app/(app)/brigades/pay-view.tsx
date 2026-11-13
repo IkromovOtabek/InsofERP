@@ -6,6 +6,7 @@ import { unitLabel } from "@/lib/unit";
 import type { BrigadeDefectsMonth, BrigadePayMonth } from "@/lib/brigade-pay";
 import { Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { DefectAmountForm } from "./forms";
+import { DeleteDefectButton } from "../dashboard/production-forms";
 
 const qtyText = (q: Record<string, number>) => Object.entries(q).map(([u, n]) => `${qty(n)} ${unitLabel(u)}`).join(", ");
 
@@ -69,14 +70,18 @@ export function BrigadePayView({ data }: { data: BrigadePayMonth }) {
   );
 }
 
-/** «Brak (kunlik)» tabi: kun × brigada summasi va yozuvlar ro'yxati (summani tahrirlash). */
-export function BrigadeDefectsView({ data, month, brigadeId, canEdit }: { data: BrigadeDefectsMonth; month: string; brigadeId: string | null; canEdit: boolean }) {
+/**
+ * «Brak (kunlik)» tabi: kun × brigada summasi va yozuvlar ro'yxati (summani tahrirlash).
+ * `deletable` — o'chirish mumkin bo'lgan yozuvlar (bosh sahifadagi «Brak» qoidasi, sahifada hisoblanadi).
+ */
+export function BrigadeDefectsView({ data, month, brigadeId, canEdit, deletable }: { data: BrigadeDefectsMonth; month: string; brigadeId: string | null; canEdit: boolean; deletable?: Set<string> }) {
   const list = brigadeId ? data.list.filter((d) => d.brigadeId === brigadeId) : data.list;
   const brigadeName = brigadeId ? data.grid.find((g) => g.id === brigadeId)?.name : null;
   // Kunlar: oy boshidan bugungacha (o'tgan oy — oxirigacha), eng yangisi tepada
   const now = new Date();
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const days = data.days.filter((d) => d <= todayIso).reverse();
+  const canDelete = list.some((d) => deletable?.has(d.id));
   return (
     <div className="space-y-4">
       <Card padded={false}>
@@ -124,7 +129,7 @@ export function BrigadeDefectsView({ data, month, brigadeId, canEdit }: { data: 
           {brigadeId && <Link href={`/brigades?tab=brak&oy=${month}`} className="text-[13px] font-medium text-slate-600 underline">Barcha brigadalar</Link>}
         </div>
         <Table>
-          <thead><tr><Th>Vaqt</Th><Th>Brigada</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Sabab</Th><Th right>Narx × miqdor</Th><Th right>Brak summasi</Th></tr></thead>
+          <thead><tr><Th>Vaqt</Th><Th>Brigada</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Sabab</Th><Th right>Narx × miqdor</Th><Th right>Brak summasi</Th>{canDelete && <Th />}</tr></thead>
           <tbody>
             {list.length === 0 && <Empty text="Brak yozuvi yo'q" icon={TriangleAlert} />}
             {list.map((d) => {
@@ -138,6 +143,7 @@ export function BrigadeDefectsView({ data, month, brigadeId, canEdit }: { data: 
                   <Td>{d.reason}{d.note && <div className="text-xs text-slate-400">{d.note}</div>}</Td>
                   <Td right className="tabular text-slate-500">{money(auto)}</Td>
                   <Td right>{canEdit ? <DefectAmountForm id={d.id} amount={d.amount} /> : <span className={`tabular ${d.amount !== auto ? "font-semibold" : ""}`}>{money(d.amount)}</span>}</Td>
+                  {canDelete && <Td right>{deletable?.has(d.id) && <DeleteDefectButton id={d.id} />}</Td>}
                 </Tr>
               );
             })}

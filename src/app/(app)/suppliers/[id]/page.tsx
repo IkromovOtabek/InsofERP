@@ -33,7 +33,8 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
     }),
     db.supplyRequest.findMany({ where: { supplierId: id }, orderBy: { date: "desc" }, take: 10, include: { items: { select: { qty: true, price: true } } } }),
   ]);
-  const canEdit = ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "DIRECTOR"].includes(s.role);
+  // Rekvizitlar — `updateSupplier` bilan bir xil huquq (stock → suppliers; direktor bergan ruxsat ham hisobga olinadi)
+  const canEdit = canDo(s, "stock", "suppliers");
   // Boshlang'ich qarzni shu kartadan ham to'lash ("Boshlang'ich qoldiqlar" bo'limidagi bilan bir action) — moliya huquqi bilan
   const canPay = canDo(s, "cashflow", "pay");
   const [dues, accounts] = canPay && ledger.opening > 0.005

@@ -30,8 +30,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const s = await requirePage("/payments");
   const role = s?.role ?? "";
   // Ruxsatlar server action'lariga mos: kim nima qila olmasa, tugmasi ham ko'rinmaydi
-  const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
-  const canImport = ["CASHIER", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
+  const canImport = canDo(s, "payments", "import");
+  // Partiyani qaytarish (`deleteImportBatch`) — import ruxsati bilan; kassir faqat o'zi yuklagan partiyani (pastda `isCashier`)
+  const canDelete = canImport && role !== "CASHIER";
   const canBalance = !!s && canDo(s, "payments", "balance");
   // Qator tafsilotidagi «Tahrirlash» (Kassa jurnali, To'lovlar, Realizatsiya jurnali) — bitta amal; tugmalarni server
   // har qator uchun alohida hal qiladi (`row-detail.ts`), bu yerda faqat tahrir oynasi ro'yxatlari yuklanadimi
@@ -82,8 +83,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         { key: "jurnal", label: "Realizatsiya jurnali", href: qs("jurnal"), icon: Receipt, count: regCount },
       ]} />
 
-      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} canAddSub={canAddSub} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
-        <JurnalTab where={regWhere} canEdit={canEdit} accounts={accounts} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={role === "CASHIER"} from={from} to={to}
+      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} canAddSub={canAddSub} /> : tab === "tolovlar" ? <PaymentsTab canPay={canDo(s, "payments", "create")} /> : (
+        <JurnalTab where={regWhere} canEdit={canEdit} accounts={accounts} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={canImport && role === "CASHIER"} from={from} to={to}
           totals={{ rows: regTotals._count._all, qty: Number(regTotals._sum.qty ?? 0), sum: Number(regTotals._sum.sum ?? 0), nds: Number(regTotals._sum.nds ?? 0), total: Number(regTotals._sum.total ?? 0) }} />
       )}
     </div>
@@ -92,9 +93,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
 /* ───────── To'lovlar ───────── */
 
-async function PaymentsTab({ role }: { role: string }) {
-  // Server ruxsatiga mos: to'lov — kassir/buxgalter; bog'lash — kassir/buxgalter. Tahrir va storno — qator tafsilotida
-  const canPay = ["CASHIER", "ACCOUNTING", "DIRECTOR"].includes(role);
+async function PaymentsTab({ canPay }: { canPay: boolean }) {
+  // `canPay` — server ruxsatiga mos (`createPayment`, `linkPayment` → payments.create). Tahrir va storno — qator tafsilotida
   const [payments, accounts, customers, openInvoices, advOrders] = await Promise.all([
     db.payment.findMany({
       orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 200,

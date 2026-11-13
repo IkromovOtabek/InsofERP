@@ -9,6 +9,7 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { importParties, type PartyRow } from "@/lib/import-parties";
 import { parseInn } from "@/lib/inn";
 import { updateSupplierRequisites } from "@/lib/supplier-edit";
+import { Prisma } from "@/generated/prisma";
 
 // vatPayer: "1" — QQS to'lovchisi (kirimga 12% QQS), "0" — yo'q; berilmasa: yangi kartada "1", tahrirda o'zgarmaydi
 const schema = z.object({ name: zStr("Nomi kerak"), inn: zOpt, phone: zOpt, address: zOpt, contactPerson: zOpt, vatPayer: z.enum(["0", "1"]).optional() });
@@ -32,12 +33,65 @@ export async function createSupplier(_prev: ActionState, fd: FormData): Promise<
   return { ok: true };
 }
 
+/** «Nofaol qilish» / «Faollashtirish» — yetkazuvchi ro'yxatlardan (kirim, ta'minot) yashiriladi yoki qaytadi, hujjatlari joyida. */
 export async function toggleSupplier(id: string) {
   const s = await requireAction("stock", "suppliers");
   const cur = await db.supplier.findUniqueOrThrow({ where: { id } });
   await db.supplier.update({ where: { id }, data: { isActive: !cur.isActive } });
   await audit(db, s.userId, "UPDATE", "Supplier", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
   revalidatePath("/suppliers"); revalidatePath(`/suppliers/${id}`);
+}
+
+type RemoveSupplier = { kind: "missing" } | { kind: "deleted"; name: string } | { kind: "used"; name: string; isActive: boolean; why: string };
+
+/**
+ * Yetkazuvchini o'chirish (`DeleteButton`). Hech qayerda ishlatilmagan — butunlay o'chadi. Kirim, boshlang'ich qoldiq,
+ * Kirim-Chiqim, ta'minot, taklif yoki jo'natmada uchrasa — o'chirilmaydi, nofaol qilinadi (hujjatlar joyida).
+ * Bog'lanishlar aniq sanaladi: Kirim-Chiqim, ta'minot va taklif FK'si ON DELETE SET NULL — sanamasdan o'chirilsa
+ * hujjatdagi yetkazuvchi jimgina bo'shab qolardi. Qator qulfi (FOR UPDATE) ostida: shu payt yangi hujjat bog'lanib
+ * qolmasin; sanalmagan bog'lanish chiqsa (P2003) — baribir nofaol qilinadi.
+ */
+export async function deleteSupplier(id: string): Promise<ActionState> {
+  const s = await requireAction("stock", "suppliers");
+  let res: RemoveSupplier;
+  try {
+    res = await db.$transaction(async (tx): Promise<RemoveSupplier> => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Supplier" WHERE id = ${id} FOR UPDATE`;
+      if (!locked.length) return { kind: "missing" };
+      const sup = await tx.supplier.findUniqueOrThrow({ where: { id } });
+      const [receipts, openings, txs, supply, quotes, shipments] = await Promise.all([
+        tx.goodsReceipt.count({ where: { supplierId: id } }),
+        tx.openingBalance.count({ where: { supplierId: id } }),
+        tx.cashTransaction.count({ where: { supplierId: id } }),
+        tx.supplyRequest.count({ where: { supplierId: id } }),
+        tx.supplyQuote.count({ where: { supplierId: id } }),
+        tx.supplyShipment.count({ where: { supplierId: id } }),
+      ]);
+      const parts = [
+        receipts && `kirim ${receipts}`, openings && `boshlang'ich qoldiq ${openings}`, txs && `Kirim-Chiqim ${txs}`,
+        supply && `ta'minot ${supply}`, quotes && `taklif ${quotes}`, shipments && `jo'natma ${shipments}`,
+      ].filter(Boolean);
+      if (parts.length) return { kind: "used", name: sup.name, isActive: sup.isActive, why: `hujjatlarda ishlatilgan (${parts.join(", ")})` };
+      await tx.supplier.delete({ where: { id } });
+      await audit(tx, s.userId, "DELETE", "Supplier", id, sup, undefined);
+      return { kind: "deleted", name: sup.name };
+    });
+  } catch (e) {
+    if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003")) throw e;
+    const sup = await db.supplier.findUnique({ where: { id }, select: { name: true, isActive: true } });
+    res = sup ? { kind: "used", name: sup.name, isActive: sup.isActive, why: "boshqa hujjatga bog'langan" } : { kind: "missing" };
+  }
+  if (res.kind === "missing") return { error: "Yetkazuvchi topilmadi" };
+  if (res.kind === "used") {
+    if (!res.isActive) return { error: `«${res.name}» ${res.why} — butunlay o'chirilmaydi, u allaqachon nofaol` };
+    // Shartli: parallel «Faollashtirish» bilan to'qnashsa — ikkinchi marta yozilmaydi
+    const u = await db.supplier.updateMany({ where: { id, isActive: true }, data: { isActive: false } });
+    if (u.count) await audit(db, s.userId, "UPDATE", "Supplier", id, { isActive: true }, { isActive: false, reason: `o'chirish o'rniga nofaol: ${res.why}` });
+  }
+  revalidatePath("/suppliers"); revalidatePath(`/suppliers/${id}`); revalidatePath("/receipts/new"); revalidatePath("/receipts/import");
+  return res.kind === "deleted"
+    ? { ok: true, note: `«${res.name}» o'chirildi.` }
+    : { ok: true, note: `«${res.name}» o'chirilmadi — ${res.why}. Nofaol qilindi (hujjatlar joyida).` };
 }
 
 /** Yetkazuvchi rekvizitlarini tahrirlash (nomi, INN, telefon) — qoida `lib/supplier-edit.ts` da (mobil ilova ham shundan). */

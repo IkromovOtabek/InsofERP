@@ -11,6 +11,8 @@ import { money, date, opAt } from "@/lib/format";
 import { Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Td, Th, Tr } from "@/components/ui";
 import { InvoiceStatusBadge } from "../../invoices/status";
 import { CustomerForm } from "../customer-form";
+import { deleteCustomer } from "../actions";
+import { DeleteButton } from "@/components/delete-button";
 import { BlacklistMark, ContractMark } from "@/components/customer-name";
 import { OrderStatusBadge } from "../../orders/status";
 import { customerAppStatus } from "@/lib/eco/customers";
@@ -37,6 +39,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const canOrder = canDo(s, "orders", "create") && c.isActive && !blacklisted;
   // Server amali (`saveSite`) bilan bir xil ruxsat — ruxsatlar daraxtida berilgan xodimga ham tugma chiqadi
   const canEditSites = canDo(s, "customers", "sites");
+  // «Ma'lumotlar» formasi va o'chirish — `saveCustomer`/`deleteCustomer` bilan bir xil ruxsat; ruxsatsiz xodim faqat ko'radi
+  const canEdit = canDo(s, "customers", "edit");
 
   return (
     <div>
@@ -45,6 +49,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           <LinkButton href={`/customers/${id}/akt`} variant="secondary"><Scale size={16} /> Akt sverki</LinkButton>
           {canDo(s, "offers", "create") && c.isActive && <LinkButton href={`/takliflar/new?customer=${id}`} variant="secondary"><FileBadge2 size={16} /> Tijorat taklifi</LinkButton>}
           {canOrder && <LinkButton href={`/orders/new?customer=${id}`}><Plus size={16} /> Zayavka</LinkButton>}
+          {/* Ishlatilmagan karta o'chadi (ro'yxatga qaytadi); hujjatda uchrasa — nofaol qilinadi */}
+          {canEdit && !c.isInternal && <DeleteButton action={deleteCustomer.bind(null, true)} id={id} name={c.name} title="Mijozni o'chirish (hujjatlarda ishlatilgan bo'lsa — nofaol qilinadi)" className="h-10 w-10" />}
         </>} />
       {blacklisted && (
         <div className="mb-4"><Callout tone="danger" title="Mijoz qora ro'yxatda">Limit {money(limit)} to'liq ishlatilgan: qarz {money(debt)} + ochiq zayavkalar {money(open)}. Yangi zayavka ochilmaydi. Qarz to'langach mijoz avtomatik ro'yxatdan chiqadi; direktor, Finance yoki Buxgalteriya limitni oshirishi mumkin.</Callout></div>
@@ -61,7 +67,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div id="malumotlar" className="scroll-mt-20"><Card>
           <CardHeader title="Ma'lumotlar" />
-          <CustomerForm customer={{ ...c, creditLimit: c.creditLimit.toString() }} canEditLimit={["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role)} />
+          {/* key: karta serverda o'zgarsa (masalan o'chirish o'rniga nofaol qilindi) forma yangi qiymatlar bilan qayta chiziladi */}
+          <CustomerForm key={c.updatedAt.getTime()} customer={{ ...c, creditLimit: c.creditLimit.toString() }} canEditLimit={["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role)} readOnly={!canEdit} />
         </Card></div>
         <div className="space-y-5">
         {appStatus && (

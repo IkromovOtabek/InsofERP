@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { deleteCatalogProduct, deleteProductGroup } from "@/lib/catalog-actions";
+import { deleteCatalogProduct, deleteProductGroup, renameProductGroup } from "@/lib/catalog-actions";
 import { FolderPicker } from "@/components/folder-picker";
 import { DeleteButton } from "@/components/delete-button";
+import { RenameFolderForm } from "@/components/material-picker";
 import { ProductPanelBody, ProductTools, RenameProductForm, duplicateNames, type ProductPanel } from "@/components/catalog-tools";
 import type { ProductCreate } from "@/lib/catalog";
 
@@ -45,11 +46,13 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
   const [panel, setPanel] = useState<ProductPanel>(null);
   // Nomini tuzatayotgan mahsulot (qatordagi qalam) — panel o'rnida forma chiqadi
   const [renaming, setRenaming] = useState<CatalogProduct | null>(null);
-  useEffect(() => { if (!open) { setPanel(null); setRenaming(null); } }, [open]);
+  // Nomini tuzatayotgan papka (papka qatoridagi qalam)
+  const [renamingGroup, setRenamingGroup] = useState<CatalogGroup | null>(null);
+  useEffect(() => { if (!open) { setPanel(null); setRenaming(null); setRenamingGroup(null); } }, [open]);
 
   const dupes = duplicateNames(products);
-  const toggle = (p: ProductPanel) => { setRenaming(null); setPanel((cur) => (cur === p ? null : p)); };
-  const afterCreate = () => { setPanel(null); setRenaming(null); router.refresh(); };
+  const toggle = (p: ProductPanel) => { setRenaming(null); setRenamingGroup(null); setPanel((cur) => (cur === p ? null : p)); };
+  const afterCreate = () => { setPanel(null); setRenaming(null); setRenamingGroup(null); router.refresh(); };
 
   return (
     <FolderPicker
@@ -80,10 +83,12 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
       /* O'chirish: hujjatlarda ishlatilmagan mahsulot butunlay o'chadi, ishlatilgani arxivga olinadi */
       rowAction={full ? (row) => {
         const p = row.kind === "item" ? products.find((x) => x.id === row.id) : undefined;
+        const g = row.kind === "group" ? groups.find((x) => x.id === row.id) : undefined;
         return (
           <span className="inline-flex items-center gap-0.5">
-            {p && (
-              <button type="button" onClick={() => { setPanel(null); setRenaming(p); }} title="Nomini tahrirlash" aria-label={`${p.name} — nomini tahrirlash`}
+            {(p || g) && (
+              <button type="button" onClick={() => { setPanel(null); setRenaming(p ?? null); setRenamingGroup(g ?? null); }}
+                title={p ? "Nomini tahrirlash" : "Papka nomini tahrirlash"} aria-label={`${row.name} — ${p ? "nomini" : "papka nomini"} tahrirlash`}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900"><Pencil size={14} /></button>
             )}
             <DeleteButton
@@ -96,7 +101,9 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
         );
       } : undefined}
       tools={() => (canCreate ? <ProductTools toggle={toggle} dupes={dupes} addOnly={!full} /> : null)}
-      panel={(ctx) => (renaming
+      panel={(ctx) => (renamingGroup
+        ? <RenameFolderForm key={renamingGroup.id} group={renamingGroup} action={renameProductGroup} onDone={afterCreate} onCancel={() => setRenamingGroup(null)} />
+        : renaming
         ? <RenameProductForm key={renaming.id} product={renaming} onDone={afterCreate} onCancel={() => setRenaming(null)} />
         : canCreate ? <ProductPanelBody panel={panel} ctx={ctx} dupes={dupes} onDone={afterCreate} onCancel={() => setPanel(null)} /> : null)}
     />

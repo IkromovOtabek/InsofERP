@@ -25,10 +25,13 @@ export async function addProgress(taskId: string, _prev: ActionState, fd: FormDa
   return { ok: true, note: res.note };
 }
 
-export async function cancelTask(taskId: string) {
+/** Topshiriqni bekor qilish (`ConfirmButton`) — xato bo'lsa (allaqachon yopilgan) sababi tugma yonida chiqadi. */
+export async function cancelTask(taskId: string): Promise<ActionState> {
   const s = await requireAction("tasks", "cancel");
   const res = await taskCancel(taskId, s.userId);
+  if (res.error) return { error: res.error };
   revalidatePath("/tasks"); revalidatePath("/brigades"); revalidatePath(`/orders/${res.orderId}`);
+  return { ok: true, note: "Bekor qilindi" };
 }
 
 const subSchema = z.object({

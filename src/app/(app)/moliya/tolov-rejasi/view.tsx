@@ -6,7 +6,7 @@ import { groupSales } from "@/lib/fin-report/cost";
 import { loadCategories, toTree } from "@/lib/fin-report/categories";
 import { Badge, Card, CardHeader, DL, Empty, Input, Section, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { DailyFlagToggle, PlannedCreateForm, PlannedRowActions, PlanSettingsForm, RecurringCreateForm, RecurringRowActions, SalesPlanForm, SupplierTermForm } from "./forms";
+import { DailyFlagToggle, PlannedCreateForm, PlannedEditForm, PlannedRowActions, PlanSettingsForm, RecurringCreateForm, RecurringEditForm, RecurringRowActions, SalesPlanForm, SupplierTermForm } from "./forms";
 
 /**
  * To'lov rejasi — «Insof 2026» → «To'lov rejasi» varag'idek, to'lov kalendari shu sozlamalardan hisoblanadi:
@@ -29,6 +29,8 @@ export async function PaymentPlanView({ canWrite }: { canWrite: boolean }) {
   const defDays = settings?.supplierPaymentDays ?? 7;
   const expenseTops = toTree(nodes, { type: "EXPENSE", activeOnly: true });
   const loanName = new Map(loans.map((l) => [l.id, l.name]));
+  const recCats = expenseTops.map((t) => ({ name: t.name, loan: t.needs === "LOAN" }));
+  const planCats = expenseTops.map((t) => t.name);
   const monthlyFixed = recurring.filter((r) => r.isActive).reduce((x, r) => x + Number(r.amount), 0);
   const dueOf = new Map(cal.suppliers.map((x) => [x.supplierId, x]));
   const supRows = suppliers.map((x) => ({ ...x, due: dueOf.get(x.id) })).sort((a, b) => (b.due?.debt ?? 0) - (a.due?.debt ?? 0) || a.name.localeCompare(b.name));
@@ -117,12 +119,12 @@ export async function PaymentPlanView({ canWrite }: { canWrite: boolean }) {
                 <Td right className="font-semibold">{fmtNum(Number(r.amount))}</Td>
                 <Td>{r.isActive ? <Badge color="green">Ha</Badge> : <Badge color="slate">to&apos;xtatilgan</Badge>}</Td>
                 <Td className="text-slate-500">{[r.loanId ? loanName.get(r.loanId) : null, r.note].filter(Boolean).join(" · ") || "—"}</Td>
-                {canWrite && <Td right><RecurringRowActions id={r.id} active={r.isActive} /></Td>}
+                {canWrite && <Td right><div className="flex items-start justify-end gap-1"><RecurringEditForm r={{ id: r.id, name: r.name, category: r.category, dayOfMonth: r.dayOfMonth, amount: Number(r.amount), loanId: r.loanId, note: r.note }} cats={recCats} loans={loans} /><RecurringRowActions id={r.id} active={r.isActive} /></div></Td>}
               </Tr>
             ))}
           </tbody>
         </Table>
-        {canWrite && <Card className="mt-4"><RecurringCreateForm cats={expenseTops.map((t) => ({ name: t.name, loan: t.needs === "LOAN" }))} loans={loans} /></Card>}
+        {canWrite && <Card className="mt-4"><RecurringCreateForm cats={recCats} loans={loans} /></Card>}
       </Section>
 
       <Section title={`3. Kundalik xarajatlar (oxirgi ${cal.histDays} kunlik o'rtachadan avtomatik)`}>
@@ -176,12 +178,12 @@ export async function PaymentPlanView({ canWrite }: { canWrite: boolean }) {
                 <Td>{p.counterparty}</Td>
                 <Td className="text-slate-500">{[p.category, p.note].filter(Boolean).join(" · ") || "—"}</Td>
                 <Td right className={p.type === "INCOME" ? "text-emerald-700" : "text-red-600"}>{p.type === "INCOME" ? "+" : "−"}{fmtNum(Number(p.amount))}</Td>
-                {canWrite && <Td right><PlannedRowActions id={p.id} /></Td>}
+                {canWrite && <Td right><div className="flex items-start justify-end gap-1"><PlannedEditForm p={{ id: p.id, type: p.type === "INCOME" ? "INCOME" : "EXPENSE", date: isoDate(p.date), amount: Number(p.amount), counterparty: p.counterparty, category: p.category, note: p.note }} cats={planCats} /><PlannedRowActions id={p.id} /></div></Td>}
               </Tr>
             ))}
           </tbody>
         </Table>
-        {canWrite && <Card className="mt-4"><PlannedCreateForm today={isoDate()} cats={expenseTops.map((t) => t.name)} /></Card>}
+        {canWrite && <Card className="mt-4"><PlannedCreateForm today={isoDate()} cats={planCats} /></Card>}
       </Section>
 
       <Section title="6. Divident — faqat shu oy foydasidan olinadi">

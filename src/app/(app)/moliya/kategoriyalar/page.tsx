@@ -5,8 +5,8 @@ import { db } from "@/lib/db";
 import { fmtNum } from "@/lib/format";
 import { loadCategories, makeResolver, toTree, FLOW_LABEL, NEEDS_LABEL, PNL_LINE_LABEL } from "@/lib/fin-report/categories";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, Table, Td, Th, Tr } from "@/components/ui";
-import { AliasForm, CategoryCreateForm, CategoryEditForm, ProjectCreateForm, ProjectToggle, type CatView } from "./forms";
-import { deleteCategoryAction } from "./actions";
+import { AliasForm, CategoryCreateForm, CategoryEditForm, ProjectCreateForm, ProjectEditForm, ProjectToggle, type CatView } from "./forms";
+import { deleteCategoryAction, deleteProjectAction } from "./actions";
 import { DeleteButton } from "@/components/delete-button";
 
 /**
@@ -102,7 +102,16 @@ export default async function CategoriesPage() {
                 <Td className="text-slate-500">{p.note ?? "—"}</Td>
                 <Td right>{p._count.transactions}</Td>
                 <Td>{p.isActive ? <Badge color="green">faol</Badge> : <Badge color="slate">yopilgan</Badge>}</Td>
-                {canWrite && <Td right><ProjectToggle id={p.id} isActive={p.isActive} /></Td>}
+                {canWrite && (
+                  <Td right>
+                    <div className="flex items-start justify-end gap-1">
+                      <ProjectEditForm id={p.id} name={p.name} note={p.note} />
+                      <ProjectToggle id={p.id} isActive={p.isActive} />
+                      {/* Kassa yozuvi bog'lanmagan loyiha o'chadi; bog'langanini server rad etadi va «Yopish»ni aytadi */}
+                      <DeleteButton action={deleteProjectAction} id={p.id} name={p.name} title={p._count.transactions ? "O'chirish (kassa yozuvi bor — faqat yopiladi)" : "Loyihani o'chirish"} />
+                    </div>
+                  </Td>
+                )}
               </Tr>
             ))}
           </tbody>

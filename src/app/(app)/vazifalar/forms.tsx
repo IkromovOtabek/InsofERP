@@ -2,8 +2,8 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCheck, Play, Plus, RotateCcw, Send, XCircle } from "lucide-react";
-import { commentAction, createTaskAction, quickStatus, taskStatusAction } from "./actions";
+import { Check, CheckCheck, Pencil, Play, Plus, RotateCcw, Save, Send, XCircle } from "lucide-react";
+import { commentAction, createTaskAction, quickStatus, taskStatusAction, updateTaskAction } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
 import { PRIORITIES, PRIORITY_LABEL } from "@/lib/hr/labels";
 import type { ActionState } from "@/lib/action";
@@ -38,6 +38,49 @@ export function NewTaskForm({ employees, myId, canAssign }: { employees: { id: s
       <Field label="Tavsif"><Textarea name="description" rows={2} maxLength={3000} /></Field>
       <FormError error={state?.error} /><FormSuccess text={state?.ok ? state.note : undefined} />
       <Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Vazifa berish"}</Button>
+    </form>
+  );
+}
+
+/**
+ * Vazifa kartasidagi «Tahrirlash»: nomi, bajaruvchi, muddat, muhimlik, tavsif. Bajaruvchi ro'yxati serverdan keladi
+ * (`vazifalar.assign` bo'lmasa — hozirgi bajaruvchi va o'zi); almashtirilsa vazifa yangi bajaruvchiga boshidan beriladi.
+ */
+export function EditTaskForm({ task, employees }: {
+  task: { id: string; title: string; description: string | null; assigneeId: string; dueDate: string | null; dueTime: string | null; priority: string };
+  employees: { id: string; fullName: string; position: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [state, act, pending] = useActionState(updateTaskAction.bind(null, task.id), undefined);
+  useRefresh(state);
+  useEffect(() => { if (state?.ok) setOpen(false); }, [state]);
+  if (!open) {
+    return (
+      <div className="space-y-2">
+        <Button variant="ghost" onClick={() => setOpen(true)}><Pencil size={15} /> Tahrirlash</Button>
+        <FormSuccess text={state?.ok ? state.note : undefined} />
+      </div>
+    );
+  }
+  return (
+    <form action={act} className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1.3fr_150px_110px_140px]">
+        <Field label="Vazifa *"><Input name="title" required minLength={3} maxLength={200} defaultValue={task.title} /></Field>
+        <Field label="Bajaruvchi" hint={employees.length > 1 ? "Almashtirilsa — yangi bajaruvchi boshidan oladi" : undefined}>
+          <Select name="assigneeId" defaultValue={task.assigneeId} disabled={employees.length < 2}>
+            {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} · {e.position}</option>)}
+          </Select>
+        </Field>
+        <Field label="Muddat"><Input type="date" name="dueDate" defaultValue={task.dueDate ?? ""} /></Field>
+        <Field label="Soat"><Input type="time" name="dueTime" defaultValue={task.dueTime ?? ""} /></Field>
+        <Field label="Muhimlik"><Select name="priority" defaultValue={task.priority}>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</Select></Field>
+      </div>
+      <Field label="Tavsif"><Textarea name="description" rows={3} maxLength={3000} defaultValue={task.description ?? ""} /></Field>
+      <FormError error={state?.error} />
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={pending}><Save size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Bekor qilish</Button>
+      </div>
     </form>
   );
 }

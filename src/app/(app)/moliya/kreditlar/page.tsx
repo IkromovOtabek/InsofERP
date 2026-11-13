@@ -6,7 +6,7 @@ import { date, fmtNum, isoDate, money, opAt } from "@/lib/format";
 import { loanBalances, LOAN_KIND_LABEL } from "@/lib/fin-report/loans";
 import { loadCategories } from "@/lib/fin-report/categories";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { LinkTxForm, LoanCreateForm, LoanRowActions } from "./forms";
+import { LinkTxForm, LoanCreateForm, LoanEditForm, LoanRowActions } from "./forms";
 
 /**
  * Kreditlar va qarzlar — balansning passivi (bank kreditlari, olingan qarzlar) va aktivi (biz bergan qarzlar).
@@ -59,7 +59,7 @@ export default async function LoansPage() {
                   <Td right>{fmtNum(back)}</Td>
                   <Td right className="text-slate-500">{fmtNum(l.interestPaid)}</Td>
                   <Td right className="font-semibold">{fmtNum(l.balance)}</Td>
-                  {canWrite && <Td right><LoanRowActions id={l.id} canClose={!l.closedAt} /></Td>}
+                  {canWrite && <Td right><div className="flex items-start justify-end gap-3"><LoanEditForm l={{ id: l.id, name: l.name, counterparty: l.counterparty, opening: l.opening, openingDate: isoDate(l.openingDate), rate: l.rate, note: l.note }} /><LoanRowActions id={l.id} canClose={!l.closedAt} /></div></Td>}
                 </Tr>
               );
             })}

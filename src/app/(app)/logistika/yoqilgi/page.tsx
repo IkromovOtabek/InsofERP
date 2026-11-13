@@ -14,6 +14,7 @@ import { cancelFuel } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
+import { canDo } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
   const ses = await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   // Davr summasi va transport bo'yicha summa — faqat Logistika moliyani ko'radiganlarga; zapravka summasi qatorda qoladi
   const m = canSeeLogiMoney(ses);
+  // Qo'shish (`addFuel`) va bekor qilish (`cancelFuel`) — server tekshiradigan bitta ruxsat: `logistika` → `fuel`
+  const canWrite = canDo(ses, "logistika", "fuel");
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [logs, opts, price] = await Promise.all([
@@ -63,7 +66,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
         <StatCard label="O'rtacha narx" value={liters ? `${fmtNum(sum / liters, 0)} so'm/l` : "—"} icon={Fuel} href="#zapravkalar" />
         <StatCard label="Transport soni" value={byV.size} icon={Gauge} href="#transport-kesimida" />
       </div>
-      <Card className="mb-5 min-w-0"><CardHeader title="Zapravka qo'shish" icon={Fuel} /><FuelForm {...opts} lastPrice={price} vehicleId={sp.vehicleId} /></Card>
+      {canWrite && <Card className="mb-5 min-w-0"><CardHeader title="Zapravka qo'shish" icon={Fuel} /><FuelForm {...opts} lastPrice={price} vehicleId={sp.vehicleId} /></Card>}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <Card padded={false} className="xl:col-span-2">
           <div id="transport-kesimida" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Transport kesimida" icon={Gauge} /></div>
@@ -100,7 +103,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
                   <Td right className="tabular">{fmtNum(Number(f.pricePerL), 0)}</Td>
                   <Td right className={`tabular ${f.cancelledAt ? "line-through" : ""}`}>{money(Number(f.amount))}</Td>
                   <Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td>
-                  <Td>{!f.cancelledAt && <ConfirmButton action={cancelFuel.bind(null, f.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`Zapravka ${date(f.date)} (${money(Number(f.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
+                  <Td>{!f.cancelledAt && canWrite && <ConfirmButton action={cancelFuel.bind(null, f.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`Zapravka ${date(f.date)} (${money(Number(f.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
                 </Tr>
               ))}
             </tbody>

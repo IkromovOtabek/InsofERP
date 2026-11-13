@@ -3,6 +3,8 @@ import { AlarmClock, Banknote, CalendarDays, CheckCheck, ChevronDown, ChevronUp,
 import type { PayMethod } from "@/generated/prisma";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
+import { canDo } from "@/lib/permissions";
+import { db } from "@/lib/db";
 import { date, dateTime, isoDate, money, opAt } from "@/lib/format";
 import { daysLeft, dueLabel } from "@/lib/production";
 import {
@@ -13,6 +15,8 @@ import { Badge, Button, Callout, Empty, Input, PageHeader, StatCard, Table, Tabs
 import { cn } from "@/lib/utils";
 import { payReqSummary } from "./summary";
 import { ReceiveForm } from "./receive-form";
+import { CashRow } from "../payments/cash-detail";
+import { CashEditProvider } from "../payments/cash-edit";
 
 const TAB_ICON: Record<PayReqTab, typeof Layers> = { all: Layers, open: ListTodo, today: CalendarDays, overdue: AlarmClock, done: CheckCheck, history: History };
 const SUBTITLE: Record<PayMethod, string> = {
@@ -60,6 +64,12 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
     if (one) list = [one, ...rows];
   }
   const canOrders = pathAllowed("/orders", s.role, s.perms);
+  // To'lovlar tarixidagi qator bosilsa — Kassa / bank dagi tafsilot oynasi (kim kiritgan, tarix; tahrirlash va o'chirish ruxsatga
+  // qarab, `payments/row-detail.ts`). Oyna `/payments` huquqi bilan o'qiladi — u yopiq xodimga oddiy ro'yxat qoladi
+  const canCashRow = pathAllowed("/payments", s.role, s.perms);
+  const editAccounts = canCashRow && sp.open && canDo(s, "cashflow", "edit")
+    ? await db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } })
+    : [];
   const accountsFor = (m: PayMethod) => (m === "CASH" ? cashAccs : bankAccs);
 
   const href = (t: PayReqTab, open?: string) => {
@@ -163,7 +173,21 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
                     <div className="grid grid-cols-1 gap-5 font-normal lg:grid-cols-5">
                       <div className="lg:col-span-2">
                         <div className="mb-2 text-[13px] font-semibold text-slate-700">To&apos;lovlar tarixi</div>
-                        {r.payments.length === 0 ? <p className="text-sm text-slate-500">Hali to&apos;lov tushmagan</p> : (
+                        {r.payments.length === 0 ? <p className="text-sm text-slate-500">Hali to&apos;lov tushmagan</p> : canCashRow ? (
+                          <CashEditProvider options={{ accounts: editAccounts, income: [], expense: [] }}>
+                            <Table className="shadow-none">
+                              <tbody>
+                                {r.payments.map((p) => (
+                                  <CashRow key={p.id} kind="pay" id={p.id}>
+                                    <Td className="whitespace-nowrap py-2 font-medium tabular-nums text-slate-900">{money(p.amount)}</Td>
+                                    <Td className="py-2 text-xs text-slate-500">{`${opAt(p.date, p.createdAt)} · ${p.account} (${p.accountType === "CASH" ? "naqd" : "bank"})${p.by ? ` · ${p.by}` : ""}`}</Td>
+                                  </CashRow>
+                                ))}
+                              </tbody>
+                            </Table>
+                            <p className="mt-1 text-[11px] text-slate-500">To&apos;lovni bosing — kim va qachon kiritgani, tarix; tahrirlash va o&apos;chirish (ruxsatga qarab)</p>
+                          </CashEditProvider>
+                        ) : (
                           <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
                             {r.payments.map((p) => (
                               <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-3 px-3 py-2 text-sm">

@@ -12,7 +12,8 @@ import { BannerForm } from "./banner-form";
 import { ShopHistoryList } from "./history";
 import { shopHistory } from "@/lib/shop-history";
 import { isoDate } from "@/lib/format";
-import { canEditProducts } from "@/lib/catalog";
+import { canEditProducts, PRODUCT_CATALOG_ROLES } from "@/lib/catalog";
+import { moduleWriteAllowed } from "@/lib/auth";
 import { NewProductForm } from "./new-product-form";
 
 const LEAD_STATUS = {
@@ -33,6 +34,8 @@ const LEAD_STATUS = {
 export default async function EcommercePage({ searchParams }: { searchParams: Promise<{ tab?: string; p?: string }> }) {
   const s = await requireRoles(["SALES", "DIRECTOR"], { module: "sales", actions: ["ecommerce"] });
   const canAdd = canEditProducts(s.role);
+  // Vitrina qatoridagi savatcha — `deleteCatalogProduct` bilan bir xil tekshiruv (ishlatilgan mahsulot arxivga olinadi)
+  const canDelete = moduleWriteAllowed(s, "production", PRODUCT_CATALOG_ROLES) === true;
   const { tab = "vitrina", p: historyFor } = await searchParams;
 
   const [products, leads, banners] = await Promise.all([
@@ -142,7 +145,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
             <p className="mb-2 text-xs text-slate-500">Ilovada shu tartibda ko'rinadi. Nom va narx bo'sh qoldirilsa Sozlamalar → Beton markalaridagi qiymat olinadi.</p>
             <div className="divide-y divide-slate-100">
               {published.length === 0 && <EmptyNote text="Chiqarilgan mahsulot yo'q" icon={Store} />}
-              {published.map((p) => <ShopItemForm key={p.id} p={p} />)}
+              {published.map((p) => <ShopItemForm key={p.id} p={p} canDelete={canDelete} />)}
             </div>
           </Card>
           <Card>
@@ -150,7 +153,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
             <p className="mb-2 text-xs text-slate-500">Faol mahsulotlar, lekin do'konda ko'rinmaydi. Yangi mahsulot — yuqoridagi «Mahsulot qo'shish» tugmasi.</p>
             <div className="divide-y divide-slate-100">
               {hidden.length === 0 && <EmptyNote text="Hamma mahsulot do'konda" icon={ShoppingBag} />}
-              {hidden.map((p) => <ShopItemForm key={p.id} p={p} />)}
+              {hidden.map((p) => <ShopItemForm key={p.id} p={p} canDelete={canDelete} />)}
             </div>
           </Card>
         </div>
