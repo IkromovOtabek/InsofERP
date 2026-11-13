@@ -48,7 +48,7 @@ const flowText = (f?: Flow) => (
 
 /** Matritsa ustunlarini ajratuvchi tik chiziq (birinchi — «Hisob» ustunidan boshqa hamma katakda) */
 const COL = "border-l border-l-slate-200";
-// Ixcham matritsa: kataklar kichik, jadval mazmun kengligida (butun ekranga cho'zilmaydi)
+// Ixcham matritsa: kataklar kichik, jadval esa butun kenglikka cho'ziladi (yonida bo'sh joy qolmaydi)
 const CELL = "px-3 py-1.5 text-[13px]";
 const HEAD = "px-3 py-2 text-[11px]";
 
@@ -82,7 +82,7 @@ export async function AccountMatrix({ accounts, range }: { accounts: Account[]; 
 
   return (
     <div className="mb-6">
-      <Table className="w-fit">
+      <Table>
         <thead>
           <tr>
             <Th className={HEAD}>Hisob</Th>
