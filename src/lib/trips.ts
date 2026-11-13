@@ -150,7 +150,14 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
         const u = unitLabel(line.unit);
         throw new StockShort(`Skladda ${line.name ?? "mahsulot"} faqat ${fq(Math.max(0, wh.total))} ${u}${wh.detail ? ` (${wh.detail})` : ""} — ${fq(qty)} ${u} bitta skladdan yuklab bo'lmaydi. Avval ishlab chiqarilgani (zames / brigada) qayd qilinsin`);
       }
-      claimed(await tx.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "LOADED", loadedAt: new Date() } }));
+      // Miqdor va texnika ham shart: reys tranzaksiyadan tashqarida o'qilgan — shu orada tahrirlangan bo'lsa (`updatePlannedTrip`),
+      // skladdan eski miqdor / eski turdagi mahsulot chiqib ketmasin
+      const c = await tx.trip.updateMany({ where: { id, status: "PLANNED", qtyM3: t.qtyM3, vehicleId: t.vehicleId }, data: { status: "LOADED", loadedAt: new Date() } });
+      if (c.count !== 1) {
+        const now = await tx.trip.findUnique({ where: { id }, select: { status: true } });
+        if (now?.status === "PLANNED") throw new StockShort("Reys shu payt tahrirlandi (miqdor yoki texnika o'zgardi) — sahifani yangilab, qayta yuklang");
+        claimed(c);
+      }
       await writeShipment(tx, { tripId: id, orderId: t.orderId, warehouseId: wh.id, line, qty, note, userId });
       await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED", note });
       return true;

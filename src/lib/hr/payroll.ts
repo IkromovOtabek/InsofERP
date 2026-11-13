@@ -459,6 +459,8 @@ export async function payRun(id: string, input: { cashAccountId: string; lineIds
 
   return wrap(async () => {
     const res = await db.$transaction(async (tx) => {
+      // Vedomost qatori qulfi: to'lash va to'lovni bekor qilish (`unpayRun`) navbat bilan — «qolmadi» hisobi eski bo'lmasin
+      await tx.$queryRaw`SELECT id FROM "PayrollRun" WHERE id = ${id} FOR UPDATE`;
       const lines = await tx.payrollLine.findMany({
         where: { runId: id, paidAt: null, net: { gt: 0 }, ...(input.lineIds?.length ? { id: { in: input.lineIds } } : {}) },
         select: { id: true, net: true, employeeId: true, employee: { select: { fullName: true } } },
@@ -514,6 +516,8 @@ export async function unpayRun(id: string, input: { lineIds?: string[] | null; r
 
   return wrap(async () => {
     const res = await db.$transaction(async (tx) => {
+      // `payRun` bilan bir xil qulf — ikkalasi bir vaqtda kelsa navbat bilan
+      await tx.$queryRaw`SELECT id FROM "PayrollRun" WHERE id = ${id} FOR UPDATE`;
       const lines = await tx.payrollLine.findMany({
         where: { runId: id, paidAt: { not: null }, ...(input.lineIds?.length ? { id: { in: input.lineIds } } : {}) },
         select: { id: true, paid: true, paidAt: true, paidById: true, cashTxId: true, employeeId: true, employee: { select: { fullName: true } } },

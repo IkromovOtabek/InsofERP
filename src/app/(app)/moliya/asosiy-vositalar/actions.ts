@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zOpt, zStr, validDate, type ActionState } from "@/lib/action";
 import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
-import { ASSET_COST_CASH_LOCK, assetValueLock } from "@/lib/fin-report/assets";
+import { ASSET_COST_CASH_LOCK, assetValueLock, depreciationStarted } from "@/lib/fin-report/assets";
 
 /** Asosiy vositalar kartochkasi — buxgalteriya (`moliya.assets`), direktor doim. O'chirilmaydi: chiqarish yoki bekor qilish. */
 const writer = () => requireAction("moliya", "assets");
@@ -120,6 +120,8 @@ export async function updateAssetAction(_p: ActionState, fd: FormData): Promise<
     if (valueChanged) {
       const lock = assetValueLock(a);
       if (lock) return { error: lock };
+      // Yangi sana ham: shu oyda olingan vositani o'tmishga surilsa, yopilgan oylarga amortizatsiya orqaga qarab tushardi
+      if (depreciationStarted({ acquiredAt })) return { error: "Olingan sanani o'tgan oyga surib bo'lmaydi — o'tgan oylar PNL va balansi o'zgarib ketadi. Xato bo'lsa — kartochkani bekor qilib, qaytadan kiriting", field: "acquiredAt" };
       if (costChanged && a.cashTxId) return { error: ASSET_COST_CASH_LOCK, field: "cost" };
     }
     const before = { name: a.name, group: a.group, note: a.note, acquiredAt: a.acquiredAt, cost: Number(a.cost), lifeMonths: a.lifeMonths };

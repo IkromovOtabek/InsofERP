@@ -9,6 +9,7 @@ import { cancelIssue, issueStock, IssueError, ISSUE_STORNO, parseIssueTarget } f
 import { upsertRecipient, setRecipientActive } from "@/lib/stock-recipients";
 import { dateRu, isoDate } from "@/lib/format";
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
 import { canDo } from "@/lib/permissions";
 import type { BulkStornoResult } from "../prixod/actions";
 
@@ -53,14 +54,18 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
   }
   if (!items.length) return { error: "Kamida bitta qator qo'shing: nomi va miqdori" };
 
-  // Tuzatishda eski sana saqlanadi: faqat bekor qilingan hujjatning AYNAN o'z sanasi uchun 31 kunlik chegara ochiladi
+  // Tuzatishda eski sana saqlanadi: faqat bekor qilingan hujjatning AYNAN o'z sanasi uchun 31 kunlik chegara ochiladi.
+  // Faqat stornoni shu xodim o'zi qilgan bo'lsa, 2 soat ichida va bir marta — aks holda istalgan eski bekor qilingan
+  // hujjat id'si bilan orqa sanaga cheksiz chiqim yozish mumkin bo'lardi
   let anyPastDate = false;
   if (d.copyOf && d.date) {
-    const [orig, stornoed] = await Promise.all([
+    const [orig, storno, used] = await Promise.all([
       db.stockMove.findFirst({ where: { refType: "Issue", refId: d.copyOf }, select: { date: true } }),
-      db.stockMove.count({ where: { refType: ISSUE_STORNO, refId: d.copyOf } }),
+      db.stockMove.findFirst({ where: { refType: ISSUE_STORNO, refId: d.copyOf }, orderBy: { createdAt: "desc" }, select: { createdById: true, createdAt: true } }),
+      db.auditLog.count({ where: { entity: "IssueCopy", entityId: d.copyOf } }),
     ]);
-    anyPastDate = !!orig && stornoed > 0 && isoDate(orig.date) === d.date;
+    anyPastDate = !!orig && !!storno && isoDate(orig.date) === d.date && storno.createdById === s.userId
+      && Date.now() - storno.createdAt.getTime() < 2 * 3600_000 && used === 0;
   }
 
   let res;
@@ -70,6 +75,8 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
     if (e instanceof IssueError) return { error: e.message };
     throw e;
   }
+  // Orqa sana ruxsati bir martalik: shu nusxa ishlatildi
+  if (anyPastDate && d.copyOf) await audit(db, s.userId, "CREATE", "IssueCopy", d.copyOf, undefined, { date: d.date, count: res.count });
   refresh();
   redirect(savedUrl(res.count, d.date));
 }

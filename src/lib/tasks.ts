@@ -215,6 +215,10 @@ export async function taskProgressCancel(progressId: string, reason: string, use
     if (count !== 1) throw new ProgressCancelError(`Topshiriqda ${count} ta qayd bor — sklad harakatlari topshiriqqa umumiy yozilgan, bittasini aniq ajratib bekor qilib bo'lmaydi`);
     const def = await tx.productDefect.aggregate({ where: { taskId }, _sum: { qty: true }, _count: { _all: true } });
     if (def._count._all > 0) throw new ProgressCancelError(`Bu topshiriqqa brak yozilgan (${def._count._all} ta, ${fq(Number(def._sum.qty ?? 0))} ${unit}) — avval brakni o'chiring, keyin qaydni bekor qiling`);
+    // Mijoz zayavkasi yopilgan bo'lsa (yetkazilgan / yopilgan / bekor) topshiriq qayta ochilib, brigadaga ochiq ish chiqib qolardi
+    if (t.order.kind !== "STOCK" && ["DELIVERED", "CLOSED", "CANCELLED"].includes(t.order.status)) {
+      throw new ProgressCancelError("Zayavka yopilgan (yetkazilgan yoki bekor qilingan) — bu topshiriq qaydini bekor qilib bo'lmaydi");
+    }
     const pq = Number(p.qty);
     const left = Number(t.doneQty) - pq;
     if (left < -STOCK_EPS) throw new ProgressCancelError("Topshiriqdagi bajarilgan miqdor qayddan kam — ma'lumot mos emas, bekor qilinmadi");

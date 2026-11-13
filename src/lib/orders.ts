@@ -932,6 +932,8 @@ type CloseAtDeliveredInput = {
 };
 
 export type CloseAtDeliveredPlan = {
+  /** Bir mahsulot bir necha qatorda har xil narxda — reys qaysi qatorga tegishliligi noma'lum, yangi summa taxminiy bo'lardi */
+  mixedPrices: boolean;
   /** Qator id → yetkazilgan miqdor (yangi miqdor) */
   delivered: Map<string, number>;
   /** Jami yetkazilgan (birliklar aralash bo'lsa ham — faqat 0 dan kattaligini bilish uchun) */
@@ -960,7 +962,10 @@ export function closeAtDeliveredPlan(o: CloseAtDeliveredInput): CloseAtDelivered
   const rest = items
     .map((i) => ({ unit: i.product.unit, qty: Math.max(0, Math.round((Number(i.qtyM3) - (delivered.get(i.id) ?? 0)) * 1000) / 1000) }))
     .filter((r) => r.qty > 0.0005);
+  const priceOf = new Map<string, Set<string>>();
+  for (const i of items) priceOf.set(i.productId, (priceOf.get(i.productId) ?? new Set<string>()).add(Number(i.price).toFixed(2)));
   return {
+    mixedPrices: [...priceOf.values()].some((p) => p.size > 1),
     delivered,
     deliveredQty: [...delivered.values()].reduce((s, q) => s + q, 0),
     restText: fmtUnitTotals(rest),
@@ -1014,6 +1019,7 @@ export async function orderCloseAtDelivered(id: string, reason: string, userId: 
       const plan = closeAtDeliveredPlan(o);
       if (plan.deliveredQty <= 0.0005) throw new CloseError("Yetkazilgan miqdor 0 (yuk to'liq qaytgan) — yetkazilganicha yopib bo'lmaydi");
       if (!plan.hasRest) throw new CloseError("Zayavka to'liq yetkazilgan — olib tashlanadigan qoldiq yo'q");
+      if (plan.mixedPrices) throw new CloseError("Bir mahsulot bir necha qatorda har xil narxda — yetkazilgani qaysi narxdagi qatorga tegishli aniq emas. Zayavkani tahrirlab qatorlarni moslang yoki qoldiqni qo'lda kamaytiring");
       const invoiced = o.invoices.reduce((s, i) => s + Number(i.amount), 0);
       if (invoiced > plan.newTotal + 0.005) {
         throw new CloseError(`Schyot (${o.invoices.map((i) => i.invoiceNo).join(", ")}) ${money(invoiced)} — yetkazilgan summa ${money(plan.newTotal)} dan katta. Avval schyotni tuzating yoki bekor qiling`);
