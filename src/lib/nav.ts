@@ -176,16 +176,18 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" }] },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ombor/xomashyo", label: "Xom-ashyo balansi" }, { href: "/bi-tahlil/ombor/tayyor-mahsulot", label: "Tayyor mahsulot" }] },
-  // Logistika (zayavka, jo'natish, transport ehtiyoji) va Mexanik (texnika: ta'mir, ehtiyot qism, texnik xizmat) — alohida bandlar
+  // Logistika (zayavka, jo'natish, transport ehtiyoji) va Mexanik (texnika: ta'mir, ehtiyot qism, texnik xizmat) — direktor menyusida
+  // Mexanik Logistika ichida turadi; o'z bandi ruxsat uchun qoladi (oyna alohida berilgan xodim menyusida — alohida band)
   // Logistika va mexanik summalari (xarajat, daromad, foyda) — faqat direktor; ish boshqaruvchi va mexanik «Logistika moliya» da ko'radi
-  { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: ["DIRECTOR"], group: "Tahlil", children: [{ href: "/bi-tahlil/logistika/avtotransport", label: "Avtotransport tahlili" }] },
-  { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: ["DIRECTOR"], group: "Tahlil" },
+  { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: ["DIRECTOR"], group: "Tahlil", children: [{ href: "/bi-tahlil/logistika/avtotransport", label: "Avtotransport tahlili" }, { href: "/bi-tahlil/mexanik", label: "Mexanik" }] },
+  { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: ["DIRECTOR"], group: "Tahlil", menuHide: ["DIRECTOR"] },
   { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },
   { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ml",               label: "ML tahlil",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ml/anomaliyalar", label: "Anomaliyalar" }, { href: "/bi-tahlil/ml/churn", label: "Churn tahlili" }, { href: "/bi-tahlil/ml/klasterlar", label: "Klasterlar" }] },
-  { href: "/bi-tahlil/ai",               label: "Insof AI",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ai/chat", label: "AI Chat" }, { href: "/bi-tahlil/ai/telegram", label: "Telegram bot" }] },
+  // Direktor menyusida yo'q (tepadagi «Insof AI» tugmasi va havolalar qoladi); moliya va buxgalteriyada — menyuda
+  { href: "/bi-tahlil/ai",               label: "Insof AI",         roles: BI_ROLES, group: "Tahlil", menuHide: ["DIRECTOR"], children: [{ href: "/bi-tahlil/ai/chat", label: "AI Chat" }, { href: "/bi-tahlil/ai/telegram", label: "Telegram bot" }] },
   // Ish boshqaruvchi: «Moliya» guruhida to'g'ridan-to'g'ri shu sahifalar (menyusi faqat unga, ichida yana «Moliya» bandi yo'q) — `SUPERVISOR_FIN`.
   // Har band o'z sahifasiga ruxsat ham beradi (eng uzun yo'l). Direktor menyusida yo'q — Ruxsatlar daraxti tartibiga ta'sir qilmaydi
   ...SUPERVISOR_FIN.map((c): NavItem => ({ href: c.href, label: c.label, roles: SUPERVISOR_FIN_ROLES, group: "Moliya", menuFor: ["SUPERVISOR"] })),

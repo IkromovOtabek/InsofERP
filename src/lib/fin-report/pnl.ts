@@ -2,13 +2,14 @@ import { cache } from "react";
 import { db } from "@/lib/db";
 import { loadRevenue } from "@/lib/bi/core";
 import { avgUnitCosts } from "@/lib/stock";
-import { moneyShort } from "@/lib/format";
+import { fmtNum, moneyShort } from "@/lib/format";
 import { PAYROLL_REF } from "@/lib/hr/payroll";
 import { FLOW_ONLY, isSalesIncome } from "@/lib/cash-tx";
+import { cashDayHref, finDrill, own, type Drill, type DrillItem } from "@/lib/drill";
 import type { PnlLine } from "@/generated/prisma";
 import { loadCategories, makeResolver, UNKNOWN_CATEGORY } from "./categories";
 import { activeAssets, depreciationIn } from "./assets";
-import { type MonthKey, monthStart, monthEnd, monthKeyOf } from "./period";
+import { type MonthKey, monthStart, monthEnd, monthKeyOf, periodLabel } from "./period";
 import { type FinRow, row, pctRow, zeros, addInto, neg, plus } from "./rows";
 import { DEPRECIATION_LINE, PNL_FIXED, sheetLine } from "./sheet-lines";
 
@@ -63,7 +64,7 @@ async function nonRecipeUse(from: Date, to: Date) {
   const [moves, avg, mats, groups] = await Promise.all([
     db.stockMove.findMany({
       where: { materialId: { not: null, notIn: recipeIds }, type: { in: [...USE_TYPES] }, date: { gte: from, lt: to } },
-      select: { date: true, type: true, qty: true, unitCost: true, materialId: true },
+      select: { date: true, type: true, qty: true, unitCost: true, materialId: true, material: { select: { name: true, unit: true } } },
     }),
     avgUnitCosts(),
     db.material.findMany({ select: { id: true, name: true, unitPrice: true, groupId: true } }),
@@ -73,14 +74,14 @@ async function nonRecipeUse(from: Date, to: Date) {
   const topGroup = (id: string | null) => { let g = id ? gById.get(id) : undefined; for (let i = 0; g?.parentId && i < 10; i++) g = gById.get(g.parentId) ?? g; return g?.name ?? "boshqa materiallar"; };
   const mat = new Map(mats.map((m) => [m.id, m]));
   const byMat = new Map<string, number>();
-  const out: { date: Date; group: string; value: number }[] = [];
+  const out: { date: Date; group: string; value: number; name: string; qty: number; unit: string; type: string }[] = [];
   for (const mv of moves) {
     const q = Number(mv.qty);
     if (mv.type === "ADJUSTMENT" && q > 0) continue;
     const m = mat.get(mv.materialId!);
     const price = mv.unitCost != null ? Number(mv.unitCost) : m?.unitPrice != null ? Number(m.unitPrice) : avg.get(mv.materialId!) ?? 0;
     const value = Math.round(-q * price * 100) / 100;
-    out.push({ date: mv.date, group: topGroup(m?.groupId ?? null), value });
+    out.push({ date: mv.date, group: topGroup(m?.groupId ?? null), value, name: mv.material?.name ?? "—", qty: -q, unit: mv.material?.unit ?? "", type: mv.type });
     byMat.set(mv.materialId!, (byMat.get(mv.materialId!) ?? 0) + value);
   }
   const top = [...byMat.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, v]) => `${mat.get(id)?.name ?? "—"} ${moneyShort(v)}`);
@@ -111,7 +112,37 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
 /** Bosh sahifada «Bugun» va boshqaruv paneli joriy oy PNL'ini ikkalasi so'raydi — bir marta (`cache`). Natija o'zgartirilmaydi. */
 const pnlOnce = cache((months: string, mode: PnlMode) => buildPnl(months.split(",") as MonthKey[], mode));
 
-async function buildPnl(months: MonthKey[], mode: PnlMode): Promise<PnlReport> {
+/** Drill-down uchun: qaysi qator kalitining yozuvlari yig'iladi (`month` — ustun, null — davr jami). */
+type Trace = { match: (key: string) => boolean; month: number | null; items: DrillItem[] };
+
+/** Kassa yozuvi tushadigan PNL qatorining kaliti — `rows` dagi kalitlar bilan bir xil (pastdagi `sheetRows`/`subRows`). */
+function cashRowKey(line: PnlLine | "UNKNOWN", name: string): string {
+  switch (line) {
+    case "PRODUCTION": case "PAYROLL": case "TRANSPORT": return `prod:${name}`;
+    case "ADMIN": return `admin:${name}`;
+    case "COMMERCIAL": return `comm:${name}`;
+    case "PROJECT": return `PROJECT:${name}`;
+    case "OTHER_INCOME": return "other-income";
+    case "MATERIALS": return "cogs";
+    case "TAX": return "tax";
+    case "INTEREST": return "interest";
+    case "DIVIDEND": return "dividend";
+    case "UNKNOWN": return "unknown";
+    default: return line;
+  }
+}
+
+/** Kassa yozuvi — drill-down ro'yxatida: kimga/kimdan (bo'lmasa manba), hisob, manba va izoh. */
+type CashLike = { category: string; subCategory: string | null; counterparty: string | null; note: string | null; cashAccount: { name: string } };
+const cashTitle = (t: CashLike) => t.counterparty?.trim() || t.subCategory || t.category;
+const cashSub = (t: CashLike) => [t.cashAccount.name, t.subCategory ? `${t.category} → ${t.subCategory}` : t.category, t.note?.trim()].filter(Boolean).join(" · ");
+
+const STOCK_TYPE_LABEL: Record<string, string> = {
+  PRODUCTION_CONSUME: "ishlab chiqarishga sarf", BRIGADE_ISSUE: "brigadaga berildi", BRIGADE_RETURN: "brigadadan qaytdi",
+  ISSUE: "chiqim", WRITE_OFF: "spisaniye", ADJUSTMENT: "inventarizatsiya",
+};
+
+async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promise<PnlReport> {
   const n = months.length;
   const from = monthStart(months[0]!), to = monthEnd(months[n - 1]!);
   const idx = new Map(months.map((m, i) => [m, i]));
@@ -121,19 +152,26 @@ async function buildPnl(months: MonthKey[], mode: PnlMode): Promise<PnlReport> {
     loadCategories(),
     db.cashTransaction.findMany({
       where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: from, lt: to } },
-      select: { date: true, type: true, amount: true, category: true, subCategory: true, refType: true, refId: true, project: { select: { name: true } } },
+      select: {
+        date: true, type: true, amount: true, category: true, subCategory: true, refType: true, refId: true, project: { select: { name: true } },
+        counterparty: true, note: true, cashAccount: { select: { name: true } },
+      },
     }),
     mode === "accrual" ? loadRevenue(from, to) : Promise.resolve([]),
-    mode === "cash" ? db.payment.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true } }) : Promise.resolve([]),
+    mode === "cash" ? db.payment.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true, customerId: true, customer: { select: { name: true } } } }) : Promise.resolve([]),
     mode === "accrual" ? productGroupNames() : Promise.resolve(new Map<string, string>()),
     mode === "accrual"
-      ? db.payrollRun.findMany({ where: { month: { in: months }, kind: "FINAL", status: { in: ["APPROVED", "PAID"] } }, select: { month: true, gross: true, employerTax: true } })
+      ? db.payrollRun.findMany({ where: { month: { in: months }, kind: "FINAL", status: { in: ["APPROVED", "PAID"] } }, select: { id: true, docNo: true, month: true, gross: true, employerTax: true } })
       : Promise.resolve([]),
     mode === "accrual" ? activeAssets() : Promise.resolve([]),
     mode === "accrual" ? nonRecipeUse(from, to) : Promise.resolve(null),
   ]);
   const resolve = makeResolver(nodes);
   const notes: string[] = [];
+  /** Drill-down: so'ralgan qatorga (va ustunga) tushgan yozuvni yig'adi; oddiy hisobotda hech narsa qilmaydi. */
+  const tr = (key: string, i: number, item: () => DrillItem) => {
+    if (trace && (trace.month === null || trace.month === i) && trace.match(key)) trace.items.push(item());
+  };
 
   // ── Daromad ──
   const sales = new Map<string, number[]>(); // guruh → oylar (so'm)
@@ -148,22 +186,44 @@ async function buildPnl(months: MonthKey[], mode: PnlMode): Promise<PnlReport> {
     addInto(qty.get(g)!, i, r.qty);
     if (r.costKnown) addInto(cogs, i, r.cost);
     else addInto(uncosted, i, r.net);
+    if (trace) {
+      const rz = r.orderId.startsWith("rz:");
+      const src = { date: r.date, title: `${r.customer} — ${r.product}`, href: rz ? "/logistika/realizatsiya" : `/orders/${r.orderId}` };
+      const sub = `${rz ? "Realizatsiya reestri" : `Zayavka ${r.orderNo}`} · ${fmtNum(r.qty, 3)} ${r.unit} × ${fmtNum(r.price)}`;
+      tr(`sales:${g}`, i, () => ({ ...src, sub, amount: r.net }));
+      tr(`qty:${g}`, i, () => ({ ...src, sub, amount: r.qty }));
+      if (r.costKnown) tr("cogs", i, () => ({ ...src, sub: `${sub} · tannarx retsept bo'yicha`, amount: -r.cost }));
+      else tr("uncosted", i, () => ({ ...src, sub: `${sub} · retsepti yoki xomashyo narxi yo'q`, amount: r.net }));
+    }
   }
   if (mode === "cash") {
     // Savdo tushumi (kassa usuli) = mijoz to'lovlari + kassaga «Savdo» kirimi — DDS bilan bir xil. «Savdo» manbasi
     // PNL qatori NONE, pastdagi kassa siklida o'tkazib yuboriladi — ikki marta kirmaydi.
     const s = zeros(n);
-    for (const p of [...payments, ...txs.filter(isSalesIncome)]) { const i = at(p.date); if (i !== undefined) addInto(s, i, Number(p.amount)); }
+    for (const p of payments) {
+      const i = at(p.date);
+      if (i === undefined) continue;
+      addInto(s, i, Number(p.amount));
+      tr("sales:Savdo tushumi", i, () => ({ date: p.date, title: p.customer.name, sub: "Mijoz to'lovi", amount: Number(p.amount), href: `/customers/${p.customerId}` }));
+    }
+    for (const t of txs.filter(isSalesIncome)) {
+      const i = at(t.date);
+      if (i === undefined) continue;
+      addInto(s, i, Number(t.amount));
+      tr("sales:Savdo tushumi", i, () => ({ date: t.date, title: cashTitle(t), sub: cashSub(t), amount: Number(t.amount), href: cashDayHref(t.date) }));
+    }
     sales.set("Savdo tushumi", s);
   }
 
   // ── Kassa: PNL qatori → manba → oylar (xarajat musbat; teskari yozuv — qaytgan pul — ayiriladi) ──
   const byLine = new Map<PnlLine | "UNKNOWN", Map<string, number[]>>();
-  const put = (line: PnlLine | "UNKNOWN", name: string, i: number, v: number) => {
+  /** `src` — drill-down uchun yozuvning o'zi (jadvalda xarajat manfiy, «Boshqa tushumlar» musbat ko'rinadi). */
+  const put = (line: PnlLine | "UNKNOWN", name: string, i: number, v: number, src?: () => Omit<DrillItem, "amount">) => {
     let m = byLine.get(line);
     if (!m) byLine.set(line, (m = new Map()));
     if (!m.has(name)) m.set(name, zeros(n));
     addInto(m.get(name)!, i, v);
+    if (src) tr(cashRowKey(line, name), i, () => ({ ...src(), amount: line === "OTHER_INCOME" ? v : -v }));
   };
   // Ish haqi vedomosti orqali to'langan pul (refType «Payroll») — o'z oyiga (vedomost oyi) tegishli. O'sha oy hisoblangan bo'lsa,
   // to'lov qachon bo'lmasin PNL'ga qayta kirmaydi (oktyabr maoshi 5-noyabrda to'lansa, noyabr xarajati bo'lmaydi);
@@ -176,7 +236,8 @@ async function buildPnl(months: MonthKey[], mode: PnlMode): Promise<PnlReport> {
     if (i === undefined) continue;
     const a = Number(t.amount);
     const r = resolve(t.category, t.subCategory);
-    if (!r) { put("UNKNOWN", UNKNOWN_CATEGORY, i, t.type === "EXPENSE" ? a : -a); continue; }
+    const src = () => ({ date: t.date, title: cashTitle(t), sub: cashSub(t), href: cashDayHref(t.date) });
+    if (!r) { put("UNKNOWN", UNKNOWN_CATEGORY, i, t.type === "EXPENSE" ? a : -a, src); continue; }
     const line = r.top.pnlLine;
     if (line === "NONE") continue;
     if (line === "MATERIALS" && mode === "accrual") continue;
@@ -198,18 +259,29 @@ async function buildPnl(months: MonthKey[], mode: PnlMode): Promise<PnlReport> {
     const v = (r.top.type === "INCOME") === (t.type === "INCOME") ? a : -a;
     // Qator nomi — jadvaldagi atama («Xodimlar maoshlari», «Zavod xarajatlari»…), loyihada — loyiha nomi
     const name = line === "PROJECT" ? (t.project?.name ?? "Loyiha tanlanmagan") : sheetLine(r.top.name, r.sub?.name);
-    put(line, name, i, v);
+    put(line, name, i, v, src);
   }
   if (mode === "accrual") {
     for (const p of payroll) {
       const i = idx.get(p.month);
-      if (i !== undefined) put("PAYROLL", sheetLine("Ish haqi"), i, Number(p.gross) + Number(p.employerTax));
+      if (i !== undefined) put("PAYROLL", sheetLine("Ish haqi"), i, Number(p.gross) + Number(p.employerTax), () => ({
+        date: monthStart(p.month as MonthKey), title: `Ish haqi vedomosti ${p.docNo}`,
+        sub: `hisoblangan ${fmtNum(Number(p.gross))} + ish beruvchi solig'i ${fmtNum(Number(p.employerTax))}`, href: `/ish-haqi/${p.id}`,
+      }));
     }
-    for (const a of assets) for (const m of months) { const v = depreciationIn(a, m); if (v) put("PRODUCTION", DEPRECIATION_LINE, idx.get(m)!, v); }
+    for (const a of assets) for (const m of months) {
+      const v = depreciationIn(a, m);
+      if (v) put("PRODUCTION", DEPRECIATION_LINE, idx.get(m)!, v, () => ({ date: monthStart(m), title: a.name, sub: `Amortizatsiya · ${a.group} · ${a.lifeMonths} oyga`, href: "/moliya/asosiy-vositalar" }));
+    }
     const open = months.filter((m) => unaccruedPaid.has(m));
     if (open.length) notes.push(`${open.map((m) => `${m.slice(5)}.${m.slice(0, 4)}`).join(", ")}: oy yakuni ish haqi vedomosti hali tasdiqlanmagan — «Xodimlar maoshlari» qatorida faqat shu oy uchun to'langan pul (avans); tasdiqlangach hisoblangani bilan almashadi.`);
     if (stockUse) {
-      for (const u of stockUse.moves) { const i = at(u.date); if (i !== undefined && u.value) put("PRODUCTION", `${STOCK_USE_PREFIX}${u.group}`, i, u.value); }
+      for (const u of stockUse.moves) {
+        const i = at(u.date);
+        if (i !== undefined && u.value) put("PRODUCTION", `${STOCK_USE_PREFIX}${u.group}`, i, u.value, () => ({
+          date: u.date, title: u.name, sub: `${fmtNum(u.qty, 3)} ${u.unit} · ${STOCK_TYPE_LABEL[u.type] ?? u.type}`, href: "/stock/rasxod",
+        }));
+      }
       if (stockUse.top.length) notes.push(`Retseptda yo'q materiallar (yoqilg'i, ehtiyot qism…) skladdan chiqqanda xarajat — «${STOCK_USE_PREFIX}…» qatorlari. Eng kattalari: ${stockUse.top.join(", ")}.`);
       if (stockUse.twins.length) notes.push(`Retsept materialiga o'xshash, lekin retseptga ulanmagan: ${stockUse.twins.join(", ")} — Sklad'da birlashtiring, aks holda ular tannarxga emas, «Sklad sarfi»ga tushadi.`);
     }
@@ -288,4 +360,39 @@ async function buildPnl(months: MonthKey[], mode: PnlMode): Promise<PnlReport> {
   // Bo'sh ichki qatorlarni chiqarmaymiz (0 summali sub), jadvaldagi qat'iy qatorlar va asosiy qatorlar doim turadi
   const visible = rows.filter((r) => r.kind !== "sub" || fixed.has(r.key) || r.values.some((v) => (v ?? 0) !== 0));
   return { months, mode, rows: visible, retained, notes };
+}
+
+/** Qatorning bolalari: ota qator kaliti → bola kaliti shu qatorga kiradimi (Daromad ← mahsulot guruhlari + boshqa tushumlar). */
+const CHILDREN: Record<string, (key: string) => boolean> = {
+  income: (k) => k.startsWith("sales:") || k === "other-income",
+  qty: (k) => k.startsWith("qty:"),
+  prod: (k) => k.startsWith("prod:"),
+  admin: (k) => k.startsWith("admin:"),
+  comm: (k) => k.startsWith("comm:"),
+  projects: (k) => k.startsWith("PROJECT:"),
+};
+/** Jami qatorlar — boshqa qatorlardan qo'shiladi (jadvalda xarajat manfiy, shuning uchun hammasi qo'shiluvchi). */
+const COMPOSE: Record<string, string[]> = {
+  gross: ["income", "cogs"],
+  operating: ["gross", "prod", "admin", "comm", "unknown"],
+  net: ["operating", "tax", "interest"],
+  result: ["net", "projects"],
+  retained: ["result", "dividend"],
+  // Jadvalda alohida qatori yo'q — statistika kartasi «Xarajatlar»
+  expenses: ["prod", "admin", "comm", "unknown", "tax", "interest"],
+};
+const VIRTUAL: Record<string, string> = { expenses: "Xarajatlar (ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz)" };
+
+/**
+ * PNL katagining manbasi: `key` — qator kaliti, `col` — oy ustuni (null — davr jami). Jami qatorlar (Yalpi foyda…) tarkibini,
+ * qolganlari tarkibi (bo'lsa) va katakni tashkil qilgan yozuvlarni qaytaradi: kassa yozuvi, reys/zayavka, vedomost, sklad sarfi,
+ * amortizatsiya. Hisob `buildPnl` ning o'zi — jadvaldagi son bilan bir xil.
+ */
+export async function pnlDrill(months: MonthKey[], mode: PnlMode, key: string, col: number | null): Promise<Drill | null> {
+  if (col !== null && (col < 0 || col >= months.length)) return null;
+  const compose = own(COMPOSE, key), child = own(CHILDREN, key);
+  const trace: Trace | undefined = compose ? undefined : { match: (k) => k === key || !!child?.(k), month: col, items: [] };
+  const rep = await buildPnl(months, mode, trace);
+  const parts = compose ?? rep.rows.filter((r) => r.key !== key && child?.(r.key)).map((r) => r.key);
+  return finDrill(rep.rows, periodLabel(months, col), key, col, { parts, items: trace?.items ?? [], compose: !!compose, virtual: own(VIRTUAL, key), isQty: key === "qty" || key.startsWith("qty:") });
 }

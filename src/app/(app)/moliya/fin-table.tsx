@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Info } from "lucide-react";
 import type { FinRow } from "@/lib/fin-report/rows";
 import { type MonthKey, monthLabel } from "@/lib/fin-report/period";
@@ -8,8 +9,11 @@ import { cn } from "@/lib/utils";
  * Moliyaviy hisobot jadvali — «Insof 2026» jadvali ko'rinishida: ustunlar oylar (yoki `labels` — balansdagi sanalar),
  * oxirida «JAMI» (`totalLabel = null` — yo'q), DDS da belgi ustuni (+ / − / ± / =). Birinchi ustun yopishib turadi
  * (telefonda keng jadval o'z ichida suriladi). Manfiy summa qizil, tekshiruv qatori 0 bo'lmasa qizil fon bilan.
+ * `drill(kalit, ustun)` — son bosilganda ochiladigan manba paneli havolasi (ustun null — JAMI); null — son bosilmaydi.
  */
-export function FinTable({ months, rows, labels, totalLabel = "JAMI", firstHeader = "Ko'rsatkich / Oy" }: { months: MonthKey[]; rows: FinRow[]; labels?: string[]; totalLabel?: string | null; firstHeader?: string }) {
+export function FinTable({ months, rows, labels, totalLabel = "JAMI", firstHeader = "Ko'rsatkich / Oy", drill }: {
+  months: MonthKey[]; rows: FinRow[]; labels?: string[]; totalLabel?: string | null; firstHeader?: string; drill?: (key: string, col: number | null) => string | null;
+}) {
   const cols = labels ?? months.map(monthLabel);
   const signs = rows.some((r) => r.sign);
   const cell = (v: number | null, kind: FinRow["kind"]) => {
@@ -19,6 +23,12 @@ export function FinTable({ months, rows, labels, totalLabel = "JAMI", firstHeade
     return fmtNum(v, 0);
   };
   const width = cols.length + 1 + (signs ? 1 : 0) + (totalLabel ? 1 : 0);
+  /** Son — bosiladigan havola (manba paneli); foiz qatori va bo'sh katak bosilmaydi. */
+  const num = (r: FinRow, v: number | null, col: number | null) => {
+    const text = cell(v, r.kind);
+    const href = drill && v !== null && v !== 0 && r.kind !== "pct" ? drill(r.key, col) : null;
+    return href ? <Link href={href} scroll={false} title="Qayerdan kelgan — bosing" className="-mx-1 rounded px-1 underline decoration-slate-300 decoration-dotted underline-offset-4 hover:bg-brand-100 hover:decoration-slate-500">{text}</Link> : text;
+  };
   return (
     <div className="relative max-h-[75vh] max-w-full overflow-auto overscroll-x-contain rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)">
       <table className="w-full text-sm tabular">
@@ -55,9 +65,9 @@ export function FinTable({ months, rows, labels, totalLabel = "JAMI", firstHeade
                 </td>
                 {signs && <td className="border-t border-slate-100 px-1 py-2 text-center font-semibold not-italic text-slate-400">{r.sign ?? ""}</td>}
                 {r.values.map((v, i) => (
-                  <td key={i} className={cn("whitespace-nowrap border-t border-slate-100 px-3 py-2 text-right", v !== null && v < 0 && r.kind !== "check" && r.kind !== "pct" && "text-red-600")}>{cell(v, r.kind)}</td>
+                  <td key={i} className={cn("whitespace-nowrap border-t border-slate-100 px-3 py-2 text-right", v !== null && v < 0 && r.kind !== "check" && r.kind !== "pct" && "text-red-600")}>{num(r, v, i)}</td>
                 ))}
-                {totalLabel && <td className={cn("whitespace-nowrap border-l-2 border-t border-l-brand-200 border-t-slate-100 bg-brand-50/70 px-3 py-2 text-right font-bold text-slate-900", r.total !== null && r.total < 0 && r.kind !== "check" && r.kind !== "pct" && "text-red-600")}>{cell(r.total, r.kind)}</td>}
+                {totalLabel && <td className={cn("whitespace-nowrap border-l-2 border-t border-l-brand-200 border-t-slate-100 bg-brand-50/70 px-3 py-2 text-right font-bold text-slate-900", r.total !== null && r.total < 0 && r.kind !== "check" && r.kind !== "pct" && "text-red-600")}>{num(r, r.total, null)}</td>}
               </tr>
             );
           })}

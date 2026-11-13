@@ -33,3 +33,7 @@ export function monthDiff(a: MonthKey, b: MonthKey): number {
   const [by, bm] = b.split("-").map(Number);
   return (by! - ay!) * 12 + (bm! - am!);
 }
+
+/** Drill paneli sarlavhasi: ustun oyi (`col`) yoki butun davr. */
+export const periodLabel = (months: MonthKey[], col: number | null) =>
+  col !== null ? monthLabel(months[col]!) : months.length > 1 ? `${monthLabel(months[0]!)} — ${monthLabel(months[months.length - 1]!)}` : monthLabel(months[0]!);

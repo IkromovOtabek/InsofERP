@@ -1,10 +1,11 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
+import { cashDayHref, finDrill, own, type Drill, type DrillItem } from "@/lib/drill";
 import type { LoanKind } from "@/generated/prisma";
 import { loadCategories, makeResolver } from "./categories";
 import { DDS_FIXED, sheetLine } from "./sheet-lines";
-import { type MonthKey, monthStart, monthEnd, monthKeyOf } from "./period";
+import { type MonthKey, monthStart, monthEnd, monthKeyOf, periodLabel } from "./period";
 import { type FinRow, row, head, zeros, addInto, neg, plus, r2 } from "./rows";
 
 /**
@@ -38,7 +39,10 @@ export async function ddsReport(months: MonthKey[]): Promise<DdsReport> {
 /** Tahlil → Pul oqimi: KPI qatori va jadval bir sahifada bir xil hisobotni so'raydi — bir marta (`cache`). Natija o'zgartirilmaydi. */
 const ddsOnce = cache((months: string) => buildDds(months.split(",") as MonthKey[]));
 
-async function buildDds(months: MonthKey[]): Promise<DdsReport> {
+/** Drill-down: qaysi qator kalitining yozuvlari yig'iladi (`month` — ustun, null — davr jami). */
+type Trace = { match: (key: string) => boolean; month: number | null; items: DrillItem[] };
+
+async function buildDds(months: MonthKey[], trace?: Trace): Promise<DdsReport> {
   const n = months.length;
   const from = monthStart(months[0]!), to = monthEnd(months[n - 1]!);
   const idx = new Map(months.map((m, i) => [m, i]));
@@ -48,21 +52,41 @@ async function buildDds(months: MonthKey[]): Promise<DdsReport> {
     loadCategories(),
     db.cashTransaction.findMany({
       where: { cancelledAt: null, date: { gte: from, lt: to } },
-      select: { date: true, type: true, amount: true, category: true, subCategory: true, cashAccountId: true, project: { select: { name: true } }, loan: { select: { kind: true } } },
+      select: {
+        date: true, type: true, amount: true, category: true, subCategory: true, cashAccountId: true, project: { select: { name: true } }, loan: { select: { kind: true } },
+        counterparty: true, note: true, cashAccount: { select: { name: true } },
+      },
     }),
-    db.payment.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true, cashAccountId: true } }),
+    db.payment.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true, cashAccountId: true, customerId: true, customer: { select: { name: true } }, cashAccount: { select: { name: true } } } }),
     db.cashAccount.findMany({ orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, isActive: true } }),
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null, date: { lt: from } }, _sum: { amount: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], where: { date: { lt: from } }, _sum: { amount: true } }),
   ]);
   const resolve = makeResolver(nodes);
+  /** Drill-down: so'ralgan qatorga (va ustunga) tushgan yozuv; oddiy hisobotda hech narsa qilmaydi. */
+  const tr = (key: string, i: number, item: () => DrillItem) => {
+    if (trace && (trace.month === null || trace.month === i) && trace.match(key)) trace.items.push(item());
+  };
 
   // ── Oqimlar: jadval («Cash Flow») qatorlari bo'yicha — qator nomi → oylar (ishora bilan: kirim +, chiqim −) ──
   type Bucket = Map<string, number[]>;
   const opIn: Bucket = new Map(), opOut: Bucket = new Map(), fin: Bucket = new Map(), inv: Bucket = new Map(), trf: Bucket = new Map();
-  const put = (b: Bucket, name: string, i: number, v: number) => { if (!b.has(name)) b.set(name, zeros(n)); addInto(b.get(name)!, i, v); };
+  /** Qator kaliti — pastdagi `lines(...)` bilan bir xil: «Jami chiqim» ichidagilar jadvalda manfiy. */
+  const prefix = new Map<Bucket, string>([[opIn, "OPERATING:in"], [opOut, "OPERATING:out"], [fin, "FINANCING"], [inv, "INVESTING"], [trf, "TRANSFERS"]]);
+  const put = (b: Bucket, name: string, i: number, v: number, src?: () => Omit<DrillItem, "amount">) => {
+    if (!b.has(name)) b.set(name, zeros(n));
+    addInto(b.get(name)!, i, v);
+    if (src) tr(`${prefix.get(b)}:${name}`, i, () => ({ ...src(), amount: b === opOut ? -v : v }));
+  };
   const sales = zeros(n);
-  for (const p of pays) { const i = at(p.date); if (i !== undefined) addInto(sales, i, Number(p.amount)); }
+  for (const p of pays) {
+    const i = at(p.date);
+    if (i === undefined) continue;
+    addInto(sales, i, Number(p.amount));
+    const src = { date: p.date, title: p.customer.name, sub: `Mijoz to'lovi · ${p.cashAccount.name}`, amount: Number(p.amount), href: `/customers/${p.customerId}` };
+    tr(`OPERATING:in:${SALES}`, i, () => src);
+    tr(`acc:${p.cashAccountId}:in`, i, () => src);
+  }
   opIn.set(SALES, sales);
   const projectNames = new Set<string>();
 
@@ -74,21 +98,31 @@ async function buildDds(months: MonthKey[]): Promise<DdsReport> {
     const i = at(t.date);
     if (i === undefined) continue;
     const v = Number(t.amount), a = acc.get(t.cashAccountId);
+    const src = () => ({
+      date: t.date, title: t.counterparty?.trim() || t.subCategory || t.category, href: cashDayHref(t.date),
+      sub: [t.cashAccount.name, t.subCategory ? `${t.category} → ${t.subCategory}` : t.category, t.note?.trim()].filter(Boolean).join(" · "),
+    });
     if (t.type === "OPENING") { if (a) addInto(a.opening, i, v); continue; }
-    if (t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT") { if (a) addInto(a.tr, i, txSign(t.type) * v); put(trf, TRANSFER_LINE, i, txSign(t.type) * v); continue; }
+    if (t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT") {
+      if (a) addInto(a.tr, i, txSign(t.type) * v);
+      put(trf, TRANSFER_LINE, i, txSign(t.type) * v, src);
+      tr(`acc:${t.cashAccountId}:tr`, i, () => ({ ...src(), amount: txSign(t.type) * v }));
+      continue;
+    }
     if (a) addInto(t.type === "INCOME" ? a.inn : a.out, i, v);
+    tr(`acc:${t.cashAccountId}:${t.type === "INCOME" ? "in" : "out"}`, i, () => ({ ...src(), amount: t.type === "INCOME" ? v : -v }));
     const sv = t.type === "INCOME" ? v : -v;
     const r = resolve(t.category, t.subCategory);
-    if (!r) { put(trf, UNKNOWN_LINE, i, sv); continue; }
+    if (!r) { put(trf, UNKNOWN_LINE, i, sv, src); continue; }
     if (r.top.flow === "OPERATING") {
-      if (t.type === "INCOME") put(opIn, sheetLine(r.top.name, r.sub?.name), i, v);
-      else put(opOut, sheetLine(r.top.name, r.sub?.name), i, v);
+      if (t.type === "INCOME") put(opIn, sheetLine(r.top.name, r.sub?.name), i, v, src);
+      else put(opOut, sheetLine(r.top.name, r.sub?.name), i, v, src);
     } else if (r.top.flow === "FINANCING") {
-      put(fin, financingLine(r.top.name, t.type, t.loan?.kind ?? null), i, sv);
+      put(fin, financingLine(r.top.name, t.type, t.loan?.kind ?? null), i, sv, src);
     } else if (r.top.needs === "PROJECT") {
       if (t.project?.name) projectNames.add(t.project.name);
-      put(inv, PROJECTS_LINE, i, sv);
-    } else put(inv, sheetLine(r.top.name, r.sub?.name), i, sv);
+      put(inv, PROJECTS_LINE, i, sv, () => ({ ...src(), sub: `${t.project?.name ?? "Loyiha tanlanmagan"} · ${src().sub}` }));
+    } else put(inv, sheetLine(r.top.name, r.sub?.name), i, sv, src);
   }
 
   const total = (b: Bucket) => plus(zeros(n), ...b.values());
@@ -160,4 +194,41 @@ async function buildDds(months: MonthKey[]): Promise<DdsReport> {
   accountRows.push(row("all:check", "Tekshiruv: o'zgarish − sof pul oqimi (0 bo'lishi kerak)", "check", check));
 
   return { months, rows, accountRows, netFlow, check };
+}
+
+/** Hisoblar jadvalidagi qatorlar: kirim, chiqim, ichki o'tkazma — yozuvlardan; qoldiq qatorlari (boshlang'ich, yakuniy) bosilmaydi. */
+const ACC_PART = /^(acc:[^:]+|all):(in|out|tr)$/;
+/** DDS katagi bosiladimi (qoldiq va tekshiruv qatorlari — yo'q). */
+export const ddsDrillable = (key: string) => !/:(open|close|change|check)$/.test(key) && !key.startsWith("h:") && (!key.startsWith("acc:") && !key.startsWith("all:") || ACC_PART.test(key));
+
+/** Ota qator → bola kalitlari: «Jami tushum» ← tushum manbalari, «Moliyaviy pul oqimi» ← moliyaviy qatorlar… */
+const CHILDREN: Record<string, (key: string) => boolean> = {
+  "OPERATING:in": (k) => k.startsWith("OPERATING:in:"),
+  "OPERATING:out": (k) => k.startsWith("OPERATING:out:"),
+  "FINANCING:net": (k) => k.startsWith("FINANCING:") && k !== "FINANCING:net",
+  "INVESTING:net": (k) => k.startsWith("INVESTING:") && k !== "INVESTING:net",
+};
+
+/**
+ * DDS katagining manbasi: oqim qatorlari — kassa yozuvlari va mijoz to'lovlari, jami qatorlar — tarkibi, hisoblar jadvalida
+ * kirim / chiqim / ichki o'tkazma — shu hisobning yozuvlari (`all:*` — barcha hisoblar). Hisob `buildDds` ning o'zi.
+ */
+export async function ddsDrill(months: MonthKey[], key: string, col: number | null): Promise<Drill | null> {
+  if ((col !== null && (col < 0 || col >= months.length)) || !ddsDrillable(key)) return null;
+  const acc = ACC_PART.exec(key);
+  const compose = key === "OPERATING:net" || key === "net";
+  const child = own(CHILDREN, key);
+  const match = acc
+    ? acc[1] === "all" ? (k: string) => k.startsWith("acc:") && k.endsWith(`:${acc[2]}`) : (k: string) => k === key
+    : (k: string) => k === key || !!child?.(k);
+  const trace: Trace | undefined = compose ? undefined : { match, month: col, items: [] };
+  const rep = await buildDds(months, trace);
+  const rows = [...rep.rows, ...rep.accountRows];
+  const parts = key === "OPERATING:net" ? ["OPERATING:in", "OPERATING:out"]
+    : key === "net" ? ["OPERATING:net", "FINANCING:net", "INVESTING:net", ...rep.rows.filter((r) => r.key.startsWith("TRANSFERS:")).map((r) => r.key)]
+    : rep.rows.filter((r) => r.key !== key && child?.(r.key)).map((r) => r.key);
+  const d = finDrill(rows, periodLabel(months, col), key, col, { parts, items: trace?.items ?? [], compose });
+  // Hisoblar jadvalida qator nomi umumiy («Kirim (oborot)») — hisob nomi bilan
+  if (d && acc) d.title = `${acc[1] === "all" ? "Barcha hisoblar" : (rep.accountRows.find((r) => r.key === acc[1])?.label ?? "Hisob")} — ${d.title}`;
+  return d;
 }

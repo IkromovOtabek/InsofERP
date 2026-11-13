@@ -60,13 +60,15 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
     const expenses = -["prod", "admin", "comm", "unknown", "tax", "interest"].reduce((s, k) => s + totalOf(rows, k), 0);
     const netPct = rowOf(rows, "net-pct")?.total ?? null, grossPct = rowOf(rows, "gross-pct")?.total ?? null, cogsPct = rowOf(rows, "cogs-pct")?.total ?? null;
     const uncosted = totalOf(rows, "uncosted");
+    // Karta bosilsa — jadval qatorining manba paneli (davr jami)
+    const dq = (key: string) => `${BASE}/pnl?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), ...(cash ? { mode: "cash" } : {}), drill: key })}`;
     return (
       <div className={grid}>
-        <Kpi label="Daromad" value={moneyShort(income)} icon={TrendingUp} tone="brand" hint={`${period} · ${cash ? "pul asosida" : "QQSsiz"}`} />
-        <Kpi label="Sotuv tannarxi" value={moneyShort(cogs)} icon={Calculator} tone="info" hint={cogsPct !== null ? `daromadning ${pct(cogsPct)}` : "daromad yo'q"} />
-        <Kpi label="Yalpi foyda" value={moneyShort(gross)} icon={Wallet} tone={signTone(gross)} hint={grossPct !== null ? `marja ${pct(grossPct)}` : undefined} />
-        <Kpi label="Xarajatlar" value={moneyShort(expenses)} icon={Receipt} tone="warning" hint="ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz" />
-        <Kpi label="Zavod sof foydasi" value={moneyShort(net)} icon={PiggyBank} tone={signTone(net)} hint={period} />
+        <Kpi label="Daromad" value={moneyShort(income)} icon={TrendingUp} tone="brand" hint={`${period} · ${cash ? "pul asosida" : "QQSsiz"}`} href={dq("income")} />
+        <Kpi label="Sotuv tannarxi" value={moneyShort(cogs)} icon={Calculator} tone="info" hint={cogsPct !== null ? `daromadning ${pct(cogsPct)}` : "daromad yo'q"} href={dq("cogs")} />
+        <Kpi label="Yalpi foyda" value={moneyShort(gross)} icon={Wallet} tone={signTone(gross)} hint={grossPct !== null ? `marja ${pct(grossPct)}` : undefined} href={dq("gross")} />
+        <Kpi label="Xarajatlar" value={moneyShort(expenses)} icon={Receipt} tone="warning" hint="ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz" href={dq("expenses")} />
+        <Kpi label="Zavod sof foydasi" value={moneyShort(net)} icon={PiggyBank} tone={signTone(net)} hint={period} href={dq("net")} />
         <Kpi label="Sof rentabellik" value={netPct !== null ? pct(netPct) : "–"} icon={Percent} tone={netPct === null ? "default" : signTone(netPct)} hint={uncosted > 0 ? `tannarxsiz tushum ${moneyShort(uncosted)} — foyda oshib ko'rinadi` : "sof foyda ÷ daromad"} />
       </div>
     );

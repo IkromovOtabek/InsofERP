@@ -394,9 +394,9 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
           <NavProgress />
         </header>
         {ai && <AiPanel />}
-        <main className="app-main min-w-0 flex-1 px-3 py-5 sm:px-4 sm:py-6 lg:px-8 lg:py-7 has-[[data-wide]]:lg:px-4">
-          {/* Menyu yig'ilganda (`sb-collapsed`) yoki sahifa `data-wide` bo'lsa eni cheklanmaydi — ro'yxat va jadvallar bo'shagan joyga yoyiladi */}
-          <div className="mx-auto max-w-[1400px] has-[[data-wide]]:max-w-none [.sb-collapsed_&]:lg:max-w-none">{children}</div>
+        <main className="app-main min-w-0 flex-1 px-3 py-5 sm:px-4 sm:py-6 lg:px-5 lg:py-6 has-[[data-wide]]:lg:px-4">
+          {/* Sahifa ekran eniga yoyiladi (ikki yonda bo'sh joy qolmasin); faqat juda keng monitorda o'rtada cheklanadi */}
+          <div className="mx-auto max-w-[2200px] has-[[data-wide]]:max-w-none">{children}</div>
         </main>
       </div>
 

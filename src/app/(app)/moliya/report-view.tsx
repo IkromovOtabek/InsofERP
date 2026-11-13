@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { goLiveDate } from "@/lib/bi/core";
-import { pnlReport, type PnlMode } from "@/lib/fin-report/pnl";
-import { ddsReport } from "@/lib/fin-report/dds";
+import { pnlDrill, pnlReport, type PnlMode } from "@/lib/fin-report/pnl";
+import { ddsDrill, ddsDrillable, ddsReport } from "@/lib/fin-report/dds";
 import { balanceReport } from "@/lib/fin-report/balance";
 import { type MonthKey, addMonths, isMonthKey, monthDiff, monthKeyOf, monthLabel, monthRange } from "@/lib/fin-report/period";
 import { Callout, Section, Select, Tabs } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
+import { DrillPanel } from "@/components/drill-panel";
 import { FinTable, finSheetRows } from "./fin-table";
 
 export const REPORT_TABS = ["pnl", "dds", "balans"] as const;
@@ -32,8 +33,15 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
   const q = (o: Record<string, string>, m: PnlMode = mode) => `${base}?${new URLSearchParams({ ...keep, tab, oy: from, n: String(n), ...(m === "cash" ? { mode: "cash" } : {}), ...o })}`;
 
   const pnl = tab === "pnl" ? await pnlReport(months, mode) : null;
+  // Raqam manbasi (PNL): `drill` — qator kaliti, `m` — oy (yo'q — davr jami)
+  const drillCol = isMonthKey(sp.m) && months.includes(sp.m) ? months.indexOf(sp.m) : null;
+  const drillHref = (key: string, col: number | null) => q({ drill: key, ...(col !== null ? { m: months[col]! } : {}) });
+  const pnlDrillP = pnl && sp.drill ? pnlDrill(months, mode, sp.drill, drillCol) : null;
   const dds = tab === "dds" ? await ddsReport(months) : null;
   const bal = tab === "balans" ? await balanceReport(months) : null;
+  const drill = sp.drill ? (pnlDrillP ? await pnlDrillP : dds ? await ddsDrill(months, sp.drill, drillCol) : null) : null;
+  const ddsHref = (key: string, col: number | null) => (ddsDrillable(key) ? drillHref(key, col) : null);
+  const drillPanel = drill && <DrillPanel drill={drill} closeHref={q({})} partHref={(k) => drillHref(k, drillCol)} />;
   const cols = months.map(monthLabel);
   const sheets = pnl
     ? [{ name: mode === "cash" ? "PNL (pul asosida)" : "PNL", rows: finSheetRows(cols, pnl.rows) }]
@@ -89,7 +97,7 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
 
       {pnl && (
         <>
-          <FinTable months={months} rows={pnl.rows} />
+          <FinTable months={months} rows={pnl.rows} drill={drillHref} />
           <ul className="mt-3 space-y-1 text-[13px] text-slate-500">{pnl.notes.map((t) => <li key={t}>{t}</li>)}</ul>
         </>
       )}
@@ -97,13 +105,15 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
       {dds && (
         <>
           {dds.check.some((v) => Math.abs(v) >= 1) && <Callout tone="danger" title="Tekshiruv 0 emas">Hisoblararo o&apos;tkazmaning bir tomoni yetishmayapti yoki bekor qilingan. Kirim-Chiqim jurnalida o&apos;tkazmalarni tekshiring.</Callout>}
-          <FinTable months={months} rows={dds.rows} firstHeader="Pul oqimi turi / Manba" />
+          <FinTable months={months} rows={dds.rows} firstHeader="Pul oqimi turi / Manba" drill={ddsHref} />
           <Section title="Hisoblar bo'yicha qoldiq">
-            <FinTable months={months} rows={dds.accountRows} totalLabel="JAMI" firstHeader="Hisob / Ko'rsatkich" />
+            <FinTable months={months} rows={dds.accountRows} totalLabel="JAMI" firstHeader="Hisob / Ko'rsatkich" drill={ddsHref} />
           </Section>
           <p className="mt-3 text-[13px] text-slate-500">Boshlang&apos;ich qoldiqlar — kassa va bank hisoblarining tizimga o&apos;tish sanasidagi qoldig&apos;i (Moliya → Boshlang&apos;ich qoldiqlar).</p>
         </>
       )}
+
+      {drillPanel}
 
       {bal && (
         <>
