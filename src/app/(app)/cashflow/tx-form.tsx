@@ -12,7 +12,7 @@ import type { CategoryOption } from "@/lib/fin-report/categories";
 import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
 import { QuickAdd, QuickDelete, QuickEdit, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
 import { quickAddCashCategory, quickAddLoan, quickAddProject, quickRemoveCashCategory, quickRenameCashCategory } from "@/lib/quick-add-actions";
-import { CategoryManager } from "./category-manager";
+import { CategoryManager, RemoveText } from "./category-manager";
 
 type Opt = { id: string; name: string };
 type LoanOpt = Opt & { kind: "BANK" | "BORROWED" | "LENT" };
@@ -26,7 +26,7 @@ type Acc = Opt & { type?: CashMethod };
  * `canAdd` — manba, sub manba, loyiha, kredit / qarz va yetkazuvchi tanlovlari yonida «+»: ro'yxatda yo'g'i shu yerning o'zida qo'shiladi
  * va darhol tanlanadi (sahifa yangilanguncha mahalliy ro'yxatga ham qo'shib turiladi).
  * `canEditCat` / `canDeleteCat` — tanlangan manba va sub manba yonida qalam (nomini o'zgartirish) va savatcha (o'chirish;
- * ishlatilgani ro'yxatdan olinadi). `lockedCats` — tizim kategoriyalari: ularda qalam / savatcha yo'q.
+ * ishlatilgani ro'yxatdan olinadi). `lockedCats` — tizim kategoriyalari: qalam yo'q (nomi o'zgarmaydi), savatcha faqat ro'yxatdan oladi.
  * Manba ostidagi «Ro'yxatni tahrirlash» — shu turdagi barcha manba va sub manbalar bitta oynada (`category-manager.tsx`).
  */
 export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, canEditCat = false, canDeleteCat = false, lockedCats = [], clientToken = "" }: {
@@ -69,9 +69,12 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   const perekit = type === "EXPENSE" && cat === PEREKIT_CATEGORY;
   // Sub manba har bir kirim/chiqimda majburiy (perekitdan tashqari); sub manbasi yo'q manbada «+» bilan qo'shiladi. Qoida serverda ham (`lib/cash-entry.ts`)
   const subNeeded = !perekit && !!cur;
-  // Qalam / savatcha: tanlangan haqiqiy manba / sub manbada (perekit va tizim kategoriyalarida emas)
-  const catTools = !!cur && !perekit && !lockedCats.includes(cat);
-  const subTools = subNeeded && !!sub && subs.includes(sub) && !lockedCats.includes(sub);
+  // Qalam / savatcha: tanlangan haqiqiy manba / sub manbada (perekitda emas). Tizim kategoriyasida faqat savatcha —
+  // nomi o'zgarmaydi (kod unga tayanadi), o'chirish esa uni faqat ro'yxatdan oladi
+  const catTools = !!cur && !perekit;
+  const catLocked = lockedCats.includes(cat);
+  const subTools = subNeeded && !!sub && subs.includes(sub);
+  const subLocked = lockedCats.includes(sub);
   // Qalam / savatcha (tanlov ostida ham, «Ro'yxatni tahrirlash» oynasida ham): ro'yxat va formadagi tanlov yangi holatga o'tadi
   const onRenamed = (old: string, x: QuickAdded, top: boolean) => {
     setEdits((e) => ({ ...e, renamed: { ...e.renamed, [old]: x.name } }));
@@ -153,7 +156,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
           </Field>
           {(canEditCat || canDeleteCat) && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {catTools && canEditCat && (
+              {catTools && !catLocked && canEditCat && (
                 <QuickEdit label="Manba nomini tahrirlash" title={`«${cat}» manbasini tahrirlash`} save={quickRenameCashCategory}
                   onSaved={(x) => onRenamed(cat, x, true)}>
                   <input type="hidden" name="name" value={cat} />
@@ -165,10 +168,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
               {catTools && canDeleteCat && (
                 <QuickDelete label="Manbani o'chirish" title={`«${cat}» manbasini o'chirish`} save={quickRemoveCashCategory} onDone={(x) => onRemoved(cat, x, true)}>
                   <input type="hidden" name="name" value={cat} />
-                  <p className="text-sm text-slate-600">
-                    Manba{subs.length ? ` va uning ${subs.length} ta sub manbasi` : ""} ro&apos;yxatdan o&apos;chiriladi. Kirim / chiqim yozuvlarida ishlatilgan bo&apos;lsa butunlay
-                    o&apos;chirilmaydi — faqat tanlovdan olinadi, eski yozuvlar hisobotda joyida qoladi.
-                  </p>
+                  <RemoveText name={cat} subCount={subs.length} system={catLocked} />
                 </QuickDelete>
               )}
               <CategoryManager type={type} cats={allCats} locked={lockedCats} canEdit={canEditCat} canDelete={canDeleteCat} onRenamed={onRenamed} onRemoved={onRemoved} />
@@ -188,9 +188,9 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                 <Select name="subCategory" value={sub} required onChange={(e) => setSub(e.target.value)}><option value="" disabled>— tanlang —</option>{subs.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
               </WithAdd>
             </Field>
-            {subTools && (canEditCat || canDeleteCat) && (
+            {subTools && ((canEditCat && !subLocked) || canDeleteCat) && (
               <div className="mt-1 flex flex-wrap gap-1">
-                {subTools && canEditCat && (
+                {subTools && !subLocked && canEditCat && (
                   <QuickEdit label="Sub manba nomini tahrirlash" title={`«${sub}» sub manbasini tahrirlash`} save={quickRenameCashCategory} onSaved={(x) => onRenamed(sub, x, false)}>
                     <input type="hidden" name="parent" value={cat} />
                     <input type="hidden" name="name" value={sub} />
@@ -203,9 +203,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                   <QuickDelete label="Sub manbani o'chirish" title={`«${sub}» sub manbasini o'chirish`} save={quickRemoveCashCategory} onDone={(x) => onRemoved(sub, x, false)}>
                     <input type="hidden" name="parent" value={cat} />
                     <input type="hidden" name="name" value={sub} />
-                    <p className="text-sm text-slate-600">
-                      «{cat}» ichidagi «{sub}» o&apos;chiriladi. Yozuvlarda ishlatilgan bo&apos;lsa butunlay o&apos;chirilmaydi — faqat tanlovdan olinadi, eski yozuvlar hisobotda joyida qoladi.
-                    </p>
+                    <RemoveText name={sub} parent={cat} system={subLocked} />
                   </QuickDelete>
                 )}
               </div>

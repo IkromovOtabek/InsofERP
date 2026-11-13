@@ -11,10 +11,31 @@ export type ManagedCat = { name: string; subs: string[] };
 type Done = (old: string, x: QuickAdded, top: boolean) => void;
 
 /**
+ * O'chirish oynasidagi izoh — formadagi savatcha va «Ro'yxatni tahrirlash» uchun bitta matn.
+ * Tizim kategoriyasi butunlay o'chmaydi, faqat ro'yxatdan olinadi (`lib/fin-report/category-edit.ts` → `removeCashCategory`).
+ */
+export function RemoveText({ name, parent, subCount = 0, system }: { name: string; parent?: string | null; subCount?: number; system?: boolean }) {
+  const what = parent ? <>«{parent}» ichidagi «{name}»</> : <>«{name}» manbasi{subCount ? ` va uning ${subCount} ta sub manbasi` : ""}</>;
+  return system ? (
+    <p className="text-sm text-slate-600">
+      {what} ro&apos;yxatdan olinadi — formalarda endi ko&apos;rinmaydi. Bu tizim {parent ? "sub manbasi" : "manbasi"}: dastur ba&apos;zi yozuvlarni
+      (ish haqi, bank komissiyasi, xomashyo to&apos;lovi…) avtomatik unga yozadi, shuning uchun butunlay o&apos;chirilmaydi — eski va yangi yozuvlar
+      hisobotda joyida qoladi. Qaytarish — Moliya → Kategoriyalar.
+    </p>
+  ) : (
+    <p className="text-sm text-slate-600">
+      {what} ro&apos;yxatdan o&apos;chiriladi. Kirim / chiqim yozuvlarida ishlatilgan bo&apos;lsa butunlay o&apos;chirilmaydi — faqat tanlovdan olinadi,
+      eski yozuvlar hisobotda joyida qoladi.
+    </p>
+  );
+}
+
+/**
  * Kirim-Chiqim formasidagi «Ro'yxatni tahrirlash»: tanlangan turdagi (kirim / chiqim) barcha manba va sub manbalar bitta oynada,
  * har birining yonida «Tahrirlash» va «O'chirish» — formadagi tanlovda bittalab tanlab o'tirmasdan.
  * Qoida formadagi qalam / savatcha bilan bitta (`quickRenameCashCategory`, `quickRemoveCashCategory`): ishlatilgan kategoriya
- * butunlay o'chmaydi — nofaol bo'ladi. `locked` — tizim kategoriyalari (kod nomiga tayanadi): qulf, ichidagi sub manbalari tahrirlanadi.
+ * butunlay o'chmaydi — nofaol bo'ladi. `locked` — tizim kategoriyalari (kod nomiga tayanadi): nomi o'zgarmaydi, faqat ro'yxatdan
+ * olinadi (nofaol); ichidagi oddiy sub manbalari to'liq tahrirlanadi.
  */
 export function CategoryManager({ type, cats, locked, canEdit, canDelete, onRenamed, onRemoved }: {
   type: "INCOME" | "EXPENSE"; cats: ManagedCat[]; locked: string[]; canEdit: boolean; canDelete: boolean; onRenamed: Done; onRemoved: Done;
@@ -46,9 +67,9 @@ export function CategoryManager({ type, cats, locked, canEdit, canDelete, onRena
         <span className={top ? "font-medium text-slate-800" : "text-sm text-slate-700"}>
           {name}{isLocked && <> <Badge color="slate" dot={false}>tizim</Badge></>}
         </span>
-        {!isLocked && (
+        {(canEdit && !isLocked) || canDelete ? (
           <span className="flex gap-1">
-            {canEdit && (
+            {canEdit && !isLocked && (
               <QuickEdit label={`«${name}» nomini tahrirlash`} title={`«${name}» ${top ? "manbasini" : "sub manbasini"} tahrirlash`} save={quickRenameCashCategory} onSaved={(x) => done(onRenamed)(name, x, top)}>
                 {parent && <input type="hidden" name="parent" value={parent} />}
                 <input type="hidden" name="name" value={name} />
@@ -61,14 +82,11 @@ export function CategoryManager({ type, cats, locked, canEdit, canDelete, onRena
               <QuickDelete label={`«${name}» ni o'chirish`} title={`«${name}» ${top ? "manbasini" : "sub manbasini"} o'chirish`} save={quickRemoveCashCategory} onDone={(x) => done(onRemoved)(name, x, top)}>
                 {parent && <input type="hidden" name="parent" value={parent} />}
                 <input type="hidden" name="name" value={name} />
-                <p className="text-sm text-slate-600">
-                  {top ? <>Manba{subCount ? ` va uning ${subCount} ta sub manbasi` : ""}</> : <>«{parent}» ichidagi «{name}»</>} ro&apos;yxatdan o&apos;chiriladi. Kirim / chiqim
-                  yozuvlarida ishlatilgan bo&apos;lsa butunlay o&apos;chirilmaydi — faqat tanlovdan olinadi, eski yozuvlar hisobotda joyida qoladi.
-                </p>
+                <RemoveText name={name} parent={parent} subCount={subCount} system={isLocked} />
               </QuickDelete>
             )}
           </span>
-        )}
+        ) : null}
       </div>
     );
   };
@@ -85,8 +103,8 @@ export function CategoryManager({ type, cats, locked, canEdit, canDelete, onRena
               <button type="button" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
             </div>
             <p className="text-[13px] text-slate-500">
-              Nomini o&apos;zgartirsangiz, eski yozuvlar ham yangi nomga o&apos;tadi. «tizim» belgili manbalar dastur ichida ishlatiladi — ularning nomi
-              o&apos;zgarmaydi va o&apos;chmaydi, ichidagi sub manbalarini tahrirlash mumkin. Yangisi — formadagi «+» bilan.
+              Nomini o&apos;zgartirsangiz, eski yozuvlar ham yangi nomga o&apos;tadi. «tizim» belgili manbalarga dastur avtomatik yozadi — ularni
+              ro&apos;yxatdan olish mumkin (formada ko&apos;rinmaydi, hisobot buzilmaydi), nomi esa o&apos;zgarmaydi. Yangisi — formadagi «+» bilan.
             </p>
             {note && <FormSuccess text={note} />}
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Qidirish: manba yoki sub manba nomi" aria-label="Qidirish" autoComplete="off" />

@@ -65,12 +65,14 @@ const nameWhere = (field: "category" | "subCategory", names: string[]): Prisma.C
 /**
  * O'chirish: hech qayerda ishlatilmagan bo'lsa — butunlay (manba sub manbalari bilan); kassa yozuvi, to'lov rejasi yoki
  * byudjetda ishlatilgan bo'lsa — o'chirilmaydi, nofaol qilinadi: formalarda ko'rinmaydi, eski yozuvlar hisobotda joyida qoladi
- * (Moliya → Kategoriyalarda qayta faollashtiriladi). Tizim kategoriyasi (kod nomiga tayanadi) o'chirilmaydi.
+ * (Moliya → Kategoriyalarda qayta faollashtiriladi). Tizim kategoriyasi (kod nomiga tayanadi: ish haqi, bank komissiyasi,
+ * xomashyo to'lovi… avtomatik shu nomga yoziladi) hech qachon butunlay o'chmaydi — faqat ro'yxatdan olinadi (nofaol):
+ * nomi topiladigan bo'lib qoladi, avtomatik yozuvlar va hisobotlar o'zgarmaydi.
  */
-export async function removeCashCategory(id: string, userId: string, via?: string): Promise<{ kind: "deleted" | "archived"; name: string; used: number; subs: number } | { error: string }> {
+export async function removeCashCategory(id: string, userId: string, via?: string): Promise<{ kind: "deleted" | "archived"; name: string; used: number; subs: number; system: boolean } | { error: string }> {
   const c = await db.cashCategory.findUnique({ where: { id }, include: { children: true } });
   if (!c) return { error: "Kategoriya topilmadi — sahifani yangilang" };
-  if (c.isSystem || c.children.some((x) => x.isSystem)) return { error: `«${c.name}» — tizim kategoriyasi, o'chirib bo'lmaydi${c.isSystem ? "" : " (ichida tizim sub manbasi bor)"}` };
+  const system = c.isSystem || c.children.some((x) => x.isSystem);
   const own = [c.name, ...c.aliases];
   const subNames = c.children.flatMap((x) => [x.name, ...x.aliases]);
   const txWhere: Prisma.CashTransactionWhereInput = c.parentId
@@ -84,7 +86,7 @@ export async function removeCashCategory(id: string, userId: string, via?: strin
     planNames.length ? db.expenseBudget.count({ where: { category: { in: planNames } } }) : 0,
   ]);
   const used = txs + plans + flows + budgets;
-  if (used === 0) {
+  if (used === 0 && !system) {
     await db.$transaction(async (tx) => {
       for (const x of c.children) {
         await tx.cashCategory.delete({ where: { id: x.id } });
@@ -96,18 +98,19 @@ export async function removeCashCategory(id: string, userId: string, via?: strin
       await audit(tx, userId, "DELETE", "CashCategory", c.id, self, via ? { via } : undefined);
     });
     resetCategoryCache();
-    return { kind: "deleted", name: c.name, used: 0, subs: c.children.length };
+    return { kind: "deleted", name: c.name, used: 0, subs: c.children.length, system };
   }
   await db.$transaction(async (tx) => {
     const u = await tx.cashCategory.updateMany({ where: { id: c.id, isActive: true }, data: { isActive: false } });
-    if (u.count) await audit(tx, userId, "STATUS_CHANGE", "CashCategory", c.id, { isActive: true }, { isActive: false, used: { txs, plans, flows, budgets }, ...(via ? { via } : {}) });
+    if (u.count) await audit(tx, userId, "STATUS_CHANGE", "CashCategory", c.id, { isActive: true }, { isActive: false, used: { txs, plans, flows, budgets }, ...(system ? { system } : {}), ...(via ? { via } : {}) });
   });
   resetCategoryCache();
-  return { kind: "archived", name: c.name, used, subs: c.children.length };
+  return { kind: "archived", name: c.name, used, subs: c.children.length, system };
 }
 
 /** Foydalanuvchiga xabar — o'chirildi yoki ro'yxatdan olindi (nega). */
-export function removeNote(r: { kind: "deleted" | "archived"; name: string; used: number; subs: number }, top: boolean): string {
+export function removeNote(r: { kind: "deleted" | "archived"; name: string; used: number; subs: number; system?: boolean }, top: boolean): string {
   if (r.kind === "deleted") return `«${r.name}» o'chirildi${r.subs ? ` (${r.subs} ta sub manbasi bilan)` : ""}`;
+  if (r.system) return `«${r.name}» ro'yxatdan olindi (nofaol). Tizim ${top ? "manbasi" : "sub manbasi"} butunlay o'chmaydi — dastur ba'zi yozuvlarni avtomatik unga yozadi, eski yozuvlar hisobotda joyida. Qaytarish — Moliya → Kategoriyalar`;
   return `«${r.name}» ${r.used} ta yozuvda ishlatilgan — butunlay o'chirilmadi, ${top ? "manba" : "sub manba"} ro'yxatdan olindi (nofaol). Eski yozuvlar hisobotda joyida; qaytarish — Moliya → Kategoriyalar`;
 }
