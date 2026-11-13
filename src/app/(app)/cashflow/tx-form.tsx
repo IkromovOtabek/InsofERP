@@ -6,6 +6,7 @@ import { isoDate } from "@/lib/format";
 import { createCashTx } from "./actions";
 import { Button, Callout, Field, FormError, FormSuccess, Input, Select, FormActions } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
+import { SearchSelect } from "@/components/ui/search-select";
 import { cn } from "@/lib/utils";
 import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, type CashMethod } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
@@ -253,7 +254,8 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
         ) : type === "EXPENSE" ? (
           <Field label="Yetkazuvchi" hint="Xomashyo uchun">
             <WithAdd add={canAdd && <SupplierAdd onCreated={(x) => { setAdded((a) => ({ ...a, suppliers: [...a.suppliers, { id: x.id, name: x.name }] })); setSupplierId(x.id); }} />}>
-              <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}><option value="">—</option>{supplierList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+              <SearchSelect name="supplierId" value={supplierId} onChange={setSupplierId} options={supplierList} placeholder="Yetkazuvchini yozib qidiring…" ariaLabel="Yetkazuvchi"
+                className={cn("min-w-0 flex-1", canAdd && "[&_input]:rounded-r-none")} />
             </WithAdd>
           </Field>
         ) : null}
