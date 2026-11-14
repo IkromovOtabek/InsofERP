@@ -3,8 +3,7 @@ import type { Perms, Session } from "./auth";
 import { isModuleOff, pathOff } from "./platform-modules";
 import { buttonMode, buttonsOf, btnKey, windowOpen, type PermButton } from "./perm-buttons";
 
-/** `notRoles` — ichki band shu rollarga menyuda chiqmaydi (masalan mexanikka Zavod zapchast / Ofis / Tayyor mahsulot) */
-export type NavChild = { href: string; label: string; notRoles?: Role[] };
+export type NavChild = { href: string; label: string };
 /**
  * `hidden` — menyuda ko'rinmaydi, lekin middleware ruxsatni shu yerdan tekshiradi (havola bo'yicha ochiladi).
  * `menuFor` — menyuda faqat shu rollarga ko'rinadi (direktor ham kirmaydi); boshqalar sahifani bo'lim tablari orqali
@@ -34,6 +33,8 @@ const SUPERVISOR_FIN: NavChild[] = [
   { href: "/payments", label: "Kassa jurnali (buxgalter)" },
 ];
 const SUPERVISOR_FIN_ROLES: Role[] = [...BI_ROLES, "SUPERVISOR"];
+/** Sklad sahifasi (`/stock`) va uning menyudagi bo'limlari — bir xil rollar */
+const STOCK_ROLES: Role[] = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC", "SUPERVISOR"];
 /** Logistika rahbari va dispetcher — bizda bitta LOGISTICS roli (TZ 15: Logistics Director + Dispatcher). */
 const LOGI: Role[] = ["LOGISTICS"];
 
@@ -112,15 +113,14 @@ export const NAV: NavItem[] = [
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi).
   // Ish boshqaruvchi — ko'rish uchun: «Sklad holati — xomashyo» va hovli bosh sahifadan shu yerga ko'chgan; amallar o'z ruxsatlari bilan yopiq
   { href: "/stock/umumiy", label: "Sklad — umumiy", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SUPERVISOR", "MECHANIC"], group: "Sklad" },
-  // Ichki bandlar — Sklad bo'limlari (kategoriya bo'yicha qoldiqlar va hovli). Mexanik skladda faqat Avto zapchast va Xomashyoni
-  // ko'radi (`categoriesFor`), hovli unga yopiq (`perm-buttons` → «hovli»)
-  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC", "SUPERVISOR"], group: "Sklad", menuHide: ["LOGISTICS"], children: [
-    { href: "/stock?kat=xomashyo", label: "Xomashyo" },
-    { href: "/stock?kat=avto", label: "Avto zapchast" },
-    { href: "/stock?kat=zavod", label: "Zavod zapchast", notRoles: ["MECHANIC"] },
-    { href: "/stock?kat=ofis", label: "Ofis", notRoles: ["MECHANIC"] },
-    { href: "/stock?bolim=hovli", label: "Tayyor mahsulotlar", notRoles: ["MECHANIC"] },
-  ] },
+  // «Sklad» bandi menyuda yo'q (ichma-ich «Sklad → Sklad» bo'lmasin) — ruxsat shu yerdan; menyuda o'rniga bo'limlari tekis turadi:
+  // kategoriya bo'yicha qoldiqlar va hovli. Mexanik skladda faqat Avto zapchast va Xomashyoni ko'radi (`categoriesFor`), hovli unga yopiq
+  { href: "/stock",       label: "Sklad",              roles: STOCK_ROLES, group: "Sklad", hidden: true },
+  { href: "/stock?kat=xomashyo", label: "Xomashyo",       roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS"] },
+  { href: "/stock?kat=avto",     label: "Avto zapchast",  roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS"] },
+  { href: "/stock?kat=zavod",    label: "Zavod zapchast", roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS", "MECHANIC"] },
+  { href: "/stock?kat=ofis",     label: "Ofis",           roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS", "MECHANIC"] },
+  { href: "/stock?bolim=hovli",  label: "Tayyor mahsulotlar", roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS", "MECHANIC"] },
   // Dispetcher ombori: skladdagi avto zapchast va yoqilg'ini ko'radi (qo'sha olmaydi), keraklisini o'ziga oladi va mashinaga beradi —
   // zapravka / transport xarajati bo'lib tushadi (`lib/dispatcher-stock.ts`). Sklad, ish boshqaruvchi va mexanik ko'radi (menyusida yo'q)
   { href: "/stock/dispetcher", label: "Dispetcher ombori", roles: ["DISPATCHER", "WAREHOUSE", "SUPERVISOR", "MECHANIC"], group: "Sklad", menuFor: ["DISPATCHER", "DIRECTOR"] },
@@ -309,8 +309,7 @@ export function navFor(role: Role, perms?: Perms) {
     const l = m && perms?.[m];
     return pathOff(href, m) || (!!l && (l === "none" || !windowOpen(m, href, l)));
   };
-  const hide = (c: NavChild) => off(c.href) || !!c.notRoles?.includes(role);
-  const open = items.map((i) => (i.children?.some(hide) ? { ...i, children: i.children.filter((c) => !hide(c)) } : i));
+  const open = items.map((i) => (i.children?.some((c) => off(c.href)) ? { ...i, children: i.children.filter((c) => !off(c.href)) } : i));
   return OWN_PAGE_ONLY[role] ? open.filter((i) => i.roles !== "all") : open;
 }
 

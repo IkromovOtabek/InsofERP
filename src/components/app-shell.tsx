@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, CalendarDays, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, LayoutGrid, Forklift, Sheet, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, CalendarDays, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, LayoutGrid, Forklift, Sheet, Layers, Car, Cog, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { NAV_GROUPS } from "@/lib/nav-groups";
@@ -21,7 +21,7 @@ import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/sales/realizatsiya": Sheet, "/customers": Users, "/leads": Inbox, "/amocrm": SquareKanban, "/takliflar": FileBadge2, "/e-commerce": Store, "/production": Factory, "/recipes": FlaskConical,
-  "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/mexanik-sorovlar": Wrench, "/receipts": PackagePlus, "/jonatma": Forklift, "/oluvchi": PackageOpen, "/taminot/": FileText, "/suppliers": Handshake, "/invoices": Receipt,
+  "/trips": Truck, "/stock": Warehouse, "/stock?kat=xomashyo": Layers, "/stock?kat=avto": Car, "/stock?kat=zavod": Cog, "/stock?kat=ofis": Briefcase, "/stock?bolim=hovli": Package, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/mexanik-sorovlar": Wrench, "/receipts": PackagePlus, "/jonatma": Forklift, "/oluvchi": PackageOpen, "/taminot/": FileText, "/suppliers": Handshake, "/invoices": Receipt,
   "/marketing": Gauge, "/marketing/kontent": CalendarRange, "/marketing/studiya": Sparkles, "/marketing/media": Images, "/marketing/target": Crosshair, "/marketing/sozlamalar": SlidersHorizontal, "/marketing/agent": Bot,
   "/payments": Landmark, "/pul-qabul": HandCoins, "/cashflow": ArrowLeftRight, "/arenda": Store, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
   "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=ish-vaqti": Clock, "/otdel-kadr?tab=taqvim": CakeSlice, "/otdel-kadr?tab=jarima-bonus": Scale, "/vazifalar": ListTodo, "/ish-haqi": Wallet,
@@ -45,6 +45,19 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
 
 type User = { fullName: string; roleLabel: string };
 
+/**
+ * Bandda so'rov bo'lsa (`/stock?kat=avto`): yo'l bir xil va bandning har parametri joriy URL'da shu qiymat bilan bor —
+ * tartibi va qo'shimcha parametrlardan (davr, sklad, qidiruv) qat'i nazar.
+ */
+function queryMatch(path: string, h: string) {
+  const qi = h.indexOf("?");
+  if (qi < 0) return false;
+  const [p, q = ""] = path.split("?");
+  if (p !== h.slice(0, qi)) return false;
+  const cur = new URLSearchParams(q);
+  return [...new URLSearchParams(h.slice(qi + 1))].every(([k, v]) => cur.get(k) === v);
+}
+
 /** Eng uzun mos keladigan href — /bi-tahlil va /bi-tahlil/sotuvlar bir vaqtda faol bo'lmasligi uchun. */
 function bestMatch(path: string, items: NavItem[]) {
   let best = "";
@@ -52,7 +65,7 @@ function bestMatch(path: string, items: NavItem[]) {
     for (const h of [i.href, ...(i.children ?? []).map((c) => c.href)]) {
       // `h + "&"` — tab bandiga qo'shimcha so'rov qo'shilgan hol: /otdel-kadr?tab=davomat&kun=…
       // `h + "?"` — oddiy bandga so'rov qo'shilgan hol: /marketing/kontent?m=… (aks holda ota /marketing tanlanardi)
-      if ((path === h || path.startsWith(h + "/") || path.startsWith(h + "&") || (!h.includes("?") && path.startsWith(h + "?"))) && h.length > best.length) best = h;
+      if ((path === h || path.startsWith(h + "/") || path.startsWith(h + "&") || (!h.includes("?") && path.startsWith(h + "?")) || queryMatch(path, h)) && h.length > best.length) best = h;
     }
   }
   return best;

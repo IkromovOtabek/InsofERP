@@ -203,8 +203,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* «Sklad holati — xomashyo» — alohida oyna (shu tabda, mexanikka emas); ochiq oyna — to'q tugma. Xomashyo / Avto zapchast /
                 Zavod zapchast / Ofis va «Tayyor mahsulotlar» (hovli) — chap menyuda Sklad ichki bandlari. Jo'natmalar — chap menyuda */}
             {seeHolat && <LinkButton href="/stock?bolim=holat" variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>}
-            {/* Hovliga dona mahsulotni qo'lda kirim (boshlang'ich qoldiq) — hovli oynasida va «Ishlab chiqarish imkoni» da */}
-            {(bolim === "hovli" || tab === "capacity") && canDo(s, "stock", "products") && <LinkButton href="/stock/products/new" variant="success" size="lg"><PackagePlus size={18} /> <span>Tayyor mahsulot qo&apos;shish</span></LinkButton>}
+            {/* «Tayyor mahsulot qo'shish» tugmasi Sklad oynasidan olindi (foydalanuvchi so'rovi, 2026-11-14): tayyor mahsulot
+                hovliga brigada topshirig'i orqali kiradi */}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
             {canDo(s, "stock", "brigade") && canSee(s, "stock", "brigada") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
@@ -390,7 +390,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 )}
               </tbody>
             </Table>
-            <p className="mt-2 text-xs text-slate-500">Hovlida tayyor turgan dona mahsulotlar (ustun, blok, bordyur…). Qatorni bosib, kimga band qilinganini ko&apos;rasiz. Qo&apos;lda kirim qilish — yuqoridagi «Tayyor mahsulot qo&apos;shish».</p>
+            <p className="mt-2 text-xs text-slate-500">Hovlida tayyor turgan dona mahsulotlar (ustun, blok, bordyur…). Qatorni bosib, kimga band qilinganini ko&apos;rasiz.</p>
           </div>
 
           <BrigadeWarehouses />

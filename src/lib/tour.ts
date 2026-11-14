@@ -133,7 +133,7 @@ const SALES_STEPS: TourStep[] = [
   openPage("/customers", "Mijozlar", "Mijozlar kartotekasi. Yangi mijozga direktor belgilagan standart kredit limiti beriladi (odatda 0 — naqd / avans), qarz berish uchun buxgalteriya limitni oshiradi; qarz limitni to'ldirsa mijoz avtomatik qora ro'yxatga tushadi va yangi zayavka bloklanadi."),
   openPage("/leads", "Sayt arizalari", "Kompaniya saytidagi formadan tushgan so'rovlar. Ariza bilan ishlab, uni mijozga aylantirganingizdan keyingina kartoteka ochiladi."),
   openGroup("Sklad"),
-  openPage("/stock", "Sklad", "Mijozga va'da berishdan oldin shu yerga qarang: xomashyo qoldig'i va «Ishlab chiqarish imkoni» qancha beton chiqarish mumkinligini ko'rsatadi."),
+  openPage("/stock?kat=xomashyo", "Xomashyo", "Mijozga va'da berishdan oldin shu yerga qarang: xomashyo qoldig'i va «Ishlab chiqarish imkoni» qancha beton chiqarish mumkinligini ko'rsatadi."),
 ];
 
 const PRODUCTION_STEPS: TourStep[] = [
@@ -142,7 +142,7 @@ const PRODUCTION_STEPS: TourStep[] = [
   openPage("/recipes", "Retseptlar", "Har bir marka uchun 1 m³ ga ketadigan xomashyo normasi. Norma to'g'ri bo'lsa, sklad hisobi ham to'g'ri chiqadi."),
   openPage("/tasks", "Topshiriqlar", "Sizga va brigadalarga berilgan topshiriqlar; bajarilgani shu yerda belgilanadi."),
   openGroup("Sklad"),
-  openPage("/stock", "Sklad", "Xomashyo qoldig'i va «Ishlab chiqarish imkoni». Qoldiq kamayganda ta'minot zayavkasi shu yerdan ochiladi."),
+  openPage("/stock?kat=xomashyo", "Xomashyo", "Xomashyo qoldig'i va «Ishlab chiqarish imkoni». Qoldiq kamayganda ta'minot zayavkasi shu yerdan ochiladi."),
   openGroup("Logistika"),
   openPage("/trips", "Reyslar / nakladnoy", "Tayyor beton mikserga yuklanadi va reys ochiladi. Nakladnoy shu yerdan chop etiladi."),
 ];
@@ -168,7 +168,7 @@ const LOGISTICS_STEPS: TourStep[] = [
 // Sklad menyusida «Ta'minot zayavkalari» yo'q (`nav.ts` menuFor) — u faqat snabjeniye yo'riqnomasida
 const SKLAD_STEPS = {
   snab: openPage("/snabjeniye", "Snabjeniye", "Zayavkaga narx qo'yish va yetkazuvchini tanlash. Narx o'zgarsa hujjat qayta tasdiqlashga ketadi."),
-  stock: openPage("/stock", "Sklad", "Xomashyo qoldig'i — asosiy ish oynangiz. Qoldiq kamayganda «Kerakli mahsulotlar» tugmasi bilan ta'minot zayavkasi ochiladi."),
+  stock: openPage("/stock?kat=xomashyo", "Xomashyo", "Xomashyo qoldig'i — asosiy ish oynangiz. Qoldiq kamayganda «Kerakli mahsulotlar» tugmasi bilan ta'minot zayavkasi ochiladi."),
   receipts: openPage("/receipts", "Kirim", "Kelgan mol qabul qilinadi. Nakladnoyni kamerada suratga olsangiz, AI raqamlarni o'zi o'qib beradi."),
   suppliers: openPage("/suppliers", "Yetkazuvchilar", "Yetkazuvchilar bazasi va ular bilan hisob-kitob holati."),
 };
@@ -291,7 +291,7 @@ const AGENT_STEPS: TourStep[] = [
 
 const MECHANIC_STEPS: TourStep[] = [
   openGroup("Sklad"),
-  openPage("/stock", "Sklad", "Xomashyo qoldig'i va hovlidagi tayyor mahsulot — bosh sahifadagi «Skladda» ustuni shu yerdan olinadi."),
+  openPage("/stock?kat=xomashyo", "Xomashyo", "Xomashyo qoldig'i va hovlidagi tayyor mahsulot — bosh sahifadagi «Skladda» ustuni shu yerdan olinadi."),
   openGroup("Logistika"),
   openPage("/trips", "Reyslar", "Jo'natilgan va yo'ldagi reyslar. Bosh sahifadagi «Jo'natilgan» raqami shu reyslardan hisoblanadi."),
   openPage("/logistika/transport", "Transport", "Texnika ro'yxati va holati (saflda / ta'mirda / bekor turibdi) — ertangi transport ehtiyoji shu mashinalar bilan solishtiriladi."),
