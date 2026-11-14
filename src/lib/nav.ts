@@ -3,7 +3,8 @@ import type { Perms, Session } from "./auth";
 import { isModuleOff, pathOff } from "./platform-modules";
 import { buttonMode, buttonsOf, btnKey, windowOpen, type PermButton } from "./perm-buttons";
 
-export type NavChild = { href: string; label: string };
+/** `notRoles` — ichki band shu rollarga menyuda chiqmaydi (masalan mexanikka Zavod zapchast / Ofis / Tayyor mahsulot) */
+export type NavChild = { href: string; label: string; notRoles?: Role[] };
 /**
  * `hidden` — menyuda ko'rinmaydi, lekin middleware ruxsatni shu yerdan tekshiradi (havola bo'yicha ochiladi).
  * `menuFor` — menyuda faqat shu rollarga ko'rinadi (direktor ham kirmaydi); boshqalar sahifani bo'lim tablari orqali
@@ -111,7 +112,15 @@ export const NAV: NavItem[] = [
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi).
   // Ish boshqaruvchi — ko'rish uchun: «Sklad holati — xomashyo» va hovli bosh sahifadan shu yerga ko'chgan; amallar o'z ruxsatlari bilan yopiq
   { href: "/stock/umumiy", label: "Sklad — umumiy", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SUPERVISOR", "MECHANIC"], group: "Sklad" },
-  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC", "SUPERVISOR"], group: "Sklad", menuHide: ["LOGISTICS"] },
+  // Ichki bandlar — Sklad bo'limlari (kategoriya bo'yicha qoldiqlar va hovli). Mexanik skladda faqat Avto zapchast va Xomashyoni
+  // ko'radi (`categoriesFor`), hovli unga yopiq (`perm-buttons` → «hovli»)
+  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC", "SUPERVISOR"], group: "Sklad", menuHide: ["LOGISTICS"], children: [
+    { href: "/stock?kat=xomashyo", label: "Xomashyo" },
+    { href: "/stock?kat=avto", label: "Avto zapchast" },
+    { href: "/stock?kat=zavod", label: "Zavod zapchast", notRoles: ["MECHANIC"] },
+    { href: "/stock?kat=ofis", label: "Ofis", notRoles: ["MECHANIC"] },
+    { href: "/stock?bolim=hovli", label: "Tayyor mahsulotlar", notRoles: ["MECHANIC"] },
+  ] },
   // Dispetcher ombori: skladdagi avto zapchast va yoqilg'ini ko'radi (qo'sha olmaydi), keraklisini o'ziga oladi va mashinaga beradi —
   // zapravka / transport xarajati bo'lib tushadi (`lib/dispatcher-stock.ts`). Sklad, ish boshqaruvchi va mexanik ko'radi (menyusida yo'q)
   { href: "/stock/dispetcher", label: "Dispetcher ombori", roles: ["DISPATCHER", "WAREHOUSE", "SUPERVISOR", "MECHANIC"], group: "Sklad", menuFor: ["DISPATCHER", "DIRECTOR"] },
@@ -300,7 +309,8 @@ export function navFor(role: Role, perms?: Perms) {
     const l = m && perms?.[m];
     return pathOff(href, m) || (!!l && (l === "none" || !windowOpen(m, href, l)));
   };
-  const open = items.map((i) => (i.children?.some((c) => off(c.href)) ? { ...i, children: i.children.filter((c) => !off(c.href)) } : i));
+  const hide = (c: NavChild) => off(c.href) || !!c.notRoles?.includes(role);
+  const open = items.map((i) => (i.children?.some(hide) ? { ...i, children: i.children.filter((c) => !hide(c)) } : i));
   return OWN_PAGE_ONLY[role] ? open.filter((i) => i.roles !== "all") : open;
 }
 

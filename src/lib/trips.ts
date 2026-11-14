@@ -716,7 +716,7 @@ export async function tripArrival(tripId: string): Promise<TripArrival> {
  * "zayavka − jo'natilgan" edi va hali chiqmagan mahsulotga reys ochilib ketardi.
  *
  * Qator tayyorligi: brigada topshirig'i bo'lsa — brigadir tasdiqlagan `doneQty`;
- * topshiriqsiz dona mahsulot — hali 0. Beton (m³) ishlab chiqarishga tushmaydi: RBU mikserga
+ * topshiriqsiz dona mahsulot — hali 0; «Brigadadan olish» qatori (brigada omborida tayyor) — to'liq. Beton (m³) ishlab chiqarishga tushmaydi: RBU mikserga
  * yuklash paytida quyadi, shuning uchun beton qatori zames kutmasdan to'liq tayyor hisoblanadi.
  */
 export type OrderReadiness = {
@@ -749,7 +749,7 @@ export function tripCoveredQty(t: { status: string; qtyM3: unknown; acceptedQty?
 }
 
 type ReadinessOrder = {
-  items: { productId: string; qtyM3: unknown; product: { unit: string }; tasks: { doneQty: unknown; status: string }[] }[];
+  items: { productId: string; qtyM3: unknown; product: { unit: string }; tasks: { doneQty: unknown; status: string }[]; /** «Brigadadan olish» */ stockBrigadeId?: string | null }[];
   trips: { status: string; qtyM3: unknown; acceptedQty?: unknown; returnedQty?: unknown }[];
 };
 
@@ -759,6 +759,9 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 function itemReady(i: ReadinessOrder["items"][number]): number {
   // Beton zayavkasi to'g'ridan-to'g'ri logistikaga: zames va brigadasiz butun miqdori reysga ochiq
   if (i.product.unit === "m3") return Number(i.qtyM3);
+  // «Brigadadan olish»: mahsulot brigada omborida tayyor — topshiriqsiz butun miqdori reysga ochiq.
+  // Omborda yetmasa yuklash (`tripLoaded`) sklad qoldig'ini tekshirib rad etadi
+  if (i.stockBrigadeId) return Number(i.qtyM3);
   // Qator bir nechta brigadaga bo'lingan bo'lishi mumkin; bekor qilingan topshiriq tayyor hisoblanmaydi (avvalgidek)
   const r = i.tasks.reduce((s, t) => s + (t.status === "CANCELLED" ? 0 : Number(t.doneQty)), 0);
   return Math.min(Number(i.qtyM3), r);

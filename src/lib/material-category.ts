@@ -13,9 +13,6 @@ export const MATERIAL_CATEGORY_LABEL: Record<MaterialCategory, string> = {
   OFIS: "Ofis",
 };
 
-/** Sklad sahifasi tepasidagi bo'lim tugmalari tartibi (foydalanuvchi aytgandek): Xomashyo, Avto zapchast, Zavod zapchast, Ofis */
-export const STOCK_TAB_ORDER = ["XOMASHYO", "AVTO_ZAPCHAST", "ZAVOD_ZAPCHAST", "OFIS"] as const satisfies readonly MaterialCategory[];
-
 /** Formalardagi tanlov: [qiymat, yorliq]. */
 export const MATERIAL_CATEGORY_OPTIONS: [MaterialCategory, string][] = MATERIAL_CATEGORIES.map((c) => [c, MATERIAL_CATEGORY_LABEL[c]]);
 

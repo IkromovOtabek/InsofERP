@@ -60,9 +60,10 @@ const NONE = "__none__";
  */
 export async function withOrderActions(user: MobileUser, d: MobileDetail): Promise<MobileDetail> {
   if (!can(user, "order.assign")) return d;
-  const o = await db.order.findUnique({ where: { id: d.id }, select: { status: true, items: { select: { id: true, productId: true, qtyM3: true, product: { select: { name: true, unit: true } }, tasks: { select: { status: true, qty: true, doneQty: true } } } } } });
+  const o = await db.order.findUnique({ where: { id: d.id }, select: { status: true, items: { select: { id: true, productId: true, qtyM3: true, stockBrigadeId: true, product: { select: { name: true, unit: true } }, tasks: { select: { status: true, qty: true, doneQty: true } } } } } });
   if (!o) return d;
-  const open = o.items.map((i) => ({ ...i, left: itemTasks(i.qtyM3, i.tasks).left })).filter((i) => i.left > 0.0005);
+  // «Brigadadan olish» qatori brigada omborida tayyor — tayinlanmaydi
+  const open = o.items.filter((i) => !i.stockBrigadeId).map((i) => ({ ...i, left: itemTasks(i.qtyM3, i.tasks).left })).filter((i) => i.left > 0.0005);
   if (!open.length || !["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return d;
   const base = { id: "order.assign", label: "Brigada tayinlash", tone: "brand" as const };
   if (o.status === "DRAFT") return { ...d, actions: [{ ...base, disabled: true, hint: "Zayavka hali tasdiqlanmagan (qoralama) — sotuv bo'limi qabul qilgach brigada tayinlanadi" }, ...d.actions] };

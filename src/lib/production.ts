@@ -28,11 +28,14 @@ export type ProdOrder = {
   /** Sana aniq emas (qoralama) — muddat hisoblanmaydi */
   dateUnknown?: boolean;
   isUrgent: boolean;
-  items: { qtyM3: unknown; product?: { unit: string }; tasks: { status: string; qty: unknown; doneQty: unknown }[] }[];
+  items: { qtyM3: unknown; product?: { unit: string }; tasks: { status: string; qty: unknown; doneQty: unknown }[]; /** «Brigadadan olish» */ stockBrigadeId?: string | null }[];
 };
 
-/** Sex qatorlari: beton (m³) ishlab chiqarishga tushmaydi — zayavka qabul qilingach to'g'ridan-to'g'ri logistikaga (reys). */
-export const workItems = <T extends ProdOrder["items"][number]>(items: T[]) => items.filter((i) => i.product?.unit !== "m3");
+/**
+ * Sex qatorlari: beton (m³) ishlab chiqarishga tushmaydi — zayavka qabul qilingach to'g'ridan-to'g'ri logistikaga (reys).
+ * «Brigadadan olish» qatori ham sexning ishi emas: mahsulot brigada omborida tayyor turibdi — to'g'ridan-to'g'ri reysga.
+ */
+export const workItems = <T extends ProdOrder["items"][number]>(items: T[]) => items.filter((i) => i.product?.unit !== "m3" && !i.stockBrigadeId);
 /** Sexga ishi bor zayavka: kamida bitta dona / m² qatori bor. Faqat betondan iborat zayavka sexda ko'rinmaydi. */
 export const hasWork = (o: ProdOrder) => workItems(o.items).length > 0;
 

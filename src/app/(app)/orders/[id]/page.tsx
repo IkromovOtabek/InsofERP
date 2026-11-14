@@ -113,7 +113,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (isStock ? canStock : can("cancel")) && o.batches.length === 0 && o.trips.every((t) => t.status === "CANCELLED");
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
   const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
-  const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !itemTasks(i.qtyM3, i.tasks).full);
+  // «Brigadadan olish» qatori brigada omborida tayyor — tayinlash kutilmaydi
+  const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.stockBrigadeId && !itemTasks(i.qtyM3, i.tasks).full);
   // Brigada faqat qabul qilingan zayavkaga tayinlanadi (server ham DRAFT ni rad etadi) — qoralamada tugma yo'q
   const needsAssign = unassigned && o.status !== "DRAFT";
   // Yetkazish sanasi qoralamada tahrirlanadi; "Sana aniq emas" bo'lsa belgilanmaguncha qabul qilinmaydi

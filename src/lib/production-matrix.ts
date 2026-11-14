@@ -73,7 +73,7 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
       where: { kind: { in: ["SALE", "STOCK"] }, status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
       select: {
         id: true, kind: true, deliveryDate: true, dateUnknown: true, isUrgent: true, customer: { select: { name: true } }, site: { select: { name: true } },
-        items: { select: { id: true, productId: true, qtyM3: true, product: { select: { unit: true } }, block: { select: { id: true, name: true, sortOrder: true } }, tasks: { select: { status: true, qty: true, doneQty: true, brigade: { select: { name: true } } } } } },
+        items: { select: { id: true, productId: true, qtyM3: true, product: { select: { unit: true } }, block: { select: { id: true, name: true, sortOrder: true } }, stockBrigade: { select: { name: true } }, tasks: { select: { status: true, qty: true, doneQty: true, brigade: { select: { name: true } } } } } },
         trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
       },
       take: 300,
@@ -99,7 +99,11 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
       : Number(i.qtyM3) * left);
     const pending = isStock ? dona.some((i) => openQty(i) > 0.0005) : left > 0;
     if (pending) open++;
-    const donaOpen = dona.some((i) => !itemTasks(i.qtyM3, i.tasks).done);
+    // «Brigadadan olish» qatori — brigada omborida tayyor: tayinlangan va bajarilgan hisoblanadi (sexning ishi emas)
+    const stateOf = (i: (typeof dona)[number]) => (i.stockBrigade
+      ? { given: Number(i.qtyM3), left: 0, full: true, any: true, done: true, doneQty: Number(i.qtyM3) }
+      : itemTasks(i.qtyM3, i.tasks));
+    const donaOpen = dona.some((i) => !stateOf(i).done);
     if (!o.dateUnknown && o.deliveryDate < today && pending && donaOpen) late++;
     // Obyekt bloklari bo'yicha ustunlar: bloksiz qatorlar birinchi, keyin bloklar kiritilgan tartibda
     const parts = new Map<string, typeof dona>();
@@ -116,7 +120,7 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
         if (q > 0) items[i.productId] = (items[i.productId] ?? 0) + q;
       }
       if (!Object.keys(items).length) continue;
-      const st = part.map((i) => itemTasks(i.qtyM3, i.tasks));
+      const st = part.map(stateOf);
       const status: MatrixStatus = st.every((x) => x.done) ? "ready" : st.some((x) => x.any) ? "pour" : "queue";
       const assign: MatrixAssign = st.every((x) => x.full) ? "full" : st.some((x) => x.given > 0) ? "part" : "none";
       // Bir ustunda bir mahsulot ikki qatorda bo'lsa — birinchisi ochiladi, miqdorlar qo'shiladi
@@ -125,6 +129,7 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
         const c = (cells[i.productId] ??= { itemId: i.id, qty: 0, given: 0, brigades: [] });
         c.qty = round3(c.qty + Number(i.qtyM3)); c.given = round3(c.given + st[n]!.given);
         for (const t of i.tasks) if (t.status !== "CANCELLED" && !c.brigades.includes(t.brigade.name)) c.brigades.push(t.brigade.name);
+        if (i.stockBrigade && !c.brigades.includes(`${i.stockBrigade.name} (omboridan)`)) c.brigades.push(`${i.stockBrigade.name} (omboridan)`);
       });
       const block = part[0]!.block;
       rows.push({
