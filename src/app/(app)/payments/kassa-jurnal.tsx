@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
-import { money, date, isoDate, opAt } from "@/lib/format";
+import { fmtNum, date, isoDate, opAt } from "@/lib/format";
 import { Button, Callout, Card, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { JOURNAL_ONLY, TRANSFER_REF, isTransfer, txSign } from "@/lib/cash-tx";
@@ -17,12 +17,12 @@ import { LastImportUndo } from "./import/recent";
 type Account = { id: string; name: string; type: "CASH" | "BANK" };
 
 /**
- * Davrdagi harakat. Hisob ustunida kirim/chiqimga perekit ham kiradi (`trIn`/`trOut` — shundan perekit), shunda har ustunda
- * boshlang'ich + kirim − chiqim = qoldiq. Jami ustunida perekit yo'q — pul kompaniya ichida ko'chgan, oyoqlari bir-birini yopadi.
- * `open` — davr ichiga tushgan boshlang'ich qoldiq yozuvi («Oy oxiri qoldiqlari»): oqim emas, lekin qoldiqni o'zgartiradi.
+ * Davrdagi kirim / chiqim. Hisob ustunida perekit ham kiradi (pul shu hisobga kirgan yoki chiqqan); Jami ustunida
+ * perekit yo'q — pul kompaniya ichida ko'chgan, oyoqlari bir-birini yopadi. Boshlang'ich qoldiq yozuvi («Oy oxiri
+ * qoldiqlari», `OPENING`) oqim emas — bu yerga kirmaydi, faqat qoldiqqa ta'sir qiladi.
  */
-type Flow = { inc: number; exp: number; trIn: number; trOut: number; open: number };
-const noFlow = (): Flow => ({ inc: 0, exp: 0, trIn: 0, trOut: 0, open: 0 });
+type Flow = { inc: number; exp: number };
+const noFlow = (): Flow => ({ inc: 0, exp: 0 });
 
 async function flowsSince(since: Date, accountIds: string[], until?: Date) {
   const when = { gte: since, ...(until ? { lte: until } : {}) };
@@ -35,11 +35,11 @@ async function flowsSince(since: Date, accountIds: string[], until?: Date) {
   const of = (id: string) => { const f = byAcc.get(id) ?? noFlow(); byAcc.set(id, f); return f; };
   for (const p of pay) { const a = Number(p._sum.amount ?? 0); of(p.cashAccountId).inc += a; total.inc += a; }
   for (const t of tx) {
+    if (t.type === "OPENING") continue;
     const a = Number(t._sum.amount ?? 0), f = of(t.cashAccountId);
-    if (t.type === "OPENING") { f.open += a; total.open += a; continue; }
     const transfer = isTransfer(t.type);
-    if (txSign(t.type) > 0) { f.inc += a; if (transfer) f.trIn += a; else total.inc += a; }
-    else { f.exp += a; if (transfer) f.trOut += a; else total.exp += a; }
+    if (txSign(t.type) > 0) { f.inc += a; if (!transfer) total.inc += a; }
+    else { f.exp += a; if (!transfer) total.exp += a; }
   }
   return { byAcc, total };
 }
@@ -50,52 +50,42 @@ const COL = "border-l border-l-slate-200";
 const CELL = "px-3 py-1.5 text-[13px]";
 const HEAD = "px-3 py-2 text-[11px]";
 
+/** Kirim / chiqim million so'mda, Google jadvalidagi kabi: «+2454,9 / −2333» */
+const mln = (v: number) => fmtNum(v / 1e6, 1);
+const flowText = (f?: Flow) => (
+  <span className="whitespace-nowrap">
+    <span className={f?.inc ? "text-emerald-700" : "text-slate-400"}>+{mln(f?.inc ?? 0)}</span>
+    <span className="text-slate-300"> / </span>
+    <span className={f?.exp ? "text-red-600" : "text-slate-400"}>−{mln(f?.exp ?? 0)}</span>
+  </span>
+);
+
 /**
  * Hisoblar matritsasi (Google jadvalidagi «Kassa» varag'i tepasi kabi): ustunlar — har bir kassa/bank hisobi va Jami,
- * qatorlar — tepadagi sana davri bo'yicha: davr boshidagi qoldiq, davrdagi kirim/chiqim va davr oxiridagi qoldiq
- * (10–13-sana tanlansa — 13-sana oxiridagi qoldiq). Hisob nomi bosilsa — jurnal shu hisob bo'yicha ochiladi.
+ * qatorlar — «Qoldiq» (tepadagi sana oxiriga; sukut — bugun), «Bugun, mln» va «Shu oy, mln» (kirim / chiqim).
+ * Tanlangan sana bugun / shu oydan farq qilsa — shu davr qatori ham. Hisob nomi bosilsa — jurnal shu hisob bo'yicha ochiladi.
  */
 export async function AccountMatrix({ accounts, range }: { accounts: Account[]; range: { from: Date; to: Date } }) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const ids = accounts.map((a) => a.id);
-  const [opening, closing, flow] = await Promise.all([
-    accountBalances(db, ids, new Date(range.from.getTime() - 1)),
+  const toToday = isoDate(range.to) === isoDate(today);
+  const own = toToday && [isoDate(today), isoDate(monthStart)].includes(isoDate(range.from)) ? null : range;
+  const [closing, day, month, sel] = await Promise.all([
     accountBalances(db, ids, range.to),
-    flowsSince(range.from, ids, range.to),
+    flowsSince(today, ids),
+    flowsSince(monthStart, ids),
+    own ? flowsSince(own.from, ids, own.to) : null,
   ]);
-  const sum = (m: Map<string, number>) => accounts.reduce((s, a) => s + (m.get(a.id) ?? 0), 0);
-  const sub = (text: string) => <span className="block text-[10.5px] leading-tight font-normal text-slate-500">{text}</span>;
-  // Kirim / Chiqim qatori — aniq summa (qisqartirilmagan): ustunni qo'lda tekshirish mumkin bo'lsin
-  const flowRow = (label: string, hint: string, side: "inc" | "exp") => {
-    const tone = side === "inc" ? "text-emerald-700" : "text-red-600";
-    const cell = (v: number, tr: number) => (
-      <>
-        <span className={v ? tone : "text-slate-400"}>{side === "inc" ? "+" : "−"}{money(v)}</span>
-        {tr > 0 && <span className="block text-[10.5px] leading-tight font-normal text-sky-700">shundan perekit {money(tr)}</span>}
-      </>
-    );
-    return (
-      <Tr>
-        <Td className={cn(CELL, "whitespace-nowrap")}>{label}{sub(hint)}</Td>
-        {accounts.map((a) => { const f = flow.byAcc.get(a.id); return <Td key={a.id} right className={cn(COL, CELL, "whitespace-nowrap")}>{cell(f?.[side] ?? 0, (side === "inc" ? f?.trIn : f?.trOut) ?? 0)}</Td>; })}
-        <Td right className={cn(COL, CELL, "whitespace-nowrap font-medium")}>{cell(flow.total[side], 0)}</Td>
-      </Tr>
-    );
-  };
-  // Davr ichida «Oy oxiri qoldiqlari» yozuvi bo'lsa — alohida qator (u kirim ham, chiqim ham emas)
-  const openIn = new Map(accounts.map((a) => [a.id, flow.byAcc.get(a.id)?.open ?? 0]));
-  const balanceRow = (label: string, hint: string, m: Map<string, number>, strong: boolean) => {
-    const total = sum(m);
-    return (
-      <Tr className={strong ? "bg-brand-50/60" : undefined}>
-        <Td className={cn(CELL, "whitespace-nowrap")}>{label}{sub(hint)}</Td>
-        {accounts.map((a) => {
-          const b = m.get(a.id) ?? 0;
-          return <Td key={a.id} right className={cn(COL, CELL, strong ? "font-semibold" : "font-medium", b < 0 ? "text-red-600" : "text-slate-900")}>{money(b)}</Td>;
-        })}
-        <Td right className={cn(COL, CELL, strong ? "font-bold" : "font-semibold", total < 0 ? "text-red-600" : "text-slate-900")}>{money(total)}</Td>
-      </Tr>
-    );
-  };
+  const total = accounts.reduce((s, a) => s + (closing.get(a.id) ?? 0), 0);
+  const flowRow = (label: string, f: Awaited<ReturnType<typeof flowsSince>>, className?: string) => (
+    <Tr className={className}>
+      <Td className={cn(CELL, "whitespace-nowrap font-medium")}>{label}</Td>
+      {accounts.map((a) => <Td key={a.id} right className={cn(COL, CELL)}>{flowText(f.byAcc.get(a.id))}</Td>)}
+      <Td right className={cn(COL, CELL, "font-semibold")}>{flowText(f.total)}</Td>
+    </Tr>
+  );
 
   return (
     <div className="mb-6">
@@ -106,21 +96,29 @@ export async function AccountMatrix({ accounts, range }: { accounts: Account[]; 
             {accounts.map((a) => (
               <Th key={a.id} right className={cn(COL, HEAD)}>
                 <Link href={`/payments?account=${a.id}&from=${isoDate(range.from)}&to=${isoDate(range.to)}`} className="hover:underline">{a.name}</Link>
-                <span className="block text-[10px] font-medium normal-case tracking-normal text-slate-500">{a.type === "CASH" ? "naqd" : "bank"}</span>
               </Th>
             ))}
             <Th right className={cn(COL, HEAD)}>Jami</Th>
           </tr>
         </thead>
         <tbody>
-          {balanceRow("Boshlang'ich qoldiq", `${date(range.from)} boshiga`, opening, false)}
-          {flow.total.open !== 0 && balanceRow("Kiritilgan qoldiq", "Oy oxiri qoldiqlari", openIn, false)}
-          {flowRow("Kirim", rangeLabel(range.from, range.to), "inc")}
-          {flowRow("Chiqim", rangeLabel(range.from, range.to), "exp")}
-          {balanceRow("Qoldiq", `${date(range.to)} oxiriga`, closing, true)}
+          <Tr className="bg-brand-50/60">
+            <Td className={cn(CELL, "whitespace-nowrap font-medium")}>
+              Qoldiq
+              {!toToday && <span className="block text-[10.5px] leading-tight font-normal text-slate-500">{date(range.to)} oxiriga</span>}
+            </Td>
+            {accounts.map((a) => {
+              const b = closing.get(a.id) ?? 0;
+              return <Td key={a.id} right className={cn(COL, CELL, "font-semibold", b < 0 ? "text-red-600" : "text-slate-900")}>{fmtNum(b)}</Td>;
+            })}
+            <Td right className={cn(COL, CELL, "font-bold", total < 0 ? "text-red-600" : "text-slate-900")}>{fmtNum(total)}</Td>
+          </Tr>
+          {own && sel && flowRow(`${rangeLabel(own.from, own.to)}, mln`, sel, "bg-amber-50/60")}
+          {flowRow("Bugun, mln", day)}
+          {flowRow("Shu oy, mln", month)}
         </tbody>
       </Table>
-      <p className="mt-1.5 text-xs text-slate-500">Hammasi tepadagi sana bo&apos;yicha; har ustunda boshlang&apos;ich qoldiq + kirim − chiqim = qoldiq. Hisob ustunlarida perekit ham kirim/chiqimga kiradi (pul shu hisobga kirgan yoki chiqqan); Jami — perekitsiz (pul kompaniya ichida ko&apos;chgan). Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
+      <p className="mt-1.5 text-xs text-slate-500">Qoldiq — so&apos;mda, tepadagi sana oxiriga; Bugun va Shu oy — kirim / chiqim, million so&apos;mda. Hisob ustunlarida perekit ham kirim/chiqimga kiradi; Jami — perekitsiz (pul kompaniya ichida ko&apos;chgan). Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
     </div>
   );
 }
