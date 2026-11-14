@@ -128,11 +128,11 @@ function EntryFields({ entry, token, action, pending, error, onClose }: {
     const p = options.products.find((x) => x.name.toLowerCase() === v.trim().toLowerCase());
     if (p) { setUnit(p.unit); setGroup(p.group); }
   };
-  // Summa va QQS tiyinigacha — server (`entryData`) bilan bir xil yaxlitlash
-  const r2 = (n: number) => Math.round(n * 100) / 100;
-  const q = Number(qty.replace(",", ".")) || 0, pr = r2(Number(price) || 0), dl = r2(Number(delivery) || 0);
-  const net = r2(q * pr + dl);
-  const vat = pay === "BANK" ? r2(q * pr * NDS_RATE) : 0;
+  // Summa va QQS 3 xonagacha — server (`entryData`) bilan bir xil yaxlitlash
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  const q = Number(qty.replace(",", ".")) || 0, pr = r3(Number(price) || 0), dl = r3(Number(delivery) || 0);
+  const net = r3(q * pr + dl);
+  const vat = pay === "BANK" ? r3(q * pr * NDS_RATE) : 0;
   return (
     <form onSubmit={submitWith(action)} className="space-y-4">
       {!entry && <input type="hidden" name="clientToken" value={token} />}
@@ -158,8 +158,8 @@ function EntryFields({ entry, token, action, pending, error, onClose }: {
         <Field label="TTN №"><Input name="ttn" defaultValue={entry?.ttn} maxLength={40} autoComplete="off" /></Field>
         <Field label="Mashina (raqami)"><Input name="vehicle" list={`${uid}-v`} defaultValue={entry?.vehicle} maxLength={40} autoComplete="off" /></Field>
         <Field label="Miqdor *"><Input name="qty" type="number" min="0.001" step="0.001" value={qty} onChange={(e) => setQty(e.target.value)} required className="text-right tabular" /></Field>
-        <Field label="Narx (QQSsiz)"><MoneyInput name="price" value={price} onChange={setPrice} /></Field>
-        <Field label="Dostavka"><MoneyInput name="delivery" value={delivery} onChange={setDelivery} /></Field>
+        <Field label="Narx (QQSsiz)"><MoneyInput name="price" value={price} onChange={setPrice} decimals={3} /></Field>
+        <Field label="Dostavka"><MoneyInput name="delivery" value={delivery} onChange={setDelivery} decimals={3} /></Field>
         <Field label="Ortilgan joy"><Input name="loadPlace" list={`${uid}-l`} defaultValue={entry?.loadPlace} maxLength={60} autoComplete="off" placeholder="BSU-1, Sklad-2…" /></Field>
         <Field label="Boradigan manzil" className="sm:col-span-2"><Input name="destination" list={`${uid}-d`} defaultValue={entry?.destination} maxLength={200} autoComplete="off" /></Field>
         <Field label="Izoh (TTN, mashina, telefon)" className="sm:col-span-2"><Input name="note" defaultValue={entry?.note} maxLength={300} /></Field>
@@ -168,7 +168,7 @@ function EntryFields({ entry, token, action, pending, error, onClose }: {
       <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm tabular">
         <span>Summa (QQSsiz): <b>{fmtTiyin(net)}</b></span>
         <span>QQS 12%: <b>{vat ? fmtTiyin(vat) : "—"}</b></span>
-        <span>Jami: <b>{fmtTiyin(r2(net + vat))}</b></span>
+        <span>Jami: <b>{fmtTiyin(r3(net + vat))}</b></span>
       </div>
       <FormError error={error} />
       <div className="flex justify-end gap-2">

@@ -2135,9 +2135,9 @@ model RealizationEntry {
   vehicle       String? // mashina raqami (matn)
   unit          String
   qty           Decimal   @db.Decimal(18, 3)
-  price         Decimal   @db.Decimal(18, 2) // QQSsiz
-  delivery      Decimal   @default(0) @db.Decimal(18, 2)
-  vat           Decimal   @default(0) @db.Decimal(18, 2) // perechisleniyeda 12% (miqdor × narx dan)
+  price         Decimal   @db.Decimal(18, 3) // QQSsiz; summa 3 xonagacha (realizatsiya reestri)
+  delivery      Decimal   @default(0) @db.Decimal(18, 3)
+  vat           Decimal   @default(0) @db.Decimal(18, 3) // perechisleniyeda 12% (miqdor × narx dan)
   loadPlace     String? // ortilgan joy: BSU-1, Sklad-2…
   destination   String? // boradigan manzil
   note          String?
@@ -2184,8 +2184,8 @@ model RealizationLine {
   groupName   String?
   unit        String?
   qty         Decimal? @db.Decimal(18, 3)
-  price       Decimal? @db.Decimal(18, 2) // QQSsiz
-  delivery    Decimal? @db.Decimal(18, 2)
+  price       Decimal? @db.Decimal(18, 3) // QQSsiz, 3 xonagacha
+  delivery    Decimal? @db.Decimal(18, 3)
   updatedById String
   updatedAt   DateTime @updatedAt
 }

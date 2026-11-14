@@ -22,10 +22,10 @@ export function fmtFixed(v: number | string | { toString(): string }, frac = 2):
 }
 
 /**
- * Summa tiyinigacha: «1 000 000.00» — pul maydoni (`MoneyInput`) ko'rinishi bilan bir xil (kasr nuqta bilan).
- * Realizatsiya varaqlari (Logistika, Sotuv, kunlik zayavka, Tahlil hisoboti) shu bilan.
+ * Summa tiyinigacha, 3 xonali kasr: «1 000 000.000» — pul maydoni (`MoneyInput`) ko'rinishi bilan bir xil (kasr nuqta bilan).
+ * Realizatsiya varaqlari (Logistika, Sotuv, kunlik zayavka, Tahlil hisoboti) shu bilan; reestr summalari bazada Decimal(18,3).
  */
-export const fmtTiyin = (v: number | string | { toString(): string }) => fmtFixed(v, 2).replace(",", ".");
+export const fmtTiyin = (v: number | string | { toString(): string }) => fmtFixed(v, 3).replace(",", ".");
 
 /**
  * Kiritilgan raqam matni → JS o'qiydigan satr: «1 000 000,50» → «1000000.50», «1,4» → «1.4».

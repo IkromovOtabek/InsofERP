@@ -27,7 +27,7 @@ const PAY_SHORT: Record<PayGroupKey, string> = { BANK: "Perech.", CASH: "Naqd", 
 const SOURCES: { key: LogSource; label: string }[] = [{ key: "AUTO", label: "Reysdan" }, { key: "MANUAL", label: "Qo'lda" }];
 const NO_PLACE = "—";
 
-/** Summa tiyinigacha («1 000 000.00»), nol — bo'sh katak */
+/** Summa 3 xonali kasr bilan («1 000 000.000»), nol — bo'sh katak */
 const n0 = (v: number) => (v ? fmtTiyin(v) : "");
 /** Varaqda kun.oy (yil — davr sarlavhasida, to'liq sana — ustiga olib borilsa) */
 const dayMonth = (d: Date) => dateRu(d).slice(0, 5);

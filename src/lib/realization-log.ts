@@ -58,7 +58,8 @@ export type LogRow = {
   orig: Partial<Record<AutoCell, string>>;
 };
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
+/** Reestr summalari 3 xonagacha (`RealizationEntry`/`RealizationLine` — Decimal(18,3)) */
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const PAY_LABEL = Object.fromEntries(PAY_GROUPS.map((g) => [g.key, g.label])) as Record<PayGroupKey, string>;
 export const PAY_KEYS = PAY_GROUPS.map((g) => g.key) as [PayGroupKey, ...PayGroupKey[]];
 
@@ -91,9 +92,9 @@ function autoEdits(r: RealizationRow, n: RealizationNote | undefined, l: Realiza
   const price = pick("price", dec(l?.price), r.price, fmtTiyin);
   const delivery = pick("delivery", dec(l?.delivery), r.delivery, fmtTiyin);
   const money = "qty" in orig || "price" in orig || "delivery" in orig;
-  const line = r2(qty * price);
-  const vat = money ? (r.nds ? r2(line * NDS_RATE) : 0) : r.vat;
-  const net = money ? r2(line + delivery) : r.net;
+  const line = r3(qty * price);
+  const vat = money ? (r.nds ? r3(line * NDS_RATE) : 0) : r.vat;
+  const net = money ? r3(line + delivery) : r.net;
   return {
     date: pick("date", n?.date, r.date, dateRu),
     pay, payLabel: PAY_LABEL[pay],
@@ -103,7 +104,7 @@ function autoEdits(r: RealizationRow, n: RealizationNote | undefined, l: Realiza
     ttn: r.tripId ? (r.ttn ? shortTtn(r.ttn) : null) : pick<string | null>("ttn", n?.ttn, null, () => "—"),
     product: pick("productName", l?.productName, r.product, (v) => v),
     group: pick("groupName", l?.groupName, r.group, (v) => v),
-    unitKey, unit: unitLabel(unitKey), qty, price, delivery, net, vat, total: money ? r2(net + vat) : r.total,
+    unitKey, unit: unitLabel(unitKey), qty, price, delivery, net, vat, total: money ? r3(net + vat) : r.total,
     orig,
   };
 }
@@ -144,12 +145,12 @@ export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
   }
   for (const e of entries) {
     const qty = Number(e.qty), price = Number(e.price), delivery = Number(e.delivery), vat = Number(e.vat);
-    const net = r2(qty * price + delivery);
+    const net = r3(qty * price + delivery);
     const pay = (PAY_KEYS as string[]).includes(e.payGroup) ? (e.payGroup as PayGroupKey) : "CASH";
     rows.push({
       key: `m-${e.id}`, source: "MANUAL", ref: e.id, orderId: null, tripId: null, customerId: e.customerId,
       date: e.date, at: e.createdAt, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer: e.customerName, product: e.productName, group: e.groupName,
-      ttn: e.ttn, tripTtn: null, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r2(net + vat),
+      ttn: e.ttn, tripTtn: null, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r3(net + vat),
       loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? e.customerName,
       filled: null, suggest: null, line: null, orig: {},
     });
@@ -277,13 +278,13 @@ function entryData(d: EntryInput, lk: Lookup) {
   const group = d.groupName ?? (product ? lk.group(product.groupId) : null);
   const unit = product?.unit ?? d.unit ?? "m3";
   if (!product && !PRODUCT_UNITS.some(([u]) => u === unit)) return { error: "O'lchov birligini tanlang" } as const;
-  // Narx va dastavka tiyinigacha (Decimal(18,2))
-  const qty = d.qty!, price = r2(d.price ?? 0), delivery = r2(d.delivery ?? 0);
+  // Narx va dastavka 3 xonagacha (Decimal(18,3))
+  const qty = d.qty!, price = r3(d.price ?? 0), delivery = r3(d.delivery ?? 0);
   return {
     data: {
       date: d.date!, payGroup: d.payGroup, seller: d.seller, customerId, customerName: d.customerName,
       productId: product?.id ?? null, productName: product?.name ?? d.productName, groupName: group ?? "Boshqa",
-      ttn: d.ttn, vehicle: d.vehicle, unit, qty, price, delivery, vat: d.payGroup === "BANK" ? r2(qty * price * NDS_RATE) : 0,
+      ttn: d.ttn, vehicle: d.vehicle, unit, qty, price, delivery, vat: d.payGroup === "BANK" ? r3(qty * price * NDS_RATE) : 0,
       loadPlace: d.loadPlace, destination: d.destination, note: d.note, refName: d.refName,
     },
   } as const;
@@ -499,8 +500,8 @@ export async function saveRealizationLineField(key: string, field: LineCell, val
       if (p.data !== null && p.data <= 0) return { error: "Miqdor 0 dan katta bo'lsin", field };
       set.qty = p.data !== null && Math.abs(p.data - r.qty) >= 0.0005 ? p.data : null;
     } else {
-      const v = p.data === null ? null : r2(p.data);
-      set[field] = v !== null && Math.abs(v - r[field]) >= 0.005 ? v : null;
+      const v = p.data === null ? null : r3(p.data);
+      set[field] = v !== null && Math.abs(v - r[field]) >= 0.0005 ? v : null;
     }
   }
   await db.$transaction(async (tx) => {

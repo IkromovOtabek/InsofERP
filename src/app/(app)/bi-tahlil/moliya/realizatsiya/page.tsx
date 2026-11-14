@@ -13,7 +13,7 @@ import { MonthPlanForm, SalesRecordForm } from "./forms";
 export const dynamic = "force-dynamic";
 
 /** «KUNLIK REALIZATSIYA HISOBOTI» — Sheets varag'idagi 5 bo'lim (`lib/fin-report/realizatsiya.ts`). */
-const n0 = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.005 ? "–" : fmtTiyin(v)); // summa tiyinigacha
+const n0 = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.0005 ? "–" : fmtTiyin(v)); // summa 3 xonali kasr bilan
 const n1 = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.0005 ? "–" : fmtNum(v, 1));
 const p1 = (v: number | null) => (v === null ? "–" : pct(v));
 const tone = (v: number | null) => (v === null ? undefined : v >= 100 ? "text-emerald-600" : v >= 70 ? "text-amber-600" : "text-red-600");
