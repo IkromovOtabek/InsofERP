@@ -164,7 +164,16 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="overflow-x-auto print:overflow-visible">
       <div className="paper mx-auto w-[210mm] rounded-sm bg-white p-[8mm] text-black [print-color-adjust:exact] print:w-auto print:rounded-none print:p-0 print:shadow-none">
-        <style>{`@media print { @page { size: A4 portrait; margin: 8mm } aside, nav, header { display: none } body { background: #fff } }`}</style>
+        {/* Chop etishda qobiq chekkalari (app-main padding, sidebar joyi) va qog'oz soyasi bo'lmasin: dark rejimdagi
+            `.dark .paper` halqasi (box-shadow) varaq atrofida ortiqcha chiziq bo'lib chiqardi, padding esa maketni toraytirib
+            jadvalni chegaradan chiqarardi. Qog'oz aniq 194 mm — @page chetlari ichida. */}
+        <style>{`@media print {
+  @page { size: A4 portrait; margin: 8mm }
+  aside, nav, header { display: none }
+  body { background: #fff }
+  :has(> .app-main), .app-main, .app-main > div { padding: 0 !important; margin: 0 !important; max-width: none !important }
+  .paper { box-shadow: none !important; width: 194mm !important; margin: 0 !important; padding: 0 !important; border-radius: 0 !important }
+}`}</style>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-[11.5px] print:hidden">
           <BackLink href={`/trips/${id}`} label="Reys" />
           <PrintButton />
