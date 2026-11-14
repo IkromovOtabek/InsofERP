@@ -188,9 +188,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   return (
     <div>
       <PageHeader
-        // Bo'lim (kategoriya) chap menyudagi Sklad ichki bandlaridan tanlanadi — sarlavhada ko'rinadi
-        title={bolim === "xomashyo" ? "Xomashyo qoldiqlari" : bolim === "hovli" ? "Tayyor mahsulotlar" : bolim === "holat" ? "Sklad holati — xomashyo" : kat ? `Sklad — ${MATERIAL_CATEGORY_LABEL[kat]}` : "Sklad"}
-        back={bolim ? { href: "/stock", label: "Sklad" } : undefined}
+        // Bo'lim (kategoriya) chap menyudagi Sklad ichki bandlaridan tanlanadi — sarlavhada ko'rinadi; kategoriyasiz — «Umumiy eski sklad» bandi
+        title={bolim === "xomashyo" ? "Xomashyo qoldiqlari" : bolim === "hovli" ? "Tayyor mahsulotlar" : bolim === "holat" ? "Sklad holati — xomashyo" : kat ? `Sklad — ${MATERIAL_CATEGORY_LABEL[kat]}` : "Umumiy eski sklad"}
+        back={bolim ? { href: "/stock", label: "Umumiy eski sklad" } : undefined}
         info={bolim === "xomashyo" ? "Davr bo'yicha kirim, chiqim va qoldiq — har xomashyo, kategoriya va sklad kesimida."
           : bolim === "hovli" ? "Dona mahsulot brigadalar bo'yicha: davrdagi kirim, chiqim va qoldiq; zayavkaga band / erkin va betondan xomashyo bilan qancha chiqadi."
           : bolim === "holat" ? "Qoldiq, kunlik sarf, necha kunga yetadi va tasdiqlangan zayavkalarga yetmaydigan xomashyo."

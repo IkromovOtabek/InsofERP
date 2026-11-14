@@ -113,9 +113,10 @@ export const NAV: NavItem[] = [
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi).
   // Ish boshqaruvchi — ko'rish uchun: «Sklad holati — xomashyo» va hovli bosh sahifadan shu yerga ko'chgan; amallar o'z ruxsatlari bilan yopiq
   { href: "/stock/umumiy", label: "Sklad — umumiy", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SUPERVISOR", "MECHANIC"], group: "Sklad" },
-  // «Sklad» bandi menyuda yo'q (ichma-ich «Sklad → Sklad» bo'lmasin) — ruxsat shu yerdan; menyuda o'rniga bo'limlari tekis turadi:
-  // kategoriya bo'yicha qoldiqlar va hovli. Mexanik skladda faqat Avto zapchast va Xomashyoni ko'radi (`categoriesFor`), hovli unga yopiq
-  { href: "/stock",       label: "Sklad",              roles: STOCK_ROLES, group: "Sklad", hidden: true },
+  // «Umumiy eski sklad» — kategoriyasiz `/stock`: hamma kategoriya bitta jadvalda (eski «Hammasi» ko'rinishi), ruxsat ham shu yerdan.
+  // Uning ostida bo'limlari tekis turadi: kategoriya bo'yicha qoldiqlar va hovli (`?kat=` bandi uzunroq — o'sha sahifada u faol).
+  // Mexanik skladda faqat Avto zapchast va Xomashyoni ko'radi (`categoriesFor`), hovli unga yopiq
+  { href: "/stock",       label: "Umumiy eski sklad",  roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS"] },
   { href: "/stock?kat=xomashyo", label: "Xomashyo",       roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS"] },
   { href: "/stock?kat=avto",     label: "Avto zapchast",  roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS"] },
   { href: "/stock?kat=zavod",    label: "Zavod zapchast", roles: STOCK_ROLES, group: "Sklad", menuHide: ["LOGISTICS", "MECHANIC"] },
