@@ -43,11 +43,11 @@ const mtok = async (login: string) => (await mob("POST", "/api/mobile/auth/login
 const [finTok, dirTok, kassaTok] = await Promise.all([mtok("test.finance"), mtok("test.direktor"), mtok("test.kassa")]);
 const digits = (s: unknown) => Number(String(s ?? "").replace(/[^\d−-]/g, "").replace("−", "-"));
 const field = (j: { fields?: { label: string; value: string }[] } | null, label: string) => j?.fields?.find((f) => f.label === label)?.value;
-// P&L va pul oqimi (mobil): moliya "Sof pul oqimi" (hafta) — Kirim/Chiqim; direktor "Sof foyda" (hafta) — operatsion xarajat
+// P&L va pul oqimi (mobil): moliya "Sof pul oqimi" (hafta) — Kirim/Chiqim; direktor "Sof foyda" (hafta) — xarajatlar (yalpi − sof)
 const flow = async () => {
   const n = (await mob("GET", "/api/mobile/detail?key=dash&id=net.week", finTok)).json;
   const p = (await mob("GET", "/api/mobile/detail?key=dash&id=profit.week", dirTok)).json;
-  return { in: digits(field(n, "Kirim")), out: digits(field(n, "Chiqim")), opex: digits(field(p, "Operatsion xarajat")) };
+  return { in: digits(field(n, "Kirim")), out: digits(field(n, "Chiqim")), opex: digits(field(p, "Xarajatlar")) };
 };
 // Mobil "Kassa qoldig'i" jami = faol hisoblar: to'lovlar + Σ txSign(tur)·summa (o'tkazmalar ham)
 const mobileTotal = async () => digits(field((await mob("GET", "/api/mobile/detail?key=dash&id=balance.month", kassaTok)).json, "Jami"));
