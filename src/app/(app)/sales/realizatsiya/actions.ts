@@ -19,7 +19,7 @@ import {
  * Qo'lda qator va Excel import — `logistika.real_manual`, reysdan tushgan qatorni to'ldirish — `logistika.real_auto`.
  */
 
-const refresh = () => revalidatePath("/logistika/realizatsiya");
+const refresh = () => revalidatePath("/sales/realizatsiya");
 
 const formError = (r: { error: string; field?: string }): ActionState =>
   ({ error: r.field && LABEL[r.field] && !r.error.startsWith(LABEL[r.field]) ? `${LABEL[r.field]}: ${r.error.charAt(0).toLowerCase()}${r.error.slice(1)}` : r.error, field: r.field });
@@ -64,7 +64,7 @@ export async function importRealizationAction(_prev: ActionState, fd: FormData):
   // Hammasi joyida — reestrga, qo'shilganlar davri bilan
   const fresh = res.newProducts.length, newCust = res.newCustomers.length;
   if (res.added && !bad) {
-    redirect(`/logistika/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}-${fresh}-${newCust}`);
+    redirect(`/sales/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}-${fresh}-${newCust}`);
   }
   // O'qilmagan qator bor — shu sahifada qoladi: qo'shilgani yashil, o'tkazilgani sababi bilan sariq (import to'xtamaydi)
   const prods = (fresh ? ` Katalogga ${fresh} ta yangi mahsulot qo'shildi (narxi 0): ${listProblems(res.newProducts, 10)}.` : "")

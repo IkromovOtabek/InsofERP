@@ -1,26 +1,18 @@
 import { db } from "./db";
 import type { Prisma } from "@/generated/prisma";
 import { customerBalances, balanceOf } from "./receivables";
+import { debtSalesByOrder } from "./debt-sales";
 import { orderTotal } from "@/lib/order-total";
 import { tripCoveredQty } from "@/lib/trips";
 
-/**
- * Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm) — direktor Sozlamalar → Limitlar'da belgilaydi
- * (`CompanySettings.defaultCreditLimit`). 0 — yangi mijoz qarzga olmaydi, naqd/avans bilan ishlaydi; qarz berish
- * kerak bo'lsa direktor/moliya mijoz kartasida limitni oshiradi. Faqat YANGI mijozga qo'llanadi.
- * Mijoz yaratiladigan har joy (forma, Excel, zayavka/ariza/realizatsiyadan yangi mijoz, mobil) shu yerdan oladi.
- * Ichki "Sklad" kartochkasi (`stock-orders.ts`) bundan mustasno — unga doim 0.
- */
-export async function defaultCreditLimit(client: Pick<Prisma.TransactionClient, "companySettings"> = db): Promise<number> {
-  const s = await client.companySettings.findUnique({ where: { id: "main" }, select: { defaultCreditLimit: true } });
-  return s ? Number(s.defaultCreditLimit) : 0;
-}
+export { defaultCreditLimit } from "./credit-default";
 
 /**
  * Qarz va limit — hisob qoidasi (bitta joyda):
  *
  *   balans    = `receivables.ts` dagi yagona mijoz balansi: schyotlar (boshlang'ich qoldiq bilan, bekor
- *               qilinganlarsiz) − mijozning BARCHA to'lovlari (schyotga bog'langan-bog'lanmagan, zayavka avansi ham)
+ *               qilinganlarsiz) + reestrdagi qarzga sotuv − mijozning BARCHA to'lovlari (schyotga bog'langan-bog'lanmagan,
+ *               zayavka avansi ham, kassa qarz to'lovi) ± qarz o'tkazmalari
  *   qarz      = max(0, balans) — mijoz kartasi, dashboard, BI va mobil ilova bilan bir xil raqam
  *   ochiq     = tasdiqlangan zayavkalarning limitga tushadigan, hali schyot yozilmagan qismi (`orderExposure`):
  *                 · «Qarzga» (onCredit) — butun summa: qabul qilinganda limitdan joy band qiladi;
@@ -98,7 +90,7 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
   // Ichki "Sklad" kartochkasi mijoz emas — limit ham, reyting ham hisoblanmaydi
   const where: Prisma.CustomerWhereInput = { ...(opts?.includeInternal ? {} : { isInternal: false }), ...(ids ? { id: { in: ids } } : {}) };
   const byCustomer = ids ? { customerId: { in: ids } } : {};
-  const [customers, bal, orders, trips] = await Promise.all([
+  const [customers, bal, orders, trips, onBooks] = await Promise.all([
     db.customer.findMany({ where, select: { id: true, creditLimit: true } }),
     // Qarz/avans — yagona balans (schyotlar − barcha to'lovlar); zayavka avansi ham shu yerda ayiriladi
     customerBalances({ ids, includeInternal: true }),
@@ -112,6 +104,8 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
       where: { status: { in: [...SHIPPED_TRIP_STATUSES] }, order: { kind: "SALE", onCredit: false, status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, ...byCustomer } },
       select: { orderId: true, status: true, qtyM3: true, acceptedQty: true, returnedQty: true },
     }),
+    // Reestrdagi qarzga sotuv (schyotsiz zayavka reyslari) balansda turibdi — o'sha qism ochiq zayavkadan ayiriladi
+    debtSalesByOrder(ids),
   ]);
   const shipped = new Map<string, number>();
   for (const t of trips) shipped.set(t.orderId, (shipped.get(t.orderId) ?? 0) + tripCoveredQty(t));
@@ -120,7 +114,7 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
     const exposure = orderExposure({ onCredit: o.onCredit, status: o.status, total: orderTotal(o), qty: o.items.reduce((s, i) => s + Number(i.qtyM3), 0), shippedQty: shipped.get(o.id) ?? 0 });
     // Schyot yozilgan qismi balansda turibdi; schyoti summadan kam yozilgan zayavkaning qoldig'i ham limitga kiradi —
     // aks holda 1 so'mlik schyot butun zayavkani limitdan chiqarib yuborardi
-    const rest = exposure - o.invoices.reduce((x, i) => x + Number(i.amount), 0);
+    const rest = exposure - o.invoices.reduce((x, i) => x + Number(i.amount), 0) - (onBooks.get(o.id) ?? 0);
     if (rest > 0.005) openSum.set(o.customerId, (openSum.get(o.customerId) ?? 0) + rest);
   }
   return new Map(customers.map((c) => [c.id, creditOf(Number(c.creditLimit), balanceOf(bal, c.id).balance, openSum.get(c.id) ?? 0)]));

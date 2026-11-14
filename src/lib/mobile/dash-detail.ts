@@ -922,10 +922,10 @@ async function receivablesDetail(r?: DashRange): Promise<Part> {
   const inv = rep.rows.flatMap((c) => c.items.map((x) => ({ ...x, customer: { id: c.customerId, name: c.name } }))).sort((a, b) => a.date.getTime() - b.date.getTime());
   const aging = rep.labels.map((l, i) => ({ label: i === rep.labels.length - 1 ? `${rep.edges.at(-1)} kundan eski` : `${l} kun`, v: rep.buckets[i]!, old: i === rep.labels.length - 1 }));
   return {
-    title: "Debitorka", subtitle: until ? `${period(r!)} oxiridagi qarz` : "Mijoz balansi: schyotlar − barcha to'lovlar",
+    title: "Debitorka", subtitle: until ? `${period(r!)} oxiridagi qarz` : "Mijoz balansi: schyot va qarzga sotuv − to'lovlar",
     fields: [f("Jami qarz", money(rep.total), rep.total > 0 ? "danger" : "success"), f("Qarzdorlar", cnt(rep.debtors, "mijoz")), f("Ochiq schyotlar", cnt(inv.length, "ta")), ...aging.map((a) => f(a.label, money(a.v), a.old && a.v > 0 ? "danger" : undefined)), ...(rep.advance > 0.005 ? [f("Mijozlar avansi", `${money(rep.advance)} · ${cnt(rep.advanceCustomers, "mijoz")}`, "success")] : [])],
     sections: [
-      sec("Qarzdorlar", rep.rows.slice(0, 40).map((c) => ({ id: c.customerId, title: c.name, subtitle: `${cnt(c.items.length, "ochiq schyot")} · eng eskisi ${c.oldestDays ?? 0} kun`, right: short(c.debt), tone: (c.oldestDays ?? 0) > 60 ? "danger" : (c.oldestDays ?? 0) > 30 ? "warning" : "info" })), { target: "customers", empty: "Qarzdor yo'q" }),
+      sec("Qarzdorlar", rep.rows.slice(0, 40).map((c) => ({ id: c.customerId, title: c.name, subtitle: `${cnt(c.items.length, "ochiq hujjat")} · eng eskisi ${c.oldestDays ?? 0} kun`, right: short(c.debt), tone: (c.oldestDays ?? 0) > 60 ? "danger" : (c.oldestDays ?? 0) > 30 ? "warning" : "info" })), { target: "customers", empty: "Qarzdor yo'q" }),
       sec("Ochiq schyotlar (eskidan yangiga)", inv.slice(0, 60).map((x) => ({ id: x.invoiceId, title: `${x.invoiceNo} · ${x.customer.name}`, subtitle: `${day(x.date)} · ${x.age} kun · summa ${short(x.amount)}`, right: short(x.left), status: INVOICE_LABEL[x.status], tone: x.age > 60 ? "danger" : x.age > 30 ? "warning" : "info" })), { target: "invoices", empty: "Ochiq schyot yo'q" }),
     ],
   };

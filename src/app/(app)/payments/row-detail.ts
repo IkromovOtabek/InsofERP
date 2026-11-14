@@ -67,7 +67,7 @@ async function txDetail(id: string, s: Session): Promise<CashRowDetail | null> {
     where: { id },
     include: {
       cashAccount: { select: { name: true, type: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } },
-      project: { select: { name: true } }, loan: { select: { name: true } },
+      project: { select: { name: true } }, loan: { select: { name: true } }, customer: { select: { name: true } },
     },
   });
   if (!t) return null;
@@ -102,6 +102,7 @@ async function txDetail(id: string, s: Session): Promise<CashRowDetail | null> {
       { label: "Manba", value: t.category },
       ...field("Sub manba", t.subCategory),
       ...field(inc ? "Kimdan" : "Kimga", who),
+      ...field(inc ? "Mijoz qarziga (to'lov)" : "Mijozga qaytarildi", t.customer?.name, t.customerId ? `/customers/${t.customerId}` : undefined),
       ...field("Loyiha", t.project?.name),
       ...field("Kredit", t.loan?.name),
       ...field("Hujjat", href ? "Hujjatni ochish →" : null, href),
@@ -113,6 +114,7 @@ async function txDetail(id: string, s: Session): Promise<CashRowDetail | null> {
     edit: canEdit && manual && !editBlock ? {
       kind: "tx", id: t.id, type: t.type as "INCOME" | "EXPENSE", date: isoDate(t.date), cashAccountId: t.cashAccountId, amount: Number(t.amount),
       category: t.category, subCategory: t.subCategory ?? "", counterparty: who ?? "", note: t.note ?? "", sig: cashEntrySig(t), lock: cashEntryLocks(t),
+      customerId: t.customerId ?? "", customerName: t.customer?.name ?? "",
     } : undefined,
     buttons: {
       edit: btn(canEdit, editBlock),

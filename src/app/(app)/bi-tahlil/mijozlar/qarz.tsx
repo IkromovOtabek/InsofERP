@@ -7,6 +7,7 @@ import { MONTHS_UZ } from "@/lib/bi/plans";
 import { date, dateRu, dateShort, fmtFixed, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, type BadgeColor, Card, InfoButton, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
+import { DebtFixButton } from "./debt-dialogs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,7 +27,8 @@ const isToday = (d: Date) => isoDate(d) === isoDate(new Date());
 const Num = ({ v, className }: { v: number; className?: string }) => (Math.abs(v) < 1 ? <span className="text-slate-300">—</span> : <span className={className}>{fmtNum(v)}</span>);
 
 /** Sana, qidiruv va Excel — har uch hisobot tepasida. */
-function Toolbar({ base, day, start, sp, keep, excel, extra, entry, placeholder }: { base: string; day: Date; start?: Date; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; extra?: React.ReactNode; entry?: React.ReactNode; placeholder: string }) {
+function Toolbar({ base, day, start, allTime, sp, keep, excel, extra, entry, placeholder }: { base: string; day: Date; start?: Date; allTime?: boolean; sp: SP; keep: Record<string, string | undefined>; excel: React.ReactNode; extra?: React.ReactNode; entry?: React.ReactNode; placeholder: string }) {
+  const monthIso = isoDate(new Date(day.getFullYear(), day.getMonth(), 1));
   return (
     <form method="get" action={base} className="mb-4 flex flex-wrap items-center gap-2">
       {Object.entries(keep).map(([k, v]) => v && <input key={k} type="hidden" name={k} value={v} />)}
@@ -35,8 +37,15 @@ function Toolbar({ base, day, start, sp, keep, excel, extra, entry, placeholder 
         <Input name="q" defaultValue={sp.q ?? ""} placeholder={placeholder} className="h-9 pl-9" />
       </label>
       {start && (
-        <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-500">Dan
-          <Input type="date" name="dan" defaultValue={isoDate(start)} max={isoDate(new Date())} className="h-9 w-40" />
+        <div className="ml-auto flex items-center gap-1 rounded-lg border border-slate-200 p-0.5 text-[13px]">
+          {/* Davr: boshidan (sukut) yoki shu oy — «Dan» maydonini qo'lda ham tanlash mumkin */}
+          <Link href={`${base}${qs({ ...keep, q: sp.q, sana: sp.sana })}`} className={cn("rounded-md px-2.5 py-1 font-medium", allTime ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>Boshidan</Link>
+          <Link href={`${base}${qs({ ...keep, q: sp.q, sana: sp.sana, dan: monthIso })}`} className={cn("rounded-md px-2.5 py-1 font-medium", !allTime && isoDate(start) === monthIso ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>Shu oy</Link>
+        </div>
+      )}
+      {start && (
+        <label className="flex items-center gap-1.5 text-xs text-slate-500">Dan
+          <Input type="date" name="dan" defaultValue={allTime ? "" : isoDate(start)} max={isoDate(new Date())} className="h-9 w-40" />
         </label>
       )}
       <label className={cn("flex items-center gap-1.5 text-xs text-slate-500", !start && "ml-auto")}>{start ? "Gacha" : "Sana"}
@@ -110,63 +119,78 @@ function SumFilter({ on, label, side, smin, smax, sort, presets, clearHref }: {
   );
 }
 
-// ───────────────────── Qarz / Avans: davr boshi → davr oxiri ─────────────────────
+// ───────────────────── Qarzdorlik / haqdorlik: davr boshi → sotib olgan → to'lagan → davr oxiri ─────────────────────
 
-/** Jadval ranglari — «Insof 2026» dagi «Xaridorlar qarzi» varag'idek: kulrang nom/davr boshi, yashil davr oxiri. */
+/** Jadval ranglari — «Insof 2026» dagi «Xaridorlar qarzi» varag'idek: kulrang nom/davr boshi, ko'k aylanma, yashil davr oxiri. */
 const SH = {
   head: "bg-[#c8cfb6] text-slate-900 dark:bg-[#383e30]",
+  headMid: "bg-[#d9e4f2] text-slate-900 dark:bg-[#26324a]",
   headNow: "bg-[#e3ecc8] text-slate-900 dark:bg-[#33402a]",
   cell: "bg-[#ececec] dark:bg-[#1f2328]",
+  cellMid: "bg-[#f3f7fc] dark:bg-[#1c2333]",
   cellNow: "bg-[#f4f7ea] dark:bg-[#20291c]",
   hover: "group-hover:bg-[#dfe6f2] dark:group-hover:bg-[#28334a]",
   line: "border border-[#d4d6cf] dark:border-slate-200",
   split: "border-l-2 border-l-[#6b9a3f]",
 } as const;
 
-/** «Ta'minotchilar oldidagi qarzdorlik» va «Xaridorlar qarzdorligi» — bir xil ko'rinish. Qatorni bosish — akt sverka. */
-export function DebtSheetView({ who, s, sp, base, company, entryHref }: {
+type Row = DebtSheet["rows"][number];
+
+/**
+ * «Ta'minotchilar oldidagi qarzdorlik» va «Xaridorlar qarzdorligi» — bir xil ko'rinish, 4 ustun (Otabek, 2026-11-14):
+ *  1) davr boshidagi qarzdorlik / haqdorlik (qarzdorlik — ular bizga qarz, haqdorlik — biz ularga qarzmiz),
+ *  2) shu davrda sotib olgan (ta'minotchida — bizga bergan mahsulot) — bosilsa nima, qachon, qancha olgani,
+ *  3) shundan to'lagan — bosilsa to'lovlar, 4) davr oxiridagi qarzdorlik / haqdorlik.
+ * Qator nomi — akt sverka; qalam — qoldiqni tuzatish (kiritish huquqi borlarga).
+ */
+export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, transfer }: {
   who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; company: string;
   /** «Qarzlarni kiritish» sahifasi (Excel / qo'lda, tahrir, kamaytirish, o'chirish) — kiritish huquqi borlarga */
   entryHref?: string;
+  /** Qatordagi qalam — «Qoldiqni tuzatish» */
+  canFix?: boolean;
+  /** «Boshqa mijoz to'lovi» tugmasi (faqat xaridorlar) */
+  transfer?: React.ReactNode;
 }) {
   const sup = who === "supplier";
   const kind = sp.tur === "CASH" || sp.tur === "BANK" ? sp.tur : undefined;
-  // Debitorka — bizga qarzdorlar (mijoz qarzi, ta'minotchiga bergan avansimiz);
-  // kreditorka — biz qarzmiz (mijozdan olingan avans, ta'minotchiga qarzimiz)
+  // Qarzdorlik — ular bizga qarz (mijoz qarzi; ta'minotchiga bergan avansimiz), haqdorlik — biz ularga qarzmiz.
+  // Ma'lumotda `debt` — musbat qoldiq: mijozda u bizga qarz, ta'minotchida biz qarzmiz — ko'rinishda shunga qarab almashtiriladi
+  const owes = (x: { debt: number; advance: number }) => (sup ? x.advance : x.debt);
+  const owed = (x: { debt: number; advance: number }) => (sup ? x.debt : x.advance);
   const qism = sp.qism === "debitor" || sp.qism === "kreditor" ? sp.qism : undefined;
-  const isDebitor = (r: DebtSheet["rows"][number]) => (sup ? r.now.advance : r.now.debt) >= 1;
-  const isKreditor = (r: DebtSheet["rows"][number]) => (sup ? r.now.debt : r.now.advance) >= 1;
+  const isDebitor = (r: Row) => owes(r.now) >= 1;
+  const isKreditor = (r: Row) => owed(r.now) >= 1;
   const named = filterName(s.rows, sp.q);
-  // Summa filtri — davr oxiridagi summa: tanlangan qism (debitor / kreditor) ustuni, «Hammasi»da qarz yoki avansning kattasi
-  const amt = (r: DebtSheet["rows"][number]) => (qism === "debitor" ? (sup ? r.now.advance : r.now.debt) : qism === "kreditor" ? (sup ? r.now.debt : r.now.advance) : Math.max(r.now.debt, r.now.advance));
+  // Summa filtri — davr oxiridagi summa: tanlangan qism ustuni, «Hammasi»da qarzdorlik yoki haqdorlikning kattasi
+  const amt = (r: Row) => (qism === "debitor" ? owes(r.now) : qism === "kreditor" ? owed(r.now) : Math.max(r.now.debt, r.now.advance));
   const smin = parseSum(sp.smin), smax = parseSum(sp.smax);
-  // Saralash — davr oxiri «Qarz» yoki «Avans» ustuni sarlavhasidan (katta summa tepada); `summa` — eski havolalar
-  const sort = sp.sort === "qarz" || sp.sort === "avans" || sp.sort === "summa" ? sp.sort : undefined;
-  const sortVal = (r: DebtSheet["rows"][number]) => (sort === "qarz" ? r.now.debt : sort === "avans" ? r.now.advance : amt(r));
+  // Saralash — davr oxiri ustunlari (`qarz` — qarzdorlik, `avans` — haqdorlik), sotib olgan / to'lagan; `summa` — eski havolalar
+  const sort = ["qarz", "avans", "summa", "sotuv", "tolov"].includes(sp.sort ?? "") ? sp.sort : undefined;
+  const sortVal = (r: Row) => (sort === "qarz" ? owes(r.now) : sort === "avans" ? owed(r.now) : sort === "sotuv" ? r.sold : sort === "tolov" ? r.paid : amt(r));
   const sumOn = smin != null || smax != null;
   const sumKeep = { smin: smin != null ? String(smin) : undefined, smax: smax != null ? String(smax) : undefined, sort };
   const rows = named
     .filter((r) => !qism || (qism === "debitor" ? isDebitor(r) : isKreditor(r)))
     .filter((r) => (smin == null || amt(r) >= smin) && (smax == null || amt(r) <= smax))
     .sort((a, b) => (sort ? sortVal(b) - sortVal(a) : 0));
-  const d1 = dateShort(s.monthStart), d2 = dateShort(s.day);
+  const d1 = s.allTime ? "boshidan" : dateShort(s.monthStart), d2 = dateShort(s.day);
   const dan = isoDate(s.monthStart), sana = isoDate(s.day);
-  // Oy boshidan boshlangan davrda `dan` URL'da yurmaydi — sana o'zgarsa davr boshi ham o'sha oyga ko'chadi
-  const danKeep = s.monthStart.getDate() === 1 && s.monthStart.getMonth() === s.day.getMonth() && s.monthStart.getFullYear() === s.day.getFullYear() ? undefined : dan;
-  // Kartalar va «Ko'rinish» chiplari qidiruvga (`q`) bo'ysunadi — soni kabi summasi ham topilganlar bo'yicha
-  const sumNamed = (f: (r: DebtSheet["rows"][number]) => number) => named.reduce((a, r) => a + f(r), 0);
-  const t = named === s.rows ? s.total : { open: { debt: sumNamed((r) => r.open.debt), advance: sumNamed((r) => r.open.advance) }, now: { debt: sumNamed((r) => r.now.debt), advance: sumNamed((r) => r.now.advance) } };
-  const sumRows = (f: (r: DebtSheet["rows"][number]) => number) => rows.reduce((a, r) => a + f(r), 0);
-  const ft = { open: { debt: sumRows((r) => r.open.debt), advance: sumRows((r) => r.open.advance) }, now: { debt: sumRows((r) => r.now.debt), advance: sumRows((r) => r.now.advance) } };
-  const debitorSum = sup ? t.now.advance : t.now.debt, kreditorSum = sup ? t.now.debt : t.now.advance;
+  // Boshidan (sukut) — `dan` URL'da yurmaydi
+  const danKeep = s.allTime ? undefined : dan;
+  const sumNamed = (f: (r: Row) => number) => named.reduce((a, r) => a + f(r), 0);
+  const t = named === s.rows ? s.total : { open: { debt: sumNamed((r) => r.open.debt), advance: sumNamed((r) => r.open.advance) }, sold: sumNamed((r) => r.sold), paid: sumNamed((r) => r.paid), now: { debt: sumNamed((r) => r.now.debt), advance: sumNamed((r) => r.now.advance) } };
+  const sumRows = (f: (r: Row) => number) => rows.reduce((a, r) => a + f(r), 0);
+  const ft = { open: { debt: sumRows((r) => r.open.debt), advance: sumRows((r) => r.open.advance) }, sold: sumRows((r) => r.sold), paid: sumRows((r) => r.paid), now: { debt: sumRows((r) => r.now.debt), advance: sumRows((r) => r.now.advance) } };
+  const debitorSum = owes(t.now), kreditorSum = owed(t.now);
   const qismHref = (v?: string) => `${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, tur: kind, qism: v, ...sumKeep })}`;
   const sumHref = (o: Partial<typeof sumKeep>) => `${base}${qs({ dan: danKeep, sana: sp.sana, q: sp.q, tur: kind, qism, ...sumKeep, ...o })}`;
   const sumLabel = smin != null && smax != null ? `${moneyShort(smin)} – ${moneyShort(smax)}` : smin != null ? `${moneyShort(smin)} dan ko'p` : smax != null ? `${moneyShort(smax)} gacha` : "";
-  const sumSide = qism === "debitor" ? "debitorka" : qism === "kreditor" ? "kreditorka" : "qarz yoki avans";
-  const sortLabel = sort === "qarz" ? `${d2} qarz bo'yicha` : sort === "avans" ? `${d2} avans bo'yicha` : "summa bo'yicha";
-  /** Davr oxiri ustuni sarlavhasi: bosilsa — shu ustun bo'yicha katta summa tepada, yana bosilsa — nomi bo'yicha */
-  const SortTh = ({ k, label, className }: { k: "qarz" | "avans"; label: string; className: string }) => (
-    <th className={className} aria-sort={sort === k ? "descending" : "none"}>
+  const sumSide = qism === "debitor" ? "qarzdorlik" : qism === "kreditor" ? "haqdorlik" : "qarzdorlik yoki haqdorlik";
+  const SORT_LABEL: Record<string, string> = { qarz: `${d2} qarzdorlik bo'yicha`, avans: `${d2} haqdorlik bo'yicha`, sotuv: sup ? "olgan mahsulot bo'yicha" : "sotib olgan bo'yicha", tolov: "to'lagan bo'yicha", summa: "summa bo'yicha" };
+  /** Ustun sarlavhasi: bosilsa — shu ustun bo'yicha katta summa tepada, yana bosilsa — nomi bo'yicha */
+  const SortTh = ({ k, label, className, rowSpan }: { k: string; label: string; className: string; rowSpan?: number }) => (
+    <th className={className} rowSpan={rowSpan} aria-sort={sort === k ? "descending" : "none"}>
       <Link href={sumHref({ sort: sort === k ? undefined : k })} title={sort === k ? "Nomi bo'yicha saralash (A → Z)" : "Katta summa tepada"}
         className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 ring-1 ring-black/10 transition dark:ring-white/15", sort === k ? "bg-[#2c4a6e] font-semibold text-[#fff] ring-[#2c4a6e]" : "hover:bg-black/5 dark:hover:bg-white/10")}>
         {label} <ArrowDownWideNarrow size={13} className={sort === k ? "" : "opacity-60"} />
@@ -174,44 +198,53 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref }: {
     </th>
   );
   const sheetTitle = sup ? "Ta'minotchilar oldidagi qarzdorlik" : "Xaridorlar qarzdorligi";
-  const legend = sup ? "Qarz (kreditorka) — biz ularga qarzmiz; Avans (debitorka) — biz oldindan to'laganmiz" : "Qarz (debitorka) — mijoz bizga qarz; Avans (kreditorka) — mijoz oldindan to'lagan";
+  const soldLabel = sup ? "Bizga bergan" : "Sotib olgan";
+  const paidLabel = sup ? "Biz to'lagan" : "To'lagan";
   const delta = (a: number, b: number) => (Math.abs(b - a) < 1 ? "davr boshidagidek" : `davr boshiga nisbatan ${b > a ? "+" : "−"}${moneyShort(Math.abs(b - a))}`);
   const col = sup ? "Ta'minotchi" : "Xaridor";
-  const aktHref = (id: string) => `${base}/${id}${qs({ dan, gacha: sana })}`;
+  const detail = (id: string, tab?: string) => `${base}/${id}${qs({ dan, gacha: sana, tab })}`;
   const excelRows = rows.map((r) => ({
     [col]: r.name, ...(sup ? {} : { "Mijoz turi": r.kind ? CUSTOMER_KIND_LABEL[r.kind] : "" }),
-    [`Qarz ${d1}`]: r.open.debt || null, [`Avans ${d1}`]: r.open.advance || null,
-    [`Qarz ${d2}`]: r.now.debt || null, [`Avans ${d2}`]: r.now.advance || null, "O'zgarish": r.change || null,
+    [`Qarzdorlik ${d1}`]: owes(r.open) || null, [`Haqdorlik ${d1}`]: owed(r.open) || null,
+    [soldLabel]: r.sold || null, [paidLabel]: r.paid || null,
+    [`Qarzdorlik ${d2}`]: owes(r.now) || null, [`Haqdorlik ${d2}`]: owed(r.now) || null,
   }));
   const Amt = ({ v }: { v: number }) => (Math.abs(v) < 0.005 ? null : <>{fmtFixed(v)}</>);
   const num = "whitespace-nowrap px-3 py-1.5 text-right tabular";
+  /** Katakdagi summa — bosilsa tafsilot (qatorning akt havolasi ustida) */
+  const CellLink = ({ href, v, title }: { href: string; v: number; title: string }) => (Math.abs(v) < 0.005 ? null
+    : <Link href={href} title={title} className="relative z-10 rounded px-0.5 underline decoration-slate-300 decoration-dotted underline-offset-4 hover:bg-white/70 hover:decoration-slate-700">{fmtFixed(v)}</Link>);
+  const span = canFix ? 8 : 7;
 
   return (
     <div className="space-y-5">
-      <Toolbar base={base} day={s.day} start={s.monthStart} sp={sp} keep={{ tur: kind, qism }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
+      <Toolbar base={base} day={s.day} start={s.monthStart} allTime={s.allTime} sp={sp} keep={{ tur: kind, qism }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
         extra={<SumFilter on={sumOn} label={sumLabel} side={sumSide} smin={smin} smax={smax} sort={sort}
           presets={SUM_PRESETS.map((v) => ({ v, href: sumHref({ smin: String(v), smax: undefined }), on: smin === v && smax == null }))}
           clearHref={sumHref({ smin: undefined, smax: undefined })} />}
-        entry={entryHref && (
-          <Link href={entryHref} title={sup ? "Ta'minotchi qarzini Excel'dan yoki qo'lda kiritish, tahrirlash va kamaytirish" : "Mijoz qarzini Excel'dan yoki qo'lda kiritish, tahrirlash va kamaytirish"}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700">
-            <FileSpreadsheet size={15} /> Qarzlarni kiritish
-          </Link>
-        )}
+        entry={<>
+          {transfer}
+          {entryHref && (
+            <Link href={entryHref} title={sup ? "Ta'minotchi qarzini Excel'dan yoki qo'lda kiritish, tahrirlash va kamaytirish" : "Mijoz qarzini Excel'dan yoki qo'lda kiritish, tahrirlash va kamaytirish"}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700">
+              <FileSpreadsheet size={15} /> Qarzlarni kiritish
+            </Link>
+          )}
+        </>}
         excel={<ExcelButton file={`${sheetTitle} ${sana}`} sheets={[{ name: sup ? "Ta'minotchilar" : "Xaridorlar", rows: excelRows }]} />} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label={sup ? `Kreditorka (qarzimiz), ${d2}` : `Debitorka (mijozlar qarzi), ${d2}`} value={moneyShort(t.now.debt)} hint={delta(t.open.debt, t.now.debt)} icon={sup ? Truck : HandCoins} tone={t.now.debt > t.open.debt ? "danger" : "success"} href={qismHref(sup ? "kreditor" : "debitor")} />
-        <StatCard label={sup ? `Debitorka (bergan avansimiz), ${d2}` : `Kreditorka (olingan avans), ${d2}`} value={moneyShort(t.now.advance)} hint={delta(t.open.advance, t.now.advance)} icon={Wallet} tone="info" href={qismHref(sup ? "debitor" : "kreditor")} />
-        <StatCard label={`Sof holat, ${d2}`} value={moneyShort(t.now.debt - t.now.advance)} hint={sup ? "kreditorka − debitorka: + bo'lsa biz qarzmiz" : "debitorka − kreditorka: + bo'lsa ular qarz"} icon={Scale} tone="brand" href={qismHref()} />
-        <StatCard label={sup ? "Ta'minotchilar" : "Xaridorlar"} value={fmtNum(named.length)} hint={`debitor: ${named.filter(isDebitor).length} · kreditor: ${named.filter(isKreditor).length}`} icon={sup ? Truck : UserRound} href={qismHref()} />
+        <StatCard label={`Qarzdorlik (bizga qarz), ${d2}`} value={moneyShort(owes(t.now))} hint={delta(owes(t.open), owes(t.now))} icon={HandCoins} tone={owes(t.now) > owes(t.open) ? "danger" : "success"} href={qismHref("debitor")} />
+        <StatCard label={`Haqdorlik (biz qarzmiz), ${d2}`} value={moneyShort(owed(t.now))} hint={delta(owed(t.open), owed(t.now))} icon={sup ? Truck : Wallet} tone="info" href={qismHref("kreditor")} />
+        <StatCard label={`${soldLabel}, ${d1} – ${d2}`} value={moneyShort(t.sold)} hint={`${paidLabel}: ${moneyShort(t.paid)}`} icon={sup ? Truck : FileSpreadsheet} tone="brand" href={sumHref({ sort: "sotuv" })} />
+        <StatCard label={sup ? "Ta'minotchilar" : "Xaridorlar"} value={fmtNum(named.length)} hint={`qarzdor: ${named.filter(isDebitor).length} · haqdor: ${named.filter(isKreditor).length}`} icon={sup ? Truck : UserRound} href={qismHref()} />
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-xs font-medium text-slate-500">Ko&apos;rinish:</span>
         <Chip href={qismHref()} on={!qism} count={named.length}>Hammasi</Chip>
-        <Chip href={qismHref("debitor")} on={qism === "debitor"} count={named.filter(isDebitor).length}>Debitorka · {sup ? "bizga qarz (avans)" : "bizga qarz"} · {moneyShort(debitorSum)}</Chip>
-        <Chip href={qismHref("kreditor")} on={qism === "kreditor"} count={named.filter(isKreditor).length}>Kreditorka · {sup ? "biz qarzmiz" : "biz qarzmiz (avans)"} · {moneyShort(kreditorSum)}</Chip>
+        <Chip href={qismHref("debitor")} on={qism === "debitor"} count={named.filter(isDebitor).length}>Qarzdorlik · bizga qarz · {moneyShort(debitorSum)}</Chip>
+        <Chip href={qismHref("kreditor")} on={qism === "kreditor"} count={named.filter(isKreditor).length}>Haqdorlik · biz qarzmiz · {moneyShort(kreditorSum)}</Chip>
         {sumOn && (
           <Link href={sumHref({ smin: undefined, smax: undefined })} title="Summa filtrini olib tashlash"
             className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[13px] font-medium text-amber-800 hover:bg-amber-100">
@@ -234,61 +267,71 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref }: {
         <div className="border-b border-[#d4d6cf] px-3 py-2 dark:border-slate-200">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[15px] font-bold text-slate-900">
             <span>{company}</span>
-            <span className="tabular">Oy: <span className="ml-2">{String(s.day.getMonth() + 1).padStart(2, "0")}.{s.day.getFullYear()}</span></span>
+            <span className="tabular">{s.allTime ? `${dateRu(s.day)} holatiga` : `${dateRu(s.monthStart)} – ${dateRu(s.day)}`}</span>
           </div>
           <div className="mt-1 text-[22px] font-bold leading-tight text-slate-900">
-            {sheetTitle} — {monthName(s.day)}
+            {sheetTitle}{s.allTime ? "" : ` — ${monthName(s.day)}`}
             <InfoButton title={sheetTitle} size="md" className="ml-1">
-              <p>Saralash — {d2} ustunlari sarlavhasini bosib o&apos;zgartiring. Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</p>
-              <p>{legend}.</p>
+              <p>Qarzdorlik — {sup ? "ta'minotchi" : "mijoz"} bizga qarz; haqdorlik — biz unga qarzmiz. Davr boshi + {soldLabel.toLowerCase()} − {paidLabel.toLowerCase()} = davr oxiri.</p>
+              <p>{soldLabel} yoki {paidLabel.toLowerCase()} summasini bosing — nima, qachon va qancha ekani, har yozuvni tahrirlash yoki o&apos;chirish. Nomni bosing — akt sverka.</p>
               <p>
                 {sup
                   ? "Hisob: boshlang'ich qoldiq + kirim hujjatlari (QQS va dostavka bilan) − ta'minotchiga to'langan pul."
-                  : "Hisob: hisob-fakturalar − mijoz to'lovlari. Mijoz turi — oxirgi zayavkadagi to'lov usuli."}
+                  : "Hisob: boshlang'ich qoldiq + schyotlar va Realizatsiyadagi «Qarz» turidagi sotuv − to'lovlar va kassadagi qarz to'lovlari ± boshqa mijoz to'lagan qarz. Naqd va perechisleniye sotuv qarzga tushmaydi."}
               </p>
+              {s.allTime && <p>Davr — boshidan; «Dan» sanasini tanlasangiz, shu kungacha bo&apos;lgan hammasi davr boshidagi qoldiqqa yig&apos;iladi.</p>}
             </InfoButton>
           </div>
-          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: {sort ? `${sortLabel} (katta → kichik)` : "nomi bo'yicha (A → Z)"}</div>
+          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: {sort ? `${SORT_LABEL[sort]} (katta → kichik)` : "nomi bo'yicha (A → Z)"}</div>
         </div>
         <div className="overflow-auto" style={{ maxHeight: "70vh" }}>
-          <table className="w-full min-w-[760px] border-collapse text-[14px] text-slate-900">
-            <thead className="sticky top-0 z-10">
+          <table className="w-full min-w-[980px] border-collapse text-[14px] text-slate-900">
+            <thead className="sticky top-0 z-20">
               <tr>
                 <th rowSpan={2} className={cn(SH.line, SH.head, "px-3 py-1.5 text-left align-top font-normal")}>{col}</th>
-                <th colSpan={2} className={cn(SH.line, SH.head, "px-3 py-1.5 text-center font-normal")}>Hisob-kitob {d1} holatiga</th>
-                <th colSpan={2} className={cn(SH.line, SH.headNow, SH.split, "px-3 py-1.5 text-center font-normal")}>Hisob-kitob {d2} holatiga</th>
+                <th colSpan={2} className={cn(SH.line, SH.head, "px-3 py-1.5 text-center font-normal")}>{s.allTime ? "Boshlang'ich qoldiq" : `${d1} holatiga`}</th>
+                <SortTh k="sotuv" label={soldLabel} rowSpan={2} className={cn(SH.line, SH.headMid, "w-[13%] px-2 py-1 text-center align-middle font-normal")} />
+                <SortTh k="tolov" label={paidLabel} rowSpan={2} className={cn(SH.line, SH.headMid, "w-[13%] px-2 py-1 text-center align-middle font-normal")} />
+                <th colSpan={2} className={cn(SH.line, SH.headNow, SH.split, "px-3 py-1.5 text-center font-normal")}>{d2} holatiga</th>
+                {canFix && <th rowSpan={2} className={cn(SH.line, SH.headNow, "w-9 px-1")} aria-label="Tuzatish" />}
               </tr>
               <tr>
-                <th className={cn(SH.line, SH.head, "w-[17%] px-3 py-1 text-center font-normal")}>Qarz</th>
-                <th className={cn(SH.line, SH.head, "w-[17%] px-3 py-1 text-center font-normal")}>Avans</th>
-                <SortTh k="qarz" label="Qarz" className={cn(SH.line, SH.headNow, SH.split, "w-[17%] px-2 py-1 text-center font-normal")} />
-                <SortTh k="avans" label="Avans" className={cn(SH.line, SH.headNow, "w-[17%] px-2 py-1 text-center font-normal")} />
+                <th className={cn(SH.line, SH.head, "w-[12%] px-3 py-1 text-center font-normal")}>Qarzdorlik</th>
+                <th className={cn(SH.line, SH.head, "w-[12%] px-3 py-1 text-center font-normal")}>Haqdorlik</th>
+                <SortTh k="qarz" label="Qarzdorlik" className={cn(SH.line, SH.headNow, SH.split, "w-[13%] px-2 py-1 text-center font-normal")} />
+                <SortTh k="avans" label="Haqdorlik" className={cn(SH.line, SH.headNow, "w-[13%] px-2 py-1 text-center font-normal")} />
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={5} className={cn(SH.line, "px-4 py-10 text-center text-sm text-slate-500")}>{sp.q || qism ? "Filtr bo'yicha hech narsa topilmadi" : "Bu davrda hisob-kitob yo'q"}</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={span} className={cn(SH.line, "px-4 py-10 text-center text-sm text-slate-500")}>{sp.q || qism ? "Filtr bo'yicha hech narsa topilmadi" : "Bu davrda hisob-kitob yo'q"}</td></tr>}
               {rows.map((r) => (
                 <tr key={r.id} className="group relative cursor-pointer">
                   <td className={cn(SH.line, SH.cell, SH.hover, "min-w-56 px-3 py-1.5")}>
-                    {/* Butun qator — akt sverka havolasi (after: qatorni qoplaydi) */}
-                    <Link href={aktHref(r.id)} className="after:absolute after:inset-0 after:content-['']" title={`${r.name} — akt sverka`}>{r.name}</Link>
+                    {/* Butun qator — akt sverka havolasi (after: qatorni qoplaydi); summalar o'z tafsilotiga */}
+                    <Link href={detail(r.id)} className="after:absolute after:inset-0 after:content-['']" title={`${r.name} — akt sverka`}>{r.name}</Link>
                     {!sup && !kind && r.kind === "CASH" && <span className="ml-2 align-middle"><Badge color="green" dot={false}>naqd</Badge></span>}
                   </td>
-                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><Amt v={r.open.debt} /></td>
-                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><Amt v={r.open.advance} /></td>
-                  <td className={cn(SH.line, SH.cellNow, SH.split, num, SH.hover)}><Amt v={r.now.debt} /></td>
-                  <td className={cn(SH.line, SH.cellNow, num, SH.hover)}><Amt v={r.now.advance} /></td>
+                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><CellLink href={detail(r.id, "qoldiq")} v={owes(r.open)} title="Boshlang'ich qoldiq — tafsilot" /></td>
+                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><CellLink href={detail(r.id, "qoldiq")} v={owed(r.open)} title="Boshlang'ich qoldiq — tafsilot" /></td>
+                  <td className={cn(SH.line, SH.cellMid, num, SH.hover)}><CellLink href={detail(r.id, "sotuv")} v={r.sold} title={`${soldLabel} — mahsulotlar, sana, miqdor`} /></td>
+                  <td className={cn(SH.line, SH.cellMid, num, SH.hover, r.paid < 0 && "text-red-700")}><CellLink href={detail(r.id, "tolov")} v={r.paid} title={`${paidLabel} — to'lovlar`} /></td>
+                  <td className={cn(SH.line, SH.cellNow, SH.split, num, SH.hover, owes(r.now) >= 1 && "font-semibold text-red-700")}><Amt v={owes(r.now)} /></td>
+                  <td className={cn(SH.line, SH.cellNow, num, SH.hover, owed(r.now) >= 1 && "font-semibold text-emerald-700")}><Amt v={owed(r.now)} /></td>
+                  {canFix && <td className={cn(SH.line, SH.cellNow, SH.hover, "px-1 text-center")}><DebtFixButton who={who} id={r.id} name={r.name} day={sana} now={owes(r.now) - owed(r.now)} /></td>}
                 </tr>
               ))}
             </tbody>
             {rows.length > 0 && (
-              <tfoot className="sticky bottom-0">
+              <tfoot className="sticky bottom-0 z-20">
                 <tr className="font-bold">
                   <td className={cn(SH.line, SH.head, "px-3 py-2")}>Jami</td>
-                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(ft.open.debt)}</td>
-                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(ft.open.advance)}</td>
-                  <td className={cn(SH.line, SH.headNow, SH.split, num, "py-2")}>{fmtFixed(ft.now.debt)}</td>
-                  <td className={cn(SH.line, SH.headNow, num, "py-2")}>{fmtFixed(ft.now.advance)}</td>
+                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(owes(ft.open))}</td>
+                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(owed(ft.open))}</td>
+                  <td className={cn(SH.line, SH.headMid, num, "py-2")}>{fmtFixed(ft.sold)}</td>
+                  <td className={cn(SH.line, SH.headMid, num, "py-2")}>{fmtFixed(ft.paid)}</td>
+                  <td className={cn(SH.line, SH.headNow, SH.split, num, "py-2")}>{fmtFixed(owes(ft.now))}</td>
+                  <td className={cn(SH.line, SH.headNow, num, "py-2")}>{fmtFixed(owed(ft.now))}</td>
+                  {canFix && <td className={cn(SH.line, SH.headNow)} />}
                 </tr>
               </tfoot>
             )}

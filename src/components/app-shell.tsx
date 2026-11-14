@@ -26,7 +26,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/payments": Landmark, "/pul-qabul": HandCoins, "/cashflow": ArrowLeftRight, "/arenda": Store, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
   "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=ish-vaqti": Clock, "/otdel-kadr?tab=taqvim": CakeSlice, "/otdel-kadr?tab=jarima-bonus": Scale, "/vazifalar": ListTodo, "/ish-haqi": Wallet,
   "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/moliya": BadgeDollarSign, "/settings/boshlangich-qoldiq": Scale, "/settings/davomat": SlidersHorizontal, "/settings/ish-tartibi": CalendarDays,
-  "/logistika/buyurtmalar": PackageCheck, "/logistika/kalendar": CalendarClock, "/logistika/transport": Container, "/logistika/haydovchilar": IdCard, "/logistika/tabel": TableProperties, "/logistika/realizatsiya": Sheet,
+  "/logistika/buyurtmalar": PackageCheck, "/logistika/kalendar": CalendarClock, "/logistika/transport": Container, "/logistika/haydovchilar": IdCard, "/logistika/tabel": TableProperties,
   "/logistika/obyektlar": MapPin, "/logistika/monitoring": Radar, "/logistika/nakladnoylar": FileText, "/logistika/yetkazish": PackageCheck,
   "/logistika/yoqilgi": Fuel, "/logistika/xarajatlar": Wallet, "/logistika/hisobotlar": FileChartColumn, "/logistika/analitika": ChartPie, "/logistika/sozlamalar": SlidersHorizontal, "/logistika/moliya": Landmark,
   // Ichki bandlar (BI)

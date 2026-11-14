@@ -19,6 +19,7 @@ import { addPayment, reversePayment } from "@/lib/payments";
 import { createOpening } from "@/lib/opening-balances";
 import { customerCredit } from "@/lib/finance";
 import { receivablesReport, customerBalance, OWNER_EDGES } from "@/lib/receivables";
+import { debtSales } from "@/lib/debt-sales";
 import { ownerDashboard } from "@/lib/owner-dashboard";
 import { customerBase, customersTab } from "@/lib/bi/customers";
 import { financeTab } from "@/lib/bi/finance";
@@ -33,14 +34,22 @@ const hasMoney = (html: string, n: number) => flat(html).includes(`${Math.round(
 const field = (j: { fields?: { label: string; value: string }[] } | null, label: string) => j?.fields?.find((f) => f.label === label)?.value;
 const digits = (s: unknown) => Number(String(s ?? "").replace(/[^\d]/g, ""));
 
-/** Mustaqil hisob (modulga tayanmasdan): Σ musbat (schyotlar − to'lovlar), ichki mijozsiz. */
+/**
+ * Mustaqil hisob (SQL, modulga tayanmasdan): Σ musbat (schyotlar − to'lovlar − kassa qarz to'lovi + mijozga qaytarilgan ±
+ * qarz o'tkazmasi), ichki mijozsiz. Qarzga sotuv (reestrning «Qarz» qatorlari) — `debtSales` dan (reestr hisobi `realization-log.ts`).
+ */
 async function expectedTotals() {
   const rows = await db.$queryRaw<{ id: string; bal: string }[]>`
-    SELECT c.id, (COALESCE(i.s, 0) - COALESCE(p.s, 0))::text AS bal FROM "Customer" c
+    SELECT c.id, (COALESCE(i.s, 0) - COALESCE(p.s, 0) - COALESCE(t.s, 0) - COALESCE(d.s, 0) + COALESCE(r.s, 0))::text AS bal FROM "Customer" c
     LEFT JOIN (SELECT "customerId", SUM(amount) s FROM "Invoice" WHERE status::text <> 'CANCELLED' GROUP BY 1) i ON i."customerId" = c.id
     LEFT JOIN (SELECT p."customerId", SUM(p.amount) s FROM "Payment" p WHERE NOT EXISTS (SELECT 1 FROM "SalesRegister" r WHERE r."paymentId" = p.id) GROUP BY 1) p ON p."customerId" = c.id
+    LEFT JOIN (SELECT "customerId", SUM(CASE WHEN type::text = 'EXPENSE' THEN -amount ELSE amount END) s FROM "CashTransaction" WHERE "customerId" IS NOT NULL AND "cancelledAt" IS NULL AND type::text IN ('INCOME', 'EXPENSE') GROUP BY 1) t ON t."customerId" = c.id
+    LEFT JOIN (SELECT "debtorId", SUM(amount) s FROM "CustomerDebtTransfer" WHERE "cancelledAt" IS NULL GROUP BY 1) d ON d."debtorId" = c.id
+    LEFT JOIN (SELECT "payerId", SUM(amount) s FROM "CustomerDebtTransfer" WHERE "cancelledAt" IS NULL GROUP BY 1) r ON r."payerId" = c.id
     WHERE NOT c."isInternal"`;
-  const b = rows.map((r) => Number(r.bal));
+  const sales = new Map<string, number>();
+  for (const x of await debtSales()) sales.set(x.customerId, (sales.get(x.customerId) ?? 0) + x.total);
+  const b = rows.map((r) => Math.round((Number(r.bal) + (sales.get(r.id) ?? 0)) * 100) / 100);
   return { total: Math.round(b.filter((x) => x > 0).reduce((s, x) => s + x, 0) * 100) / 100, advance: Math.round(-b.filter((x) => x < 0).reduce((s, x) => s + x, 0) * 100) / 100, debtors: b.filter((x) => x > 0.005).length };
 }
 

@@ -201,7 +201,10 @@ async function main() {
   check("qarz yoshi jami = xaridorlar varag'idagi bugungi qarz", near(age.total, cust.total.now.debt), [age.total, cust.total.now.debt]);
   check("qarz yoshi: 60 kundan eski ≤ 30 kundan eski ≤ jami", age.over60 <= age.over30 + 0.01 && age.over30 <= age.total + 0.01);
   check("Mijoz turi: naqd + perechisleniye = hammasi", cash.rows.length + bank.rows.length === cust.rows.length && near(cash.total.now.debt + bank.total.now.debt, cust.total.now.debt));
-  check("xaridorlar: oy boshi ustuni 1-sana", cust.monthStart.getDate() === 1 && cust.monthStart.getMonth() === today.getMonth());
+  check("xaridorlar: sukut davri — boshidan", cust.allTime && sup.allTime);
+  check("xaridorlar: davr boshi + sotib olgan − to'lagan = davr oxiri", cust.rows.every((r) => near((r.open.debt - r.open.advance) + r.sold - r.paid, r.now.debt - r.now.advance)));
+  const custMonth = await customerDebtSheet(today, null, new Date(today.getFullYear(), today.getMonth(), 1));
+  check("xaridorlar (shu oy): davr oxiri boshidan hisobdagi bilan bir xil", near(custMonth.total.now.debt, cust.total.now.debt) && near(custMonth.total.now.advance, cust.total.now.advance), [custMonth.total.now, cust.total.now]);
   check("ta'minotchilar: o'zgarish = bugungi sof − oy boshidagi sof", sup.rows.every((r) => near(r.change, (r.now.debt - r.now.advance) - (r.open.debt - r.open.advance))));
   check("kelajak sanasi bugunga tushadi", parseDebtDay("2999-01-01").getTime() === today.getTime());
 

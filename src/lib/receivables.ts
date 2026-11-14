@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { getCompany } from "./company";
 import { Prisma } from "@/generated/prisma";
+import { debtSales } from "./debt-sales";
 
 /**
  * Debitorka (mijoz qarzi) — YAGONA hisob manbai. Mijoz kartasi, dashboard, BI, /sales, mobil ilova, AI
@@ -10,7 +11,11 @@ import { Prisma } from "@/generated/prisma";
  * schyotga bog'lanmagan avans to'laydi):
  *
  *   balans = Σ schyotlar (boshlang'ich qoldiq schyotlari ham, bekor qilinganlarsiz)
+ *          + Σ qarzga sotuv — Realizatsiya reestrining «Qarz» turidagi qatorlari, schyotsiz zayavkalar (`debt-sales.ts`)
  *          − Σ mijoz to'lovlari (schyotga bog'langan yoki bog'lanmagan; storno qilingan to'lov bazadan o'chadi)
+ *          − Σ kassa «Savdo» kirimi shu mijoz qarziga yozilgani (`CashTransaction.customerId`); chiqim (mijozga qaytarilgan
+ *            pul) — qarzga qo'shiladi
+ *          ± qarz o'tkazmalari (`CustomerDebtTransfer`): qarzdordan ayiriladi, to'lovchiga qo'shiladi
  *
  *   musbat balans — debitorka (mijoz qarzi), manfiy — avans (mijoz oldidagi bizning qarzimiz).
  *
@@ -46,6 +51,10 @@ export type BalanceOpts = {
   includeInternal?: boolean;
   /** Shu paytgacha (date < asOf) — o'tgan davr oxiridagi holat; berilmasa hozirgi. */
   asOf?: Date | null;
+  /** Faqat schyot − to'lov (2026-11-14 gacha qoida): reestr, kassa va o'tkazmasiz — eski qoldiqlarni tenglash skripti uchun. */
+  legacy?: boolean;
+  /** Shu paytdan (date >= since) — davr aylanmasi (`customerTurnover`) uchun */
+  since?: Date | null;
 };
 
 export type CustomerBalance = {
@@ -62,11 +71,22 @@ export const zeroBalance = (customerId: string): CustomerBalance => ({ customerI
 function where(opts: BalanceOpts) {
   const customer = opts.includeInternal ? {} : { customer: { isInternal: false } };
   const ids = opts.ids ? { customerId: { in: opts.ids } } : {};
-  const date = opts.asOf ? { date: { lt: opts.asOf } } : {};
+  const date = opts.asOf || opts.since ? { date: { ...(opts.since ? { gte: opts.since } : {}), ...(opts.asOf ? { lt: opts.asOf } : {}) } } : {};
+  const party = (k: "debtor" | "payer", idKey: "debtorId" | "payerId") => ({
+    cancelledAt: null, ...(opts.includeInternal ? {} : { [k]: { isInternal: false } }), ...(opts.ids ? { [idKey]: { in: opts.ids } } : {}), ...date,
+  });
   return {
     invoice: { status: { not: "CANCELLED" }, ...customer, ...ids, ...date } satisfies Prisma.InvoiceWhereInput,
     payment: { register: { is: null }, ...customer, ...ids, ...date } satisfies Prisma.PaymentWhereInput,
+    cash: { cancelledAt: null, type: { in: ["INCOME", "EXPENSE"] }, customerId: opts.ids ? { in: opts.ids } : { not: null }, ...customer, ...date } satisfies Prisma.CashTransactionWhereInput,
+    debtor: party("debtor", "debtorId") as Prisma.CustomerDebtTransferWhereInput,
+    payer: party("payer", "payerId") as Prisma.CustomerDebtTransferWhereInput,
   };
+}
+
+/** Ichki «Sklad» kartochkasi — qo'lda realizatsiya qatori unga bog'lanib qolsa ham mijoz qarziga kirmaydi. */
+async function internalIds(): Promise<Set<string>> {
+  return new Set((await db.customer.findMany({ where: { isInternal: true }, select: { id: true } })).map((c) => c.id));
 }
 
 type RawBalance = { customerId: string; inv: Dec; pay: Dec };
@@ -74,14 +94,30 @@ type RawBalance = { customerId: string; inv: Dec; pay: Dec };
 async function rawBalances(opts: BalanceOpts): Promise<Map<string, RawBalance>> {
   if (opts.ids && opts.ids.length === 0) return new Map();
   const w = where(opts);
-  const [inv, pay] = await Promise.all([
+  const none = Promise.resolve([] as never[]);
+  const [inv, pay, sales, cash, asDebtor, asPayer, internal] = await Promise.all([
     db.invoice.groupBy({ by: ["customerId"], where: w.invoice, _sum: { amount: true } }),
     db.payment.groupBy({ by: ["customerId"], where: w.payment, _sum: { amount: true } }),
+    opts.legacy ? none : debtSales({ ids: opts.ids, asOf: opts.asOf }),
+    opts.legacy ? none : db.cashTransaction.groupBy({ by: ["customerId", "type"], where: w.cash, _sum: { amount: true } }),
+    opts.legacy ? none : db.customerDebtTransfer.groupBy({ by: ["debtorId"], where: w.debtor, _sum: { amount: true } }),
+    opts.legacy ? none : db.customerDebtTransfer.groupBy({ by: ["payerId"], where: w.payer, _sum: { amount: true } }),
+    opts.legacy || opts.includeInternal ? Promise.resolve(new Set<string>()) : internalIds(),
   ]);
   const m = new Map<string, RawBalance>();
   const get = (id: string) => { let r = m.get(id); if (!r) { r = { customerId: id, inv: ZERO, pay: ZERO }; m.set(id, r); } return r; };
   for (const x of inv) get(x.customerId).inv = dec(x._sum.amount);
   for (const x of pay) get(x.customerId).pay = dec(x._sum.amount);
+  // Qarzga sotuv, mijozga qaytarilgan pul, boshqaning qarzini to'lagani — debet; kassa qarz to'lovi, uning qarzini boshqa to'lagani — kredit
+  for (const x of sales) if (!internal.has(x.customerId)) { const r = get(x.customerId); r.inv = r.inv.plus(new D(x.total)); }
+  for (const x of cash) {
+    if (!x.customerId) continue;
+    const r = get(x.customerId);
+    if (x.type === "EXPENSE") r.inv = r.inv.plus(dec(x._sum.amount));
+    else r.pay = r.pay.plus(dec(x._sum.amount));
+  }
+  for (const x of asDebtor) { const r = get(x.debtorId); r.pay = r.pay.plus(dec(x._sum.amount)); }
+  for (const x of asPayer) { const r = get(x.payerId); r.inv = r.inv.plus(dec(x._sum.amount)); }
   return m;
 }
 
@@ -107,6 +143,43 @@ export const balanceOf = (m: Map<string, CustomerBalance>, id: string) => m.get(
 /** Bitta mijoz balansi. */
 export async function customerBalance(customerId: string, opts: Omit<BalanceOpts, "ids"> = {}): Promise<CustomerBalance> {
   return balanceOf(await customerBalances({ ...opts, ids: [customerId], includeInternal: true }), customerId);
+}
+
+/** Davr aylanmasi (qarz varag'i ustunlari): boshlang'ich qoldiq yozuvlari, sotuv (debet) va to'lov (kredit, sof). */
+export type Turnover = { opening: number; sold: number; paid: number };
+
+/**
+ * `since` ≤ sana < `until` oralig'idagi harakatlar — `rawBalances` bilan bir xil manba va filtrlar:
+ *   opening — boshlang'ich qoldiq yozuvlari (BQ-schyotlar), sold — schyotlar + qarzga sotuv,
+ *   paid — to'lovlar + kassa qarz to'lovi − mijozga qaytarilgan pul + uning qarzini boshqa to'lagani − u boshqaning qarzini to'lagani.
+ * Davr boshidagi balans + opening + sold − paid = davr oxiridagi balans.
+ */
+export async function customerTurnover(since: Date, until: Date, opts: Pick<BalanceOpts, "ids" | "includeInternal"> = {}): Promise<Map<string, Turnover>> {
+  const o: BalanceOpts = { ...opts, since, asOf: until };
+  if (o.ids && o.ids.length === 0) return new Map();
+  const w = where(o);
+  const [inv, pay, sales, cash, asDebtor, asPayer, internal] = await Promise.all([
+    db.invoice.groupBy({ by: ["customerId", "isOpening"], where: w.invoice, _sum: { amount: true } }),
+    db.payment.groupBy({ by: ["customerId"], where: w.payment, _sum: { amount: true } }),
+    debtSales({ ids: o.ids, asOf: until }).then((l) => l.filter((x) => x.date >= since)),
+    db.cashTransaction.groupBy({ by: ["customerId", "type"], where: w.cash, _sum: { amount: true } }),
+    db.customerDebtTransfer.groupBy({ by: ["debtorId"], where: w.debtor, _sum: { amount: true } }),
+    db.customerDebtTransfer.groupBy({ by: ["payerId"], where: w.payer, _sum: { amount: true } }),
+    o.includeInternal ? Promise.resolve(new Set<string>()) : internalIds(),
+  ]);
+  const m = new Map<string, { opening: Dec; sold: Dec; paid: Dec }>();
+  const get = (id: string) => { let r = m.get(id); if (!r) { r = { opening: ZERO, sold: ZERO, paid: ZERO }; m.set(id, r); } return r; };
+  for (const x of inv) { const r = get(x.customerId); if (x.isOpening) r.opening = r.opening.plus(dec(x._sum.amount)); else r.sold = r.sold.plus(dec(x._sum.amount)); }
+  for (const x of sales) if (!internal.has(x.customerId)) { const r = get(x.customerId); r.sold = r.sold.plus(new D(x.total)); }
+  for (const x of pay) { const r = get(x.customerId); r.paid = r.paid.plus(dec(x._sum.amount)); }
+  for (const x of cash) {
+    if (!x.customerId) continue;
+    const r = get(x.customerId);
+    r.paid = x.type === "EXPENSE" ? r.paid.minus(dec(x._sum.amount)) : r.paid.plus(dec(x._sum.amount));
+  }
+  for (const x of asDebtor) { const r = get(x.debtorId); r.paid = r.paid.plus(dec(x._sum.amount)); }
+  for (const x of asPayer) { const r = get(x.payerId); r.paid = r.paid.minus(dec(x._sum.amount)); }
+  return new Map([...m].map(([id, r]) => [id, { opening: toNum(r.opening), sold: toNum(r.sold), paid: toNum(r.paid) }]));
 }
 
 // ───────────────────────── Aging (FIFO) ─────────────────────────
@@ -174,8 +247,23 @@ export async function receivablesReport(opts: BalanceOpts & { edges?: number[]; 
     ])
     : [[], []];
   const nameOf = new Map(names.map((c) => [c.id, c.name]));
-  const invBy = new Map<string, typeof invoices>();
-  for (const i of invoices) { const l = invBy.get(i.customerId) ?? []; l.push(i); invBy.set(i.customerId, l); }
+  // FIFO hujjatlari: schyotlar + qarzga sotuv (reestr qatori), mijozga qaytarilgan pul, boshqa mijoz qarzini to'lagani
+  type Doc = (typeof invoices)[number];
+  const extra: Doc[] = [];
+  if (debtorIds.length && !opts.legacy) {
+    const wd = where({ ...opts, ids: debtorIds });
+    const [sales, refunds, paidFor] = await Promise.all([
+      debtSales({ ids: debtorIds, asOf: opts.asOf }),
+      db.cashTransaction.findMany({ where: { ...wd.cash, type: "EXPENSE" }, select: { id: true, customerId: true, date: true, amount: true, createdAt: true } }),
+      db.customerDebtTransfer.findMany({ where: wd.payer, select: { id: true, docNo: true, payerId: true, date: true, amount: true, createdAt: true } }),
+    ]);
+    for (const x of sales) extra.push({ id: `rz:${x.key}`, invoiceNo: x.row.ttn ? `TTN ${x.row.ttn}` : "Realizatsiya", customerId: x.customerId, date: x.date, amount: new D(x.total), status: "OPEN", isOpening: false, createdAt: x.date });
+    for (const x of refunds) if (x.customerId) extra.push({ id: `tx:${x.id}`, invoiceNo: "Qaytarilgan pul", customerId: x.customerId, date: x.date, amount: x.amount, status: "OPEN", isOpening: false, createdAt: x.createdAt });
+    for (const x of paidFor) extra.push({ id: `qo:${x.id}`, invoiceNo: x.docNo, customerId: x.payerId, date: x.date, amount: x.amount, status: "OPEN", isOpening: false, createdAt: x.createdAt });
+  }
+  const invBy = new Map<string, Doc[]>();
+  for (const i of [...invoices, ...extra]) { const l = invBy.get(i.customerId) ?? []; l.push(i); invBy.set(i.customerId, l); }
+  if (extra.length) for (const l of invBy.values()) l.sort((a, b) => a.date.getTime() - b.date.getTime() || a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
 
   const rows: AgingRow[] = [];
   const bucketsDec = Array.from({ length: edges.length + 1 }, () => ZERO);

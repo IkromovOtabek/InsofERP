@@ -4,7 +4,7 @@ export const EXPENSE_CATEGORIES = ["Xomashyo", "Ish haqi", "Pitaniya", "Transpor
 export const INCOME_CATEGORIES = ["Savdo", "Boshqa tushum", "Xizmat (nasos, transport)", "Chiqindi / brak sotuvi", "Qaytarilgan avans", "Ta'sischi kiritmasi", "Kredit / qarz olindi"];
 /**
  * «Savdo» — mahsulot sotuvidan tushgan pul, mijoz to'lovi (`Payment`) bo'lib yozilmagani (chakana, tizimdan tashqari sotuv).
- * Mijoz qarzini kamaytirmaydi. Cash Flow'da «Savdo tushumi» qatoriga qo'shiladi, PNL daromadiga kirmaydi
+ * Mijoz tanlansa (`CashTransaction.customerId`) — o'sha mijoz qarzidan ayiriladi, aks holda qarzga tegmaydi. Cash Flow'da «Savdo tushumi» qatoriga qo'shiladi, PNL daromadiga kirmaydi
  * (daromad realizatsiyadan) — kategoriya tizimniki, migratsiya `savdo_manbasi` bilan har korxonaga qo'shiladi.
  */
 export const SALES_CATEGORY = "Savdo";

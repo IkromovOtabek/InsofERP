@@ -14,10 +14,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const [s, company] = await Promise.all([supplierDebtSheet(day, parseDebtStart(sp.dan, day)), getCompany()]);
   return (
     <BiPage title="Mijozlar" subtitle="Ta'minotchilar bilan hisob-kitob" info={<>
-      <p>Ta&apos;minotchilar bilan hisob-kitob: davr boshi va oxiri holatiga qarz va avans.</p>
-      <p>Qatorni bosing — akt sverka.</p>
+      <p>Ta&apos;minotchilar bilan hisob-kitob: davr boshidagi qarzdorlik/haqdorlik, bizga bergan (kirim), biz to&apos;lagan va hozirgi holat.</p>
+      <p>Summani bosing — tafsilot (material, sana, to&apos;lovlar); nomni bosing — akt sverka.</p>
     </>} tab="customers" range={range} period={false}>
-      <DebtSheetView who="supplier" s={s} sp={sp} base="/bi-tahlil/mijozlar/taminotchilar" company={company.legalName ?? company.name} entryHref={canEnterDebts(session) ? debtEntryHref("supplier") : undefined} />
+      <DebtSheetView who="supplier" s={s} sp={sp} base="/bi-tahlil/mijozlar/taminotchilar" company={company.legalName ?? company.name} entryHref={canEnterDebts(session) ? debtEntryHref("supplier") : undefined} canFix={canEnterDebts(session)} />
     </BiPage>
   );
 }

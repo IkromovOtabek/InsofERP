@@ -10,7 +10,7 @@ import { dayField, numIn } from "@/lib/logistics-admin";
 import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
 import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-sheet";
 import { nextCatalogCode } from "@/lib/numbering";
-import { defaultCreditLimit } from "@/lib/finance";
+import { defaultCreditLimit } from "@/lib/credit-default";
 
 /**
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
@@ -109,14 +109,16 @@ function autoEdits(r: RealizationRow, n: RealizationNote | undefined, l: Realiza
   };
 }
 
-export async function realizationLog(from: Date, to: Date): Promise<LogRow[]> {
+/** `customerIds` — faqat shu mijozlar qatorlari (debitorka: `lib/debt-sales.ts`); mijozga bog'lanmagan qo'lda qator kirmaydi. */
+export async function realizationLog(from: Date, to: Date, opts?: { customerIds?: string[] }): Promise<LogRow[]> {
   const a = new Date(from); a.setHours(0, 0, 0, 0);
   const b = new Date(to); b.setHours(0, 0, 0, 0); b.setDate(b.getDate() + 1);
+  const ids = opts?.customerIds;
   // Dispetcher sanasini shu davrga ko'chirgan reys/zayavka — asl sanasi boshqa davrda bo'lsa ham shu yerda
   const moved = (await db.realizationNote.findMany({ where: { date: { gte: a, lt: b } }, select: { key: true } })).map((n) => n.key);
   const [auto, entries] = await Promise.all([
-    realizationRows(from, to, { tripIds: moved.filter((k) => !k.startsWith("o:")), orderIds: moved.filter((k) => k.startsWith("o:")).map((k) => k.slice(2)) }),
-    db.realizationEntry.findMany({ where: { cancelledAt: null, date: { gte: a, lt: b } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }] }),
+    realizationRows(from, to, { tripIds: moved.filter((k) => !k.startsWith("o:")), orderIds: moved.filter((k) => k.startsWith("o:")).map((k) => k.slice(2)), customerIds: ids }),
+    db.realizationEntry.findMany({ where: { cancelledAt: null, date: { gte: a, lt: b }, ...(ids ? { customerId: { in: ids } } : {}) }, orderBy: [{ date: "asc" }, { createdAt: "asc" }] }),
   ]);
   const keys = [...new Set(auto.map(autoKey))];
   const [noteList, lineList] = await Promise.all([

@@ -20,8 +20,9 @@ import { loadCategories, makeResolver, normCat, resetCategoryCache, type CatNode
  *    tuzatiladi). Sub manba shu manbaniki bo'lmasa — o'sha manba ostiga yangi sub manba bo'lib qo'shiladi (nomi boshqa
  *    manbada band bo'lsa — «Nom (Manba)»);
  *  · kredit / loyiha so'raydigan manba importda yozilmaydi (formada kredit yoki loyiha tanlanadi);
- *  · «Savdo tushumi» — mijoz to'lovi jurnalda (To'lovlar) bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi bo'lib yoziladi
- *    (mijoz qarzini kamaytirmaydi);
+ *  · «Savdo tushumi» — mijoz to'lovi jurnalda (To'lovlar) bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi bo'lib yoziladi;
+ *  · «Mijoz» ustuni (ixtiyoriy) — to'ldirilgan qator mijoz qarziga yoziladi: kirim — qarz to'lovi, chiqim — qaytarilgan pul
+ *    (`CashTransaction.customerId`, `lib/receivables.ts`); bo'sh — qarzga tegmaydi;
  *  · «Perekit» / «99999-Xisob raqam almashinuvi» — o'tkazma: jurnalda bo'lsa o'tkaziladi, bo'lmasa bir xil summali juft
  *    qator (bir hisobdan chiqim + boshqasiga kirim, o'sha kuni yoki ±1 kun) o'tkazma hujjatiga (OT-…) aylanadi, jufti yo'q — xato;
  *  · jurnalda bor qator (kun, hisob, kirim/chiqim, summa, manba bir xil) qayta yozilmaydi — jurnalning o'zidan
@@ -43,6 +44,8 @@ export type CashImportResult = { error: string } | { ok: true; added: number; sk
 type Fresh = {
   date: Date; type: "INCOME" | "EXPENSE"; cashAccountId: string; amount: number;
   category: string; subCategory: string | null; counterparty: string | null; note: string | null;
+  /** «Mijoz» ustuni to'ldirilgan bo'lsa — mijoz qarziga (kirim — qarz to'lovi, chiqim — qaytarilgan pul) */
+  customerId?: string | null;
 };
 /**
  * Fayl qatori: oddiy kirim/chiqim (`data`) yoki o'tkazma oyog'i (`leg`). `altKeys` — jurnalda boshqacha yozilgan bo'lishi
@@ -67,10 +70,15 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
   if (!list.length) return { error: "Faylda qator yo'q" };
   if (list.length > CASH_IMPORT_MAX) return { error: `Bir martada ko'pi bilan ${CASH_IMPORT_MAX} qator — faylni bo'lib yuklang` };
 
-  const [accounts, cats] = await Promise.all([
+  const needCustomers = list.some((x) => str(x.customer) !== "");
+  const [accounts, cats, customers] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true, type: true, allowOverdraft: true } }),
     loadCategories(),
+    needCustomers ? db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, aliases: true } }) : Promise.resolve([]),
   ]);
+  // «Mijoz» ustuni: nomi yoki boshqa nomi (alias) bo'yicha, kirill/lotin farqsiz; bir xil nomli ikki mijoz — null (aniqlashtirish kerak)
+  const custByKey = new Map<string, { id: string; name: string } | null>();
+  for (const c of customers) for (const n of [c.name, ...c.aliases]) { const k = matchKey(n); if (k) custByKey.set(k, custByKey.has(k) && custByKey.get(k)?.id !== c.id ? null : c); }
   const accById = new Map(accounts.map((a) => [a.id, a]));
   // Hisob nomi bo'yicha (kirill/lotin, belgilarsiz); bir xil nomli ikki hisob bo'lsa — nom yetmaydi, null
   const accByName = new Map<string, (typeof accounts)[number] | null>();
@@ -160,12 +168,18 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
       return;
     }
     const who = cell("who") || null, note = cell("note") || null;
+    // Mijoz qarziga — ixtiyoriy ustun; to'ldirilgan bo'lsa ro'yxatdagi mijozga mos kelishi shart
+    const custRaw = cell("customer");
+    const cust = custRaw ? custByKey.get(matchKey(custRaw)) : undefined;
+    if (custRaw && cust === null) return fail(`«${custRaw}» nomli mijoz bir nechta — fayldagi nomni aniqlashtiring`);
+    if (custRaw && !cust) return fail(`mijoz topilmadi — «${custRaw}» (Mijozlar ro'yxatidagi nom yoki boshqa nomi bo'lsin)`);
+    const customerId = cust ? cust.id : null;
     // Mijoz to'lovi: To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi (mijoz qarziga tegmaydi)
     if (normCat(manba) === normCat(SALES_MANBA)) {
       if (type !== "INCOME") return fail(`«${SALES_MANBA}» — kirim, summa esa Chiqim ustunida`);
       parsed.push({
         no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, SALES_MANBA), altKeys: [rowKey(date, acc.id, sign, amount, SALES_CATEGORY)],
-        data: { date, type, cashAccountId: acc.id, amount, category: SALES_CATEGORY, subCategory: null, counterparty: who, note },
+        data: { date, type, cashAccountId: acc.id, amount, category: SALES_CATEGORY, subCategory: null, counterparty: who ?? cust?.name ?? null, note, customerId },
       });
       return;
     }
@@ -184,7 +198,7 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
     }
     parsed.push({
       no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, top.name),
-      data: { date, type, cashAccountId: acc.id, amount, category: top.name, subCategory: subName, counterparty: who, note },
+      data: { date, type, cashAccountId: acc.id, amount, category: top.name, subCategory: subName, counterparty: who ?? cust?.name ?? null, note, customerId },
     });
   });
   if (errors.length) return { error: `${errors.slice(0, 5).join("; ")}${errors.length > 5 ? `; yana ${errors.length - 5} ta qatorda xato` : ""}. Faylni tuzatib qayta yuklang — hech narsa yozilmadi` };

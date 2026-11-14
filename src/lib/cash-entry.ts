@@ -27,6 +27,8 @@ export type CashEntryInput = {
   category: string;
   counterparty?: string | null;
   supplierId?: string | null;
+  /** Mijoz qarziga (`lib/receivables.ts`): kirim — qarz to'lovi (qarzdan ayiriladi), chiqim — mijozga qaytarilgan pul. Bo'sh — qarzga tegmaydi */
+  customerId?: string | null;
   /** Chiqim qaysi kirim hujjati (yetkazuvchidan olingan mol) uchun. */
   receiptId?: string | null;
   note?: string | null;
@@ -90,9 +92,23 @@ async function subCategoryMissing(category: string): Promise<string | null> {
     : `«${top.name}» manbasida sub manba yo'q — avval «+» bilan sub manba qo'shing (yoki Moliya → Kategoriyalar)`;
 }
 
+/** Mijoz qarziga yoziladigan yozuv: mijoz bor va ichki «Sklad» emas; yetkazuvchi bilan birga bo'lmaydi. Kontragent bo'sh bo'lsa — mijoz nomi. */
+async function customerLink(customerId: string | null | undefined, supplierId: string | null | undefined, counterparty: string | null | undefined): Promise<{ error: string } | { customerId: string | null; counterparty: string | null }> {
+  const who = counterparty?.trim() || null;
+  if (!customerId) return { customerId: null, counterparty: who };
+  if (supplierId) return { error: "Yozuv yo ta'minotchiga, yo mijoz qarziga — ikkalasiga birdan emas" };
+  const c = await db.customer.findUnique({ where: { id: customerId }, select: { id: true, name: true, isInternal: true } });
+  if (!c || c.isInternal) return { error: "Mijoz topilmadi" };
+  return { customerId: c.id, counterparty: who ?? c.name };
+}
+
 export async function createCashEntry(input: CashEntryInput, userId: string): Promise<{ id?: string; error?: string }> {
-  const { receiptId, subCategory, projectId, loanId, ...d } = { ...input, amount: r2(input.amount) };
+  const { receiptId, subCategory, projectId, loanId, customerId, ...d } = { ...input, amount: r2(input.amount) };
   if (!(d.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
+  const cust = await customerLink(customerId, d.supplierId, d.counterparty);
+  if ("error" in cust) return { error: cust.error };
+  if (cust.customerId && receiptId) return { error: "Kirim hujjati to'lovi mijoz qarziga yozilmaydi" };
+  d.counterparty = cust.counterparty;
   if (receiptId && d.type !== "EXPENSE") return { error: "Kirim hujjatiga faqat chiqim (to'lov) bog'lanadi" };
   // Perekit — o'tkazma hujjati (`lib/cash-transfer.ts`), oddiy chiqim bo'lib yozilmaydi
   if (d.category === PEREKIT_CATEGORY) return { error: "Perekit — hisoblararo o'tkazma: «Kassa ⇄ bank» orqali yozing" };
@@ -133,7 +149,7 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
     const t = await tx.cashTransaction.create({
       data: {
         type: d.type, date: d.date, cashAccountId: d.cashAccountId, amount: d.amount, category: d.category,
-        counterparty: d.counterparty ?? null, supplierId: d.supplierId ?? null, note: d.note ?? null,
+        counterparty: d.counterparty ?? null, supplierId: d.supplierId ?? null, customerId: cust.customerId, note: d.note ?? null,
         ...links.data, ...(link ?? {}), createdById: userId,
       },
     });
@@ -254,14 +270,16 @@ export function cashEntryLocks(t: { refType: string | null; loanId: string | nul
 }
 
 /** Tahrir oynasi ochilgandagi holat: saqlashda bazadagisi boshqacha bo'lsa — boshqa joyda o'zgartirilgan (ustma-ust yozilmasin). */
-export const cashEntrySig = (t: { type: string; amount: unknown; date: Date; cashAccountId: string; category: string; subCategory: string | null; counterparty: string | null; note: string | null }) =>
-  [t.type, Number(t.amount).toFixed(2), isoDate(t.date), t.cashAccountId, t.category, t.subCategory ?? "", t.counterparty ?? "", t.note ?? ""].join("|");
+export const cashEntrySig = (t: { type: string; amount: unknown; date: Date; cashAccountId: string; category: string; subCategory: string | null; counterparty: string | null; note: string | null; customerId?: string | null }) =>
+  [t.type, Number(t.amount).toFixed(2), isoDate(t.date), t.cashAccountId, t.category, t.subCategory ?? "", t.counterparty ?? "", t.note ?? "", t.customerId ?? ""].join("|");
 
 export type CashEntryEdit = {
   /** Berilmasa — turi o'zgarmaydi */
   type?: "INCOME" | "EXPENSE" | null;
   date: Date; cashAccountId: string; amount: number; category: string; subCategory?: string | null;
   counterparty?: string | null; note?: string | null; sig: string;
+  /** Mijoz qarziga (`CashEntryInput.customerId`); berilmasa (undefined) — o'zgarmaydi, null — qarzdan olinadi */
+  customerId?: string | null;
   /** Kassa / bank tahriri: sub manba majburiy (`subCategoryMissing`) */
   requireSub?: boolean;
 };
@@ -305,9 +323,12 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
     const miss = await subCategoryMissing(d.category);
     if (miss) return { error: miss };
   }
+  const cust = await customerLink(d.customerId === undefined ? t.customerId : d.customerId, t.supplierId, d.counterparty);
+  if ("error" in cust) return { error: cust.error };
+  if (cust.customerId && t.refType) return { error: "Hujjatga bog'langan yozuv mijoz qarziga yozilmaydi" };
   const data = {
     type, date: d.date, cashAccountId: d.cashAccountId, amount, category: links.data.category ?? d.category, subCategory: links.data.subCategory,
-    counterparty: d.counterparty?.trim() || null, note: d.note?.trim() || null,
+    counterparty: cust.counterparty, customerId: cust.customerId, note: d.note?.trim() || null,
   };
   return db.$transaction(async (tx) => {
     for (const a of [...new Set([t.cashAccountId, d.cashAccountId])].sort()) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + a}))`;
@@ -317,7 +338,7 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
     if (err) throw new CashError(type !== cur.type && type === "EXPENSE" ? `Kirim chiqimga aylansa hisob minusga tushadi. ${err}` : err);
     // Sana o'zgarmagan bo'lsa — asl vaqt (soat) qoladi: jurnal tartibi tahrirdan keyin buzilmasin
     await tx.cashTransaction.update({ where: { id }, data: { ...data, date: sameDay(d.date, cur.date) ? cur.date : d.date } });
-    const before = { type: cur.type, date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, note: cur.note };
+    const before = { type: cur.type, date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, customerId: cur.customerId, note: cur.note };
     await audit(tx, userId, "UPDATE", "CashTransaction", id, before, data);
     return {};
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });

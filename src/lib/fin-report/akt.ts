@@ -7,7 +7,7 @@ import { supplierPositions } from "./balance";
 
 /**
  * Akt sverka (o'zaro hisob-kitoblarni solishtirish dalolatnomasi) — korxona buxgalteriyasi nuqtai nazaridan:
- *  · xaridor: Debet — hisob-faktura (sotuv), Kredit — mijoz to'lovi (`customerStatement` bilan bir hisob);
+ *  · xaridor: Debet — hisob-faktura, qarzga sotuv (realizatsiya), Kredit — mijoz to'lovi (`customerStatement` bilan bir hisob);
  *  · ta'minotchi: Debet — biz to'lagan pul, Kredit — kirim hujjati (QQS va dostavka bilan) (`supplierPositions` bilan bir hisob).
  * Saldo ishorasi ikkalasida bir xil: musbat — ular bizga qarz (debet saldo), manfiy — biz ularga qarzmiz (kredit saldo).
  * Qarz varaqlari (Tahlil → Mijozlar) va mijoz kartasidagi akt shu yerdan o'qiydi.
@@ -36,9 +36,13 @@ export async function customerAkt(id: string, from: Date, to: Date): Promise<Akt
   ]);
   const lines = st.lines.map((l): AktLine => ({
     date: l.date, debit: l.debit, credit: l.credit, href: l.href,
-    doc: l.kind === "PAYMENT"
+    doc: l.kind === "PAYMENT" || l.kind === "CASH"
       ? `To'lov ${dateRu(l.date)}${l.account ? ` (${l.account})` : ""}`
-      : l.doc.startsWith("Boshlang'ich") ? "Boshlang'ich qoldiq (tizimga o'tish)" : `Hisob-faktura № ${l.no ?? ""} (${dateRu(l.date)})`,
+      : l.kind === "OPENING" ? "Boshlang'ich qoldiq (tizimga o'tish)"
+        : l.kind === "INVOICE" ? `Hisob-faktura № ${l.no ?? ""} (${dateRu(l.date)})`
+          : l.kind === "SALE" ? `Realizatsiya${l.no ? ` ${l.no}` : ""} (${dateRu(l.date)})`
+            : l.kind === "REFUND" ? `Qaytarilgan pul ${dateRu(l.date)}${l.account ? ` (${l.account})` : ""}`
+              : `${l.doc} (${dateRu(l.date)})`,
   }));
   return { who: "customer", id: c.id, name: c.name, contractNo: contract?.contractNo ?? null, from: dayStart(from), to: dayStart(to), opening: st.opening, lines, debit: st.debit, credit: st.credit, closing: st.closing };
 }

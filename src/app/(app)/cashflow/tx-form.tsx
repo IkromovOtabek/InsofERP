@@ -30,8 +30,10 @@ type Acc = Opt & { type?: CashMethod };
  * ishlatilgani ro'yxatdan olinadi). `lockedCats` — tizim kategoriyalari: qalam yo'q (nomi o'zgarmaydi), savatcha faqat ro'yxatdan oladi.
  * Manba ostidagi «Ro'yxatni tahrirlash» — shu turdagi barcha manba va sub manbalar bitta oynada (`category-manager.tsx`).
  */
-export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, canEditCat = false, canDeleteCat = false, lockedCats = [], clientToken = "" }: {
+export function TxForm({ accounts, suppliers, customers = [], receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, canEditCat = false, canDeleteCat = false, lockedCats = [], clientToken = "" }: {
   accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: CategoryOption[]; expenseCats: CategoryOption[];
+  /** Kirimda «Mijoz qarziga» — tanlansa pul shu mijoz qarzidan ayiriladi (`lib/receivables.ts`) */
+  customers?: Opt[];
   projects?: Opt[]; loans?: LoanOpt[]; canPerekit?: boolean; canAdd?: boolean; canEditCat?: boolean; canDeleteCat?: boolean; lockedCats?: string[]; clientToken?: string;
 }) {
   const [state, action, pending] = useActionState(createCashTx, undefined);
@@ -40,6 +42,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   // Saqlangandan keyin maydonlar qayta mount qilinadi — summa (MoneyInput) ham, tanlovlar ham to'liq tozalanadi
   const [formKey, setFormKey] = useState(0);
   const [supplierId, setSupplierId] = useState("");
+  const [customerId, setCustomerId] = useState("");
   const [category, setCategory] = useState("");
   const [sub, setSub] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -58,7 +61,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   const [fromId, setFromId] = useState(accounts[0]?.id ?? "");
   // Perekit uchun bir martalik kalit: ikki marta bosilgan «Saqlash» ikkinchi o'tkazma ochmaydi; saqlangach yangilanadi
   const [token, setToken] = useState(clientToken);
-  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setCatNote(""); setSupplierId(""); setCategory(""); setSub(""); setProjectId(""); setLoanId(""); setToken(crypto.randomUUID()); } }, [state]);
+  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setCatNote(""); setSupplierId(""); setCustomerId(""); setCategory(""); setSub(""); setProjectId(""); setLoanId(""); setToken(crypto.randomUUID()); } }, [state]);
   const perekitOpt: CategoryOption = { name: PEREKIT_CATEGORY, needs: null, loanPart: null, subs: [] };
   const typeCats = merge(type === "INCOME" ? incomeCats : expenseCats, added.cats.filter((c) => c.type === type), (c) => c.name).map(fixCat).filter((c) => live(c.name));
   const cats = type === "EXPENSE" && canPerekit && accounts.length >= 2 ? [...typeCats, perekitOpt] : typeCats;
@@ -139,7 +142,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
         <Field label={perekit ? "Qayerdan (hisob) *" : "Kassa / hisob *"}><Select name="cashAccountId" value={accId} onChange={(e) => setFromId(e.target.value)} required>{shownAccounts.map((a) => <option key={a.id} value={a.id}>{perekit ? accLabel(a) : a.name}</option>)}</Select></Field>
         <Field label="Summa *"><MoneyInput name="amount" required /></Field>
         <div>
-          <Field label="Manba (kategoriya) *" hint={type === "INCOME" && cat === SALES_CATEGORY ? "Mijoz qarzini kamaytirmaydi — mijoz to'lovi Kassa / bank → To'lovlar orqali kiritiladi" : undefined}>
+          <Field label="Manba (kategoriya) *" hint={type === "INCOME" && cat === SALES_CATEGORY ? (customerId ? "Qarz to'lovi — mijoz qarzidan ayiriladi" : "Mijoz tanlanmasa — chakana savdo, qarzga tegmaydi") : undefined}>
             <WithAdd add={canAdd && (
               <QuickAdd label="Yangi manba qo'shish" title={`Yangi ${type === "INCOME" ? "kirim" : "chiqim"} manbasi`} save={quickAddCashCategory}
                 onCreated={(x: QuickAdded) => { setEdits((e) => ({ ...e, removed: e.removed.filter((n) => n !== x.name) })); setAdded((a) => ({ ...a, cats: [...a.cats, { name: x.name, needs: null, loanPart: null, subs: [], type }] })); pickCategory(x.name); }}>
@@ -260,6 +263,10 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
               <SearchSelect name="supplierId" value={supplierId} onChange={setSupplierId} options={supplierList} placeholder="Yetkazuvchini yozib qidiring…" ariaLabel="Yetkazuvchi"
                 className={cn("min-w-0 flex-1", canAdd && "[&_input]:rounded-r-none")} />
             </WithAdd>
+          </Field>
+        ) : customers.length > 0 ? (
+          <Field label="Mijoz qarziga (to'lov)" hint={customerId ? "shu mijoz qarzidan ayiriladi — «Kimdan» boshqa mijoz bo'lishi mumkin" : "tanlanmasa — mijoz qarziga tegmaydi"}>
+            <SearchSelect name="customerId" value={customerId} onChange={setCustomerId} options={customers} placeholder="Mijozni yozib qidiring…" ariaLabel="Mijoz qarziga" />
           </Field>
         ) : null}
         {type === "EXPENSE" && !perekit && shownReceipts.length > 0 && (

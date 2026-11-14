@@ -7,6 +7,7 @@ import { updateCashTx } from "../cashflow/actions";
 import { updatePaymentRow, updateTransferRow } from "./actions";
 import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
+import { SearchSelect } from "@/components/ui/search-select";
 import { QuickAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
 import { quickAddCashCategory } from "@/lib/quick-add-actions";
 import type { CategoryOption } from "@/lib/fin-report/categories";
@@ -32,6 +33,8 @@ export type CashEditEntry =
   | {
       kind: "tx"; id: string; type: "INCOME" | "EXPENSE"; date: string; cashAccountId: string; amount: number;
       category: string; subCategory: string; counterparty: string; note: string; sig: string;
+      /** Mijoz qarziga (kirim — qarz to'lovi, chiqim — qaytarilgan pul); bo'sh — qarzga tegmaydi */
+      customerId: string; customerName: string;
       /** Hujjatga bog'langan / kredit yozuvida qulf ustunlar (`lib/cash-entry.ts` → `cashEntryLocks`) */
       lock: { type: boolean; amount: boolean; account: boolean; category: boolean; why: string | null };
     }
@@ -127,6 +130,11 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
   // «+» bilan qo'shilgan sub manbalar — sahifa yangilanguncha ham ro'yxatda tursin
   const [addedSubs, setAddedSubs] = useState<Record<string, string[]>>({});
   const action = useCallback<Act>((p, fd) => updateCashTx(entry.id, p, fd), [entry.id]);
+  // Mijoz qarziga bog'lash: ro'yxat berilgan bo'lsa (cashflow.edit) — kirimda (qarz to'lovi) yoki allaqachon bog'langan yozuvda
+  const [customer, setCustomer] = useState(entry.customerId);
+  const custBase = o.customers ?? [];
+  const custList = entry.customerId && !custBase.some((c) => c.id === entry.customerId) ? [{ id: entry.customerId, name: entry.customerName }, ...custBase] : custBase;
+  const showCust = custBase.length > 0 && !entry.lock.type && (type === "INCOME" || !!entry.customerId);
 
   const sameType = type === entry.type;
   const list = type === "INCOME" ? o.income : o.expense;
@@ -188,7 +196,13 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
           </WithAdd>
         </Field>
         <Field label={type === "INCOME" ? "Kimdan" : "Kimga"} className="sm:col-span-1"><Input name="counterparty" defaultValue={entry.counterparty} maxLength={200} autoComplete="off" /></Field>
-        <Field label="Izoh" className="sm:col-span-2"><Input name="note" defaultValue={entry.note} maxLength={500} /></Field>
+        {showCust && (
+          <Field label={type === "INCOME" ? "Mijoz qarziga (to'lov)" : "Mijozga qaytarilgan pul"} className="sm:col-span-2"
+            hint={customer ? (type === "INCOME" ? "shu mijoz qarzidan ayiriladi — «Kimdan» boshqa mijoz bo'lishi mumkin" : "shu mijoz qarziga qo'shiladi") : "tanlanmasa — mijoz qarziga tegmaydi (chakana, naqd sotuv)"}>
+            <SearchSelect name="customerId" options={custList} value={customer} onChange={setCustomer} placeholder="Mijozni yozib qidiring…" ariaLabel="Mijoz qarziga" />
+          </Field>
+        )}
+        <Field label="Izoh" className={showCust ? "sm:col-span-3" : "sm:col-span-2"}><Input name="note" defaultValue={entry.note} maxLength={500} /></Field>
       </div>
       {!sameType && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Yozuv {type === "INCOME" ? "chiqimdan kirimga" : "kirimdan chiqimga"} o&apos;tkaziladi — {type === "INCOME" ? "kirim" : "chiqim"} manbasini tanlang. Hisob qoldig&apos;i shunga qarab o&apos;zgaradi.</p>}
     </EditModal>

@@ -80,7 +80,7 @@ export async function entryStatus(now: Date = new Date()): Promise<EntryStatus[]
     const full = (r: (typeof log)[number]) => r.price > 0 && (r.source === "MANUAL" ? !!r.ttn : !!r.tripTtn && !!r.filled?.loadPlace && !!r.filled?.destination);
     const done = log.filter(full).length, total = log.length;
     out.push({
-      key: "realization", dept: "Realizatsiya", who: who("realization"), href: "/logistika/realizatsiya",
+      key: "realization", dept: "Realizatsiya", who: who("realization"), href: "/sales/realizatsiya",
       ...(!total ? { state: "none" as const, text: "bugun jo'natma yo'q" }
         : done === total ? { state: "ok" as const, text: `${total} qator to'liq yozilgan` }
         : done === 0 ? { state: "missing" as const, text: `${total} qator — to'liq yozilmagan` }

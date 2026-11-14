@@ -3,9 +3,9 @@ import { audit } from "./audit";
 import { date, money } from "./format";
 import { notifyAfter, notifyRoles } from "./notify";
 import { nextNo } from "./numbering";
-import { customerBalance } from "./receivables";
 import { recalcInvoice } from "./payments";
 import { orderTotal } from "@/lib/order-total";
+import { customerLedger, type LedgerKind } from "@/lib/customer-ledger";
 
 /**
  * Schyot yozish qoidasi — veb (`app/(app)/invoices/actions.ts`) ham, mobil ilova ham shu
@@ -112,34 +112,27 @@ export async function updateInvoice(id: string, input: { amount: number; date: D
 
 // ───────────────────────── Akt sverki (mijoz bilan solishtirma dalolatnoma) ─────────────────────────
 
-/** `no` — schyot raqami, `account` — to'lov tushgan kassa/bank (akt sverka hujjat nomi uchun). */
-export type StatementLine = { date: Date; doc: string; kind: "INVOICE" | "PAYMENT"; debit: number; credit: number; note: string | null; href?: string; no?: string; account?: string };
+/** `no` — hujjat raqami (schyot, TTN, o'tkazma), `account` — to'lov tushgan kassa/bank (akt sverka hujjat nomi uchun). */
+export type StatementLine = { date: Date; doc: string; kind: LedgerKind; debit: number; credit: number; note: string | null; href?: string; no?: string; account?: string };
 export type Statement = { opening: number; lines: StatementLine[]; debit: number; credit: number; closing: number };
 
 /**
- * Davr bo'yicha akt sverki: boshlang'ich qoldiq, davrdagi schyotlar (debet) va to'lovlar (kredit), yakuniy qoldiq.
- * Qoida `lib/finance.ts` dagi qarz hisobi bilan bir xil: bekor qilingan schyot kirmaydi, Realizatsiya jurnali
- * to'lovlari (o'z sotuvini yopadi, ERP schyotlariga tegmaydi) kirmaydi. Musbat qoldiq — mijoz qarzi, manfiy — avans.
+ * Davr bo'yicha akt sverki: boshlang'ich qoldiq, davrdagi debet (schyot, qarzga sotuv, qaytarilgan pul, boshqaning qarzini
+ * to'lagani, boshlang'ich qoldiq yozuvi) va kredit (to'lov, kassa qarz to'lovi, uning qarzini boshqa to'lagani), yakuniy qoldiq.
+ * Qatorlar qarz varag'i tafsiloti bilan bitta manbadan (`lib/customer-ledger.ts`), qoida — `lib/receivables.ts`.
+ * Musbat qoldiq — mijoz qarzi, manfiy — avans.
  */
 export async function customerStatement(customerId: string, from: Date, to: Date): Promise<Statement> {
-  const invWhere = { customerId, status: { not: "CANCELLED" as const } };
-  const payWhere = { customerId, register: { is: null } };
-  const [before, invoices, payments] = await Promise.all([
-    // Davr boshidagi qoldiq — yagona mijoz balansi (receivables.ts) o'sha paytga
-    customerBalance(customerId, { asOf: from }),
-    db.invoice.findMany({ where: { ...invWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { order: { select: { deliveryDate: true } } } }),
-    db.payment.findMany({ where: { ...payWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { invoice: { select: { invoiceNo: true } }, order: { select: { deliveryDate: true } }, cashAccount: { select: { name: true } } } }),
-  ]);
+  const l = await customerLedger(customerId, from, to);
+  if (!l) return { opening: 0, lines: [], debit: 0, credit: 0, closing: 0 };
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const opening = before.balance;
-  const lines: StatementLine[] = [
-    ...invoices.map((i): StatementLine => i.isOpening
-      // Boshlang'ich qoldiq: musbat — mijoz qarzi (debet), manfiy — mijoz avansi (kredit)
-      ? { date: i.date, doc: `Boshlang'ich qoldiq ${i.invoiceNo}`, kind: "INVOICE", debit: Math.max(0, Number(i.amount)), credit: Math.max(0, -Number(i.amount)), note: "tizimga o'tish sanasidagi qoldiq", href: undefined, no: i.invoiceNo }
-      : { date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${date(i.order.deliveryDate)}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined, no: i.invoiceNo }),
-    ...payments.map((p): StatementLine => ({ date: p.date, doc: `To'lov · ${p.cashAccount.name}`, kind: "PAYMENT", debit: 0, credit: Number(p.amount), note: p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.order ? `avans · zayavka ${date(p.order.deliveryDate)}` : p.note, href: undefined, account: p.cashAccount.name })),
-  ].sort((a, b) => a.date.getTime() - b.date.getTime() || (a.kind === b.kind ? 0 : a.kind === "INVOICE" ? -1 : 1));
-  const debit = r2(lines.reduce((s, l) => s + l.debit, 0));
-  const credit = r2(lines.reduce((s, l) => s + l.credit, 0));
-  return { opening, lines, debit, credit, closing: r2(opening + debit - credit) };
+  const lines = l.lines.map((x): StatementLine => ({
+    date: x.date, kind: x.kind, debit: Math.max(0, x.amount), credit: Math.max(0, -x.amount),
+    doc: x.kind === "OPENING" ? `Boshlang'ich qoldiq ${x.no ?? ""}`.trim() : x.no ? `${x.doc} ${x.no}` : x.doc,
+    note: x.kind === "OPENING" ? (x.note ?? "tizimga o'tish sanasidagi qoldiq") : [x.counterparty && x.kind !== "TRANSFER" ? `kimdan: ${x.counterparty}` : null, x.items?.map((i) => `${i.name} ${i.qty} ${i.unit}`).join(", "), x.note].filter(Boolean).join(" · ") || null,
+    href: x.href, no: x.no ?? undefined, account: x.account ?? undefined,
+  }));
+  const debit = r2(lines.reduce((s, x) => s + x.debit, 0));
+  const credit = r2(lines.reduce((s, x) => s + x.credit, 0));
+  return { opening: l.start, lines, debit, credit, closing: r2(l.start + debit - credit) };
 }

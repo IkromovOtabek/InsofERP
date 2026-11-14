@@ -54,10 +54,11 @@ const ORDER_SELECT = {
 /**
  * `extra` — davrdan tashqaridagi reys/zayavka ham qo'shilsin (Logistika reestrida dispetcher sanasini shu davrga o'zgartirgan).
  */
-export async function realizationRows(from: Date, to: Date, extra?: { tripIds: string[]; orderIds: string[] }): Promise<RealizationRow[]> {
+export async function realizationRows(from: Date, to: Date, extra?: { tripIds: string[]; orderIds: string[]; customerIds?: string[] }): Promise<RealizationRow[]> {
   const a = new Date(from); a.setHours(0, 0, 0, 0);
   const b = new Date(to); b.setHours(0, 0, 0, 0); b.setDate(b.getDate() + 1);
-  const live = { kind: "SALE" as const, status: { not: "CANCELLED" as const } };
+  // `customerIds` — faqat shu mijozlar zayavkalari (debitorka hisobi bitta mijoz uchun butun reestrni o'qimasin)
+  const live = { kind: "SALE" as const, status: { not: "CANCELLED" as const }, ...(extra?.customerIds ? { customerId: { in: extra.customerIds } } : {}) };
   const [trips, pickups, groups] = await Promise.all([
     db.trip.findMany({
       where: { status: { not: "CANCELLED" }, order: live, OR: [{ loadedAt: { gte: a, lt: b } }, { loadedAt: null, createdAt: { gte: a, lt: b } }, ...(extra?.tripIds.length ? [{ id: { in: extra.tripIds } }] : [])] },

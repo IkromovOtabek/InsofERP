@@ -33,7 +33,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
   ],
   sales: [
     { key: "sotuv", label: "Sotuv", paths: ["/sales"], actions: [] },
-    { key: "realizatsiya", label: "Realizatsiya reestri", paths: ["/sales/realizatsiya"], actions: [] },
+    { key: "realizatsiya", label: "Realizatsiya", paths: ["/sales/realizatsiya"], actions: [] },
     { key: "leads", label: "Sayt arizalari", paths: ["/leads"], actions: ["leads"] },
     { key: "ecommerce", label: "E-commerce", paths: ["/e-commerce"], actions: ["ecommerce"] },
     { key: "amocrm", label: "amoCRM", paths: ["/amocrm"], actions: ["amocrm", "amocrm_settings"] },
@@ -80,7 +80,8 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "xarajatlar", label: "Transport xarajatlari", paths: ["/logistika/xarajatlar"], actions: ["expense"] },
     { key: "haydovchilar", label: "Haydovchilar", paths: ["/logistika/haydovchilar"], actions: ["drivers", "driver_login"] },
     { key: "tabel", label: "Haydovchilar tabeli", paths: ["/logistika/tabel"], actions: ["pay", "pay_approve", "ledger"] },
-    { key: "realizatsiya", label: "Realizatsiya", paths: ["/logistika/realizatsiya"], actions: ["real_auto", "real_manual"] },
+    // Oyna Sotuv bo'limida (`sales.realizatsiya`, 2026-11-14 ko'chdi) — amallar shu modulda qoldi (berilgan ruxsatlar saqlansin)
+    { key: "realizatsiya", label: "Realizatsiya amallari (Sotuv → Realizatsiya oynasida)", actions: ["real_auto", "real_manual"] },
     { key: "obyektlar", label: "Obyektlar", paths: ["/logistika/obyektlar"], actions: ["sites"] },
     { key: "monitoring", label: "GPS / Monitoring", paths: ["/logistika/monitoring"], actions: [] },
     { key: "nakladnoy", label: "Nakladnoylar va yetkazish", paths: ["/logistika/nakladnoylar", "/logistika/yetkazish"], actions: [] },

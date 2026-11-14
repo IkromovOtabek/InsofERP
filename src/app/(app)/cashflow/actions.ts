@@ -16,6 +16,8 @@ const schema = z.object({
   category: zStr("Kategoriya tanlanmagan"),
   counterparty: zOpt,
   supplierId: zOpt,
+  // Mijoz qarziga: kirim — qarz to'lovi, chiqim — mijozga qaytarilgan pul (`lib/receivables.ts`); kontragent boshqa bo'lishi mumkin
+  customerId: zOpt,
   // Chiqim qaysi kirim hujjati (yetkazuvchidan olingan mol) uchun — bog'lansa kirim "to'langan" summasiga qo'shiladi
   receiptId: zOpt,
   note: zOpt,
@@ -47,6 +49,7 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   const res = await createCashEntry({ ...r.data, date: new Date(r.data.date), requireSub: true }, s.userId);
   if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
+  if (r.data.customerId) revalidatePath("/bi-tahlil/mijozlar", "layout");
   return { ok: true, note: r.data.category === ASSET_PURCHASE_CATEGORY ? "Saqlandi. Endi Moliya → Asosiy vositalar sahifasida shu xarid uchun kartochka oching (amortizatsiya shundan hisoblanadi)" : undefined };
 }
 
@@ -66,6 +69,8 @@ const editSchema = z.object({
   category: zStr("Manba tanlanmagan"),
   subCategory: zOpt,
   counterparty: zOpt,
+  // Maydon yuborilmasa — mijoz bog'lanishi o'zgarmaydi; bo'sh — qarzdan olinadi
+  customerId: z.string().trim().optional().transform((v) => (v === undefined ? undefined : v || null)),
   note: zOpt,
   sig: z.string().max(5000),
 });
@@ -77,7 +82,7 @@ export async function updateCashTx(id: string, _prev: ActionState, fd: FormData)
   if ("error" in r) return { error: r.error };
   const res = await updateCashEntry(id, { ...r.data, date: new Date(r.data.date), requireSub: true }, s.userId);
   if (res.error) return { error: res.error };
-  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
+  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout"); revalidatePath("/bi-tahlil/mijozlar", "layout");
   return { ok: true, note: "Saqlandi" };
 }
 

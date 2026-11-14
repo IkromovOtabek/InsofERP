@@ -70,6 +70,7 @@ model User {
   tasks                  BrigadeTask[]            @relation("TaskCreatedBy")
   taskProgress           TaskProgress[]           @relation("ProgressCreatedBy")
   cashTx                 CashTransaction[]        @relation("CashTxCreatedBy")
+  debtTransfers          CustomerDebtTransfer[]   @relation("DebtTransferBy")
   cashTransfers          CashTransfer[]           @relation("CashTransferCreatedBy")
   cashTransfersCancelled CashTransfer[]           @relation("CashTransferCancelledBy")
   auditLogs              AuditLog[]
@@ -280,6 +281,11 @@ model Customer {
   agent       User?             @relation("CustomerAgent", fields: [agentId], references: [id])
   openings    OpeningBalance[]
   offers      CommercialOffer[]
+  /// Kassa kirim-chiqimi shu mijoz qarziga yozilgan (qarz to'lovi / pul qaytarish)
+  cashTx       CashTransaction[]
+  /// Qarz o'tkazmalari: shu mijozning qarzini boshqa mijoz to'lagan (debtor) / shu mijoz boshqaning qarzini to'lagan (payer)
+  debtPaidBy   CustomerDebtTransfer[] @relation("DebtTransferDebtor")
+  debtPaidFor  CustomerDebtTransfer[] @relation("DebtTransferPayer")
 
   @@index([agentId])
 }
@@ -2377,9 +2383,13 @@ model CashTransaction {
   /// Kredit / qarz — kategoriya `needs = LOAN` bo'lsa; `loanPart` asosiy qarz yoki foizni ajratadi
   loanId        String?
   loanPart      LoanPart?
+  /// Mijoz qarziga yozilgan pul (`lib/receivables.ts`): «Savdo» kirimi — qarz to'lovi (qarzdan ayiriladi), chiqim — mijozga
+  /// qaytarilgan pul (qarzga qo'shiladi). Bo'sh — mijoz qarziga tegmaydi (chakana, naqd sotuv). Kontragent (kimdan) boshqa bo'lishi mumkin
+  customerId    String?
 
   cashAccount CashAccount     @relation(fields: [cashAccountId], references: [id])
   supplier    Supplier?       @relation(fields: [supplierId], references: [id])
+  customer    Customer?       @relation(fields: [customerId], references: [id], onDelete: Restrict)
   createdBy   User            @relation("CashTxCreatedBy", fields: [createdById], references: [id])
   opening     OpeningBalance?
   project     Project?        @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -2394,6 +2404,34 @@ model CashTransaction {
   @@index([cancelledAt])
   @@index([projectId])
   @@index([loanId])
+  @@index([customerId])
+}
+
+/// Qarzni boshqa mijoz to'ladi: `debtor` qarzidan ayiriladi, `payer` ga yoziladi (uning puli yoki avansi bilan).
+/// Pul kassaga tushmaydi — kassa kirimi to'lovchi nomiga alohida yoziladi (yoki uning avansi ishlatiladi). Debitorka
+/// (`lib/receivables.ts`), akt sverka va qarz varaqlari shu yozuvni ikkala mijozda ko'rsatadi. O'chirilmaydi — bekor qilinadi.
+model CustomerDebtTransfer {
+  id            String    @id @default(cuid())
+  docNo         String    @unique
+  date          DateTime
+  debtorId      String
+  payerId       String
+  amount        Decimal   @db.Decimal(18, 2)
+  note          String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  debtor    Customer @relation("DebtTransferDebtor", fields: [debtorId], references: [id], onDelete: Restrict)
+  payer     Customer @relation("DebtTransferPayer", fields: [payerId], references: [id], onDelete: Restrict)
+  createdBy User     @relation("DebtTransferBy", fields: [createdById], references: [id])
+
+  @@index([debtorId])
+  @@index([payerId])
+  @@index([date])
 }
 
 /// Pul oqimi turi (DDS): joriy, moliyaviy, investitsion.

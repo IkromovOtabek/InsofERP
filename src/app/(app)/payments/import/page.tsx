@@ -84,11 +84,12 @@ export default async function CashJournalImport() {
                     ...expenseCats.map((c) => ({ value: c.name, label: c.name, group: "Chiqim manbalari" })),
                   ],
                   newLabel: "Nomidan aniqlanadi",
-                  note: `Manba tizimdagi kategoriyaga moslanadi, tizimda yo'q manba yangi bo'lib qo'shiladi. Tizimda yo'q sub manba o'sha manba ostiga yangi bo'lib qo'shiladi. «${SALES_MANBA}» — To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «${SALES_CATEGORY}» kirimi bo'lib yoziladi (mijoz qarziga tegmaydi). «${PEREKIT_CATEGORY}» / «99999-Xisob raqam almashinuvi» — bir xil summali juft qator (bir hisobdan chiqim, boshqasiga kirim; o'sha kuni yoki ±1 kun) o'tkazma hujjati bo'ladi.`,
+                  note: `Manba tizimdagi kategoriyaga moslanadi, tizimda yo'q manba yangi bo'lib qo'shiladi. Tizimda yo'q sub manba o'sha manba ostiga yangi bo'lib qo'shiladi. «${SALES_MANBA}» — To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «${SALES_CATEGORY}» kirimi bo'lib yoziladi («Mijoz» ustuni to'ldirilsa — shu mijoz qarzidan ayiriladi). «${PEREKIT_CATEGORY}» / «99999-Xisob raqam almashinuvi» — bir xil summali juft qator (bir hisobdan chiqim, boshqasiga kirim; o'sha kuni yoki ±1 kun) o'tkazma hujjati bo'ladi.`,
                 },
               },
               { key: "sub", label: "Sub manba", hint: "yo'q bo'lsa manbaga qo'shiladi", synonyms: ["sub manba", "sub", "подкатег", "подстат"] },
               { key: "who", label: "Kontragent", hint: "kimdan / kimga", synonyms: ["kontragent", "контрагент", "kimdan", "kimga", "кимдан", "кимга", "получател", "плательщ"] },
+              { key: "customer", label: "Mijoz (qarziga)", hint: "to'ldirilsa — kirim mijoz qarzidan ayiriladi", synonyms: ["mijoz", "мижоз", "клиент", "qarzdor", "қарздор", "должник"] },
               { key: "note", label: "Izoh", synonyms: ["izoh", "изох", "изоҳ", "примеч", "коммент", "назначен", "note"] },
             ]}
           >

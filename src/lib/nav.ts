@@ -47,8 +47,10 @@ export const NAV: NavItem[] = [
   { href: "/sales/umumiy", label: "Umumiy ko'rinish",  roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["PRODUCTION", "LOGISTICS"] },
-  // Realizatsiya reestri (reys/TTN bo'yicha): Sotuv va Zayavkalar sahifasidagi tugmadan; ish boshqaruvchi menyusida ham (Sotuv sahifasi unga yopiq)
-  { href: "/sales/realizatsiya", label: "Realizatsiya",  roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Sotuv", menuFor: ["SUPERVISOR"] },
+  // Realizatsiya (2026-11-14 Logistikadan ko'chdi, eski Sotuv reestri o'rniga): reys (TTN) qatorlari zayavkadan o'zi tushadi,
+  // tizimdan tashqari jo'natma qo'lda (`lib/realization-log.ts`); «Qarz» turidagi qatorlar mijoz qarziga (`lib/debt-sales.ts`).
+  // Dispetcher yuritadi (amallar `logistika.real_*`). Sex menyusida yo'q — Zayavkalar sahifasidagi tugmadan
+  { href: "/sales/realizatsiya", label: "Realizatsiya",  roles: ["SALES", "PRODUCTION", "LOGISTICS", "DISPATCHER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Sotuv", menuHide: ["PRODUCTION"] },
   // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi
   { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["ACCOUNTING"] },
   // Sotuv agenti — o'z mijozlari, ularning qarzi va o'z mijoziga zayavka. AGENT uchun yagona sahifa
@@ -91,8 +93,6 @@ export const NAV: NavItem[] = [
   // Haydovchilar tabeli: yetkazilgan reyslar o'zi tushadi, dispetcher narx qo'yadi → Ish haqi (`lib/driver-trip-pay.ts`)
   // Ish boshqaruvchi reys haqini tasdiqlaydi, buxgalter oylikka tushadiganini ko'radi
   { href: "/logistika/tabel",       label: "Haydovchilar tabeli", roles: [...LOGI, "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], group: "Logistika" },
-  // Realizatsiya: reys (TTN) qatorlari zayavkadan o'zi tushadi, tizimdan tashqari jo'natma qo'lda (`lib/realization-log.ts`). Faqat reestr
-  { href: "/logistika/realizatsiya", label: "Realizatsiya",     roles: [...LOGI, "DISPATCHER"], group: "Logistika" },
   // Sotuvda mijoz obyekti mijoz kartasidan ochiladi; GPS — logistika ishi (sex Reyslar'dagi jonli xaritani ko'radi)
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika", menuHide: ["SALES"] },
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika", menuHide: ["PRODUCTION", "SUPERVISOR"] },

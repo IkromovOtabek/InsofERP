@@ -109,9 +109,11 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   // Jurnal qatori bosilsa — Kassa / bank dagi tafsilot oynasi: Tahrirlash, Bekor qilish, O'chirish (ruxsatni server har qatorga hal qiladi,
   // `payments/row-detail.ts`). Oyna `/payments` huquqi bilan o'qiladi — u yopiq xodimga oddiy qator (faqat bekor qilish tugmasi) qoladi
   const canDetail = pathAllowed("/payments", s.role, s.perms);
-  const editCustomers = canDetail && canDo(s, "cashflow", "edit")
+  // Faol mijozlar — kirim formasidagi «Mijoz qarziga» (qarz to'lovi) va tahrir oynasi uchun bir so'rov
+  const activeCustomers = canCreate || (canDetail && canDo(s, "cashflow", "edit"))
     ? await db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } })
     : [];
+  const editCustomers = canDetail && canDo(s, "cashflow", "edit") ? activeCustomers : [];
   const editOptions = { accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })), income: incomeCats, expense: expenseCats, customers: editCustomers, canAddSub: canCreate || canDo(s, "moliya", "categories") };
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
 
@@ -202,7 +204,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         {canCreate && (
           <Card className="lg:col-span-3">
             <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
-            <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} canAdd={canCreate} canEditCat={canEditCat} canDeleteCat={canDeleteCat} lockedCats={systemCats.map((c) => c.name)} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
+            <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} canAdd={canCreate} canEditCat={canEditCat} canDeleteCat={canDeleteCat} lockedCats={systemCats.map((c) => c.name)} clientToken={crypto.randomUUID()} suppliers={suppliers} customers={activeCustomers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
           </Card>
         )}
         <Card className="lg:col-span-2">

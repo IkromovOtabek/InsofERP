@@ -222,7 +222,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
     else addInto(uncosted, i, r.net);
     if (trace) {
       const rz = r.orderId.startsWith("rz:");
-      const src = { date: r.date, title: `${r.customer} — ${r.product}`, href: rz ? "/logistika/realizatsiya" : `/orders/${r.orderId}` };
+      const src = { date: r.date, title: `${r.customer} — ${r.product}`, href: rz ? "/sales/realizatsiya" : `/orders/${r.orderId}` };
       const sub = `${rz ? "Realizatsiya reestri" : `Zayavka ${r.orderNo}`} · ${fmtNum(r.qty, 3)} ${r.unit} × ${fmtNum(r.price)}`;
       tr(`sales:${g}`, i, () => ({ ...src, sub, amount: r.net }));
       tr(`qty:${g}`, i, () => ({ ...src, sub, amount: r.qty }));

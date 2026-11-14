@@ -278,40 +278,40 @@ check(page.status === 200 && page.text.includes(note1), "nakladnoy chop etish sa
 check(page.text.includes(ttn1) && page.text.includes("Zavod nusxasi") && page.text.includes("Yuk oluvchi nusxasi"), "nakladnoyda TTN va bitta A4 da 2 nusxa", page.status);
 
 // Logistika → Realizatsiya: katakdagi qalamcha — reys TTN, reysdan qatorda xaridordan boshqa ustunlar (faqat reestr), qo'lda qatorda hamma ustun
-const RA = "(app)/logistika/realizatsiya/actions";
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`t:${t1}`, "ttn", `${ttn1}A`], "/logistika/realizatsiya");
+const RA = "(app)/sales/realizatsiya/actions";
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`t:${t1}`, "ttn", `${ttn1}A`], "/sales/realizatsiya");
 check(r.ok && q1(`select ttn from "Trip" where id='${t1}'`) === `${ttn1}A`, "Realizatsiya katagidan reys TTN tuzatildi", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "loadPlace", "QA BSU-9"], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "loadPlace", "QA BSU-9"], "/sales/realizatsiya");
 check(r.ok && q1(`select "loadPlace" from "RealizationNote" where key='${t1}'`) === "QA BSU-9", "reysdan qatorda ortilgan joy katakdan yozildi", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "qty", "99"], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "qty", "99"], "/sales/realizatsiya");
 check(!!r.error && !r.ok, "reys kaliti bilan miqdor yozilmaydi (miqdor — mahsulot qatorida)", r.error);
 // Reysdan qatorni tuzatish — faqat reestrda: zayavka qatori, sotuvchisi o'zgarmaydi; bo'shatilsa asl qiymat qaytadi
 const it1 = q1(`select i.id from "OrderItem" i join "Trip" t on t."orderId"=i."orderId" where t.id='${t1}' order by i.id limit 1`)!;
 const line1 = `${t1}-${it1}`;
 const itemQty = q1(`select "qtyM3"::text from "OrderItem" where id='${it1}'`);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`l:${line1}`, "qty", "99"], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`l:${line1}`, "qty", "99"], "/sales/realizatsiya");
 check(r.ok && n1(`select qty from "RealizationLine" where key='${line1}'`) === 99 && q1(`select "qtyM3"::text from "OrderItem" where id='${it1}'`) === itemQty, "reysdan qatorda miqdor reestrda tuzatildi — zayavka qatori o'zgarmadi", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "seller", "QA Reestr Sotuvchi"], "/logistika/realizatsiya");
-let rz = (await logist.get("/logistika/realizatsiya")).text;
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "seller", "QA Reestr Sotuvchi"], "/sales/realizatsiya");
+let rz = (await logist.get("/sales/realizatsiya")).text;
 check(r.ok && q1(`select seller from "RealizationNote" where key='${t1}'`) === "QA Reestr Sotuvchi" && rz.includes("QA Reestr Sotuvchi") && rz.includes("Zayavkada:"), "reysdan qatorda sotuvchi tuzatildi — jadvalda tuzatilgan belgisi bilan", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "date", "2099-01-01"], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "date", "2099-01-01"], "/sales/realizatsiya");
 check(/kelajak/.test(r.error ?? ""), "reysdan qatorda kelajak sana rad etildi", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "customerName", "QA boshqa xaridor"], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "customerName", "QA boshqa xaridor"], "/sales/realizatsiya");
 check(!r.ok && /tahrirlanmaydi/.test(r.error ?? ""), "reysdan qatorda xaridor tuzatilmaydi (zayavkada)", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`l:${line1}`, "qty", ""], "/logistika/realizatsiya");
-const back1 = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "seller", ""], "/logistika/realizatsiya");
-rz = (await logist.get("/logistika/realizatsiya")).text;
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`l:${line1}`, "qty", ""], "/sales/realizatsiya");
+const back1 = await logist.action(`${RA}#saveRealizationCellAction`, [`a:${t1}`, "seller", ""], "/sales/realizatsiya");
+rz = (await logist.get("/sales/realizatsiya")).text;
 check(r.ok && back1.ok && q1(`select coalesce(qty::text, '-') from "RealizationLine" where key='${line1}'`) === "-" && q1(`select coalesce(seller, '-') from "RealizationNote" where key='${t1}'`) === "-" && !rz.includes("QA Reestr Sotuvchi"), "bo'shatilgan katak zayavkadagi qiymatga qaytdi", r.error ?? back1.error);
-r = await sklad.action(`${RA}#saveRealizationCellAction`, [`l:${line1}`, "price", "1"], "/logistika/realizatsiya");
+r = await sklad.action(`${RA}#saveRealizationCellAction`, [`l:${line1}`, "price", "1"], "/sales/realizatsiya");
 check(!r.ok, "sklad reysdan qatorni tuzata olmaydi");
-r = await logist.action(`${RA}#createRealizationAction`, [undefined, fd({ clientToken: token(), date: today, payGroup: "CASH", customerName: "QA Katak Xaridor", productName: "QA katak mahsulot", unit: "m3", qty: "3", price: "100000" })], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#createRealizationAction`, [undefined, fd({ clientToken: token(), date: today, payGroup: "CASH", customerName: "QA Katak Xaridor", productName: "QA katak mahsulot", unit: "m3", qty: "3", price: "100000" })], "/sales/realizatsiya");
 const me = q1(`select id from "RealizationEntry" where "customerName"='QA Katak Xaridor' and "cancelledAt" is null order by "createdAt" desc limit 1`)!;
 check(r.ok && !!me, "qo'lda qator qo'shildi", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "qty", "4,5"], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "qty", "4,5"], "/sales/realizatsiya");
 check(r.ok && n1(`select qty from "RealizationEntry" where id='${me}'`) === 4.5 && n1(`select price from "RealizationEntry" where id='${me}'`) === 100000, "qo'lda qator miqdori katakdan tuzatildi, narx joyida", r.error);
-r = await logist.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "date", "2099-01-01"], "/logistika/realizatsiya");
+r = await logist.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "date", "2099-01-01"], "/sales/realizatsiya");
 check(/kelajak/.test(r.error ?? ""), "katakdan kelajak sana rad etildi", r.error);
-r = await sklad.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "note", "x"], "/logistika/realizatsiya");
+r = await sklad.action(`${RA}#saveRealizationCellAction`, [`m:${me}`, "note", "x"], "/sales/realizatsiya");
 check(!r.ok, "sklad Realizatsiya katagini tahrirlay olmaydi");
 
 // Realizatsiya Excel importi: xato qator importni to'xtatmaydi, ro'yxatda yo'q mahsulot nomi bilan qo'shiladi
@@ -324,7 +324,7 @@ const impRows = [
   { date: dmy, payGroup: "абв", customerName: `QA Imp xato ${tag}`, productName: "B25", qty: "5" },
 ];
 const impFd = () => fd({ rows: JSON.stringify(impRows), valueMaps: "{}" });
-r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/logistika/realizatsiya/import");
+r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/sales/realizatsiya/import");
 const imp = q(`select "productName", unit, "payGroup", length(coalesce(note, '')) from "RealizationEntry" where "customerName"='QA Imp ${tag}' order by unit`);
 check(r.ok && !r.redirect && imp.length === 2 && r.text.includes("2 ta qator o'qilmadi"), "importda 2 xato qator o'tkazildi, qolgan 2 tasi qo'shildi", r.error ?? imp.length);
 check(imp[0]?.[1] === "dona" && imp[0]?.[2] === "BANK" && imp[0]?.[3] === "300" && imp[1]?.[1] === "m3" && imp[1]?.[2] === "CASH",
@@ -340,10 +340,10 @@ check(n1(`select count(*) ${custSql}`) === 1 && n1(`select count(*) from "Custom
   && n1(`select count(*) from "RealizationEntry" e join "Customer" c on c.id=e."customerId" where e."customerName"='QA Imp ${tag}'`) === 2
   && n1(`select count(*) from "AuditLog" where entity='Customer' and action='CREATE' and "entityId" in (select id ${custSql})`) === 1,
   "ro'yxatda yo'q xaridor mijozlarga bitta bo'lib qo'shildi, ikkala qator bog'landi; xato qator xaridori qo'shilmadi");
-r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/logistika/realizatsiya/import");
+r = await logist.action(`${RA}#importRealizationAction`, [undefined, impFd()], "/sales/realizatsiya/import");
 check(r.ok && n1(`select count(*) from "RealizationEntry" where "customerName"='QA Imp ${tag}'`) === 2 && r.text.includes("Yangi qator yo'q")
   && n1(`select count(*) ${prodSql}`) === 2 && n1(`select count(*) ${custSql}`) === 1, "o'sha faylni qayta yuklash — yangi qator, mahsulot va mijoz yo'q, takror yozilmadi", r.error);
-r = await logist.action(`${RA}#importRealizationAction`, [undefined, fd({ rows: JSON.stringify(impRows.slice(2)), valueMaps: "{}" })], "/logistika/realizatsiya/import");
+r = await logist.action(`${RA}#importRealizationAction`, [undefined, fd({ rows: JSON.stringify(impRows.slice(2)), valueMaps: "{}" })], "/sales/realizatsiya/import");
 check(!r.ok && !!r.error?.includes("Hech bir qator qo'shilmadi"), "faqat xato qatorli fayl — qo'shilmadi deb aytildi", r.error);
 
 const vt =q1(`select "verifyToken" from "Trip" where id='${t1}'`)!;

@@ -105,7 +105,7 @@ function EntryDialog({ entry, clientToken, onClose }: { entry?: EntryValues; cli
   }, [state, entry, onClose]);
   return (
     <Dialog title={entry ? "Qo'lda qatorni tuzatish" : "Realizatsiyaga qo'lda qator"} onClose={onClose} wide>
-      <p className="text-xs text-slate-500">Tizimga reys bo&apos;lib tushmagan jo&apos;natma. Faqat reestr — mijoz qarzi, kassa va skladga ta&apos;sir qilmaydi.</p>
+      <p className="text-xs text-slate-500">Tizimga reys bo&apos;lib tushmagan jo&apos;natma. To&apos;lov turi «Qarz» bo&apos;lsa — mijoz qarziga tushadi; kassa va skladga ta&apos;sir qilmaydi.</p>
       {state?.ok && !entry && <FormSuccess text={state.note ?? "Qo'shildi"} />}
       <EntryFields key={round} entry={entry} token={token} action={action} pending={pending} error={state?.error} onClose={onClose} />
     </Dialog>

@@ -62,6 +62,35 @@ export async function supplierPositions(asOf: Date, since?: Date): Promise<Map<s
   return sup;
 }
 
+/**
+ * Ta'minotchi davr aylanmasi (`since` ≤ sana < `until`) — `supplierPositions` bilan bir xil filtrlar:
+ *   opening — boshlang'ich qoldiq yozuvlari, sold — kirim hujjatlari (QQS va dostavka bilan),
+ *   paid — biz to'lagan pul − qaytarilgan pul. Davr boshidagi pozitsiya + opening + sold − paid = davr oxiridagisi.
+ */
+export async function supplierTurnover(since: Date, until: Date): Promise<Map<string, { opening: number; sold: number; paid: number }>> {
+  const from = await payablesSince();
+  const txFrom = since > from ? since : from;
+  const [recItems, openings, supTx] = await Promise.all([
+    db.goodsReceiptItem.findMany({
+      where: { receipt: { cancelledAt: null, date: { gte: since, lt: until }, createdAt: { gte: from }, OR: [{ clientToken: null }, { NOT: { clientToken: { startsWith: PAID_IMPORT_TOKEN } } }] } },
+      select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { supplierId: true } } },
+    }),
+    db.openingBalance.findMany({ where: { kind: "SUPPLIER", cancelledAt: null, date: { gte: since, lt: until } }, select: { supplierId: true, amount: true } }),
+    txFrom < until
+      ? db.cashTransaction.groupBy({ by: ["supplierId", "type"], where: { supplierId: { not: null }, cancelledAt: null, type: { in: ["INCOME", "EXPENSE"] }, date: { gte: txFrom, lt: until } }, _sum: { amount: true } })
+      : Promise.resolve([]),
+  ]);
+  const m = new Map<string, { opening: number; sold: number; paid: number }>();
+  const get = (id: string) => { let r = m.get(id); if (!r) { r = { opening: 0, sold: 0, paid: 0 }; m.set(id, r); } return r; };
+  const bySupplier = new Map<string, typeof recItems>();
+  for (const it of recItems) { const k = it.receipt.supplierId; if (!bySupplier.has(k)) bySupplier.set(k, []); bySupplier.get(k)!.push(it); }
+  for (const [k, items] of bySupplier) get(k).sold += receiptTotal(items);
+  for (const o of openings) if (o.supplierId) get(o.supplierId).opening += Number(o.amount);
+  for (const t of supTx) if (t.supplierId) get(t.supplierId).paid += (t.type === "EXPENSE" ? 1 : -1) * Number(t._sum.amount ?? 0);
+  for (const r of m.values()) { r.opening = r2(r.opening); r.sold = r2(r.sold); r.paid = r2(r.paid); }
+  return m;
+}
+
 async function snapshot(asOf: Date, ctx: { matCost: Map<string, number>; prodCost: Map<string, number | null>; since: Date; assets: Awaited<ReturnType<typeof activeAssets>> }): Promise<Snapshot> {
   const month = monthKeyOf(new Date(asOf.getTime() - 1));
   const [stock, cust, sup, txBal, payBal, loans] = await Promise.all([
