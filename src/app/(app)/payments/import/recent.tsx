@@ -41,7 +41,7 @@ export async function RecentImports({ userId, canAny }: { userId: string; canAny
     <Card className="mt-4 max-w-6xl">
       <div id="oxirgi" className="scroll-mt-20" />
       <CardHeader title="Oxirgi importlar"
-        description="Noto'g'ri fayl butunligicha qaytariladi: yozuvlar, perekit o'tkazmalari va ishlatilmagan yangi manbalar o'chadi. Yuklangandan keyin tahrirlangan, bekor qilingan yoki hujjatga bog'langan yozuv bo'lsa — qaytarilmaydi" />
+        info="Noto'g'ri fayl butunligicha qaytariladi: yozuvlar, perekit o'tkazmalari va ishlatilmagan yangi manbalar o'chadi. Yuklangandan keyin tahrirlangan, bekor qilingan yoki hujjatga bog'langan yozuv bo'lsa — qaytarilmaydi" />
       <Table>
         <thead>
           <tr><Th>Qachon</Th><Th>Kim</Th><Th>Davr</Th><Th right>Yozuv</Th><Th right>O&apos;tkazma</Th><Th right>Yangi manba</Th><Th /></tr>

@@ -3,7 +3,7 @@ import { CalendarDays } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { fmtNum, date, isoDate, opAt } from "@/lib/format";
-import { Button, Callout, Card, Input, Table, Td, Th, Tr } from "@/components/ui";
+import { Button, Callout, Card, InfoButton, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { JOURNAL_ONLY, TRANSFER_REF, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -92,7 +92,16 @@ export async function AccountMatrix({ accounts, range }: { accounts: Account[]; 
       <Table>
         <thead>
           <tr>
-            <Th className={HEAD}>Hisob</Th>
+            <Th className={HEAD}>
+              <span className="inline-flex items-center gap-1">
+                Hisob
+                <InfoButton title="Hisoblar jadvali">
+                  <p>Qoldiq — so&apos;mda, tepadagi sana oxiriga. Bugun va Shu oy — kirim / chiqim, million so&apos;mda.</p>
+                  <p>Hisob ustunlarida perekit ham kirim/chiqimga kiradi (pul shu hisobga kirgan yoki chiqqan). Jami — perekitsiz: pul kompaniya ichida ko&apos;chgan.</p>
+                  <p>Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
+                </InfoButton>
+              </span>
+            </Th>
             {accounts.map((a) => (
               <Th key={a.id} right className={cn(COL, HEAD)}>
                 <Link href={`/payments?account=${a.id}&from=${isoDate(range.from)}&to=${isoDate(range.to)}`} className="hover:underline">{a.name}</Link>
@@ -118,7 +127,6 @@ export async function AccountMatrix({ accounts, range }: { accounts: Account[]; 
           {flowRow("Shu oy, mln", month)}
         </tbody>
       </Table>
-      <p className="mt-1.5 text-xs text-slate-500">Qoldiq — so&apos;mda, tepadagi sana oxiriga; Bugun va Shu oy — kirim / chiqim, million so&apos;mda. Hisob ustunlarida perekit ham kirim/chiqimga kiradi; Jami — perekitsiz (pul kompaniya ichida ko&apos;chgan). Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
     </div>
   );
 }

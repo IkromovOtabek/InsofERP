@@ -39,7 +39,15 @@ export default async function CashJournalImport() {
       <PageHeader
         back={{ href: "/payments?tab=kassa", label: "Kassa / bank" }}
         title="Excel orqali qo'shish"
-        subtitle="Kassa jurnali ustunlaridagi faylni yuklang: Sana, Hisob, Kirim, Chiqim, Manba, Sub manba, Kontragent, Izoh. Har qator kirim yoki chiqim bo'lib Kassa jurnaliga tushadi."
+        info={<>
+          <p>Kassa jurnali ustunlaridagi faylni yuklang: Sana, Hisob, Kirim, Chiqim, Manba, Sub manba, Kontragent, Izoh. Har qator kirim yoki chiqim bo&apos;lib Kassa jurnaliga tushadi.</p>
+          <p>Har qatorda Kirim yoki Chiqim summasidan bittasi to&apos;ldiriladi. Kassa jurnalida bor qator (kun, hisob, summa, manba bir xil) qayta yozilmaydi —
+            jurnalning o&apos;zidan yuklab olingan faylni ham yuklash mumkin. Kredit va loyiha manbalari Kirim-Chiqim formasida kiritiladi.</p>
+          <p>Tizimda yo&apos;q manba qator turi bilan yangi manba bo&apos;lib qo&apos;shiladi (PNL qatorini keyin Moliya → Kategoriyalarda tuzating).
+            Tizimda yo&apos;q sub manba o&apos;sha manba ostiga yangi bo&apos;lib qo&apos;shiladi (nomi boshqa manbada band bo&apos;lsa — «Nom (Manba)»).</p>
+          <p>Naqd kassa minusga tushsa yoki biror qatorda xato bo&apos;lsa hech narsa yozilmaydi. Noto&apos;g&apos;ri yozuv Kirim-Chiqim jadvalida sabab bilan bekor qilinadi,
+            butun fayl noto&apos;g&apos;ri bo&apos;lsa — pastdagi «Oxirgi importlar»dan qaytariladi.</p>
+        </>}
       />
       <Card className="max-w-6xl">
         {accounts.length === 0 ? (
@@ -89,14 +97,6 @@ export default async function CashJournalImport() {
                 {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({kind(a.type)})</option>)}
               </Select>
             </Field>
-            <p className="text-xs text-slate-500">
-              Har qatorda Kirim yoki Chiqim summasidan bittasi to&apos;ldiriladi. Kassa jurnalida bor qator (kun, hisob, summa, manba bir xil) qayta yozilmaydi —
-              jurnalning o&apos;zidan yuklab olingan faylni ham yuklash mumkin. Kredit va loyiha manbalari Kirim-Chiqim formasida kiritiladi.
-              Tizimda yo&apos;q manba qator turi bilan yangi manba bo&apos;lib qo&apos;shiladi (PNL qatorini keyin Moliya → Kategoriyalarda tuzating).
-              Tizimda yo&apos;q sub manba o&apos;sha manba ostiga yangi bo&apos;lib qo&apos;shiladi (nomi boshqa manbada band bo&apos;lsa — «Nom (Manba)»).
-              Naqd kassa minusga tushsa yoki biror qatorda xato bo&apos;lsa hech narsa yozilmaydi. Noto&apos;g&apos;ri yozuv Kirim-Chiqim jadvalida sabab bilan bekor qilinadi,
-              butun fayl noto&apos;g&apos;ri bo&apos;lsa — pastdagi «Oxirgi importlar»dan qaytariladi.
-            </p>
           </ExcelImport>
         )}
       </Card>

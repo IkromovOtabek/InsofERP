@@ -74,7 +74,6 @@ export function MonthEndForm({ oy, day, rows }: { oy: string; day: string; rows:
       </Table>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button disabled={pending || filled.length === 0}><Save size={15} /> Qoldiqlarni saqlash{filled.length ? ` (${filled.length})` : ""}</Button>
-        <span className="text-xs text-slate-500">Bo&apos;sh qoldirilgan hisob o&apos;zgarmaydi. «O&apos;zgaradi» — saqlangach hisob qoldig&apos;i shuncha o&apos;zgaradi.</span>
       </div>
       <div className="mt-2"><FormError error={state?.error} /><FormSuccess text={state?.ok ? state.note : undefined} /></div>
     </form>

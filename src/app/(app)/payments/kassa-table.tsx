@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Banknote, Landmark, Search, Wallet, X } from "lucide-react";
-import { Badge, Card, ColumnFilter, Empty, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, type FilterOption, type SortDir } from "@/components/ui";
+import { Badge, Card, ColumnFilter, Empty, InfoButton, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, type FilterOption, type SortDir } from "@/components/ui";
 import { CustomerName } from "@/components/customer-name";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -189,7 +189,10 @@ export function KassaJournal({ rows, accounts, from, to, initial, truncated }: {
       <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
         <h2 className="min-w-0 flex-1 font-semibold">
           Kassa jurnali <span className="text-sm font-normal text-slate-500">· {shown.length} ta yozuv{shown.length !== rows.length ? ` (${rows.length} tadan)` : ""}{shown.length > view.length ? ` — oxirgi ${view.length} tasi ko'rsatilgan, Excel'da hammasi` : ""}</span>
-          <span className="block text-xs font-normal text-slate-500">Ustun nomi yonidagi tugma — Excel kabi filtr va saralash. Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash, bekor qilish va o&apos;chirish (ruxsatga qarab)</span>
+          <InfoButton title="Kassa jurnali" className="ml-1">
+            <p>Ustun nomi yonidagi tugma — Excel kabi filtr va saralash.</p>
+            <p>Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash, bekor qilish va o&apos;chirish (ruxsatga qarab).</p>
+          </InfoButton>
         </h2>
         <ExcelButton file={`Kassa jurnali ${from} — ${to}`} load={excel} />
       </div>

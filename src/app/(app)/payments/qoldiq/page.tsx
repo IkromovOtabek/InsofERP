@@ -51,7 +51,14 @@ export default async function MonthEndBalancesPage({ searchParams }: { searchPar
       <PageHeader
         back={{ href: "/payments?tab=kassa", label: "Kassa / bank" }}
         title="Oy oxiri qoldiqlari"
-        subtitle="Exceldan tizimga o'tish: naqd kassa va bank hisoblarining oy oxiridagi qoldig'ini kiriting — keyingi kirim-chiqim shu qoldiq ustiga yoziladi."
+        info={<>
+          <p>Exceldan tizimga o&apos;tish: naqd kassa va bank hisoblarining oy oxiridagi qoldig&apos;ini kiriting — keyingi kirim-chiqim shu qoldiq ustiga yoziladi.</p>
+          <p>Exceldagi qoldiqni ERPga o&apos;tgan kundan oldingi oy oxiri holatiga yozing. Excel jurnalini keyingi oydan boshlab
+            «Excel orqali qo&apos;shish» bilan yuklasangiz yoki kunlik kiritsangiz — hisob shu qoldiqdan davom etadi va minusga tushmaydi.</p>
+          <p>Qoldiq kirim/chiqim va foyda-zarar hisobotlariga kirmaydi. Har hisobda bitta boshlang&apos;ich qoldiq: qayta kiritilsa —
+            summa va sana yangilanadi (tarix AuditLog&apos;da).</p>
+          <p>Bo&apos;sh qoldirilgan hisob o&apos;zgarmaydi. «O&apos;zgaradi» ustuni — saqlangach hisob qoldig&apos;i shuncha o&apos;zgaradi.</p>
+        </>}
       />
 
       <Card className="max-w-6xl">
@@ -71,14 +78,6 @@ export default async function MonthEndBalancesPage({ searchParams }: { searchPar
           <MonthEndForm key={oy} oy={oy} day={dateRu(day)} rows={rows} />
         )}
 
-        <div className="mt-5">
-          <Callout tone="info" title="Qanday ishlaydi">
-            Exceldagi qoldiqni ERPga o&apos;tgan kundan oldingi oy oxiri holatiga yozing. Excel jurnalini keyingi oydan boshlab
-            «Excel orqali qo&apos;shish» bilan yuklasangiz yoki kunlik kiritsangiz — hisob shu qoldiqdan davom etadi va minusga tushmaydi.
-            Qoldiq kirim/chiqim va foyda-zarar hisobotlariga kirmaydi. Har hisobda bitta boshlang&apos;ich qoldiq: qayta kiritilsa —
-            summa va sana yangilanadi (tarix AuditLog&apos;da).
-          </Callout>
-        </div>
       </Card>
     </div>
   );

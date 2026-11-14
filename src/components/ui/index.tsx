@@ -11,14 +11,18 @@ export { BackLink, NavHistoryTracker } from "./back-link";
 import { BackLink } from "./back-link";
 export { Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot, type SheetTone } from "./sheet";
 export { ColumnFilter, type FilterOption, type SortDir } from "./column-filter";
+export { InfoButton } from "./info-button";
+import { InfoButton } from "./info-button";
 
 /* ═══════════════════════ Layout ═══════════════════════ */
 
 /** `back` berilmagan sahifalar uchun: bosh sahifaga qaytish. */
 const HOME_BACK = { href: "/dashboard", label: "Bosh sahifa" };
 
-export function PageHeader({ title, subtitle, eyebrow, action, back = HOME_BACK }: {
+export function PageHeader({ title, subtitle, eyebrow, action, back = HOME_BACK, info }: {
   title: React.ReactNode; subtitle?: React.ReactNode; eyebrow?: string; action?: React.ReactNode;
+  /** Sahifa haqida tushuntirish — sarlavha yonida «i» tugma, bosilganda oynada (sahifada doim turmaydi) */
+  info?: React.ReactNode;
   /** Ota sahifa havolasi (standart — bosh sahifa); `false` — tugmasiz (bosh sahifaning o'zi) */
   back?: { href: string; label?: string } | false;
 }) {
@@ -27,7 +31,7 @@ export function PageHeader({ title, subtitle, eyebrow, action, back = HOME_BACK 
       <div className="min-w-0">
         {back && <BackLink href={back.href} label={back.label} className="mb-3" />}
         {eyebrow && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
-        <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-[32px]">{title}</h1>
+        <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-[32px]">{title}{info && <InfoButton title={typeof title === "string" ? title : "Sahifa haqida"} size="md">{info}</InfoButton>}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       {/* `data-tour` — instruksiya (onboarding) shu belgilarga strelka qo'yadi */}
@@ -40,7 +44,8 @@ export function Card({ children, className, padded = true }: { children: React.R
   return <div className={cn("rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)", padded && "p-5", className)}>{children}</div>;
 }
 
-export function CardHeader({ title, description, action, icon: Icon, help }: { title: string; description?: string; action?: React.ReactNode; icon?: LucideIcon; help?: React.ReactNode }) {
+/** `description` — qisqa ma'lumot (davr, soni); tushuntirish matni — `info` («i» tugma, bosilganda oynada). */
+export function CardHeader({ title, description, action, icon: Icon, help, info }: { title: string; description?: React.ReactNode; action?: React.ReactNode; icon?: LucideIcon; help?: React.ReactNode; info?: React.ReactNode }) {
   return (
     <div className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
       {/* basis-64: sarlavha uchun mo'ljallangan en. Amal tugmalari shu enga sig'masa
@@ -48,7 +53,7 @@ export function CardHeader({ title, description, action, icon: Icon, help }: { t
       <div className="flex min-w-0 flex-1 basis-64 items-start gap-2.5">
         {Icon && <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><Icon size={16} /></div>}
         <div className="min-w-0">
-          <h2 className="text-[19px] font-bold leading-snug text-slate-900">{title}{help && <span className="ml-1 inline-flex align-middle">{help}</span>}</h2>
+          <h2 className="text-[19px] font-bold leading-snug text-slate-900">{title}{help && <span className="ml-1 inline-flex align-middle">{help}</span>}{info && <span className="ml-1 inline-flex align-middle"><InfoButton title={title}>{info}</InfoButton></span>}</h2>
           {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
         </div>
       </div>
@@ -57,11 +62,11 @@ export function CardHeader({ title, description, action, icon: Icon, help }: { t
   );
 }
 
-export function Section({ title, action, children, className, id }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string; id?: string }) {
+export function Section({ title, action, children, className, id, info }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string; id?: string; info?: React.ReactNode }) {
   return (
     <section id={id} className={cn("mt-8 scroll-mt-20", className)}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h2 className="min-w-0 border-l-4 border-brand-400 pl-2.5 text-lg font-bold text-slate-900">{title}</h2>
+        <h2 className="min-w-0 border-l-4 border-brand-400 pl-2.5 text-lg font-bold text-slate-900">{title}{info && <span className="ml-1 inline-flex align-middle"><InfoButton title={title}>{info}</InfoButton></span>}</h2>
         {action}
       </div>
       {children}
