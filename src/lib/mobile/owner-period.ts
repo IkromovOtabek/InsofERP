@@ -1,19 +1,19 @@
 import { db } from "@/lib/db";
 import { balanceFromGroups } from "@/lib/cash-tx";
 import { loadRevenue } from "@/lib/bi/core";
-import { COGS_CATEGORY } from "@/lib/owner-dashboard";
+import { pnlRange, pnlSum } from "@/lib/fin-report/pnl";
 import { periodPlan } from "@/lib/period-stats";
 import { asOf, monthShares, receivables, type DashRange } from "./dashboard";
 
 /**
  * Direktor bosh sahifasi kartalari — oydan boshqa davr tanlanganda (bugun / hafta / yil / kalendar).
- * "Oy" da raqamlar vebdagi Egasi dashbordidan (`ownerDashboard`) olinadi; bu yerda xuddi shu formulalar
- * ixtiyoriy davr uchun: sof foyda = tushum − tannarx (retsept) − operatsion xarajat (xomashyodan tashqari).
+ * "Oy" da raqamlar vebdagi Egasi dashbordidan (`ownerDashboard`) olinadi. Foyda ikkalasida ham vebdagi «Foyda-zarar»
+ * (hisoblangan PNL) qoidalari bilan — bu yerda shu davr uchun (`pnlRange`): daromad − tannarx − xarajatlar.
  */
 export async function ownerPeriod(r: DashRange) {
   const until = asOf(r);
   const months = monthShares(r);
-  const [sales, tx, budgets, pay, allTx, accounts, recv, batches, trips, pp] = await Promise.all([
+  const [sales, tx, budgets, pay, allTx, accounts, recv, batches, trips, pp, pnl] = await Promise.all([
     loadRevenue(r.from, r.to), // tushum — yetkazilgan reyslar bo'yicha (vebdagi Egasi dashbordi bilan bir xil)
     db.cashTransaction.groupBy({ by: ["type", "category"], where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
     db.expenseBudget.findMany({ where: { OR: months.map(({ year, month }) => ({ year, month })) } }),
@@ -24,11 +24,13 @@ export async function ownerPeriod(r: DashRange) {
     db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { qtyM3: true } }),
     periodPlan(r.from, r.to),
+    pnlRange(r.from, r.to),
   ]);
   const n = (v: unknown) => Number(v ?? 0);
-  const revenue = sales.reduce((s, x) => s + x.revenue, 0), cogs = sales.reduce((s, x) => s + x.cost, 0);
+  const revenue = sales.reduce((s, x) => s + x.revenue, 0);
   const expense = tx.filter((t) => t.type === "EXPENSE").reduce((s, t) => s + n(t._sum.amount), 0);
-  const opex = expense - tx.filter((t) => t.type === "EXPENSE" && t.category === COGS_CATEGORY).reduce((s, t) => s + n(t._sum.amount), 0);
+  const p = (k: Parameters<typeof pnlSum>[1]) => pnlSum(pnl.parts, k);
+  const gross = p("gross"), net = p("net");
   const share = (b: { year: number; month: number }) => months.find((m) => m.year === b.year && m.month === b.month)?.share ?? 0;
   const expensePlan = budgets.length ? budgets.reduce((s, b) => s + n(b.amount) * share(b), 0) : null;
   // Qoldiq: to'lovlar + barcha yozuvlar ishorasi bilan (boshlang'ich qoldiq, o'tkazmalar ham — txSign)
@@ -39,7 +41,8 @@ export async function ownerPeriod(r: DashRange) {
   const concretePlan = pp.rows.filter((p) => p.product.unit === "m3").reduce((s, p) => s + p.plan, 0) || null;
   return {
     until,
-    profit: { revenue, cogs, gross: revenue - cogs, opex, net: revenue - cogs - opex },
+    // `revenue` — daromad (QQS'siz, qaytarilgan pul ayirilgan), `opex` — ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz
+    profit: { revenue: p("income"), cogs: p("cogs"), gross, opex: gross - net, net, cogsEst: p("cogsEst"), uncosted: p("uncosted") },
     expenses: { total: expense, plan: expensePlan, ratio: revenue > 0 ? (expense / revenue) * 100 : null },
     cash: { total: cash + bank, cash, bank },
     receivable: { total: recv.total, debtors: recv.list.length },

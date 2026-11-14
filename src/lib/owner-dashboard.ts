@@ -2,12 +2,13 @@ import { db } from "@/lib/db";
 import { lineTotal } from "@/lib/receipt-vat";
 import { getCompany } from "@/lib/company";
 import { monthWorkDays, workCalendar } from "@/lib/work-calendar";
-import { loadRevenue, productCosts, materialCosts, sum, safeDiv, addDays, startOfDay, monthForecast, workingDays, goLiveDate, grossOf, marginOf, type Range, type SaleRow } from "@/lib/bi/core";
+import { loadRevenue, productCosts, materialCosts, sum, safeDiv, addDays, startOfDay, monthForecast, workingDays, goLiveDate, marginOf, type Range, type SaleRow } from "@/lib/bi/core";
 import { lossChannels } from "@/lib/bi/finance";
 import { materialOverview } from "@/lib/bi/stock";
 import { MONTHS_SHORT } from "@/lib/bi/plans";
 import { EXPENSE_CATEGORIES } from "@/app/(app)/cashflow/categories";
 import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
+import { pnlRange, pnlReport, pnlSum } from "@/lib/fin-report/pnl";
 import type { PnlLine } from "@/generated/prisma";
 import { ROLE_LABELS } from "@/lib/nav";
 import { customersCredit, type CustomerCredit } from "@/lib/finance";
@@ -40,8 +41,11 @@ const cat = (name: string) => {
 };
 /** Xomashyo kategoriyasi — tannarxga kiradi, operatsion xarajatga qo'shilmaydi (ikki marta hisoblanmasin). */
 export const COGS_CATEGORY = cat("Xomashyo");
-/** Operatsion xarajatga kirmaydigan PNL qatorlari (`lib/fin-report`): kredit tanasi / asosiy vosita / qarz (NONE), loyihalar, divident. */
-const NON_OPEX = new Set<PnlLine>(["NONE", "PROJECT", "DIVIDEND"]);
+/**
+ * Xarajatga kirmaydigan PNL qatorlari (`lib/fin-report`): kredit tanasi / asosiy vosita / qarz (NONE), loyihalar, divident,
+ * mijozga qaytarilgan pul (xarajat emas — PNL'da daromaddan ayiriladi).
+ */
+const NON_OPEX = new Set<PnlLine>(["NONE", "PROJECT", "DIVIDEND", "CUSTOMER_REFUND"]);
 /** Transport (yoqilg'i shu toifada) — transport blokidagi "fakt / norma". */
 const FUEL_CATEGORY = cat("Transport");
 const REPAIR_CATEGORY = cat("Ta'mirlash / ehtiyot qism");
@@ -119,7 +123,7 @@ export async function ownerDashboard() {
   const [
     company, sales90, salesPlans, budgets, txMonth, txPrev3, payMonth, pay30, allPay, allTx, accounts, recv,
     supplyOpen, receiptsMonth, prodPlans, batchesMonth, outputsMonth, ordersMonth, overdueOrders, tripsToday, tripsMonth, vehicles,
-    materials, recipes, consumeMonth, loss, defectsMonth, overdueTasks, costs, matCost,
+    materials, recipes, consumeMonth, loss, defectsMonth, overdueTasks, costs, matCost, pnl3, pnlToday,
   ] = await Promise.all([
     getCompany(),
     // Tushum — yetkazilgan reyslar (realizatsiya) bo'yicha; zayavka qabul qilingani hali tushum emas
@@ -161,15 +165,17 @@ export async function ownerDashboard() {
     db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: today } } }),
     productCosts(),
     materialCosts(),
+    // Foyda — vebdagi «Foyda-zarar» (hisoblangan PNL) bilan bitta hisob: 3 oy (trend, joriy oy oxirgi ustun) va bugun
+    pnlReport([monthKey(from3), monthKey(prevMonthStart), monthKey(monthStart)]),
+    pnlRange(today, tomorrow),
   ]);
   const T = { warn: company.alertWarnPct, crit: company.alertCritPct, stockWarn: company.stockWarnDays, stockCrit: company.stockCritDays, overdue: company.overdueDays };
 
   /* ───────────────────────── Sotuv → tushum, tannarx, marja ───────────────────────── */
   const inMonth = (r: SaleRow) => r.date >= monthStart;
   const salesMonth = sales90.filter(inMonth), salesToday = salesMonth.filter((r) => r.date >= today);
-  const rev = (rows: SaleRow[]) => sum(rows.map((r) => r.revenue)), cogsOf = (rows: SaleRow[]) => sum(rows.map((r) => r.cost));
+  const rev = (rows: SaleRow[]) => sum(rows.map((r) => r.revenue));
   const revenueToday = rev(salesToday), revenueMonth = rev(salesMonth);
-  const cogsToday = cogsOf(salesToday), cogsMonth = cogsOf(salesMonth);
   const companyPlanRow = salesPlans.find((p) => p.sellerId === null);
   const revenuePlan = companyPlanRow ? Number(companyPlanRow.amount) : sum(salesPlans.map((p) => Number(p.amount))) || null;
   const revenueForecast = project(revenueMonth);
@@ -218,8 +224,6 @@ export async function ownerDashboard() {
   const expenseMonth = sum(categories.map((c) => c.month)), expenseToday = sum(categories.map((c) => c.day));
   const expensePlan = budgetOf.size ? sum([...budgetOf.values()].map((b) => b.amount)) : null;
   const expenseForecastTotal = sum(categories.map((c) => c.forecast));
-  const opexMonth = expenseMonth - (categories.find((c) => c.cat === COGS_CATEGORY)?.month ?? 0); // xomashyo tannarxda — operatsionga kirmaydi
-  const opexToday = expenseToday - (categories.find((c) => c.cat === COGS_CATEGORY)?.day ?? 0);
   const cogsBudget = budgetOf.get(COGS_CATEGORY)?.amount ?? null;
   const opexPlan = expensePlan !== null ? expensePlan - (cogsBudget ?? 0) : null;
   const overspent = categories.filter((c) => c.over);
@@ -233,8 +237,19 @@ export async function ownerDashboard() {
   const duplicateSum = sum(duplicates.map((t) => Number(t.amount))) / 2;
 
   /* ───────────────────────── Foyda ───────────────────────── */
-  const grossToday = grossOf(salesToday), grossMonth = grossOf(salesMonth);
-  const netToday = grossToday - opexToday, netMonth = grossMonth - opexMonth;
+  // Vebdagi «Foyda-zarar» (hisoblangan PNL) raqamlari: daromad QQS'siz, mijozga qaytarilgan pul ayirilgan; tannarx retsept
+  // bo'yicha (retseptsiz mahsulotga — taxminiy); xarajat kassa kategoriyasining PNL qatori bo'yicha (qarz berish, loyiha,
+  // divident, kirim hujjati puli kirmaydi), ish haqi vedomostdan, amortizatsiya. Sof foyda = «Zavod sof foydasi».
+  // Ilgari bu yerda alohida formula edi: retseptsiz sotuv tushumi foydaga umuman kirmasdi, xarajat esa to'liq ayirilardi.
+  const CUR = 2; // `pnl3` ustunlari: 2 oy oldin, o'tgan oy, joriy oy
+  const P3 = pnl3.parts, PT = pnlToday.parts;
+  const incomeMonth = pnlSum(P3, "income", CUR), incomeToday = pnlSum(PT, "income");
+  const cogsMonth = pnlSum(P3, "cogs", CUR), cogsToday = pnlSum(PT, "cogs");
+  const grossMonth = pnlSum(P3, "gross", CUR), grossToday = pnlSum(PT, "gross");
+  const netMonth = pnlSum(P3, "net", CUR), netToday = pnlSum(PT, "net");
+  // Xarajatlar: ishlab chiqarish, ma'muriy, tijoriy, soliq, kredit foizi (yalpi foyda − sof foyda)
+  const opexMonth = grossMonth - netMonth, opexToday = grossToday - netToday;
+  const cogsEstMonth = pnlSum(P3, "cogsEst", CUR), uncostedMonth = pnlSum(P3, "uncosted", CUR);
   // Foyda rejasi faqat REJALARDAN: sotuv plani − xomashyo byudjeti − operatsion byudjet. Ilgari tannarx rejasi
   // joriy faktdagi tannarx ulushidan olinardi — fakt yomonlashsa reja ham "yomonlashib", manfiy reja chiqardi.
   // Xomashyo byudjeti kiritilmagan bo'lsa yoki natija ≤ 0 bo'lsa (reja to'liq/izchil emas) — reja ko'rsatilmaydi.
@@ -244,13 +259,16 @@ export async function ownerDashboard() {
   const grossPlan = grossPlanRaw !== null && grossPlanRaw > 0 ? grossPlanRaw : null;
   const netPlan = netPlanRaw !== null && netPlanRaw > 0 ? netPlanRaw : null;
   const profitPlanNote = revenuePlan === null ? "Sotuv plani kiritilmagan" : cogsPlan === null ? "Xomashyo byudjeti kiritilmagan — foyda rejasi hisoblanmaydi" : netPlanRaw !== null && netPlanRaw <= 0 ? "Byudjet sotuv planidan katta — foyda rejasi izchil emas" : null;
-  // Sof foyda prognozi = tushum prognozi − tannarx (joriy ulushda) − xarajat prognozi (toifa qoidalari bilan)
-  const netForecast = revenueForecast - project(cogsMonth) - (expenseForecastTotal - (categories.find((c) => c.cat === COGS_CATEGORY)?.forecast ?? 0));
+  // Sof foyda prognozi = yalpi foyda ish kunlari sur'atida + hozirgi xarajat + oy oxirigacha kutilgan xarajat
+  // (kassa toifalari qoidasi: oylik bir martalik toifa — rejagacha, qolgani — sur'at bo'yicha; xomashyo tannarxda)
+  const cogsCat = categories.find((c) => c.cat === COGS_CATEGORY);
+  const opexLeft = Math.max(0, (expenseForecastTotal - (cogsCat?.forecast ?? 0)) - (expenseMonth - (cogsCat?.month ?? 0)));
+  const netForecast = project(grossMonth) - opexMonth - opexLeft;
   const profitTable = [
-    { key: "revenue", label: "Tushum", today: revenueToday, month: revenueMonth, plan: revenuePlan, invert: false },
-    { key: "cogs", label: "Tannarx (xomashyo, retsept bo'yicha; reja — xomashyo byudjeti)", today: cogsToday, month: cogsMonth, plan: cogsPlan, invert: true },
+    { key: "revenue", label: "Daromad (QQS'siz, qaytarilgan pul ayirilgan)", today: incomeToday, month: incomeMonth, plan: revenuePlan, invert: false },
+    { key: "cogs", label: `Tannarx (xomashyo, retsept bo'yicha${cogsEstMonth > 0 ? `; shundan taxminiy ${moneyShort(cogsEstMonth)}` : ""}; reja — xomashyo byudjeti)`, today: cogsToday, month: cogsMonth, plan: cogsPlan, invert: true },
     { key: "gross", label: "Yalpi foyda", today: grossToday, month: grossMonth, plan: grossPlan, invert: false },
-    { key: "opex", label: "Operatsion xarajatlar", today: opexToday, month: opexMonth, plan: opexPlan, invert: true },
+    { key: "opex", label: "Xarajatlar (ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz)", today: opexToday, month: opexMonth, plan: opexPlan, invert: true },
     { key: "net", label: "Sof foyda", today: netToday, month: netMonth, plan: netPlan, invert: false },
   ].map((r) => ({ ...r, deviation: r.plan !== null ? r.month - r.plan : null, pct: r.plan ? (r.month / r.plan) * 100 : null }));
   const marginPlan = revenuePlan && netPlan !== null ? (netPlan / revenuePlan) * 100 : null;
@@ -377,11 +395,11 @@ export async function ownerDashboard() {
 
   /* ───────────────────────── Trend: 3 oy va 30/60/90 kun ───────────────────────── */
   const months = [2, 1, 0].map((k) => { const s = new Date(y, m - k, 1), e = new Date(y, m - k + 1, 1); return { key: monthKey(s), label: MONTHS_SHORT[s.getMonth()], s, e }; });
-  const trend = months.map(({ key, label, s, e }) => {
-    const rows = sales90.filter((r) => r.date >= s && r.date < e);
-    const r = rev(rows), c = cogsOf(rows);
-    const opex = key === monthKey(monthStart) ? opexMonth : sum(txPrev3.filter((t) => t.date >= s && t.date < e && t.category !== COGS_CATEGORY && isOpex(t)).map((t) => Number(t.amount)));
-    return { key, label, revenue: r, profit: r - c - opex, expenses: c + opex, production: sum(batchesMonth.filter((b) => b.date >= s && b.date < e && b.product.unit === "m3").map((b) => Number(b.qtyM3))) };
+  // Foyda va xarajat (tannarx + xarajatlar) — PNL'dan (`pnl3` ustunlari shu 3 oy), tushum — yetkazilgan sotuv (QQS bilan)
+  const trend = months.map(({ key, label, s, e }, i) => {
+    const r = rev(sales90.filter((x) => x.date >= s && x.date < e));
+    const profit = pnlSum(P3, "net", i);
+    return { key, label, revenue: r, profit, expenses: pnlSum(P3, "income", i) - profit, production: sum(batchesMonth.filter((b) => b.date >= s && b.date < e && b.product.unit === "m3").map((b) => Number(b.qtyM3))) };
   });
   const dyn = [30, 60, 90].map((d) => { const cur = rev(sales90.filter((r) => r.date >= addDays(today, -d))); const prev = rev(sales90.filter((r) => r.date >= addDays(today, -2 * d) && r.date < addDays(today, -d))); return { days: d, revenue: cur, delta: prev > 0 ? ((cur - prev) / prev) * 100 : null }; });
 
@@ -443,7 +461,7 @@ export async function ownerDashboard() {
     today, monthStart, daysPassed, daysInMonth, wdPassed, wdTotal, thresholds: T, levels, problems, reportText,
     summary: {
       revenue: { today: revenueToday, month: revenueMonth, plan: revenuePlan, forecast: revenueForecast, pct: revenuePct, expected: revenueExpected },
-      profit: { today: netToday, month: netMonth, plan: netPlan, forecast: netForecast, gross: grossMonth },
+      profit: { today: netToday, month: netMonth, plan: netPlan, forecast: netForecast, gross: grossMonth, cogsEst: cogsEstMonth, uncosted: uncostedMonth },
       expenses: { today: expenseToday, month: expenseMonth, plan: expensePlan, deviation: expensePlan !== null ? expenseMonth - expensePlan : null, ratio: safeDiv(expenseMonth, revenueMonth) * 100 },
       cash: { total: cashTotal, cash: cashOnHand, bank: bankTotal, gapDay },
       receivable: { total: receivable, overdue: overdueReceivable, debtors: debtByCustomer.size },

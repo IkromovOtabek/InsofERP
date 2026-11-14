@@ -24,7 +24,7 @@ import { MECH_STATUS_SHORT, MECH_STATUS_TONE, mechSubject } from "@/lib/mechanic
 import { FACTORY_REQUEST_WHERE, LOGI_REQUEST_WHERE, canLogiPay, canSeeLogiMoney } from "@/lib/logistics-finance";
 import type { MechanicRequestStatus } from "@/generated/prisma";
 import { soleUnit } from "@/lib/unit";
-import { day, inUnit, money, num, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
+import { day, inUnit, money, num, short, sum, sumFull, time, totalsText, tripQty } from "./fmt";
 import { dashRange, roleDashboard } from "./dashboard";
 import { ownerPeriod } from "./owner-period";
 import { ownerCached } from "./owner-cache";
@@ -469,7 +469,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         const endTag = P.until ? ` (${periodLabel} oxirida)` : "";
         cards.push(
           revenueCard,
-          { key: "profit", label: `Sof foyda ${pl}`, value: shortSigned(P.profit.net), hint: `yalpi ${short(P.profit.gross)} · xarajat ${short(P.profit.opex)}`, tone: P.profit.net < 0 ? "danger" : "success", icon: "banknote", open: dOpen("profit") },
+          { key: "profit", label: `Sof foyda ${pl}`, value: sumFull(P.profit.net), hint: `yalpi ${short(P.profit.gross)} · xarajat ${short(P.profit.opex)}${P.profit.cogsEst > 0 ? ` · taxminiy tannarx ${short(P.profit.cogsEst)}` : ""}`, tone: P.profit.net < 0 ? "danger" : "success", icon: "banknote", open: dOpen("profit") },
           { key: "expenses", label: `Xarajatlar ${pl}`, value: short(P.expenses.total), hint: P.expenses.plan ? `byudjet ${short(P.expenses.plan)}` : `tushumning ${pctTxt(P.expenses.ratio)}`, tone: P.expenses.plan && P.expenses.total > P.expenses.plan ? "danger" : "success", icon: "wallet", open: dOpen("expenses") },
           { key: "cash", label: `Pul${endTag}`, value: short(P.cash.total), hint: `kassa ${short(P.cash.cash)} · bank ${short(P.cash.bank)}`, tone: P.cash.total < 0 ? "danger" : "success", icon: "landmark", open: dOpen("cash") },
           { key: "receivable", label: `Debitorka${endTag}`, value: short(P.receivable.total), hint: `${P.receivable.debtors} ta qarzdor`, tone: P.receivable.total > 0 ? "warning" : "success", icon: "receipt", open: dOpen("receivable") },
@@ -480,7 +480,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         );
       } else cards.push(
         revenueCard,
-        { key: "profit", label: "Sof foyda", value: short(S.profit.month), hint: `prognoz ${short(S.profit.forecast)}`, tone: tone(L.profit), icon: "banknote", open: dOpen("profit") },
+        { key: "profit", label: "Sof foyda", value: sumFull(S.profit.month), hint: `prognoz ${short(S.profit.forecast)}${S.profit.cogsEst > 0 ? ` · taxminiy tannarx ${short(S.profit.cogsEst)}` : ""}`, tone: tone(L.profit), icon: "banknote", open: dOpen("profit") },
         { key: "expenses", label: "Xarajatlar", value: short(S.expenses.month), hint: S.expenses.plan ? `byudjet ${short(S.expenses.plan)}` : `tushumning ${pctTxt(S.expenses.ratio)}`, tone: tone(L.expenses), icon: "wallet", open: dOpen("expenses") },
         { key: "cash", label: "Pul", value: short(S.cash.total), hint: `kassa ${short(S.cash.cash)} · bank ${short(S.cash.bank)}`, tone: tone(L.cash), icon: "landmark", open: dOpen("cash") },
         { key: "receivable", label: "Debitorka", value: short(S.receivable.total), hint: S.receivable.overdue ? `muddati o'tgan ${short(S.receivable.overdue)}` : `${S.receivable.debtors} ta qarzdor`, tone: tone(L.receivable), icon: "receipt", open: dOpen("receivable") },

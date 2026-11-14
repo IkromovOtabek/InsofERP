@@ -19,7 +19,8 @@ import { DEPRECIATION_LINE, PNL_FIXED, sheetLine } from "./sheet-lines";
  *  HISOBLANGAN (accrual, asosiy):
  *   - daromad  = yetkazilgan mahsulot (`loadRevenue`, QQS'siz) mahsulot guruhlari bo'yicha + boshqa tushumlar (kassa)
  *   - tannarx  = retsept × xomashyo o'rtacha narxi; kassadagi «Xomashyo» to'lovi bu rejimda PNL'ga kirmaydi
- *     (u sklad qoldig'iga aylanadi, tannarxga sotilganda o'tadi — ikki marta hisoblanmasin)
+ *     (u sklad qoldig'iga aylanadi, tannarxga sotilganda o'tadi — ikki marta hisoblanmasin). Retsepti yo'q mahsulotga —
+ *     taxminiy tannarx (`SaleRow.estCost`: shu birlikdagi retseptli sotuvning tannarx ulushi), «shundan taxminiy» qatori
  *   - ish haqi = shu oy uchun tasdiqlangan yakuniy vedomost (hisoblangan + ish beruvchi solig'i); vedomost
  *     bo'lmasa — kassadan to'langani. Kunbay ishchilar har doim kassadan.
  *   - amortizatsiya — asosiy vositalardan
@@ -32,7 +33,19 @@ import { DEPRECIATION_LINE, PNL_FIXED, sheetLine } from "./sheet-lines";
  * asosiy vosita xaridi, qarz berish (`NONE`) PNL'ga kirmaydi. Loyihalar — zavod foydasidan keyin, divident — oxirida.
  */
 export type PnlMode = "accrual" | "cash";
-export type PnlReport = { months: MonthKey[]; mode: PnlMode; rows: FinRow[]; retained: number[]; notes: string[] };
+/**
+ * Hisobotning xom yig'indilari (har ustun — oy), ishorasiz: xarajat musbat. Egasi dashbordi va mobil bosh sahifa
+ * foydani shu yerdan oladi — vebdagi «Foyda-zarar» bilan bitta hisob.
+ */
+export type PnlParts = {
+  sales: number[]; otherIncome: number[]; refund: number[]; income: number[];
+  cogs: number[]; cogsEst: number[]; uncosted: number[]; gross: number[];
+  prod: number[]; admin: number[]; comm: number[]; unknown: number[]; operating: number[];
+  tax: number[]; interest: number[]; net: number[]; projects: number[]; dividend: number[]; retained: number[];
+};
+export type PnlReport = { months: MonthKey[]; mode: PnlMode; rows: FinRow[]; retained: number[]; notes: string[]; parts: PnlParts };
+/** Ustunlar yig'indisi (`col` berilsa — shu ustun). */
+export const pnlSum = (p: PnlParts, k: keyof PnlParts, col?: number) => (col === undefined ? p[k].reduce((s, v) => s + v, 0) : p[k][col] ?? 0);
 
 /** Kunbay ishchilar sub manbasi — vedomostga kirmaydi, hisoblangan rejimda ham kassadan olinadi («Xodimlar maoshlari» qatoriga). */
 const DAY_WORKERS_SUB = "Yollanma (kunbay) ishchilar";
@@ -112,6 +125,19 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
 /** Bosh sahifada «Bugun» va boshqaruv paneli joriy oy PNL'ini ikkalasi so'raydi — bir marta (`cache`). Natija o'zgartirilmaydi. */
 const pnlOnce = cache((months: string, mode: PnlMode) => buildPnl(months.split(",") as MonthKey[], mode));
 
+/**
+ * Ixtiyoriy davr PNL'i (hisoblangan) — bugun, hafta, kalendar oralig'i: o'sha qoidalar, ustunlar — davr tushgan oylar.
+ * Oyning bir qismi olinsa, oy uchun hisoblanadigan summalar (ish haqi vedomosti, amortizatsiya) kunlarga bo'linadi.
+ */
+export async function pnlRange(from: Date, to: Date): Promise<PnlReport> {
+  return rangeOnce(from.getTime(), to.getTime());
+}
+const rangeOnce = cache((from: number, to: number) => {
+  const months: MonthKey[] = [];
+  for (let d = new Date(new Date(from).getFullYear(), new Date(from).getMonth(), 1); d.getTime() < to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) months.push(monthKeyOf(d));
+  return buildPnl(months.length ? months : [monthKeyOf(new Date(from))], "accrual", undefined, { from: new Date(from), to: new Date(to) });
+});
+
 /** Drill-down uchun: qaysi qator kalitining yozuvlari yig'iladi (`month` — ustun, null — davr jami). */
 type Trace = { match: (key: string) => boolean; month: number | null; items: DrillItem[] };
 
@@ -143,11 +169,17 @@ const STOCK_TYPE_LABEL: Record<string, string> = {
   ISSUE: "chiqim", WRITE_OFF: "spisaniye", ADJUSTMENT: "inventarizatsiya",
 };
 
-async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promise<PnlReport> {
+async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?: { from: Date; to: Date }): Promise<PnlReport> {
   const n = months.length;
-  const from = monthStart(months[0]!), to = monthEnd(months[n - 1]!);
+  const from = clip?.from ?? monthStart(months[0]!), to = clip?.to ?? monthEnd(months[n - 1]!);
   const idx = new Map(months.map((m, i) => [m, i]));
-  const at = (d: Date) => idx.get(monthKeyOf(d));
+  const at = (d: Date) => (d >= from && d < to ? idx.get(monthKeyOf(d)) : undefined);
+  /** Oyning davrga tushgan ulushi (kunlar bo'yicha) — oylik summalar uchun; to'liq oyda 1. */
+  const shareOf = (m: MonthKey) => {
+    if (!clip) return 1;
+    const s = monthStart(m).getTime(), e = monthEnd(m).getTime();
+    return Math.max(0, Math.min(to.getTime(), e) - Math.max(from.getTime(), s)) / (e - s);
+  };
 
   const [nodes, txs, revenue, payments, groups, payroll, assets, stockUse] = await Promise.all([
     loadCategories(),
@@ -177,7 +209,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
   // ── Daromad ──
   const sales = new Map<string, number[]>(); // guruh → oylar (so'm)
   const qty = new Map<string, number[]>(); // guruh → oylar (dona, m³) — «Jami sotuv (dona, m3)»
-  const cogs = zeros(n), uncosted = zeros(n);
+  const cogs = zeros(n), cogsEst = zeros(n), uncosted = zeros(n);
   for (const r of revenue) {
     const i = at(r.date);
     if (i === undefined) continue;
@@ -186,6 +218,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
     addInto(sales.get(g)!, i, r.net);
     addInto(qty.get(g)!, i, r.qty);
     if (r.costKnown) addInto(cogs, i, r.cost);
+    else if (r.estCost !== undefined) { addInto(cogs, i, r.estCost); addInto(cogsEst, i, r.estCost); }
     else addInto(uncosted, i, r.net);
     if (trace) {
       const rz = r.orderId.startsWith("rz:");
@@ -194,7 +227,11 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
       tr(`sales:${g}`, i, () => ({ ...src, sub, amount: r.net }));
       tr(`qty:${g}`, i, () => ({ ...src, sub, amount: r.qty }));
       if (r.costKnown) tr("cogs", i, () => ({ ...src, sub: `${sub} · tannarx retsept bo'yicha`, amount: -r.cost }));
-      else tr("uncosted", i, () => ({ ...src, sub: `${sub} · retsepti yoki xomashyo narxi yo'q`, amount: r.net }));
+      else if (r.estCost !== undefined) {
+        const est = { ...src, sub: `${sub} · retsept yo'q — taxminiy tannarx`, amount: -r.estCost };
+        tr("cogs", i, () => est);
+        tr("cogs-est", i, () => est);
+      } else tr("uncosted", i, () => ({ ...src, sub: `${sub} · retsepti yoki xomashyo narxi yo'q`, amount: r.net }));
     }
   }
   if (mode === "cash") {
@@ -265,13 +302,13 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
   if (mode === "accrual") {
     for (const p of payroll) {
       const i = idx.get(p.month);
-      if (i !== undefined) put("PAYROLL", sheetLine("Ish haqi"), i, Number(p.gross) + Number(p.employerTax), () => ({
+      if (i !== undefined) put("PAYROLL", sheetLine("Ish haqi"), i, (Number(p.gross) + Number(p.employerTax)) * shareOf(p.month), () => ({
         date: monthStart(p.month as MonthKey), title: `Ish haqi vedomosti ${p.docNo}`,
         sub: `hisoblangan ${fmtNum(Number(p.gross))} + ish beruvchi solig'i ${fmtNum(Number(p.employerTax))}`, href: `/ish-haqi/${p.id}`,
       }));
     }
     for (const a of assets) for (const m of months) {
-      const v = depreciationIn(a, m);
+      const v = depreciationIn(a, m) * shareOf(m);
       if (v) put("PRODUCTION", DEPRECIATION_LINE, idx.get(m)!, v, () => ({ date: monthStart(m), title: a.name, sub: `Amortizatsiya · ${a.group} · ${a.lifeMonths} oyga`, href: "/moliya/asosiy-vositalar" }));
     }
     const open = months.filter((m) => unaccruedPaid.has(m));
@@ -286,6 +323,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
       if (stockUse.top.length) notes.push(`Retseptda yo'q materiallar (yoqilg'i, ehtiyot qism…) skladdan chiqqanda xarajat — «${STOCK_USE_PREFIX}…» qatorlari. Eng kattalari: ${stockUse.top.join(", ")}.`);
       if (stockUse.twins.length) notes.push(`Retsept materialiga o'xshash, lekin retseptga ulanmagan: ${stockUse.twins.join(", ")} — Sklad'da birlashtiring, aks holda ular tannarxga emas, «Sklad sarfi»ga tushadi.`);
     }
+    if (cogsEst.some((v) => v > 0)) notes.push("Retsepti yo'q (yoki katalogga bog'lanmagan) mahsulotlar tannarxi taxminiy — shu birlikdagi retseptli sotuvning tannarx ulushi bo'yicha («shundan taxminiy» qatori). Aniq bo'lishi uchun mahsulotni katalogga bog'lab, retsept kiriting.");
     if (uncosted.some((v) => v > 0)) notes.push("Ba'zi mahsulotlarning retsepti yoki xomashyo narxi yo'q — ularning tushumi tannarxsiz kirdi («Tannarxi noma'lum tushum» qatori).");
     notes.push("Daromad — yetkazilgan mahsulot, QQS'siz; dostavka summasi kirmaydi. Tannarx retsept bo'yicha (haqiqiy ÷ me'yor koeffitsiyenti keyingi bosqichda).");
   } else {
@@ -336,6 +374,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
     row("refund", "Sotib oluvchiga qaytarilgan pul", "sub", neg(refund)),
     ...(mode === "accrual" && uncosted.some((v) => v > 0) ? [row("uncosted", "shundan tannarxi noma'lum tushum", "sub", uncosted, { hint: "Retsepti yoki xomashyo narxi yo'q mahsulotlar" })] : []),
     row("cogs", mode === "accrual" ? "Sotuv tannarxi (xom-ashyo)" : "Sotuv tannarxi (xom-ashyoga to'langan)", "line", neg(cogsTotal), { hint: mode === "accrual" ? "Retsept bo'yicha xom-ashyo × o'rtacha narx (QQSsiz)" : undefined }),
+    ...(mode === "accrual" && cogsEst.some((v) => v > 0) ? [row("cogs-est", "shundan taxminiy (retseptsiz mahsulotlar)", "sub", neg(cogsEst), { hint: "Shu birlikdagi retseptli sotuvning tannarx ulushi bo'yicha" })] : []),
     pctRow("cogs-pct", "Tannarx ulushi, %", cogsTotal, income),
     row("gross", "YALPI FOYDA", "total", gross),
     pctRow("gross-pct", "Yalpi marja, %", gross, income),
@@ -363,7 +402,11 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace): Promi
   ];
   // Bo'sh ichki qatorlarni chiqarmaymiz (0 summali sub), jadvaldagi qat'iy qatorlar va asosiy qatorlar doim turadi
   const visible = rows.filter((r) => r.kind !== "sub" || fixed.has(r.key) || r.values.some((v) => (v ?? 0) !== 0));
-  return { months, mode, rows: visible, retained, notes };
+  const parts: PnlParts = {
+    sales: salesTotal, otherIncome, refund, income, cogs: cogsTotal, cogsEst, uncosted, gross,
+    prod, admin, comm, unknown, operating, tax, interest, net, projects, dividend, retained,
+  };
+  return { months, mode, rows: visible, retained, notes, parts };
 }
 
 /** Qatorning bolalari: ota qator kaliti → bola kaliti shu qatorga kiradimi (Daromad ← mahsulot guruhlari + boshqa tushumlar). */

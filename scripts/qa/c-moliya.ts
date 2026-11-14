@@ -11,7 +11,9 @@ import { check, section, done } from "./c-lib";
 import { db } from "@/lib/db";
 import { createCashEntry } from "@/lib/cash-entry";
 import { loadCategories, makeResolver, resetCategoryCache } from "@/lib/fin-report/categories";
-import { pnlReport } from "@/lib/fin-report/pnl";
+import { pnlRange, pnlReport, pnlSum } from "@/lib/fin-report/pnl";
+import { DEPRECIATION_LINE } from "@/lib/fin-report/sheet-lines";
+import { loadRevenue } from "@/lib/bi/core";
 import { ddsReport } from "@/lib/fin-report/dds";
 import { balanceReport } from "@/lib/fin-report/balance";
 import { loanBalances } from "@/lib/fin-report/loans";
@@ -213,6 +215,35 @@ async function main() {
   check("xom-ashyo: guruh jami = qatorlar yig'indisi", raw.groups.every((g) => !g.total || Math.abs(g.total.fact - g.rows.reduce((a, r) => a + r.fact, 0)) < 0.01));
   check("tayyor mahsulot: oy oxiri = boshi + ishlab chiqarildi − jo'natildi ± boshqa", fin.rows.every((r) => Math.abs(r.close - (r.open + r.produced - r.shipped + r.other)) < 0.01));
   check("ish haqi: vedomost yo'q bo'lsa qatorlar bo'sh, bor bo'lsa jami = qatorlar", ved.run ? near(ved.total.gross, ved.rows.reduce((a, r) => a + r.gross, 0)) : ved.rows.length === 0);
+
+  section("PNL: realizatsiya — nom bo'yicha bog'lash, retseptsizga taxminiy tannarx, qisqa davr");
+  // 2019-05 — boshqa testlar yozmaydigan oy. A — retseptli (100 kg × 1 000 = 100 000 / m³), B — retseptsiz
+  const RM = "2019-05", rd = (day: number) => new Date(2019, 4, day, 12);
+  const [pr0, rg0] = await Promise.all([pnlReport([RM]), pnlRange(rd(1), rd(16))]);
+  const whR = await db.warehouse.findFirst({ select: { id: true } }) ?? await db.warehouse.create({ data: { name: `QA sklad ${tag}` } });
+  const semR = await db.material.create({ data: { code: `QAPS${tag}`, name: `QA PNL sement ${tag}`, unit: "kg" } });
+  await db.stockMove.create({ data: { warehouseId: whR.id, createdById: U, date: rd(1), type: "RECEIPT", materialId: semR.id, qty: 1_000, unitCost: 1_000 } });
+  const pA = await db.product.create({ data: { code: `QAPA${tag}`, name: `QA PNL Beton A ${tag}`, unit: "m3", price: 500_000 } });
+  const pB = await db.product.create({ data: { code: `QAPB${tag}`, name: `QA PNL Beton B ${tag}`, unit: "m3", price: 500_000 } });
+  await db.recipe.create({ data: { productId: pA.id, items: { create: [{ materialId: semR.id, qtyPerM3: 100 }] } } });
+  const rz = { payGroup: "CASH", customerName: `QA PNL mijoz ${tag}`, groupName: "Beton", unit: "m3", createdById: U };
+  // A — katalogga bog'lanmagan, nomi boshqa registrda va ortiqcha bo'sh joy bilan; B — bog'langan, retsepti yo'q
+  await db.realizationEntry.create({ data: { ...rz, date: rd(10), productName: `  qa pnl  beton a ${tag}`, qty: 10, price: 400_000 } });
+  await db.realizationEntry.create({ data: { ...rz, date: rd(20), productId: pB.id, productName: pB.name, qty: 5, price: 400_000 } });
+  const revR = await loadRevenue(rd(1), new Date(2019, 5, 1));
+  const rA = revR.find((r) => r.product === pA.name), rB = revR.find((r) => r.productId === pB.id);
+  check("bog'lanmagan qator nomi bo'yicha katalog mahsulotiga ulandi, tannarx retseptdan (10 × 100 000)", rA?.productId === pA.id && rA.costKnown && near(rA.cost, 1_000_000), rA);
+  check("retseptsiz qatorga taxminiy tannarx: shu oy m³ ulushi 1 000 000 / 4 000 000 → 2 000 000 × 25%", rB?.costKnown === false && near(rB.estCost ?? -1, 500_000), rB);
+  const pr1 = await pnlReport([RM]);
+  const dRz = (k: Parameters<typeof pnlSum>[1]) => pnlSum(pr1.parts, k) - pnlSum(pr0.parts, k);
+  check("PNL tannarx +1 500 000 (shundan taxminiy 500 000), tannarxsiz tushum yo'q", near(dRz("cogs"), 1_500_000) && near(dRz("cogsEst"), 500_000) && near(dRz("uncosted"), 0), [dRz("cogs"), dRz("cogsEst"), dRz("uncosted")]);
+  check("PNL yalpi foyda +4 500 000 (6 000 000 − 1 500 000), «shundan taxminiy» qatori bor", near(dRz("gross"), 4_500_000) && val(pr1.rows, "cogs-est") <= -500_000 + 0.01, [dRz("gross"), val(pr1.rows, "cogs-est")]);
+  check("PNL qatorlari va `parts` bir xil: yalpi foyda", near(val(pr1.rows, "gross"), pnlSum(pr1.parts, "gross")));
+  const rg1 = await pnlRange(rd(1), rd(16));
+  check("qisqa davr (1–15 may): faqat A sotuvi — tannarx +1 000 000, taxmin yo'q", near(pnlSum(rg1.parts, "cogs") - pnlSum(rg0.parts, "cogs"), 1_000_000) && near(pnlSum(rg1.parts, "cogsEst") - pnlSum(rg0.parts, "cogsEst"), 0));
+  const depKey = `prod:${DEPRECIATION_LINE}`;
+  const [aprM, aprH] = await Promise.all([pnlReport([N]), pnlRange(new Date(2020, 3, 1), new Date(2020, 3, 16))]);
+  check("qisqa davrda amortizatsiya kunlarga bo'linadi: aprelning 15/30 kuni → yarmi", val(aprM.rows, depKey) !== 0 && near(val(aprH.rows, depKey), val(aprM.rows, depKey) / 2), [val(aprM.rows, depKey), val(aprH.rows, depKey)]);
 
   done();
 }

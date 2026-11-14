@@ -4,6 +4,7 @@ import { isoDate } from "@/lib/format";
 import { avgUnitCosts } from "@/lib/stock";
 import { companyVatPayer } from "@/lib/receipt-vat";
 import { withoutNds } from "@/lib/nds";
+import { normalizeUnit } from "@/lib/unit";
 import { countWorkDays, monthWorkDays, type WorkCalendar } from "@/lib/work-calendar";
 
 /* ───────────── Davr ───────────── */
@@ -102,6 +103,11 @@ export type SaleRow = {
   net: number;
   /** Tannarx ma'lummi (faol retsept bor va har xomashyoning narxi bor). Bilinmasa marjaga kirmaydi — 100% foyda bo'lib ko'rinmasin */
   costKnown: boolean;
+  /**
+   * Taxminiy tannarx — faqat `costKnown` yo'q qatorda (`estimateCosts`). Foyda-zarar (PNL) uchun: retseptsiz mahsulot tushumi
+   * foydadan tushib qolmasin va 100% foyda bo'lib ham ko'rinmasin. Marja jadvallari (`grossOf`, `marginOf`) buni olmaydi.
+   */
+  estCost?: number;
   /** Faqat Realizatsiya reestri qatorida: zayavka yo'q — to'lov turi, dastavka, guruh va manzil qatorning o'zidan */
   rz?: { payGroup: "BANK" | "CASH" | "DEBT"; delivery: number; group: string; address: string };
 };
@@ -273,7 +279,38 @@ async function queryRevenue(from: Date, to: Date): Promise<SaleRow[]> {
   }
   for (const o of noTrip) out.push(...rowsOf(o, o.deliveryDate, 1));
   out.push(...(await realizationRows(from, to, costs, vatPayer)));
+  estimateCosts(out, costs);
   return out;
+}
+
+/** Birlik kaliti (m3 / dona / t …): reestrda birlik qo'lda yozilgan bo'ladi ("М3", "шт"). */
+const unitKey = (u: string) => normalizeUnit(u) ?? u.trim().toLowerCase();
+
+/**
+ * Tannarxi noma'lum qatorga taxminiy tannarx (`estCost`). Ulush — shu birlikdagi (m³, dona…) tannarxi ma'lum qatorlarning
+ * tannarx ÷ QQS'siz tushumi (shu davr sotuvi); davrda bunday sotuv bo'lmasa — katalogdagi retseptli faol mahsulotlar
+ * (retsept tannarxi ÷ narx), u ham bo'lmasa — barcha birliklar bo'yicha. Hech qanday asos bo'lmasa taxmin qo'yilmaydi.
+ */
+function estimateCosts(rows: SaleRow[], costs: Awaited<ReturnType<typeof productCosts>>) {
+  if (!rows.some((r) => !r.costKnown)) return;
+  const acc = (m: Map<string, { c: number; n: number }>, k: string, c: number, n: number) => {
+    const cur = m.get(k) ?? { c: 0, n: 0 };
+    m.set(k, { c: cur.c + c, n: cur.n + n });
+  };
+  const sold = new Map<string, { c: number; n: number }>(), catalog = new Map<string, { c: number; n: number }>();
+  for (const r of rows) if (r.costKnown && r.net > 0) acc(sold, unitKey(r.unit), r.cost, r.net);
+  for (const p of costs.values()) {
+    if (p.cost === null || !(p.price > 0) || !p.isActive) continue;
+    acc(catalog, unitKey(p.unit), p.cost, p.price);
+    acc(catalog, "*", p.cost, p.price);
+  }
+  const share = (s?: { c: number; n: number }) => (s && s.n > 0 ? Math.min(1, Math.max(0, s.c / s.n)) : null);
+  for (const r of rows) {
+    if (r.costKnown) continue;
+    const u = unitKey(r.unit);
+    const k = share(sold.get(u)) ?? share(catalog.get(u)) ?? share(catalog.get("*"));
+    if (k !== null) r.estCost = r.net * k;
+  }
 }
 
 /** Realizatsiya reestri qatori (`RealizationEntry`) — `SaleRow.orderId` shu prefiks bilan boshlanadi (zayavka emas, havola reestrga). */
@@ -286,7 +323,8 @@ const nameKey = (v: string) => v.trim().toLowerCase().replace(/[ʻʼ’‘`']/g,
 /**
  * Reestrning qo'lda / Excel qatorlari → `SaleRow` (sana — jo'natma sanasi). Pul: miqdor × narx (QQSsiz) + QQS;
  * dastavka zayavkalardagi kabi tushumga kirmaydi. Mijoz / mahsulot katalogga bog'langan bo'lsa — o'sha, aks holda nomi
- * bo'yicha (`rz:` kalit, mijoz kartasi yo'q). «Zayavka» — bir kunda bitta xaridorga jo'natmalar.
+ * bo'yicha (`rz:` kalit, mijoz kartasi yo'q). Bog'lanmagan mahsulot nomi katalogdagi mahsulot nomiga teng bo'lsa — o'sha
+ * mahsulot (faqat hisobda, reestr o'zgarmaydi). «Zayavka» — bir kunda bitta xaridorga jo'natmalar.
  * Sotuvchi: mijozga biriktirilgan agent → qatordagi sotuvchi nomi (xodimga mos kelsa — o'sha xodim) → «Ko'rsatilmagan».
  * Tannarx faqat katalogdagi mahsulotda (retsept bo'yicha); chegirma hisoblanmaydi (bazaviy narx = sotilgan narx).
  */
@@ -308,6 +346,13 @@ async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<t
   const tripDays = new Map<string, number[]>();
   for (const t of trips) for (const k of new Set([ttnKey(t.ttn), ttnKey(t.deliveryNoteNo)])) if (k) tripDays.set(k, [...(tripDays.get(k) ?? []), t.deliveredAt!.getTime()]);
   const userByName = new Map(users.map((u) => [nameKey(u.fullName), u]));
+  // Bir xil nomli mahsulotlardan: tannarxi ma'lumi, keyin faoli
+  const productByName = new Map<string, string>();
+  const rank = (id: string) => { const p = costs.get(id)!; return (p.cost !== null ? 2 : 0) + (p.isActive ? 1 : 0); };
+  for (const [id, p] of costs) {
+    const k = nameKey(p.name), cur = productByName.get(k);
+    if (!cur || rank(id) > rank(cur)) productByName.set(k, id);
+  }
   const out: SaleRow[] = [];
   for (const e of entries) {
     const k = ttnKey(e.ttn);
@@ -318,12 +363,15 @@ async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<t
     const seller = e.customer?.agentId && e.customer.agent ? { sellerId: e.customer.agentId, seller: e.customer.agent.fullName }
       : u ? { sellerId: u.id, seller: u.fullName }
       : { sellerId: `${REALIZATION_PREFIX}s:${nameKey(e.seller ?? "")}`, seller: e.seller?.trim() || "Ko'rsatilmagan" };
-    const c = e.productId ? costs.get(e.productId)?.cost ?? null : null;
+    // Katalogga bog'lanmagan qator — mahsulot nomi bo'yicha topiladi (bazaga yozilmaydi, faqat hisobda)
+    const pid = e.productId ?? productByName.get(nameKey(e.productName)) ?? null;
+    const lp = pid ? costs.get(pid) : undefined;
+    const c = lp?.cost ?? null;
     const gross = qty * price + vat;
     out.push({
       date: e.date, orderId: `${REALIZATION_PREFIX}${isoDate(e.date)}:${customerId}`, orderNo: e.ttn ? `TTN ${e.ttn}` : "Realizatsiya", status: "DELIVERED",
       customerId, customer, ...seller,
-      productId: e.productId ?? `${REALIZATION_PREFIX}p:${nameKey(e.productName)}`, product: e.product?.name ?? e.productName, code: e.product?.code ?? "", unit: e.product?.unit ?? e.unit,
+      productId: pid ?? `${REALIZATION_PREFIX}p:${nameKey(e.productName)}`, product: e.product?.name ?? lp?.name ?? e.productName, code: e.product?.code ?? lp?.code ?? "", unit: e.product?.unit ?? lp?.unit ?? e.unit,
       qty, price: qty > 0 ? gross / qty : price, basePrice: qty > 0 ? gross / qty : price, revenue: gross, cost: qty * (c ?? 0),
       net: vatPayer ? qty * price : gross, costKnown: c !== null,
       rz: { payGroup: e.payGroup === "BANK" || e.payGroup === "DEBT" ? e.payGroup : "CASH", delivery: Number(e.delivery), group: e.groupName, address: e.destination ?? "" },

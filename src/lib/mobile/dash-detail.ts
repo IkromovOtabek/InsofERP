@@ -14,7 +14,7 @@ import { ORDER_LOGI } from "@/lib/logistics";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { unitLabel, unitTotals, type UnitRow } from "@/lib/unit";
 import { BRIGADE_ISSUE, dayPlan, taskPhase } from "@/lib/brigade-shift";
-import { day, inUnit, money, num, pctText, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
+import { day, inUnit, money, num, pctText, short, shortSigned, sum, sumFull, time, totalsText, tripQty } from "./fmt";
 import { ATT_LABEL, INVOICE_LABEL, MOVE_LABEL, ORDER_LABEL, asOf, dashRange, monthShares, procRange, staffAt, type DashRange } from "./dashboard";
 import { parsePeriod } from "./sex";
 import { tripPayKm } from "@/lib/trip-summary";
@@ -1066,22 +1066,52 @@ async function activeStaff(r?: DashRange): Promise<Part> {
 
 // ───────────────────────── Direktor (Egasi dashbordi) ─────────────────────────
 
-/** Sof foyda — oydan boshqa davr uchun (formula Egasi dashbordi bilan bir xil), mahsulot marjasi bilan. */
+/**
+ * Tannarxi aniq emas mahsulotlar: katalogga bog'lanmagan yoki retsepti yo'q — foydada tannarxi taxminiy (yoki yo'q).
+ * Direktor ro'yxatdan qaysi mahsulotni bog'lash / retsept kiritish kerakligini ko'radi.
+ */
+function uncostedSection(rows: SaleRow[]): HomeSection {
+  const byNet = (g: SaleRow[]) => sumBy(g, (s) => s.net);
+  const list = groupBy(rows.filter((s) => !s.costKnown), (s) => s.productId).sort((a, b) => byNet(b[1]) - byNet(a[1])).map(([id, g]) => {
+    const est = sumBy(g, (s) => s.estCost ?? 0), linked = !id.startsWith("rz:");
+    return {
+      id: `u-${id}`, title: `${g[0]!.code ? `${g[0]!.code} · ` : ""}${g[0]!.product}`,
+      subtitle: `${linked ? "retsept yo'q" : "katalogga bog'lanmagan"} · ${inUnit(sumBy(g, (s) => s.qty), g[0]!.unit)} · ${est > 0 ? `taxminiy tannarx ${short(est)}` : "tannarx noma'lum"}`,
+      right: short(byNet(g)), tone: "warning" as Tone,
+    };
+  });
+  return sec("Tannarxi aniq emas mahsulotlar", list, { icon: "triangle-alert", empty: "Hamma sotilgan mahsulotning retsepti bor" });
+}
+
+/** Mahsulot marjasi — faqat tannarxi ma'lum (retseptli) sotuv bo'yicha; retseptsizlari `uncostedSection` da. */
+function marginRows(rows: SaleRow[]): HomeRow[] {
+  const byNet = (g: SaleRow[]) => sumBy(g, (s) => s.net);
+  return groupBy(rows.filter((s) => s.costKnown), (s) => s.productId).sort((a, b) => byNet(b[1]) - byNet(a[1])).map(([id, list]) => {
+    const rev = byNet(list), cost = sumBy(list, (s) => s.cost);
+    const margin = rev > 0 ? ((rev - cost) / rev) * 100 : 0;
+    return { id, title: `${list[0]!.code} · ${list[0]!.product}`, subtitle: `sotuv ${short(rev)} · tannarx ${short(cost)} · ${inUnit(sumBy(list, (s) => s.qty), list[0]!.unit)}`, right: pctText(margin), tone: (margin >= 20 ? "success" : margin >= 10 ? "warning" : "danger") as Tone };
+  });
+}
+
+/** Foyda bo'limining umumiy maydonlari: tannarxning taxminiy qismi va tannarxsiz tushum (bo'lsa). */
+const costFields = (x: { cogs: number; cogsEst: number; uncosted: number }) => [
+  f("Tannarx", `${money(x.cogs)}${x.cogsEst > 0 ? ` · shundan taxminiy ${short(x.cogsEst)}` : ""}`),
+  ...(x.uncosted > 0 ? [f("Tannarxsiz kirgan tushum", money(x.uncosted), "warning" as Tone)] : []),
+];
+
+/** Sof foyda — oydan boshqa davr uchun: vebdagi «Foyda-zarar» qoidalari shu davrga (`ownerPeriod` → `pnlRange`). */
 async function ownerProfitPeriod(r: DashRange): Promise<Part> {
   const [P, sales] = await Promise.all([ownerPeriod(r), loadSales(r.from, r.to)]);
   const x = P.profit;
-  const byProduct = groupBy(sales, (s) => s.productId).map(([id, list]) => {
-    const rev = sumBy(list, (s) => s.revenue), cost = sumBy(list, (s) => s.cost);
-    return { id, title: `${list[0]!.code} · ${list[0]!.product}`, rev, cost, qty: sumBy(list, (s) => s.qty), unit: list[0]!.unit, margin: rev > 0 ? ((rev - cost) / rev) * 100 : 0 };
-  }).sort((a, b) => b.rev - a.rev);
   return {
-    title: `Sof foyda — ${period(r)}`, subtitle: "tushum − tannarx (retsept) − operatsion xarajat",
+    title: `Sof foyda — ${period(r)}`, subtitle: "daromad − tannarx − xarajatlar · vebdagi «Foyda-zarar» bilan bir hisob",
     fields: [
-      f("Sof foyda", shortSigned(x.net), x.net < 0 ? "danger" : "success"), f("Tushum", money(x.revenue)), f("Tannarx", money(x.cogs)),
-      f("Yalpi foyda", money(x.gross)), f("Operatsion xarajat", money(x.opex)), f("Marja", pctText(x.revenue > 0 ? (x.net / x.revenue) * 100 : null)),
+      f("Sof foyda", sumFull(x.net), x.net < 0 ? "danger" : "success"), f("Daromad (QQS'siz)", money(x.revenue)), ...costFields(x),
+      f("Yalpi foyda", sumFull(x.gross)), f("Xarajatlar", money(x.opex)), f("Rentabellik", pctText(x.revenue > 0 ? (x.net / x.revenue) * 100 : null)),
     ],
     sections: [
-      sec("Mahsulot marjasi", byProduct.map((p) => ({ id: p.id, title: p.title, subtitle: `sotuv ${short(p.rev)} · tannarx ${short(p.cost)} · ${inUnit(p.qty, p.unit)}`, right: pctText(p.margin), tone: (p.margin >= 20 ? "success" : p.margin >= 10 ? "warning" : "danger") as Tone })), { icon: "package", empty: "Bu davrda sotuv yo'q" }),
+      uncostedSection(sales),
+      sec("Mahsulot marjasi", marginRows(sales), { icon: "package", empty: "Bu davrda retseptli mahsulot sotilmagan" }),
     ],
   };
 }
@@ -1090,15 +1120,19 @@ async function ownerProfit(): Promise<Part> {
   const d = await ownerCached();
   const S = d.summary;
   const tone = (l: string): Tone => (l === "crit" ? "danger" : l === "warn" ? "warning" : "success");
+  const cogs = d.profitTable.find((t) => t.key === "cogs")?.month ?? 0;
+  const sales = await loadSales(d.monthStart, new Date(d.today.getFullYear(), d.today.getMonth(), d.today.getDate() + 1));
   return {
-    title: "Sof foyda", subtitle: "Joriy oy · Egasi dashbordi bilan bir manba",
+    title: "Sof foyda", subtitle: "Joriy oy · vebdagi «Foyda-zarar» bilan bir hisob",
     fields: [
-      f("Sof foyda (oy)", shortSigned(S.profit.month) === short(Math.abs(S.profit.month)) ? money(S.profit.month) : `−${money(-S.profit.month)}`, tone(d.levels.profit)),
-      f("Bugun", `${S.profit.today < 0 ? "−" : ""}${money(Math.abs(S.profit.today))}`), f("Plan (oy)", S.profit.plan == null ? "—" : money(S.profit.plan)), f("Prognoz (oy oxiri)", money(S.profit.forecast)),
-      f("Yalpi foyda", money(S.profit.gross)), f("Marja", `${pctText(S.margin.total)}${S.margin.plan != null ? ` · plan ${pctText(S.margin.plan)}` : ""}`),
+      f("Sof foyda (oy)", sumFull(S.profit.month), tone(d.levels.profit)),
+      f("Bugun", sumFull(S.profit.today)), f("Plan (oy)", S.profit.plan == null ? "—" : money(S.profit.plan)), f("Prognoz (oy oxiri)", sumFull(S.profit.forecast)),
+      f("Yalpi foyda", sumFull(S.profit.gross)), ...costFields({ cogs, cogsEst: S.profit.cogsEst, uncosted: S.profit.uncosted }),
+      f("Marja (retseptli mahsulotlar)", `${pctText(S.margin.total)}${S.margin.plan != null ? ` · plan ${pctText(S.margin.plan)}` : ""}`),
     ],
     sections: [
       sec("Foyda jadvali (oy)", d.profitTable.map((x) => ({ id: x.key, title: x.label, subtitle: `bugun ${shortSigned(x.today)}${x.plan != null ? ` · plan ${short(x.plan)}` : ""}`, right: shortSigned(x.month), tone: (x.pct == null ? "info" : x.invert ? (x.pct > 100 ? "danger" : "success") : x.pct >= 90 ? "success" : x.pct >= 60 ? "warning" : "danger") as Tone })), { icon: "banknote" }),
+      uncostedSection(sales),
       sec("Mahsulot marjasi", S.margin.byProduct.map((p) => ({ id: p.id, title: `${p.code} · ${p.name}`, subtitle: `sotuv ${short(p.revenue)} · tannarx ${short(p.cost)} · ${inUnit(p.qty, p.unit)}`, right: pctText(p.margin), tone: (p.margin >= 20 ? "success" : p.margin >= 10 ? "warning" : "danger") as Tone })), { icon: "package", empty: "Bu oyda sotuv yo'q" }),
       sec("Dinamika — 3 oy", d.trend.map((t) => ({ id: `tr-${t.key}`, title: t.label, subtitle: `tushum ${short(t.revenue)} · xarajat ${short(t.expenses)}`, right: shortSigned(t.profit), tone: (t.profit >= 0 ? "success" : "danger") as Tone })), { icon: "chart-column" }),
     ],
