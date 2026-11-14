@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CalendarRange, FileSpreadsheet, FileUp, PackageMinus, Rows3, TriangleAlert, Users } from "lucide-react";
-import { Badge, Button, Callout, Field, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Field, InfoButton, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { JournalTemplateButton } from "@/components/journal-template";
 import { dateRu, fmtNum, isoDate } from "@/lib/format";
 import { groupIssueJournal, parseIssueJournal, type IssueJournalDoc } from "@/lib/issue-journal";
@@ -135,7 +135,10 @@ export function IssueImport({ warehouses, targets, materials }: {
           <input type="file" accept=".xlsx,.xls" className="hidden" disabled={busy} onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
         <JournalTemplateButton file="chiqim-namuna" example={{ "Sana": isoDate().split("-").reverse().join("."), "Tovar": "Sement M400", "O'lchov": "t", "Miqdor": 2, "Kimga": "Brigada 1 — Ilxom", "Izoh": "ustun uchun" }} />
-        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar Kirim bilan bir xil. Chiqimga Sana, Tovar, O'lchov, Miqdor, Kimga olinadi; TTN, Manzil, Izoh, Ta'minotchi — izohga. Narx skladdan."}</span>
+        <InfoButton title="Excel fayl ustunlari">
+          Ustunlar Kirim bilan bir xil. Chiqimga Sana, Tovar, O&apos;lchov, Miqdor, Kimga olinadi; TTN, Manzil, Izoh, Ta&apos;minotchi — izohga. Narx skladdan.
+        </InfoButton>
+        {data?.file && <span className="text-sm text-slate-500">{data.file}</span>}
       </div>
       {readError && <Callout tone="danger">{readError}</Callout>}
 
@@ -222,10 +225,12 @@ export function IssueImport({ warehouses, targets, materials }: {
                   </Select>
                 </Field>
               )}
-              <p className="w-full text-sm text-slate-500">Narx skladdan olinadi (dona narxi yoki o&apos;rtacha). Qoldig&apos;i yetmagan hujjat saqlanmaydi, qolganlari yoziladi.</p>
               <Button type="button" onClick={save} disabled={busy || !warehouseId}>
                 <PackageMinus size={16} /> {busy ? `Saqlanmoqda… ${fmtNum(done)} / ${fmtNum(data.docs.length)}` : `${fmtNum(data.docs.length)} ta chiqimni yozish`}
               </Button>
+              <InfoButton title="Chiqimni yozish" className="mb-2.5">
+                Narx skladdan olinadi (dona narxi yoki o&apos;rtacha). Qoldig&apos;i yetmagan hujjat saqlanmaydi, qolganlari yoziladi.
+              </InfoButton>
               {busy && <div className="w-full"><Progress value={done} max={data.docs.length} /></div>}
             </div>
           )}

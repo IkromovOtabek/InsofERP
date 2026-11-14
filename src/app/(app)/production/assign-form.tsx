@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useActionState } from "react";
 import { createPortal } from "react-dom";
 import { Gauge, Plus, Send, TriangleAlert, X } from "lucide-react";
 import { assignBrigades } from "./assign-actions";
-import { Button, FormError, FormSuccess, Input, Select, Td, Th, Tr } from "@/components/ui";
+import { Button, FormError, FormSuccess, InfoButton, Input, Select, Td, Th, Tr } from "@/components/ui";
 import { fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -61,7 +61,11 @@ function CapacityModal({ open, onClose, item, need: needFor, brigades, capacity,
         onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="Brigadalar imkoni">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <div>
-            <h2 className="text-base font-semibold tracking-tight">Brigadalar imkoni</h2>
+            <h2 className="text-base font-semibold tracking-tight">Brigadalar imkoni
+              <InfoButton title="Brigadalar imkoni" className="ml-1">
+                To&apos;lish chizig&apos;i — brigada qo&apos;lidagi xomashyoning shu zayavkaga yetishi. Yetmasa <b>Sklad → Brigadalar</b> bo&apos;limidan berasiz.
+              </InfoButton>
+            </h2>
             <p className="text-sm text-slate-500">{item.product} · shu brigadaga {fmtNum(need, 3)} {item.unit} · tayinlanmagan {fmtNum(item.left, 3)} (jami {item.qty})</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
@@ -117,9 +121,6 @@ function CapacityModal({ open, onClose, item, need: needFor, brigades, capacity,
               </div>
             );
           })}
-        </div>
-        <div className="border-t border-slate-200 px-5 py-2.5 text-xs text-slate-500">
-          To&apos;lish chizig&apos;i — brigada qo&apos;lidagi xomashyoning shu zayavkaga yetishi. Yetmasa <b>Sklad → Brigadalar</b> bo&apos;limidan berasiz.
         </div>
       </div>
     </div>
@@ -294,7 +295,7 @@ export function AssignForm({ orderId, items, brigades, capacity, focus }: { orde
       </div>
       {open.length > 0 && (
         <div className="flex flex-wrap items-center justify-end gap-3 px-5 py-4">
-          <span className="text-xs text-slate-500">Xomashyo yetmasa ham tayinlash mumkin — skladdan <b>Sklad → Brigadalar</b> bo&apos;limi orqali berasiz</span>
+          <InfoButton title="Brigadalarga yuborish">Xomashyo yetmasa ham tayinlash mumkin — skladdan <b>Sklad → Brigadalar</b> bo&apos;limi orqali berasiz</InfoButton>
           {hasErr && <span className="text-xs font-medium text-red-600">Miqdorni tuzating — keyin yuborish mumkin</span>}
           <Button disabled={pending || brigades.length === 0 || hasErr} variant="success"><Send size={16} /> {pending ? "Yuborilmoqda…" : "Tasdiqlash — brigadalarga yuborish"}</Button>
         </div>

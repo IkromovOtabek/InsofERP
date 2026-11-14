@@ -65,7 +65,11 @@ export default async function MyTasksPage() {
   return (
     <div>
       <PageHeader title="Mening topshiriqlarim"
-        subtitle={`${me.fullName} · ${brigades.map((b) => b.name).join(", ")}`} />
+        subtitle={`${me.fullName} · ${brigades.map((b) => b.name).join(", ")}`}
+        info={<>
+          <p>Bajarilgan miqdorni <b>Insof ECO</b> ilovasida qayd qilasiz — bu sahifa shu ma&apos;lumotni ko&apos;rsatadi.</p>
+          <p>Savol bo&apos;lsa ishlab chiqarish bo&apos;limiga murojaat qiling. <Link href="/qollanma" className="underline">Qo&apos;llanma</Link></p>
+        </>} />
 
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Ochiq topshiriq" value={`${open.length} ta`} icon={ListChecks} tone={open.length ? "brand" : "success"} href="#bajarilishi-kerak" />
@@ -75,7 +79,7 @@ export default async function MyTasksPage() {
       </div>
 
       <Card className="mb-5" padded={false}>
-        <div id="bajarilishi-kerak" className="scroll-mt-20 p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Ishlab chiqarish brigadangizga tayinlagan topshiriqlar" /></div>
+        <div id="bajarilishi-kerak" className="scroll-mt-20 p-5"><CardHeader icon={Package} title="Bajarilishi kerak" info="Ishlab chiqarish brigadangizga tayinlagan topshiriqlar" /></div>
         <Table>
           <thead><tr><Th>Brigada</Th><Th>Muddat</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th></tr></thead>
           <tbody>
@@ -124,11 +128,7 @@ export default async function MyTasksPage() {
           ))}
         </tbody>
       </Table>
-      <p className="mt-2 text-xs text-slate-500">
-        Bajarilgan miqdorni <b>Insof ECO</b> ilovasida qayd qilasiz — bu sahifa shu ma&apos;lumotni ko&apos;rsatadi.
-        Savol bo&apos;lsa ishlab chiqarish bo&apos;limiga murojaat qiling. <Link href="/qollanma" className="underline">Qo&apos;llanma</Link>
-      </p>
-      {me.phone && <p className="mt-1 text-xs text-slate-400"><Phone size={11} className="inline" /> {me.phone}</p>}
+      {me.phone && <p className="mt-2 text-xs text-slate-400"><Phone size={11} className="inline" /> {me.phone}</p>}
     </div>
   );
 }

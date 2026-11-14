@@ -1,13 +1,13 @@
 "use client";
 
-import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Star, Wallet, FileText, Upload, Check, Smartphone, Building2 } from "lucide-react";
+import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Star, Wallet, FileText, Check, Smartphone, Building2 } from "lucide-react";
 import { AddressPicker, type SavedPlace } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { startTransition, useActionState, useMemo, useState, type ReactNode } from "react";
 import { createOrder } from "./actions";
 import { TripPlanPanel } from "./trip-plan-panel";
 import { lookupAppByPhone } from "../customers/app-actions";
-import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, FormActions } from "@/components/ui";
+import { Badge, Button, Callout, Field, FormError, InfoButton, Input, LinkButton, Textarea, FormActions } from "@/components/ui";
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
 import type { ProductCreate } from "@/lib/catalog";
 import { ProductField } from "@/components/product-field";
@@ -489,7 +489,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             <div className="col-span-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
               <Building2 size={13} className="text-indigo-400" /> <span className="font-medium text-slate-700">{curSite!.name}</span> obyektida {siteBlocks.length} ta blok:
               {siteBlocks.map((b) => <span key={b} className="rounded-md bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-800 ring-1 ring-indigo-200 ring-inset">{b}</span>)}
-              <span>— jadvalda har qatorga blokni tanlang</span>
+              <InfoButton title="Obyekt bloklari">Jadvalda har qatorga blokni tanlang.</InfoButton>
             </div>
           )}
         </div>
@@ -726,12 +726,15 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                 </div>
               </div>
               <div className="mt-3">
-                <Field label="Imzolangan shartnoma fayli (Didox'dan)" hint="PDF yoki rasm, 15 MB gacha. Hozir bo'lmasa — zayavka sahifasida keyin yuklaysiz">
+                <Field label="Imzolangan shartnoma fayli (Didox'dan)" hint="PDF yoki rasm, 15 MB gacha"
+                  help={<InfoButton title="Imzolangan shartnoma fayli">
+                    <p>Hozir bo&apos;lmasa — zayavka sahifasida keyin yuklaysiz.</p>
+                    <p>Saqlangach shartnoma raqami beriladi. Didox&apos;da imzolangan shartnoma tizimga isbot sifatida yuklanadi.</p>
+                  </InfoButton>}>
                   <input name="contractFile" type="file" accept={contractAccept}
                     className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700" />
                 </Field>
               </div>
-              <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-800"><Upload size={14} /> Saqlangach shartnoma raqami beriladi. Didox&apos;da imzolangan shartnoma tizimga isbot sifatida yuklanadi.</p>
               {contractN > 0 && contractLeft < 0 && <p className="mt-1 text-xs text-red-600">Zayavka summasi shartnoma summasidan katta — summani tekshiring.</p>}
             </div>
           )}

@@ -4,7 +4,7 @@ import { dateTime, money, qty } from "@/lib/format";
 import { dayTitle, monthTitle } from "@/lib/davomat";
 import { unitLabel } from "@/lib/unit";
 import type { BrigadeDefectsMonth, BrigadePayMonth } from "@/lib/brigade-pay";
-import { Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Callout, Card, CardHeader, Empty, InfoButton, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { DefectAmountForm } from "./forms";
 import { DeleteDefectButton } from "../dashboard/production-forms";
 
@@ -26,7 +26,14 @@ export function BrigadePayView({ data }: { data: BrigadePayMonth }) {
       <Card padded={false}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm">
-            <thead><tr><Th>Brigada</Th><Th>Bajarilgan ish</Th><Th right>Sdelka fondi</Th><Th right>Brak</Th><Th right>Brak summasi</Th><Th right>Oylik (fond − brak)</Th><Th right>Sdelka a&apos;zolari</Th></tr></thead>
+            <thead><tr><Th>Brigada</Th><Th>Bajarilgan ish</Th><Th right>Sdelka fondi</Th><Th right>Brak</Th><Th right>Brak summasi</Th><Th right>
+              <span className="inline-flex items-center gap-1">
+                Oylik (fond − brak)
+                <InfoButton title="Oylik (fond − brak)">
+                  Xodimlarga bo&apos;linishi va to&apos;lov — <Link href="/ish-haqi" className="underline">Ish haqi</Link> vedomostida: fond va brak sdelkadagi a&apos;zolarga ishlagan soati bo&apos;yicha bo&apos;linadi.
+                </InfoButton>
+              </span>
+            </Th><Th right>Sdelka a&apos;zolari</Th></tr></thead>
             <tbody>
               {data.rows.length === 0 && <Empty text="Brigada yo'q" icon={HardHat} />}
               {data.rows.map((r) => (
@@ -65,7 +72,6 @@ export function BrigadePayView({ data }: { data: BrigadePayMonth }) {
           </table>
         </div>
       </Card>
-      <p className="text-xs text-slate-500">Xodimlarga bo&apos;linishi va to&apos;lov — <Link href="/ish-haqi" className="underline">Ish haqi</Link> vedomostida: fond va brak sdelkadagi a&apos;zolarga ishlagan soati bo&apos;yicha bo&apos;linadi.</p>
     </div>
   );
 }
@@ -85,7 +91,7 @@ export function BrigadeDefectsView({ data, month, brigadeId, canEdit, deletable 
   return (
     <div className="space-y-4">
       <Card padded={false}>
-        <div className="px-5 pt-4"><CardHeader title={`Kunlik brak — ${monthTitle(month)}`} description={`Jami ${money(data.total)} · ${data.activeDays.length} kunda brak bo'lgan. Katakda — summa va miqdor`} /></div>
+        <div className="px-5 pt-4"><CardHeader title={`Kunlik brak — ${monthTitle(month)}`} description={`Jami ${money(data.total)} · ${data.activeDays.length} kunda brak bo'lgan`} info="Katakda — summa va miqdor" /></div>
         {data.grid.length === 0 ? <div className="px-5 pb-4 text-sm text-slate-500">Bu oyda brak yozilmagan.</div> : (
           <div className="max-h-[32rem] overflow-auto">
             <table className="w-full min-w-[560px] text-sm">
@@ -125,7 +131,7 @@ export function BrigadeDefectsView({ data, month, brigadeId, canEdit, deletable 
 
       <Card padded={false}>
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
-          <CardHeader title={brigadeName ? `Brak yozuvlari — ${brigadeName}` : "Brak yozuvlari"} description={canEdit ? "Summa brigada oyligidan ushlanadi — kerak bo'lsa tuzating va saqlang" : "Summani ish boshqaruvchi tahrirlaydi"} />
+          <CardHeader title={brigadeName ? `Brak yozuvlari — ${brigadeName}` : "Brak yozuvlari"} info={canEdit ? "Summa brigada oyligidan ushlanadi — kerak bo'lsa tuzating va saqlang" : "Summani ish boshqaruvchi tahrirlaydi"} />
           {brigadeId && <Link href={`/brigades?tab=brak&oy=${month}`} className="text-[13px] font-medium text-slate-600 underline">Barcha brigadalar</Link>}
         </div>
         <Table>

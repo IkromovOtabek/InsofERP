@@ -66,7 +66,15 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     <div>
       <PageHeader
         title="Xodimlar"
-        subtitle="Bo'lim lavozimi tanlansa xodimga login beriladi va u faqat o'z bo'limini ko'radi"
+        info={<>
+          <p>Bo&apos;lim lavozimi tanlansa xodimga login beriladi va u faqat o&apos;z bo&apos;limini ko&apos;radi.</p>
+          {isHR && <>
+            <p>Lavozimni tanlang — F.I.O. maydonida o&apos;sha lavozimdagi faol xodimlar chiqadi (Otdel kadrda yoki Excel orqali kelganlar ham).
+              Ro&apos;yxatdan tanlasangiz yangi karta ochilmaydi, shu xodimga login beriladi.</p>
+            <p>To&apos;liq karta (hujjatlar, tabel, tarif) —{" "}
+              <Link href="/otdel-kadr?tab=xodimlar" className="font-medium text-slate-700 underline">Otdel kadr → Xodimlar ro&apos;yxati</Link> da.</p>
+          </>}
+        </>}
         action={isHR ? <Link href="/otdel-kadr" className="text-sm font-medium text-slate-600 hover:text-slate-900">Otdel kadr →</Link> : undefined}
       />
 
@@ -79,11 +87,6 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
 
       {isHR && (
         <Card className="mb-4">
-          <p className="mb-3 text-xs text-slate-500">
-            Lavozimni tanlang — F.I.O. maydonida o&apos;sha lavozimdagi faol xodimlar chiqadi (Otdel kadrda yoki Excel orqali kelganlar ham).
-            Ro&apos;yxatdan tanlasangiz yangi karta ochilmaydi, shu xodimga login beriladi. To&apos;liq karta (hujjatlar, tabel, tarif) —{" "}
-            <Link href="/otdel-kadr?tab=xodimlar" className="font-medium text-slate-700 underline">Otdel kadr → Xodimlar ro&apos;yxati</Link> da.
-          </p>
           <EmployeeForm departments={POSITIONS} work={[...workNames, ...strays]} drivers={drivers} staff={staffOpts} vehicles={vehicleOpts} canGrant={isHR} templates={Object.fromEntries(tplOf)} />
         </Card>
       )}

@@ -61,7 +61,7 @@ export default async function NewOfferPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHeader back={{ href: "/takliflar", label: "Tijorat takliflari" }} title="Yangi tijorat taklifi" subtitle="Zayavka shart emas — potensial mijozga ham tuziladi. Saqlangach A4 hujjat va QR havolasi tayyor bo'ladi." />
+      <PageHeader back={{ href: "/takliflar", label: "Tijorat takliflari" }} title="Yangi tijorat taklifi" info="Zayavka shart emas — potensial mijozga ham tuziladi. Saqlangach A4 hujjat va QR havolasi tayyor bo'ladi." />
       <Card>
         <OfferForm customers={customers as OfferCustomerOpt[]} products={catalog.products} groups={catalog.groups} defaults={defaults} prefill={prefill} canCreateProduct={canEditProducts(s.role)} />
       </Card>

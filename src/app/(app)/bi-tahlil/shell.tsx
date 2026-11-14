@@ -20,13 +20,15 @@ export async function biContext(searchParams: Promise<SP>, path = "/bi-tahlil"):
 }
 
 /** Sahifa qobig'i: sarlavha + davr paneli. Bo'lim ichidagi sahifalar — sidebar'da (`lib/nav.ts` children), sahifada tab qatori yo'q. */
-export function BiPage({ title, subtitle, eyebrow = "Tahlil", tab, range, keep, period = true, children }: {
+export function BiPage({ title, subtitle, info, eyebrow = "Tahlil", tab, range, keep, period = true, children }: {
   title?: string; subtitle?: string; eyebrow?: string; tab: string; range: Range; keep?: Record<string, string | undefined>; period?: boolean;
+  /** Sahifa haqida tushuntirish — sarlavha yonida «i» tugma (`subtitle` — faqat qisqa ma'lumot: bo'lim nomi, davr) */
+  info?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="min-w-0">
-      {title ? <PageHeader back={tab === "overview" ? undefined : { href: "/dashboard", label: "Bosh sahifa" }} eyebrow={eyebrow} title={title} subtitle={subtitle} /> : <BackLink href="/dashboard" label="Bosh sahifa" className="mb-4" />}
+      {title ? <PageHeader back={tab === "overview" ? undefined : { href: "/dashboard", label: "Bosh sahifa" }} eyebrow={eyebrow} title={title} subtitle={subtitle} info={info} /> : <BackLink href="/dashboard" label="Bosh sahifa" className="mb-4" />}
       {period && <PeriodBar range={range} tab={tab} keep={keep} />}
       {children}
       <HashFocus />

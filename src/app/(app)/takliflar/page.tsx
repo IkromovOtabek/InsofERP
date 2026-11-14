@@ -43,7 +43,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
     <>
       <PageHeader
         title="Tijorat takliflari" eyebrow="Sotuv"
-        subtitle="Mijozga beriladigan rasmiy narx hujjati — zayavkadan mustaqil. Chop etiladi, QR orqali mijoz haqiqiyligini tekshiradi va qabul qiladi."
+        info="Mijozga beriladigan rasmiy narx hujjati — zayavkadan mustaqil. Chop etiladi, QR orqali mijoz haqiqiyligini tekshiradi va qabul qiladi."
         action={<>
           {canSettings && <LinkButton href="/takliflar/sozlamalar" variant="secondary"><Settings2 size={16} /> Hujjat sozlamalari</LinkButton>}
           {canCreate && <LinkButton href="/takliflar/new"><Plus size={16} /> Yangi taklif</LinkButton>}

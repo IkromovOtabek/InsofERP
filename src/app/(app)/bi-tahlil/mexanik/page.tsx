@@ -35,7 +35,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const close = `/bi-tahlil/mexanik${Object.keys(periodQs).length ? `?${new URLSearchParams(periodQs)}` : ""}`;
   const DL = ({ href, children }: { href: string; children: React.ReactNode }) => <Link href={href} scroll={false} title="Qayerdan kelgan — bosing" className={DRILL_LINK}>{children}</Link>;
   return (
-    <BiPage title="Mexanik" subtitle="Texnika: ta'mir uchun pul so'rovlari, ehtiyot qism zayavkalari va texnik xizmat muddati" tab="mechanic" range={range} period={false}>
+    <BiPage title="Mexanik" info="Texnika: ta'mir uchun pul so'rovlari, ehtiyot qism zayavkalari va texnik xizmat muddati" tab="mechanic" range={range} period={false}>
       <DayRangeBar base="/bi-tahlil/mexanik" range={period} />
 
       {/* ── Davr bo'yicha ta'mir tahlili ── */}

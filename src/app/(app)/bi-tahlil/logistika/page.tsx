@@ -50,7 +50,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const DL = ({ href, children }: { href: string; children: React.ReactNode }) => <Link href={href} scroll={false} title="Qayerdan kelgan — bosing" className={DRILL_LINK}>{children}</Link>;
 
   return (
-    <BiPage title="Logistika" subtitle="Davr tahlili (reys, hajm, o'z vaqtida, xarajat), bugungi va ertangi zayavkalar, jo'natish va transport ehtiyoji" tab="logistics" range={range} period={false}>
+    <BiPage title="Logistika" info="Davr tahlili (reys, hajm, o'z vaqtida, xarajat), bugungi va ertangi zayavkalar, jo'natish va transport ehtiyoji" tab="logistics" range={range} period={false}>
       <DayRangeBar base="/bi-tahlil/logistika" range={period} keep={{ date: sp.date }} />
 
       <Section title="Davr tahlili" className="mt-0"

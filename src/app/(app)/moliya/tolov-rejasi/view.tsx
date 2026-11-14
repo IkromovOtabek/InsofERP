@@ -51,7 +51,7 @@ export async function PaymentPlanView({ canWrite }: { canWrite: boolean }) {
     <div>
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader title="1. Oylik reja (ishlab chiqarish va sotuv)" icon={Target} description={`Reja bo'sh bo'lsa — oxirgi ${cal.histDays} kundek. Narx — QQSsiz, dostavkasiz`} />
+          <CardHeader title="1. Oylik reja (ishlab chiqarish va sotuv)" icon={Target} info={`Reja bo'sh bo'lsa — oxirgi ${cal.histDays} kundek. Narx — QQSsiz, dostavkasiz`} />
           <SalesPlanForm id="sales-plan">
             <Table>
               <thead><tr><Th>Ko&apos;rsatkich</Th><Th right>Reja (oyiga)</Th><Th right>Oxirgi {cal.histDays} kun (haqiqiy)</Th><Th right>O&apos;rtacha narx (QQSsiz)</Th></tr></thead>
@@ -127,7 +127,8 @@ export async function PaymentPlanView({ canWrite }: { canWrite: boolean }) {
         {canWrite && <Card className="mt-4"><RecurringCreateForm cats={recCats} loans={loans} /></Card>}
       </Section>
 
-      <Section title={`3. Kundalik xarajatlar (oxirgi ${cal.histDays} kunlik o'rtachadan avtomatik)`}>
+      <Section title={`3. Kundalik xarajatlar (oxirgi ${cal.histDays} kunlik o'rtachadan avtomatik)`}
+        info={<>«Rejaga qarab o&apos;zgaradi» — reja koeffitsiyentiga ko&apos;paytiriladi ({fmtNum(cal.factor, 2)}). Xom-ashyo (ta&apos;minotchi qatorida), soliq, kredit, divident, loyihalar va doimiy to&apos;lovlardagi kategoriyalar bu yerga kirmaydi.</>}>
         <Table>
           <thead><tr><Th>Xarajat turi (Kirim-Chiqim manbasi)</Th><Th right>Oxirgi {cal.histDays} kun, so&apos;m</Th><Th right>Kunlik o&apos;rtacha</Th><Th>Hisobga olinsinmi</Th><Th>Rejaga qarab o&apos;zgaradi</Th><Th right>Kalendarga, kuniga</Th></tr></thead>
           <tbody>
@@ -145,7 +146,6 @@ export async function PaymentPlanView({ canWrite }: { canWrite: boolean }) {
             {cal.dailyRows.length > 0 && <Tr className="bg-slate-50 font-semibold"><Td>JAMI (hisobga olinganlari)</Td><Td right>{fmtNum(dailySum)}</Td><Td right>{fmtNum(dailyAvg)}</Td><Td /><Td /><Td right className="font-bold">{fmtNum(cal.perDayOut)}</Td></Tr>}
           </tbody>
         </Table>
-        <p className="mt-2 text-[13px] text-slate-500">«Rejaga qarab o&apos;zgaradi» — reja koeffitsiyentiga ko&apos;paytiriladi ({fmtNum(cal.factor, 2)}). Xom-ashyo (ta&apos;minotchi qatorida), soliq, kredit, divident, loyihalar va doimiy to&apos;lovlardagi kategoriyalar bu yerga kirmaydi.</p>
       </Section>
 
       <Section title="4. Ta'minotchi to'lov muddati">

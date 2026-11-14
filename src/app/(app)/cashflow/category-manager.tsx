@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ListTree, X } from "lucide-react";
-import { Badge, Button, Field, FormSuccess, Input } from "@/components/ui";
+import { Badge, Button, Field, FormSuccess, InfoButton, Input } from "@/components/ui";
 import { QuickDelete, QuickEdit, ToolButton, type QuickAdded } from "@/components/quick-add";
 import { quickRemoveCashCategory, quickRenameCashCategory } from "@/lib/quick-add-actions";
 
@@ -99,13 +99,15 @@ export function CategoryManager({ type, cats, locked, canEdit, canDelete, onRena
           <div role="dialog" aria-label={`${what} manbalari`} onMouseDown={(e) => e.stopPropagation()}
             className="w-full max-w-2xl space-y-3 rounded-(--radius-card) border border-slate-200 bg-white p-5 shadow-(--shadow-pop)">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold tracking-tight">{what} manbalari va sub manbalari</h2>
+              <h2 className="flex items-center gap-1 text-base font-semibold tracking-tight">{what} manbalari va sub manbalari
+                <InfoButton title={`${what} manbalari va sub manbalari`}>
+                  <p>Nomini o&apos;zgartirsangiz, eski yozuvlar ham yangi nomga o&apos;tadi.</p>
+                  <p>«tizim» belgili manbalarga dastur avtomatik yozadi — ularni ro&apos;yxatdan olish mumkin (formada ko&apos;rinmaydi, hisobot buzilmaydi), nomi esa o&apos;zgarmaydi.</p>
+                  <p>Yangisi — formadagi «+» bilan.</p>
+                </InfoButton>
+              </h2>
               <button type="button" onClick={close} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
             </div>
-            <p className="text-[13px] text-slate-500">
-              Nomini o&apos;zgartirsangiz, eski yozuvlar ham yangi nomga o&apos;tadi. «tizim» belgili manbalarga dastur avtomatik yozadi — ularni
-              ro&apos;yxatdan olish mumkin (formada ko&apos;rinmaydi, hisobot buzilmaydi), nomi esa o&apos;zgarmaydi. Yangisi — formadagi «+» bilan.
-            </p>
             {note && <FormSuccess text={note} />}
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Qidirish: manba yoki sub manba nomi" aria-label="Qidirish" autoComplete="off" />
             <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">

@@ -60,14 +60,14 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
 
       {canEdit && (
         <Card className="mt-5">
-          <CardHeader title="Rekvizitlar" description="Nomi, INN, telefon, manzil va mas'ul shaxs — o'zgarish auditda qoladi" />
+          <CardHeader title="Rekvizitlar" info="Nomi, INN, telefon, manzil va mas'ul shaxs — o'zgarish auditda qoladi" />
           <SupplierEditForm id={sup.id} value={{ name: sup.name, inn: sup.inn ?? "", phone: sup.phone ?? "", address: sup.address ?? "", contactPerson: sup.contactPerson ?? "", vatPayer: sup.vatPayer }} />
         </Card>
       )}
 
       {dues.some((d) => d.left > 0.005) && (
         <Card className="mt-5">
-          <CardHeader title="Boshlang'ich qarz (tizimga o'tish sanasidagi)" description="To'lov Kirim-Chiqimga chiqim bo'lib yoziladi; qisman to'lash mumkin" />
+          <CardHeader title="Boshlang'ich qarz (tizimga o'tish sanasidagi)" info="To'lov Kirim-Chiqimga chiqim bo'lib yoziladi; qisman to'lash mumkin" />
           <div className="space-y-2">
             {dues.filter((d) => d.left > 0.005).map((d) => (
               <div key={d.id} className="flex flex-wrap items-center gap-3 text-sm">

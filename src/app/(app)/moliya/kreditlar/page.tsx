@@ -32,7 +32,7 @@ export default async function LoansPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Moliya" title="Kreditlar va qarzlar" subtitle="Bank kreditlari, olingan va berilgan qarzlar: qoldiq, to'langan asosiy qarz va foiz" />
+      <PageHeader eyebrow="Moliya" title="Kreditlar va qarzlar" info="Bank kreditlari, olingan va berilgan qarzlar: qoldiq, to'langan asosiy qarz va foiz" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Bank kreditlari" value={money(bank)} hint="balans passivi" icon={Landmark} tone={bank > 0 ? "warning" : "default"} href="#reyestr" />
@@ -68,8 +68,7 @@ export default async function LoansPage() {
       </Section>
 
       {unlinked.length > 0 && (
-        <Section title="Kassada kredit yozuvi, lekin kredit tanlanmagan">
-          <p className="mb-3 text-[13px] text-slate-500">Bu yozuvlar qoldiqni o&apos;zgartirmaydi va balansga tushmaydi. Qaysi kreditga tegishli ekanini tanlang.</p>
+        <Section title="Kassada kredit yozuvi, lekin kredit tanlanmagan" info="Bu yozuvlar qoldiqni o'zgartirmaydi va balansga tushmaydi. Qaysi kreditga tegishli ekanini tanlang.">
           <Table>
             <thead><tr><Th>Sana</Th><Th>Kategoriya</Th><Th>Hisob</Th><Th>Izoh</Th><Th right>Summa</Th>{canWrite && <Th />}</tr></thead>
             <tbody>
@@ -91,7 +90,7 @@ export default async function LoansPage() {
       {canWrite && (
         <div className="mt-8">
           <Card>
-            <CardHeader title="Yangi kredit yoki qarz" description="Tizimga o'tish sanasidagi qolgan asosiy qarzni kiriting; keyingi to'lovlar Kirim-Chiqimda shu kreditni tanlab yoziladi" />
+            <CardHeader title="Yangi kredit yoki qarz" info="Tizimga o'tish sanasidagi qolgan asosiy qarzni kiriting; keyingi to'lovlar Kirim-Chiqimda shu kreditni tanlab yoziladi" />
             <LoanCreateForm today={isoDate()} />
           </Card>
         </div>

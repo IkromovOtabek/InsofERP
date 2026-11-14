@@ -17,7 +17,12 @@ export default async function ArendaImportPage() {
       <PageHeader
         back={{ href: "/arenda", label: "Arenda" }}
         title="Excel'dan import"
-        subtitle="Har oy varag'i alohida yuklanadi: do'konlar, shu oy hisobi (perechisleniye, naqd, svet, soliq) va tushgan pul. Faylda bir nechta varaq bo'lsa — kerakli oyni tanlang."
+        info={<>
+          <p>Har oy varag&apos;i alohida yuklanadi: do&apos;konlar, shu oy hisobi (perechisleniye, naqd, svet, soliq) va tushgan pul. Faylda bir nechta varaq bo&apos;lsa — kerakli oyni tanlang.</p>
+          <p>«Общий», «Буш» va summasi yo&apos;q qatorlar (izohlar) o&apos;tkazib yuboriladi. «Жами» va «Колдик» ustunlari kerak emas — tizim o&apos;zi hisoblaydi.
+            Bazada yo&apos;q do&apos;kon qo&apos;shiladi, bor do&apos;konning shu oy hisobi fayldagi summalar bilan yangilanadi.</p>
+          <p>Diqqat: o&apos;tgan oylar to&apos;lovlari kirim qilinsa, arenda kassasi umumiy summasi oshadi — zavod kassasiga topshirilgan pulni «Kassaga topshirildi» chiqimi bilan yozing.</p>
+        </>}
       />
       {canShops ? (
         <Card className="max-w-6xl">

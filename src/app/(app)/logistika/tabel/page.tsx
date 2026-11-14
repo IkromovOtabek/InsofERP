@@ -14,7 +14,7 @@ import { driverEmployees, mainDriverOf } from "@/lib/logistics";
 import { avtoReport } from "@/lib/fin-report/avto";
 import { entryRows, pendingEntryWhere, type EntryRow } from "@/lib/logistics-entry";
 import { date, dateTime, fmtNum, isoDate, money, moneyShort, opAt } from "@/lib/format";
-import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, Empty, InfoButton, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { AllCheck, ApproveButton, EntryEditButton, EntryEditProvider, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
 import { LedgerFormsProvider, LedgerRowForm, type LedgerOptions } from "./ledger-forms";
@@ -301,7 +301,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 
   return (
     <div>
-      <PageHeader title="Haydovchilar tabeli" subtitle="Yetkazilgan reyslar o'zi tushadi · narx va to'lov turini dispetcher qo'yadi · ish boshqaruvchi tasdiqlaydi: naqd — kassa, oylik — Ish haqi" />
+      <PageHeader title="Haydovchilar tabeli" info="Yetkazilgan reyslar o'zi tushadi · narx va to'lov turini dispetcher qo'yadi · ish boshqaruvchi tasdiqlaydi: naqd — kassa, oylik — Ish haqi" />
 
       <Tabs scroll={false} current={bolim} items={[
         { key: "narxsiz", label: "Narx belgilanmagan", href: qs({ bolim: "narxsiz" }), icon: BellRing, count: unpriced.length },
@@ -321,7 +321,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       {bolim === "narxsiz" && <Card padded={false} className={unpriced.length ? "border-amber-300 ring-2 ring-amber-100" : undefined}>
         <div id="narxsiz" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title={`Narx belgilanmagan reyslar${unpriced.length ? ` (${unpriced.length})` : ""}`} icon={BellRing}
-            description="Narx va to'lov turi (naqd / oylik) qo'yilgach reys ish boshqaruvchi tasdig'iga o'tadi"
+            info="Narx va to'lov turi (naqd / oylik) qo'yilgach reys ish boshqaruvchi tasdig'iga o'tadi"
             action={canPrice && unpriced.length > 1 ? <PriceAllButton ids={unpriced.map((r) => r.id)} /> : undefined} />
         </div>
         {unpriced.length === 0 ? <div className="px-5 pb-5 text-sm text-emerald-700">Hamma yetkazilgan reysga narx qo&apos;yilgan</div>
@@ -334,7 +334,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       {bolim === "tasdiq" && <Card padded={false} className={pending.length && canApprove ? "border-blue-300 ring-2 ring-blue-100" : undefined}>
         <div id="tasdiq" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title={`Reys haqi tasdig'i${pending.length ? ` (${pending.length})` : ""}`} icon={ShieldCheck}
-            description="Ish boshqaruvchi tasdiqlaydi: naqd — kassaga o'tadi va kassir beradi (kassa chiqimi), oylik — oy yakuni vedomostiga tushadi (buxgalter ko'radi)"
+            info="Ish boshqaruvchi tasdiqlaydi: naqd — kassaga o'tadi va kassir beradi (kassa chiqimi), oylik — oy yakuni vedomostiga tushadi (buxgalter ko'radi)"
             action={canApprove && pending.length > 1 ? <ApproveButton ids={pending.map((r) => r.id)} label="Hammasini tasdiqlash" /> : undefined} />
         </div>
         {pending.length === 0 ? <div className="px-5 pb-5 text-sm text-slate-500">Tasdiq kutayotgan reys haqi yo&apos;q</div> : (
@@ -368,7 +368,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       {bolim === "tasdiq" && pendingEntries.length > 0 && <Card padded={false} className={`mt-4 ${canApprove ? "border-blue-300 ring-2 ring-blue-100" : ""}`}>
         <div className="px-5 pt-5">
           <CardHeader title={`Qo'lda yozilgan haq (${pendingEntries.length})`} icon={PencilLine}
-            description="Dispetcher yozgan: reys tizimga tushmagan ish yoki oylik haq. Tasdiqlansa — naqd kassaga, oylik vedomostga; rad etilsa yozuv sababi bilan bekor bo'ladi"
+            info="Dispetcher yozgan: reys tizimga tushmagan ish yoki oylik haq. Tasdiqlansa — naqd kassaga, oylik vedomostga; rad etilsa yozuv sababi bilan bekor bo'ladi"
             action={canApprove && pendingEntries.length > 1 ? <ApproveButton ids={pendingEntries.map((e) => e.id)} label="Hammasini tasdiqlash" entry /> : undefined} />
         </div>
         <Table>
@@ -393,7 +393,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       {bolim === "usta" && <Card padded={false}>
         <div id="usta" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title="Remont usta puli" icon={Wrench}
-            description="Ta'mir, vulkanizatsiya, zapchast. Joyida berish — ish boshqaruvchi tasdiqlaydi, kassa beradi. N kunda berish — muddat kuni «… ga remont puli berish vaqti keldi» eslatmasi keladi va tasdiqqa o'tadi"
+            info="Ta'mir, vulkanizatsiya, zapchast. Joyida berish — ish boshqaruvchi tasdiqlaydi, kassa beradi. N kunda berish — muddat kuni «… ga remont puli berish vaqti keldi» eslatmasi keladi va tasdiqqa o'tadi"
             action={canApprove ? <Link href="/mexanik-sorovlar?tab=NEW" className="text-sm text-blue-700 hover:underline">Tasdiqlash — Mexanik so&apos;rovlari</Link> : undefined} />
           {canPrice && <div className="pb-4"><MasterPayForm vehicles={vehicles} payees={payees.map((p) => p.payee!).filter(Boolean)} problems={MASTER_PROBLEMS} /></div>}
         </div>
@@ -461,7 +461,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             <Card padded={false} className="mb-4">
               <div className="px-5 pt-5">
                 <CardHeader title="Yoqilg'i qoldig'i" icon={Fuel}
-                  description="Transport bo'yicha: oy boshidagi qoldiq + zapravka − norma sarfi (km × 100 km normasi + baraban soati × soat normasi)" />
+                  info="Transport bo'yicha: oy boshidagi qoldiq + zapravka − norma sarfi (km × 100 km normasi + baraban soati × soat normasi)" />
               </div>
               <Table>
                 <thead><tr><Th>Transport</Th><Th>Haydovchilar</Th><Th right>Reys</Th><Th right>Oy boshida</Th><Th right>Zapravka</Th><Th right>Sarf (norma)</Th><Th right>Qoldiq</Th></tr></thead>
@@ -503,7 +503,10 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       </Section>}
 
       {/* ── Reyslar va narx: haydovchilar bo'yicha oy, haydovchi tanlansa — uning reyslari ── */}
-      {bolim === "reyslar" && <Section title={monthTitleText} className="mt-0" action={monthNav}>
+      {bolim === "reyslar" && <Section title={monthTitleText} className="mt-0" action={monthNav} info={<>
+        <p>Yoqilg&apos;i normasi: km × 100 km normasi + ishlagan soat × turib ishlash normasi (metan — m³, dizel — l).</p>
+        <p>Oylik {date(new Date(y!, m!, 0))} gacha yetkazilgan reyslardan.</p>
+      </>}>
         {picked ? (
           <Card padded={false}>
             {monthTrips.length === 0 ? <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /> : <TripRows rows={[...monthTrips].reverse()} canPrice={canPrice} showDriver={false} bal={balOf} />}
@@ -536,7 +539,6 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             </Table>
           </Card>
         )}
-        <p className="mt-2 text-xs text-slate-500">Yoqilg&apos;i normasi: km × 100 km normasi + ishlagan soat × turib ishlash normasi (metan — m³, dizel — l). Oylik {date(new Date(y!, m!, 0))} gacha yetkazilgan reyslardan.</p>
       </Section>}
 
       {/* ── Oylik hisoblash: BARCHA haydovchi (reys haqi + qo'lda haq: oylikka / naqd) va BARCHA transport (kirim, chiqim, foyda) ── */}
@@ -555,7 +557,11 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         {payRows.length === 0 ? <Card><Empty text="Faol haydovchi yo'q (Otdel kadr → haydovchi lavozimi)" icon={Users} /></Card> : (
           <>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-slate-500">Hamma faol haydovchi — reysi yo&apos;q yoki ECO&apos;ga ulanmagani ham. Reys tizimga tushmagan ishni <Link href={qs({ bolim: "qolda" })} className="text-blue-700 hover:underline">«Qo&apos;lda yozuvlar»</Link> da yozing. Oklad, avans va ushlanmalar bilan to&apos;liq oylik — Ish haqi bo&apos;limida.</p>
+              <InfoButton title="Oylik hisoblash">
+                <p>Hamma faol haydovchi — reysi yo&apos;q yoki ECO&apos;ga ulanmagani ham.</p>
+                <p>Reys tizimga tushmagan ishni <Link href={qs({ bolim: "qolda" })} className="text-blue-700 hover:underline">«Qo&apos;lda yozuvlar»</Link> da yozing.</p>
+                <p>Oklad, avans va ushlanmalar bilan to&apos;liq oylik — Ish haqi bo&apos;limida.</p>
+              </InfoButton>
               <ExcelButton file={`Haydovchilar oyligi ${month}`} sheets={[{ name: "Oylik hisoblash", rows: [...payRows, payTotal].map((r) => ({
                 Haydovchi: r.name, ECO: r === payTotal ? "" : r.eco == null ? outsideInfo.get(r.id) ?? "" : r.eco ? "ulangan" : "ulanmagan", Transport: r.plate ?? "",
                 Reys: r.trips, "Qo'lda yozuv": r.manual, "Oylikka (tasdiqlangan)": r.payroll, "Oylik — tasdiq kutmoqda": r.payrollWait,
@@ -607,7 +613,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
               <Card padded={false} className="mt-4">
                 <div className="px-5 pt-5">
                   <CardHeader title={`${pickedName} — reyslar va to'lov turi`} icon={Route}
-                    description="Oylik — tasdiqlangach oy yakuni vedomostiga tushadi; naqd — tasdiqlangach kassa beradi"
+                    info="Oylik — tasdiqlangach oy yakuni vedomostiga tushadi; naqd — tasdiqlangach kassa beradi"
                     action={<Link href={qs({ driver: null })} scroll={false} className="text-sm text-blue-700 hover:underline">Hamma haydovchilar</Link>} />
                 </div>
                 {monthTrips.length === 0 ? <div className="px-5 pb-5 text-sm text-slate-500">Bu oyda tizimda yetkazilgan reysi yo&apos;q</div> : (
@@ -671,7 +677,10 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                 <StatCard label="Transport" value={rows.filter((r) => !ext.has(r.id)).length} hint={`${t.trips} reys · ${fmtNum(t.km, 0)} km`} icon={Truck} href="/logistika/transport" />
               </div>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs text-slate-500">Hamma faol transport — reysi yo&apos;q oyda ham. Yoqilg&apos;i — zapravka summasi; haydovchi haqi — reys haqi + qo&apos;lda haq.{noVehicle ? ` Transportsiz qo'lda haq ${money(noVehicle)} — transport foydasiga kirmaydi.` : ""}</p>
+                <p className="text-xs text-slate-500"><InfoButton title="Transport">
+                  <p>Hamma faol transport — reysi yo&apos;q oyda ham.</p>
+                  <p>Yoqilg&apos;i — zapravka summasi; haydovchi haqi — reys haqi + qo&apos;lda haq.</p>
+                </InfoButton>{noVehicle ? ` Transportsiz qo'lda haq ${money(noVehicle)} — transport foydasiga kirmaydi.` : ""}</p>
                 <ExcelButton file={`Transport oylik hisobi ${month}`} sheets={[{ name: "Transport", rows: [...rows, t].map((r) => ({
                   Transport: r.plate, Turi: r.type, Reys: r.trips, Km: r.km, Kirim: r.revenue, "Shundan qo'lda kirim": manualBy.get(r.id)?.rev ?? 0,
                   "Yoqilg'i": r.fuelSum, "Haydovchi haqi": r.pay, "Shundan qo'lda haq": manualBy.get(r.id)?.pay ?? 0, "Ta'mir / zapchast": r.repair, Boshqa: r.other,
@@ -717,20 +726,20 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         {canPrice && opts && (
           <Card className="mb-4">
             <CardHeader title="Qo'lda yozuv: ish, haq, kirim" icon={PencilLine}
-              description="Reys tizimga tushmagan ish (ECO'ga ulanmagan haydovchi, zavoddan tashqari ish), oyiga qat'iy haq yoki transport kirimi. Haq ish boshqaruvchi tasdig'idan keyin: oylik — vedomostga, naqd — kassaga" />
+              info="Reys tizimga tushmagan ish (ECO'ga ulanmagan haydovchi, zavoddan tashqari ish), oyiga qat'iy haq yoki transport kirimi. Haq ish boshqaruvchi tasdig'idan keyin: oylik — vedomostga, naqd — kassaga" />
             <EntryForm drivers={opts.drivers.map((d) => ({ ...d, vehicleId: opts.vehicles.find((v) => v.driverId === d.id)?.id ?? null }))} vehicles={opts.vehicles} clientToken={crypto.randomUUID()} />
           </Card>
         )}
         {canExpense && opts && (
           <Card className="mb-4">
-            <CardHeader title="Transport chiqimi" icon={Wrench} description="Ta'mir, zapchast, yo'l, jarima va boshqalar — Transport xarajatlariga yoziladi (Avtotransport tahlili va transport kartasi bilan bitta manba)" />
+            <CardHeader title="Transport chiqimi" icon={Wrench} info="Ta'mir, zapchast, yo'l, jarima va boshqalar — Transport xarajatlariga yoziladi (Avtotransport tahlili va transport kartasi bilan bitta manba)" />
             <ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} />
           </Card>
         )}
         <Card padded={false}>
           <div className="px-5 pt-5">
             <CardHeader title={`${monthTitle(month)} — qo'lda yozuvlar`} icon={FileSpreadsheet}
-              description={`Haq: ${money(liveEntries.reduce((a, e) => a + e.pay, 0))}${showMoney ? ` · kirim: ${money(liveEntries.reduce((a, e) => a + e.revenue, 0))}` : ""}. Yozuv o'chirilmaydi — bekor qilinadi (sababi bilan)`} />
+              description={`Haq: ${money(liveEntries.reduce((a, e) => a + e.pay, 0))}${showMoney ? ` · kirim: ${money(liveEntries.reduce((a, e) => a + e.revenue, 0))}` : ""}`} info="Yozuv o'chirilmaydi — bekor qilinadi (sababi bilan)" />
           </div>
           {monthEntries.length === 0 ? <Empty text="Bu oyda qo'lda yozuv yo'q" icon={PencilLine} /> : <EntryTable rows={monthEntries} canCancel={canPrice} edit={canPrice && opts ? { drivers: opts.drivers, vehicles: opts.vehicles.map((v) => ({ id: v.id, label: v.label })) } : null} />}
         </Card>
@@ -738,7 +747,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 
       {bolim === "tarif" && <Section title="Tarif" className="mt-0">
         <Card>
-          <CardHeader title="Reys haqi tarifi" icon={Settings2} description="Taklif = reys + km × tarif + mikser kutish soati × tarif (1000 so'mga yaxlitlanadi)" />
+          <CardHeader title="Reys haqi tarifi" icon={Settings2} info="Taklif = reys + km × tarif + mikser kutish soati × tarif (1000 so'mga yaxlitlanadi)" />
           {canPrice ? <TariffForm v={{ drvTripRate: tariff.trip, drvKmRate: tariff.km, drvWaitHourRate: tariff.waitHour }} />
             : <p className="text-sm text-slate-600">Reys: {money(tariff.trip)} · 1 km: {money(tariff.km)} · kutish: {money(tariff.waitHour)} / soat. Tarifni dispetcher o&apos;zgartiradi.</p>}
         </Card>

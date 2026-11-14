@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { Pencil, Plus, Trash2, X, type LucideIcon } from "lucide-react";
-import { Button, Checkbox, Field, FormError, Input } from "@/components/ui";
+import { Button, Checkbox, Field, FormError, InfoButton, Input } from "@/components/ui";
 import { quickAddRecipient, quickAddSupplier, type QuickAddResult } from "@/lib/quick-add-actions";
 
 export type QuickAdded = { id: string; name: string; vatPayer?: boolean; note?: string };
@@ -167,7 +167,7 @@ function VatPayerBox() {
 export function RecipientAddDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (x: QuickAdded) => void }) {
   return (
     <QuickAddDialog title="Yangi oluvchi — qo'lda kiritish" open={open} onClose={onClose} save={quickAddRecipient} onCreated={onCreated}>
-      <Field label="Oluvchi nomi *" hint="Xodim yoki brigada bo'lsa — ro'yxatdan tanlang; bu yerga tizimda yo'q nom yoziladi">
+      <Field label="Oluvchi nomi *" help={<InfoButton title="Oluvchi nomi">Xodim yoki brigada bo&apos;lsa — ro&apos;yxatdan tanlang; bu yerga tizimda yo&apos;q nom yoziladi</InfoButton>}>
         <Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder="Masalan: Shofyorlar, Traktor, Mexanik / ustaxona" />
       </Field>
       <Field label="Izoh"><Input name="note" maxLength={200} autoComplete="off" placeholder="ixtiyoriy" /></Field>

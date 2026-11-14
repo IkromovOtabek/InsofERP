@@ -43,7 +43,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
 
   return (
     <div>
-      <PageHeader eyebrow="Moliya" title="Asosiy vositalar" subtitle="Bino, uskuna va mashinalar: qiymati, amortizatsiyasi va balansdagi qoldiq qiymati" />
+      <PageHeader eyebrow="Moliya" title="Asosiy vositalar" info="Bino, uskuna va mashinalar: qiymati, amortizatsiyasi va balansdagi qoldiq qiymati" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Vositalar" value={String(live.length)} hint={`${assets.length - live.length} ta chiqarilgan`} icon={Building2} href="#royxat" />
@@ -123,7 +123,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
       {canWrite && (
         <div id="yangi" className="mt-8 scroll-mt-20">
           <Card>
-            <CardHeader title="Yangi asosiy vosita" description="Tizimga o'tish sanasidagi bor vositalarni bugungi baholangan qiymati va qolgan xizmat muddati bilan kiriting" />
+            <CardHeader title="Yangi asosiy vosita" info="Tizimga o'tish sanasidagi bor vositalarni bugungi baholangan qiymati va qolgan xizmat muddati bilan kiriting" />
             <AssetCreateForm prefill={prefill} today={today} txOptions={unlinked.map((t) => ({ id: t.id, label: `${date(t.date)} · ${money(Number(t.amount))}${t.note ? " · " + t.note : ""}` }))} />
           </Card>
         </div>

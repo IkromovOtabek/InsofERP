@@ -8,7 +8,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   await requirePage("/bi-tahlil/ishlab-chiqarish");
   const { sp, range } = await biContext(searchParams);
   return (
-    <BiPage title="Ishlab chiqarish va logistika" subtitle="Zameslar, reyslar, mikserlar, haydovchilar scorecard va zayavkalar bajarilishi." tab="operations" range={range}>
+    <BiPage title="Ishlab chiqarish va logistika" info="Zameslar, reyslar, mikserlar, haydovchilar scorecard va zayavkalar bajarilishi." tab="operations" range={range}>
       <OperationsTab range={range} sp={sp} />
     </BiPage>
   );

@@ -20,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     redirect(`${MOLIYA_LINKS.find((l) => l.key === tab)!.href}${q ? `?${q}` : ""}`);
   }
   return (
-    <BiPage title="Moliya" subtitle="Pul qayerdan oqyapti va kassada nima bo'ladi — yo'qotish kanallari, kassa prognozi, foyda yo'qotishlari, foyda-zarar, qarz yoshi." tab="finance" range={range}>
+    <BiPage title="Moliya" info="Pul qayerdan oqyapti va kassada nima bo'ladi — yo'qotish kanallari, kassa prognozi, foyda yo'qotishlari, foyda-zarar, qarz yoshi." tab="finance" range={range}>
       <FinanceTab range={range} sp={sp} />
     </BiPage>
   );

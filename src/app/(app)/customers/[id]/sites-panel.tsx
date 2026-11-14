@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { Building2, Plus, Pencil, Trash2, MapPin, Phone, Clock, Wallet, ClipboardList, Archive, ArchiveRestore } from "lucide-react";
-import { Badge, Button, Field, FormError, Input, LinkButton, Textarea, Checkbox, Empty } from "@/components/ui";
+import { Badge, Button, Field, FormError, InfoButton, Input, LinkButton, Textarea, Checkbox, Empty } from "@/components/ui";
 import { AddressPicker } from "@/components/address-picker";
 import { BlockTag, BlocksEditor } from "@/components/site-blocks";
 import { money } from "@/lib/format";
@@ -161,9 +161,10 @@ function SiteForm({ customerId, site, geoSearch, onDone }: { customerId: string;
       <Field label="Maxsus ko'rsatma" hint="kirish darvozasi, nasos joyi, yo'l cheklovi..."><Textarea name="instructions" defaultValue={s?.instructions ?? ""} /></Field>
       {/* <label> emas (Field): label bosilganda ichidagi birinchi tugma — blokni olib tashlash — bosilib ketardi */}
       <div>
-        <div className="mb-1.5 text-[13px] font-medium text-slate-700">Bloklar</div>
+        <div className="mb-1.5 flex items-center gap-1 text-[13px] font-medium text-slate-700">Bloklar
+          <InfoButton title="Bloklar">Obyekt ichidagi binolar. Zayavkada har mahsulot qatoriga blok tanlanadi, ishlab chiqarishda har blok alohida ustunda ko&apos;rinadi.</InfoButton>
+        </div>
         <BlocksEditor defaultValue={s?.blocks ?? []} />
-        <p className="mt-1 text-xs text-slate-500">Obyekt ichidagi binolar. Zayavkada har mahsulot qatoriga blok tanlanadi, ishlab chiqarishda har blok alohida ustunda ko&apos;rinadi.</p>
       </div>
       <Checkbox name="isActive" defaultChecked={s?.isActive ?? true} label="Faol" />
       <div className="flex items-center gap-2">

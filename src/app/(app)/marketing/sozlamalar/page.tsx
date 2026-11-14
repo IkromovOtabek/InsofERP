@@ -42,7 +42,7 @@ export default async function MarketingSettingsPage({ searchParams }: { searchPa
 
   return (
     <div>
-      <PageHeader title="Sozlamalar" subtitle="Ijtimoiy tarmoq profillarini ulang — ERP'dan turib post chiqarish, statistika va AI tavsiyalari shu profillar orqali ishlaydi." />
+      <PageHeader title="Sozlamalar" info="Ijtimoiy tarmoq profillarini ulang — ERP'dan turib post chiqarish, statistika va AI tavsiyalari shu profillar orqali ishlaydi." />
       {sp.ulandi && <Callout tone="success" title="Profillar ulandi">Instagram — {ig || 0}, Facebook sahifa — {fb || 0}. Statistika bir necha daqiqada yig&apos;ila boshlaydi.</Callout>}
       {sp.xato && <Callout tone="danger">{ERRORS[sp.xato] ?? "Xato"}</Callout>}
       {smmDryRun() && <Callout tone="info">Sinov rejimi: postlar tarmoqqa yuborilmaydi, reklamaga pul sarflanmaydi.</Callout>}
@@ -50,7 +50,7 @@ export default async function MarketingSettingsPage({ searchParams }: { searchPa
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Ijtimoiy tarmoq profillari" icon={AtSign} description="Har tarmoqda bitta asosiy profil — nashr va statistika shundan" />
+            <CardHeader title="Ijtimoiy tarmoq profillari" icon={AtSign} info="Har tarmoqda bitta asosiy profil — nashr va statistika shundan" />
             {active.length === 0 ? (
               <EmptyState title="Hali profil ulanmagan" text="Instagram va Facebook'ni «Meta bilan ulash» tugmasi bilan, Telegram kanalni bot orqali ulang." />
             ) : (
@@ -101,7 +101,7 @@ export default async function MarketingSettingsPage({ searchParams }: { searchPa
           </Card>
 
           <Card>
-            <CardHeader title="Brend profili" icon={Building2} description="AI post, ssenariy va tavsiyalarni shu ma'lumotga tayanib yozadi" />
+            <CardHeader title="Brend profili" icon={Building2} info="AI post, ssenariy va tavsiyalarni shu ma'lumotga tayanib yozadi" />
             <BrandForm disabled={!canEdit} v={{
               brandAbout: settings.brandAbout ?? "", brandTone: settings.brandTone ?? "", audience: settings.audience ?? "",
               languages: settings.languages, defaultHashtags: settings.defaultHashtags ?? "",
@@ -111,12 +111,12 @@ export default async function MarketingSettingsPage({ searchParams }: { searchPa
 
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Joylashuvlar" icon={Settings} description="Postga qo'yiladigan joy (zavod, ofis, sklad) — Instagram'da manzil ko'rinadi" />
+            <CardHeader title="Joylashuvlar" icon={Settings} info="Postga qo'yiladigan joy (zavod, ofis, sklad) — Instagram'da manzil ko'rinadi" />
             <LocationsEditor initial={places} disabled={!canEdit} />
           </Card>
 
           <Card>
-            <CardHeader title="Raqobatchilar" icon={Users} description="Instagram Business profillari — ochiq ko'rsatkichlar har kuni yangilanadi" />
+            <CardHeader title="Raqobatchilar" icon={Users} info="Instagram Business profillari — ochiq ko'rsatkichlar har kuni yangilanadi" />
             {competitors.length === 0 ? <p className="mb-3 text-sm text-slate-500">Ro&apos;yxat bo&apos;sh.</p> : (
               <ul className="mb-3 divide-y divide-slate-100">
                 {competitors.map((c) => (
@@ -136,7 +136,7 @@ export default async function MarketingSettingsPage({ searchParams }: { searchPa
           </Card>
 
           <Card>
-            <CardHeader title="Avtomatik agentlar" icon={Bot} description="Claude o'zi hisobot va reja tayyorlab, Telegram bot va ilovaga yuboradi" />
+            <CardHeader title="Avtomatik agentlar" icon={Bot} info="Claude o'zi hisobot va reja tayyorlab, Telegram bot va ilovaga yuboradi" />
             {!aiReady() && <Callout tone="warning">AI ulanmagan — haftalik hisobot ishlamaydi, kunlik tekshiruv faqat faktlar bilan ketadi.</Callout>}
             <AutoAgentsForm disabled={!canConnect}
               v={{ autoWeekly: settings.autoWeekly, autoDaily: settings.autoDaily, autoDrafts: settings.autoDrafts, recipients: settings.autoRecipients }}
@@ -147,7 +147,7 @@ export default async function MarketingSettingsPage({ searchParams }: { searchPa
           </Card>
 
           <Card>
-            <CardHeader title="Reklama kabineti va limitlar" icon={Megaphone} description="Target (Meta reklama) uchun" />
+            <CardHeader title="Reklama kabineti va limitlar" icon={Megaphone} info="Target (Meta reklama) uchun" />
             <AdsForm disabled={!canConnect} v={{
               adAccountId: settings.adAccountId ?? "", leadFormId: settings.leadFormId ?? "", adCurrency: settings.adCurrency,
               boostDailyCap: String(settings.boostDailyCap), boostMonthlyCap: String(settings.boostMonthlyCap),

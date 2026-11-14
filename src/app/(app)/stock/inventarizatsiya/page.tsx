@@ -32,16 +32,16 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   return (
     <div>
       <PageHeader back={{ href: "/stock", label: "Sklad" }} title="Inventarizatsiya"
-        subtitle="Skladni sanab chiqing: hisobdagi va haqiqiy qoldiq solishtiriladi, farq sabab bilan qoldiqqa tuzatish bo'lib yoziladi." />
+        info={<>
+          <p>Skladni sanab chiqing: hisobdagi va haqiqiy qoldiq solishtiriladi, farq sabab bilan qoldiqqa tuzatish bo&apos;lib yoziladi.</p>
+          <p>Faqat sanagan qatorlaringizni to&apos;ldiring — bo&apos;sh qator o&apos;zgarmaydi. Farq summasi {money(DIRECTOR_NOTIFY_SUM)} dan oshsa,
+            yoziladi va direktorga xabar ketadi. Brak yoki yo&apos;qotish bo&apos;lsa — <Link href="/stock/spisanie" className="underline">Hisobdan chiqarish</Link>.</p>
+        </>} />
       {!current ? (
         <Callout tone="warning" title="Sklad yo'q">Avval Sozlamalarda sklad oching.</Callout>
       ) : (
         <>
-          <Callout tone="info" title="Qanday ishlaydi">
-            Faqat sanagan qatorlaringizni to&apos;ldiring — bo&apos;sh qator o&apos;zgarmaydi. Farq summasi {money(DIRECTOR_NOTIFY_SUM)} dan oshsa,
-            yoziladi va direktorga xabar ketadi. Brak yoki yo&apos;qotish bo&apos;lsa — <Link href="/stock/spisanie" className="underline">Hisobdan chiqarish</Link>.
-          </Callout>
-          <Card className="mt-4">
+          <Card>
             <InventoryForm
               warehouses={warehouses}
               warehouseId={current.id}

@@ -58,7 +58,8 @@ export default async function ContentEditPage({ params, searchParams }: { params
       <PageHeader
         back={{ href: "/marketing/kontent", label: "Kontent reja" }}
         title={<>{item ? item.title : "Yangi post"}{item && <Badge color={APPROVAL[item.approval].color}>{APPROVAL[item.approval].label}</Badge>}</>}
-        subtitle={item?.createdBy ? `Muallif: ${item.createdBy}` : "Matn, media va tarmoqlarni tanlang — AI yordamchi ssenariy va izohni yozib beradi"}
+        subtitle={item?.createdBy ? `Muallif: ${item.createdBy}` : undefined}
+        info={item?.createdBy ? undefined : "Matn, media va tarmoqlarni tanlang — AI yordamchi ssenariy va izohni yozib beradi"}
       />
       {saqlandi && <div className="mb-4"><Callout tone="success">{video ? "Saqlandi. Video montaj navbatga qo'yildi — tayyor bo'lgach postga o'zi biriktiriladi." : "Saqlandi"}</Callout></div>}
       {job && job.status !== "DONE" && job.status !== "CANCELLED" && (

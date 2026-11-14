@@ -8,7 +8,7 @@ import { DELIVERY_EDIT_STATUSES } from "@/lib/orders";
 import { EditedMark } from "@/components/edited-mark";
 import { ORDER_LOGI, orderLogistics, type OrderLogiStatus } from "@/lib/logistics";
 import { deliveryAt, qty } from "@/lib/format";
-import { Card, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Card, Empty, InfoButton, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { OrderLogiBadge, unitShort } from "../ui";
 
 export const dynamic = "force-dynamic";
@@ -67,13 +67,21 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
 
   return (
     <div>
-      <PageHeader title="Buyurtmalar" subtitle="Dastavkali zayavkalar: yetkazish holati, biriktirilgan va yetkazilgan hajm"
+      <PageHeader title="Buyurtmalar" info="Dastavkali zayavkalar: yetkazish holati, biriktirilgan va yetkazilgan hajm"
         action={<div className="flex flex-wrap gap-2">{canCreate && <LinkButton href="/orders/new" variant="secondary"><Plus size={16} /> Yangi zayavka</LinkButton>}<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton></div>} />
       <form className="mb-3"><input type="hidden" name="filter" value={filter} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Mijoz yoki manzil…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Tabs current={filter} items={[tab("open", "Ochiq"), tab("waiting", "Transport kutmoqda"), tab("onroad", "Yo'lda"), tab("late", "Kechikmoqda"), tab("problem", "Muammo"), tab("done", "Yetkazilgan"), tab("all", "Hammasi")]} />
       <Card padded={false}>
         <Table>
-          <thead><tr><Th>Mijoz / obyekt</Th><Th>Marka</Th><Th right>Hajm</Th><Th right>Biriktirildi</Th><Th right>Yetkazildi</Th><Th>Yetkazish</Th><Th>Holat</Th><Th>Mas'ul</Th><Th /></tr></thead>
+          <thead><tr><Th>Mijoz / obyekt</Th><Th>Marka</Th><Th right>Hajm</Th><Th right>Biriktirildi</Th><Th right>Yetkazildi</Th><Th>Yetkazish</Th><Th>
+            <span className="inline-flex items-center gap-1">
+              Holat
+              <InfoButton title="Holat">
+                <p>Holatlar: {Object.values(ORDER_LOGI).map((x) => x.label).join(" → ")}.</p>
+                <p>&quot;Kechikmoqda&quot; — yetkazish vaqti o&apos;tgan, hammasi yetkazilmagan; &quot;Muammo mavjud&quot; — reysda hal qilinmagan muammo bor.</p>
+              </InfoButton>
+            </span>
+          </Th><Th>Mas'ul</Th><Th /></tr></thead>
           <tbody>
             {shown.length === 0 && <Empty text="Bu filtrda zayavka yo'q" />}
             {shown.map(({ o, l }) => {
@@ -106,7 +114,6 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
           </tbody>
         </Table>
       </Card>
-      <p className="mt-3 text-xs text-slate-500">Holatlar: {Object.values(ORDER_LOGI).map((x) => x.label).join(" → ")}. "Kechikmoqda" — yetkazish vaqti o'tgan, hammasi yetkazilmagan; "Muammo mavjud" — reysda hal qilinmagan muammo bor.</p>
     </div>
   );
 }

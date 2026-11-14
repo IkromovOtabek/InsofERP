@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Banknote, Landmark } from "lucide-react";
 import { isoDate } from "@/lib/format";
 import { createCashTx } from "./actions";
-import { Button, Callout, Field, FormError, FormSuccess, Input, Select, FormActions } from "@/components/ui";
+import { Button, Callout, Field, FormError, FormSuccess, InfoButton, Input, Select, FormActions } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { cn } from "@/lib/utils";
@@ -145,7 +145,8 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                 onCreated={(x: QuickAdded) => { setEdits((e) => ({ ...e, removed: e.removed.filter((n) => n !== x.name) })); setAdded((a) => ({ ...a, cats: [...a.cats, { name: x.name, needs: null, loanPart: null, subs: [], type }] })); pickCategory(x.name); }}>
                 <input type="hidden" name="type" value={type} />
                 <Field label="Nomi *"><Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder={type === "INCOME" ? "Masalan: Ijara tushumi" : "Masalan: Qo'riqlash xizmati"} /></Field>
-                <Field label="Foyda-zarar (PNL) qatori" hint="Oqim turi, alias va boshqasi — Moliya → Kategoriyalar sahifasida">
+                <Field label="Foyda-zarar (PNL) qatori"
+                  help={<InfoButton title="Foyda-zarar (PNL) qatori">Oqim turi, alias va boshqasi — Moliya → Kategoriyalar sahifasida.</InfoButton>}>
                   <Select name="pnlLine" defaultValue={type === "INCOME" ? "OTHER_INCOME" : "PRODUCTION"}>
                     {Object.entries(PNL_LINE_LABEL).filter(([k]) => k !== "PROJECT" && (type === "INCOME" ? ["OTHER_INCOME", "NONE"].includes(k) : k !== "OTHER_INCOME")).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                   </Select>
@@ -161,7 +162,8 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                 <QuickEdit label="Manba nomini tahrirlash" title={`«${cat}» manbasini tahrirlash`} save={quickRenameCashCategory}
                   onSaved={(x) => onRenamed(cat, x, true)}>
                   <input type="hidden" name="name" value={cat} />
-                  <Field label="Nomi *" hint="Shu manbadagi eski yozuvlar ham yangi nomga o'tadi. PNL qatori va oqim turi — Moliya → Kategoriyalarda">
+                  <Field label="Nomi *"
+                    help={<InfoButton title="Nomi">Shu manbadagi eski yozuvlar ham yangi nomga o&apos;tadi. PNL qatori va oqim turi — Moliya → Kategoriyalarda.</InfoButton>}>
                     <Input name="newName" required maxLength={80} defaultValue={cat} autoFocus autoComplete="off" />
                   </Field>
                 </QuickEdit>
@@ -240,7 +242,7 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
                 <Field label={lentCat ? "Kimga berildi *" : "Bank / kimdan *"}><Input name="counterparty" required maxLength={160} autoFocus autoComplete="off" placeholder={lentCat ? "F.I.O. yoki tashkilot" : "Aloqabank"} /></Field>
                 <Field label="Nomi" hint="bo'sh qolsa — yuqoridagi nom"><Input name="name" maxLength={160} autoComplete="off" placeholder={lentCat ? "Masalan: Aliyev — 2026 qarz" : "Masalan: Aloqabank — 2026 kredit"} /></Field>
                 <Field label="Izoh"><Input name="note" maxLength={300} autoComplete="off" placeholder="ixtiyoriy" /></Field>
-                <p className="text-[13px] text-slate-500">Qoldiq 0 dan boshlanadi — qarzni shu yozuvning o&apos;zi ochadi. Boshlang&apos;ich qoldiq kerak bo&apos;lsa — Moliya → Kreditlar va qarzlar.</p>
+                <div><InfoButton title="Kredit qoldig'i">Qoldiq 0 dan boshlanadi — qarzni shu yozuvning o&apos;zi ochadi. Boshlang&apos;ich qoldiq kerak bo&apos;lsa — Moliya → Kreditlar va qarzlar.</InfoButton></div>
               </QuickAdd>
             )}>
               <Select name="loanId" required value={loanVal} onChange={(e) => setLoanId(e.target.value)}><option value="" disabled>— tanlang —</option>{shownLoans.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>
@@ -248,7 +250,8 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
           </Field>
         )}
         {perekit ? (
-          <Field label="Qayerga (hisob) *" hint="Pul o'z hisobimizga o'tadi — chiqim emas, ikkala hisob tarixida ko'rinadi" className="sm:col-span-2">
+          <Field label="Qayerga (hisob) *" className="sm:col-span-2"
+            help={<InfoButton title="Qayerga (hisob)">Pul o&apos;z hisobimizga o&apos;tadi — chiqim emas, ikkala hisob tarixida ko&apos;rinadi.</InfoButton>}>
             <Select name="toAccountId" defaultValue="" required><option value="" disabled>Hisobni tanlang…</option>{accounts.filter((a) => a.id !== accId).map((a) => <option key={a.id} value={a.id}>{accLabel(a)}</option>)}</Select>
           </Field>
         ) : type === "EXPENSE" ? (
@@ -260,7 +263,8 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
           </Field>
         ) : null}
         {type === "EXPENSE" && !perekit && shownReceipts.length > 0 && (
-          <Field label="Kirim hujjati" hint="Tanlansa — shu kirimga to'lov (qisman ham), qolgandan oshmaydi" className="sm:col-span-2">
+          <Field label="Kirim hujjati" className="sm:col-span-2"
+            help={<InfoButton title="Kirim hujjati">Tanlansa — shu kirimga to&apos;lov (qisman ham), qolgandan oshmaydi.</InfoButton>}>
             <Select name="receiptId" defaultValue=""><option value="">— bog&apos;lanmagan —</option>{shownReceipts.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</Select>
           </Field>
         )}

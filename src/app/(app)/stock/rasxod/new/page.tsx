@@ -117,7 +117,7 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   return (
     <div>
       <PageHeader back={{ href: "/stock/rasxod", label: "Chiqim" }} title={copy?.cancelled ? "Tuzatish: yangi chiqim" : "Yangi chiqim"}
-        subtitle="Skladdan xomashyo berish. Qoldiq darhol kamayadi; narx — ta'minot belgilagan «Dona narxi»." />
+        info="Skladdan xomashyo berish. Qoldiq darhol kamayadi; narx — ta'minot belgilagan «Dona narxi»." />
       {copy && (
         <div className="mb-4">
           <Callout tone={copy.cancelled ? "warning" : "info"} title={copy.cancelled ? `${dateRu(copy.date)} sanadagi chiqim bekor qilingan` : `${dateRu(copy.date)} sanadagi chiqimdan nusxa`}>

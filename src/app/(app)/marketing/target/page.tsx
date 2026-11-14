@@ -30,7 +30,7 @@ export default async function TargetPage() {
 
   return (
     <div>
-      <PageHeader title="Target" subtitle="Instagram'da chiqqan postni reklama qilish. Sotuvchi so'rov yuboradi, direktor tasdiqlagach Meta'da ishga tushadi — limitdan oshib bo'lmaydi." />
+      <PageHeader title="Target" info="Instagram'da chiqqan postni reklama qilish. Sotuvchi so'rov yuboradi, direktor tasdiqlagach Meta'da ishga tushadi — limitdan oshib bo'lmaydi." />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Sarflandi" value={`${fmtNum(spend, 2)} ${cur}`} icon={Crosshair} href="#reklamalar" />
         <StatCard label="Qamrov" value={fmtNum(reach)} hint={`Natija (xabar/ariza): ${fmtNum(results)}`} href="#reklamalar" />
@@ -40,7 +40,7 @@ export default async function TargetPage() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <Card padded={false}>
-          <div id="reklamalar" className="scroll-mt-20 p-4 pb-2"><CardHeader title="Reklamalar" description="Yangi so'rov — post sahifasidan («Target qilish»)" /></div>
+          <div id="reklamalar" className="scroll-mt-20 p-4 pb-2"><CardHeader title="Reklamalar" info="Yangi so'rov — post sahifasidan («Target qilish»)" /></div>
           {boosts.length === 0 ? <EmptyState title="Reklama yo'q" text="Kontent rejada Instagram'da chiqqan postni oching va «Target qilish» formasini to'ldiring." /> : (
             <ul className="divide-y divide-slate-100">
               {boosts.map((b) => {
@@ -75,10 +75,10 @@ export default async function TargetPage() {
 
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Oylik limit" description="Joriy oyda so'ralgan va ishlayotgan reklamalar" />
+            <CardHeader title="Oylik limit" info={<><p>Joriy oyda so&apos;ralgan va ishlayotgan reklamalar.</p><p>Limitlar — Sozlamalar&apos;da.</p></>} />
             <p className="mb-2 text-sm tabular">{fmtNum(committed, 2)} / {fmtNum(Number(settings.boostMonthlyCap), 2)} {cur}</p>
             <Progress value={committed} max={Number(settings.boostMonthlyCap)} tone={committed > Number(settings.boostMonthlyCap) * 0.8 ? "warning" : "default"} />
-            <p className="mt-2 text-xs text-slate-500">Bitta reklama kunlik limiti: {fmtNum(Number(settings.boostDailyCap), 2)} {cur}. Limitlar — Sozlamalar&apos;da.</p>
+            <p className="mt-2 text-xs text-slate-500">Bitta reklama kunlik limiti: {fmtNum(Number(settings.boostDailyCap), 2)} {cur}</p>
           </Card>
           <Card>
             <CardHeader title="Ulanishlar" action={<LinkButton href="/marketing/sozlamalar" size="sm" variant="secondary">Sozlamalar</LinkButton>} />

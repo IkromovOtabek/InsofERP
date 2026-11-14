@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CalendarRange, FileSpreadsheet, FileUp, HardHat, Package, Truck, Wallet } from "lucide-react";
-import { Badge, Button, Callout, Checkbox, Field, Input, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Checkbox, Field, InfoButton, Input, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { JournalTemplateButton } from "@/components/journal-template";
 import { CategoryBulkBar, CategorySelect, RowCheck } from "@/components/category-bulk";
 import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
@@ -172,7 +172,11 @@ export function JournalImport({ warehouses, materials, categories, canEditCatego
           "Kimga": "Insof", "To'lov": "P-r", "Dostavka": 0, "Narx (QQSsiz)": 950000, "Summa (QQSsiz)": 19000000, "QQS 12%": 2280000, "Jami (QQS bilan)": 21280000,
           "Kategoriya": "Xomashyo",
         }} />
-        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar: Sana, Tovar, TTN №, O'lchov, Miqdor, Ta'minotchi, Kimga, To'lov (P-r — perechisleniye, n-q — naqd), Dostavka, Narx (QQSsiz), Summa, QQS 12%, Jami, Manzil, Snabjenets, Izoh, Mashina, Qayerdan yuklandi, Kategoriya (ixtiyoriy). Excel'dan faqat kirim bo'ladi — chiqim yozilmaydi."}</span>
+        <InfoButton title="Excel fayl ustunlari">
+          <p>Ustunlar: Sana, Tovar, TTN №, O&apos;lchov, Miqdor, Ta&apos;minotchi, Kimga, To&apos;lov (P-r — perechisleniye, n-q — naqd), Dostavka, Narx (QQSsiz), Summa, QQS 12%, Jami, Manzil, Snabjenets, Izoh, Mashina, Qayerdan yuklandi, Kategoriya (ixtiyoriy).</p>
+          <p>Excel&apos;dan faqat kirim bo&apos;ladi — chiqim yozilmaydi.</p>
+        </InfoButton>
+        {data?.file && <span className="text-sm text-slate-500">{data.file}</span>}
       </div>
       {readError && <Callout tone="danger">{readError}</Callout>}
 

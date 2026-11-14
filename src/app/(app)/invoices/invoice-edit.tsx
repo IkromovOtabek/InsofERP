@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { Pencil, X } from "lucide-react";
-import { Button, Field, FormActions, FormError, IconButton, Input } from "@/components/ui";
+import { Button, Field, FormActions, FormError, IconButton, InfoButton, Input } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { money } from "@/lib/format";
 import { editInvoice } from "./actions";
@@ -58,10 +58,10 @@ function EditForm({ inv, onDone }: { inv: InvoiceEditData; onDone: () => void })
     <form onSubmit={submit} className="space-y-4">
       <FormError error={state?.error} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Summa *" hint={hint || undefined}><MoneyInput name="amount" defaultValue={String(inv.amount)} required /></Field>
+        <Field label="Summa *" hint={hint || undefined}
+          help={<InfoButton title="Summa">Holat to&apos;lovlarga qarab qayta hisoblanadi: to&apos;langan summa yangi summaga teng bo&apos;lsa — «To&apos;langan».</InfoButton>}><MoneyInput name="amount" defaultValue={String(inv.amount)} required /></Field>
         <Field label="Sana *"><Input name="date" type="date" defaultValue={inv.date} required /></Field>
       </div>
-      <p className="text-xs text-slate-500">Holat to&apos;lovlarga qarab qayta hisoblanadi: to&apos;langan summa yangi summaga teng bo&apos;lsa — «To&apos;langan».</p>
       <FormActions>
         <Button disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
         <Button type="button" variant="secondary" onClick={onDone}>Bekor</Button>

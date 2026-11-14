@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { Plus, X, Save, CheckCircle2, MapPin, FileSignature, UserPlus, Building2, CalendarDays, Clock, ChevronLeft, ChevronRight, Pencil, HardHat } from "lucide-react";
 import type { DaySheetRow } from "@/lib/order-day-sheet";
 import { ORDER_STATUS, OrderStatusBadge } from "./status";
-import { Button, Callout, Card, Field as FormField, Input, LinkButton } from "@/components/ui";
+import { Button, Callout, Card, Field as FormField, InfoButton, Input, LinkButton } from "@/components/ui";
 import { AddressPicker, type SavedPlace } from "@/components/address-picker";
 import { scriptCleaner } from "@/components/script-guard";
 import { fmtNum, isoDate, numText, dateRu } from "@/lib/format";
@@ -778,6 +778,18 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-slate-900">
             Zayavka realizatsiya
+            <InfoButton title="Zayavka realizatsiya">
+              <p>«Sana» bo&apos;sh yangi qatorlar shu sana bilan. Enter — pastga, Tab — o&apos;ngga. Excel&apos;dan bir nechta katakni ko&apos;chirib joylashtirsa bo&apos;ladi.</p>
+              <p>Har bo&apos;lim tepasidagi kulrang qatorlar — varaq kuniga olingan barcha zayavkalar (kun almashsa o&apos;sha kunniki); har katakdagi qalam — shu ustunni
+                tahrirlash (ishlab chiqarish boshlanguncha), mijoz nomi yonidagi qalam — to&apos;liq tahrir.</p>
+              <p>«Kimga» bosilsa ro&apos;yxat: tepada «Yangi mijoz», obyektida bloklari bor mijoz — har blok alohida («Mijoz — A blok»).
+                Mijoz tanlansa bo&apos;sh kataklar o&apos;zi to&apos;ladi: obyekt joyi (oxirgi zayavkadagi, xarita nuqtasi bilan), qabul qiluvchi, telefon va shu mijozga oxirgi narx.</p>
+              <p>Plita, ustun, blok kabi dona mahsulot brigada omborlarida bo&apos;lsa — katakda brigada belgisi: bosib «Brigadadan olish»ni belgilang, brigadani tanlang (erkin miqdori bilan).</p>
+              <p>Bir mijozga bir nechta mahsulot — qator raqami ustidagi «+»: bir mijoz + obyekt + sana + vaqt qatorlari bitta zayavka (chapda bir rangli chiziq).</p>
+              <p>«Reys»: 0 — dastavka yo&apos;q (mijoz o&apos;zi olib ketadi), 1 va undan ko&apos;p — nechta reys. «Sana» bo&apos;sh — varaq sanasi, «aniq emas» ham tanlanadi.</p>
+              <p>Perechisleniyeda QQS 12% narx va dastavka ustiga qo&apos;shiladi, qarzga — belgilansa. Bosh to&apos;lov bo&apos;lsa — naqdda kassirga,
+                perechisleniyeda buxgalterga so&apos;rov boradi; «limit yo&apos;q» mijozga zayavka faqat to&apos;liq bosh to&apos;lov bilan ochiladi.</p>
+            </InfoButton>
             <div className="inline-flex items-center gap-1">
               <button type="button" onClick={() => shiftDay(-1)} aria-label="Oldingi kun" title="Oldingi kun"
                 className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"><ChevronLeft size={16} /></button>
@@ -787,10 +799,8 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
             </div>
             <span className="font-normal text-slate-500">
               — {showDay(date)} · {loading || date !== day ? "yuklanmoqda…" : orderCount ? <b className="font-semibold text-slate-700">{orderCount} ta zayavka olingan</b> : "bu kunga zayavka yo'q"}
-              {" "}· «Sana» bo&apos;sh yangi qatorlar shu sana bilan
             </span>
           </div>
-          <p className="text-xs text-slate-500">Enter — pastga, Tab — o&apos;ngga. Excel&apos;dan bir nechta katakni ko&apos;chirib joylashtirsa bo&apos;ladi.</p>
         </div>
 
         {/* Varaqning o'z katak navigatsiyasi bor (Enter/strelka, ro'yxatlar) — umumiy strelka navigatsiyasi bu yerga tegmaydi */}
@@ -829,17 +839,6 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 px-4 py-3">
           <Button type="button" onClick={save} disabled={pending || !dirty}><Save size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>
           <LinkButton href="/orders" variant="secondary">Zayavkalar</LinkButton>
-          <p className="text-xs text-slate-500">
-            Har bo&apos;lim tepasidagi kulrang qatorlar — varaq kuniga olingan barcha zayavkalar (kun almashsa o&apos;sha kunniki); har katakdagi qalam — shu ustunni
-            tahrirlash (ishlab chiqarish boshlanguncha), mijoz nomi yonidagi qalam — to&apos;liq tahrir.
-            «Kimga» bosilsa ro&apos;yxat: tepada «Yangi mijoz», obyektida bloklari bor mijoz — har blok alohida («Mijoz — A blok»).
-            Mijoz tanlansa bo&apos;sh kataklar o&apos;zi to&apos;ladi: obyekt joyi (oxirgi zayavkadagi, xarita nuqtasi bilan), qabul qiluvchi, telefon va shu mijozga oxirgi narx.
-            Plita, ustun, blok kabi dona mahsulot brigada omborlarida bo&apos;lsa — katakda brigada belgisi: bosib «Brigadadan olish»ni belgilang, brigadani tanlang (erkin miqdori bilan).
-            Bir mijozga bir nechta mahsulot — qator raqami ustidagi «+»: bir mijoz + obyekt + sana + vaqt qatorlari bitta zayavka (chapda bir rangli chiziq).
-            «Reys»: 0 — dastavka yo&apos;q (mijoz o&apos;zi olib ketadi), 1 va undan ko&apos;p — nechta reys. «Sana» bo&apos;sh — varaq sanasi, «aniq emas» ham tanlanadi.
-            Perechisleniyeda QQS 12% narx va dastavka ustiga qo&apos;shiladi, qarzga — belgilansa. Bosh to&apos;lov bo&apos;lsa — naqdda kassirga,
-            perechisleniyeda buxgalterga so&apos;rov boradi; «limit yo&apos;q» mijozga zayavka faqat to&apos;liq bosh to&apos;lov bilan ochiladi.
-          </p>
         </div>
       </Card>
 

@@ -11,7 +11,7 @@ import {
   PAYREQ_STATUS_COLOR, PAYREQ_STATUS_LABEL, PAYREQ_TABS, getPaymentRequest, listPaymentRequests, methodsFor, payReqCounts, payReqTab, receiveAccounts,
   type PayReqRow, type PayReqTab,
 } from "@/lib/payment-requests";
-import { Badge, Button, Callout, Empty, Input, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Empty, InfoButton, Input, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { payReqSummary } from "./summary";
 import { ReceiveForm } from "./receive-form";
@@ -89,7 +89,7 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <PageHeader title="Pul qabul qilish" subtitle={subtitle} />
+      <PageHeader title="Pul qabul qilish" info={subtitle} />
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Ochiq so'rovlar" value={`${summary.open.n} ta`} hint={`kutilmoqda ${money(summary.open.left)}`} icon={HandCoins} tone={summary.open.n > 0 ? "warning" : "default"} href={href("open")} />
@@ -172,7 +172,9 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
                   <Td colSpan={COLS}>
                     <div className="grid grid-cols-1 gap-5 font-normal lg:grid-cols-5">
                       <div className="lg:col-span-2">
-                        <div className="mb-2 text-[13px] font-semibold text-slate-700">To&apos;lovlar tarixi</div>
+                        <div className="mb-2 flex items-center gap-1 text-[13px] font-semibold text-slate-700">To&apos;lovlar tarixi
+                          {canCashRow && r.payments.length > 0 && <InfoButton title="To'lovlar tarixi">To&apos;lovni bosing — kim va qachon kiritgani, tarix; tahrirlash va o&apos;chirish (ruxsatga qarab).</InfoButton>}
+                        </div>
                         {r.payments.length === 0 ? <p className="text-sm text-slate-500">Hali to&apos;lov tushmagan</p> : canCashRow ? (
                           <CashEditProvider options={{ accounts: editAccounts, income: [], expense: [] }}>
                             <Table className="shadow-none">
@@ -185,7 +187,6 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
                                 ))}
                               </tbody>
                             </Table>
-                            <p className="mt-1 text-[11px] text-slate-500">To&apos;lovni bosing — kim va qachon kiritgani, tarix; tahrirlash va o&apos;chirish (ruxsatga qarab)</p>
                           </CashEditProvider>
                         ) : (
                           <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">

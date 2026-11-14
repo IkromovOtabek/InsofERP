@@ -72,7 +72,7 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
     <div>
       <PageHeader
         title="amoCRM"
-        subtitle="Savdo voronkasi amoCRM'da: lid, taklif va kelishuv. Sdelka «ERP'ga» bosqichiga o'tsa shu yerga tushadi — zayavka ochiladi, holati va summasi sdelkaga qaytadi."
+        info="Savdo voronkasi amoCRM'da: lid, taklif va kelishuv. Sdelka «ERP'ga» bosqichiga o'tsa shu yerga tushadi — zayavka ochiladi, holati va summasi sdelkaga qaytadi."
         action={ready && canWork ? <SyncNowButton /> : undefined}
       />
 
@@ -163,7 +163,7 @@ async function Settings({ conn }: { conn: Conn }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <Card>
-        <CardHeader title={ready ? "Ulanish" : "amoCRM'ni ulash"} icon={PlugZap} description={ready ? undefined : "amoCRM'da (admin) Sozlamalar → Integratsiyalar → «Integratsiya yaratish» → shaxsiy integratsiya. Undan token yoki client_id/secret olinadi."} />
+        <CardHeader title={ready ? "Ulanish" : "amoCRM'ni ulash"} icon={PlugZap} info={ready ? undefined : "amoCRM'da (admin) Sozlamalar → Integratsiyalar → «Integratsiya yaratish» → shaxsiy integratsiya. Undan token yoki client_id/secret olinadi."} />
         {ready ? (
           <div className="space-y-4">
             <DL items={[
@@ -192,7 +192,7 @@ async function Settings({ conn }: { conn: Conn }) {
 
       {ready && (
         <Card>
-          <CardHeader title="Voronka va bosqichlar" description="Qaysi bosqichda sdelka ERP'ga tushadi va zayavka holati sdelkani qaysi bosqichga o'tkazadi." />
+          <CardHeader title="Voronka va bosqichlar" info="Qaysi bosqichda sdelka ERP'ga tushadi va zayavka holati sdelkani qaysi bosqichga o'tkazadi." />
           {pipes.error ? (
             <Callout tone="danger">Voronkalar olinmadi: {pipes.error}</Callout>
           ) : pipes.list.length === 0 ? (
@@ -218,7 +218,7 @@ function WebhookSettings({ conn }: { conn: NonNullable<Conn> }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <Card>
-        <CardHeader title="Ulanish (faqat webhook)" icon={PlugZap} description="API kalitisiz, bir tomonlama: amoCRM → ERP. Sayt arizalari amoCRM'ga ketmaydi, zayavka holati sdelkaga qaytmaydi." />
+        <CardHeader title="Ulanish (faqat webhook)" icon={PlugZap} info="API kalitisiz, bir tomonlama: amoCRM → ERP. Sayt arizalari amoCRM'ga ketmaydi, zayavka holati sdelkaga qaytmaydi." />
         <div className="space-y-4">
           <div>
             <div className="mb-1.5 text-sm font-medium text-slate-700">Webhook manzili</div>
@@ -244,7 +244,8 @@ function WebhookSettings({ conn }: { conn: NonNullable<Conn> }) {
       </Card>
 
       <Card>
-        <CardHeader title="amoCRM'da sozlash" description="Admin bajaradi. Ikki yo'ldan birini tanlang." />
+        <CardHeader title="amoCRM'da sozlash" description="Admin bajaradi. Ikki yo'ldan birini tanlang."
+          info={<>Mijoz sdelka maydonlaridan topiladi: «Telefon», «ИНН/STIR», «Kompaniya», «Manzil». Telefon ham INN ham bo&apos;lmasa, mijozni sotuvchi zayavka ochishda tanlaydi.</>} />
         <div className="space-y-4 text-sm text-slate-700">
           <div>
             <div className="font-medium">1-yo&apos;l (tavsiya): raqamli voronka</div>
@@ -262,7 +263,6 @@ function WebhookSettings({ conn }: { conn: NonNullable<Conn> }) {
               <li>Shu ID&apos;ni pastga yozib saqlang. Usiz har bosqich o&apos;zgarishi ERP&apos;ga tushib qoladi.</li>
             </ol>
           </div>
-          <Callout tone="info">Mijoz sdelka maydonlaridan topiladi: «Telefon», «ИНН/STIR», «Kompaniya», «Manzil». Telefon ham INN ham bo&apos;lmasa, mijozni sotuvchi zayavka ochishda tanlaydi.</Callout>
           <div className="border-t border-slate-100 pt-4"><WebhookStageForm stageToErp={conn.stageToErp} pipelineId={conn.pipelineId} /></div>
         </div>
       </Card>

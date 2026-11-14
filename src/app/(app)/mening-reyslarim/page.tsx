@@ -61,7 +61,11 @@ export default async function MyTripsPage() {
   return (
     <div>
       <PageHeader title="Mening reyslarim"
-        subtitle={`${me.fullName}${me.vehicle ? ` · ${me.vehicle.plate}` : " · mashina biriktirilmagan"}`} />
+        subtitle={`${me.fullName}${me.vehicle ? ` · ${me.vehicle.plate}` : " · mashina biriktirilmagan"}`}
+        info={<>
+          <p>Reys holatini yo&apos;lda <b>Insof ECO</b> ilovasida belgilaysiz — bu sahifa shu ma&apos;lumotni ko&apos;rsatadi.</p>
+          <p>Savol bo&apos;lsa logistika bo&apos;limiga murojaat qiling. <Link href="/qollanma" className="underline">Qo&apos;llanma</Link></p>
+        </>} />
 
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Ochiq reyslar" value={`${open.length} ta`} icon={Bus} tone={open.length ? "brand" : "success"} href="#bajarilishi-kerak" />
@@ -71,7 +75,7 @@ export default async function MyTripsPage() {
       </div>
 
       <Card className="mb-5" padded={false}>
-        <div id="bajarilishi-kerak" className="scroll-mt-20 p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Yuklash va yetkazish shu ro'yxat bo'yicha" /></div>
+        <div id="bajarilishi-kerak" className="scroll-mt-20 p-5"><CardHeader icon={Package} title="Bajarilishi kerak" info="Yuklash va yetkazish shu ro'yxat bo'yicha" /></div>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Manzil</Th><Th>Yetkazish</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
           <tbody>
@@ -110,10 +114,6 @@ export default async function MyTripsPage() {
           ))}
         </tbody>
       </Table>
-      <p className="mt-2 text-xs text-slate-500">
-        Reys holatini yo&apos;lda <b>Insof ECO</b> ilovasida belgilaysiz — bu sahifa shu ma&apos;lumotni ko&apos;rsatadi.
-        Savol bo&apos;lsa logistika bo&apos;limiga murojaat qiling. <Link href="/qollanma" className="underline">Qo&apos;llanma</Link>
-      </p>
     </div>
   );
 }

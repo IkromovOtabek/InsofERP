@@ -10,7 +10,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const { sp, range } = await biContext(searchParams);
   const r = await debtAgeReport(parseDebtDay(sp.sana));
   return (
-    <BiPage title="Mijozlar" subtitle="Kim qancha qarz va u qancha vaqtdan beri turibdi" tab="customers" range={range} period={false}>
+    <BiPage title="Mijozlar" info="Kim qancha qarz va u qancha vaqtdan beri turibdi" tab="customers" range={range} period={false}>
       <DebtAgeView r={r} sp={sp} base="/bi-tahlil/mijozlar/qarz-yoshi" />
     </BiPage>
   );

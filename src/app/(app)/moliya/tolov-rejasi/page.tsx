@@ -8,7 +8,7 @@ export default async function PaymentPlanPage() {
   const s = await requirePage("/moliya/tolov-rejasi");
   return (
     <div>
-      <PageHeader eyebrow="Moliya" title="To'lov rejasi" subtitle="Sozlamalar (sariq kataklarni o'zingiz o'zgartirasiz) — to'lov kalendari shundan hisoblanadi" />
+      <PageHeader eyebrow="Moliya" title="To'lov rejasi" info="Sozlamalar (sariq kataklarni o'zingiz o'zgartirasiz) — to'lov kalendari shundan hisoblanadi" />
       <PaymentPlanView canWrite={canDo(s, "moliya", "plan")} />
     </div>
   );

@@ -162,7 +162,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
 
       {t.status === "LOADED" && canPlan && (
         <Card className="mt-5">
-          <CardHeader title="Yukni olgani joyi" description="Mikser yukni qayerdan olgani — haydovchi ilovasida marshrut shu nuqtadan boshlanadi" icon={MapPinned} />
+          <CardHeader title="Yukni olgani joyi" info="Mikser yukni qayerdan olgani — haydovchi ilovasida marshrut shu nuqtadan boshlanadi" icon={MapPinned} />
           <PickupForm
             tripId={id}
             searchEnabled={geoSearchEnabled()}
@@ -179,7 +179,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           <CardHeader title="Haydovchi o'rniga" icon={UserRoundCheck}
             description={t.status === "DELIVERED"
               ? (t.returnedAt ? "Haydovchi bosqichlari tugadi — Hisob varag'ini to'ldiring va reysni yoping" : "Yetkazildi. Mashina zavodga qaytganda «Zavodga qaytdim» ni bosing")
-              : "Haydovchida ilova yo'q — uning tugmalarini shu yerdan bosing. Kim va qachon belgilagani «Amallar tarixi»da qoladi"}
+              : undefined}
+            info={t.status === "DELIVERED" ? undefined : "Haydovchida ilova yo'q — uning tugmalarini shu yerdan bosing. Kim va qachon belgilagani «Amallar tarixi»da qoladi"}
             action={t.status === "DELIVERED" && ledgerHref ? <LinkButton href={ledgerHref} variant="secondary" size="sm"><FileSpreadsheet size={15} /> Hisob varag&apos;i</LinkButton> : undefined} />
           <div className="flex flex-wrap items-start gap-2">
             {t.status === "PLANNED" && <DriverStepButton tripId={id} step="loaded" />}
@@ -218,7 +219,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       {/* ── Muammolar ── */}
       {t.status !== "CANCELLED" && (
         <Card className={`mt-5 ${openIssues.length ? "border-red-200" : ""}`}>
-          <CardHeader title="Muammolar" description="Haydovchi ilovadan, dispetcher shu yerdan, ECO (rad etish / e'tiroz) avtomatik yozadi" icon={AlertTriangle} />
+          <CardHeader title="Muammolar" info="Haydovchi ilovadan, dispetcher shu yerdan, ECO (rad etish / e'tiroz) avtomatik yozadi" icon={AlertTriangle} />
           {t.issues.length > 0 && (
             <ul className="mb-4 space-y-2">
               {t.issues.map((i) => (
@@ -240,7 +241,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       {t.status === "DELIVERED" && (
         <Card className="mt-5">
           <CardHeader title={t.closedAt ? "Reys yopilgan" : "Qabulni tasdiqlash va reysni yopish"} icon={PackageCheck}
-            description={t.closedAt ? `${dateTime(t.closedAt)}` : "Qabul qilingan va qaytarilgan miqdorni tekshiring — keyin reys yopiladi"} />
+            description={t.closedAt ? `${dateTime(t.closedAt)}` : undefined}
+            info={t.closedAt ? undefined : "Qabul qilingan va qaytarilgan miqdorni tekshiring — keyin reys yopiladi"} />
           <div className="mb-3 grid grid-cols-3 gap-3 text-sm">
             <div><div className="text-xs text-slate-500">Yuklangan</div><div className="font-medium tabular">{qty(t.qtyM3)}</div></div>
             <div><div className="text-xs text-slate-500">Qabul qilingan</div><div className="font-medium tabular">{t.acceptedQty != null ? qty(t.acceptedQty) : "—"}</div></div>
@@ -291,7 +293,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         <Card className="mt-5">
           <CardHeader
             title="Yurgan yo'li"
-            description="Haydovchi ilovasidan kelgan GPS izi — yashil bayroq qayerdan qo'zg'algan, qora belgi obyekt manzili"
+            info="Haydovchi ilovasidan kelgan GPS izi — yashil bayroq qayerdan qo'zg'algan, qora belgi obyekt manzili"
             icon={Route}
           />
           <div className="mb-4 flex flex-wrap gap-2">

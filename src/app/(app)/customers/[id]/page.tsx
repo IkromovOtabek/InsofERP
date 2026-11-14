@@ -80,7 +80,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <div className="space-y-5">
         {appStatus && (
           <Card>
-            <CardHeader title="Ilova hisobi" icon={Smartphone} description="Mijoz Insof ECO ilovasida zayavkalarini va reyslarini kuzatishi uchun" />
+            <CardHeader title="Ilova hisobi" icon={Smartphone} info="Mijoz Insof ECO ilovasida zayavkalarini va reyslarini kuzatishi uchun" />
             <AppAccount customerId={id} phone={c.phone} initial={appStatus} canLink={["SALES", "DIRECTOR"].includes(s.role)} />
           </Card>
         )}
@@ -107,7 +107,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
 
       <div className="mt-5">
         <Card>
-          <CardHeader title="Obyektlar" icon={Building2} description="Mijozning obyektlari va har obyekt bo'yicha qarz (yozilgan schyot − to'langan + schyotsiz ochiq zayavka)" />
+          <CardHeader title="Obyektlar" icon={Building2} info="Mijozning obyektlari va har obyekt bo'yicha qarz (yozilgan schyot − to'langan + schyotsiz ochiq zayavka)" />
           <div className="mt-4">
             <SitesPanel customerId={id} sites={sites} canEdit={canEditSites} canOrder={canOrder} geoSearch={geoSearchEnabled()} />
           </div>

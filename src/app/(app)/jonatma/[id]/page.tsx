@@ -81,7 +81,7 @@ export default async function ShipmentPage({ params }: { params: Promise<{ id: s
           </Card>
           {receipts.length > 0 && (
             <Card>
-              <CardHeader title="Skladga kirim" description="Qabul qilingan qatorlar shu hujjatlar bilan kirim bo'ldi" />
+              <CardHeader title="Skladga kirim" info="Qabul qilingan qatorlar shu hujjatlar bilan kirim bo'ldi" />
               <ul className="space-y-1 text-sm">{receipts.map((r) => <li key={r.id}><a href={`/receipts/${r.id}`} className="font-medium underline">{r.docNo}</a></li>)}</ul>
             </Card>
           )}

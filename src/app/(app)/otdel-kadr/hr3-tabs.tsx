@@ -9,7 +9,7 @@ import { listCandidates } from "@/lib/hr/recruit";
 import { listPlans, stepsOf, stepsToText, DEFAULT_STEPS } from "@/lib/hr/onboarding";
 import { courseStats } from "@/lib/hr/training";
 import { PIPELINE, PROBATION_BADGE, PROBATION_LABEL, STAGE_LABEL, VACANCY_STATUS_BADGE, VACANCY_STATUS_LABEL } from "@/lib/hr/labels";
-import { Badge, Card, CardHeader, Empty, Progress, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, Empty, InfoButton, Progress, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { CandidateForm, CourseForm, CourseToggle, OnbTemplateForm, ProbationForm, StartPlanForm, StepToggle, VacancyForm, VacancyRowActions } from "./hr3-forms";
 
@@ -166,11 +166,11 @@ export async function MoslashuvTab({ s, employees, positions, holat }: { s: Sess
       {editable && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Card>
-            <CardHeader title="Mavjud xodimga reja ochish" icon={UserPlus} description="Nomzod «Ishga qabul qilish» bilan kelsa — reja o'zi ochiladi" />
+            <CardHeader title="Mavjud xodimga reja ochish" icon={UserPlus} info="Nomzod «Ishga qabul qilish» bilan kelsa — reja o'zi ochiladi" />
             <StartPlanForm employees={empOpts.filter((e) => !has.has(e.id))} />
           </Card>
           <Card>
-            <CardHeader title="Moslashuv shablonlari" icon={BookOpen} description="Lavozimga mos shablon bo'lmasa — umumiy, u ham bo'lmasa standart qadamlar" />
+            <CardHeader title="Moslashuv shablonlari" icon={BookOpen} info="Lavozimga mos shablon bo'lmasa — umumiy, u ham bo'lmasa standart qadamlar" />
             <div className="space-y-4">
               {templates.map((t) => <OnbTemplateForm key={t.id} positions={positions} t={{ id: t.id, name: t.name, position: t.position, text: stepsToText(stepsOf(t.steps)) }} />)}
               <details>
@@ -193,7 +193,7 @@ export async function OqitishTab({ s, positions }: { s: Session; positions: stri
   return (
     <div className="space-y-4">
       <Card padded={false}>
-        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Kurslar</h2><p className="text-xs text-slate-500">Xodim kursni «Mening hisobim» yoki ilovada o&apos;qiydi va test topshiradi; o&apos;tsa — sertifikat</p></div>
+        <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-1 text-sm font-semibold">Kurslar<InfoButton title="Kurslar">Xodim kursni «Mening hisobim» yoki ilovada o&apos;qiydi va test topshiradi; o&apos;tsa — sertifikat</InfoButton></h2></div>
         <Table>
           <thead><tr><Th>Kurs</Th><Th>Lavozim</Th><Th right>Savol</Th><Th right>Topshirmagan</Th><Th right>O&apos;tdi</Th><Th right>O&apos;tmadi</Th><Th right /></tr></thead>
           <tbody>

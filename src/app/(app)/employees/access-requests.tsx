@@ -17,7 +17,7 @@ export type AccessRow = {
 export function AccessRequests({ rows, roles }: { rows: AccessRow[]; roles: { value: string; label: string }[] }) {
   return (
     <Card className="mb-4">
-      <CardHeader icon={UserPlus} title={`Kirish arizalari · ${rows.length}`} description="Xodim o'zi login va parol tanlagan, telefonini kod bilan tasdiqlagan. Tasdiqlasangiz login ochiladi." />
+      <CardHeader icon={UserPlus} title={`Kirish arizalari · ${rows.length}`} info="Xodim o'zi login va parol tanlagan, telefonini kod bilan tasdiqlagan. Tasdiqlasangiz login ochiladi." />
       <div className="mt-3 divide-y divide-slate-100">
         {rows.map((r) => <Row key={r.id} r={r} roles={roles} />)}
       </div>

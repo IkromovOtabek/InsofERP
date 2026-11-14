@@ -2,7 +2,7 @@ import Link from "next/link";
 import { FileSpreadsheet, PencilLine, ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
-import { Callout, Card, Field, PageHeader, Select } from "@/components/ui";
+import { Card, Field, InfoButton, PageHeader, Select } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { FIELD_SYNONYMS } from "@/lib/excel";
 import { canEditMaterials } from "@/lib/catalog";
@@ -37,7 +37,7 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
         <Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
       </Field>
       {/* Qo'shilgan xomashyo summasi shu hisobdan chiqim bo'lib Kirim-Chiqimga tushadi — faqat direktor */}
-      {s.role === "DIRECTOR" && <Field label="Qaysi hisobdan to'landi" hint="Jami summa shu hisobdan chiqim bo'lib yoziladi. Xomashyo allaqachon to'langan bo'lsa — «Hisobga olinmasin»">
+      {s.role === "DIRECTOR" && <Field label="Qaysi hisobdan to'landi" help={<InfoButton title="Qaysi hisobdan to'landi">Jami summa shu hisobdan chiqim bo&apos;lib yoziladi. Xomashyo allaqachon to&apos;langan bo&apos;lsa — «Hisobga olinmasin»</InfoButton>}>
         <Select name="cashAccountId" defaultValue={accounts.find((a) => a.type === "CASH")?.id ?? ""}>
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === "CASH" ? " (naqd)" : " (o'tkazma)"}</option>)}
           <option value="">Hisobga olinmasin</option>
@@ -48,7 +48,16 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
 
   return (
     <div>
-      <PageHeader back={{ href: "/stock", label: "Sklad" }} title="Xomashyo qo'shish" subtitle="Skladdagi xomashyo ro'yxati va qoldig'i. Retseptlar shu xomashyolardan tuziladi, ishlab chiqarish imkoni qoldiqqa qarab hisoblanadi." />
+      <PageHeader back={{ href: "/stock", label: "Sklad" }} title="Xomashyo qo'shish" info={<>
+        <p>Skladdagi xomashyo ro&apos;yxati va qoldig&apos;i. Retseptlar shu xomashyolardan tuziladi, ishlab chiqarish imkoni qoldiqqa qarab hisoblanadi.</p>
+        {s.role !== "DIRECTOR" && (
+          <p><b>Boshlang&apos;ich qoldiq — faqat yangi xomashyoga.</b>{" "}
+            Skladda harakati bor xomashyoga bu yerdan qoldiq qo&apos;shilmaydi (spravochnik — nomi, papkasi, minimal qoldig&apos;i — yangilanaveradi).
+            Mavjud xomashyo qoldig&apos;i <Link href="/receipts/new" className="underline">Kirim</Link>,{" "}
+            <Link href="/stock/inventarizatsiya" className="underline">Inventarizatsiya</Link> yoki{" "}
+            <Link href="/stock/spisanie" className="underline">Hisobdan chiqarish</Link> orqali o&apos;zgaradi.</p>
+        )}
+      </>} />
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {MODES.map((m) => (
@@ -59,15 +68,6 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
           </Link>
         ))}
       </div>
-
-      {s.role !== "DIRECTOR" && (
-        <Callout tone="info" title="Boshlang'ich qoldiq — faqat yangi xomashyoga">
-          Skladda harakati bor xomashyoga bu yerdan qoldiq qo&apos;shilmaydi (spravochnik — nomi, papkasi, minimal qoldig&apos;i — yangilanaveradi).
-          Mavjud xomashyo qoldig&apos;i <Link href="/receipts/new" className="underline">Kirim</Link>,{" "}
-          <Link href="/stock/inventarizatsiya" className="underline">Inventarizatsiya</Link> yoki{" "}
-          <Link href="/stock/spisanie" className="underline">Hisobdan chiqarish</Link> orqali o&apos;zgaradi.
-        </Callout>
-      )}
 
       {!current && <p className="text-sm text-slate-500"><ArrowLeft size={14} className="inline" /> Yuqoridan usulni tanlang.</p>}
 

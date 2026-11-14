@@ -3,7 +3,7 @@ import { Boxes, Factory, Package, Recycle, Scale, Search, TriangleAlert } from "
 import type { FinishedReport, RawBalance, RawRow } from "@/lib/fin-report/sklad";
 import type { SP } from "../shell";
 import { fmtNum, isoDate, moneyShort, pct } from "@/lib/format";
-import { Badge, Card, CardHeader, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, InfoButton, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
 import { MonthBar, monthTitle } from "../month-bar";
@@ -93,8 +93,14 @@ export function RawBalanceView({ r, sp, base, drill }: { r: RawBalance; sp: SP; 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] font-bold text-slate-900">Xom-ashyo balansi — {monthTitle(r.month)}</h2>
-        <span className="text-[13px] text-slate-500">Haqiqiy sarf = oy boshi + kirim − oy oxiri · Norma = retsept bo&apos;yicha</span>
+        <h2 className="text-[17px] font-bold text-slate-900">
+          Xom-ashyo balansi — {monthTitle(r.month)}
+          <InfoButton title="Xom-ashyo balansi" className="ml-1">
+            <p>Haqiqiy sarf = oy boshi + kirim − oy oxiri · Norma = retsept bo&apos;yicha.</p>
+            <p>Norma: sotilganga — retsept × sotilgan beton (zameslar) va jo&apos;natilgan buyumlar; omborda qolgan — retsept × (ishlab chiqarilgan − jo&apos;natilgan) buyumlar.</p>
+            <p>Narx — kirimlar bo&apos;yicha o&apos;rtacha tannarx (sklad bilan bir xil). Kirim va qoldiqlar Sklad aylanmasidan olinadi.</p>
+          </InfoButton>
+        </h2>
       </div>
       <MonthBar base={base} month={r.month} keep={{ otxod: sp.otxod, guruh: group, holat: state, q: sp.q }}>
         <ExcelButton file={`Xom-ashyo balansi ${r.month}`} sheets={[{ name: "Xom-ashyo balansi", rows: groups.flatMap((g) => [...g.rows.map(sheet), ...(g.total ? [sheet(g.total)] : [])]) }]} />
@@ -140,7 +146,7 @@ export function RawBalanceView({ r, sp, base, drill }: { r: RawBalance; sp: SP; 
 
       {st && (
         <Card>
-          <CardHeader title={`${scrapGroup!.group} otxodi (metallom)`} icon={Recycle} description="Oyda chiqqan otxod normadan ortiq sarfning bir qismini izohlaydi — qolgani izohlanmagan farq" />
+          <CardHeader title={`${scrapGroup!.group} otxodi (metallom)`} icon={Recycle} info="Oyda chiqqan otxod normadan ortiq sarfning bir qismini izohlaydi — qolgani izohlanmagan farq" />
           <form method="get" action={base} className="mb-4 flex flex-wrap items-end gap-2">
             <input type="hidden" name="oy" value={r.month} />
             <label className="text-xs text-slate-500">Otxod, {st.unit} (oy uchun)
@@ -165,11 +171,6 @@ export function RawBalanceView({ r, sp, base, drill }: { r: RawBalance; sp: SP; 
       )}
 
       {drill && <DrillPanel drill={drill} closeHref={href({})} />}
-
-      <ul className="space-y-1 text-[13px] text-slate-500">
-        <li>Norma: sotilganga — retsept × sotilgan beton (zameslar) va jo&apos;natilgan buyumlar; omborda qolgan — retsept × (ishlab chiqarilgan − jo&apos;natilgan) buyumlar.</li>
-        <li>Narx — kirimlar bo&apos;yicha o&apos;rtacha tannarx (sklad bilan bir xil). Kirim va qoldiqlar Sklad aylanmasidan olinadi.</li>
-      </ul>
     </div>
   );
 }
@@ -192,8 +193,13 @@ export function FinishedView({ r, sp, base, drill }: { r: FinishedReport; sp: SP
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] font-bold text-slate-900">Tayyor mahsulot — {monthTitle(r.month)}</h2>
-        <span className="text-[13px] text-slate-500">Oy boshi + ishlab chiqarildi − jo&apos;natildi = oy oxiri</span>
+        <h2 className="text-[17px] font-bold text-slate-900">
+          Tayyor mahsulot — {monthTitle(r.month)}
+          <InfoButton title="Tayyor mahsulot" className="ml-1">
+            <p>Oy boshi + ishlab chiqarildi − jo&apos;natildi = oy oxiri.</p>
+            <p>Dona mahsulot (beton omborda turmaydi). Brigada — oy davomida shu mahsulot bo&apos;yicha bajarilgan topshiriqlar (miqdori bilan). Tannarx — kirim narxi, bo&apos;lmasa retsept tannarxi.</p>
+          </InfoButton>
+        </h2>
       </div>
       <MonthBar base={base} month={r.month} keep={{ guruh: group, brigada: brigade }}>
         <ExcelButton file={`Tayyor mahsulot ${r.month}`} sheets={[{ name: "Tayyor mahsulot", rows: rows.map((x) => ({
@@ -257,7 +263,6 @@ export function FinishedView({ r, sp, base, drill }: { r: FinishedReport; sp: SP
         </Table>
       </div>
       {drill && <DrillPanel drill={drill} closeHref={href({})} />}
-      <p className="text-[13px] text-slate-500">Dona mahsulot (beton omborda turmaydi). Brigada — oy davomida shu mahsulot bo&apos;yicha bajarilgan topshiriqlar (miqdori bilan). Tannarx — kirim narxi, bo&apos;lmasa retsept tannarxi.</p>
     </div>
   );
 }

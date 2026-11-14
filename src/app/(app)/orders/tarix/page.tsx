@@ -3,7 +3,7 @@ import { CalendarDays, ClipboardList, Layers, Percent, TrendingUp } from "lucide
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { money, moneyShort, date, isoDate, qty as q, fmtNum, pct } from "@/lib/format";
-import { Badge, Button, Card, CardHeader, Empty, Input, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Empty, InfoButton, Input, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { BarChart, DonutChart, HBarList } from "@/components/ui/charts";
 import { ORDER_STATUS } from "../status";
 import type { OrderStatus } from "@/generated/prisma";
@@ -98,7 +98,7 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
 
       <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader icon={CalendarDays} title="Kun bo'yicha zayavkalar" description="Ustun balandligi — shu kungi hajm (m³); qizil ustun quvvatdan oshgan kun" />
+          <CardHeader icon={CalendarDays} title="Kun bo'yicha zayavkalar" info="Ustun balandligi — shu kungi hajm (m³); qizil ustun quvvatdan oshgan kun" />
           <BarChart height={180} labelEvery={Math.max(1, Math.round(list.length / 12))} formatValue={(v) => `${fmtNum(v, 1)} m³`}
             data={list.map((d) => ({ label: `${d.d.getDate()}/${d.d.getMonth() + 1}`, value: d.m3, tone: d.m3 > capacity ? "danger" : d.m3 > capacity * 0.6 ? "warning" : "success" }))} />
           {busiest?.count > 0 && <p className="mt-2 text-xs text-slate-500">Eng band kun: <b>{date(busiest.d)}</b> — {busiest.count} ta zayavka, {q(busiest.m3)} m³ ({pct((busiest.m3 / capacity) * 100, 0)} quvvatdan).</p>}
@@ -129,7 +129,7 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
           )}
         </Card>
         <Card>
-          <CardHeader title="Hafta kunlari bo'yicha yuk" description="Qaysi kun odatda bandroq — reja tuzishda asqotadi" />
+          <CardHeader title="Hafta kunlari bo'yicha yuk" info="Qaysi kun odatda bandroq — reja tuzishda asqotadi" />
           <HBarList tone="brand" formatValue={(v) => `${fmtNum(v, 1)} m³`}
             data={["Dush", "Sesh", "Chor", "Pay", "Jum", "Shan", "Yak"].map((label, i) => {
               const idx = (i + 1) % 7;
@@ -141,7 +141,15 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
       </div>
 
       <div id="kunlar" className="scroll-mt-20"><Table>
-        <thead><tr><Th>Sana</Th><Th right>Zayavka</Th><Th right>Hajm</Th><Th right>Summa</Th><Th right>Yopilgan</Th><Th right>Jarayonda</Th><Th>Bandlik</Th></tr></thead>
+        <thead><tr><Th>Sana</Th><Th right>Zayavka</Th><Th right>Hajm</Th><Th right>Summa</Th><Th right>Yopilgan</Th><Th right>Jarayonda</Th><Th>
+          <span className="inline-flex items-center gap-1">
+            Bandlik
+            <InfoButton title="Bandlik">
+              <p>Bandlik — kunlik quvvatga nisbatan hajm (Sozlamalar → Limitlar → kunlik quvvat: {fmtNum(capacity)} m³).</p>
+              <p>Sanani bosib, o&apos;sha kungi zayavkalarni ko&apos;rasiz.</p>
+            </InfoButton>
+          </span>
+        </Th></tr></thead>
         <tbody>
           {list.filter((d) => d.count > 0).length === 0 && <Empty text="Davrda zayavka yo'q" icon={ClipboardList} />}
           {list.filter((d) => d.count > 0).reverse().map((d) => {
@@ -165,7 +173,6 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
           })}
         </tbody>
       </Table></div>
-      <p className="mt-2 text-xs text-slate-500">Bandlik — kunlik quvvatga nisbatan hajm (Sozlamalar → Limitlar → kunlik quvvat: {fmtNum(capacity)} m³). Sanani bosib, o&apos;sha kungi zayavkalarni ko&apos;rasiz.</p>
     </div>
   );
 }

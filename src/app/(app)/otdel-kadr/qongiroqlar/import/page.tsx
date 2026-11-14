@@ -25,7 +25,11 @@ export default async function CallLogImportPage() {
       <PageHeader
         back={{ href: "/otdel-kadr?tab=qongiroqlar", label: "Qo'ng'iroqlar jurnali" }}
         title="Qo'ng'iroqlarni Excel'dan qo'shish"
-        subtitle="Har qator — bitta qo'ng'iroq. Sana va lavozim birlashtirilgan katakda bo'lsa, guruhdagi qatorlar shu qiymatni oladi. Shu kun va shu telefon jurnalda bo'lsa — qayta yozilmaydi."
+        info={<>
+          <p>Har qator — bitta qo&apos;ng&apos;iroq.</p>
+          <p>Sana va lavozim birlashtirilgan katakda bo&apos;lsa, guruhdagi qatorlar shu qiymatni oladi.</p>
+          <p>Shu kun va shu telefon jurnalda bo&apos;lsa — qayta yozilmaydi.</p>
+        </>}
       />
       <Card className="max-w-6xl">
         <ExcelImport

@@ -5,7 +5,7 @@ import { moduleWriteAllowed, type Session } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
 import { money, qty as fq, date, dateTime, isoDate, opAt } from "@/lib/format";
 import { OPENING_WRITERS, supplierOpeningDues, supplierOpeningPayments } from "@/lib/opening-balances";
-import { Badge, Callout, Card, CardHeader, Checkbox, Empty, Field, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, Checkbox, Empty, Field, InfoButton, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { OpeningCreateForm, OpeningEditForm, OpeningReduceForm, SupplierPayForm } from "./forms";
@@ -142,8 +142,6 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
 
   return (
     <>
-      {help && <Callout tone="info" title="Hisobotlarga qanday tushadi">{HELP[kind]}</Callout>}
-
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Kiritilgan yozuvlar" value={String(used.length)} icon={Icon} hint={!lastDate ? "hali yo'q" : debtKind ? `${net.size} ta ${kind === "CUSTOMER" ? "mijoz" : "yetkazuvchi"} · oxirgi sana ${date(lastDate)}` : `oxirgisi ${date(lastDate)} holatiga`} href="#kiritilganlar" />
         <StatCard label={kind === "STOCK" ? "Ombor qiymati (tannarx)" : kind === "CASH" ? "Jami qoldiq" : kind === "CUSTOMER" ? "Mijozlar qarzi (+)" : "Qarzimiz (+)"} value={money(kind === "STOCK" || kind === "CASH" ? total : plus)} tone="info" href="#kiritilganlar" />
@@ -152,7 +150,7 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
 
       {canEdit && <>
       <Card className="mt-6">
-        <CardHeader title="Excel orqali yuklash" description={debtKind
+        <CardHeader title="Excel orqali yuklash" info={debtKind
           ? "Kunlik jadval (har sana ostida Kirim · Chiqim · Qoldiq) yoki ro'yxat (Nomi · Sana · Qoldiq). Har sanadagi «Qoldiq» — shu kun oxiridagi qarz: tizim qarzni o'sha kunda Exceldagiga tenglaydi, farqi yozuv bo'lib tushadi. Fayl qayta yuklansa sanalar qayta hisoblanadi — ikki marta yozilmaydi. Bitta qatorda xato bo'lsa ham hech narsa yozilmaydi."
           : "Namunani yuklab oling, to'ldiring va qaytarib yuklang. Bitta qatorda xato bo'lsa ham hech narsa yozilmaydi; qoldig'i bor obyektlar o'tkazib yuboriladi (ularni ro'yxatdan tahrirlang)."} />
         <ExcelImport
@@ -202,13 +200,13 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
       </Card>
 
       <Card className="mt-6">
-        <CardHeader title="Qo'lda kiritish" description={debtKind ? "Bitta sanaga bitta yozuv: summa — shu kungi qarz (+) yoki avans (−) qo'shimchasi" : "Bitta obyektga bitta boshlang'ich qoldiq — kiritilganlari tanlov ro'yxatida chiqmaydi"} />
+        <CardHeader title="Qo'lda kiritish" info={debtKind ? "Bitta sanaga bitta yozuv: summa — shu kungi qarz (+) yoki avans (−) qo'shimchasi" : "Bitta obyektga bitta boshlang'ich qoldiq — kiritilganlari tanlov ro'yxatida chiqmaydi"} />
         <OpeningCreateForm kind={kind} entities={entities} warehouses={warehouses.map((w) => ({ id: w.id, label: w.name }))} defaultDate={isoDate(lastDate ?? new Date())} />
       </Card>
       </>}
 
       <div id="kiritilganlar" className="mt-6 mb-2 flex scroll-mt-20 flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold">Kiritilgan qoldiqlar</h2>
+        <h2 className="font-semibold">Kiritilgan qoldiqlar{help && <InfoButton title="Hisobotlarga qanday tushadi" className="ml-1">{HELP[kind]}</InfoButton>}</h2>
         <div className="flex flex-wrap items-center gap-3">
           <form method="get" action={base} className="relative">
             {Object.entries(keep).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}

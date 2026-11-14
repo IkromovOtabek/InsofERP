@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, EyeOff, Eye, Plus, Repeat, Save } from "lucide-react";
 import { fillShiftPattern, saveShiftGrid, saveShiftTemplate, toggleShiftTemplate } from "./hr-actions";
-import { Badge, Button, Card, CardHeader, Empty, Field, FormError, FormSuccess, Input, Select, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Empty, Field, FormError, FormSuccess, InfoButton, Input, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export type ShiftTpl = { id: string; name: string; start: string; end: string; color: string | null; isActive: boolean };
@@ -50,6 +50,10 @@ export function ShiftGrid({ days, rows, templates, prevHref, nextHref, title }: 
           <Link href={prevHref} aria-label="Oldingi hafta" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"><ChevronLeft size={16} /></Link>
           <h2 className="text-sm font-semibold">{title}</h2>
           <Link href={nextHref} aria-label="Keyingi hafta" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"><ChevronRight size={16} /></Link>
+          <InfoButton title="Ish grafigi">
+            <p>Bo&apos;sh katak — xodim kartasidagi ish grafigi (yakshanba — dam).</p>
+            <p>Kechikish, oyning norma kunlari va ish haqi shu grafik bo&apos;yicha hisoblanadi.</p>
+          </InfoButton>
         </div>
         <form action={act} className="flex items-center gap-2">
           <input type="hidden" name="cells" value={JSON.stringify(changed.map(([k, value]) => { const [employeeId, date] = k.split("|"); return { employeeId, date, value }; }))} />
@@ -98,7 +102,6 @@ export function ShiftGrid({ days, rows, templates, prevHref, nextHref, title }: 
           ))}
         </tbody>
       </Table>
-      <p className="px-4 py-3 text-xs text-slate-500">Bo&apos;sh katak — xodim kartasidagi ish grafigi (yakshanba — dam). Kechikish, oyning norma kunlari va ish haqi shu grafik bo&apos;yicha hisoblanadi.</p>
     </Card>
   );
 }
@@ -114,7 +117,7 @@ export function PatternFill({ employees, templates, from, to }: { employees: { i
   if (!active.length) return <Card><CardHeader title="Naqsh bilan to'ldirish" icon={Repeat} description="Avval pastda kamida bitta smena qo'shing" /></Card>;
   return (
     <Card>
-      <CardHeader title="Naqsh bilan to'ldirish" icon={Repeat} description="Belgilangan xodimlarga davr bo'yicha: masalan 2/2 — ikki kun ish, ikki kun dam" />
+      <CardHeader title="Naqsh bilan to'ldirish" icon={Repeat} info="Belgilangan xodimlarga davr bo'yicha: masalan 2/2 — ikki kun ish, ikki kun dam" />
       <form action={act} className="space-y-3">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Field label="Smena"><Select name="templateId" defaultValue={active[0]!.id}>{active.map((t) => <option key={t.id} value={t.id}>{t.name} {t.start}–{t.end}</option>)}</Select></Field>
@@ -142,7 +145,7 @@ export function PatternFill({ employees, templates, from, to }: { employees: { i
 export function ShiftTemplates({ templates }: { templates: ShiftTpl[] }) {
   return (
     <Card padded={false}>
-      <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Smenalar</h2><p className="text-xs text-slate-500">Grafik kataklariga qo&apos;yiladigan smenalar. Tugashi boshlanishidan oldin bo&apos;lsa — tungi smena</p></div>
+      <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-1 text-sm font-semibold">Smenalar<InfoButton title="Smenalar">Grafik kataklariga qo&apos;yiladigan smenalar. Tugashi boshlanishidan oldin bo&apos;lsa — tungi smena</InfoButton></h2></div>
       <Table>
         <thead><tr><Th>Nomi</Th><Th>Vaqti</Th><Th>Rangi</Th><Th right>Amal</Th></tr></thead>
         <tbody>

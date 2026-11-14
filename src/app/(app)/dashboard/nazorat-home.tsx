@@ -77,7 +77,7 @@ export async function NazoratHome({ date }: { date?: string }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
         <Card className="xl:col-span-3">
-          <CardHeader title={`Telegram xabari (har kuni ${String(hour).padStart(2, "0")}:00)`} icon={MessageSquareText} description="Direktorga to'liq; mas'ullarga — faqat o'z bandlari" action={<SendNowButton />} />
+          <CardHeader title={`Telegram xabari (har kuni ${String(hour).padStart(2, "0")}:00)`} icon={MessageSquareText} info="Direktorga to'liq; mas'ullarga — faqat o'z bandlari" action={<SendNowButton />} />
           <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 font-sans text-[13px] leading-relaxed text-slate-700">{preview}</pre>
         </Card>
         <Card className="xl:col-span-2">
@@ -100,7 +100,7 @@ export async function NazoratHome({ date }: { date?: string }) {
 
       <div id="sozlamalar" className="scroll-mt-20">
         <Card>
-          <CardHeader title="Sozlamalar" icon={Settings2} description="Hisobot vaqti, kimga yuborilishi va salyarka nazorati" />
+          <CardHeader title="Sozlamalar" icon={Settings2} info="Hisobot vaqti, kimga yuborilishi va salyarka nazorati" />
           <NazoratSettingsForm enabled={settings?.controlReportEnabled ?? true} hour={hour} owners={settings?.controlNotifyOwners ?? true} fuelMaterialId={settings?.fuelMaterialId ?? null} materials={materials} />
         </Card>
       </div>

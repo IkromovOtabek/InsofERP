@@ -58,7 +58,6 @@ export function BrigadeStaffView({ staff, employees, canEdit, showAtt }: { staff
           </Card>
         ))}
       </div>
-      <p className="text-xs text-slate-500">Brigadasi o&apos;zgartirilgan xodim sex davomatida yangi brigadada ko&apos;rinadi; sdelka fondi a&apos;zolarga ishlagan soati bo&apos;yicha bo&apos;linadi.</p>
     </div>
   );
 }

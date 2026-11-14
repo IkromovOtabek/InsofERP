@@ -6,7 +6,7 @@ import {
   addIncident, addQuote, attachDoc, chooseQuote, closeIncident, dropDoc, dropQuote, saveDelivery, saveMeta,
 } from "@/lib/supply-actions";
 import type { ActionState } from "@/lib/action";
-import { Badge, Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { Badge, Button, Field, FormError, FormSuccess, InfoButton, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { money } from "@/lib/format";
 import {
@@ -149,7 +149,8 @@ export function DeliveryPanel({ id, value }: {
   const [status, setStatus] = useState<SupplyDelivery>(value.status && value.status !== "RECEIVED" ? value.status : "PLANNED");
   return (
     <form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <Field label="Holat">
+      <Field label="Holat" help={status === "ARRIVED" || status === "RECEIVING"
+        ? <InfoButton title="Holat">Saqlansa sklad xodimiga &quot;qabul qilishni boshlang&quot; xabari ketadi.</InfoButton> : undefined}>
         <Select name="deliveryStatus" value={status} onChange={(e) => setStatus(e.target.value as SupplyDelivery)}>
           {DELIVERY_MANUAL.map((d) => <option key={d} value={d}>{DELIVERY_LABEL[d]}</option>)}
         </Select>
@@ -161,7 +162,6 @@ export function DeliveryPanel({ id, value }: {
         <Input name="note" required={status === "PROBLEM"} placeholder={status === "PROBLEM" ? "Masalan: yo'lda buzildi, 2 kunga kechikadi" : ""} />
       </Field>
       <div className="space-y-2 sm:col-span-2">
-        {(status === "ARRIVED" || status === "RECEIVING") && <p className="text-xs text-slate-500">Saqlansa sklad xodimiga &quot;qabul qilishni boshlang&quot; xabari ketadi.</p>}
         <Done s={state} />
         <div className="flex justify-end"><Button variant="secondary" disabled={pending}><Truck size={16} /> {pending ? "Saqlanmoqda…" : "Holatni yangilash"}</Button></div>
       </div>

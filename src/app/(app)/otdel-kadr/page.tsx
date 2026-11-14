@@ -6,7 +6,7 @@ import { positionCatalog, workPositions } from "@/lib/positions";
 import { parsePerms } from "@/lib/auth";
 import { TEMPLATE_ROLE_OPTIONS } from "@/lib/perm-template";
 import { date } from "@/lib/format";
-import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, PageHeader, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Card, CardHeader, Empty, InfoButton, Input, LinkButton, PageHeader, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { toCyrillic } from "@/lib/translit";
 import {
   DEFAULT_SHIFT, dayUtc, isoDay, monthDays, monthOf, today, validDay, validMonth, workedMinutes,
@@ -213,8 +213,8 @@ export default async function OtdelKadrPage({ searchParams }: {
   return (
     <div>
       {tab === "lavozimlar"
-        ? <PageHeader title="Lavozimlar va login shablonlari" subtitle="Ishchi lavozimlar ro'yxati, bo'lim va lavozim bo'yicha tizimga kirish ruxsatlari." />
-        : <PageHeader title="Otdel kadr" subtitle="Xodimlar ro'yxati, bo'limlar, davomat va kadr taqvimi shu yerda. Xodim kartasi — Xodimlar sahifasida." />}
+        ? <PageHeader title="Lavozimlar va login shablonlari" info="Ishchi lavozimlar ro'yxati, bo'lim va lavozim bo'yicha tizimga kirish ruxsatlari." />
+        : <PageHeader title="Otdel kadr" info="Xodimlar ro'yxati, bo'limlar, davomat va kadr taqvimi shu yerda. Xodim kartasi — Xodimlar sahifasida." />}
 
       {(qoshildi || yangilandi) && (
         <Callout tone="success" title="Excel import bajarildi">
@@ -239,8 +239,7 @@ export default async function OtdelKadrPage({ searchParams }: {
         <Card padded={false}>
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
             <div>
-              <h2 className="text-sm font-semibold">Xodimlar ro&apos;yxati</h2>
-              <p className="text-xs text-slate-500">Yangi xodim ma&apos;lumotlari va hujjat nusxalari bilan kiritiladi.</p>
+              <h2 className="flex items-center gap-1 text-sm font-semibold">Xodimlar ro&apos;yxati<InfoButton title="Xodimlar ro'yxati">Yangi xodim ma&apos;lumotlari va hujjat nusxalari bilan kiritiladi.</InfoButton></h2>
             </div>
             <div className="flex flex-wrap gap-2">
               <LinkButton href="/otdel-kadr/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali qo&apos;shish</LinkButton>
@@ -326,17 +325,21 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "lavozimlar" && (
         <div className="space-y-4">
           <Card>
-            <CardHeader title="Yangi ishchi lavozim" description={s.role === "DIRECTOR" ? "Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi. Lavozim tizimga kirsin desangiz — ro'yxatdagi «Login shabloni» orqali asosiy bo'lim va ruxsatlarni belgilang." : "Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi. Lavozimni tizimga kiradigan qilishni (login shabloni) direktor belgilaydi."} icon={BriefcaseBusiness} />
+            <CardHeader title="Yangi ishchi lavozim" info={s.role === "DIRECTOR" ? "Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi. Lavozim tizimga kirsin desangiz — ro'yxatdagi «Login shabloni» orqali asosiy bo'lim va ruxsatlarni belgilang." : "Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi. Lavozimni tizimga kiradigan qilishni (login shabloni) direktor belgilaydi."} icon={BriefcaseBusiness} />
             <NewPositionForm nextOrder={(positions.at(-1)?.sortOrder ?? 0) + 10} />
           </Card>
           <Card>
-            <CardHeader title="Lavozimlarni tartibga solish" description="Excel orqali kelgan xodimlarning lavozimini ro'yxat bilan moslaydi: bir xil ishning turli yozilishi bitta nomga keltiriladi, ro'yxatda yo'q lavozim ro'yxatga olinadi — shundan keyin lavozim Xodimlar sahifasida, filtrlarda va tuzilma diagrammasida bir xil ko'rinadi." icon={BriefcaseBusiness} />
+            <CardHeader title="Lavozimlarni tartibga solish" info="Excel orqali kelgan xodimlarning lavozimini ro'yxat bilan moslaydi: bir xil ishning turli yozilishi bitta nomga keltiriladi, ro'yxatda yo'q lavozim ro'yxatga olinadi — shundan keyin lavozim Xodimlar sahifasida, filtrlarda va tuzilma diagrammasida bir xil ko'rinadi." icon={BriefcaseBusiness} />
             <SyncPositionsButton strays={strays} />
           </Card>
           <Card padded={false}>
             <div className="border-b border-slate-100 px-3 py-2.5">
-              <h2 className="text-sm font-semibold">Lavozimlar ro&apos;yxati</h2>
-              <p className="text-xs text-slate-500">Nomni o&apos;zgartirsangiz shu lavozimdagi xodimlar kartasi ham yangilanadi. Bandi bor lavozimni o&apos;chirib bo&apos;lmaydi — yashiring.</p>
+              <h2 className="flex items-center gap-1 text-sm font-semibold">Lavozimlar ro&apos;yxati
+                <InfoButton title="Lavozimlar ro'yxati">
+                  <p>Nomni o&apos;zgartirsangiz shu lavozimdagi xodimlar kartasi ham yangilanadi.</p>
+                  <p>Bandi bor lavozimni o&apos;chirib bo&apos;lmaydi — yashiring.</p>
+                </InfoButton>
+              </h2>
             </div>
             {positions.length === 0 && <div className="px-3 py-6 text-center text-sm text-slate-500">Lavozim yo&apos;q</div>}
             {positions.map((p) => (
@@ -357,10 +360,6 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "bolimlar" && (
         <div className="space-y-3">
           <OrgChart employees={orgEmployees} positions={orgPositions} stageCounts={stageCounts} />
-          <p className="px-1 text-xs text-slate-500">
-            Bo&apos;limlar tizim rollariga bog&apos;langan — qo&apos;shish yoki olib tashlash uchun dasturchi kerak.
-            Ishchi lavozimni boshqa bo&apos;lim tagiga direktor ko&apos;chiradi: <Link href="/otdel-kadr?tab=lavozimlar" className="font-medium text-slate-700 underline-offset-2 hover:underline">Lavozimlar va login shablonlari</Link>, <span className="font-medium text-slate-700">Bo&apos;lim</span> ustuni.
-          </p>
         </div>
       )}
 
@@ -416,7 +415,7 @@ function KadrTaqvim({ employees }: { employees: Emp[] }) {
       </Card>
 
       <Card padded={false}>
-        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Ish yubileylari</h2><p className="text-xs text-slate-500">Zavodda ishlagan yillari to&apos;ladigan xodimlar</p></div>
+        <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-1 text-sm font-semibold">Ish yubileylari<InfoButton title="Ish yubileylari">Zavodda ishlagan yillari to&apos;ladigan xodimlar</InfoButton></h2></div>
         <Table>
           <thead><tr><Th>Xodim</Th><Th>Ishga kirgan</Th><Th right>Qachon</Th></tr></thead>
           <tbody>
@@ -435,7 +434,7 @@ function KadrTaqvim({ employees }: { employees: Emp[] }) {
       <Card padded={false} className="lg:col-span-2">
         <div className="flex items-start gap-2 border-b border-slate-100 px-4 py-3">
           {incomplete.length > 0 && <TriangleAlert size={16} className="mt-0.5 text-amber-600" />}
-          <div><h2 className="text-sm font-semibold">To&apos;ldirilmagan kartalar</h2><p className="text-xs text-slate-500">Telefon, ishga kirgan yoki tug&apos;ilgan sanasi yo&apos;q faol xodimlar — Xodimlar sahifasida to&apos;ldiring</p></div>
+          <div><h2 className="flex items-center gap-1 text-sm font-semibold">To&apos;ldirilmagan kartalar<InfoButton title="To'ldirilmagan kartalar">Telefon, ishga kirgan yoki tug&apos;ilgan sanasi yo&apos;q faol xodimlar — Xodimlar sahifasida to&apos;ldiring</InfoButton></h2></div>
         </div>
         <Table>
           <thead><tr><Th>Xodim</Th><Th>Lavozim</Th><Th>Yetishmayapti</Th></tr></thead>

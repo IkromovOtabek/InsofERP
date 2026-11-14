@@ -5,7 +5,7 @@ import { requirePage } from "@/lib/page-guard";
 import { vedomost } from "@/lib/fin-report/vedomost";
 import { PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
 import { fmtNum, moneyShort } from "@/lib/format";
-import { Badge, EmptyState, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, EmptyState, InfoButton, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { MonthBar, monthTitle, parseMonth } from "../../month-bar";
 import type { PayrollStatus } from "@/generated/prisma";
@@ -23,10 +23,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const N = ({ x, className }: { x: number | null; className?: string }) => (x == null || Math.abs(x) < 0.5 ? <span className="text-slate-300">—</span> : <span className={className}>{fmtNum(x)}</span>);
 
   return (
-    <BiPage title="Moliya" subtitle="Oy uchun hisoblangan ish haqi — vedomost bo'yicha, guruhlar kesimida" tab="finance" range={range} period={false}>
+    <BiPage title="Moliya" info="Oy uchun hisoblangan ish haqi — vedomost bo'yicha, guruhlar kesimida" tab="finance" range={range} period={false}>
       <div className="space-y-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-[17px] font-bold text-slate-900">Oy uchun hisoblangan ish haqi — {monthTitle(month)}</h2>
+          <h2 className="text-[17px] font-bold text-slate-900">
+            Oy uchun hisoblangan ish haqi — {monthTitle(month)}
+            {v.run && (
+              <InfoButton title="Oy uchun hisoblangan ish haqi" className="ml-1">
+                <p>Qo&apos;lga = hisoblangan − daromad solig&apos;i. To&apos;lanishi kerak = qo&apos;lga − ushlanmalar − avans − to&apos;langan.</p>
+                <p>1 donaga ish haqi — brigada hisoblangani / oyda bajargan mahsuloti (topshiriqlar bo&apos;yicha).</p>
+              </InfoButton>
+            )}
+          </h2>
           {v.run && (
             <span className="flex items-center gap-2 text-[13px] text-slate-500">
               Manba: <Link href={`/ish-haqi/${v.run.id}`} className="font-medium text-slate-800 underline">{v.run.docNo}</Link>
@@ -94,7 +102,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 </tr>
               </tfoot>
             </Table>
-            <p className="text-[13px] text-slate-500">Qo&apos;lga = hisoblangan − daromad solig&apos;i. To&apos;lanishi kerak = qo&apos;lga − ushlanmalar − avans − to&apos;langan. 1 donaga ish haqi — brigada hisoblangani / oyda bajargan mahsuloti (topshiriqlar bo&apos;yicha).</p>
           </>
         )}
       </div>

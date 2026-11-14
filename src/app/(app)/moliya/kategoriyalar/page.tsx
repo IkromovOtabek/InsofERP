@@ -65,11 +65,10 @@ export default async function CategoriesPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Moliya" title="Kategoriyalar va loyihalar" subtitle="Kirim-Chiqim manbalari: qaysi biri PNL'ning qaysi qatoriga va pul oqimining qaysi turiga tushadi" />
+      <PageHeader eyebrow="Moliya" title="Kategoriyalar va loyihalar" info="Kirim-Chiqim manbalari: qaysi biri PNL'ning qaysi qatoriga va pul oqimining qaysi turiga tushadi" />
 
       {unknown.length > 0 && (
-        <Section title="Topilmagan nomlar">
-          <p className="mb-3 text-[13px] text-slate-500">Bu nomlar bilan yozilgan kassa yozuvlari hisobotlarda «Manbasi aniqlanmagan» qatoriga tushyapti. Har birini to&apos;g&apos;ri kategoriyaga biriktiring.</p>
+        <Section title="Topilmagan nomlar" info="Bu nomlar bilan yozilgan kassa yozuvlari hisobotlarda «Manbasi aniqlanmagan» qatoriga tushyapti. Har birini to'g'ri kategoriyaga biriktiring.">
           <Table>
             <thead><tr><Th>Yozuvdagi nom</Th><Th>Turi</Th><Th right>Yozuvlar</Th><Th right>Summa</Th>{canWrite && <Th />}</tr></thead>
             <tbody>
@@ -90,8 +89,7 @@ export default async function CategoriesPage() {
       <Section title="Chiqim manbalari">{block("EXPENSE")}</Section>
       <Section title="Kirim manbalari">{block("INCOME")}</Section>
 
-      <Section title="Loyihalar">
-        <p className="mb-3 text-[13px] text-slate-500">Zavoddan tashqari yo&apos;nalishlar. «Loyihalar» kategoriyasi bilan yozilgan chiqim PNL&apos;da zavod sof foydasidan keyin, alohida qatorda chiqadi.</p>
+      <Section title="Loyihalar" info="Zavoddan tashqari yo'nalishlar. «Loyihalar» kategoriyasi bilan yozilgan chiqim PNL'da zavod sof foydasidan keyin, alohida qatorda chiqadi.">
         <Table>
           <thead><tr><Th>Loyiha</Th><Th>Izoh</Th><Th right>Kassa yozuvlari</Th><Th>Holati</Th>{canWrite && <Th />}</tr></thead>
           <tbody>
@@ -122,7 +120,7 @@ export default async function CategoriesPage() {
       {canWrite && (
         <div className="mt-8">
           <Card>
-            <CardHeader title="Yangi manba yoki sub manba" icon={FolderTree} description="Sub manba — manba ichidagi tafsilot (masalan Transport → Yoqilg'i); u manbaning oqim turi va PNL qatorini oladi" />
+            <CardHeader title="Yangi manba yoki sub manba" icon={FolderTree} info="Sub manba — manba ichidagi tafsilot (masalan Transport → Yoqilg'i); u manbaning oqim turi va PNL qatorini oladi" />
             <CategoryCreateForm parents={parents} />
           </Card>
         </div>

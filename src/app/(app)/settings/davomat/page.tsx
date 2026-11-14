@@ -50,7 +50,7 @@ export default async function DavomatSettingsPage({ searchParams }: { searchPara
 
   return (
     <div>
-      <PageHeader back={back} eyebrow="Sozlamalar" title="Davomat sozlamalari" subtitle="Kechikish jarimasi — otdel kadr yoki direktor belgilaydi; tabel, xodimning o'z davomati va ish haqi hisobi shu qoidadan oladi." />
+      <PageHeader back={back} eyebrow="Sozlamalar" title="Davomat sozlamalari" info="Kechikish jarimasi — otdel kadr yoki direktor belgilaydi; tabel, xodimning o'z davomati va ish haqi hisobi shu qoidadan oladi." />
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Joriy qoida" value={active ? (active.perMinute ? `${money(active.amount)} / daqiqa` : `${money(active.amount)} / kun`) : "Jarima yo'q"} hint={fineText(fine)} icon={AlarmClock} tone={active ? "default" : "warning"} href="#jarima-qoidasi" />
@@ -61,14 +61,14 @@ export default async function DavomatSettingsPage({ searchParams }: { searchPara
       <div className="space-y-4">
         <div id="jarima-qoidasi" className="scroll-mt-20"><Card>
           <CardHeader icon={AlarmClock} title="Kechikish jarimasi"
-            description="Kechikish xodim smenasi boshlanishidan hisoblanadi (smena grafigi, bo'lmasa xodim kartasidagi ish vaqti). Qoida hamma xodimga bir xil; o'zgarish audit jurnaliga tushadi va faqat keyingi hisob-kitobga ta'sir qiladi." />
+            info="Kechikish xodim smenasi boshlanishidan hisoblanadi (smena grafigi, bo'lmasa xodim kartasidagi ish vaqti). Qoida hamma xodimga bir xil; o'zgarish audit jurnaliga tushadi va faqat keyingi hisob-kitobga ta'sir qiladi." />
           <LateFineForm value={fine} />
           {!active && <Callout tone="info" title="Qoida faol emas">Jarima hisoblanmaydi — tabelda faqat kechikish daqiqalari ko&apos;rinadi. Summani kiritib «Qoida faol» ni belgilang.</Callout>}
         </Card></div>
 
         <div id="kechikkanlar" className="scroll-mt-20"><Card>
           <CardHeader icon={Users} title="Kechikkanlar"
-            description="Tanlangan oyda kechikib kelgan xodimlar — tabeldagi saqlangan kechikish bo'yicha. Jarima joriy qoida bilan hisoblanadi."
+            info="Tanlangan oyda kechikib kelgan xodimlar — tabeldagi saqlangan kechikish bo'yicha. Jarima joriy qoida bilan hisoblanadi."
             action={
               <div className="flex items-center gap-1">
                 <Link href={href(shiftMonth(month, -1))} aria-label="Oldingi oy" className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"><ChevronLeft size={16} /></Link>

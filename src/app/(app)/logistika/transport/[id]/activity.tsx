@@ -49,7 +49,10 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
-        {showMoney && <Section id="xarajatlar" title="Xarajatlar — turi bo'yicha" className="mt-0 xl:col-span-2">
+        {showMoney && <Section id="xarajatlar" title="Xarajatlar — turi bo'yicha" className="mt-0 xl:col-span-2" info={<>
+          <p>Daromad — zayavka dastavka haqi reyslarga hajm ulushida.</p>
+          <p>Texnik xizmat jurnalidagi narx jamiga qo&apos;shilmaydi (ta&apos;mir xarajati alohida yoziladi).</p>
+        </>}>
           <Table>
             <thead><tr><Th>Turi</Th><Th right>Soni</Th><Th right>Summa</Th><Th right>Ulush</Th></tr></thead>
             <tbody>
@@ -66,10 +69,7 @@ export function VehicleActivity({ r, period, base, plate, tripsClosed, ordersOpe
               )}
             </tbody>
           </Table>
-          <p className="mt-2 text-xs text-slate-500">
-            Daromad — zayavka dastavka haqi reyslarga hajm ulushida. Texnik xizmat jurnalidagi narx jamiga qo&apos;shilmaydi (ta&apos;mir xarajati alohida yoziladi).
-            {a.cash > 0.5 && <> Kassadan izohida shu raqam bilan chiqqan: {money(a.cash)}.</>}
-          </p>
+          {a.cash > 0.5 && <p className="mt-2 text-xs text-slate-500">Kassadan izohida shu raqam bilan chiqqan: {money(a.cash)}.</p>}
         </Section>}
 
         <Section id="qayerga" title="Qayerga qatnadi" className={showMoney ? "mt-0 xl:col-span-3" : "mt-0 xl:col-span-5"}>

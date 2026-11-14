@@ -8,7 +8,7 @@ import { ACTIVE_TRIP, capText, expiryLevel, FUEL_TYPE, VEHICLE_TYPE, vehicleLive
 import { date, moneyShort } from "@/lib/format";
 import { fleetPeriod, fmtLoad } from "@/lib/vehicle-report";
 import { DayRangeBar, parseDayRange } from "@/app/(app)/bi-tahlil/month-bar";
-import { Badge, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, Empty, InfoButton, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { VehicleStatusForm } from "../../drivers/vehicle-status-form";
 import { TripLink, VehicleLiveBadge } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
@@ -70,7 +70,7 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
   return (
     <div>
       <SectionTabs section="transport" current="/logistika/transport" />
-      <PageHeader title="Transport" subtitle="Mikser, nasos va yuk mashinalar — joriy holat, hujjat muddatlari, tanlangan davrdagi reys, yuk, xarajat va foyda"
+      <PageHeader title="Transport" info="Mikser, nasos va yuk mashinalar — joriy holat, hujjat muddatlari, tanlangan davrdagi reys, yuk, xarajat va foyda"
         action={canManage && <LinkButton href="/logistika/transport/new"><Plus size={16} /> Transport qo'shish</LinkButton>} />
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6 [&>*]:min-w-0">
@@ -92,7 +92,15 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
 
       <Card padded={false}>
         <Table>
-          <thead><tr><Th>Transport</Th><Th>Joriy holat</Th><Th>Haydovchi</Th><Th right>Sig'im</Th><Th>GPS</Th><Th>Tex. ko'rik</Th><Th>Sug'urta</Th><Th right>Reys / zayavka</Th><Th>Tashilgan yuk</Th>{showMoney && <><Th right>Xarajat</Th><Th right>Daromad</Th><Th right>Foyda</Th></>}<Th>Texnik holat</Th></tr></thead>
+          <thead><tr><Th>Transport</Th><Th>
+            <span className="inline-flex items-center gap-1">
+              Joriy holat
+              <InfoButton title="Joriy holat">
+                <p>Joriy holat reyslardan avtomatik chiqadi.</p>
+                <p>&quot;Ta&apos;mirda&quot; va &quot;Bekor turibdi&quot; — texnik holat ustunidan qo&apos;lda belgilanadi (sababi bilan); ta&apos;mirdagi transport reysga berilmaydi.</p>
+              </InfoButton>
+            </span>
+          </Th><Th>Haydovchi</Th><Th right>Sig'im</Th><Th>GPS</Th><Th>Tex. ko'rik</Th><Th>Sug'urta</Th><Th right>Reys / zayavka</Th><Th>Tashilgan yuk</Th>{showMoney && <><Th right>Xarajat</Th><Th right>Daromad</Th><Th right>Foyda</Th></>}<Th>Texnik holat</Th></tr></thead>
           <tbody>
             {shown.length === 0 && <Empty text="Transport yo'q" icon={Truck} />}
             {shown.map(({ v, live }) => {
@@ -125,7 +133,6 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
           </tbody>
         </Table>
       </Card>
-      <p className="mt-3 text-xs text-slate-500">Joriy holat reyslardan avtomatik chiqadi. "Ta'mirda" va "Bekor turibdi" — texnik holat ustunidan qo'lda belgilanadi (sababi bilan); ta'mirdagi transport reysga berilmaydi.</p>
     </div>
   );
 }

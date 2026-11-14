@@ -3,7 +3,7 @@ import { Undo2 } from "lucide-react";
 import { driverPaySums, type LedgerKind, type LedgerRow, type LedgerTotals } from "@/lib/driver-ledger";
 import { date, dateTime, fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/components/ui";
+import { InfoButton, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { cancelEntryAction } from "../actions";
@@ -97,11 +97,11 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="max-w-3xl text-xs text-slate-500">
-          Reys yetkazilganda o&apos;zi tushadi: km — ECO/GPS izi (bo&apos;lmasa zayavka masofasi × 2), baraban soati — haydovchi yoki reys vaqti.
-          {canEdit ? "Har katakdagi qalam — shu ustunni, qator oxiridagisi — butun qatorni tahrirlaydi." : "ECO bermagan km — km katagidagi qalam bilan yoziladi."} Sarf — transport normasi, qoldiq — mashina bo&apos;yicha zapravkalar minus sarf.
-          <span className="ml-1 rounded bg-amber-100 px-1 text-amber-800">Sariq</span> — naqd haq.
-        </p>
+        <InfoButton title="Hisob varag'i">
+          <p>Reys yetkazilganda o&apos;zi tushadi: km — ECO/GPS izi (bo&apos;lmasa zayavka masofasi × 2), baraban soati — haydovchi yoki reys vaqti.</p>
+          <p>{canEdit ? "Har katakdagi qalam — shu ustunni, qator oxiridagisi — butun qatorni tahrirlaydi." : "ECO bermagan km — km katagidagi qalam bilan yoziladi."} Sarf — transport normasi, qoldiq — mashina bo&apos;yicha zapravkalar minus sarf.</p>
+          <p><span className="rounded bg-amber-100 px-1 text-amber-800">Sariq</span> — naqd haq.</p>
+        </InfoButton>
         <ExcelButton file={file} sheets={sheets} />
       </div>
       <Sheet lang="uz">

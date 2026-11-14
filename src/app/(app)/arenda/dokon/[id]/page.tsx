@@ -96,13 +96,13 @@ export default async function RentShopPage({ params, searchParams }: { params: P
         <div className="space-y-4 xl:col-span-2">
           {canCreate && active && (
             <Card>
-              <CardHeader title="To'lov qabul qilish" icon={Wallet} description={daily ? "Kunlik ijara — qaysi kun uchun to'lov ekanini tanlang." : "Oldindan bir necha oyga to'lasa — «Necha oyga» ni tanlang: summa oylarga bo'linadi, kvitansiya bitta."} />
+              <CardHeader title="To'lov qabul qilish" icon={Wallet} info={daily ? "Kunlik ijara — qaysi kun uchun to'lov ekanini tanlang." : "Oldindan bir necha oyga to'lasa — «Necha oyga» ni tanlang: summa oylarga bo'linadi, kvitansiya bitta."} />
               <ShopTxForm shop={shopOpt} month={monthKey(now)} months={months} />
             </Card>
           )}
           {daily && days.length > 0 && <DaysCalendar id={id} month={calMonth} days={days} />}
           <div id="hisob" className="scroll-mt-20"><Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title={`Oyma-oy hisob${curLease?.tenantName ? ` — ${curLease.tenantName}` : ""}`} description={`Har oy: to'lashi kerak (perechisleniye + naqd), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans.${former.length ? " Oldingi ijarachilar hisobi — pastda alohida." : ""}`} /></div>
+            <div className="p-5 pb-0"><CardHeader title={`Oyma-oy hisob${curLease?.tenantName ? ` — ${curLease.tenantName}` : ""}`} info={`Har oy: to'lashi kerak (perechisleniye + naqd), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans.${former.length ? " Oldingi ijarachilar hisobi — pastda alohida." : ""}`} /></div>
             {ledger.months.length === 0 ? <div className="p-5 pt-0"><EmptyState title="Hisob yo'q" text="Oy varag'i ochilganda yoki Excel'dan import qilinganda shu yerda chiqadi." /></div> : (
               <Table>
                 <thead><tr><Th>Oy</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th><Th right>Jami</Th><Th right>Tushgan</Th><Th right>Qoldiq</Th></tr></thead>
@@ -131,7 +131,8 @@ export default async function RentShopPage({ params, searchParams }: { params: P
           {showElec && (
             <Card padded={false}>
               <div className="p-5 pb-0"><CardHeader title="Svet hisobi" icon={Zap}
-                description={`Ijaradan alohida: summasi (hisoblagich × tarif + ustama yoki shartnoma bo'yicha) − berilgan (kassaga svet to'lovi + litsevoyga).${Number(shop.elecFixed) > 0 ? ` Shartnoma bo'yicha oylik: ${money(shop.elecFixed)}.` : ""}`}
+                description={Number(shop.elecFixed) > 0 ? `Shartnoma bo'yicha oylik: ${money(shop.elecFixed)}` : undefined}
+                info="Ijaradan alohida: summasi (hisoblagich × tarif + ustama yoki shartnoma bo'yicha) − berilgan (kassaga svet to'lovi + litsevoyga)."
                 action={<span className={`text-sm font-semibold tabular-nums ${elec.debt > 1 ? "text-red-600" : "text-emerald-700"}`}>{elec.debt > 1 ? `qarz ${money(elec.debt)}` : elec.debt < -1 ? `avans ${money(-elec.debt)}` : "qarz yo'q"}</span>} /></div>
               {elec.months.length === 0 ? <div className="p-5 pt-0 text-sm text-slate-500">Hali svet hisobi yo&apos;q — «Arenda → Svet» varag&apos;ida ko&apos;rsatkich kiritiladi.</div> : (
                 <Table>
@@ -153,7 +154,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
           )}
 
           <div id="tolovlar" className="scroll-mt-20"><Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" description="Ijarachidan arenda kassasiga tushgan pul. Xato yozuv qalam bilan tuzatiladi; bekor qilingan yozuv chizilgan holda qoladi." /></div>
+            <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" info="Ijarachidan arenda kassasiga tushgan pul. Xato yozuv qalam bilan tuzatiladi; bekor qilingan yozuv chizilgan holda qoladi." /></div>
             {txs.length === 0 ? <div className="p-5 pt-0"><EmptyState title="To'lov yo'q" text="Arenda sahifasidagi «Kirim» tugmasi bilan yoziladi." /></div> : (
               <Table>
                 <thead><tr><Th>Sana</Th><Th>Qaysi oy / kun uchun</Th><Th>Usul</Th><Th right>Summa</Th><Th>Kim yozdi</Th><Th></Th></tr></thead>
@@ -224,7 +225,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
 
           {former.length > 0 && (
             <div id="oldingi" className="scroll-mt-20"><Card>
-              <CardHeader title="Oldingi ijarachilar" icon={History} description="Har ijarachining hisobi o'z shartnomasida: qarzi bo'lsa shu yerda to'lov qabul qilinadi." />
+              <CardHeader title="Oldingi ijarachilar" icon={History} info="Har ijarachining hisobi o'z shartnomasida: qarzi bo'lsa shu yerda to'lov qabul qilinadi." />
               <ul className="divide-y divide-slate-100 text-sm">
                 {former.map((l) => {
                   const d = debts.get(l.id) ?? 0;
@@ -254,7 +255,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
           )}
 
           <Card>
-            <CardHeader title="Narx o'zgarishi" icon={TrendingUp} description="Yangi narx tanlangan oy hisobi ochilganda o'zi qo'llanadi (do'kon andozasi ham yangilanadi)." />
+            <CardHeader title="Narx o'zgarishi" icon={TrendingUp} info="Yangi narx tanlangan oy hisobi ochilganda o'zi qo'llanadi (do'kon andozasi ham yangilanadi)." />
             {changes.length > 0 && (
               <ul className="mb-3 divide-y divide-slate-100 text-sm">
                 {changes.map((c) => (
@@ -276,7 +277,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
           </Card>
 
           <Card>
-            <CardHeader title="Hujjatlar va suratlar" icon={Paperclip} description="Shartnoma skani, pasport nusxasi, do'kon rasmi — faqat Arenda bo'limi xodimlari ko'radi." />
+            <CardHeader title="Hujjatlar va suratlar" icon={Paperclip} info="Shartnoma skani, pasport nusxasi, do'kon rasmi — faqat Arenda bo'limi xodimlari ko'radi." />
             {files.length > 0 && (
               <ul className="mb-3 grid grid-cols-2 gap-2">
                 {files.map((f) => {
@@ -305,7 +306,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
           </Card>
 
           <Card>
-            <CardHeader title="Telegram" icon={MessageCircle} description="Ijarachi botga ulansa, qarz eslatmasi o'zi boradi va u istalgan payt «qarz» deb yozib, holatini bila oladi." />
+            <CardHeader title="Telegram" icon={MessageCircle} info="Ijarachi botga ulansa, qarz eslatmasi o'zi boradi va u istalgan payt «qarz» deb yozib, holatini bila oladi." />
             {!botEnabled() ? (
               <Callout tone="warning" title="Bot sozlanmagan">Serverda TELEGRAM_BOT_TOKEN bo&apos;lmasa eslatma faqat qo&apos;lda (matnni nusxalab) yuboriladi.</Callout>
             ) : shop.tgChatId ? (
@@ -374,7 +375,8 @@ function DaysCalendar({ id, month, days }: { id: string; month: Date; days: Rent
   return (
     <Card>
       <CardHeader title="Kunlar bo'yicha to'lov" icon={CalendarDays}
-        description={`${monthLabel(month)}: o'tgan ${past.length} kundan ${full} tasi to'liq to'langan, ${unpaid} tasi umuman to'lanmagan. Kirimda «Qaysi kun uchun» tanlangan to'lovlar.`}
+        description={`${monthLabel(month)}: o'tgan ${past.length} kundan ${full} tasi to'liq to'langan, ${unpaid} tasi umuman to'lanmagan`}
+        info="Kirimda «Qaysi kun uchun» tanlangan to'lovlar."
         action={<div className="flex items-center gap-1">
           <Link href={nav(-1)} aria-label="O'tgan oy" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><ChevronLeft size={16} /></Link>
           <Link href={nav(1)} aria-label="Keyingi oy" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><ChevronRight size={16} /></Link>

@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from "reac
 import { CheckCheck, ClipboardCheck, Plus, Trash2 } from "lucide-react";
 import { addDefect, assignStaff, deleteDefect, deletePlan, markAllStaff, markStaff, saveReport, savePlan } from "./production-actions";
 import { cn } from "@/lib/utils";
-import { Button, Field, FormError, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, InfoButton, Input, Select } from "@/components/ui";
 
 type Product = { id: string; code: string; name: string; unit: string };
 const u = (unit: string) => (unit === "m3" ? "m³" : unit);
@@ -26,7 +26,7 @@ export function PlanForm({ month, products, plans }: { month: string; products: 
       <Field label={`Oylik plan (${unit})`}>
         <Input name="monthQty" type="number" step="any" min="0" required defaultValue={cur?.monthQty ?? ""} />
       </Field>
-      <Field label={`Kunlik (${unit})`}>
+      <Field label={`Kunlik (${unit})`} help={<InfoButton title="Kunlik plan">Kunlik plan bo&apos;sh qolsa oylik plan ish kunlariga (yakshanbasiz) teng bo&apos;linadi.</InfoButton>}>
         <Input name="dayQty" type="number" step="any" min="0" placeholder="avto" defaultValue={cur?.dayQty ?? ""} />
       </Field>
       <Field label="Izoh">
@@ -35,7 +35,6 @@ export function PlanForm({ month, products, plans }: { month: string; products: 
       <Button type="submit" disabled={pending}>{pending ? "Saqlanmoqda…" : cur ? "Yangilash" : "Belgilash"}</Button>
       <div className="sm:col-span-2 xl:col-span-5">
         <FormError error={state?.error} />
-        <p className="text-xs text-slate-500">Kunlik plan bo&apos;sh qolsa oylik plan ish kunlariga (yakshanbasiz) teng bo&apos;linadi.</p>
       </div>
     </form>
   );
@@ -65,7 +64,7 @@ export function DefectForm({ products, brigades, reasons }: { products: Product[
           {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
       </Field>
-      <Field label={`Miqdor (${unit})`}>
+      <Field label={`Miqdor (${unit})`} help={<InfoButton title="Brak yozish">Brak hovli qoldig&apos;idan hisobdan chiqariladi.</InfoButton>}>
         <Input name="qty" type="number" step="any" min="0" required />
       </Field>
       <Field label="Sabab">
@@ -80,7 +79,6 @@ export function DefectForm({ products, brigades, reasons }: { products: Product[
       <Button type="submit" disabled={pending}><Plus size={15} /> {pending ? "Yozilmoqda…" : "Brak yozish"}</Button>
       <div className="sm:col-span-2 xl:col-span-6">
         <FormError error={state?.error} />
-        <p className="text-xs text-slate-500">Brak hovli qoldig&apos;idan hisobdan chiqariladi.</p>
       </div>
     </form>
   );

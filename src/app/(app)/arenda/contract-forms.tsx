@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { Upload } from "lucide-react";
-import { Button, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { Button, Field, FormActions, FormError, FormSuccess, InfoButton, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { isoDate } from "@/lib/format";
 import {
@@ -143,7 +143,10 @@ export function KwhPriceForm({ price, markup }: { price: number; markup: number 
         <Input name="markup" type="number" min={0} max={100} step="0.01" defaultValue={markup} className="h-9 w-24" />
       </label>
       <Button size="sm" variant="secondary" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
-      <span className="basis-full text-xs text-slate-500">Summasi = (hozirgi − avvalgi ko&apos;rsatkich) × narx + ustama %. Ustama hamma ijarachiga bir xil. Tarif o&apos;zgarsa — keyin kiritilgan ko&apos;rsatkichlarga qo&apos;llanadi.</span>
+      <InfoButton title="Svet tarifi" className="mb-2">
+        <p>Summasi = (hozirgi − avvalgi ko&apos;rsatkich) × narx + ustama %. Ustama hamma ijarachiga bir xil.</p>
+        <p>Tarif o&apos;zgarsa — keyin kiritilgan ko&apos;rsatkichlarga qo&apos;llanadi.</p>
+      </InfoButton>
       <div className="basis-full"><FormError error={state?.error} />{state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}</div>
     </form>
   );

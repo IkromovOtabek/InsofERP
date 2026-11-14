@@ -124,7 +124,7 @@ export async function LogiOverview({ period, accounts, toPay }: {
 
       <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>
-          <CardHeader title="Yoqilg'i" icon={Fuel} description={`${period.label}: zapravka va norma bo'yicha sarf`} />
+          <CardHeader title="Yoqilg'i" icon={Fuel} description={period.label} info="Zapravka va norma bo'yicha sarf" />
           <p className="text-sm text-slate-700">
             Sarf (norma): <b className="tabular">{[t.useGas ? `${fmtNum(t.useGas, 0)} m³` : null, t.useDt ? `${fmtNum(t.useDt, 0)} l` : null].filter(Boolean).join(" + ") || "—"}</b>
             {" · "}zapravka: <b className="tabular">{fmtNum(t.refuel, 0)}</b> · summa: <b className="tabular">{money(t.fuelSum)}</b>
@@ -132,7 +132,7 @@ export async function LogiOverview({ period, accounts, toPay }: {
           {[...fuel.values()].some((b) => b.closing < 0) && <p className="mt-2 text-sm text-red-600">Minus qoldiq: {[...fuel.values()].filter((b) => b.closing < 0).map((b) => b.plate).join(", ")} — normadan ko&apos;p sarflangan yoki zapravka yozilmagan.</p>}
         </Card>
         <Card>
-          <CardHeader title="Dispetcher ombori" icon={PackageOpen} description="Skladdan olingan, hali mashinaga berilmagan avto zapchast va yoqilg'i"
+          <CardHeader title="Dispetcher ombori" icon={PackageOpen} info="Skladdan olingan, hali mashinaga berilmagan avto zapchast va yoqilg'i"
             action={<Link href="/stock/dispetcher" className="text-sm text-blue-700 hover:underline">Batafsil</Link>} />
           <p className="text-sm text-slate-700"><b className="tabular">{money(heldSum)}</b> · {held.length} xil{held.length ? `: ${held.slice(0, 4).map((r) => r.name).join(", ")}${held.length > 4 ? "…" : ""}` : ""}</p>
         </Card>

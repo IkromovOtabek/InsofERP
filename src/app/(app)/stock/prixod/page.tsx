@@ -12,7 +12,7 @@ import { unitShort } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 import { prixodJournal, prixodTotals, type PrixodPayment, type PrixodRow } from "@/lib/receipts";
 import { stockPeriod, StockPeriodBar } from "@/components/stock-period";
-import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard } from "@/components/ui";
+import { Badge, Button, Callout, Empty, InfoButton, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard } from "@/components/ui";
 import { ExcelButton } from "../../logistika/excel-button";
 import { BulkStorno } from "./bulk-storno";
 
@@ -148,9 +148,13 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
 
       {(rows.some((r) => r.cancelled || r.storno) || voidIds.size > 0) && (
         <p className="mb-3 text-xs text-slate-500">
-          {rows.some((r) => r.cancelled || r.storno) && "Bekor qilingan kirim o'z sanasida ustidan chizilgan holda qoladi, bekor qilingan sanada esa minus bilan «Bekor qilish» qatori chiqadi. Jamilar bekor qilish qatorlari bilan hisoblanadi, «Qoldiqlar» dagi «Kirim» kabi. "}
           {voidIds.size > 0 && !showCancelled && `Shu davrda kiritilib bekor qilingan ${fmtNum(voidIds.size)} ta kirim yashirilgan (jamiga ta'siri yo'q). `}
           {voidIds.size > 0 && <Link href={toggleHref} className="font-medium text-slate-700 underline">{showCancelled ? "Bekor qilinganlarni yashirish" : "Ko'rsatish"}</Link>}
+          {rows.some((r) => r.cancelled || r.storno) && (
+            <InfoButton title="Bekor qilingan kirimlar" className="ml-1">
+              Bekor qilingan kirim o&apos;z sanasida ustidan chizilgan holda qoladi, bekor qilingan sanada esa minus bilan «Bekor qilish» qatori chiqadi. Jamilar bekor qilish qatorlari bilan hisoblanadi, «Qoldiqlar» dagi «Kirim» kabi.
+            </InfoButton>
+          )}
         </p>
       )}
 

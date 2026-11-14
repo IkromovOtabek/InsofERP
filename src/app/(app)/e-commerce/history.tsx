@@ -2,7 +2,7 @@ import Link from "next/link";
 import { History, X } from "lucide-react";
 import { dateTime } from "@/lib/format";
 import type { ShopHistoryEntry } from "@/lib/shop-history";
-import { Badge, Card } from "@/components/ui";
+import { Badge, Card, InfoButton } from "@/components/ui";
 
 const ACTION = {
   CREATE: { label: "Qo'shdi", color: "green" },
@@ -20,8 +20,12 @@ export function ShopHistoryList({ entries, filter }: { entries: ShopHistoryEntry
     <Card>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="font-semibold">{filter ? `Tarix: ${filter.subject}` : "O'zgarishlar tarixi"}</h2>
-          <p className="text-xs text-slate-500">Vitrina va reklamadagi har bir tahrir yoziladi — kim, qachon, nima edi va nima bo'ldi. Tarixni o'chirib bo'lmaydi.</p>
+          <h2 className="font-semibold">{filter ? `Tarix: ${filter.subject}` : "O'zgarishlar tarixi"}
+            <InfoButton title={filter ? `Tarix: ${filter.subject}` : "O'zgarishlar tarixi"} className="ml-1">
+              <p>Vitrina va reklamadagi har bir tahrir yoziladi — kim, qachon, nima edi va nima bo&apos;ldi.</p>
+              <p>Tarixni o&apos;chirib bo&apos;lmaydi.</p>
+            </InfoButton>
+          </h2>
         </div>
         {filter && (
           <Link href="/e-commerce?tab=tarix" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:underline"><X size={14} /> Hammasi</Link>

@@ -52,7 +52,10 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   return (
     <div>
       <SectionTabs section="transport" current="/logistika/xarajatlar" />
-      <PageHeader title="Transport xarajatlari" subtitle={`${r.label} · yoqilg'i + boshqa xarajatlar = logistika tannarxi`} />
+      <PageHeader title="Transport xarajatlari" subtitle={r.label} info={<>
+        <p>Yoqilg&apos;i + boshqa xarajatlar = logistika tannarxi.</p>
+        <p>Bu logistika tannarxi hisobi. Kassadan to&apos;lov (naqd/bank) Kirim-Chiqimda alohida yoziladi.</p>
+      </>} />
       <PeriodTabs base="/logistika/xarajatlar" current={r.period} />
       <RangeForm base="/logistika/xarajatlar" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
@@ -63,7 +66,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           <StatCard label="1 m³ ga" value={m3 ? money(costs.total / m3) : "—"} hint={`${qty(m3)} m³ yetkazildi`} icon={Route} href="#transport-boyicha" />
         </> : <StatCard label="Yetkazildi" value={`${qty(m3)} m³`} hint="jami summalar — Logistika moliyada" icon={Route} />}
       </div>
-      {canAdd && <Card className="mb-5"><CardHeader title="Xarajat qo'shish" description="Yoqilg'i — alohida bo'limda" icon={Coins} /><ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} vehicleId={sp.vehicleId} /></Card>}
+      {canAdd && <Card className="mb-5"><CardHeader title="Xarajat qo'shish" info="Yoqilg'i — alohida bo'limda" icon={Coins} /><ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} vehicleId={sp.vehicleId} /></Card>}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         {m && <div className="space-y-5 xl:col-span-2">
           <Card>
@@ -107,7 +110,6 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           </Table>
         </Card>
       </div>
-      <p className="mt-3 text-xs text-slate-500">Bu logistika tannarxi hisobi. Kassadan to'lov (naqd/bank) Kirim-Chiqimda alohida yoziladi.</p>
     </div>
   );
 }

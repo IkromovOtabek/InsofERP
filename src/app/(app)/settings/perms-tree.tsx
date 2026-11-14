@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { BarChart3, Boxes, Check, ChevronRight, Factory, Languages, Layers, Lock, Megaphone, Minus, RotateCcw, Search, ShoppingCart, Truck, Users, Wallet, type LucideIcon } from "lucide-react";
 import type { PermModule } from "@/lib/perm-modules";
 import { SCRIPT_PERM, WRITE_SCRIPTS } from "@/lib/permissions";
+import { InfoButton } from "@/components/ui";
 
 /**
  * Ruxsatlar daraxti (1-variant): bo'lim (menyu guruhi) → tugma (oyna) → amal, uch holatli belgilar bilan.
@@ -274,8 +275,9 @@ export function PermsTree({ modules, current, onChange, footer }: {
         <div className="flex items-center gap-3">
           <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><Languages size={17} /></span>
           <span className="min-w-0 flex-1">
-            <span className="block font-semibold">Yozish tili</span>
-            <span className="block text-xs text-slate-500">Maydonlarga faqat lotin yozuvida yoziladi. Boshqa yozuvda yozishi kerak bo&apos;lsa — belgilang</span>
+            <span className="flex items-center gap-1 font-semibold">Yozish tili
+              <InfoButton title="Yozish tili">Maydonlarga faqat lotin yozuvida yoziladi. Boshqa yozuvda yozishi kerak bo&apos;lsa — belgilang</InfoButton>
+            </span>
           </span>
         </div>
         <div className="mt-2 grid gap-1.5 sm:grid-cols-3">

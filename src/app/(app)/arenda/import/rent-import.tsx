@@ -70,11 +70,6 @@ export function RentImport({ months, defaultMonth, locations, canPay }: {
           label="To'langan summalarni («… o'tgan / bergan summa») arenda kassasiga shu oy uchun kirim qilish — qayta import qilinsa ikki marta yozilmaydi"
         />
       </div>
-      <p className="text-xs text-slate-500">
-        «Общий», «Буш» va summasi yo&apos;q qatorlar (izohlar) o&apos;tkazib yuboriladi. «Жами» va «Колдик» ustunlari kerak emas — tizim o&apos;zi hisoblaydi.
-        Bazada yo&apos;q do&apos;kon qo&apos;shiladi, bor do&apos;konning shu oy hisobi fayldagi summalar bilan yangilanadi.
-        Diqqat: o&apos;tgan oylar to&apos;lovlari kirim qilinsa, arenda kassasi umumiy summasi oshadi — zavod kassasiga topshirilgan pulni «Kassaga topshirildi» chiqimi bilan yozing.
-      </p>
     </ExcelImport>
   );
 }

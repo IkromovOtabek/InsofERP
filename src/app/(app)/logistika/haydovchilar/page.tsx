@@ -57,7 +57,10 @@ export default async function DriversPage() {
   return (
     <div>
       <SectionTabs section="haydovchi" current="/logistika/haydovchilar" />
-      <PageHeader title="Haydovchilar" subtitle="Shaxsiy ma'lumot Otdel kadrda; guvohnoma, grafik va transport — shu yerda. Mavjudlik: reys + bugungi davomat" />
+      <PageHeader title="Haydovchilar" info={<>
+        <p>Shaxsiy ma&apos;lumot Otdel kadrda; guvohnoma, grafik va transport — shu yerda. Mavjudlik: reys + bugungi davomat.</p>
+        <p>Haydovchi ilovasi (ECO) bilan ulanish — <Link href="/drivers" className="underline">Haydovchi ilovasi</Link> sahifasida.</p>
+      </>} />
       <Card padded={false}>
         <Table>
           <thead><tr><Th>Haydovchi</Th><Th>Mavjudlik</Th>{canLogin && <Th>Kirish</Th>}<Th>Guvohnoma</Th><Th>Transport</Th><Th>Ish grafigi</Th><Th right>Bugun</Th><Th right>Oy: reys</Th><Th right>Oy: hajm</Th><Th right>Kechikish</Th><Th right>Muammo</Th></tr></thead>
@@ -85,7 +88,6 @@ export default async function DriversPage() {
           </tbody>
         </Table>
       </Card>
-      <p className="mt-3 text-xs text-slate-500">Haydovchi ilovasi (ECO) bilan ulanish — <Link href="/drivers" className="underline">Haydovchi ilovasi</Link> sahifasida.</p>
     </div>
   );
 }

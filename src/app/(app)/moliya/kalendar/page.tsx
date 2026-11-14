@@ -12,7 +12,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   return (
     <div>
-      <PageHeader eyebrow="Moliya" title="To'lov kalendari" subtitle={`Kelgusi ${CAL_DAYS} kun: kimga, qachon, qancha — pul yetadimi va qaysi kuni eng kam qoladi`} />
+      <PageHeader eyebrow="Moliya" title="To'lov kalendari" subtitle={`Kelgusi ${CAL_DAYS} kun`}
+        info="Kimga, qachon, qancha — pul yetadimi va qaysi kuni eng kam qoladi." />
       <CalendarView base="/moliya/kalendar" qoldiq={sp.qoldiq} />
     </div>
   );

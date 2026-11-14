@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Sparkles, Bot, Zap, TrendingUp, FileText, MessageSquare, ArrowRight, Clock, RefreshCw, AlertTriangle, ListChecks, MessagesSquare, Timer, History } from "lucide-react";
+import { Bot, Zap, TrendingUp, FileText, MessageSquare, ArrowRight, Clock, RefreshCw, AlertTriangle, ListChecks, MessagesSquare, Timer, History } from "lucide-react";
 import { biContext, BiPage } from "../shell";
 import { aiDirector, aiReport, REPORTS, type ReportType } from "@/lib/bi/ai";
 import { aiUsageStats } from "@/lib/bi/ai-chat";
@@ -24,7 +24,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const dangerRisks = d.risks.filter((r) => r.tone === "danger").length, taskMoney = d.tasks.reduce((t, x) => t + (x.money ?? 0), 0);
 
   return (
-    <BiPage title="Insof AI — tahlil" subtitle="Bu sahifa savolni kutmaydi: tizim butun biznesni o'zi ko'rib chiqadi va bugun nima qilish kerakligini pul bo'yicha tartiblab beradi. Savol berish uchun — AI Chat." eyebrow="Insof AI" tab="ai" range={range} keep={{ report: type }}>
+    <BiPage title="Insof AI — tahlil" info={<>
+      <p>Bu sahifa savolni kutmaydi: tizim butun biznesni o&apos;zi ko&apos;rib chiqadi va bugun nima qilish kerakligini pul bo&apos;yicha tartiblab beradi. Savol berish uchun — AI Chat.</p>
+      <p>Insof AI — qoida asosidagi tahlil dvigateli. Javoblar dashboard ma&apos;lumotlaridan olinadi; muhim qarordan oldin manbani tekshiring.</p>
+    </>} eyebrow="Insof AI" tab="ai" range={range} keep={{ report: type }}>
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Kpi label="Xavflar" value={String(d.risks.length)} icon={AlertTriangle} tone={dangerRisks ? "danger" : d.risks.length ? "warning" : "success"} hint={d.risks.length ? `${dangerRisks} tasi jiddiy · pul bo'yicha tartiblangan` : "shoshilinch xavf yo'q"} href="#xavflar" />
@@ -68,21 +71,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </div>
 
         {/* Hisobotlar */}
-        <Panel title={<span className="inline-flex items-center gap-1.5"><FileText size={15} /> Hisobotlar</span>} eyebrow="Morning · Evening · Weekly · Monthly · Executive" info="Hisobot matni dashboard ma'lumotlaridan avtomatik yig'iladi — har ochilganda yangi." action={<div className="flex flex-wrap gap-1">{REPORTS.map((r) => <Chip key={r.key} active={type === r.key} href={q({ report: r.key })}>{r.label}</Chip>)}</div>}>
+        <Panel title={<span className="inline-flex items-center gap-1.5"><FileText size={15} /> Hisobotlar</span>} eyebrow="Morning · Evening · Weekly · Monthly · Executive" info={<>
+          <p>Hisobot matni dashboard ma&apos;lumotlaridan avtomatik yig&apos;iladi — har ochilganda yangi.</p>
+          <p>Barcha raqamlar ERP bazasidan jonli hisoblanadi: sotuv — tasdiqlangan zayavkalar, reja — Reja nazorati, xomashyo — StockMove jurnali, qarz — ochiq schyotlar. Matn shablon asosida yig&apos;iladi; tashqi AI xizmati ishlatilmaydi, ma&apos;lumot tashqariga chiqmaydi.</p>
+        </>} action={<div className="flex flex-wrap gap-1">{REPORTS.map((r) => <Chip key={r.key} active={type === r.key} href={q({ report: r.key })}>{r.label}</Chip>)}</div>}>
           <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-lg font-semibold">{rep.title}</h3><div className="text-xs text-slate-500">{rep.sub}</div></div>
             <div className="mt-1 text-xs text-slate-400">{REPORTS.find((r) => r.key === type)?.desc} · {fmtDate(new Date())}</div>
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">{rep.sections.map((s) => <div key={s.title} className="rounded-lg bg-white p-3.5 shadow-xs"><div className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-400">{s.title}</div><ul className="mt-1.5 space-y-1 text-[13px] leading-relaxed text-slate-700">{s.lines.map((l, i) => <li key={i}>{l}</li>)}</ul></div>)}</div>
             <div className="mt-4 flex flex-wrap gap-2">{rep.hrefs.map((h) => <Link key={h.href} href={h.href} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">{h.label} <ArrowRight size={12} /></Link>)}</div>
           </div>
-          <details className="mt-3 text-xs text-slate-500"><summary className="cursor-pointer font-medium hover:text-slate-800">Bu hisobot qanday tayyorlangan</summary><p className="mt-1.5">Barcha raqamlar ERP bazasidan jonli hisoblanadi: sotuv — tasdiqlangan zayavkalar, reja — Reja nazorati, xomashyo — StockMove jurnali, qarz — ochiq schyotlar. Matn shablon asosida yig'iladi; tashqi AI xizmati ishlatilmaydi, ma'lumot tashqariga chiqmaydi.</p></details>
         </Panel>
 
         <Link href="/bi-tahlil/ai/chat" className="flex items-center justify-between gap-3 rounded-(--radius-card) border border-slate-200/80 bg-white px-5 py-4 shadow-(--shadow-card) transition hover:border-slate-300 hover:shadow-md">
           <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><MessageSquare size={18} /></div><div><div className="font-semibold">Savolingiz bormi? AI Chat'ga o'ting</div><div className="text-xs text-slate-500">Nega sotuv kamaydi · Qaysi sotuvchi ortda · Foyda nega o'zgardi · Qaysi xomashyo tugayapti</div></div></div>
           <ArrowRight size={18} className="text-slate-400" />
         </Link>
-        <div className="text-xs text-slate-400"><Sparkles size={11} className="mr-1 inline" /> Insof AI — qoida asosidagi tahlil dvigateli. Javoblar dashboard ma'lumotlaridan olinadi; muhim qarordan oldin manbani tekshiring.</div>
       </div>
     </BiPage>
   );

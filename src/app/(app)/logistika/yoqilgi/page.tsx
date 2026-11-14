@@ -57,7 +57,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
   return (
     <div>
       <SectionTabs section="transport" current="/logistika/yoqilgi" />
-      <PageHeader title="Yoqilg'i" subtitle={`${r.label} · haydovchi ilovadan ham kiritadi (reys kartasi → "Yoqilg'i")`} />
+      <PageHeader title="Yoqilg'i" subtitle={r.label} info={`Haydovchi ilovadan ham kiritadi (reys kartasi → "Yoqilg'i")`} />
       <PeriodTabs base="/logistika/yoqilgi" current={r.period} />
       <RangeForm base="/logistika/yoqilgi" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
@@ -69,7 +69,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
       {canWrite && <Card className="mb-5 min-w-0"><CardHeader title="Zapravka qo'shish" icon={Fuel} /><FuelForm {...opts} lastPrice={price} vehicleId={sp.vehicleId} /></Card>}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <Card padded={false} className="xl:col-span-2">
-          <div id="transport-kesimida" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Transport kesimida" icon={Gauge} /></div>
+          <div id="transport-kesimida" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Transport kesimida" icon={Gauge} info={`Sarf — probegi yozilgan quyishlar bo'yicha, "to'liq bak" usuli: birinchi quyishning litri hisobga kirmaydi (u oldingi yo'l uchun).`} /></div>
           <Table>
             <thead><tr><Th>Transport</Th><Th right>Litr</Th>{m && <Th right>Summa</Th>}<Th right>l/100 km</Th></tr></thead>
             <tbody>
@@ -87,7 +87,6 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
               })}
             </tbody>
           </Table>
-          <p className="px-5 pb-4 pt-2 text-xs text-slate-500">Sarf — probegi yozilgan quyishlar bo'yicha, "to'liq bak" usuli: birinchi quyishning litri hisobga kirmaydi (u oldingi yo'l uchun).</p>
         </Card>
         <Card padded={false} className="xl:col-span-3">
           <div id="zapravkalar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Zapravkalar" icon={Fuel} /></div>

@@ -59,7 +59,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
   const waiting = all.filter((o) => o.remainingM3 <= 0 && o.total - o.shipped > 0.001);
   return (
     <div>
-      <PageHeader back={{ href: "/trips", label: "Reyslar" }} title="Yangi reys" subtitle="Faqat brigada tayyorlab bergan miqdor reysga beriladi · nakladnoy raqami avtomatik" />
+      <PageHeader back={{ href: "/trips", label: "Reyslar" }} title="Yangi reys" info="Faqat brigada tayyorlab bergan miqdor reysga beriladi · nakladnoy raqami avtomatik" />
       <TripForm
         orders={opts}
         waiting={waiting.map((o) => ({ id: o.id, date: o.date, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))}

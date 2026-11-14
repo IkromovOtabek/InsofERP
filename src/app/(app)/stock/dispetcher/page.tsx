@@ -57,7 +57,7 @@ export default async function DispatcherStockPage({ searchParams }: { searchPara
   return (
     <div>
       <PageHeader back={{ href: "/stock", label: "Sklad" }} title={DISPATCH_WH_NAME}
-        subtitle="Skladdagi avto zapchast va yoqilg'i: keraklisini o'zingizga olasiz, mashinaga berasiz — yoqilg'i zapravka, zapchast transport xarajati bo'lib yoziladi. Skladga yangi mahsulot qo'shilmaydi." />
+        info="Skladdagi avto zapchast va yoqilg'i: keraklisini o'zingizga olasiz, mashinaga berasiz — yoqilg'i zapravka, zapchast transport xarajati bo'lib yoziladi. Skladga yangi mahsulot qo'shilmaydi." />
 
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Dispetcherda" value={moneyShort(heldSum)} hint={`${held.length} xil mahsulot`} icon={PackageOpen} tone="brand" />
@@ -70,7 +70,7 @@ export default async function DispatcherStockPage({ searchParams }: { searchPara
 
       {can && (
         <Card className="mb-5">
-          <CardHeader title="Mashinaga berish" icon={Truck} description="Qo'lingizdagi mahsulotdan: yoqilg'i — shu mashinaga zapravka (hisob varag'i va yoqilg'i qoldig'iga tushadi), zapchast — transport xarajati. Narx skladdagi «Dona narxi» bo'yicha." />
+          <CardHeader title="Mashinaga berish" icon={Truck} info="Qo'lingizdagi mahsulotdan: yoqilg'i — shu mashinaga zapravka (hisob varag'i va yoqilg'i qoldig'iga tushadi), zapchast — transport xarajati. Narx skladdagi «Dona narxi» bo'yicha." />
           <IssueForm held={held.map((r) => pick(r, r.held))} drivers={drivers.map((d) => ({ id: d.id, label: d.fullName }))}
             vehicles={vehicles.map((v) => ({ id: v.id, label: `${v.plate}${v.external ? " (ko'chadan)" : ""}`, driverId: mainDriverOf(v)?.id ?? null }))} />
         </Card>
@@ -104,7 +104,7 @@ export default async function DispatcherStockPage({ searchParams }: { searchPara
       <Section title="Skladdagi avto zapchast va yoqilg'i">
         {can ? (
           <Card>
-            <CardHeader title="O'zimga olish" icon={ArrowDownToLine} description="Keraklisini belgilab miqdorini yozing («Hammasi» — skladdagining hammasi, masalan salyarka). Skladdan kamayib, dispetcher omboriga o'tadi; sarf emas — mashinaga berilganda sarf bo'ladi." />
+            <CardHeader title="O'zimga olish" icon={ArrowDownToLine} info="Keraklisini belgilab miqdorini yozing («Hammasi» — skladdagining hammasi, masalan salyarka). Skladdan kamayib, dispetcher omboriga o'tadi; sarf emas — mashinaga berilganda sarf bo'ladi." />
             <PickForm mode="take" rows={rows.filter((r) => r.inStock > 0.0005 || r.held > 0.0005).map((r) => pick(r, r.inStock))} warehouses={warehouses.map((w) => ({ id: w.id, label: w.name }))} />
           </Card>
         ) : (
@@ -125,7 +125,8 @@ export default async function DispatcherStockPage({ searchParams }: { searchPara
         )}
       </Section>
 
-      <Section title={`Harakatlar — ${period.label}`}>
+      <Section title={`Harakatlar — ${period.label}`}
+        info={<p>Mashinaga berilgani — <Link href="/logistika/tabel?bolim=hisob" className="text-blue-700 hover:underline">Hisob varag&apos;i</Link> (zapravka, zapchast ustunlari) va Transport kartasida ko&apos;rinadi.</p>}>
         <DayRangeBar base={BASE} range={period} />
         {moves.length === 0 ? <Card><Empty text="Bu davrda harakat yo'q" icon={ArrowUpFromLine} /></Card> : (
           <Table>
@@ -151,7 +152,6 @@ export default async function DispatcherStockPage({ searchParams }: { searchPara
             </tbody>
           </Table>
         )}
-        <p className="mt-2 text-xs text-slate-500">Mashinaga berilgani — <Link href="/logistika/tabel?bolim=hisob" className="text-blue-700 hover:underline">Hisob varag&apos;i</Link> (zapravka, zapchast ustunlari) va Transport kartasida ko&apos;rinadi.</p>
       </Section>
     </div>
   );

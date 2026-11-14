@@ -165,27 +165,27 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
 
           {r.status === "NEW" && canProcure && (
             <Card padded={false}>
-              <div className="p-5"><CardHeader icon={ShoppingCart} title="Snabjeniye: narx qo'yish" description="Har qatorga narx qo'ying — jami summa o'zi hisoblanadi va zayavka tasdiqlashga ketadi." /></div>
+              <div className="p-5"><CardHeader icon={ShoppingCart} title="Snabjeniye: narx qo'yish" info="Har qatorga narx qo'ying — jami summa o'zi hisoblanadi va zayavka tasdiqlashga ketadi." /></div>
               <div className="px-5 pb-5"><PricePanel id={r.id} items={items} suppliers={suppliers} supplierId={r.supplierId} drivers={driverOpts}
                 delivery={{ kind: r.deliveryKind ?? "", provider: r.deliveryProvider ?? "", cost: delivery, note: r.deliveryNote ?? "" }} /></div>
             </Card>
           )}
           {r.status === "PRICED" && canProcure && (
             <Card padded={false}>
-              <div className="p-5"><CardHeader icon={ShoppingCart} title="Narxni tuzatish" description="Zayavka tasdiq kutmoqda — tasdiqlangunicha narxni o'zgartirsangiz bo'ladi." /></div>
+              <div className="p-5"><CardHeader icon={ShoppingCart} title="Narxni tuzatish" info="Zayavka tasdiq kutmoqda — tasdiqlangunicha narxni o'zgartirsangiz bo'ladi." /></div>
               <div className="px-5 pb-5"><PricePanel id={r.id} items={items} suppliers={suppliers} supplierId={r.supplierId} drivers={driverOpts}
                 delivery={{ kind: r.deliveryKind ?? "", provider: r.deliveryProvider ?? "", cost: delivery, note: r.deliveryNote ?? "" }} /></div>
             </Card>
           )}
           {r.status === "NEW" && canEditItems && !canProcure && (
             <Card padded={false}>
-              <div className="p-5"><CardHeader title="Jadvalni tuzatish" description="Narx qo'yilgunicha miqdorni o'zgartirsangiz bo'ladi." /></div>
+              <div className="p-5"><CardHeader title="Jadvalni tuzatish" info="Narx qo'yilgunicha miqdorni o'zgartirsangiz bo'ladi." /></div>
               <div className="px-5 pb-5"><EditItemsPanel id={r.id} items={items} /></div>
             </Card>
           )}
           {r.status === "FUNDED" && canProcure && (
             <Card padded={false}>
-              <div className="p-5"><CardHeader icon={PackageCheck} title="Tasdiqdan o'tdi — kelgan molni tekshiring" description="Nima kam keldi, necha pulga keldi. To'g'ri bo'lsa «Qabul qildim» — sklad qoldig'i oshadi." /></div>
+              <div className="p-5"><CardHeader icon={PackageCheck} title="Tasdiqdan o'tdi — kelgan molni tekshiring" info="Nima kam keldi, necha pulga keldi. To'g'ri bo'lsa «Qabul qildim» — sklad qoldig'i oshadi." /></div>
               <div className="px-5 pb-5"><ReceivePanel id={r.id} items={items} suppliers={suppliers} supplierId={r.supplierId} delivery={{ kind: r.deliveryKind ?? "", cost: delivery, fact: deliveryFact }} /></div>
             </Card>
           )}
@@ -194,7 +194,8 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
           {r.status === "FUNDED" && (
             <Card>
               <CardHeader icon={Truck} title="Yetkazib berish monitoringi"
-                description={r.deliveryStatus ? `Hozir: ${DELIVERY_LABEL[r.deliveryStatus]}${r.shippedAt ? ` · jo'natilgan ${date(r.shippedAt)}` : ""}${r.eta ? ` · ETA ${date(r.eta)}` : ""}${r.arrivedAt ? ` · keldi ${dateTime(r.arrivedAt)}` : ""}` : "Buyurtma berilgach holatni yangilab boring"} />
+                description={r.deliveryStatus ? `Hozir: ${DELIVERY_LABEL[r.deliveryStatus]}${r.shippedAt ? ` · jo'natilgan ${date(r.shippedAt)}` : ""}${r.eta ? ` · ETA ${date(r.eta)}` : ""}${r.arrivedAt ? ` · keldi ${dateTime(r.arrivedAt)}` : ""}` : undefined}
+                info={r.deliveryStatus ? undefined : "Buyurtma berilgach holatni yangilab boring"} />
               {canProcure
                 ? <DeliveryPanel id={r.id} value={{ status: r.deliveryStatus, shippedAt: r.shippedAt ? isoDate(r.shippedAt) : "", eta: r.eta ? isoDate(r.eta) : "", provider: r.deliveryProvider ?? "" }} />
                 : <p className="text-sm text-slate-500">{r.deliveryProvider ?? "Transport ko'rsatilmagan"}</p>}
@@ -202,26 +203,26 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
           )}
           {(r.quotes.length > 0 || ((r.status === "NEW" || r.status === "PRICED") && canProcure)) && (
             <Card>
-              <CardHeader icon={Scale} title="Tijorat takliflari" description="Narx, muddat va to'lov sharti bo'yicha taqqoslang — tanlangani yetkazuvchi bo'ladi" />
+              <CardHeader icon={Scale} title="Tijorat takliflari" info="Narx, muddat va to'lov sharti bo'yicha taqqoslang — tanlangani yetkazuvchi bo'ladi" />
               <QuotesPanel id={r.id} suppliers={suppliers} editable={canProcure && (r.status === "NEW" || r.status === "PRICED")}
                 quotes={r.quotes.map((x) => ({ id: x.id, supplierName: x.supplierName, supplierId: x.supplierId, amount: Number(x.amount), deliveryDays: x.deliveryDays, paymentTerms: x.paymentTerms, validUntil: x.validUntil ? date(x.validUntil) : null, note: x.note, chosen: x.chosen, by: `${x.createdBy.fullName} · ${dateTime(x.createdAt)}` }))} />
             </Card>
           )}
           {open && canProcure && (
             <Card>
-              <CardHeader icon={ClipboardList} title="Talabnoma rekvizitlari" description="Bo'lim, ustuvorlik, mas'ul xodim va muddat — dashboard shular bo'yicha saralaydi" />
+              <CardHeader icon={ClipboardList} title="Talabnoma rekvizitlari" info="Bo'lim, ustuvorlik, mas'ul xodim va muddat — dashboard shular bo'yicha saralaydi" />
               <MetaPanel id={r.id} people={people.map((p) => ({ id: p.id, name: `${p.fullName} · ${ROLE_LABELS[p.role]}` }))}
                 value={{ department: r.department ?? "", priority: r.priority, responsibleId: r.responsibleId ?? "", needBy: r.needBy ? isoDate(r.needBy) : "", contractNo: r.contractNo ?? "" }} />
             </Card>
           )}
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <Card>
-              <CardHeader icon={AlertTriangle} title="Muammolar" description={openIncidents ? `${openIncidents} ta ochiq` : "Kam miqdor, sifat, kechikish, hujjat"} />
+              <CardHeader icon={AlertTriangle} title="Muammolar" description={openIncidents ? `${openIncidents} ta ochiq` : undefined} info="Kam miqdor, sifat, kechikish, hujjat" />
               <IncidentsPanel id={r.id} canAdd={r.status !== "REJECTED" && (canProcure || role === "PRODUCTION")} canResolve={canProcure}
                 incidents={r.incidents.map((x) => ({ id: x.id, kind: x.kind, note: x.note, by: x.createdBy.fullName, at: dateTime(x.createdAt), resolvedAt: x.resolvedAt ? dateTime(x.resolvedAt) : null, resolution: x.resolution }))} />
             </Card>
             <Card>
-              <CardHeader icon={FileText} title="Hujjatlar" description="Shartnoma, hisob-faktura, nakladnoy, sertifikat" />
+              <CardHeader icon={FileText} title="Hujjatlar" info="Shartnoma, hisob-faktura, nakladnoy, sertifikat" />
               <DocsPanel id={r.id} accept={SUPPLY_DOC_ACCEPT} missing={[...missingDocs]} canEdit={canProcure || ["ACCOUNTING", "FINANCE"].includes(role)}
                 canDelete={(canProcure || ["ACCOUNTING", "FINANCE"].includes(role)) && canRemoveSupplyDoc(r.status, role)}
                 docs={r.documents.map((d) => ({ id: d.id, kind: d.kind, fileName: d.fileName, by: d.createdBy.fullName, at: dateTime(d.createdAt) }))} />
@@ -265,7 +266,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
           {canReject && (
             <Card>
               <CardHeader icon={XCircle} title="Bekor qilish"
-                description={r.cashTxId || r.status === "APPROVED" || r.status === "FUNDED" ? "Moliya bosqichi — chiqim o'chirilmaydi, qaytarilishi kerak bo'lib qoladi" : "Sabab bilan — so'rovni kiritgan xodimga xabar ketadi"} />
+                info={r.cashTxId || r.status === "APPROVED" || r.status === "FUNDED" ? "Moliya bosqichi — chiqim o'chirilmaydi, qaytarilishi kerak bo'lib qoladi" : "Sabab bilan — so'rovni kiritgan xodimga xabar ketadi"} />
               <RejectPanel id={r.id} refund={refund == null ? null : Number(refund)} />
             </Card>
           )}
@@ -295,7 +296,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
 
           {open && matIds.length > 0 && (
             <Card>
-              <CardHeader icon={Layers} title="Ombor qoldig'i" description="Omborda bor bo'lsa — xaridni kamaytiring" />
+              <CardHeader icon={Layers} title="Ombor qoldig'i" info="Omborda bor bo'lsa — xaridni kamaytiring" />
               <ul className="space-y-2 text-sm">
                 {r.items.filter((i) => i.materialId).map((i) => {
                   const b = balance.get(i.materialId!) ?? 0;
@@ -315,7 +316,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
           )}
 
           <Card>
-            <CardHeader title="Harakatlar tarixi" description="Kim, qachon, nima qildi" />
+            <CardHeader title="Harakatlar tarixi" info="Kim, qachon, nima qildi" />
             <ol className="space-y-3">
               {r.events.map((e) => (
                 <li key={e.id} className="flex gap-3 text-sm">
@@ -332,7 +333,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
 
           {r.status === "RECEIVED" && (
             <Card>
-              <CardHeader icon={HardHat} title="Keyingi qadam" description="Kelgan xomashyoni brigadalarga taqsimlang" />
+              <CardHeader icon={HardHat} title="Keyingi qadam" info="Kelgan xomashyoni brigadalarga taqsimlang" />
               <LinkButton href={r.receipt ? `/stock?tab=brigades&receipt=${r.receipt.id}` : "/stock?tab=brigades"} variant="secondary">Brigadalarga taqsimlash</LinkButton>
             </Card>
           )}

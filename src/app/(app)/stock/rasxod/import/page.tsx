@@ -30,7 +30,7 @@ export default async function RasxodImportPage() {
   return (
     <div>
       <PageHeader back={{ href: "/stock/rasxod", label: "Chiqim" }} title="Excel orqali chiqim"
-        subtitle="Kirimdagi kabi ustunli faylni yuklang: qatorlar sana va «Kimga» bo'yicha alohida chiqimlarga bo'linadi. Saqlashdan oldin hammasini tekshirasiz." />
+        info="Kirimdagi kabi ustunli faylni yuklang: qatorlar sana va «Kimga» bo'yicha alohida chiqimlarga bo'linadi. Saqlashdan oldin hammasini tekshirasiz." />
       {warehouses.length === 0 ? (
         <Callout tone="warning" title="Sklad yo'q">Avval Sozlamalarda sklad oching.</Callout>
       ) : (

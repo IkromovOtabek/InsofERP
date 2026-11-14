@@ -3,7 +3,7 @@
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List, ArrowRightLeft } from "lucide-react";
-import { Button, FormError, FormSuccess, FormWarning, Select, Table, Td, Th, Tr } from "@/components/ui";
+import { Button, FormError, FormSuccess, FormWarning, InfoButton, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
 import { flatName, guessColumn, guessMatrix, headerRowIndex, matchKey, matrixColumns, maxLen, num, parseDate, str, trimEmptyRows, unpivotDayGroups, unpivotMatrix, valueKey, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick, type ValueMaps } from "@/lib/excel";
 import { normalizeUnit } from "@/lib/unit";
@@ -691,9 +691,11 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-4">
       <div className="mb-3 text-sm">
         <span className="font-medium text-slate-800">Kesishma jadvalni yoyish</span>
+        <InfoButton title="Kesishma jadvalni yoyish" className="ml-1">
+          Ustunlar — mijoz/obyekt, qatorlar — mahsulot, katak — miqdor. Har to&apos;ldirilgan katak bitta zayavka qatoriga aylanadi.
+        </InfoButton>
         <span className="ml-2 text-xs text-slate-600">
-          Ustunlar — mijoz/obyekt, qatorlar — mahsulot, katak — miqdor. Har to&apos;ldirilgan katak bitta zayavka qatoriga aylanadi:
-          hozir <b>{mx.use.length}</b> ta ustundan <b>{rows.length}</b> ta qator.
+          Hozir <b>{mx.use.length}</b> ta ustundan <b>{rows.length}</b> ta qator.
         </span>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -721,8 +723,9 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
         </label>
       </div>
       <div className="mt-3">
-        <div className="mb-1.5 text-xs text-slate-600">
-          Mijoz / obyekt ustunlari — belgilangani import qilinadi, yonidagi sana o&apos;sha ustundagi zayavkalarning yetkazish sanasi bo&apos;ladi:
+        <div className="mb-1.5 flex items-center gap-1 text-xs text-slate-600">
+          Mijoz / obyekt ustunlari
+          <InfoButton title="Mijoz / obyekt ustunlari">Belgilangani import qilinadi, yonidagi sana o&apos;sha ustundagi zayavkalarning yetkazish sanasi bo&apos;ladi.</InfoButton>
         </div>
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
           {mx.cols.map((c) => {
@@ -857,6 +860,10 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
             </label>
             {scan?.enabled && <DocScan endpoint={scan.endpoint} label={scan.label} onResult={onScan} />}
             <span className="text-sm text-slate-500">{fileName || ".xlsx, .xls yoki .csv"}</span>
+            <InfoButton title="Excel fayl">
+              <p>Birinchi qator — ustun sarlavhalari. Ustunlar tartibi muhim emas: quyida har bir maydon qaysi ustundan olinishini tanlaysiz.</p>
+              {scan?.enabled && <p>Nakladnoy qog&apos;ozda bo&apos;lsa — kamera bilan suratga oling, qatorlar o&apos;zi to&apos;ldiriladi.</p>}
+            </InfoButton>
             {sheetNames.length > 1 && (
               <label className="inline-flex items-center gap-2 text-sm text-slate-600">
                 Varaq:
@@ -868,10 +875,6 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           </div>
           <button type="button" onClick={downloadTemplate} className="inline-flex items-center gap-1 text-xs text-slate-600 hover:underline"><Download size={13} /> Namuna faylni yuklab olish</button>
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          Birinchi qator — ustun sarlavhalari. Ustunlar tartibi muhim emas: quyida har bir maydon qaysi ustundan olinishini tanlaysiz.
-          {scan?.enabled && " Nakladnoy qog'ozda bo'lsa — kamera bilan suratga oling, qatorlar o'zi to'ldiriladi."}
-        </p>
         {scan && !scan.enabled && <p className="mt-1 text-xs text-slate-400">Kamera bilan o&apos;qish uchun AI kaliti sozlanmagan (.env → ANTHROPIC_API_KEY yoki GROQ_API_KEY).</p>}
         {scanNote && (
           <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1.5 text-xs text-sky-800">
@@ -892,11 +895,11 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
             <div className="flex flex-wrap items-end gap-2">
               {extra.map((e) => <div key={e.key} className="w-44">{extraName(e)}</div>)}
               {addExtraBtn}
+              <InfoButton title="Ustunlar" className="mb-2">
+                <p>Faylingizda qo&apos;shimcha ustun bo&apos;lsa — shu yerga nomini yozib qo&apos;shasiz; namuna faylga ham tushadi, fayl tanlangach qaysi ustundan olinishini belgilaysiz.</p>
+                <p>Keraksiz ustunni «×» bilan olib tashlasangiz — namuna faylda ham, jadvalda ham chiqmaydi.</p>
+              </InfoButton>
             </div>
-            <p className="mt-1.5 text-[11px] text-slate-400">
-              Faylingizda qo&apos;shimcha ustun bo&apos;lsa — shu yerga nomini yozib qo&apos;shasiz; namuna faylga ham tushadi, fayl tanlangach qaysi ustundan olinishini belgilaysiz.
-              Keraksiz ustunni «×» bilan olib tashlasangiz — namuna faylda ham, jadvalda ham chiqmaydi.
-            </p>
             {restoreRow}
           </div>
         )}
@@ -907,11 +910,11 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           {modeToggle && (
             <div className="flex flex-wrap items-center gap-3">
               {modeToggle}
-              <span className="text-xs text-slate-500">
+              <InfoButton title="Ro'yxat yoki matritsa">
                 {mx
                   ? "Faylda har mijoz alohida ustun bo'lsa — matritsa. Pastda qaysi qator/ustun nima ekanini to'g'rilaysiz."
                   : "Har qator bitta yozuv bo'lsa — ro'yxat. Ustunlar mijozlar bo'lsa \u00abMatritsa\u00bb ni tanlang."}
-              </span>
+              </InfoButton>
             </div>
           )}
           {matrixPanel}
@@ -959,7 +962,9 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
 
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">
-              <span className="font-medium text-slate-700">Oldindan ko&apos;rish</span>
+              <span className="inline-flex items-center gap-1 font-medium text-slate-700">Oldindan ko&apos;rish
+                {ac?.fill && <InfoButton title="Oldindan ko'rish">Summa/NDS faylda bo&apos;lmasa miqdor × narxdan hisoblanadi (kursiv bilan).</InfoButton>}
+              </span>
               {ready
                 ? <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><CheckCircle2 size={13} /> Hammasi joyida — {allRows.length} ta qator import qilinadi</span>
                 : <span className="inline-flex items-center gap-1 text-xs text-amber-700"><AlertTriangle size={13} /> {missingRequired.length ? `Majburiy maydon moslanmagan: ${missingRequired.map((f) => f.label).join(", ")}` : `${badList.length} ta qatorda ${emptyCells} ta katak bo'sh yoki noto'g'ri`}</span>}
@@ -991,7 +996,6 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
               </button>
               {badFilterBtn}
               {source.length > PREVIEW && <span className="text-xs text-slate-500">… va yana {source.length - PREVIEW} ta qator</span>}
-              {ac?.fill && <span className="text-xs text-slate-500">Summa/NDS faylda bo&apos;lmasa miqdor × narxdan hisoblanadi (kursiv bilan).</span>}
             </div>
           </div>
         </>

@@ -4,7 +4,7 @@ import { useActionState, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Package, Trash2, Truck } from "lucide-react";
 import { createTrip, hideExternalVehicle, updateTrip } from "./actions";
-import { Button, Callout, Card, CardHeader, Checkbox, Field, FormActions, FormError, Input, LinkButton, Select, Textarea } from "@/components/ui";
+import { Button, Card, CardHeader, Checkbox, Field, FormActions, FormError, InfoButton, Input, LinkButton, Select, Textarea } from "@/components/ui";
 
 /** Zayavka qatori (mahsulot birligida): jami, tayyor, jo'natilgan, hozir reysga mumkin. mixer — beton qatori (mikserda ketadi). */
 type Line = { productId: string; name: string; unit: string; qty: number; ready: number; shipped: number; available: number; inProduction: number; mixer: boolean };
@@ -199,7 +199,11 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card>
-          <CardHeader icon={Truck} title="Transport" description={external ? "Ko'chadan chaqirilgan mashina va haydovchi" : "O'z texnikamiz va haydovchimiz"} />
+          <CardHeader icon={Truck} title="Transport" description={external ? "Ko'chadan chaqirilgan mashina va haydovchi" : "O'z texnikamiz va haydovchimiz"}
+            info={<>
+              <p>O&apos;z transportimiz hammasi band bo&apos;lsa, ish to&apos;xtab qolmasligi uchun tashqaridan mashina chaqiriladi.</p>
+              <p>Mashina va haydovchi faqat reys uchun yoziladi: park, kadr va oylik ro&apos;yxatlariga kirmaydi, haydovchi ilovasiga yuborilmaydi — bosqichlarni (yuklandi, yo&apos;lga chiqdi, yetkazildi) dispetcher shu yerdan belgilaydi.</p>
+            </>} />
           <div className="mb-4">
             <Checkbox label="Ko'chadan mashina chaqirildi" checked={external} onChange={(e) => toggleExternal(e.target.checked)} disabled={!!edit?.externalLocked && !external} />
             {edit?.externalLocked && !external && <p className="mt-1 text-xs text-slate-500">{edit.externalLocked}</p>}
@@ -207,10 +211,6 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
           {external ? (
             <>
               <input type="hidden" name="external" value="1" />
-              <Callout tone="info">
-                O&apos;z transportimiz hammasi band bo&apos;lsa, ish to&apos;xtab qolmasligi uchun tashqaridan mashina chaqiriladi. Mashina va haydovchi faqat
-                reys uchun yoziladi: park, kadr va oylik ro&apos;yxatlariga kirmaydi, haydovchi ilovasiga yuborilmaydi — bosqichlarni (yuklandi, yo&apos;lga chiqdi, yetkazildi) dispetcher shu yerdan belgilaydi.
-              </Callout>
               {saved.length > 0 && (
                 <Field
                   label="Avval chaqirilgan mashina"
@@ -292,7 +292,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
         </Card>
 
         <Card>
-          <CardHeader icon={Package} title="Yuk" description={edit ? "Zayavka o'zgarmaydi — miqdor, BRU, vaqt va izohni tahrirlang" : "Jo'natishga tayyor zayavka va miqdor"} />
+          <CardHeader icon={Package} title="Yuk" info={edit ? "Zayavka o'zgarmaydi — miqdor, BRU, vaqt va izohni tahrirlang" : "Jo'natishga tayyor zayavka va miqdor"} />
           <Field label="Zayavka *" className="mb-3">
             <Select name="orderId" value={orderId} onChange={(e) => pickOrder(e.target.value)} disabled={!!edit}>
               {orders.map((o) => <option key={o.id} value={o.id}>{o.customer} · {o.date} · tayyor {o.remainingM3} {o.unit}{o.inProduction > 0 ? ` · sexda ${o.inProduction} ${o.unit}` : ""}{o.mixed ? " · aralash" : ""}</option>)}
@@ -309,7 +309,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
             </div>
           )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label={`Miqdor, ${unit} *`} hint={overReady ? undefined : "Texnika sig'imi va tayyor qoldiqdan kichigi taklif qilinadi"} error={overReady}>
+            <Field label={`Miqdor, ${unit} *`} help={<InfoButton title={`Miqdor, ${unit}`}>Texnika sig&apos;imi va tayyor qoldiqdan kichigi taklif qilinadi</InfoButton>} error={overReady}>
               <Input name="qtyM3" type="number" step="0.5" min="0.5" max={order ? avail : undefined} value={qty} onChange={(e) => setQty(e.target.value)} onFocus={() => !qty && suggest(order, vType, external ? extCap(ext) : vehicle?.capacityM3)} required />
             </Field>
             {concrete && (
@@ -326,11 +326,11 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
             )}
             {/* Tahrirda TTN reys sahifasidagi alohida formada (band raqam tekshiruvi bilan) */}
             {!edit && (
-              <Field label="TTN raqami" hint="Nakladnoy blankasidagi raqam — nakladnoyda va Realizatsiyada shu ko'rinadi. Bo'sh qolsa tizim raqami (N-…)">
+              <Field label="TTN raqami" help={<InfoButton title="TTN raqami">Nakladnoy blankasidagi raqam — nakladnoyda va Realizatsiyada shu ko&apos;rinadi. Bo&apos;sh qolsa tizim raqami (N-…)</InfoButton>}>
                 <Input name="ttn" value={ttn} onChange={(e) => setTtn(e.target.value)} maxLength={40} autoComplete="off" placeholder="Masalan: 000161" className="tabular" />
               </Field>
             )}
-            <Field label="Rejadagi yetkazish vaqti" hint="Zayavkadan olinadi. Dispetcher kalendari va kechikish hisobi shu vaqtga qaraydi" className={concrete ? undefined : "sm:col-span-2"}>
+            <Field label="Rejadagi yetkazish vaqti" help={<InfoButton title="Rejadagi yetkazish vaqti">Zayavkadan olinadi. Dispetcher kalendari va kechikish hisobi shu vaqtga qaraydi</InfoButton>} className={concrete ? undefined : "sm:col-span-2"}>
               <Input name="plannedAt" type="datetime-local" value={plannedAt} onChange={(e) => setPlannedAt(e.target.value)} />
             </Field>
             <Field label="Izoh" className="sm:col-span-2"><Textarea name="note" value={note} onChange={(e) => setNote(e.target.value)} /></Field>

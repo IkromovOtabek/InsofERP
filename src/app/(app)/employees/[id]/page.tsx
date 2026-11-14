@@ -103,7 +103,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
         <Card>
-          <CardHeader title="Ma'lumotlari" description="Otdel kadr yuritadi" />
+          <CardHeader title="Ma'lumotlari" info="Otdel kadr yuritadi" />
           <div className="flex flex-col gap-4 sm:flex-row">
             <div className="shrink-0">
               <EmployeePhotoForm
@@ -171,7 +171,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
         <Card>
           <CardHeader
             title="Hududdan tashqarida davomat"
-            description="Komandirovka / obyektda ishlovchi: ish hududidan tashqarida ham Keldim/Ketdim belgilay oladi (yuz + joy rasmi bilan)"
+            info="Komandirovka / obyektda ishlovchi: ish hududidan tashqarida ham Keldim/Ketdim belgilay oladi (yuz + joy rasmi bilan)"
             icon={MapPin}
           />
           <AnywhereSwitch employeeId={e.id} on={e.attendanceAnywhere} canEdit={(ANYWHERE_ROLES as readonly string[]).includes(s.role)} />
@@ -185,8 +185,9 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
               description={!e.isActive
                 ? "Xodim nofaol — logini ham bloklangan. Qaytarish uchun Xodimlar ro'yxatida \"Yoqish\" tugmasini bosing."
                 : e.user.isActive
-                  ? "Bo'limni, loginni yoki parolni almashtirish, kerak bo'lsa kirishni vaqtincha bloklash"
+                  ? undefined
                   : "Bu login bloklangan — xodim ERP'ga kira olmaydi"}
+              info={e.isActive && e.user.isActive ? "Bo'limni, loginni yoki parolni almashtirish, kerak bo'lsa kirishni vaqtincha bloklash" : undefined}
               icon={KeyRound}
               action={e.userId === s.userId || !e.isActive ? undefined : <ToggleLoginButton employeeId={e.id} blocked={!e.user.isActive} />}
             />
@@ -206,7 +207,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
           <div className="border-b border-slate-100 px-5 pt-5">
             <CardHeader
               title="Kadr hujjatlari"
-              description="Ariza, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq, bo'shatish arizasi va bo'shatish buyrug'i — tizimda to'ldiriladi, chop etiladi, imzolangan nusxasi qaytib yuklanadi."
+              info="Ariza, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq, bo'shatish arizasi va bo'shatish buyrug'i — tizimda to'ldiriladi, chop etiladi, imzolangan nusxasi qaytib yuklanadi."
               icon={FileSignature}
             />
           </div>
@@ -228,7 +229,8 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
 
         <Card className="lg:col-span-2" padded={false}>
           <div className="border-b border-slate-100 px-5 pt-5">
-            <CardHeader title="Hujjat nusxalari" description="Rasm yoki PDF. Turini tanlang yoki nomini yozing (buyruq, ariza, ma'lumotnoma…). Fayllar tizimda saqlanadi, tashqariga chiqmaydi." icon={Paperclip} />
+            <CardHeader title="Hujjat nusxalari" description="Rasm yoki PDF." icon={Paperclip}
+              info={<><p>Turini tanlang yoki nomini yozing (buyruq, ariza, ma&apos;lumotnoma…).</p><p>Fayllar tizimda saqlanadi, tashqariga chiqmaydi.</p></>} />
           </div>
           <div className="border-b border-slate-100 px-5 py-4">
             <DocumentForms employeeId={e.id} accept={EMPLOYEE_ACCEPT} />

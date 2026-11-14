@@ -8,7 +8,7 @@ export default async function NewVehiclePage() {
   const drivers = await vehicleFormDrivers();
   return (
     <div>
-      <PageHeader back={{ href: "/logistika/transport", label: "Transport" }} title="Yangi transport" subtitle="Saqlangach haydovchi ilovasiga (ECO) ham yuboriladi" />
+      <PageHeader back={{ href: "/logistika/transport", label: "Transport" }} title="Yangi transport" info="Saqlangach haydovchi ilovasiga (ECO) ham yuboriladi" />
       <Card><VehicleForm drivers={drivers} /></Card>
     </div>
   );

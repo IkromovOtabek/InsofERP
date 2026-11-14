@@ -91,26 +91,26 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
         <div className="space-y-5">
           {canDecide && (
             <Card>
-              <CardHeader title="Ish boshqaruvchi qarori" description={logi ? "Tasdiqlagach pulni o'zingiz berasiz — zavod yoki logistika hisobidan" : "Tasdiqlasangiz kassa pul beradi"} />
+              <CardHeader title="Ish boshqaruvchi qarori" info={logi ? "Tasdiqlagach pulni o'zingiz berasiz — zavod yoki logistika hisobidan" : "Tasdiqlasangiz kassa pul beradi"} />
               <DecidePanel id={r.id} />
             </Card>
           )}
           {canPay && (
             <Card>
-              <CardHeader title="Pul berish" description={logi ? "Logistika so'rovi — Logistika moliyada ko'rinadi" : "Kirim-Chiqimga chiqim bo'lib yoziladi"} />
+              <CardHeader title="Pul berish" info={logi ? "Logistika so'rovi — Logistika moliyada ko'rinadi" : "Kirim-Chiqimga chiqim bo'lib yoziladi"} />
               <PayPanel id={r.id} amount={money(r.amount)} accounts={accounts} logi={logi} defaultId={defaultId} />
             </Card>
           )}
           {st === "NEW" && !canDecide && !canCancel && <Callout tone="info">Ish boshqaruvchi tasdig&apos;i kutilmoqda — tasdiqlanmaguncha pul berilmaydi.</Callout>}
           {canEdit && (
             <Card>
-              <CardHeader title="Tahrirlash" description="Tasdiqlanmaguncha summa va tavsifni tuzatish mumkin" />
+              <CardHeader title="Tahrirlash" info="Tasdiqlanmaguncha summa va tavsifni tuzatish mumkin" />
               <EditPanel id={r.id} amount={Number(r.amount)} note={r.note ?? ""} />
             </Card>
           )}
           {canCancel && (
             <Card>
-              <CardHeader title="Bekor qilish" description="Tasdiqlanmaguncha bekor qilish mumkin" />
+              <CardHeader title="Bekor qilish" info="Tasdiqlanmaguncha bekor qilish mumkin" />
               <CancelPanel id={r.id} />
             </Card>
           )}

@@ -5,7 +5,7 @@ import { ACTIVE_TRIP, dayRange, driverEmployees, expiryLevel, ISSUE_KIND, VEHICL
 import { unpricedWhere } from "@/lib/driver-trip-pay";
 import { driverLedger, fuelBalances } from "@/lib/driver-ledger";
 import { date, dateTime, fmtNum } from "@/lib/format";
-import { Badge, Card, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, Empty, InfoButton, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 
 const more = (href: string, text: string) => (
   <Link href={href} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">{text} <ArrowRight size={14} /></Link>
@@ -80,7 +80,8 @@ export async function DispatcherHome() {
       )}
       {issues.length > 0 && (
         <Card padded={false} className="border-red-200">
-          <div className="flex items-center gap-2 px-5 pt-4 text-sm font-semibold text-red-800"><AlertTriangle size={16} /> Ochiq transport muammolari ({issues.length})</div>
+          <div className="flex items-center gap-2 px-5 pt-4 text-sm font-semibold text-red-800"><AlertTriangle size={16} /> Ochiq transport muammolari ({issues.length})
+            <InfoButton title="Ochiq transport muammolari">Hal qilish — reys sahifasida «Muammoni hal qilish».</InfoButton></div>
           <Table>
             <thead><tr><Th>Transport</Th><Th>Muammo</Th><Th>Haydovchi · reys</Th><Th>Qachon</Th></tr></thead>
             <tbody>
@@ -94,7 +95,6 @@ export async function DispatcherHome() {
               ))}
             </tbody>
           </Table>
-          <p className="px-5 pb-3 text-xs text-slate-500">Hal qilish — reys sahifasida «Muammoni hal qilish».</p>
         </Card>
       )}
       <Section title="Haydovchilar" className="mt-0" action={more("/logistika/haydovchilar", "Haydovchilar")}>

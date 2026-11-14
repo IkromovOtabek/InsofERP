@@ -15,7 +15,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const kind = STOCK_DRILL_KINDS.find((k) => k === sp.drill) as StockDrillKind | undefined;
   const drill = kind && sp.mat ? await stockDrill({ materialId: sp.mat, from: r.from, to: r.to, kind, period: monthTitle(r.month) }) : null;
   return (
-    <BiPage title="Ombor" subtitle="Xom-ashyo: haqiqiy sarf retsept normasi bilan solishtiriladi" tab="stock" range={range} period={false}>
+    <BiPage title="Ombor" info="Xom-ashyo: haqiqiy sarf retsept normasi bilan solishtiriladi" tab="stock" range={range} period={false}>
       <RawBalanceView r={r} sp={sp} base="/bi-tahlil/ombor/xomashyo" drill={drill} />
     </BiPage>
   );

@@ -7,7 +7,7 @@ import { addTripCost, closeTrip, driverStep, markDelivered, markLoaded, markOnRo
 import type { DriverStep } from "@/lib/trip-dispatch";
 import type { ActionState } from "@/lib/action";
 import { isAccessDenied } from "@/lib/access-denied";
-import { Button, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
+import { Button, FormError, FormSuccess, IconButton, InfoButton, Input, Select } from "@/components/ui";
 
 const ISSUE_OPTS: [string, string][] = [
   ["BREAKDOWN", "Mashina buzildi"], ["TRAFFIC", "Tirbandlik / yo'l yopiq"], ["SITE_NOT_READY", "Obyekt tayyor emas"],
@@ -176,10 +176,10 @@ export function DriverDeliverForm({ tripId, loaded, unit, mixer, ledgerHref }: {
       {mixer && <label className="flex flex-col text-xs text-slate-500">Mikser aylantirildi<Input name="drumTurns" type="number" step="1" min="0" max="500" placeholder="marta" className="mt-1 h-9 w-28 text-sm" /></label>}
       <label className="flex min-w-[10rem] flex-1 flex-col text-xs text-slate-500">Izoh<Input name="comment" className="mt-1 h-9 text-sm" /></label>
       <Button size="sm" variant="success" disabled={pending || (state?.ok && !!ledgerHref)}><PackageCheck size={14} /> {pending ? "Saqlanmoqda…" : "Yetkazdim"}</Button>
+      {ledgerHref && <InfoButton title="Yetkazdim" className="mb-1.5">Saqlangach Hisob varag&apos;i ochiladi: km, baraban soati, zapravka, xarajat va haydovchi haqini shu yerda yozasiz.</InfoButton>}
       <div className="w-full">
         <FormError error={state?.error} />
-        {state?.ok && ledgerHref ? <FormSuccess text="Yetkazildi — Hisob varag'i ochilmoqda…" />
-          : ledgerHref && <p className="text-xs text-slate-500">Saqlangach Hisob varag&apos;i ochiladi: km, baraban soati, zapravka, xarajat va haydovchi haqini shu yerda yozasiz.</p>}
+        {state?.ok && ledgerHref && <FormSuccess text="Yetkazildi — Hisob varag'i ochilmoqda…" />}
       </div>
     </form>
   );

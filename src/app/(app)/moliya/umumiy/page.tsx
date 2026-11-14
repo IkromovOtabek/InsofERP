@@ -51,7 +51,7 @@ export default async function MoliyaUmumiyPage({ searchParams }: { searchParams:
   return (
     <div>
       <PageHeader eyebrow="Moliya" title="Moliya — umumiy ko'rinish"
-        subtitle="Pul qoldiqlari, kirim-chiqim, qarzlar, kreditlar, ish haqi va to'lovlar bitta joyda. Logistika moliyasi alohida hisob — bu yerga kirmaydi." />
+        info="Pul qoldiqlari, kirim-chiqim, qarzlar, kreditlar, ish haqi va to'lovlar bitta joyda. Logistika moliyasi alohida hisob — bu yerga kirmaydi." />
       <DayRangeBar base={BASE} range={period} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -73,7 +73,7 @@ export default async function MoliyaUmumiyPage({ searchParams }: { searchParams:
       <Section title="Pul">
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <Card className="xl:col-span-2">
-            <CardHeader title="Kassa va bank hisoblari" description="Davr boshi + kirim − chiqim ± o'tkazma = davr oxiri. O'tkazma ustunida perekit va shu davrda kiritilgan boshlang'ich qoldiq." action={<More href={href("/payments")} />} />
+            <CardHeader title="Kassa va bank hisoblari" info="Davr boshi + kirim − chiqim ± o'tkazma = davr oxiri. O'tkazma ustunida perekit va shu davrda kiritilgan boshlang'ich qoldiq." action={<More href={href("/payments")} />} />
             <Table>
               <thead><tr><Th>Hisob</Th><Th right>Davr boshi</Th><Th right>Kirim</Th><Th right>Chiqim</Th><Th right>O&apos;tkazma ±</Th><Th right>Davr oxiri</Th></tr></thead>
               <tbody>

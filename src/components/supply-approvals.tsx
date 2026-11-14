@@ -35,7 +35,7 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
       <CardHeader
         icon={mode === "finance" ? Clock : ClipboardCheck}
         title={mode === "finance" ? `Ta'minot to'lovlari — tasdiq kutilmoqda: ${rows.length} ta` : `Ta'minot zayavkalari — tasdiqingizni kutmoqda: ${rows.length} ta`}
-        description={mode === "finance"
+        info={mode === "finance"
           ? "Sotuv bo'limi tasdiqlagan zayavkalar. Tasdiqlasangiz summa shu jurnalga chiqim bo'lib tushadi va snabjeniye sotib oladi."
           : "Snabjeniye narx qo'ygan zayavkalar. Tasdiqlasangiz Moliya bo'limiga (Kirim-Chiqim) tushadi."} />
       <div className="space-y-2">

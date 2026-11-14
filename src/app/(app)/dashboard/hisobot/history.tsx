@@ -12,7 +12,7 @@ type Row = Awaited<ReturnType<typeof reportHistory>>[number];
 export function ReportHistory({ rows, current, title = "Qayd etilgan hisobotlar" }: { rows: Row[]; current: string | null; title?: string }) {
   return (
     <Card padded={false}>
-      <div className="px-5 pt-5"><CardHeader icon={History} title={title} description="Saqlangan varaq o'zgarmaydi — keyin tuzatilgan raqamlar faqat yangi qayd etilgan nusxada ko'rinadi" /></div>
+      <div className="px-5 pt-5"><CardHeader icon={History} title={title} info="Saqlangan varaq o'zgarmaydi — keyin tuzatilgan raqamlar faqat yangi qayd etilgan nusxada ko'rinadi" /></div>
       <Table className="rounded-none border-0 shadow-none">
         <thead><tr><Th>Kun</Th><Th>Xulosa</Th><Th>Kim qayd etdi</Th><Th>Holat</Th></tr></thead>
         <tbody>

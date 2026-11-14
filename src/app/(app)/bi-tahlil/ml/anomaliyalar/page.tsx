@@ -8,7 +8,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   await requirePage("/bi-tahlil/ml/anomaliyalar");
   const { sp, range } = await biContext(searchParams);
   return (
-    <BiPage title="Anomaliyalar" subtitle="Qoida asosida aniqlangan shubhali holatlar — narx chetlanishi, ish vaqtidan tashqari to'lovlar, dublikat summalar, g'ayrioddiy hajmlar, inventarizatsiya farqlari." eyebrow="ML tahlil" tab="anomalies" range={range} period={false}>
+    <BiPage title="Anomaliyalar" info="Qoida asosida aniqlangan shubhali holatlar — narx chetlanishi, ish vaqtidan tashqari to'lovlar, dublikat summalar, g'ayrioddiy hajmlar, inventarizatsiya farqlari." eyebrow="ML tahlil" tab="anomalies" range={range} period={false}>
       <AnomaliesTab sp={sp} />
     </BiPage>
   );

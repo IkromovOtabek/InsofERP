@@ -229,10 +229,10 @@ export async function ProductionHome({ s }: { s: Session }) {
 
       {/* ── Ishlab chiqarilishi kerak (sex xodimlari kartasi o'rniga) ── */}
       {(
-        <Section id="ishlab-chiqarish-kerak" title="Ishlab chiqarilishi kerak" action={more("/production", "Matritsa")}>
+        <Section id="ishlab-chiqarish-kerak" title="Ishlab chiqarilishi kerak"
+          info="Tasdiqlangan zayavkalardagi jo'natilmagan qism − skladdagi qoldiq (beton sexga tushmaydi — u to'g'ridan-to'g'ri logistikaga)." action={more("/production", "Matritsa")}>
           <MobileFold label="Ishlab chiqarish kerak jadvali">
             <Card padded={false}>
-              <p className="px-5 pt-4 text-xs text-slate-500">Tasdiqlangan zayavkalardagi jo&apos;natilmagan qism − skladdagi qoldiq (beton sexga tushmaydi — u to&apos;g&apos;ridan-to&apos;g&apos;ri logistikaga).</p>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[520px] text-sm">
                   <thead><tr><Th>Mahsulot</Th><Th right>Zayavkalarda</Th><Th right>Skladda</Th><Th right>Ishlab chiqarish kerak</Th></tr></thead>

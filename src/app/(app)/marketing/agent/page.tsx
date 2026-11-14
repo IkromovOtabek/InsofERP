@@ -28,7 +28,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader back={{ href: "/marketing/studiya", label: "AI studiya" }} title="AI agentlar" subtitle="Har agent o'z ishiga ixtisoslashgan: strategiya, Reels va video, tahlil, target, raqobatchilar. Arizalar, kontent reja, statistika va target ma'lumotiga tayanadi." />
+      <PageHeader back={{ href: "/marketing/studiya", label: "AI studiya" }} title="AI agentlar" info="Har agent o'z ishiga ixtisoslashgan: strategiya, Reels va video, tahlil, target, raqobatchilar. Arizalar, kontent reja, statistika va target ma'lumotiga tayanadi." />
       <Tabs current={active ? "" : agent} items={(Object.keys(AGENTS) as AgentKey[]).map((k) => ({ key: k, label: AGENTS[k].label, href: `/marketing/agent?a=${k}`, icon: AGENT_ICON[k] }))} />
       <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
         <aside className="order-2 space-y-2 lg:order-1">

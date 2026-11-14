@@ -7,7 +7,7 @@ import { hoursShort, monthTitle } from "@/lib/davomat";
 import { breakdownOf, canPayroll, runWithLines } from "@/lib/hr/payroll";
 import { payAccounts } from "@/lib/mechanic-requests";
 import { PAY_TYPE_LABEL, PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
-import { Badge, Callout, Card, CardHeader, PageHeader, StatCard, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, InfoButton, PageHeader, StatCard, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
 import { PayForm, RunActions, UnpayForm, type UnpayGroup } from "../forms";
 
 const STEPS = [{ key: "DRAFT", label: "Hisoblandi" }, { key: "SUBMITTED", label: "Direktor tasdig'ida" }, { key: "APPROVED", label: "Tasdiqlandi" }, { key: "PAID", label: "To'landi" }];
@@ -67,7 +67,7 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
       {canPay && unpaid.length > 0 && (
         <Card>
           <div id="tolash" className="scroll-mt-20" />
-          <CardHeader title="Kassadan to'lash" description="Har to'lov Kirim-Chiqimda «Ish haqi» chiqimi bo'lib yoziladi; kassa qoldig'i tekshiriladi" />
+          <CardHeader title="Kassadan to'lash" info="Har to'lov Kirim-Chiqimda «Ish haqi» chiqimi bo'lib yoziladi; kassa qoldig'i tekshiriladi" />
           <PayForm id={run.id} accounts={accounts} lines={unpaid.map((l) => ({ id: l.id, fullName: l.employee.fullName, net: n(l.net) }))} />
         </Card>
       )}
@@ -132,7 +132,15 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
           </tbody>
         </Table>
       </Card>
-      {final && <p className="text-xs text-slate-500">INPS (shaxsiy jamg&apos;arib boriladigan pensiya) {money(sum("inps"))} — JShDS ichidan o&apos;tkaziladi. Ijtimoiy soliq {money(sum("employerTax"))} — ish beruvchi hisobidan.</p>}
+      {final && (
+        <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+          INPS {money(sum("inps"))} · Ijtimoiy soliq {money(sum("employerTax"))}
+          <InfoButton title="INPS va ijtimoiy soliq">
+            <p>INPS (shaxsiy jamg&apos;arib boriladigan pensiya) — JShDS ichidan o&apos;tkaziladi.</p>
+            <p>Ijtimoiy soliq — ish beruvchi hisobidan.</p>
+          </InfoButton>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,7 +25,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const initialMessages: StoredMsg[] = rawMsgs ? rawMsgs.map(decode) : [];
 
   return (
-    <BiPage title="AI Chat" subtitle="Javoblar dashboard ma'lumotlariga asoslanadi — tanlangan davr (yuqorida) savollarga qo'llanadi." eyebrow="Insof AI" tab="chat" range={range}>
+    <BiPage title="AI Chat" info="Javoblar dashboard ma'lumotlariga asoslanadi — tanlangan davr (yuqorida) savollarga qo'llanadi." eyebrow="Insof AI" tab="chat" range={range}>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="Savollarim · bugun" value={String(u.today)} icon={MessageSquare} tone="info" hint={`bu oy ${u.month} · shundan Telegram ${u.telegram.month}`} />
         <Kpi label="Suhbatlar" value={String(u.chats)} icon={MessagesSquare} tone="violet" hint="saqlangan suhbatlaringiz" />

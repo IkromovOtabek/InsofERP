@@ -7,7 +7,7 @@ import type { ActivityRow } from "@/lib/activity";
 export function ActivityLog({ rows, className }: { rows: ActivityRow[]; className?: string }) {
   return (
     <Card className={className}>
-      <CardHeader icon={History} title="Amallar tarixi" description="Kim, qachon va nima qildi" />
+      <CardHeader icon={History} title="Amallar tarixi" info="Kim, qachon va nima qildi" />
       {rows.length === 0 ? (
         <p className="text-sm text-slate-500">Hali amal yozilmagan</p>
       ) : (

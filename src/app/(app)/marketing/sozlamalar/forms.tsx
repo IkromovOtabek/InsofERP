@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { CheckCircle2, Link2, MapPin, Play, Plus, RefreshCw, Search, Send, Star, Trash2, Unplug } from "lucide-react";
-import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
+import { Button, Checkbox, Field, FormError, FormSuccess, InfoButton, Input, Select, Textarea } from "@/components/ui";
 import {
   accountAction, addCompetitor, connectMetaManual, connectTelegramAction, findPlaces, removeCompetitor, runAutoAgentNow, saveAds, saveAutoAgents, saveBrand, saveLocations, type Place,
 } from "./actions";
@@ -44,9 +44,9 @@ export function MetaConnect({ ready }: { ready: boolean }) {
       <form action="/api/marketing/oauth/meta" method="get">
         <Button disabled={!ready}><Link2 size={16} /> Instagram va Facebook&apos;ni Meta orqali ulash</Button>
       </form>
-      <p className="text-xs text-slate-500">
-        {ready ? "Meta oynasida sahifa va Instagram profilini tanlab, ruxsat bering." : "Meta ilovasi hali sozlanmagan — hozircha tokenni qo'lda kiriting."}
-      </p>
+      {ready
+        ? <InfoButton title="Meta orqali ulash">Meta oynasida sahifa va Instagram profilini tanlab, ruxsat bering.</InfoButton>
+        : <p className="text-xs text-slate-500">Meta ilovasi hali sozlanmagan — hozircha tokenni qo&apos;lda kiriting.</p>}
     </div>
   );
 }
@@ -55,7 +55,7 @@ export function MetaManualForm() {
   const [state, action, pending] = useActionState(connectMetaManual, undefined);
   return (
     <form action={action} className="space-y-3">
-      <Field label="Meta tokeni" hint="Meta Business Suite → Sozlamalar → Tizim foydalanuvchilari → Token yaratish (instagram_content_publish, instagram_manage_insights, pages_manage_posts ruxsatlari bilan)">
+      <Field label="Meta tokeni" help={<InfoButton title="Meta tokeni">Meta Business Suite → Sozlamalar → Tizim foydalanuvchilari → Token yaratish (instagram_content_publish, instagram_manage_insights, pages_manage_posts ruxsatlari bilan)</InfoButton>}>
         <Input name="token" type="password" autoComplete="off" required />
       </Field>
       <Button size="sm" disabled={pending}>{pending ? "Tekshirilmoqda…" : "Ulash"}</Button>
@@ -70,10 +70,9 @@ export function TelegramForm() {
   return (
     <form action={action} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Kanal" hint="@kanal_nomi yoki -100… (yopiq kanal)"><Input name="chat" placeholder="@insof_beton" required /></Field>
+        <Field label="Kanal" hint="@kanal_nomi yoki -100… (yopiq kanal)" help={<InfoButton title="Kanal">Botni kanalga administrator qilib qo&apos;shing va «Xabar joylash» huquqini bering.</InfoButton>}><Input name="chat" placeholder="@insof_beton" required /></Field>
         <Field label="Bot tokeni" hint="Bo'sh qoldirilsa — korxonaning asosiy boti"><Input name="token" type="password" autoComplete="off" /></Field>
       </div>
-      <p className="text-xs text-slate-500">Botni kanalga administrator qilib qo&apos;shing va «Xabar joylash» huquqini bering.</p>
       <Button size="sm" disabled={pending}>{pending ? "Tekshirilmoqda…" : "Kanalni ulash"}</Button>
       <FormError error={state?.error} />
       <FormSuccess text={state?.ok ? state.note : undefined} />
@@ -86,13 +85,13 @@ export function BrandForm({ v, disabled }: { v: { brandAbout: string; brandTone:
   return (
     <form action={action} className="space-y-3">
       <fieldset disabled={disabled} className="space-y-3">
-        <Field label="Zavod haqida" hint="Nima ishlab chiqarasiz, afzalliklar, xizmat hududi, yetkazib berish, sertifikatlar — faqat haqiqiy faktlar">
+        <Field label="Zavod haqida" help={<InfoButton title="Zavod haqida">Nima ishlab chiqarasiz, afzalliklar, xizmat hududi, yetkazib berish, sertifikatlar — faqat haqiqiy faktlar</InfoButton>}>
           <Textarea name="brandAbout" rows={5} defaultValue={v.brandAbout} maxLength={4000} />
         </Field>
-        <Field label="Ohang" hint="Masalan: ishonchli, aniq raqamlar bilan, ortiqcha reklamasiz, quruvchi tilida">
+        <Field label="Ohang" help={<InfoButton title="Ohang">Masalan: ishonchli, aniq raqamlar bilan, ortiqcha reklamasiz, quruvchi tilida</InfoButton>}>
           <Input name="brandTone" defaultValue={v.brandTone} maxLength={1000} />
         </Field>
-        <Field label="Maqsadli auditoriya" hint="Kimlar sotib oladi: prorablar, xususiy uy quruvchilar, qurilish kompaniyalari…">
+        <Field label="Maqsadli auditoriya" help={<InfoButton title="Maqsadli auditoriya">Kimlar sotib oladi: prorablar, xususiy uy quruvchilar, qurilish kompaniyalari…</InfoButton>}>
           <Textarea name="audience" rows={3} defaultValue={v.audience} maxLength={2000} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -225,19 +224,23 @@ export function AutoAgentsForm({ v, people, disabled }: {
             <Checkbox name="autoWeekly" label="Haftalik hisobot va reja — har dushanba 09:00" defaultChecked={v.autoWeekly} />
             <Checkbox name="autoDaily" label="Kunlik tekshiruv — har kuni 08:30" defaultChecked={v.autoDaily} />
           </div>
-          <Field label="Haftalik g'oyalardan kontent rejaga" hint="«G'oya» holatida qo'shiladi — studiyada bir bosishda video yoki post qilinadi">
+          <Field label="Haftalik g'oyalardan kontent rejaga" help={<InfoButton title="Haftalik g'oyalardan kontent rejaga">«G&apos;oya» holatida qo&apos;shiladi — studiyada bir bosishda video yoki post qilinadi</InfoButton>}>
             <Select name="autoDrafts" defaultValue={String(v.autoDrafts)}>
               {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n === 0 ? "Qo'shilmasin" : `${n} ta g'oya`}</option>)}
             </Select>
           </Field>
           <div>
-            <span className="mb-1.5 block text-[13px] font-medium text-slate-700">Kimga yuboriladi</span>
+            <span className="mb-1.5 flex items-center gap-1 text-[13px] font-medium text-slate-700">Kimga yuboriladi
+              <InfoButton title="Kimga yuboriladi">
+                <p>Hech kim belgilanmasa — barcha direktorlarga.</p>
+                <p>Telegram ulanmagan xodim xabarni faqat ilovada ko&apos;radi (Mening hisobim → Telegram).</p>
+              </InfoButton>
+            </span>
             <div className="grid gap-1.5 sm:grid-cols-2">
               {people.map((p) => (
                 <Checkbox key={p.id} name="recipients[]" value={p.id} defaultChecked={v.recipients.includes(p.id)} label={`${p.name} · ${p.role}${p.telegram ? "" : " (Telegram ulanmagan)"}`} />
               ))}
             </div>
-            <p className="mt-1 text-xs text-slate-500">Hech kim belgilanmasa — barcha direktorlarga. Telegram ulanmagan xodim xabarni faqat ilovada ko&apos;radi (Mening hisobim → Telegram).</p>
           </div>
         </fieldset>
         {!disabled && <Button size="sm" disabled={pending}>Saqlash</Button>}

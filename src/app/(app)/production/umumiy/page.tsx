@@ -52,7 +52,7 @@ export default async function ProductionOverviewPage({ searchParams }: { searchP
     <div className="min-w-0">
       <PageHeader back={{ href: "/production", label: "Ishlab chiqarish" }} eyebrow="Ishlab chiqarish"
         title="Ishlab chiqarish — umumiy ko'rinish"
-        subtitle="Bo'limning muhim raqamlari bir joyda: bugungi plan, davrdagi ishlab chiqarish, brigadalar, brak, xomashyo va hovli. Har blokdan to'liq sahifaga o'tiladi." />
+        info="Bo'limning muhim raqamlari bir joyda: bugungi plan, davrdagi ishlab chiqarish, brigadalar, brak, xomashyo va hovli. Har blokdan to'liq sahifaga o'tiladi." />
       <DayRangeBar base={BASE} range={period} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">

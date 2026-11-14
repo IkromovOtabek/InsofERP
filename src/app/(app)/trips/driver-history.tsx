@@ -53,7 +53,7 @@ export async function DriverList() {
   return (
     <Card padded={false}>
       <div className="px-5 pt-5">
-        <CardHeader title="Haydovchilar" description="Haydovchi ustiga bosing — uning barcha nakladnoylari ochiladi." icon={Users} />
+        <CardHeader title="Haydovchilar" info="Haydovchi ustiga bosing — uning barcha nakladnoylari ochiladi." icon={Users} />
       </div>
       <Table>
         <thead>
@@ -126,7 +126,7 @@ export async function DriverTrips({ driverId }: { driverId: string }) {
 
       <Card padded={false}>
         <div id="nakladnoylar" className="scroll-mt-20 px-5 pt-5">
-          <CardHeader title="Nakladnoylar" description={`Yetkazilgan jami ${qty(m3)} m³. Eng yangisi tepada.`} icon={Route} />
+          <CardHeader title="Nakladnoylar" description={`Yetkazilgan jami ${qty(m3)} m³`} info="Eng yangisi tepada." icon={Route} />
         </div>
         <Table>
           <thead>

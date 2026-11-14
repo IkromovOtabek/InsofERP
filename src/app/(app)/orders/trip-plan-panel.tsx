@@ -69,6 +69,10 @@ export function TripPlanPanel({ rows, km, kmSource, pump, day, onApplyTrips }: {
   return (
     <Card>
       <CardHeader icon={Truck} title="Reys va transport hisobi"
+        info={<>
+          <p>Taxminiy reja: o&apos;rtacha tezlik {PLAN.speedLoaded}/{PLAN.speedEmpty} km/soat, yuklash {PLAN.loadMin} daq, nasos {PLAN.pumpRate}–{PLAN.pumpMax} m³/soat, yollanma mikser {PLAN.hiredMixerM3} m³.</p>
+          <p>Mashina sig&apos;imi — Logistika → Transport kartasidagi «sig&apos;im» (bir reysdagi haqiqiy yuk).</p>
+        </>}
         description={`${day ? fmtDate(parseDay(day)) : "Sana aniq emas — bandlik hisobga olinmadi"} · masofa ${kmText}${view ? ` · smena ${dur(view.shiftMin)}` : ""}`}
         action={totalTrips > 0 ? <Button type="button" size="sm" variant="secondary" onClick={() => onApplyTrips(totalTrips)}>Dastavkaga {totalTrips} reys qo&apos;yish</Button> : undefined} />
 
@@ -129,11 +133,6 @@ export function TripPlanPanel({ rows, km, kmSource, pump, day, onApplyTrips }: {
           <Warns list={piece.warns} />
         </section>
       )}
-
-      <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
-        Taxminiy reja: o&apos;rtacha tezlik {PLAN.speedLoaded}/{PLAN.speedEmpty} km/soat, yuklash {PLAN.loadMin} daq, nasos {PLAN.pumpRate}–{PLAN.pumpMax} m³/soat, yollanma mikser {PLAN.hiredMixerM3} m³.
-        Mashina sig&apos;imi — Logistika → Transport kartasidagi «sig&apos;im» (bir reysdagi haqiqiy yuk).
-      </p>
     </Card>
   );
 }

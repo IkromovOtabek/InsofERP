@@ -31,7 +31,8 @@ async function AgentCabinet({ userId, fullName }: { userId: string; fullName: st
 
   return (
     <div>
-      <PageHeader title="Mening mijozlarim" subtitle={fullName} />
+      <PageHeader title="Mening mijozlarim" subtitle={fullName}
+        info={<p>Savol bo&apos;lsa sotuv bo&apos;limiga murojaat qiling. <Link href="/qollanma" className="underline">Qo&apos;llanma</Link></p>} />
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3 [&>*]:min-w-0">
         <StatCard label="Olib kelgan mijozlar" value={`${customers.length} ta`} hint={`${activeCustomers.length} faol`} icon={Users} tone="brand" href="#mijozlar" />
@@ -40,12 +41,12 @@ async function AgentCabinet({ userId, fullName }: { userId: string; fullName: st
       </div>
 
       <Card className="mb-5">
-        <CardHeader icon={UserPlus} title="Yangi zayavka" description="Faqat o'z mijozingizga. Zayavka qoralama bo'lib tushadi — sotuv bo'limi qabul qiladi." />
+        <CardHeader icon={UserPlus} title="Yangi zayavka" info="Faqat o'z mijozingizga. Zayavka qoralama bo'lib tushadi — sotuv bo'limi qabul qiladi." />
         <div className="mt-3"><AgentOrderForm customers={activeCustomers.map((c) => ({ id: c.id, name: c.name }))} products={products.map((p) => ({ id: p.id, name: p.name, unit: p.unit, price: Number(p.price) }))} /></div>
       </Card>
 
       <Card padded={false}>
-        <div id="mijozlar" className="scroll-mt-20 p-5"><CardHeader icon={Users} title="Mijozlar va qarz" description="Har mijozning zavoddan joriy qarzi" /></div>
+        <div id="mijozlar" className="scroll-mt-20 p-5"><CardHeader icon={Users} title="Mijozlar va qarz" info="Har mijozning zavoddan joriy qarzi" /></div>
         <Table>
           <thead><tr><Th>Mijoz</Th><Th>Telefon</Th><Th right>Qarz</Th><Th right>Limitda qolgan</Th><Th>Holat</Th></tr></thead>
           <tbody>
@@ -67,9 +68,6 @@ async function AgentCabinet({ userId, fullName }: { userId: string; fullName: st
         </Table>
       </Card>
 
-      <p className="mt-3 text-xs text-slate-500">
-        Savol bo&apos;lsa sotuv bo&apos;limiga murojaat qiling. <Link href="/qollanma" className="underline">Qo&apos;llanma</Link>
-      </p>
     </div>
   );
 }
@@ -94,7 +92,7 @@ async function AgentManage() {
 
   return (
     <div>
-      <PageHeader title="Sotuv agentlari" subtitle="Mijozni agentga biriktiring — agent o'z mijozlariga zayavka ochadi va qarzini ko'radi" />
+      <PageHeader title="Sotuv agentlari" info="Mijozni agentga biriktiring — agent o'z mijozlariga zayavka ochadi va qarzini ko'radi" />
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3 [&>*]:min-w-0">
         <StatCard label="Agentlar" value={`${agents.length} ta`} icon={Users} tone="brand" href="#agentlar" />
@@ -107,7 +105,7 @@ async function AgentManage() {
       </Card>
 
       <Card padded={false}>
-        <div id="agentlar" className="scroll-mt-20 p-5"><CardHeader icon={Users} title="Agentlar bo'yicha" description="Har agentning mijozlari va umumiy qarzi" /></div>
+        <div id="agentlar" className="scroll-mt-20 p-5"><CardHeader icon={Users} title="Agentlar bo'yicha" info="Har agentning mijozlari va umumiy qarzi" /></div>
         <Table>
           <thead><tr><Th>Agent</Th><Th right>Mijozlar</Th><Th right>Umumiy qarz</Th></tr></thead>
           <tbody>

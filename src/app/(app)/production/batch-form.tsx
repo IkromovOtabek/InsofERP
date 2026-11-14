@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { createBatch } from "./actions";
-import { Button, Callout, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
+import { Button, Callout, Field, FormError, InfoButton, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
 import { ProductSelect } from "@/components/product-select";
 import type { CatalogGroup, CatalogProduct } from "@/components/product-picker";
 
@@ -42,7 +42,7 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
   return (
     <form action={action} className="max-w-xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
-      <Field label="Zayavka" hint="Ixtiyoriy — zayavkasiz zames (sklad uchun) ham bo'ladi. Ko'p mahsulotli zayavkaning har bir beton qatori alohida">
+      <Field label="Zayavka" help={<InfoButton title="Zayavka">Ixtiyoriy — zayavkasiz zames (sklad uchun) ham bo&apos;ladi. Ko&apos;p mahsulotli zayavkaning har bir beton qatori alohida</InfoButton>}>
         <input type="hidden" name="orderId" value={order?.id ?? ""} />
         <Select value={orderKey} onChange={(e) => pickOrder(e.target.value)}>
           <option value="">— zayavkasiz —</option>

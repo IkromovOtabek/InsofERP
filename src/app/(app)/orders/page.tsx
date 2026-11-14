@@ -79,7 +79,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     <div>
       <PageHeader
         title="Zayavkalar"
-        subtitle="Zayavka ochilgandan yopilguncha shu yerda. «Ochiq» — hali yetkazilmaganlar: qoralama, tasdiqlangan, ishlab chiqarishdagi. Yetkazilgan va yopilganlar — o'z tabida. Bekor qilingan zayavka tizimdan o'chiriladi."
+        info="Zayavka ochilgandan yopilguncha shu yerda. «Ochiq» — hali yetkazilmaganlar: qoralama, tasdiqlangan, ishlab chiqarishdagi. Yetkazilgan va yopilganlar — o'z tabida. Bekor qilingan zayavka tizimdan o'chiriladi."
         action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton>{pathAllowed("/sales/realizatsiya", s.role, s.perms) && <LinkButton href="/sales/realizatsiya" variant="secondary"><ScrollText size={16} /> Realizatsiya</LinkButton>}{pathAllowed("/sales", s.role, s.perms) && <LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton>}{can("import") && <LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>}{can("create") && <LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton>}</div>}
       />
       {/* Excel importidan keyin: nechta zayavka ochilgani — hammasi qoralama, quyidagi ro'yxatda turadi */}

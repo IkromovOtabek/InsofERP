@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { CalendarRange, Clock, FileSpreadsheet, Gauge, Save, X, Zap } from "lucide-react";
 import { qty as q, fmtNum, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { Button, Field, FormError, FormSuccess, Input } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, InfoButton, Input } from "@/components/ui";
 import { saveDailyCapacity } from "./actions";
 
 /** m3 / pcs — beton hajmi va dona mahsulot (kunlik limit uchun); vol — zayavkaning to'liq hajmi birligi bilan. */
@@ -85,8 +85,12 @@ export function CalendarView({ cells, capacity, capacityPcs, canEdit }: { cells:
     <div className="mb-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-(--shadow-card)">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="inline-flex items-center gap-2 text-[15px] font-semibold text-slate-900"><CalendarRange size={16} className="text-slate-400" /> Haftalik ish tartibi</h2>
-          <p className="text-xs text-slate-500">Kunlik limit: <b className="font-semibold text-slate-700">{limitText}</b>. Kunni bosing — zayavkalar shu yerda ochiladi; 2 marta bosing — kunlik realizatsiya varag&apos;i (Excel ko&apos;rinishi).</p>
+          <h2 className="inline-flex items-center gap-2 text-[15px] font-semibold text-slate-900"><CalendarRange size={16} className="text-slate-400" /> Haftalik ish tartibi
+            <InfoButton title="Haftalik ish tartibi">
+              <p>Kunni bosing — zayavkalar shu yerda ochiladi; 2 marta bosing — kunlik realizatsiya varag&apos;i (Excel ko&apos;rinishi).</p>
+            </InfoButton>
+          </h2>
+          <p className="text-xs text-slate-500">Kunlik limit: <b className="font-semibold text-slate-700">{limitText}</b></p>
         </div>
         {canEdit && !editing && (
           <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}><Gauge size={14} /> Kunlik limit</Button>

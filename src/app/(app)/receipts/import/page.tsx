@@ -17,7 +17,7 @@ export default async function ReceiptImport() {
   ]);
   return (
     <div>
-      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title="Excel yoki kamera orqali kirim" subtitle="Nakladnoyni kamera bilan suratga oling yoki Excel faylni yuklang — qatorlar jadvalga o'zi tushadi, tekshirib tasdiqlaysiz. Har qator sklad qoldig'iga qo'shiladi. QQS to'lovchisi yetkazuvchida 12% QQS hisoblanadi — to'lanadigan jami QQS bilan." />
+      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title="Excel yoki kamera orqali kirim" info="Nakladnoyni kamera bilan suratga oling yoki Excel faylni yuklang — qatorlar jadvalga o'zi tushadi, tekshirib tasdiqlaysiz. Har qator sklad qoldig'iga qo'shiladi. QQS to'lovchisi yetkazuvchida 12% QQS hisoblanadi — to'lanadigan jami QQS bilan." />
       <Card className="max-w-6xl">
         <ExcelImport
           action={importReceiptFromExcel}

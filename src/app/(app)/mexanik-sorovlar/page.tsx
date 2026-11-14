@@ -21,7 +21,7 @@ export default async function MexanikSorovlarPage({ searchParams }: { searchPara
   return (
     <div>
       <PageHeader title={own ? "Mening so'rovlarim" : "Mexanik so'rovlari"}
-        subtitle="Mexanik Insof ECO ilovasidan pul so'raydi → ish boshqaruvchi tasdiqlaydi → pul beriladi: zavod so'rovini kassa, transport va reys haqini ish boshqaruvchi (zavod yoki logistika hisobidan)." />
+        info="Mexanik Insof ECO ilovasidan pul so'raydi → ish boshqaruvchi tasdiqlaydi → pul beriladi: zavod so'rovini kassa, transport va reys haqini ish boshqaruvchi (zavod yoki logistika hisobidan)." />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Tasdiq kutmoqda" value={`${c.counts.NEW} ta`} hint={c.counts.NEW ? money(c.sums.NEW) : undefined} icon={Clock} tone={c.counts.NEW ? "warning" : "default"} href="/mexanik-sorovlar?tab=NEW" />

@@ -9,7 +9,7 @@ import { pathAllowed } from "@/lib/nav";
 import { eco, ecoEnabled, ecoUrl, normalizePhone, type EcoDriver, type EcoDelivery, type EcoVehicle, type EcoMileage } from "@/lib/eco/client";
 import { ECO_STATUS } from "@/lib/eco/labels";
 import { qty, dateTime } from "@/lib/format";
-import { BackLink, Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { BackLink, Badge, Callout, Card, CardHeader, Empty, InfoButton, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ApproveDriverButton, ImportDriverButton, LinkAllButton, LinkDriverButton, ResendTripsButton, SyncAllButton, SyncVehiclesButton } from "./buttons";
 import { VehicleStatusBadge, VehicleStatusForm } from "./vehicle-status-form";
 import { TripStatusBadge } from "../trips/status";
@@ -60,8 +60,7 @@ export default async function DriversPage() {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <BackLink href="/dashboard" label="Bosh sahifa" className="mb-3" />
-          <h1 className="text-2xl font-semibold tracking-tight">Haydovchilar (Insof ECO)</h1>
-          <p className="mt-1 text-sm text-slate-500">Nakladnoy yaratilganda haydovchi telefoniga tushadi; u qabul qiladi, yo'lda GPS yuboradi, obyektda mijoz imzolaydi — holat ERP'ga qaytadi.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Haydovchilar (Insof ECO) <InfoButton title="Haydovchilar (Insof ECO)" size="md">Nakladnoy yaratilganda haydovchi telefoniga tushadi; u qabul qiladi, yo&apos;lda GPS yuboradi, obyektda mijoz imzolaydi — holat ERP&apos;ga qaytadi.</InfoButton></h1>
         </div>
         {enabled && canManage && <div className="flex flex-wrap gap-2"><SyncAllButton /><SyncVehiclesButton /><ResendTripsButton /></div>}
       </div>
@@ -94,7 +93,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
 
       <Card className="mt-5" padded={false}>
         <div id="erp-haydovchilar" className="flex min-w-0 scroll-mt-20 flex-wrap items-center justify-between gap-2 px-5 pt-5">
-          <CardHeader title="ERP haydovchilari" description="Xodimlar sahifasidagi 'Haydovchi' lavozimli xodimlar. Ulash uchun telefon +998… formatida bo'lsin." icon={Smartphone} />
+          <CardHeader title="ERP haydovchilari" info="Xodimlar sahifasidagi 'Haydovchi' lavozimli xodimlar. Ulash uchun telefon +998… formatida bo'lsin." icon={Smartphone} />
           {enabled && canManage && employees.some((e) => e.isActive && !e.ecoUserId) && <LinkAllButton />}
         </div>
         <Table>
@@ -144,7 +143,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
 
       {enabled && unknownEco.length > 0 && (
         <Card className="mt-5" padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="ECO'da ro'yxatdan o'tgan, ERP'da yo'q" description="Haydovchi ilovada zavodni tanlab ro'yxatdan o'tgan. Qo'shsangiz xodimlar ro'yxatiga tushadi va reys berish mumkin bo'ladi. Odatda bu avtomatik bo'ladi — bu yerda faqat webhook yetib bormaganlari qoladi." icon={Users} /></div>
+          <div className="px-5 pt-5"><CardHeader title="ECO'da ro'yxatdan o'tgan, ERP'da yo'q" info="Haydovchi ilovada zavodni tanlab ro'yxatdan o'tgan. Qo'shsangiz xodimlar ro'yxatiga tushadi va reys berish mumkin bo'ladi. Odatda bu avtomatik bo'ladi — bu yerda faqat webhook yetib bormaganlari qoladi." icon={Users} /></div>
           <Table>
             <thead><tr><Th>F.I.O.</Th><Th>Telefon</Th><Th>ECO holati</Th><Th></Th></tr></thead>
             <tbody>
@@ -162,7 +161,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
 
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card padded={false}>
-          <div id="texnika" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Texnika" description="Davlat raqami bo'yicha moslanadi. Reys yuborilganda mashina ECO'da avtomatik yaratiladi." icon={Truck} /></div>
+          <div id="texnika" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Texnika" info="Davlat raqami bo'yicha moslanadi. Reys yuborilganda mashina ECO'da avtomatik yaratiladi." icon={Truck} /></div>
           <Table>
             <thead><tr><Th>Raqam</Th><Th right>Sig'im</Th><Th>Holat</Th><Th>ECO</Th></tr></thead>
             <tbody>
@@ -178,7 +177,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
         </Card>
 
         <Card padded={false}>
-          <div id="eco-reyslar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Faol reyslar — ECO holati" description="Haydovchi ilovasidagi jonli holat. Xatolik bo'lsa reys sahifasida 'ECO'ga yuborish'." icon={Route} /></div>
+          <div id="eco-reyslar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Faol reyslar — ECO holati" info="Haydovchi ilovasidagi jonli holat. Xatolik bo'lsa reys sahifasida 'ECO'ga yuborish'." icon={Route} /></div>
           <Table>
             <thead><tr><Th>Nakladnoy</Th><Th>Haydovchi</Th><Th>ERP</Th><Th>ECO</Th><Th>Sinxron</Th></tr></thead>
             <tbody>

@@ -28,7 +28,7 @@ export default async function DistributePage({ searchParams }: { searchParams: P
   return (
     <div>
       <PageHeader back={{ href: "/stock?bolim=hovli#hovli", label: "Hovli" }} title="Brigadalarga ajratish"
-        subtitle="Hovlidagi tayyor mahsulotni brigada omborlariga bo'lish: qayerdan (odatda umumiy hovli) va qaysi brigadaga, keyin har mahsulotga nechta. Sklad jami o'zgarmaydi — faqat qaysi brigada javobgarligida turgani." />
+        info="Hovlidagi tayyor mahsulotni brigada omborlariga bo'lish: qayerdan (odatda umumiy hovli) va qaysi brigadaga, keyin har mahsulotga nechta. Sklad jami o'zgarmaydi — faqat qaysi brigada javobgarligida turgani." />
       <DistributeForm
         clientToken={crypto.randomUUID()}
         balances={balances}

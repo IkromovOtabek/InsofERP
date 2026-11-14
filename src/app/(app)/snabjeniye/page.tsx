@@ -20,7 +20,7 @@ export default async function SnabjeniyePage({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <PageHeader title="Snabjeniye" subtitle="Skladdan kelgan kerakli mahsulotlar jadvaliga narx qo'yasiz, tasdiqdan o'tganini sotib olasiz va kelgan molni tekshirib qabul qilasiz."
+      <PageHeader title="Snabjeniye" info="Skladdan kelgan kerakli mahsulotlar jadvaliga narx qo'yasiz, tasdiqdan o'tganini sotib olasiz va kelgan molni tekshirib qabul qilasiz."
         action={
           <div className="flex flex-wrap gap-2">
             {canDo(s, "stock", "shipment") && <LinkButton href="/jonatma/new"><Send size={16} /> Skladga jo&apos;natish</LinkButton>}

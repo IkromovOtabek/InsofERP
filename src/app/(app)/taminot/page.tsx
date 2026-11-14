@@ -20,7 +20,7 @@ export default async function TaminotPage({ searchParams }: { searchParams: Prom
   return (
     <div>
       <PageHeader title="Ta'minot zayavkalari"
-        subtitle="Sklad so'ragan mahsulotlar snabjeniye narxi bilan shu yerga tushadi. Tasdiqlansa — Moliya bo'limiga (Kirim-Chiqim) o'tadi."
+        info="Sklad so'ragan mahsulotlar snabjeniye narxi bilan shu yerga tushadi. Tasdiqlansa — Moliya bo'limiga (Kirim-Chiqim) o'tadi."
         action={canAsk ? <LinkButton href="/stock/supply/new"><Plus size={16} /> Kerakli mahsulotlar</LinkButton> : undefined} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">

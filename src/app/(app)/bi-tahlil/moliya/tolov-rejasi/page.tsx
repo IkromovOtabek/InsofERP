@@ -35,7 +35,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
   const days = settings?.supplierPaymentDays ?? 7;
 
   return (
-    <BiPage title="Moliya" subtitle="To'lov rejasi — sozlamalar (sariq kataklarni o'zingiz o'zgartirasiz), to'lov kalendari shundan hisoblanadi" tab="finance" range={range} period={false}>
+    <BiPage title="Moliya" subtitle="To'lov rejasi — sozlamalar" info="To'lov rejasi — sozlamalar (sariq kataklarni o'zingiz o'zgartirasiz), to'lov kalendari shundan hisoblanadi" tab="finance" range={range} period={false}>
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatCard label="Doimiy to'lovlar, oyiga" value={moneyShort(monthlyFixed)} hint={`${active.length} ta faol${stopped ? ` · ${stopped} ta to'xtatilgan` : ""}`} icon={Repeat} tone="brand" />
         <StatCard label="Kredit va soliqlar, oyiga" value={moneyShort(creditTax)} hint={monthlyFixed > 0 ? `doimiy to'lovlarning ${pct((creditTax / monthlyFixed) * 100)}` : "doimiy to'lov kiritilmagan"} icon={Landmark} />

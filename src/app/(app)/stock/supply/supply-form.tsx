@@ -3,7 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { ClipboardList, MoreHorizontal, Plus, TriangleAlert, X } from "lucide-react";
 import { createRequest } from "@/lib/supply-actions";
-import { Button, Field, FormError, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, InfoButton, Input, Select } from "@/components/ui";
 import { MaterialPicker, type MaterialGroup } from "@/components/material-picker";
 import { fmtNum } from "@/lib/format";
 import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
@@ -168,7 +168,7 @@ export function SupplyForm({ options, low, groups = [], canCreate = false, wareh
 
       <FormError error={state?.error} />
       <div className="flex items-center justify-end gap-3">
-        <span className="text-xs text-slate-500">Narxni snabjeniye qo&apos;yadi — siz faqat miqdorni belgilaysiz</span>
+        <InfoButton title="Snabjeniyega yuborish">Narxni snabjeniye qo&apos;yadi — siz faqat miqdorni belgilaysiz</InfoButton>
         <Button disabled={pending || filled === 0}><ClipboardList size={16} /> {pending ? "Yuborilmoqda…" : "Snabjeniyega yuborish"}</Button>
       </div>
     </form>

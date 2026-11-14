@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { isoDate } from "@/lib/format";
-import { Callout, Card, Checkbox, Field, Input, PageHeader, Textarea } from "@/components/ui";
+import { Card, Checkbox, Field, Input, PageHeader, Textarea } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { FIELD_SYNONYMS } from "@/lib/excel";
 import { importOrdersFromExcel } from "../actions";
@@ -20,15 +20,15 @@ export default async function OrdersImport() {
       <PageHeader
         back={{ href: "/orders", label: "Zayavkalar" }}
         title="Excel orqali zayavka"
-        subtitle="Faylni yuklang — qatorlar jadvalga tushadi, tekshirib tasdiqlaysiz. Har mijozning har yetkazish sanasi uchun alohida qoralama zayavka ochiladi."
+        info={<>
+          <p>Faylni yuklang — qatorlar jadvalga tushadi, tekshirib tasdiqlaysiz. Har mijozning har yetkazish sanasi uchun alohida qoralama zayavka ochiladi.</p>
+          <p><b>Kesishma jadval ham bo&apos;ladi.</b> Ustunlar mijoz/obyekt, qatorlar mahsulot, kataklar miqdor bo&apos;lgan fayl o&apos;zi tanilib, har to&apos;ldirilgan katak bitta zayavka
+            qatoriga yoyiladi. Qoldiq (&ldquo;22-sent.&rdquo;) va &ldquo;Итого&rdquo; ustunlari hisobga olinmaydi — qoldiqni tizim o&apos;zi hisoblaydi.</p>
+          <p>Kataklarning rangi o&apos;qilmaydi: hamma zayavka <b>qoralama</b> bo&apos;lib tushadi, keraksizini qabul qilmaysiz.</p>
+        </>}
       />
       <Card className="max-w-6xl">
-        <Callout tone="info" title="Kesishma jadval ham bo'ladi">
-          Ustunlar mijoz/obyekt, qatorlar mahsulot, kataklar miqdor bo&apos;lgan fayl o&apos;zi tanilib, har to&apos;ldirilgan katak bitta zayavka
-          qatoriga yoyiladi. Qoldiq (&ldquo;22-sent.&rdquo;) va &ldquo;Итого&rdquo; ustunlari hisobga olinmaydi — qoldiqni tizim o&apos;zi hisoblaydi.
-          Kataklarning rangi o&apos;qilmaydi: hamma zayavka <b>qoralama</b> bo&apos;lib tushadi, keraksizini qabul qilmaysiz.
-        </Callout>
-        <div className="mt-4">
+        <div>
           <ExcelImport
             action={importOrdersFromExcel}
             submitLabel="Zayavkalarni ochish"

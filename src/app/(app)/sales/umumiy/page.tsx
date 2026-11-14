@@ -58,7 +58,7 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
   return (
     <div>
       <PageHeader title="Sotuv — umumiy ko'rinish" back={{ href: "/sales", label: "Sotuv" }}
-        subtitle="Sotuv bo'limining asosiy raqamlari bitta joyda. Sotuv — mijozga yetkazilgan mahsulot va Realizatsiya reestri (QQS bilan, Tahlil bilan bir xil); zayavkalar — zayavka sanasi bo'yicha; debitorka va pul so'rovlari — joriy holat." />
+        info="Sotuv bo'limining asosiy raqamlari bitta joyda. Sotuv — mijozga yetkazilgan mahsulot va Realizatsiya reestri (QQS bilan, Tahlil bilan bir xil); zayavkalar — zayavka sanasi bo'yicha; debitorka va pul so'rovlari — joriy holat." />
       <DayRangeBar base={BASE} range={range} />
 
       {req.overdue > 0 && (
@@ -128,7 +128,7 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
           </Table>
         </Section>
 
-        <Section title="Eng katta qarzdorlar (joriy)" action={<More href={go("/bi-tahlil/mijozlar/xaridorlar", "/customers")} />}>
+        <Section title="Eng katta qarzdorlar (joriy)" info={<>Muddati o&apos;tgan — {rv.overdueDays} kundan eski schyotlar.</>} action={<More href={go("/bi-tahlil/mijozlar/xaridorlar", "/customers")} />}>
           <Table>
             <thead><tr><Th>Mijoz</Th><Th right>Qarz</Th><Th right>Muddati o&apos;tgan</Th><Th right>Eng eski</Th></tr></thead>
             <tbody>
@@ -143,10 +143,10 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
               ))}
             </tbody>
           </Table>
-          {rv.debtors > rv.top.length && <p className="mt-2 text-xs text-slate-500">Jami {rv.debtors} ta qarzdor; muddati o&apos;tgan — {rv.overdueDays} kundan eski schyotlar.</p>}
+          {rv.debtors > rv.top.length && <p className="mt-2 text-xs text-slate-500">Jami {rv.debtors} ta qarzdor.</p>}
         </Section>
 
-        <Section title="Tushgan pul" action={<More href={go("/payments")} />}>
+        <Section title="Tushgan pul" info="«Savdo» kirimi — kassa jurnaliga to'lov bo'lib yozilmagan sotuv puli (chakana, Excel importi)." action={<More href={go("/payments")} />}>
           <Table>
             <thead><tr><Th>Hisob</Th><Th right>Mijoz to&apos;lovlari</Th><Th right>«Savdo» kirimi</Th><Th right>Jami</Th></tr></thead>
             <tbody>
@@ -156,7 +156,6 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
               <Tr className="font-semibold"><Td>Jami</Td><Td right>{money(d.received.CASH.payments + d.received.BANK.payments)}</Td><Td right>{money(d.received.CASH.sales + d.received.BANK.sales)}</Td><Td right>{money(receivedTotal)}</Td></Tr>
             </tbody>
           </Table>
-          <p className="mt-2 text-xs text-slate-500">«Savdo» kirimi — kassa jurnaliga to&apos;lov bo&apos;lib yozilmagan sotuv puli (chakana, Excel importi).</p>
         </Section>
 
         <Section title="Pul qabul qilish (ochiq so'rovlar)" action={<More href={go("/pul-qabul")} />}>
@@ -174,7 +173,7 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
           </Table>
         </Section>
 
-        <Section title="Sotuvchilar bo'yicha" action={<More href={go(`/bi-tahlil/agentlar?${q}`)} />}>
+        <Section title="Sotuvchilar bo'yicha" info="Sotuvchi — mijozga biriktirilgan agent, bo'lmasa zayavkani kiritgan xodim." action={<More href={go(`/bi-tahlil/agentlar?${q}`)} />}>
           <Table>
             <thead><tr><Th>Sotuvchi</Th><Th right>Mijoz</Th><Th right>Zayavka</Th><Th right>Summa</Th></tr></thead>
             <tbody>
@@ -184,7 +183,7 @@ export default async function SalesOverviewPage({ searchParams }: { searchParams
               ))}
             </tbody>
           </Table>
-          <p className="mt-2 text-xs text-slate-500">Sotuvchi — mijozga biriktirilgan agent, bo&apos;lmasa zayavkani kiritgan xodim{d.sellerCount > d.sellers.length ? `; jami ${d.sellerCount} ta` : ""}.</p>
+          {d.sellerCount > d.sellers.length && <p className="mt-2 text-xs text-slate-500">Jami {d.sellerCount} ta sotuvchi.</p>}
         </Section>
 
         <Section title="Yangi mijozlar" action={<More href={go("/customers")} />}>

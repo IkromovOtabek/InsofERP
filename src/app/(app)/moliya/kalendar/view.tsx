@@ -72,11 +72,14 @@ export async function CalendarView({ base, qoldiq }: { base: string; qoldiq?: st
       </div>
 
       <Card className="mt-6">
-        <CardHeader title="Qoldiq prognozi" icon={CalendarRange} description="Chiziq — kun oxiridagi qoldiq; qizil ustunlar — ta'minotchi va majburiy to'lovlar kuni" />
+        <CardHeader title="Qoldiq prognozi" icon={CalendarRange} info="Chiziq — kun oxiridagi qoldiq; qizil ustunlar — ta'minotchi va majburiy to'lovlar kuni" />
         <ForecastChart days={c.days} />
       </Card>
 
-      <Section id="kunma-kun" title={`Kunma-kun (${CAL_DAYS} kun)`}>
+      <Section id="kunma-kun" title={`Kunma-kun (${CAL_DAYS} kun)`} info={<>
+        <p>Odatiy tushum — oxirgi {c.histDays} kun o&apos;rtachasi × reja koeffitsiyenti {fmtNum(c.factor, 2)}. Yangi xom-ashyo — kuniga {fmtNum(c.perDayMaterials)}, bugun kelgan mol {c.termDays} kundan keyin to&apos;lanadi.</p>
+        <p>Sozlamalar (reja, doimiy to&apos;lovlar, ta&apos;minotchi muddatlari) — «To&apos;lov rejasi».</p>
+      </>}>
         <Table maxHeight="75vh">
           <thead>
             <tr>
@@ -110,10 +113,6 @@ export async function CalendarView({ base, qoldiq }: { base: string; qoldiq?: st
             </Tr>
           </tbody>
         </Table>
-        <p className="mt-2 text-[13px] text-slate-500">
-          Odatiy tushum — oxirgi {c.histDays} kun o&apos;rtachasi × reja koeffitsiyenti {fmtNum(c.factor, 2)}. Yangi xom-ashyo — kuniga {fmtNum(c.perDayMaterials)}, bugun kelgan mol {c.termDays} kundan keyin to&apos;lanadi.
-          Sozlamalar (reja, doimiy to&apos;lovlar, ta&apos;minotchi muddatlari) — «To&apos;lov rejasi».
-        </p>
       </Section>
 
       <div className="grid grid-cols-1 gap-6 2xl:grid-cols-5">
@@ -139,7 +138,7 @@ export async function CalendarView({ base, qoldiq }: { base: string; qoldiq?: st
           </Section>
         </div>
         <div className="2xl:col-span-2">
-          <Section title="Ta'minotchilar — shu oy: qarz, to'langan, kelgan">
+          <Section title="Ta'minotchilar — shu oy: qarz, to'langan, kelgan" info="Manfiy qarz — biz oldindan to'laganmiz (avans).">
             <Table maxHeight="70vh">
               <thead><tr><Th>Ta&apos;minotchi</Th><Th right>Oy boshidagi qarzimiz</Th><Th right>Shu oy to&apos;ladik</Th><Th right>Shu oy tovar keldi</Th><Th right>Hozirgi qarzimiz</Th><Th right>Shundan muddati o&apos;tgan</Th></tr></thead>
               <tbody>
@@ -162,7 +161,6 @@ export async function CalendarView({ base, qoldiq }: { base: string; qoldiq?: st
                 )}
               </tbody>
             </Table>
-            <p className="mt-2 text-[13px] text-slate-500">Manfiy qarz — biz oldindan to&apos;laganmiz (avans).</p>
           </Section>
           <Section title="Divident limiti">
             <Card>

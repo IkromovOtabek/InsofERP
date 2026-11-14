@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CalendarDays, Camera, ChevronLeft, ChevronRight, Eraser, MapPin, User, UserCheck } from "lucide-react";
 import { saveAttendance } from "./davomat-actions";
-import { Badge, Button, Card, CardHeader, FormError, Input, Select, Table, Td, Th, Tr, Empty } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, FormError, InfoButton, Input, Select, Table, Td, Th, Tr, Empty } from "@/components/ui";
 import {
   ATTENDANCE_MARKS, DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayTitle, hoursShort, hoursText, monthOf, shiftDay, toMinutes, today, workedMinutes,
 } from "@/lib/davomat";
@@ -121,7 +121,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
       {outsiders.length > 0 && (
         <Card padded={false}>
           <div className="border-b border-slate-100 px-4 pt-4">
-            <CardHeader title="Hududdan tashqaridagilar" description="Ish hududidan tashqarida «Keldim / Ketdim» bosgan xodimlar — turgan joyi va o'zi olgan joy rasmi" icon={MapPin} />
+            <CardHeader title="Hududdan tashqaridagilar" info="Ish hududidan tashqarida «Keldim / Ketdim» bosgan xodimlar — turgan joyi va o'zi olgan joy rasmi" icon={MapPin} />
           </div>
           <Table>
             <thead><tr><Th>Xodim</Th><Th>Belgi</Th><Th>Masofa</Th><Th>Joylashuv</Th><Th>Joy rasmi</Th></tr></thead>
@@ -248,6 +248,11 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
             <Eraser size={15} /> Tozalash
           </Button>
           <span className="text-xs text-slate-500">Standart smena {DEFAULT_SHIFT.checkIn}–{DEFAULT_SHIFT.checkOut}</span>
+          <InfoButton title="Kunlik davomat">
+            <p>Faqat o&apos;zgartirilgan qatorlar (sariq) saqlanadi. Belgi «— belgilanmagan» qilib o&apos;zgartirilsa, o&apos;sha kunlik yozuv o&apos;chadi.</p>
+            <p>Sahifa ochilgandan keyin boshqa joyda (sex ilovasi) o&apos;zgargan qator ustidan yozilmaydi.</p>
+            <p>Ketish vaqti kelishdan oldin bo&apos;lsa tungi smena deb hisoblanadi: 20:00 → 06:00 = 10 soat.</p>
+          </InfoButton>
           <div className="ml-auto flex items-center gap-3">
             {state?.ok && state.note && <span className="text-xs text-emerald-700">{state.note}</span>}
             <Button type="submit" disabled={pending || changedCount === 0}>{pending ? "Saqlanmoqda…" : changedCount ? `Saqlash (${changedCount})` : "Saqlash"}</Button>
@@ -255,12 +260,6 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
         </div>
         <FormError error={state?.error} />
       </form>
-
-      <p className="px-1 text-xs text-slate-500">
-        Faqat o&apos;zgartirilgan qatorlar (sariq) saqlanadi. Belgi «— belgilanmagan» qilib o&apos;zgartirilsa, o&apos;sha kunlik yozuv o&apos;chadi.
-        Sahifa ochilgandan keyin boshqa joyda (sex ilovasi) o&apos;zgargan qator ustidan yozilmaydi.
-        Ketish vaqti kelishdan oldin bo&apos;lsa tungi smena deb hisoblanadi: 20:00 → 06:00 = 10 soat.
-      </p>
     </div>
   );
 }

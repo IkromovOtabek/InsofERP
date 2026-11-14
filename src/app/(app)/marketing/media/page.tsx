@@ -29,7 +29,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader title="Media kutubxona" subtitle={`Suratga olish kunlaridagi material bitta joyda — teglab qo'ying, postga bir bosishda biriktiriladi. Jami: ${all.length} (video ${all.filter((m) => m.kind === "VIDEO").length})`} />
+      <PageHeader title="Media kutubxona" info="Suratga olish kunlaridagi material bitta joyda — teglab qo'ying, postga bir bosishda biriktiriladi." subtitle={`Jami: ${all.length} (video ${all.filter((m) => m.kind === "VIDEO").length})`} />
       {canEdit && <div className="mb-6"><Uploader /></div>}
       <div className="mb-4 flex flex-wrap gap-2">
         <Link href={link({ t: tag })} className={chip(!kind)}>Hammasi</Link>

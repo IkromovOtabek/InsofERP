@@ -94,7 +94,7 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
   const formTargets = { ...targets, employees: copy?.employee ? [copy.employee] : [] };
   return (
     <div>
-      <PageHeader back={{ href: "/stock/prixod", label: "Kirim" }} title={copy?.cancelled ? `Tuzatish: ${copy.docNo} o'rniga yangi kirim` : "Yangi kirim"} subtitle="Saqlangandan keyin skladdagi qoldiq darhol oshadi" />
+      <PageHeader back={{ href: "/stock/prixod", label: "Kirim" }} title={copy?.cancelled ? `Tuzatish: ${copy.docNo} o'rniga yangi kirim` : "Yangi kirim"} info="Saqlangandan keyin skladdagi qoldiq darhol oshadi" />
       {copy && (
         <div className="mb-4">
           <Callout tone={copy.cancelled ? "warning" : "info"} title={copy.cancelled ? `${copy.docNo} bekor qilingan` : `${copy.docNo} dan nusxa`}>

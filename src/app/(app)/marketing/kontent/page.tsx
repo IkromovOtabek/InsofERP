@@ -70,7 +70,7 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
     <div>
       <PageHeader
         title="Kontent reja"
-        subtitle="Reels va postlar: g'oya → ssenariy → suratga olish → tasdiqlash → tarmoqlarga avtomatik chiqish."
+        info="Reels va postlar: g'oya → ssenariy → suratga olish → tasdiqlash → tarmoqlarga avtomatik chiqish."
         action={canEdit ? (
           <>
             {canDo(s, "marketing", "agent") && aiReady() && <PlanAi defaultMonth={ym(first)} />}

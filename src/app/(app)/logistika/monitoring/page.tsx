@@ -19,11 +19,15 @@ export default async function MonitoringPage() {
   const { rows, gpsSilentMin, error } = await monitorRows();
   return (
     <div>
-      <PageHeader title="GPS / Monitoring" subtitle="Yo'ldagi transport: joylashuv, tezlik, to'xtashlar, obyektgacha ETA. Mashinani bossangiz — yurgan yo'li chiziladi" />
+      <PageHeader title="GPS / Monitoring" info="Yo'ldagi transport: joylashuv, tezlik, to'xtashlar, obyektgacha ETA. Mashinani bossangiz — yurgan yo'li chiziladi" />
       <LiveDrivers title="Jonli xarita" />
       {error && <p className="mt-2 text-xs text-amber-700">ECO: {error}</p>}
       <Card padded={false} className="mt-5">
-        <div className="px-5 pt-5"><CardHeader title="Yo'ldagi reyslar" description={`GPS ${gpsSilentMin} daqiqadan ko'p kelmasa — qizil`} icon={Radio} /></div>
+        <div className="px-5 pt-5"><CardHeader title="Yo'ldagi reyslar" info={<>
+          <p>GPS {gpsSilentMin} daqiqadan ko&apos;p kelmasa — qizil.</p>
+          <p>To&apos;xtash — 60 m radiusda 5 daqiqadan ko&apos;p turish.</p>
+          <p>ETA: ECO bersa o&apos;shani, bo&apos;lmasa obyektgacha masofa ÷ o&apos;rtacha tezlik (Logistika sozlamalari).</p>
+        </>} icon={Radio} /></div>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Transport</Th><Th>Bosqich</Th><Th>Chiqdi</Th><Th right>Yurdi</Th><Th right>Tezlik</Th><Th>To'xtashlar</Th><Th right>Qoldi</Th><Th right>ETA</Th><Th>Reja</Th><Th>Kechikish</Th><Th>GPS</Th></tr></thead>
           <tbody>
@@ -51,7 +55,6 @@ export default async function MonitoringPage() {
           </tbody>
         </Table>
       </Card>
-      <p className="mt-3 text-xs text-slate-500">To'xtash — 60 m radiusda 5 daqiqadan ko'p turish. ETA: ECO bersa o'shani, bo'lmasa obyektgacha masofa ÷ o'rtacha tezlik (Logistika sozlamalari).</p>
     </div>
   );
 }

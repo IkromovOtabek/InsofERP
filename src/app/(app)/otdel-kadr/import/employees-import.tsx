@@ -152,10 +152,6 @@ export function EmployeesImport({ initialOptions, subdivisions, canLogin, roles 
         <Checkbox name="createPositions" defaultChecked label="Ro'yxatda yo'q lavozimlarni yangi ishchi lavozim sifatida ochish (Формовщик, Бригадир…)" />
         <Checkbox name="updateExisting" defaultChecked label="Bazada bor xodimlarning kartasini fayldagi ma'lumot bilan yangilash — bo'sh kataklar eski qiymatni o'chirmaydi" />
       </div>
-      <p className="text-xs text-slate-500">
-        Surat va hujjat nusxalari Excel&apos;dan kelmaydi — ularni keyin xodim kartasidan yuklaysiz.
-        Tizimga kiradigan lavozimga (Kassa / bank, Brigadir…) moslangan xodimga login bu yerdan ochilmaydi — uni Xodimlar sahifasida «Login berish» bilan bering.
-      </p>
     </ExcelImport>
   );
 }

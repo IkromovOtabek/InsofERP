@@ -12,7 +12,7 @@ export default async function SuppliersImportPage() {
       <PageHeader
         back={{ href: "/suppliers", label: "Yetkazuvchilar" }}
         title="Excel orqali yetkazuvchi qo'shish"
-        subtitle="Har qator — yetkazuvchi kartasi. INN (bo'lmasa telefon, keyin nomi) bo'yicha bazada bor bo'lsa yangi karta ochilmaydi. Ularga bo'lgan boshlang'ich qarz — «Boshlang'ich qoldiqlar» bo'limida."
+        info="Har qator — yetkazuvchi kartasi. INN (bo'lmasa telefon, keyin nomi) bo'yicha bazada bor bo'lsa yangi karta ochilmaydi. Ularga bo'lgan boshlang'ich qarz — «Boshlang'ich qoldiqlar» bo'limida."
       />
       <Card className="max-w-6xl">
         <ExcelImport

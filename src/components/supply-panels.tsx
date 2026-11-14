@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { BadgeCheck, Check, CircleDollarSign, X } from "lucide-react";
 import { decide, directorDecide, financeDecide } from "@/lib/supply-actions";
-import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, InfoButton, Input, Select, Textarea } from "@/components/ui";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -21,17 +21,21 @@ export function ApprovePanel({ id, total, compact }: { id: string; total: number
 
   return (
     <form action={action} className="space-y-3">
-      {!compact && <p className="text-sm text-slate-600">Tasdiqlansa zayavka <b>Moliya bo&apos;limiga (Kirim-Chiqim)</b> tushadi — u yerda pul ajratilguncha soat ikonkasi turadi.</p>}
       {reject ? (
         <Field label="Bekor qilish sababi *"><Textarea name="reason" rows={2} placeholder="Nega bekor qilinmoqda" required /></Field>
       ) : (
         <Field label="Izoh"><Input name="note" placeholder="Ixtiyoriy" autoComplete="off" /></Field>
       )}
-      {compact && <p className="text-xs text-slate-500">Tasdiqlansa — Moliya bo&apos;limiga (Kirim-Chiqim) tushadi.</p>}
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Bajarildi"} />}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm text-slate-500">Jami summa: <b className="text-slate-900">{money(total)}</b></span>
+        <span className="inline-flex items-center gap-1 text-sm text-slate-500">Jami summa: <b className="text-slate-900">{money(total)}</b>
+          <InfoButton title="Tasdiqlash">
+            {compact
+              ? <>Tasdiqlansa — Moliya bo&apos;limiga (Kirim-Chiqim) tushadi.</>
+              : <>Tasdiqlansa zayavka <b>Moliya bo&apos;limiga (Kirim-Chiqim)</b> tushadi — u yerda pul ajratilguncha soat ikonkasi turadi.</>}
+          </InfoButton>
+        </span>
         <div className="flex flex-wrap gap-2">
           {reject ? (
             <>
@@ -62,7 +66,6 @@ export function FundPanel({ id, total, accounts, compact, canReject = true }: {
 
   return (
     <form action={action} className={cn("space-y-3", compact && "space-y-2")}>
-      {!compact && <p className="text-sm text-slate-600">Tasdiqlansa summa <b>Kirim-Chiqimga chiqim</b> bo&apos;lib yoziladi va snabjeniye sotib olishi mumkin. Mol kelganda fakt summa bo&apos;yicha tuzatiladi.</p>}
       <div className={cn("grid grid-cols-1 gap-3", !compact && "sm:grid-cols-2")}>
         <Field label="Qaysi hisobdan to'lanadi *">
           <Select name="cashAccountId" defaultValue={accounts.find((a) => a.type === "BANK")?.id ?? accounts[0]?.id}>
@@ -76,7 +79,14 @@ export function FundPanel({ id, total, accounts, compact, canReject = true }: {
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Bajarildi"} />}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm text-slate-500">Ajratiladigan summa: <b className="text-slate-900">{money(total)}</b></span>
+        <span className="inline-flex items-center gap-1 text-sm text-slate-500">Ajratiladigan summa: <b className="text-slate-900">{money(total)}</b>
+          {!compact && (
+            <InfoButton title="Pul ajratish">
+              <p>Tasdiqlansa summa <b>Kirim-Chiqimga chiqim</b> bo&apos;lib yoziladi va snabjeniye sotib olishi mumkin.</p>
+              <p>Mol kelganda fakt summa bo&apos;yicha tuzatiladi.</p>
+            </InfoButton>
+          )}
+        </span>
         <div className="flex flex-wrap gap-2">
           {reject ? (
             <>

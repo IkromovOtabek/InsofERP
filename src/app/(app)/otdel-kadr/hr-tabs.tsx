@@ -9,7 +9,7 @@ import { plansInRange } from "@/lib/hr/shifts";
 import { listHrRequests, requestCounts, periodText } from "@/lib/hr/requests";
 import { calculate } from "@/lib/hr/payroll";
 import { KPI_SOURCE, REQUEST_KIND, REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL, RULE_TRIGGER } from "@/lib/hr/labels";
-import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, Empty, InfoButton, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { PatternFill, ShiftGrid, ShiftTemplates, type GridDay, type GridRow } from "./grafik";
 import { DecideButtons, RequestForm } from "./arizalar-forms";
 import { createRequestForEmployee, decideRequest } from "./hr-actions";
@@ -134,7 +134,7 @@ export async function ArizalarTab({ s, employees, holat }: { s: Session; employe
       </Card>
       {canDecide && (
         <Card>
-          <CardHeader title="Xodim nomidan ariza kiritish" icon={Inbox} description="Qog'oz ariza yoki kasallik varaqasi keltirilganda. Xodimning o'zi ilovadan yoki «Mening hisobim» sahifasidan yuboradi" />
+          <CardHeader title="Xodim nomidan ariza kiritish" icon={Inbox} info="Qog'oz ariza yoki kasallik varaqasi keltirilganda. Xodimning o'zi ilovadan yoki «Mening hisobim» sahifasidan yuboradi" />
           <RequestForm action={createRequestForEmployee} employees={plain(employees)} />
         </Card>
       )}
@@ -164,8 +164,12 @@ export async function JarimaTab({ s, employees, positions, oy }: { s: Session; e
     <div className="space-y-4">
       <Card padded={false}>
         <div className="border-b border-slate-100 px-4 py-3">
-          <h2 className="text-sm font-semibold">Qoidalar — hamma uchun bir xil</h2>
-          <p className="text-xs text-slate-500">Davomatdan avtomatik hisoblanadi va oy yakuni ish haqiga qo&apos;shiladi / ushlanadi. Sababi tasdiqlangan kunlar (arizalar) hisoblanmaydi.</p>
+          <h2 className="flex items-center gap-1 text-sm font-semibold">Qoidalar — hamma uchun bir xil
+            <InfoButton title="Qoidalar — hamma uchun bir xil">
+              <p>Davomatdan avtomatik hisoblanadi va oy yakuni ish haqiga qo&apos;shiladi / ushlanadi.</p>
+              <p>Sababi tasdiqlangan kunlar (arizalar) hisoblanmaydi.</p>
+            </InfoButton>
+          </h2>
         </div>
         <Table>
           <thead><tr><Th>Qoida</Th><Th>Nimaga qarab</Th><Th right>Summa</Th><Th>Kimga</Th><Th right>Amal</Th></tr></thead>
@@ -202,8 +206,10 @@ export async function JarimaTab({ s, employees, positions, oy }: { s: Session; e
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card padded={false}>
           <div className="border-b border-slate-100 px-4 py-3">
-            <h2 className="text-sm font-semibold">Hisoblangan (qoidalar + qo&apos;lda)</h2>
-            <p className="text-xs text-slate-500">Bonus {money(totalBonus)} · jarima {money(totalPenalty)} — oy yakuni vedomostiga shunday tushadi</p>
+            <h2 className="flex items-center gap-1 text-sm font-semibold">Hisoblangan (qoidalar + qo&apos;lda)
+              <InfoButton title="Hisoblangan (qoidalar + qo'lda)">Bonus va jarima oy yakuni vedomostiga shunday tushadi.</InfoButton>
+            </h2>
+            <p className="text-xs text-slate-500">Bonus {money(totalBonus)} · jarima {money(totalPenalty)}</p>
           </div>
           <Table>
             <thead><tr><Th>Xodim</Th><Th>Tafsilot</Th><Th right>Bonus</Th><Th right>Jarima</Th></tr></thead>
@@ -225,7 +231,7 @@ export async function JarimaTab({ s, employees, positions, oy }: { s: Session; e
         </Card>
 
         <Card padded={false}>
-          <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Qo&apos;lda yozilgan</h2><p className="text-xs text-slate-500">O&apos;chirilmaydi — bekor qilinsa sababi bilan qoladi</p></div>
+          <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-1 text-sm font-semibold">Qo&apos;lda yozilgan<InfoButton title="Qo'lda yozilgan">O&apos;chirilmaydi — bekor qilinsa sababi bilan qoladi</InfoButton></h2></div>
           <Table>
             <thead><tr><Th>Xodim</Th><Th>Sababi</Th><Th right>Summa</Th><Th right /></tr></thead>
             <tbody>
@@ -263,7 +269,7 @@ export async function CheklistTab({ s, positions, kun }: { s: Session; positions
   return (
     <div className="space-y-4">
       <Card padded={false}>
-        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Cheklistlar — lavozim majburiyatlari</h2><p className="text-xs text-slate-500">Xodim har kuni o&apos;z ro&apos;yxatini ilovada yoki «Mening hisobim» da belgilaydi. Bajarilganlik KPI&apos;ga ham tushadi</p></div>
+        <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-1 text-sm font-semibold">Cheklistlar — lavozim majburiyatlari<InfoButton title="Cheklistlar — lavozim majburiyatlari"><p>Xodim har kuni o&apos;z ro&apos;yxatini ilovada yoki «Mening hisobim» da belgilaydi.</p><p>Bajarilganlik KPI&apos;ga ham tushadi.</p></InfoButton></h2></div>
         <Table>
           <thead><tr><Th>Cheklist</Th><Th>Kimga</Th><Th>Bandlar</Th><Th right /></tr></thead>
           <tbody>
@@ -322,7 +328,7 @@ export async function KpiTab({ s, positions, employees, oy }: { s: Session; posi
   return (
     <div className="space-y-4">
       <Card padded={false}>
-        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">KPI ko&apos;rsatkichlari</h2><p className="text-xs text-slate-500">Reja va mukofot; fakt avtomatik (davomat, vazifalar, cheklistlar, sotuv, ishlab chiqarish) yoki qo&apos;lda. Mukofot oy yakuni ish haqiga bonus bo&apos;lib qo&apos;shiladi</p></div>
+        <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-1 text-sm font-semibold">KPI ko&apos;rsatkichlari<InfoButton title="KPI ko'rsatkichlari"><p>Reja va mukofot; fakt avtomatik (davomat, vazifalar, cheklistlar, sotuv, ishlab chiqarish) yoki qo&apos;lda.</p><p>Mukofot oy yakuni ish haqiga bonus bo&apos;lib qo&apos;shiladi.</p></InfoButton></h2></div>
         <Table>
           <thead><tr><Th>Ko&apos;rsatkich</Th><Th>Manba</Th><Th right>Reja</Th><Th right>Mukofot</Th><Th>Kimga</Th><Th right /></tr></thead>
           <tbody>

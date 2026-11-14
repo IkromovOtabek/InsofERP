@@ -51,7 +51,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
       </div>
 
       <Card padded={false} className="mt-5">
-        <div id="kimniki" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Erkin va band" description="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — erkin (hech kimga band qilinmagan) qoldiq." icon={UserCheck} /></div>
+        <div id="kimniki" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Erkin va band" info="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — erkin (hech kimga band qilinmagan) qoldiq." icon={UserCheck} /></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-sm">
           <thead><tr><Th>Kimga band</Th><Th>Telefon</Th><Th>Yetkazish</Th><Th right>Buyurtma</Th><Th right>Jo'natildi</Th><Th right>Band</Th><Th>Holat</Th></tr></thead>
           <tbody>
@@ -78,7 +78,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
 
       {piece && (
         <Card padded={false} className="mt-5">
-          <div id="ombor" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Brigada omborlari" description="Mahsulot qaysi brigada javobgarligida turibdi. Brigada bajargani o'z omboriga tushadi; reys va brak o'sha ombordan yechiladi." icon={HardHat} /></div>
+          <div id="ombor" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Brigada omborlari" info="Mahsulot qaysi brigada javobgarligida turibdi. Brigada bajargani o'z omboriga tushadi; reys va brak o'sha ombordan yechiladi." icon={HardHat} /></div>
           <div className={canMove ? "grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]" : undefined}>
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr><Th>Ombor</Th><Th right>Qoldiq</Th></tr></thead>

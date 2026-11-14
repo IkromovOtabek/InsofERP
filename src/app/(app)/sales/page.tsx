@@ -78,7 +78,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader title="Sotuv" subtitle="Qabul qilingan zayavkalar. Yangi zayavka Zayavkalar bo'limida yaratiladi va qabul qilingach shu yerga o'tadi."
+      <PageHeader title="Sotuv" info="Qabul qilingan zayavkalar. Yangi zayavka Zayavkalar bo'limida yaratiladi va qabul qilingach shu yerga o'tadi."
         action={<LinkButton href="/sales/realizatsiya" variant="secondary"><ScrollText size={16} /> Realizatsiya</LinkButton>} />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Sotuv summasi (davr)" value={money(total)} icon={Wallet} hint={`${count} ta zayavka`} href="#sotuv-royxati" />

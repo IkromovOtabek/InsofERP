@@ -11,7 +11,7 @@ import {
 } from "./face-engine";
 import { AUTO_OUT_AFTER_MIN, FACE_MODES, SCAN_PROBES, type FaceMode, type FaceScanResult } from "@/lib/face-id-const";
 import type { FaceLogRow } from "@/lib/face-id";
-import { Badge, Card, Checkbox, Select } from "@/components/ui";
+import { Badge, Card, Checkbox, InfoButton, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 type Tone = "idle" | "work" | "busy" | "ok" | "fail";
@@ -235,6 +235,11 @@ export function FaceScanner({ initialLog, enrolled, total, canEnroll }: { initia
                 </button>
               ))}
             </div>
+            <InfoButton title="Rejim" className="-ml-3">
+              {prefs.mode === "auto"
+                ? `Avto: bugun kelmagan xodim — «Keldi», kelgan xodim (${AUTO_OUT_AFTER_MIN} daqiqadan keyin) — «Ketdi». Smena boshida navbat bo'lsa «Keldi» rejimini tanlang.`
+                : prefs.mode === "in" ? "Faqat kelishni belgilaydi — kelgan xodim qayta o'tsa hech narsa o'zgarmaydi." : "Faqat ketishni belgilaydi — bugun kelgani belgilangan bo'lishi kerak."}
+            </InfoButton>
             <Checkbox label="Jonlilik (ko'z yumib ochish)" checked={prefs.liveness} onChange={(e) => setPref({ liveness: e.target.checked })} />
             <div className="ml-auto flex items-center gap-2">
               {cam.devices.length > 1 && (
@@ -251,13 +256,12 @@ export function FaceScanner({ initialLog, enrolled, total, canEnroll }: { initia
             </div>
           </div>
         </Card>
-        <p className="flex items-start gap-1.5 text-xs text-slate-500">
-          <Info size={13} className="mt-0.5 shrink-0" />
-          {prefs.mode === "auto"
-            ? `Avto: bugun kelmagan xodim — «Keldi», kelgan xodim (${AUTO_OUT_AFTER_MIN} daqiqadan keyin) — «Ketdi». Smena boshida navbat bo'lsa «Keldi» rejimini tanlang.`
-            : prefs.mode === "in" ? "Faqat kelishni belgilaydi — kelgan xodim qayta o'tsa hech narsa o'zgarmaydi." : "Faqat ketishni belgilaydi — bugun kelgani belgilangan bo'lishi kerak."}
-          {!prefs.liveness && " Jonlilik o'chiq: surat bilan aldash mumkin — faqat nazorat ostida ishlating."}
-        </p>
+        {!prefs.liveness && (
+          <p className="flex items-start gap-1.5 text-xs text-slate-500">
+            <Info size={13} className="mt-0.5 shrink-0" />
+            Jonlilik o&apos;chiq: surat bilan aldash mumkin — faqat nazorat ostida ishlating.
+          </p>
+        )}
       </div>
 
       <aside className="space-y-3">

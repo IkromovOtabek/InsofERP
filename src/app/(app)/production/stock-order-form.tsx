@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Plus, Boxes, Zap, TriangleAlert, Sparkles, HardHat } from "lucide-react";
+import { X, Plus, Boxes, TriangleAlert, Sparkles, HardHat } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
 import { fmtNum, isoDate } from "@/lib/format";
 import { createStockOrder } from "./actions";
@@ -82,12 +82,6 @@ export function StockOrderForm({ products, groups, canCreateProduct, stock }: {
   return (
     <form onSubmit={submitKeepingState(action)} onKeyDown={blockEnterSubmit} className="space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
-
-      <Callout tone="info" title="Sklad zayavkasi — zaxiraga">
-        Mijoz uchun emas, o&apos;zimiz uchun: ishlab chiqarilgan mahsulot hovlida <b>erkin qoldiq</b> bo&apos;lib turadi va keyin kelgan
-        har qanday mijozga darhol beriladi. Narx, dastavka va shartnoma so&apos;ralmaydi. Saqlangach zayavka matritsa va doskaga
-        tushadi va shu zahoti brigadaga tayinlaysiz.
-      </Callout>
 
       {/* ── Tavsiya: nimaga zaxira kerak ── */}
       {suggestions.length > 0 && (
@@ -219,12 +213,6 @@ export function StockOrderForm({ products, groups, canCreateProduct, stock }: {
       <Field label="Izoh" hint="Nega zaxira kerak: kutilayotgan buyurtma, mavsum, obyekt nomi">
         <Textarea name="note" />
       </Field>
-
-      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1"><HardHat size={13} /> Saqlangach brigadaga tayinlanadi</span>
-        <span className="inline-flex items-center gap-1"><Boxes size={13} /> Tayyor mahsulot hech kimga band qilinmaydi</span>
-        <span className="inline-flex items-center gap-1"><Zap size={13} /> Zarur — brigadalar uchun ustuvorlik</span>
-      </div>
 
       <FormActions>
         <Button disabled={pending || filled.length === 0}><HardHat size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash — brigada tayinlash"}</Button>

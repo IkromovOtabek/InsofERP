@@ -9,7 +9,7 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requireRoles } from "@/lib/page-guard";
 import { money, date, isoDate, opAt } from "@/lib/format";
-import { Badge, Button, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
+import { Badge, Button, Card, Empty, InfoButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { TxForm } from "./tx-form";
 import { CashCloseRow, type CloseRow } from "./cash-close";
@@ -144,7 +144,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <PageHeader title="Kirim-Chiqim" subtitle={cat ? `Detalizatsiya: «${cat}» — sana, summa, kontragent, hisob, kim kiritgan. ` : "Pul oqimi jurnali: mijoz to'lovlari (Kassa/bank'dan avtomatik), boshqa kirimlar va barcha chiqimlar."} action={cat ? <Link href={`/cashflow?tab=${tab}&from=${isoDate(from)}&to=${isoDate(to)}`} className="text-sm text-slate-500 hover:text-slate-900">✕ Filtrni olib tashlash</Link> : undefined} />
+      <PageHeader title="Kirim-Chiqim" subtitle={cat ? `Detalizatsiya: «${cat}» — sana, summa, kontragent, hisob, kim kiritgan. ` : undefined}
+        info="Pul oqimi jurnali: mijoz to'lovlari (Kassa/bank'dan avtomatik), boshqa kirimlar va barcha chiqimlar." action={cat ? <Link href={`/cashflow?tab=${tab}&from=${isoDate(from)}&to=${isoDate(to)}`} className="text-sm text-slate-500 hover:text-slate-900">✕ Filtrni olib tashlash</Link> : undefined} />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Kirim (davr)" value={money(inc)} icon={ArrowDownLeft} tone="success" href={`${qs("INCOME")}#jurnal`} />
         <StatCard label="Chiqim (davr)" value={money(exp)} icon={ArrowUpRight} tone={exp > 0 ? "danger" : "default"} href={`${qs("EXPENSE")}#jurnal`} />
@@ -164,8 +165,12 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       {unpaid.length > 0 && (
         <Card className="mb-6">
           <CollapsibleRows
-            title={<>To&apos;lanmagan kirimlar <Badge color="amber">{unpaid.length}</Badge></>}
-            intro={<p className="mb-3 text-sm text-slate-500">Xomashyo skladga kirim qilingan, yetkazuvchiga hali to&apos;liq pul to&apos;lanmagan. Qolgan jami {money(unpaid.reduce((x, r) => x + r.left, 0))}. Summa bo&apos;sh qolsa — qolgani to&apos;liq to&apos;lanadi; qisman to&apos;lash uchun summani yozing.</p>}
+            title={<>To&apos;lanmagan kirimlar <Badge color="amber">{unpaid.length}</Badge>
+              <InfoButton title="To'lanmagan kirimlar" className="ml-1">
+                <p>Xomashyo skladga kirim qilingan, yetkazuvchiga hali to&apos;liq pul to&apos;lanmagan.</p>
+                <p>Summa bo&apos;sh qolsa — qolgani to&apos;liq to&apos;lanadi; qisman to&apos;lash uchun summani yozing.</p>
+              </InfoButton></>}
+            intro={<p className="mb-3 text-sm text-slate-500">Qolgan jami {money(unpaid.reduce((x, r) => x + r.left, 0))}</p>}
             head={<tr><Th>Sana</Th><Th>Kirim</Th><Th>Yetkazuvchi</Th><Th right>Summa</Th><Th></Th></tr>}>
               {unpaid.map((r) => (
                 <Tr key={r.id}>
@@ -186,8 +191,9 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
 
       {closeRows.length > 0 && (
         <div id="kassa-yopish" className="scroll-mt-20"><Card className="mb-6">
-          <h2 className="mb-1 font-semibold">Kassani yopish</h2>
-          <p className="mb-2 text-[13px] text-slate-500">Kun oxirida naqdni sanab kiriting — farq Nazoratda (direktorga 19:00 dagi hisobotda) ko&apos;rinadi.</p>
+          <h2 className="mb-2 flex items-center gap-1 font-semibold">Kassani yopish
+            <InfoButton title="Kassani yopish">Kun oxirida naqdni sanab kiriting — farq Nazoratda (direktorga 19:00 dagi hisobotda) ko&apos;rinadi.</InfoButton>
+          </h2>
           {closeRows.map((r) => <CashCloseRow key={r.id} row={r} canClose={canClose} />)}
         </Card></div>
       )}
@@ -213,8 +219,9 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
 
       {/* Hisoblararo o'tkazma: kassa → bank (inkassatsiya), bank → kassa (naqdlashtirish), kassa → kassa */}
       <Card className="mb-6">
-        <h2 className="mb-1 flex items-center gap-2 font-semibold"><ArrowRightLeft size={16} /> Perekit — o&apos;z hisoblararo o&apos;tkazma</h2>
-        <p className="mb-3 text-sm text-slate-500">Pul bir hisobdan boshqasiga o&apos;tadi — kirim ham, chiqim ham emas (P&amp;L ga kirmaydi). Bank komissiyasi «Bank xizmati» chiqimi bo&apos;lib yoziladi.</p>
+        <h2 className="mb-3 flex items-center gap-2 font-semibold"><ArrowRightLeft size={16} /> Perekit — o&apos;z hisoblararo o&apos;tkazma
+          <InfoButton title="Perekit — o'z hisoblararo o'tkazma">Pul bir hisobdan boshqasiga o&apos;tadi — kirim ham, chiqim ham emas (P&amp;L ga kirmaydi). Bank komissiyasi «Bank xizmati» chiqimi bo&apos;lib yoziladi.</InfoButton>
+        </h2>
         {canTransfer && accounts.length >= 2 && (
           <TransferForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, balance: balance.get(a.id) ?? 0 }))} clientToken={crypto.randomUUID()} />
         )}
@@ -253,8 +260,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
           <select name="method" aria-label="To'lov usuli" defaultValue={method ?? ""} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="">Naqd va bank</option>{(["CASH", "BANK"] as const).map((m) => <option key={m} value={m}>{CASH_METHOD_LABEL[m]}</option>)}</select>
           <Button variant="secondary" className="h-9 text-sm">Ko&apos;rsatish</Button>
         </form>
+        {canDetail && <InfoButton title="Kirim-Chiqim jurnali">Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash, bekor qilish va o&apos;chirish (ruxsatga qarab).</InfoButton>}
       </div>
-      {canDetail && <p className="mb-2 text-xs text-slate-500">Qatorni bosing — kim va qachon kiritgani, amallar tarixi; tahrirlash, bekor qilish va o&apos;chirish (ruxsatga qarab)</p>}
       <CashEditProvider options={editOptions}>
       <Table>
         <thead><tr><Th>Sana</Th><Th>Turi</Th><Th>Kategoriya</Th><Th>Kimdan / kimga</Th><Th>Hisob</Th><Th right>Summa</Th><Th>Izoh</Th><Th></Th></tr></thead>

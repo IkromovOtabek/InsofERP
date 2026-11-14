@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { Sparkles, Zap, Info, Download, ArrowRight } from "lucide-react";
+import { Sparkles, Zap, Download, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtNum, isoDate } from "@/lib/format";
-import { Badge, type BadgeColor, valueLength } from "@/components/ui";
+import { Badge, type BadgeColor, InfoButton, valueLength } from "@/components/ui";
 import { Sparkline } from "@/components/ui/charts";
 import { type Range, rangeQuery, addDays } from "@/lib/bi/core";
 
@@ -82,13 +82,14 @@ export function Kpi({ label, value, delta, deltaLabel, invert, hint, icon: Icon,
 
 /* ───────────── Panel / tushuntirish ───────────── */
 
-export function Panel({ id, title, info, action, children, className, padded = true, eyebrow }: { id?: string; title: React.ReactNode; info?: string; action?: React.ReactNode; children: React.ReactNode; className?: string; padded?: boolean; eyebrow?: string }) {
+/** `info` — tushuntirish matni: sarlavha yonida «i» tugma, bosilganda oynada. */
+export function Panel({ id, title, info, action, children, className, padded = true, eyebrow }: { id?: string; title: React.ReactNode; info?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string; padded?: boolean; eyebrow?: string }) {
   return (
     <section id={id} className={cn("min-w-0 scroll-mt-20 rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)", className)}>
       <div className={cn("flex flex-wrap items-start justify-between gap-2 rounded-t-(--radius-card) border-b-2 border-brand-200 bg-brand-50 px-4 py-3 sm:px-5", !padded && "")}>
         <div className="min-w-0">
           {eyebrow && <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">{eyebrow}</div>}
-          <h2 className="flex items-center gap-1.5 text-[16px] font-bold text-slate-900">{title}{info && <span title={info} className="inline-flex cursor-help text-slate-400"><Info size={13} /></span>}</h2>
+          <h2 className="flex items-center gap-1.5 text-[16px] font-bold text-slate-900">{title}{info && <InfoButton title={typeof title === "string" ? title : "Ma'lumot"}>{info}</InfoButton>}</h2>
         </div>
         {action && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">{action}</div>}
       </div>

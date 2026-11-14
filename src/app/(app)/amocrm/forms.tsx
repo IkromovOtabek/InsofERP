@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { Check, Copy, KeyRound, Link2, RefreshCw, RotateCcw, Unplug, Webhook, X } from "lucide-react";
-import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, InfoButton, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 import {
   connectOAuthAction, connectTokenAction, connectWebhookAction, disconnectAction, dismissAction, restoreAction, saveStagesAction, saveWebhookStageAction, syncNowAction, webhookAction,
@@ -18,18 +18,23 @@ export function ConnectForm({ domain, redirectUri, webhookOnly = true }: { domai
   useEffect(() => { if (oState?.ok) window.location.assign("/api/amocrm/oauth"); }, [oState]);
   return (
     <div className="space-y-4">
-      <div className="inline-flex rounded-lg border border-slate-200 p-1 text-sm">
-        <button type="button" onClick={() => setMode("token")} className={`rounded-md px-3 py-1.5 ${mode === "token" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Uzoq muddatli token</button>
-        <button type="button" onClick={() => setMode("oauth")} className={`rounded-md px-3 py-1.5 ${mode === "oauth" ? "bg-slate-900 text-white" : "text-slate-600"}`}>OAuth (client_id)</button>
-        {webhookOnly && <button type="button" onClick={() => setMode("webhook")} className={`rounded-md px-3 py-1.5 ${mode === "webhook" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Faqat webhook</button>}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-lg border border-slate-200 p-1 text-sm">
+          <button type="button" onClick={() => setMode("token")} className={`rounded-md px-3 py-1.5 ${mode === "token" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Uzoq muddatli token</button>
+          <button type="button" onClick={() => setMode("oauth")} className={`rounded-md px-3 py-1.5 ${mode === "oauth" ? "bg-slate-900 text-white" : "text-slate-600"}`}>OAuth (client_id)</button>
+          {webhookOnly && <button type="button" onClick={() => setMode("webhook")} className={`rounded-md px-3 py-1.5 ${mode === "webhook" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Faqat webhook</button>}
+        </div>
+        {mode === "webhook" && (
+          <InfoButton title="Faqat webhook">
+            <p>API kalitisiz, bir tomonlama: amoCRM sdelkani «ERP&apos;ga» bosqichiga o&apos;tkazganda ERP&apos;ga xabar yuboradi va kelishuv shu yerda paydo bo&apos;ladi.</p>
+            <p>Sayt arizalari amoCRM&apos;ga ketmaydi, zayavka holati va summasi sdelkaga qaytmaydi.</p>
+          </InfoButton>
+        )}
       </div>
       {mode === "webhook" ? (
         <form action={wAction} className="space-y-3">
-          <p className="text-sm text-slate-600">
-            API kalitisiz, bir tomonlama: amoCRM sdelkani «ERP&apos;ga» bosqichiga o&apos;tkazganda ERP&apos;ga xabar yuboradi va kelishuv shu yerda paydo bo&apos;ladi.
-            Sayt arizalari amoCRM&apos;ga ketmaydi, zayavka holati va summasi sdelkaga qaytmaydi.
-          </p>
-          <Field label="Hisob manzili *" hint="Masalan: insof.amocrm.ru — boshqa hisobdan kelgan xabar qabul qilinmaydi"><Input name="domain" defaultValue={domain} required autoComplete="off" placeholder="kompaniya.amocrm.ru" /></Field>
+          <Field label="Hisob manzili *" hint="Masalan: insof.amocrm.ru"
+            help={<InfoButton title="Hisob manzili">Boshqa hisobdan kelgan xabar qabul qilinmaydi.</InfoButton>}><Input name="domain" defaultValue={domain} required autoComplete="off" placeholder="kompaniya.amocrm.ru" /></Field>
           <FormError error={wState?.error} />
           <FormSuccess text={wState?.note} />
           <FormActions><Button disabled={wPending}><Webhook size={15} /> Webhook manzilini olish</Button></FormActions>
@@ -37,7 +42,8 @@ export function ConnectForm({ domain, redirectUri, webhookOnly = true }: { domai
       ) : mode === "token" ? (
         <form action={tAction} className="space-y-3">
           <Field label="Hisob manzili *" hint="Masalan: insof.amocrm.ru"><Input name="domain" defaultValue={domain} required autoComplete="off" placeholder="kompaniya.amocrm.ru" /></Field>
-          <Field label="Uzoq muddatli token *" hint="amoCRM → Sozlamalar → Integratsiyalar → shaxsiy integratsiya → «Kalitlar va ruxsatlar» → «Uzoq muddatli token»">
+          <Field label="Uzoq muddatli token *"
+            help={<InfoButton title="Uzoq muddatli token">amoCRM → Sozlamalar → Integratsiyalar → shaxsiy integratsiya → «Kalitlar va ruxsatlar» → «Uzoq muddatli token».</InfoButton>}>
             <Input name="token" type="password" required autoComplete="off" />
           </Field>
           <FormError error={tState?.error} />
@@ -112,7 +118,8 @@ export function WebhookStageForm({ stageToErp, pipelineId }: { stageToErp: numbe
   return (
     <form action={action} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="«ERP'ga» bosqichi ID" hint="Oddiy webhook uchun shart. Raqamli voronka triggerida bo'sh qoldiring">
+        <Field label="«ERP'ga» bosqichi ID"
+          help={<InfoButton title="«ERP'ga» bosqichi ID">Oddiy webhook uchun shart. Raqamli voronka triggerida bo&apos;sh qoldiring.</InfoButton>}>
           <Input name="stageToErp" defaultValue={stageToErp ?? ""} inputMode="numeric" autoComplete="off" placeholder="masalan 61234567" />
         </Field>
         <Field label="Voronka ID" hint="Ixtiyoriy: faqat shu voronka sdelkalari">

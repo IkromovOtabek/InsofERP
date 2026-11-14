@@ -4,7 +4,7 @@ import { startTransition, useActionState, useState } from "react";
 import { ArrowDown, ArrowUp, Eye, EyeOff, LayoutList, ListTree, RotateCcw, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS } from "@/lib/nav-groups";
-import { Badge, Button, Field, FormError, FormSuccess, IconButton, Select } from "@/components/ui";
+import { Badge, Button, Field, FormError, FormSuccess, IconButton, InfoButton, Select } from "@/components/ui";
 import { saveMenuPrefs } from "./actions";
 
 type Item = { href: string; label: string; group: string };
@@ -92,12 +92,16 @@ export function MenuPrefsForm({ items, hidden: hidden0, flat: flat0, home: home0
 
         <div>
           <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-[13px] font-medium text-slate-700">Menyu bandlari</span>
+            <span className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-700">Menyu bandlari
+              <InfoButton title="Menyu bandlari">
+                <p>Belgini olib tashlasangiz band menyudan yashirinadi — sahifa va ruxsatlaringiz o&apos;zgarmaydi.</p>
+                <p>Strelkalar bilan tartibni o&apos;zgartiring.</p>
+              </InfoButton>
+            </span>
             <span className="text-xs text-slate-500">
               {shownCount} ta ko&apos;rinadi{hidden.size > 0 && <> · {hidden.size} ta yashirilgan · <button type="button" onClick={() => setHidden(new Set())} className="font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">hammasini ko&apos;rsatish</button></>}
             </span>
           </div>
-          <p className="mb-2 text-xs text-slate-500">Belgini olib tashlasangiz band menyudan yashirinadi — sahifa va ruxsatlaringiz o&apos;zgarmaydi. Strelkalar bilan tartibni o&apos;zgartiring.</p>
           <div className="max-h-[440px] overflow-y-auto rounded-lg border border-slate-200">
             {flat
               ? <ul className="divide-y divide-slate-100">{order.map((h, i) => row(h, i, order))}</ul>

@@ -8,7 +8,7 @@ import { describeFace, detectFaces, drawBox, loadFaceApi, snapshot, useCamera, t
 import { PhotoThumb } from "./photo-viewer";
 import type { RosterRow } from "@/lib/face-id";
 import { DeleteButton } from "@/components/delete-button";
-import { Badge, Button, Callout, Card, Checkbox, Empty, Input, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Card, Checkbox, Empty, InfoButton, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -40,10 +40,10 @@ export function FaceRosterPanel({ rows }: { rows: RosterRow[] }) {
               <button key={k} type="button" onClick={() => setFilter(k)} className={cn("rounded-md px-3 py-1.5 font-medium transition pointer-coarse:py-2.5", filter === k ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900")}>{label}</button>
             ))}
           </div>
-          <p className="w-full text-xs text-slate-500">
-            Xodim kamera oldida turadi: to&apos;g&apos;ri qaraydi, boshini ikki tomonga biroz buradi — 5 ta namuna olinadi (10–20 soniya).
-            Rasm emas, yuzdan hisoblangan 128 sonli vektor saqlanadi; xodim ishdan bo&apos;shasa skaner uni tanimaydi.
-          </p>
+          <InfoButton title="Yuzlarni ro'yxatga olish">
+            <p>Xodim kamera oldida turadi: to&apos;g&apos;ri qaraydi, boshini ikki tomonga biroz buradi — 5 ta namuna olinadi (10–20 soniya).</p>
+            <p>Rasm emas, yuzdan hisoblangan 128 sonli vektor saqlanadi; xodim ishdan bo&apos;shasa skaner uni tanimaydi.</p>
+          </InfoButton>
         </div>
         <Table>
           <thead><tr><Th>Kadr</Th><Th>Xodim</Th><Th>Face ID</Th><Th right></Th></tr></thead>

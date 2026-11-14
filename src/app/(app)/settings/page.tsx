@@ -12,7 +12,7 @@ import { parsePerms } from "@/lib/auth";
 import { dateTime, isoDate, money } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { MATERIAL_CATEGORY_OPTIONS } from "@/lib/material-category";
-import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Empty, InfoButton, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { refWeight } from "@/lib/trip-plan";
 import { fmtVolume, unitVolume } from "@/lib/volume";
@@ -81,7 +81,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <PageHeader title="Sozlamalar" subtitle="Faqat direktor uchun. Har bir o'zgarish audit jurnaliga tushadi." />
+      <PageHeader title="Sozlamalar" info="Faqat direktor uchun. Har bir o'zgarish audit jurnaliga tushadi." />
       <Tabs current={tab} className="mb-6" items={TABS.map(([k, label, Icon]) => ({ key: k, label, href: `/settings?tab=${k}`, icon: Icon, count: k === "deletions" && pendingDeletions ? pendingDeletions : undefined }))} />
 
       {tab === "account" && <SelfAccountPanel s={s} />}
@@ -138,44 +138,49 @@ async function LimitsTab() {
 
       <div id="kredit-limit" className="scroll-mt-20"><Card>
         <CardHeader icon={Wallet} title="Mijozlar kredit limiti"
-          description="Limit — mijoz qarzga ola oladigan eng ko'p summa. Ishlatilgan = qarz + «Qarzga» ochiq zayavkalar + jo'natilgan, to'lanmagan naqd. Limit faqat «Qarzga»ni cheklaydi: oshsa zayavka bloklanadi, to'lsa mijoz qora ro'yxatga tushadi va qarzga zayavka ochilmaydi. Naqd va perechisleniye zayavka hech qachon bloklanmaydi. 0 — qarzga berilmaydi." />
+          info={<>
+            <p>Limit — mijoz qarzga ola oladigan eng ko&apos;p summa. Ishlatilgan = qarz + «Qarzga» ochiq zayavkalar + jo&apos;natilgan, to&apos;lanmagan naqd.</p>
+            <p>Limit faqat «Qarzga»ni cheklaydi: oshsa zayavka bloklanadi, to&apos;lsa mijoz qora ro&apos;yxatga tushadi va qarzga zayavka ochilmaydi. Naqd va perechisleniye zayavka hech qachon bloklanmaydi. 0 — qarzga berilmaydi.</p>
+            <p>Yangi mijozga standart limit: bundan keyin ochiladigan har yangi mijozga (forma, Excel, zayavka va arizadan, mobil ilova) shu limit beriladi. Mavjud mijozlarning limiti o&apos;zgarmaydi — ularni pastdagi jadvalda bering.</p>
+            <p>Jadvalda faol mijozlar. Limitni mijoz kartasida Buxgalteriya va Finance ham o&apos;zgartiradi — har o&apos;zgarish audit jurnalida («Mijoz kredit limiti»).</p>
+            <p>Limit oshirilganda bloklangan zayavka o&apos;zi ochilmaydi: uni zayavka kartasida «Blokdan chiqarish» bilan ochasiz. Bu huquqni boshqa xodimga{" "}
+              <Link href="/settings?tab=permissions" className="underline">Ruxsatlar</Link> → Zayavkalar → «Limitdan oshgan zayavka blokini ochish» orqali berish mumkin.</p>
+          </>} />
         <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
           <DefaultCreditLimitForm value={defLimit} />
-          <p className="mt-1.5 text-xs text-slate-500">Bundan keyin ochiladigan har yangi mijozga (forma, Excel, zayavka va arizadan, mobil ilova) shu limit beriladi. Mavjud mijozlarning limiti o&apos;zgarmaydi — ularni pastdagi jadvalda bering.</p>
         </div>
         <CustomerLimitsTable rows={rows} />
-        <p className="mt-3 text-xs text-slate-500">
-          Jadvalda faol mijozlar. Limitni mijoz kartasida Buxgalteriya va Finance ham o&apos;zgartiradi — har o&apos;zgarish audit jurnalida («Mijoz kredit limiti»).
-          Limit oshirilganda bloklangan zayavka o&apos;zi ochilmaydi: uni zayavka kartasida «Blokdan chiqarish» bilan ochasiz. Bu huquqni boshqa xodimga{" "}
-          <Link href="/settings?tab=permissions" className="underline">Ruxsatlar</Link> → Zayavkalar → «Limitdan oshgan zayavka blokini ochish» orqali berish mumkin.
-        </p>
       </Card></div>
 
       <div id="kunlik-limit" className="scroll-mt-20"><Card>
         <CardHeader icon={ClipboardList} title="Kunlik zayavka limiti va quvvat"
-          description="Kunlik quvvat — yumshoq ko'rsatkich, hech narsani bloklamaydi: Zayavkalar taqvimining rangi (unga bekor qilinmagan barcha zayavkalar, sklad zayavkalari ham kiradi), egasi dashbordidagi quvvat foizi va ommaviy saytdagi «Kunlik ishlab chiqarish quvvati». Hajm va son chegarasi — qattiq: bir yetkazish kuniga tasdiqlangan mijoz zayavkalari (sklad, qoralama va bloklanganlar kirmaydi) shundan oshsa, zayavka qabul qilinmaydi va blokdan chiqarilmaydi. 0 yoki bo'sh — cheklov yo'q." />
+          info="Kunlik quvvat — yumshoq ko'rsatkich, hech narsani bloklamaydi: Zayavkalar taqvimining rangi (unga bekor qilinmagan barcha zayavkalar, sklad zayavkalari ham kiradi), egasi dashbordidagi quvvat foizi va ommaviy saytdagi «Kunlik ishlab chiqarish quvvati». Hajm va son chegarasi — qattiq: bir yetkazish kuniga tasdiqlangan mijoz zayavkalari (sklad, qoralama va bloklanganlar kirmaydi) shundan oshsa, zayavka qabul qilinmaydi va blokdan chiqarilmaydi. 0 yoki bo'sh — cheklov yo'q." />
         <DailyLimitsForm capacity={c.dailyCapacityM3 != null ? Number(c.dailyCapacityM3) : null} pcs={c.dailyCapacityPcs} m3={maxM3} count={c.dailyOrderMaxCount} />
       </Card></div>
 
       <Card>
         <CardHeader icon={ShoppingCart} title="Katta xarid — direktor tasdig'i"
-          description={`Summasi shu chegaradan katta ta'minot zayavkasi ma'sul xodim tasdig'idan oldin direktor tasdig'idan o'tadi va bosh sahifadagi «Sizning tasdig'ingiz kutilmoqda» navbatida chiqadi. 0 — cheklov yo'q. Hozir: ${Number(c.supplyDirectorLimit) > 0 ? money(Number(c.supplyDirectorLimit)) : "cheklov yo'q"}.`} />
+          description={`Hozir: ${Number(c.supplyDirectorLimit) > 0 ? money(Number(c.supplyDirectorLimit)) : "cheklov yo'q"}.`}
+          info="Summasi shu chegaradan katta ta'minot zayavkasi ma'sul xodim tasdig'idan oldin direktor tasdig'idan o'tadi va bosh sahifadagi «Sizning tasdig'ingiz kutilmoqda» navbatida chiqadi. 0 — cheklov yo'q." />
         <SupplyLimitForm value={Number(c.supplyDirectorLimit)} />
       </Card>
 
       <Card>
         <CardHeader icon={BarChart3} title="Dashbord chegaralari"
-          description="Bosh sahifa va mobil ilovadagi sariq (e'tibor) va qizil (kritik) holatlar: xarajat byudjetidan oshish foizi, xomashyo necha kunga yetishi, muddati o'tgan qarz."
+          info={<>
+            <p>Bosh sahifa va mobil ilovadagi sariq (e&apos;tibor) va qizil (kritik) holatlar: xarajat byudjetidan oshish foizi, xomashyo necha kunga yetishi, muddati o&apos;tgan qarz.</p>
+            <p>Xarajat byudjeti (oy × kategoriya bo&apos;yicha limit) — Byudjet sahifasida.</p>
+          </>}
           action={<LinkButton href="/dashboard/byudjet" variant="secondary" size="sm">Xarajat byudjeti <ArrowRight size={14} /></LinkButton>} />
         <ThresholdForm t={{ alertWarnPct: c.alertWarnPct, alertCritPct: c.alertCritPct, stockWarnDays: c.stockWarnDays, stockCritDays: c.stockCritDays, overdueDays: c.overdueDays }} />
         <p className="mt-3 text-xs text-slate-500">
-          Xarajat byudjeti (oy × kategoriya bo&apos;yicha limit) — Byudjet sahifasida. Joriy oy: {budget._count._all ? <><b>{budget._count._all} ta kategoriya</b>, jami {money(Number(budget._sum.amount ?? 0))}</> : "byudjet kiritilmagan"}.
+          Xarajat byudjeti — joriy oy: {budget._count._all ? <><b>{budget._count._all} ta kategoriya</b>, jami {money(Number(budget._sum.amount ?? 0))}</> : "byudjet kiritilmagan"}.
         </p>
       </Card>
 
       <Card>
         <CardHeader icon={Truck} title="Logistika chegaralari"
-          description="Reys kechikishi, GPS signali, uzoq turish va yo'ldan chiqish, yuklangan betonning kutishi, smena. Logistika rahbari ham o'z Sozlamalar sahifasida o'zgartiradi — qiymatlar bitta." />
+          info="Reys kechikishi, GPS signali, uzoq turish va yo'ldan chiqish, yuklangan betonning kutishi, smena. Logistika rahbari ham o'z Sozlamalar sahifasida o'zgartiradi — qiymatlar bitta." />
         <LogisticsSettingsForm v={{
           lateWarnMin: logi.lateWarnMin, lateCritMin: logi.lateCritMin, gpsSilentMin: logi.gpsSilentMin, loadedWarnMin: logi.loadedWarnMin,
           assignLeadMin: logi.assignLeadMin, shiftStartHour: logi.shiftStartHour, shiftEndHour: logi.shiftEndHour, avgSpeedKmh: logi.avgSpeedKmh,
@@ -186,7 +191,7 @@ async function LimitsTab() {
 
       <Card>
         <CardHeader icon={MapPin} title="Davomat radiusi"
-          description="Xodim ilovada «Keldim / Ketdim» bosganda zavod nuqtasidan shu masofa ichida bo'lishi shart. Shu radius zavodning GPS hududi ham: yuklangan mashina shu doirada tursa «uzoq turish» ogohlantirishi berilmaydi — radiusni juda kichraytirsangiz logistikaga ortiqcha xabar keladi." />
+          info="Xodim ilovada «Keldim / Ketdim» bosganda zavod nuqtasidan shu masofa ichida bo'lishi shart. Shu radius zavodning GPS hududi ham: yuklangan mashina shu doirada tursa «uzoq turish» ogohlantirishi berilmaydi — radiusni juda kichraytirsangiz logistikaga ortiqcha xabar keladi." />
         <AttendanceRadiusForm value={c.attendanceRadiusM} />
         {(c.lat == null || c.lng == null) && (
           <p className="mt-2 text-xs text-amber-700">Zavod nuqtasi belgilanmagan — radius tekshirilmaydi. Nuqtani <Link href="/settings?tab=company" className="underline">Zavod rekvizitlari</Link> → «Zavod joyi» xaritasida belgilang.</p>
@@ -195,14 +200,14 @@ async function LimitsTab() {
 
       <Card>
         <CardHeader icon={AlarmClock} title="Kechikish jarimasi"
-          description="Kechikkan xodimdan ushlanadigan summa — otdel kadr yoki direktor belgilaydi (Sozlamalar → Davomat). Tabel, xodimning o'z davomati va ish haqi hisobi shu qoidadan oladi."
+          info="Kechikkan xodimdan ushlanadigan summa — otdel kadr yoki direktor belgilaydi (Sozlamalar → Davomat). Tabel, xodimning o'z davomati va ish haqi hisobi shu qoidadan oladi."
           action={<LinkButton href="/settings/davomat" variant="secondary" size="sm">Sozlash <ArrowRight size={14} /></LinkButton>} />
         <p className="text-sm text-slate-700">Joriy qoida: <b>{fineText(lateFine)}</b></p>
       </Card>
 
       <Card>
         <CardHeader icon={CalendarDays} title="Ish tartibi va bayramlar"
-          description="Zavod ish haftasi (6/1, 5/2), ish vaqti, bayramlar va ko'chirilgan ish kunlari — otdel kadr belgilaydi. Hisobot va prognozlardagi ish kunlari shundan."
+          info="Zavod ish haftasi (6/1, 5/2), ish vaqti, bayramlar va ko'chirilgan ish kunlari — otdel kadr belgilaydi. Hisobot va prognozlardagi ish kunlari shundan."
           action={<LinkButton href="/settings/ish-tartibi" variant="secondary" size="sm">Sozlash <ArrowRight size={14} /></LinkButton>} />
       </Card>
     </div>
@@ -214,8 +219,13 @@ async function CompanyTab() {
   return (
     <div className="space-y-4">
       <Card>
-      <h2 className="mb-1 font-semibold">Zavod rekvizitlari</h2>
-      <p className="mb-4 text-sm text-slate-500">Nakladnoy, schyot va mijozlar sahifasida ishlatiladi.</p>
+      <h2 className="mb-4 font-semibold">Zavod rekvizitlari
+        <InfoButton title="Zavod rekvizitlari" className="ml-1">
+          <p>Nakladnoy, schyot va mijozlar sahifasida ishlatiladi.</p>
+          <p>Mijozlar kredit limiti, kunlik zayavka limiti va quvvat, katta xarid chegarasi, davomat radiusi va boshqa chegaralar —{" "}
+            <Link href="/settings?tab=limits" className="font-medium underline">Sozlamalar → Limitlar</Link>.</p>
+        </InfoButton>
+      </h2>
       <RowForm action={saveCompany} cols={3} submit="Saqlash" fields={[
         { name: "name", label: "Zavod nomi (brend) *", defaultValue: c.name, required: true },
         { name: "legalName", label: "Yuridik nomi", defaultValue: c.legalName, placeholder: "INSOF BETON MChJ" },
@@ -241,28 +251,35 @@ async function CompanyTab() {
       ]} />
       </Card>
       <PlantLocation lat={c.lat} lng={c.lng} />
-      <Callout tone="info" title="Limitlar alohida bo'limda">
-        Mijozlar kredit limiti, kunlik zayavka limiti va quvvat, katta xarid chegarasi, davomat radiusi va boshqa chegaralar —{" "}
-        <Link href="/settings?tab=limits" className="font-medium underline">Sozlamalar → Limitlar</Link>.
-      </Callout>
       <Card>
-        <h2 className="mb-1 font-semibold">To&apos;lanmagan kirimlar — boshlanish sanasi</h2>
-        <p className="mb-3 text-sm text-slate-500">Kirim-Chiqimdagi «To&apos;lanmagan kirimlar» ro&apos;yxati va yetkazuvchi qarzi shu sanadan keyin kiritilgan kirimlardan hisoblanadi. Undan oldingi chiqimsiz kirimlar (Excel import, dastlabki ma&apos;lumot) to&apos;lov kutmaydi.</p>
+        <h2 className="mb-3 font-semibold">To&apos;lanmagan kirimlar — boshlanish sanasi
+          <InfoButton title="To'lanmagan kirimlar — boshlanish sanasi" className="ml-1">
+            <p>Kirim-Chiqimdagi «To&apos;lanmagan kirimlar» ro&apos;yxati va yetkazuvchi qarzi shu sanadan keyin kiritilgan kirimlardan hisoblanadi.</p>
+            <p>Undan oldingi chiqimsiz kirimlar (Excel import, dastlabki ma&apos;lumot) to&apos;lov kutmaydi.</p>
+          </InfoButton>
+        </h2>
         {/* Sana Toshkent vaqti bo'yicha ko'rsatiladi (UTC+5) */}
         <PayablesSinceForm value={new Date((c.payablesSince ?? DEFAULT_PAYABLES_SINCE).getTime() + 5 * 3_600_000).toISOString().slice(0, 10)} />
       </Card>
       <Card>
-        <h2 className="mb-1 font-semibold">QQS (NDS 12%) — kirim</h2>
-        <p className="mb-3 text-sm text-slate-500">Kirimda narx QQS&apos;siz kiritiladi, QQS to&apos;lovchisi yetkazuvchidan 12% QQS qo&apos;shiladi — yetkazuvchi qarzi va to&apos;lov QQS bilan. Korxona QQS to&apos;lovchisi bo&apos;lsa xomashyo tannarxi <b>QQS&apos;siz</b> (kirim QQS&apos;i byudjetdan qaytariladi, «Kirim QQS» reyestrida), aks holda QQS tannarxga qo&apos;shiladi. O&apos;zgartirish faqat yangi kirimlarga ta&apos;sir qiladi. Hozir: <b>{c.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas"}</b>.</p>
+        <h2 className="mb-1 font-semibold">QQS (NDS 12%) — kirim
+          <InfoButton title="QQS (NDS 12%) — kirim" className="ml-1">
+            <p>Kirimda narx QQS&apos;siz kiritiladi, QQS to&apos;lovchisi yetkazuvchidan 12% QQS qo&apos;shiladi — yetkazuvchi qarzi va to&apos;lov QQS bilan.</p>
+            <p>Korxona QQS to&apos;lovchisi bo&apos;lsa xomashyo tannarxi <b>QQS&apos;siz</b> (kirim QQS&apos;i byudjetdan qaytariladi, «Kirim QQS» reyestrida), aks holda QQS tannarxga qo&apos;shiladi.</p>
+            <p>O&apos;zgartirish faqat yangi kirimlarga ta&apos;sir qiladi.</p>
+          </InfoButton>
+        </h2>
+        <p className="mb-3 text-sm text-slate-500">Hozir: <b>{c.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas"}</b>.</p>
         <VatPayerForm value={c.vatPayer} />
       </Card>
       <Card>
-        <h2 className="mb-1 font-semibold">Ishlab chiqarish Telegram kanali</h2>
-        <p className="mb-3 text-sm text-slate-500">
-          Zayavka brigadaga tayinlanganda ERP boti shu kanalga xabar yozadi: topshiriq raqami, brigada, mijoz va obyekt, mahsulot va miqdor, muddat.
-          Botni kanalga <b>administrator</b> qilib qo&apos;shing va «Xabar joylash» huquqini bering, keyin «Tekshirish» ni bosing.
-          {!botEnabled() && <span className="mt-1 block text-amber-700">Serverda ERP boti ulanmagan (TELEGRAM_BOT_TOKEN yo&apos;q) — kanalga xabar ketmaydi.</span>}
-        </p>
+        <h2 className="mb-3 font-semibold">Ishlab chiqarish Telegram kanali
+          <InfoButton title="Ishlab chiqarish Telegram kanali" className="ml-1">
+            <p>Zayavka brigadaga tayinlanganda ERP boti shu kanalga xabar yozadi: topshiriq raqami, brigada, mijoz va obyekt, mahsulot va miqdor, muddat.</p>
+            <p>Botni kanalga <b>administrator</b> qilib qo&apos;shing va «Xabar joylash» huquqini bering, keyin «Tekshirish» ni bosing.</p>
+          </InfoButton>
+        </h2>
+        {!botEnabled() && <p className="mb-3 text-sm text-amber-700">Serverda ERP boti ulanmagan (TELEGRAM_BOT_TOKEN yo&apos;q) — kanalga xabar ketmaydi.</p>}
         <ProductionChannelForm value={c.productionTgChat} />
       </Card>
     </div>
@@ -297,21 +314,20 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
   return (
     <div className="space-y-4">
       <Card>
-        <h2 className="mb-1 font-semibold">Bo&apos;lim → tugma → amal bo&apos;yicha ruxsat</h2>
-        <p className="text-sm text-slate-500">
-          Har xodimga istalgan bo&apos;limni — o&apos;z rolidan tashqari ham — tugma (oyna) va amal aniqligida bering. Masalan, Ishlab chiqarish
-          xodimiga Sklad → <b>Kirim</b> oynasini va undagi <b>«Kirim qabul qilish»</b>ni belgilasangiz, u kirim qiladi, lekin Chiqim, Jo&apos;natmalar
-          va boshqa oynalarni ko&apos;rmaydi. Oyna yopilsa, menyudagi band, sahifadagi tugma va havolalar ham yo&apos;qoladi.
-        </p>
+        <h2 className="mb-1 font-semibold">Bo&apos;lim → tugma → amal bo&apos;yicha ruxsat
+          <InfoButton title="Bo'lim → tugma → amal bo'yicha ruxsat" className="ml-1">
+            <p>Har xodimga istalgan bo&apos;limni — o&apos;z rolidan tashqari ham — tugma (oyna) va amal aniqligida bering. Masalan, Ishlab chiqarish
+              xodimiga Sklad → <b>Kirim</b> oynasini va undagi <b>«Kirim qabul qilish»</b>ni belgilasangiz, u kirim qiladi, lekin Chiqim, Jo&apos;natmalar
+              va boshqa oynalarni ko&apos;rmaydi. Oyna yopilsa, menyudagi band, sahifadagi tugma va havolalar ham yo&apos;qoladi.</p>
+            <p>Faqat direktor beradi va o&apos;zgartiradi. Har o&apos;zgarish audit jurnaliga yoziladi, xodimga bildirishnoma boradi va qayta kirmasdan kuchga kiradi.
+              Ruxsat qoidalari (kredit limiti, kunlik limit, qora ro&apos;yxat) baribir tekshiriladi.</p>
+          </InfoButton>
+        </h2>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-slate-600">
           <div><Badge color="slate">Rol bo&apos;yicha</Badge> tegilmagan — rol odatiy huquqlari</div>
           <div><Badge color="amber">O&apos;zgartirilgan</Badge> belgilangan oyna va amallar</div>
           <div><Badge color="red">Yopiq</Badge> bo&apos;lim butunlay yashiriladi</div>
         </div>
-        <p className="mt-3 text-xs text-slate-500">
-          Faqat direktor beradi va o&apos;zgartiradi. Har o&apos;zgarish audit jurnaliga yoziladi, xodimga bildirishnoma boradi va qayta kirmasdan kuchga kiradi.
-          Ruxsat qoidalari (kredit limiti, kunlik limit, qora ro&apos;yxat) baribir tekshiriladi.
-        </p>
       </Card>
 
       <Card>
@@ -332,10 +348,12 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
 
       {users.length > 0 && (
         <Card>
-          <h2 className="mb-1 font-semibold">Bir nechta xodimga birdan</h2>
-          <p className="mb-3 text-sm text-slate-500">
-            Pastdagi ro&apos;yxatda xodimlarni belgilang va ularga lavozim shablonini yoki bitta ruxsatlar to&apos;plamini birdan bering. Har xodim uchun alohida audit yoziladi.
-          </p>
+          <h2 className="mb-3 font-semibold">Bir nechta xodimga birdan
+            <InfoButton title="Bir nechta xodimga birdan" className="ml-1">
+              <p>Pastdagi ro&apos;yxatda xodimlarni belgilang va ularga lavozim shablonini yoki bitta ruxsatlar to&apos;plamini birdan bering.</p>
+              <p>Har xodim uchun alohida audit yoziladi.</p>
+            </InfoButton>
+          </h2>
           <BulkPermsBar templates={templates} modules={permModules(null)} total={users.length} />
         </Card>
       )}
@@ -396,14 +414,17 @@ async function ProductsTab() {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="mb-1 flex flex-wrap items-start justify-between gap-2">
-          <h2 className="font-semibold">Yangi mahsulot</h2>
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <h2 className="font-semibold">Yangi mahsulot
+            <InfoButton title="Yangi mahsulot" className="ml-1">
+              <p>Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Sklad → Ishlab chiqarish imkoni bo&apos;limida hisoblanadi.</p>
+              <p>«1 dona hajmi, m³» — plitadan necha kub chiqadi (ishlab chiqarish samaradorligi, mahsulot tanlagichida ko&apos;rinadi); bo&apos;sh bo&apos;lsa og&apos;irlikdan taxminiy.</p>
+              <p>Og&apos;irlik va «bir reysga max» — zayavkadagi reys hisobi uchun (bort mashinaga nechtasi sig&apos;adi); og&apos;irlik bo&apos;sh bo&apos;lsa GOST bo&apos;yicha taxminiy olinadi (maydonda kulrang ko&apos;rinadi).</p>
+            </InfoButton>
+          </h2>
           {/* Ko'p mahsulotni bittalab yozmay: tayyor Excel ro'yxatdan yoki qator × ustun matritsasidan */}
           <div className="flex flex-wrap items-center gap-2"><ProductExcelPanel /><ProductMatrixPanel /></div>
         </div>
-        <p className="mb-3 text-xs text-slate-500">Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Sklad → Ishlab chiqarish imkoni bo'limida hisoblanadi.
-          «1 dona hajmi, m³» — plitadan necha kub chiqadi (ishlab chiqarish samaradorligi, mahsulot tanlagichida ko&apos;rinadi); bo&apos;sh bo&apos;lsa og&apos;irlikdan taxminiy.
-          Og&apos;irlik va «bir reysga max» — zayavkadagi reys hisobi uchun (bort mashinaga nechtasi sig&apos;adi); og&apos;irlik bo&apos;sh bo&apos;lsa GOST bo&apos;yicha taxminiy olinadi (maydonda kulrang ko&apos;rinadi).</p>
         <RowForm action={saveProduct.bind(null, null)} mode="create" cols={6} fields={fields()} />
       </Card>
       <Card>
@@ -438,8 +459,7 @@ async function MaterialsTab() {
     <div className="space-y-4">
       <Card><h2 className="mb-3 font-semibold">Yangi xomashyo</h2><RowForm action={saveMaterial.bind(null, null)} mode="create" cols={6} fields={fields()} /></Card>
       <Card>
-        <h2 className="mb-1 font-semibold">Xomashyo ro'yxati</h2>
-        <p className="mb-3 text-xs text-slate-500">Minimal qoldiqdan kam qolsa bosh sahifada "Kam qoldi" signali chiqadi.</p>
+        <h2 className="mb-3 font-semibold">Xomashyo ro&apos;yxati<InfoButton title="Xomashyo ro'yxati" className="ml-1">Minimal qoldiqdan kam qolsa bosh sahifada &quot;Kam qoldi&quot; signali chiqadi.</InfoButton></h2>
         <div className="divide-y divide-slate-100">{materials.map((m) => <div key={m.id} className="py-3"><RowForm action={saveMaterial.bind(null, m.id)} cols={6} fields={fields(m)} extra={<DeleteButton action={deleteCatalogMaterial} id={m.id} name={m.name} title="Xomashyoni o'chirish" />} /></div>)}</div>
       </Card>
     </div>
@@ -497,10 +517,17 @@ async function UsersTab({ me }: { me: string }) {
   const roles = Object.entries(ROLE_LABELS).filter(([r]) => r !== "DRIVER" && r !== "BRIGADIER" && r !== "SUPERADMIN");
   return (
     <div className="space-y-4">
-      <Card><h2 className="mb-1 font-semibold">Yangi foydalanuvchi</h2><p className="mb-3 text-xs text-slate-500">Xodim bilan bog'lash uchun Xodimlar sahifasidan qo'shing — u yerda lavozim bo'yicha rol avtomatik beriladi.</p><UserForm roles={roles} /></Card>
-      <p className="text-xs text-slate-500">Ism va rolni shu yerda tahrirlang (har o&apos;zgarish audit jurnalida). Rol o&apos;zgarsa foydalanuvchining ochiq sessiyalari tugaydi. O&apos;z rolingizni va oxirgi faol direktorni o&apos;zgartirib/bloklab bo&apos;lmaydi.</p>
+      <Card><h2 className="mb-3 font-semibold">Yangi foydalanuvchi<InfoButton title="Yangi foydalanuvchi" className="ml-1">Xodim bilan bog&apos;lash uchun Xodimlar sahifasidan qo&apos;shing — u yerda lavozim bo&apos;yicha rol avtomatik beriladi.</InfoButton></h2><UserForm roles={roles} /></Card>
       <Table>
-        <thead><tr><Th>F.I.O. va rol</Th><Th>Login</Th><Th>Xodim</Th><Th>Holat</Th><Th>Parol</Th><Th></Th></tr></thead>
+        <thead><tr><Th>
+          <span className="inline-flex items-center gap-1">
+            F.I.O. va rol
+            <InfoButton title="Foydalanuvchilar">
+              <p>Ism va rolni shu yerda tahrirlang (har o&apos;zgarish audit jurnalida).</p>
+              <p>Rol o&apos;zgarsa foydalanuvchining ochiq sessiyalari tugaydi. O&apos;z rolingizni va oxirgi faol direktorni o&apos;zgartirib/bloklab bo&apos;lmaydi.</p>
+            </InfoButton>
+          </span>
+        </Th><Th>Login</Th><Th>Xodim</Th><Th>Holat</Th><Th>Parol</Th><Th></Th></tr></thead>
         <tbody>
           {users.map((u) => (
             <Tr key={u.id}>
@@ -526,11 +553,13 @@ async function DeletionsTab() {
   return (
     <div className="space-y-4">
       <Card>
-        <h2 className="mb-1 font-semibold">Hisobni o'chirish so'rovlari</h2>
-        <p className="text-xs text-slate-500">
-          Mijozlar (quruvchi, tadbirkor) ilovada hisobini o'zi darhol o'chiradi. Zavod xodimi so'rov qoldiradi — tasdiqlansa ERP logini yopiladi,
-          sessiyalar tugaydi, ilova hisobi (ECO) anonimlashtiriladi. Xodim kartasi (HR, tabel) o'chirilmaydi. Saytdan kelgan so'rovda odam tekshirilmagan — avval telefon qiling.
-        </p>
+        <h2 className="font-semibold">Hisobni o&apos;chirish so&apos;rovlari
+          <InfoButton title="Hisobni o'chirish so'rovlari" className="ml-1">
+            <p>Mijozlar (quruvchi, tadbirkor) ilovada hisobini o&apos;zi darhol o&apos;chiradi. Zavod xodimi so&apos;rov qoldiradi — tasdiqlansa ERP logini yopiladi,
+              sessiyalar tugaydi, ilova hisobi (ECO) anonimlashtiriladi. Xodim kartasi (HR, tabel) o&apos;chirilmaydi.</p>
+            <p>Saytdan kelgan so&apos;rovda odam tekshirilmagan — avval telefon qiling.</p>
+          </InfoButton>
+        </h2>
       </Card>
       {pending.length === 0 ? <Card><Empty text="Ochiq so'rov yo'q" /></Card> : (
         <Table>

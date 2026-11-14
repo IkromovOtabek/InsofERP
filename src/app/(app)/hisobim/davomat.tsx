@@ -39,6 +39,7 @@ export async function MyAttendanceCard({ userId, month }: { userId: string; mont
   return (
     <Card>
       <CardHeader icon={CalendarCheck} title="Mening davomatim"
+        info="Belgini otdel kadr, sex boshlig'i yoki yuz skaneri qo'yadi; xato bo'lsa otdel kadrga murojaat qiling."
         description={`Smena ${m.shift.start}–${m.shift.end}. ${active ? `Kechikish jarimasi: ${fineText(fine)}.` : "Kechikish jarimasi belgilanmagan."}`}
         action={
           <div className="flex items-center gap-1">
@@ -80,7 +81,6 @@ export async function MyAttendanceCard({ userId, month }: { userId: string; mont
           })}
         </tbody>
       </Table>
-      <p className="mt-2 text-xs text-slate-500">Belgini otdel kadr, sex boshlig&apos;i yoki yuz skaneri qo&apos;yadi; xato bo&apos;lsa otdel kadrga murojaat qiling.</p>
     </Card>
   );
 }

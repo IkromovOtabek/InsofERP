@@ -21,7 +21,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const t = d.t;
 
   return (
-    <BiPage title="Marketing" subtitle="Pul qayerga ketyapti — ROAS, CAC, ROMI, LTV, CPL; kanal bo'yicha hukm (nimani kesish, nimani ko'paytirish), voronka va trend. Ma'lumot — Marketing ma'lumotlari sahifasidagi fakt yozuvlaridan." tab="marketing" range={range}>
+    <BiPage title="Marketing" info={<>
+      <p>Pul qayerga ketyapti — ROAS, CAC, ROMI, LTV, CPL; kanal bo&apos;yicha hukm (nimani kesish, nimani ko&apos;paytirish), voronka va trend.</p>
+      <p>Ma&apos;lumot — Marketing ma&apos;lumotlari sahifasidagi fakt yozuvlaridan.</p>
+    </>} tab="marketing" range={range}>
       <div className="space-y-6">
         {!d.has && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">Bu davr ({d.months.map((m) => `${m.month}.${m.year}`).join(", ")}) uchun <b>fakt</b> yozuvlari kiritilmagan. <Link href="/bi-tahlil/marketing/malumotlar" className="font-medium underline">Marketing ma'lumotlari</Link> sahifasida oy × kanal bo'yicha xarajat, lead, mijoz va daromadni kiriting.</div>}
 

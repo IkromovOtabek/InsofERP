@@ -44,7 +44,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
       <div>
         <PageHeader
           title="Reyslar / nakladnoy"
-          subtitle={driver ? undefined : "Haydovchilar kesimida butun tarix"}
+          info={driver ? undefined : "Haydovchilar kesimida butun tarix"}
           action={newBtn}
         />
         <Tabs current="tarix" items={tabItems} />

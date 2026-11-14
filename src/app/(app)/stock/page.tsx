@@ -10,7 +10,7 @@ import { canSeePrixod, canSeeRasxod } from "@/lib/stock-journal-access";
 import { requirePage } from "@/lib/page-guard";
 import { canSee, pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
-import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
+import { Badge, Button, Callout, Empty, InfoButton, Input, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Gauge, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse, Search, RotateCcw } from "lucide-react";
 import { visionEnabled } from "@/lib/ai/vision";
@@ -191,7 +191,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         // Bo'lim (kategoriya) chap menyudagi Sklad ichki bandlaridan tanlanadi — sarlavhada ko'rinadi
         title={bolim === "xomashyo" ? "Xomashyo qoldiqlari" : bolim === "hovli" ? "Tayyor mahsulotlar" : bolim === "holat" ? "Sklad holati — xomashyo" : kat ? `Sklad — ${MATERIAL_CATEGORY_LABEL[kat]}` : "Sklad"}
         back={bolim ? { href: "/stock", label: "Sklad" } : undefined}
-        subtitle={bolim === "xomashyo" ? "Davr bo'yicha kirim, chiqim va qoldiq — har xomashyo, kategoriya va sklad kesimida."
+        info={bolim === "xomashyo" ? "Davr bo'yicha kirim, chiqim va qoldiq — har xomashyo, kategoriya va sklad kesimida."
           : bolim === "hovli" ? "Dona mahsulot brigadalar bo'yicha: davrdagi kirim, chiqim va qoldiq; zayavkaga band / erkin va betondan xomashyo bilan qancha chiqadi."
           : bolim === "holat" ? "Qoldiq, kunlik sarf, necha kunga yetadi va tasdiqlangan zayavkalarga yetmaydigan xomashyo."
           : "Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."}
@@ -270,8 +270,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <CardHeader icon={HardHat}
                 title={undistributed.count > 0 ? `Brigadaga xomashyo berish · ${undistributed.count} ta mahsulot hali berilmagan` : "Brigadaga xomashyo berish"}
                 description={undistributed.count > 0
-                  ? `Taqsimlanmagan: ${undistributed.names.slice(0, 6).join(", ")}${undistributed.names.length > 6 ? ` va yana ${undistributed.names.length - 6} ta` : ""}. Berilgani sklad qoldig'idan chiqadi, brigada qoldig'iga o'tadi.`
-                  : "Kelgan mahsulotlarni brigadalarga taqsimlaysiz: berilgani sklad qoldig'idan chiqadi, brigada qoldig'iga o'tadi. Topshiriq bajarilganda retsept bo'yicha o'zi kamayadi."} />
+                  ? `Taqsimlanmagan: ${undistributed.names.slice(0, 6).join(", ")}${undistributed.names.length > 6 ? ` va yana ${undistributed.names.length - 6} ta` : ""}`
+                  : undefined}
+                info={<>
+                  <p>Kelgan mahsulotlarni brigadalarga taqsimlaysiz: berilgani sklad qoldig&apos;idan chiqadi, brigada qoldig&apos;iga o&apos;tadi. Topshiriq bajarilganda retsept bo&apos;yicha o&apos;zi kamayadi.</p>
+                  <p>Topshiriq bajarilganda brigadada yetmagan xomashyo skladdan avtomatik beriladi. Brigada qoldig&apos;i manfiy (qizil) chiqsa — skladda ham yetmagan: xomashyo kelgach shu miqdorni brigadaga bersangiz nolga tushadi.</p>
+                </>} />
             </div>
             <div className="px-5 pb-5">
               {brigStocks.length === 0 ? (
@@ -337,7 +341,6 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               );
             })}
           </div>
-          <p className="text-xs text-slate-500">Topshiriq bajarilganda brigadada yetmagan xomashyo skladdan avtomatik beriladi. Brigada qoldig&apos;i manfiy (qizil) chiqsa — skladda ham yetmagan: xomashyo kelgach shu miqdorni brigadaga bersangiz nolga tushadi.</p>
         </div>
       )}
 
@@ -363,7 +366,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             </tbody>
           </Table>
           <div>
-            <h2 className="mb-2 font-semibold">Dona mahsulotlar (hovlida)</h2>
+            <h2 className="mb-2 font-semibold">Dona mahsulotlar (hovlida)
+              <InfoButton title="Dona mahsulotlar (hovlida)" className="ml-1">
+                Hovlida tayyor turgan dona mahsulotlar (ustun, blok, bordyur…). Qatorni bosib, kimga band qilinganini ko&apos;rasiz.
+              </InfoButton>
+            </h2>
             <Table>
               <thead><tr><Th>Mahsulot</Th><Th>Birlik</Th><Th right>Jami</Th><Th right>Erkin</Th><Th right>Band</Th><Th>Holat</Th><Th></Th></tr></thead>
               <tbody>
@@ -390,13 +397,16 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 )}
               </tbody>
             </Table>
-            <p className="mt-2 text-xs text-slate-500">Hovlida tayyor turgan dona mahsulotlar (ustun, blok, bordyur…). Qatorni bosib, kimga band qilinganini ko&apos;rasiz.</p>
           </div>
 
           <BrigadeWarehouses />
 
           <div>
-            <h2 className="mb-2 font-semibold">Tayyor beton (ishlab chiqarilgan − jo&apos;natilgan)</h2>
+            <h2 className="mb-2 font-semibold">Tayyor beton (ishlab chiqarilgan − jo&apos;natilgan)
+              <InfoButton title="Tayyor beton" className="ml-1">
+                Beton oldindan tayyorlanmaydi — zakaz olingandan keyin ishlab chiqariladi. Shuning uchun &quot;Qoldiq&quot; zames qilingan, lekin hali nakladnoy yozilmagan hajm (nolga yaqin bo&apos;lishi kerak); asosiy ko&apos;rsatkich — xomashyodan retsept bo&apos;yicha qancha chiqishi.
+              </InfoButton>
+            </h2>
             <Table>
               <thead><tr><Th>Marka</Th><Th right>Qoldiq</Th><Th right>Xomashyodan chiqadi</Th><Th>Cheklovchi xomashyo</Th></tr></thead>
               <tbody>
@@ -414,12 +424,15 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 })}
               </tbody>
             </Table>
-            <p className="mt-2 text-xs text-slate-500">Beton oldindan tayyorlanmaydi — zakaz olingandan keyin ishlab chiqariladi. Shuning uchun &quot;Qoldiq&quot; zames qilingan, lekin hali nakladnoy yozilmagan hajm (nolga yaqin bo&apos;lishi kerak); asosiy ko&apos;rsatkich — xomashyodan retsept bo&apos;yicha qancha chiqishi.</p>
           </div>
 
           {capacity.some((c) => c.items.some((i) => i.short > 0)) && (
             <div>
-              <h2 className="mb-2 font-semibold">Zayavkalar uchun yetishmaydigan xomashyo / mahsulot</h2>
+              <h2 className="mb-2 font-semibold">Zayavkalar uchun yetishmaydigan xomashyo / mahsulot
+                <InfoButton title="Zayavkalar uchun yetishmaydigan xomashyo / mahsulot" className="ml-1">
+                  Kerak = qabul qilingan, hali ishlab chiqarilmagan zayavkalar × retsept normasi. Yetishmayotganini <Link href="/receipts/import" className="underline">Kirim → Excel orqali</Link> yoki <Link href="/receipts/new" className="underline">Kirim</Link> bilan kiriting.
+                </InfoButton>
+              </h2>
               <Table>
                 <thead><tr><Th>Mahsulot</Th><Th>Ingredient</Th><Th right>Qoldiq</Th><Th right>Kerak</Th><Th right>Yetishmaydi</Th></tr></thead>
                 <tbody>
@@ -428,7 +441,6 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                   )))}
                 </tbody>
               </Table>
-              <p className="mt-2 text-xs text-slate-500">Kerak = qabul qilingan, hali ishlab chiqarilmagan zayavkalar × retsept normasi. Yetishmayotganini <Link href="/receipts/import" className="underline">Kirim → Excel orqali</Link> yoki <Link href="/receipts/new" className="underline">Kirim</Link> bilan kiriting.</p>
             </div>
           )}
         </div>
@@ -443,7 +455,13 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <div id="xomashyo" className="scroll-mt-20 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">{kat ? `${MATERIAL_CATEGORY_LABEL[kat]} — qoldiqlar` : "Xomashyo qoldiqlari"}</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{kat ? `${MATERIAL_CATEGORY_LABEL[kat]} — qoldiqlar` : "Xomashyo qoldiqlari"}
+                <InfoButton title={kat ? `${MATERIAL_CATEGORY_LABEL[kat]} — qoldiqlar` : "Xomashyo qoldiqlari"} className="ml-1">
+                  <p>Summa = miqdor × harakat narxi: kirim — xarid narxida (yetkazib berish bilan), chiqim — berilgan paytdagi «Dona narxi» bo&apos;yicha.</p>
+                  <p>«≈» — narxsiz eski harakatlar bor, ular joriy narx bo&apos;yicha baholangan («Dona narxi» yoki o&apos;rtacha tannarx).</p>
+                  <p>«Jami» qatorida miqdor qo&apos;shilmaydi — birliklar har xil. Nomini bosing — davrdagi harakatlar.</p>
+                </InfoButton>
+              </h2>
               <p className="text-sm text-slate-500">{`${period.label}${wh ? ` · ${wh.name}` : perWarehouse ? " · barcha skladlar" : ""}`}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -573,11 +591,6 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             )}
           </Sheet>
           </MaterialEditProvider>
-          <p className="text-xs text-slate-500">
-            Summa = miqdor × harakat narxi: kirim — xarid narxida (yetkazib berish bilan), chiqim — berilgan paytdagi «Dona narxi» bo&apos;yicha.
-            «≈» — narxsiz eski harakatlar bor, ular joriy narx bo&apos;yicha baholangan («Dona narxi» yoki o&apos;rtacha tannarx).
-            «Jami» qatorida miqdor qo&apos;shilmaydi — birliklar har xil. Nomini bosing — davrdagi harakatlar.
-          </p>
         </div>
       )}
 

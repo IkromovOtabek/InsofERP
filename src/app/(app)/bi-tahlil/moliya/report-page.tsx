@@ -111,7 +111,7 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
 export async function MoliyaReportPage({ tab, searchParams }: { tab: ReportTab; searchParams: Promise<SP> }) {
   const { sp, range } = await biContext(searchParams, `${BASE}/${tab}`);
   return (
-    <BiPage title="Moliya" subtitle="Foyda va zarar, pul mablag'lari harakati va balans — oylar bo'yicha" tab="finance" range={range} period={false}>
+    <BiPage title="Moliya" info="Foyda va zarar, pul mablag'lari harakati va balans — oylar bo'yicha" tab="finance" range={range} period={false}>
       <div className="space-y-5">
         <ReportKpis tab={tab} sp={sp} />
         <FinReportView base={MOLIYA_LINKS.find((l) => l.key === tab)!.href} sp={{ ...sp, tab }} tabs={false} />

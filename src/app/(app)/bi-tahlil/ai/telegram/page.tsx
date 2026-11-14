@@ -1,7 +1,7 @@
 import { Bot, Mic, Sparkles, Link2, ShieldAlert, Users, MessageSquare, Timer } from "lucide-react";
 import { biContext } from "../../shell";
 import { Panel, Note, Kpi } from "../../ui";
-import { Badge, Button, Table, Td, Th, Tr, Empty } from "@/components/ui";
+import { Badge, Button, InfoButton, Table, Td, Th, Tr, Empty } from "@/components/ui";
 import { db } from "@/lib/db";
 import { dateTime, fmtNum } from "@/lib/format";
 import { aiUsageStats } from "@/lib/bi/ai-chat";
@@ -47,11 +47,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     <div>
       <div className="mb-6">
         <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-600">Insof AI</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Telegram bot</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-500">
-          Telegramga ovozli xabar yuborasiz — bot uni matnga o'giradi, ERP ma'lumotlari asosida javob qaytaradi.
-          Javob shu sahifadagi tahlil raqamlaridan olinadi, bot hech qanday ma'lumotni o'zgartirmaydi.
-        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+          Telegram bot
+          <InfoButton title="Telegram bot" size="md" className="ml-1">
+            <p>Telegramga ovozli xabar yuborasiz — bot uni matnga o&apos;giradi, ERP ma&apos;lumotlari asosida javob qaytaradi.
+              Javob shu sahifadagi tahlil raqamlaridan olinadi, bot hech qanday ma&apos;lumotni o&apos;zgartirmaydi.</p>
+            <p>Bot javoblari tanlangan davrga emas, joriy holatga asoslanadi.</p>
+          </InfoButton>
+        </h1>
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -63,7 +66,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel className="xl:col-span-2" eyebrow="1-qadam" title={<span className="inline-flex items-center gap-1.5"><Link2 size={15} className="text-brand-500" /> Hisobingizni ulash</span>}
-               info="Kod bir marta ishlaydi va 15 daqiqada kuchini yo'qotadi. Kodsiz bot hech kimga javob bermaydi.">
+               info={<>
+                 <p>Kod bir marta ishlaydi va 15 daqiqada kuchini yo&apos;qotadi. Kodsiz bot hech kimga javob bermaydi.</p>
+                 {bot && <p>
+                   Xodimlar botga <b>o&apos;zlari</b> ham ulanadi: <code className="rounded bg-slate-100 px-1">/start</code> → «Telefon raqamimni yuborish».
+                   Raqam Otdel kadrdagi karta bilan mos kelsa hisob ulanadi va <b>kirish va parolni tiklash kodlari botga</b> keladi.
+                 </p>}
+               </>}>
           {bot ? (
             <>
               <ol className="mb-4 space-y-1.5 text-[13px] text-slate-700">
@@ -71,10 +80,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 <li>2. Quyidagi tugma bilan 8 xonali kod oling</li>
                 <li>3. Kodni botga yuboring — shundan keyin ovozli savol berishingiz mumkin</li>
               </ol>
-              <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12.5px] text-sky-900">
-                Xodimlar botga <b>o'zlari</b> ham ulanadi: <code className="rounded bg-white/70 px-1">/start</code> → «Telefon raqamimni yuborish».
-                Raqam Otdel kadrdagi karta bilan mos kelsa hisob ulanadi va <b>kirish va parolni tiklash kodlari botga</b> keladi.
-              </p>
               <LinkCodeForm botUsername={bot.username} />
             </>
           ) : (
@@ -162,7 +167,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         ) : <div className="p-5"><Empty text="Hali savol berilmagan. Botga ovozli xabar yuboring — shu yerda ko'rinadi." /></div>}
       </Panel>
 
-      <div className="mt-6 text-xs text-slate-400">Davr: {range.label} · Bot javoblari tanlangan davrga emas, joriy holatga asoslanadi.</div>
+      <div className="mt-6 text-xs text-slate-400">Davr: {range.label}</div>
     </div>
   );
 }

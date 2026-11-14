@@ -11,7 +11,7 @@ import type { LedgerEditData } from "@/lib/ledger-edit";
 import { today } from "@/lib/davomat";
 import { fmtNum } from "@/lib/format";
 import { LEDGER_REVENUE_LABEL, LEDGER_REVENUE_TYPES } from "@/lib/ledger-revenue";
-import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, IconButton, InfoButton, Input, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /**
@@ -72,8 +72,9 @@ function RowForm({ options, vehicleId, clientToken, onClose }: { options: Ledger
     <div className="space-y-3 rounded-(--radius-card) border border-slate-200 bg-white p-4 shadow-(--shadow-card)">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Qo&apos;lda qator{v ? ` — ${v.plate}` : ""}</h3>
-          <p className="text-xs text-slate-500">ECO&apos;ga tushmagan reys. Zapravka va xarajat shu mashinaga yoziladi, haq ish boshqaruvchi tasdig&apos;iga boradi.</p>
+          <h3 className="text-sm font-semibold">Qo&apos;lda qator{v ? ` — ${v.plate}` : ""}
+            <InfoButton title="Qo'lda qator" className="ml-1">ECO&apos;ga tushmagan reys. Zapravka va xarajat shu mashinaga yoziladi, haq ish boshqaruvchi tasdig&apos;iga boradi.</InfoButton>
+          </h3>
         </div>
         <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
       </div>

@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { saveVehicle } from "../actions";
-import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
+import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, InfoButton, Input, Select, Textarea } from "@/components/ui";
 
 export type VehicleFormValue = {
   id: string; plate: string; type: string; brand: string | null; model: string | null; year: number | null;
@@ -70,7 +70,7 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
           </Select>
         </Field>
         <div className="sm:col-span-2">
-          <div className="mb-1.5 text-sm font-medium text-slate-700">Smenadosh haydovchilar</div>
+          <div className="mb-1.5 text-sm font-medium text-slate-700">Smenadosh haydovchilar <InfoButton title="Smenadosh haydovchilar">Smenali ishda — reys ochilganda bu haydovchilar ro&apos;yxat boshida turadi</InfoButton></div>
           {/* Bo'sh qiymat har doim yuboriladi — hammasi olib tashlansa ham server «ro'yxat bo'sh» deb biladi */}
           <input type="hidden" name="shiftDriverIds[]" value="" />
           <div className="space-y-2">
@@ -88,7 +88,6 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
             ))}
             <Button type="button" variant="secondary" size="sm" onClick={() => setShift((l) => [...l, ""])}><Plus size={14} /> Smenadosh haydovchi qo&apos;shish</Button>
           </div>
-          <p className="mt-1 text-xs text-slate-500">Smenali ishda — reys ochilganda bu haydovchilar ro&apos;yxat boshida turadi</p>
         </div>
       </div>
 
@@ -102,12 +101,13 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
         <Field label={methane ? "Yurish normasi, m³ / 100 km" : dual ? "Dizel normasi, l / 100 km" : "Sarf normasi, l/100 km"} hint={methane ? "Bo'sh qolsa — 50 m³" : "Haqiqiy sarf shu bilan solishtiriladi"}>
           <Input name="fuelNormL100" type="number" step="0.1" min="0" defaultValue={v?.fuelNormL100 ?? ""} key={`n${methane}`} placeholder={methane ? "50" : undefined} />
         </Field>
-        <Field label={methane ? "Turib ishlash, m³ / soat" : dual ? "Dizel, turib ishlash, l / soat" : "Turib ishlash, l / soat"} hint={methane ? "Mikser aylantirish (motor ishlab turgan soat). Bo'sh qolsa — 5 m³" : "Mikser aylantirish — ixtiyoriy"}>
+        <Field label={methane ? "Turib ishlash, m³ / soat" : dual ? "Dizel, turib ishlash, l / soat" : "Turib ishlash, l / soat"} hint={methane ? undefined : "Mikser aylantirish — ixtiyoriy"}
+          help={methane ? <InfoButton title="Turib ishlash, m³ / soat">Mikser aylantirish (motor ishlab turgan soat). Bo&apos;sh qolsa — 5 m³</InfoButton> : undefined}>
           <Input name="idleNormPerHour" type="number" step="0.1" min="0" defaultValue={v?.idleNormPerHour ?? ""} key={`i${methane}`} placeholder={methane ? "5" : undefined} />
         </Field>
         {dual && (
           <>
-            <Field label="Metan normasi, m³ / 100 km" hint="Ikkala yoqilg'i birga sarflanadi — har biri o'z normasi bilan">
+            <Field label="Metan normasi, m³ / 100 km" help={<InfoButton title="Metan normasi, m³ / 100 km">Ikkala yoqilg&apos;i birga sarflanadi — har biri o&apos;z normasi bilan</InfoButton>}>
               <Input name="gasNormPer100" type="number" step="0.1" min="0" defaultValue={v?.gasNormPer100 ?? ""} />
             </Field>
             <Field label="Metan, turib ishlash, m³ / soat" hint="Mikser aylantirish — ixtiyoriy">
@@ -115,7 +115,7 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
             </Field>
           </>
         )}
-        <Field label="Probeg, km" hint={v?.odometerKm != null ? "Kamaytirib bo'lmaydi — faqat xatoni tuzatish (sababi bilan)" : undefined}><Input name="odometerKm" type="number" min="0" defaultValue={v?.odometerKm ?? ""} /></Field>
+        <Field label="Probeg, km" help={v?.odometerKm != null ? <InfoButton title="Probeg, km">Kamaytirib bo&apos;lmaydi — faqat xatoni tuzatish (sababi bilan)</InfoButton> : undefined}><Input name="odometerKm" type="number" min="0" defaultValue={v?.odometerKm ?? ""} /></Field>
         <Field label="Texnik ko'rik muddati"><Input name="inspectionUntil" type="date" defaultValue={v?.inspectionUntil ?? ""} /></Field>
         <div className="flex items-end pb-2"><Checkbox name="hasGps" label="Doimiy GPS-treker o'rnatilgan" defaultChecked={v?.hasGps} /></div>
       </div>
@@ -126,7 +126,7 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
         <Field label="Sug'urta muddati"><Input name="insuranceUntil" type="date" defaultValue={v?.insuranceUntil ?? ""} /></Field>
       </div>
 
-      {v?.odometerKm != null && <Field label="Probegni kamaytirish sababi" hint="Faqat probeg avvalgisidan kam kiritilsa kerak (auditga yoziladi)"><Input name="odometerReason" placeholder="Masalan: 125400 o'rniga 1254000 yozilgan edi" /></Field>}
+      {v?.odometerKm != null && <Field label="Probegni kamaytirish sababi" help={<InfoButton title="Probegni kamaytirish sababi">Faqat probeg avvalgisidan kam kiritilsa kerak (auditga yoziladi)</InfoButton>}><Input name="odometerReason" placeholder="Masalan: 125400 o'rniga 1254000 yozilgan edi" /></Field>}
       <Field label="Izoh"><Textarea name="note" defaultValue={v?.note ?? ""} rows={2} /></Field>
       {v && <Checkbox name="isActive" label="Faol (reysga beriladi). Sotilgan/hisobdan chiqarilgan bo'lsa belgini olib tashlang" defaultChecked={v.isActive} />}
       <FormActions>

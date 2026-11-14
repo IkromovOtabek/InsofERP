@@ -22,7 +22,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
 
   return (
     <div>
-      <PageHeader eyebrow="Egasi dashbordi" title="Xarajat byudjeti va chegaralar" subtitle="Har kategoriya uchun oylik byudjet. Byudjetdan oshgan xarajat dashbordda qizil, rejalashtirilmagan — alohida ro'yxatda." back={{ href: "/dashboard", label: "Bosh sahifa" }}
+      <PageHeader eyebrow="Egasi dashbordi" title="Xarajat byudjeti va chegaralar" info="Har kategoriya uchun oylik byudjet. Byudjetdan oshgan xarajat dashbordda qizil, rejalashtirilmagan — alohida ro'yxatda." back={{ href: "/dashboard", label: "Bosh sahifa" }}
         action={
           <div className="flex items-center gap-1 text-sm">
             <Link href={`?oy=${shiftMonth(ym, -1)}`} className="rounded-md p-1.5 hover:bg-slate-100" aria-label="Oldingi oy"><ChevronLeft size={16} /></Link>
@@ -32,19 +32,22 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
         } />
 
       <Card padded={false} className="mb-6">
-        <div className="px-5 pt-5"><CardHeader title={`Byudjet — ${monthTitle(ym)}`} description="Limit bo'sh qolsa byudjetning o'zi limit hisoblanadi. Fakt — Kirim-Chiqimdagi chiqimlar (ta'minot zayavkasidan avtomatik yozilganlar ham)." icon={Wallet} /></div>
+        <div className="px-5 pt-5"><CardHeader title={`Byudjet — ${monthTitle(ym)}`} info={<><p>Limit bo&apos;sh qolsa byudjetning o&apos;zi limit hisoblanadi.</p><p>Fakt — Kirim-Chiqimdagi chiqimlar (ta&apos;minot zayavkasidan avtomatik yozilganlar ham).</p></>} icon={Wallet} /></div>
         <div className="px-5 pb-5"><BudgetForm month={ym} rows={rows} prevMonth={shiftMonth(ym, -1)} warnPct={company.alertWarnPct} /></div>
       </Card>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader title="Holat chegaralari" description="Norma / e'tibor / kritik qoidalari — dashborddagi ranglar shu qiymatlardan hisoblanadi (TZ §16)." icon={SlidersHorizontal} />
+          <CardHeader title="Holat chegaralari" icon={SlidersHorizontal}
+            info={<>
+              <p>Norma / e&apos;tibor / kritik qoidalari — dashborddagi ranglar shu qiymatlardan hisoblanadi (TZ §16).</p>
+              {/* Sahifa faqat direktorga ochiq (yuqorida redirect) — havola ham faqat unga ko'rinadi */}
+              <p>Katta xarid chegarasi, kunlik zayavka va mijoz limitlari — <Link href="/settings?tab=limits" className="font-medium text-slate-700 underline hover:text-slate-900">Sozlamalar → Limitlar</Link></p>
+            </>} />
           <ThresholdForm t={{ alertWarnPct: company.alertWarnPct, alertCritPct: company.alertCritPct, stockWarnDays: company.stockWarnDays, stockCritDays: company.stockCritDays, overdueDays: company.overdueDays }} />
-          {/* Sahifa faqat direktorga ochiq (yuqorida redirect) — havola ham faqat unga ko'rinadi */}
-          <p className="mt-3 text-xs text-slate-500">Katta xarid chegarasi, kunlik zayavka va mijoz limitlari — <Link href="/settings?tab=limits" className="font-medium text-slate-700 underline hover:text-slate-900">Sozlamalar → Limitlar</Link></p>
         </Card>
         <Card>
-          <CardHeader title="O'zgarishlar tarixi" description="Shu oy byudjetini kim va qachon o'zgartirgani" icon={History} />
+          <CardHeader title="O'zgarishlar tarixi" info="Shu oy byudjetini kim va qachon o'zgartirgani" icon={History} />
           {history.length === 0 ? <p className="text-sm text-slate-500">Hali o&apos;zgarish yo&apos;q.</p> : (
             <ul className="space-y-2 text-sm">
               {history.map((h) => {

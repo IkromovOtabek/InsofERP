@@ -7,7 +7,7 @@ import { date, dateTime, money } from "@/lib/format";
 import { monthOf, monthTitle, shiftMonth, today, validMonth } from "@/lib/davomat";
 import { broadcastStats, listFeedback } from "@/lib/hr/voice";
 import { hrReport } from "@/lib/hr/reports";
-import { Badge, Card, CardHeader, Empty, LinkButton, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, Empty, InfoButton, LinkButton, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { BroadcastForm, SurveyForm } from "./hr4-forms";
 import type { FeedbackStatus } from "@/generated/prisma";
@@ -59,7 +59,7 @@ export async function MurojaatTab({ s, positions, holat }: { s: Session; positio
           {([["open", "Ochiq"], ["RESOLVED", "Hal qilingan"], ["ALL", "Hammasi"]] as const).map(([k, l]) => (
             <Link key={k} href={`/otdel-kadr?tab=murojaatlar&holat=${k}`} className={cn("rounded-md px-2.5 py-1", st === k ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>{l}</Link>
           ))}
-          <span className="ml-auto text-xs text-slate-500">Anonim murojaat muallifi hech kimga ko&apos;rinmaydi</span>
+          <InfoButton title="Murojaatlar" className="ml-auto">Anonim murojaat muallifi hech kimga ko&apos;rinmaydi</InfoButton>
         </div>
         <Table>
           <thead><tr><Th>Mavzu</Th><Th>Kimdan</Th><Th>Turi</Th><Th right>Xabar</Th><Th>Holat</Th></tr></thead>
@@ -78,7 +78,7 @@ export async function MurojaatTab({ s, positions, holat }: { s: Session; positio
         </Table>
       </Card>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {editable && <Card><CardHeader title="Ommaviy xabar" icon={Megaphone} description="Xodimlar telefoniga (ilova) va ERP bildirishnomasiga" /><BroadcastForm positions={positions} /></Card>}
+        {editable && <Card><CardHeader title="Ommaviy xabar" icon={Megaphone} info="Xodimlar telefoniga (ilova) va ERP bildirishnomasiga" /><BroadcastForm positions={positions} /></Card>}
         <Card padded={false}>
           <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Yuborilgan xabarlar</h2></div>
           <Table>

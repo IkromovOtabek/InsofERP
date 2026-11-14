@@ -59,7 +59,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       </Card>
 
       <Card padded={false} className="mb-5">
-        <div className="px-5 pt-5"><CardHeader title="Transport bo'yicha" description={`Foydalanish — band vaqt / (${rep.workDays} ish kuni × smena)`} icon={Truck} /></div>
+        <div className="px-5 pt-5"><CardHeader title="Transport bo'yicha" info={`Foydalanish — band vaqt / (${rep.workDays} ish kuni × smena)`} icon={Truck} /></div>
         <Table>
           <thead><tr><Th>Transport</Th><Th right>Reys</Th><Th right>Beton, m³</Th><Th right>Band</Th><Th right>Foydalanish</Th><Th right>GPS km</Th>{m && <><Th right>Yoqilg'i</Th><Th right>Boshqa</Th><Th right>1 m³ ga</Th></>}</tr></thead>
           <tbody>

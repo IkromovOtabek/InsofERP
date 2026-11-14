@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { Plus, X, HardHat, Truck, Wallet, ShieldAlert } from "lucide-react";
 import type { OrderStatus, PayMethod } from "@/generated/prisma";
-import { Button, Callout, Card, CardHeader, Checkbox, Field, FormActions, FormError, Input, LinkButton, Select, Textarea } from "@/components/ui";
+import { Button, Callout, Card, CardHeader, Checkbox, Field, FormActions, FormError, InfoButton, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { AddressPicker } from "@/components/address-picker";
 import { BlockField } from "@/components/site-blocks";
 import { ProductField } from "@/components/product-field";
@@ -104,7 +104,7 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
       )}
 
       <Card>
-        <CardHeader title="Mahsulotlar" description={rows.some((r) => r.locked) ? "Brigadaga berilgan qator o'chirilmaydi va mahsuloti almashmaydi; soni brigadaga berilganidan kam bo'lmaydi." : undefined} />
+        <CardHeader title="Mahsulotlar" info={rows.some((r) => r.locked) ? "Brigadaga berilgan qator o'chirilmaydi va mahsuloti almashmaydi; soni brigadaga berilganidan kam bo'lmaydi." : undefined} />
         <div className="space-y-3">
           {rows.map((r, idx) => {
             const p = productOf(r.productId);
@@ -164,7 +164,9 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
                 )}
                 {!isStock && r.src && p && p.unit !== "m³" && (
                   <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/40 p-2">
-                    <div className="mb-1 text-xs font-medium text-slate-600">Brigada omboridan — reys yuklanganda chiqim shu ombordan yoziladi</div>
+                    <div className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">Brigada omboridan
+                      <InfoButton title="Brigada omboridan">Reys yuklanganda chiqim shu ombordan yoziladi.</InfoButton>
+                    </div>
                     <BrigadeSourceCell productId={r.productId} options={brigadeStock[r.productId]} unit={unit} need={Number(r.qty) || 0} value={r.srcId}
                       onChange={(id) => update(r.key, { srcId: id })} taken={takenFor(r)} onSplit={(b, q) => splitSource(r.key, b, q)} />
                   </div>

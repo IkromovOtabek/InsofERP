@@ -98,7 +98,8 @@ export async function MechanicTech({ period }: { period?: { from: Date; to: Date
   return (
     <>
       {/* ── Transportlar: raqam bosilsa — transport kartasi (xarajatlar, qayerga qatnagani, daromad, foyda) shu davr bilan ── */}
-      <Section id="transportlar" title={`Transportlar — ${p.label}`} action={more(`/logistika/transport${p.qs ? `?${p.qs}` : ""}`, "Transport ro'yxati")}>
+      <Section id="transportlar" title={`Transportlar — ${p.label}`}
+        info="Transport raqamini bosing — qanday xarajat yozilgani, qayerga necha reys qilgani, necha m³ / dona / tonna tashigani, daromad va foyda batafsil." action={more(`/logistika/transport${p.qs ? `?${p.qs}` : ""}`, "Transport ro'yxati")}>
         <Table maxHeight="60vh">
           <thead><tr><Th>Transport</Th><Th>Holat</Th><Th right>Reys / zayavka</Th><Th>Tashilgan yuk</Th><Th right>Probeg</Th><Th right>Xarajat</Th><Th right>Daromad</Th><Th right>Foyda</Th></tr></thead>
           <tbody>
@@ -131,7 +132,6 @@ export async function MechanicTech({ period }: { period?: { from: Date; to: Date
             )}
           </tbody>
         </Table>
-        <p className="mt-2 text-xs text-slate-500">Transport raqamini bosing — qanday xarajat yozilgani, qayerga necha reys qilgani, necha m³ / dona / tonna tashigani, daromad va foyda batafsil.</p>
       </Section>
 
       {/* ── Snabjenetsga zayavka: ehtiyot qism, moy, shina — sklad kabi «Kerakli mahsulotlar» jadvali ── */}
@@ -225,7 +225,8 @@ export async function SkladLogistika({ day, unit, base = "/dashboard", middle }:
       </Section>
 
       {/* ── 2. Ertangi kun ── */}
-      <Section title={`2. ${nextName} kun nazorati`} action={more("/logistika/transport", "Transport")}>
+      <Section title={`2. ${nextName} kun nazorati`}
+        info="Transport — reys soni: beton mikser sig'imiga bo'linadi, dona mahsulot zayavkasiga bitta yuk mashina." action={more("/logistika/transport", "Transport")}>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
           <StatCard label="Ertangi zayavka" value={`${n.orders} ta`} hint={n.drafts ? `${n.drafts} tasi tasdiqlanmagan` : date(d.next)} icon={ClipboardList} tone="info" href={zayavkaHref({ day: d.next })} />
           <StatCard label="Kerak bo'ladigan mahsulot" value={n.need} icon={Package} tone="brand" href="#mahsulot" />
@@ -238,14 +239,15 @@ export async function SkladLogistika({ day, unit, base = "/dashboard", middle }:
           />
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Transport — reys soni: beton mikser sig&apos;imiga bo&apos;linadi, dona mahsulot zayavkasiga bitta yuk mashina. Biriktirilgan reys: {n.assigned} ta
+          Biriktirilgan reys: {n.assigned} ta
           {n.vehicles.repair ? ` · ta'mirda ${n.vehicles.repair} ta texnika` : ""}.
         </p>
       </Section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* ── 3. Mahsulot bo'yicha ── */}
-        <Section id="mahsulot" title="3. Mahsulot bo'yicha nazorat" className="mt-0 xl:col-span-2" action={more("/stock", "Sklad")}>
+        <Section id="mahsulot" title="3. Mahsulot bo'yicha nazorat" className="mt-0 xl:col-span-2"
+          info={<><p>Skladda: dona mahsulot — hovlidagi qoldiq; beton — xomashyo qoldig&apos;i bilan retsept bo&apos;yicha chiqadigani.</p><p>Holat = skladda − bugungi jo&apos;natilmagan − ertaga.</p></>} action={more("/stock", "Sklad")}>
           <Table>
             <thead><tr><Th>Mahsulot</Th><Th right>Bugun</Th><Th right>Ertaga</Th><Th right>Skladda</Th><Th right>Holat</Th></tr></thead>
             <tbody>
@@ -277,7 +279,6 @@ export async function SkladLogistika({ day, unit, base = "/dashboard", middle }:
               })}
             </tbody>
           </Table>
-          <p className="mt-2 text-xs text-slate-500">Skladda: dona mahsulot — hovlidagi qoldiq; beton — xomashyo qoldig&apos;i bilan retsept bo&apos;yicha chiqadigani. Holat = skladda − bugungi jo&apos;natilmagan − ertaga.</p>
         </Section>
 
         {/* ── 4. Avtomatik ogohlantirish ── */}

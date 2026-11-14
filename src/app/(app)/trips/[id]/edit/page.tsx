@@ -70,7 +70,7 @@ export default async function EditTrip({ params }: { params: Promise<{ id: strin
 
   return (
     <div>
-      <PageHeader back={{ href: `/trips/${id}`, label: `Nakladnoy ${t.deliveryNoteNo}` }} title={`Reysni tahrirlash — ${t.deliveryNoteNo}`} subtitle="Faqat rejalashtirilgan (hali yuklanmagan) reys · zayavka va TTN o'zgarmaydi" />
+      <PageHeader back={{ href: `/trips/${id}`, label: `Nakladnoy ${t.deliveryNoteNo}` }} title={`Reysni tahrirlash — ${t.deliveryNoteNo}`} info="Faqat rejalashtirilgan (hali yuklanmagan) reys · zayavka va TTN o'zgarmaydi" />
       {ecoLocked && (
         <Callout tone="warning" title={`Haydovchi ilovasida: ${ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}`}>
           Haydovchi reysni qabul qilgan — ilovadagi reys endi o&apos;zgarmaydi. Bu yerda faqat BRU ni o&apos;zgartirish mumkin; texnika, haydovchi, miqdor, vaqt yoki izoh uchun reysni o&apos;chirib, yangisini oching.

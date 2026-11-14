@@ -5,7 +5,7 @@ import { marketingEntries, CHANNELS, KIND_LABEL } from "@/lib/bi/marketing";
 import { MONTHS_UZ, MONTHS_SHORT } from "@/lib/bi/plans";
 import { moneyShort, fmtNum } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Badge, Select } from "@/components/ui";
-import { Kpi, Panel, Note, Why } from "../../ui";
+import { Kpi, Panel, Why } from "../../ui";
 import { RowForm } from "@/components/row-form";
 import { saveEntry, deleteEntry } from "../actions";
 import { requirePage } from "@/lib/page-guard";
@@ -22,7 +22,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const KIND_COLOR = { BUDGET: "blue", PLAN: "amber", FACT: "green" } as const;
 
   return (
-    <BiPage title="Marketing ma'lumotlari" subtitle="Oy × kanal bo'yicha byudjet, reja va fakt yozuvlari. Marketing va Reja nazorati sahifalari shu yozuvlardan hisoblanadi." tab="marketingData" range={range} period={false}>
+    <BiPage title="Marketing ma'lumotlari" info="Oy × kanal bo'yicha byudjet, reja va fakt yozuvlari. Marketing va Reja nazorati sahifalari shu yozuvlardan hisoblanadi." tab="marketingData" range={range} period={false}>
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Kpi label="Rejalashtirilgan byudjet" value={moneyShort(S.budget)} icon={Wallet} tone="info" hint={`${S.year}-yil`} href={`/bi-tahlil/marketing/malumotlar?year=${S.year}&kind=BUDGET#yozuvlar`} />
@@ -31,7 +31,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <Kpi label="Qaytim (ROAS)" value={S.roas !== null ? `${fmtNum(S.roas, 2)}x` : "—"} icon={Percent} tone={S.roas !== null && S.roas >= 1 ? "success" : "default"} hint="pullik kanallar daromadi / fakt xarajat" href="/bi-tahlil/marketing" />
         </div>
 
-        <Panel title="Yangi yozuv qo'shish" info="Byudjet — oy boshida kanalga ajratilgan pul. Reja — natija maqsadlari (xarajat, lead, mijoz, daromad). Fakt — haqiqiy to'langan xarajat va olingan natija.">
+        <Panel title="Yangi yozuv qo'shish" info={<>
+          <p>Byudjet — oy boshida kanalga ajratilgan pul. Reja — natija maqsadlari (xarajat, lead, mijoz, daromad). Fakt — haqiqiy to&apos;langan xarajat va olingan natija.</p>
+          <p>Reja va Fakt uchun daromad, lead va mijoz maydonlarini to&apos;ldiring — ular ROAS, CAC va reja bajarilishini beradi. Byudjet uchun faqat summa kifoya.</p>
+        </>}>
           <RowForm action={saveEntry.bind(null, null)} mode="create" submit="Saqlash" cols={6} fields={[
             { name: "year", label: "Yil *", type: "number", defaultValue: now.getFullYear(), required: true },
             { name: "month", label: "Oy *", type: "select", defaultValue: String(now.getMonth() + 1), options: MONTHS_UZ.map((m, i) => [String(i + 1), m]) },
@@ -45,7 +48,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             { name: "clicks", label: "Bosishlar", type: "number", step: "1" },
             { name: "note", label: "Izoh", className: "sm:col-span-2" },
           ]} />
-          <Note>Reja va Fakt uchun daromad, lead va mijoz maydonlarini to'ldiring — ular ROAS, CAC va reja bajarilishini beradi. Byudjet uchun faqat summa kifoya.</Note>
         </Panel>
 
         <Panel id="yozuvlar" title="Kiritilgan ma'lumotlar" padded={false} action={<span>{d.rows.length} yozuv</span>}>

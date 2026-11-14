@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { InfoButton } from "@/components/ui";
 
 /**
  * Yig'iladigan bo'lim: sarlavha qatori tugma bo'lib xizmat qiladi, ichidagi uzun
@@ -42,19 +43,22 @@ export function Fold({ title, hint, meta, children, defaultOpen = false, storage
 
   return (
     <div className={className}>
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition hover:bg-slate-50"
-      >
-        <ChevronDown size={14} className={cn("shrink-0 text-slate-400 transition-transform", !open && "-rotate-90")} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</span>
-          {hint && open && <span className="block text-[11px] text-slate-400">{hint}</span>}
-        </span>
-        {meta && <span className="shrink-0 text-xs text-slate-500">{meta}</span>}
-      </button>
+      {/* «i» tugma sarlavha tugmasidan tashqarida: tugma ichida tugma bo'lmaydi */}
+      <div className="flex items-center transition hover:bg-slate-50">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          className={cn("flex min-w-0 flex-1 items-center gap-2 py-2.5 pl-5 text-left", hint ? "pr-2" : "pr-5")}
+        >
+          <ChevronDown size={14} className={cn("shrink-0 text-slate-400 transition-transform", !open && "-rotate-90")} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</span>
+          </span>
+          {meta && <span className="shrink-0 text-xs text-slate-500">{meta}</span>}
+        </button>
+        {hint && <InfoButton title={title} className="mr-4">{hint}</InfoButton>}
+      </div>
       {open && <div className="pb-1">{children}</div>}
     </div>
   );

@@ -92,7 +92,7 @@ export async function QongiroqTab({ s, month, q, suhbat, lavozim, workPositions 
         <Card>
           <CardHeader
             title="Yangi qo'ng'iroq"
-            description="Ishga so'rab telefon qilgan odam bilan gaplashuv. Raqam oldin qo'ng'iroq qilgan bo'lsa — oldingi yozuvlari chiqadi."
+            info="Ishga so'rab telefon qilgan odam bilan gaplashuv. Raqam oldin qo'ng'iroq qilgan bo'lsa — oldingi yozuvlari chiqadi."
             icon={PhoneCall}
             action={<LinkButton href="/otdel-kadr/qongiroqlar/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali qo&apos;shish</LinkButton>}
           />

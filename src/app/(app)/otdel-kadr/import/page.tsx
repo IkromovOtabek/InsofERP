@@ -24,7 +24,11 @@ export default async function EmployeesImportPage() {
       <PageHeader
         back={{ href: "/otdel-kadr?tab=xodimlar", label: "Xodimlar ro'yxati" }}
         title="Excel orqali xodim qo'shish"
-        subtitle="Tabel jadvalini yuklang — har qator xodim kartasi bo'ladi. Tabel raqami (yoki F.I.O.) bo'yicha bazada bor xodim topilsa, yangi karta ochilmaydi — mavjudi yangilanadi."
+        info={<>
+          <p>Tabel jadvalini yuklang — har qator xodim kartasi bo&apos;ladi. Tabel raqami (yoki F.I.O.) bo&apos;yicha bazada bor xodim topilsa, yangi karta ochilmaydi — mavjudi yangilanadi.</p>
+          <p>Surat va hujjat nusxalari Excel&apos;dan kelmaydi — ularni keyin xodim kartasidan yuklaysiz.</p>
+          <p>Tizimga kiradigan lavozimga (Kassa / bank, Brigadir…) moslangan xodimga login bu yerdan ochilmaydi — uni Xodimlar sahifasida «Login berish» bilan bering.</p>
+        </>}
       />
       <Card className="max-w-6xl">
         <EmployeesImport

@@ -58,7 +58,7 @@ export default async function AppUsersPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <PageHeader title="Ilova foydalanuvchilari" subtitle="Insof ECO mobil ilovasida o'zi ro'yxatdan o'tgan hamma: tadbirkorlar, quruvchilar (mijozlar) va haydovchilar. ERP'ga ruxsat bersangiz, u ERP login sahifasiga telefon raqami va ilovadagi paroli bilan kiradi va tanlangan rol bo'limlarini ko'radi." />
+      <PageHeader title="Ilova foydalanuvchilari" info="Insof ECO mobil ilovasida o'zi ro'yxatdan o'tgan hamma: tadbirkorlar, quruvchilar (mijozlar) va haydovchilar. ERP'ga ruxsat bersangiz, u ERP login sahifasiga telefon raqami va ilovadagi paroli bilan kiradi va tanlangan rol bo'limlarini ko'radi." />
 
       {!enabled ? (
         <Callout tone="warning" title="ECO ulanmagan">ERP <code>.env</code> da <code>ECO_API_URL</code> va <code>ECO_API_KEY</code> yo'q — Haydovchilar (ECO) sahifasidagi ko'rsatma bo'yicha ulang.</Callout>

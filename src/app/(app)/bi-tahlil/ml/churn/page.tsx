@@ -65,7 +65,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const rows = list.slice((page - 1) * size, page * size);
 
   return (
-    <BiPage title="Churn tahlili" subtitle="Kim ketyapti, qancha pul xavf ostida va nima qilish kerak. Gibrid xavf bali: oxirgi xariddan beri o'tgan kunlar (90 kun — to'liq ball) + qarz + chastota. Sana filtriga bog'liq emas." eyebrow="ML tahlil" tab="churn" range={range} period={false}>
+    <BiPage title="Churn tahlili" info={<>
+      <p>Kim ketyapti, qancha pul xavf ostida va nima qilish kerak. Gibrid xavf bali: oxirgi xariddan beri o&apos;tgan kunlar (90 kun — to&apos;liq ball) + qarz + chastota. Sana filtriga bog&apos;liq emas.</p>
+      <p><b>Bu sahifa nimaga tayanadi.</b> Xavf bali — gibrid: recency (oxirgi buyurtmadan beri kunlar, 60 ballgacha) + qarz (15) + muddati o&apos;tgan qarz (15) + chastota pasayishi (10). ML modeli o&apos;rniga qoida — chunki mijoz xatti-harakati ERP da to&apos;liq ko&apos;rinadi.</p>
+      <p>Kutilayotgan yo&apos;qotish = o&apos;rtacha oylik × 12 × bal/100. Har mijozning bali jadvalda.</p>
+    </>} eyebrow="ML tahlil" tab="churn" range={range} period={false}>
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
@@ -84,8 +88,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <Kpi label="Yangi mijozlar" value={String(newC.length)} icon={UserPlus} tone="info" hint={`faol (30 kun): ${active.length}`} href={`${tabHref(range, "customers", { segment: "New" })}#mijozlar-royxati`} />
           <Kpi label="Qaytgan mijozlar" value={String(reactivated.length)} icon={Users} tone="violet" hint="uzoq tanaffusdan keyin yana xarid" href="#harakat" />
         </div>
-
-        <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-[13px] text-blue-950"><b>Bu sahifa nimaga tayanadi.</b> Xavf bali — gibrid: recency (oxirgi buyurtmadan beri kunlar, 60 ballgacha) + qarz (15) + muddati o'tgan qarz (15) + chastota pasayishi (10). ML modeli o'rniga qoida — chunki mijoz xatti-harakati ERP da to'liq ko'rinadi. Kutilayotgan yo'qotish = o'rtacha oylik × 12 × bal/100. Har mijozning bali jadvalda.</div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-slate-500">Zona:</span>{ZONES.map((z) => <Chip key={z} active={sp.zone === z} href={href({ zone: sp.zone === z ? undefined : z })}>{z} ({base.filter((c) => c.risk === z).length})</Chip>)}

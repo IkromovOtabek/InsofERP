@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { ISSUE_KIND, tripPhase } from "@/lib/logistics";
 import { dateTime, qty } from "@/lib/format";
-import { Badge, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, Empty, InfoButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { PeriodTabs, PhaseBadge, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 
@@ -39,7 +39,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
   return (
     <div>
       <SectionTabs section="reyslar" current="/logistika/yetkazish" />
-      <PageHeader title="Yetkazib berish" subtitle={`${r.label}: yuklangan va qabul qilingan miqdor, qaytgan beton, muammolar`} />
+      <PageHeader title="Yetkazib berish" subtitle={r.label} info="Yuklangan va qabul qilingan miqdor, qaytgan beton, muammolar" />
       <PeriodTabs base="/logistika/yetkazish" current={r.period} />
       <RangeForm base="/logistika/yetkazish" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
@@ -56,7 +56,15 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
       ]} />
       <Card padded={false}>
         <Table>
-          <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Transport</Th><Th right>Yuklangan</Th><Th right>Qabul</Th><Th right>Qaytgan</Th><Th>Qabul qiluvchi</Th><Th>Muammo / izoh</Th><Th>Holat</Th><Th>Yetkazildi</Th></tr></thead>
+          <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Transport</Th><Th right>Yuklangan</Th><Th right>
+            <span className="inline-flex items-center gap-1">
+              Qabul
+              <InfoButton title="Qabul">
+                <p>Qabul miqdori kiritilmagan bo&apos;lsa — yuklangan miqdor olinadi (kulrang).</p>
+                <p>Reysni yopish va miqdorni tuzatish — reys kartasida.</p>
+              </InfoButton>
+            </span>
+          </Th><Th right>Qaytgan</Th><Th>Qabul qiluvchi</Th><Th>Muammo / izoh</Th><Th>Holat</Th><Th>Yetkazildi</Th></tr></thead>
           <tbody>
             {shown.length === 0 && <Empty text="Bu davrda yetkazish yo'q" />}
             {shown.map((t) => {
@@ -83,7 +91,6 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
           </tbody>
         </Table>
       </Card>
-      <p className="mt-3 text-xs text-slate-500">Qabul miqdori kiritilmagan bo'lsa — yuklangan miqdor olinadi (kulrang). Reysni yopish va miqdorni tuzatish — reys kartasida.</p>
     </div>
   );
 }

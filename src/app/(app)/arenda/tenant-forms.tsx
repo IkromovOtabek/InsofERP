@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { Button, FormError, FormSuccess, Input } from "@/components/ui";
+import { Button, FormError, FormSuccess, InfoButton, Input } from "@/components/ui";
 import { saveRentRemindDay } from "./actions";
 
 /** Matnni nusxalash (eslatma matni, ulash havolasi) — sekretar ijarachiga o'zi yuboradi. */
@@ -30,7 +30,7 @@ export function RemindDayForm({ day }: { day: number }) {
         </span>
       </label>
       <Button size="sm" variant="secondary" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
-      <span className="basis-full text-xs text-slate-500">0 — o&apos;chiq. Eslatma faqat Telegram botga ulangan, qarzi bor ijarachiga, oyda bir marta (08:00–21:00) ketadi.</span>
+      <InfoButton title="Avtomatik eslatma" className="mb-2">0 — o&apos;chiq. Eslatma faqat Telegram botga ulangan, qarzi bor ijarachiga, oyda bir marta (08:00–21:00) ketadi.</InfoButton>
       <div className="basis-full"><FormError error={state?.error} />{state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}</div>
     </form>
   );

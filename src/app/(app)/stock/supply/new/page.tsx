@@ -28,7 +28,7 @@ export default async function NewSupplyRequestPage() {
     <div>
       <PageHeader back={mechanic ? { href: "/dashboard", label: "Bosh sahifa" } : { href: "/stock", label: "Sklad" }}
         title={mechanic ? "Snabjenetsga zayavka" : "Kerakli mahsulotlar jadvali"}
-        subtitle={mechanic
+        info={mechanic
           ? "Texnikaga nima kerakligini yozasiz (ehtiyot qism, moy, shina…) — jadval snabjeniyega ketadi, u narx qo'yadi va sotib oladi."
           : "Skladga nima kerakligini yozasiz — jadval snabjeniyega ketadi, u narx qo'yadi va jami summa chiqadi."} />
       <Card><SupplyForm options={options} low={low} groups={groups} canCreate={canEditMaterials(s.role)} warehouses={warehouses}

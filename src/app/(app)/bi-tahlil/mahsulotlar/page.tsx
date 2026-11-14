@@ -8,7 +8,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   await requirePage("/bi-tahlil/mahsulotlar");
   const { range } = await biContext(searchParams);
   return (
-    <BiPage title="Mahsulotlar" subtitle="ABC × XYZ matritsa, foydalilik, klasterlar, Pareto 80/20 va mahsulotlar ro'yxati." tab="products" range={range}>
+    <BiPage title="Mahsulotlar" info="ABC × XYZ matritsa, foydalilik, klasterlar, Pareto 80/20 va mahsulotlar ro'yxati." tab="products" range={range}>
       <ProductsTab range={range} />
     </BiPage>
   );

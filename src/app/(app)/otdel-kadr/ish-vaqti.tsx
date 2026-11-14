@@ -4,7 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, Clock } from "lucide-react";
 import { setEmployeeSchedule, setScheduleBulk } from "./actions";
-import { Badge, Button, Card, CardHeader, Checkbox, Empty, Field, FormError, FormSuccess, Input, Select, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Checkbox, Empty, Field, FormError, FormSuccess, InfoButton, Input, Select, Table, Td, Th, Tr } from "@/components/ui";
 
 export type IshVaqtiRow = { id: string; fullName: string; position: string; start: string | null; end: string | null; note: string };
 
@@ -27,7 +27,10 @@ export function IshVaqti({ rows, std }: { rows: IshVaqtiRow[]; std: { start: str
       <Card>
         <CardHeader
           title="Ish vaqtini belgilash"
-          description={`Lavozim bo'yicha yoki barcha faol xodimlarga birdan. Belgilanmagan xodimga zavod standarti ${std.start}–${std.end} qo'llanadi; kechikish va erta ketish davomatda shu vaqtdan hisoblanadi.`}
+          info={<>
+            <p>Lavozim bo&apos;yicha yoki barcha faol xodimlarga birdan.</p>
+            <p>Belgilanmagan xodimga zavod standarti {std.start}–{std.end} qo&apos;llanadi; kechikish va erta ketish davomatda shu vaqtdan hisoblanadi.</p>
+          </>}
           icon={Clock}
         />
         <BulkForm positions={positions} std={std} />
@@ -36,8 +39,8 @@ export function IshVaqti({ rows, std }: { rows: IshVaqtiRow[]; std: { start: str
       <Card padded={false}>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold">Xodimlar ish vaqti</h2>
-            <p className="text-xs text-slate-500">{set} ta xodimda belgilangan, {rows.length - set} tasida standart. Bitta xodimni shu yerda yoki kartasida o&apos;zgartirasiz.</p>
+            <h2 className="flex items-center gap-1 text-sm font-semibold">Xodimlar ish vaqti<InfoButton title="Xodimlar ish vaqti">Bitta xodimni shu yerda yoki kartasida o&apos;zgartirasiz.</InfoButton></h2>
+            <p className="text-xs text-slate-500">{set} ta xodimda belgilangan, {rows.length - set} tasida standart.</p>
           </div>
           <Select aria-label="Lavozim bo'yicha" value={filter} onChange={(e) => setFilter(e.target.value)} className="w-auto min-w-48">
             <option value="">Barcha lavozimlar</option>

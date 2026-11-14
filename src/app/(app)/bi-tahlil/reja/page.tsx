@@ -33,7 +33,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   ];
 
   return (
-    <BiPage title="Reja nazorati" subtitle={`${MONTHS_UZ[month - 1]} ${year} · ${d.wdPassed} / ${d.wdTotal} ish kuni (Dush–Shan). Filial → sotuvchi: har sotuvchiga oylik reja, fakt, prognoz va signal.`} tab="plans" range={range} period={false}>
+    <BiPage title="Reja nazorati" subtitle={`${MONTHS_UZ[month - 1]} ${year} · ${d.wdPassed} / ${d.wdTotal} ish kuni (Dush–Shan)`} info="Filial → sotuvchi: har sotuvchiga oylik reja, fakt, prognoz va signal." tab="plans" range={range} period={false}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2 shadow-(--shadow-card) text-[13px]">
           <Link href={mHref(prevM.y, prevM.m)} className="rounded-lg px-2.5 py-1.5 text-slate-600 hover:bg-slate-100">‹ {MONTHS_SHORT[prevM.m - 1]}</Link>

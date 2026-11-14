@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Check, Clapperboard, Facebook, Hash, Heart, Instagram, Languages, Loader2, MapPin, MessageCircle, Plus, Save, Send, Sparkles, Upload, X } from "lucide-react";
 import type { MarketingContentStatus, MarketingContentType, SmmChannel } from "@/generated/prisma";
 import { CONTENT_STATUS, CONTENT_TYPE } from "@/lib/marketing-labels";
-import { Button, Field, FormActions, FormError, Input, Select, Textarea } from "@/components/ui";
+import { Button, Field, FormActions, FormError, InfoButton, Input, Select, Textarea } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { aiWrite, saveContent } from "./actions";
 
@@ -109,7 +109,7 @@ export function ContentForm({ id, v, canEdit, canAi, library, brand, places = []
             <Field label="Chiqish vaqti"><Input type="datetime-local" name="scheduledAt" defaultValue={v.scheduledAt} /></Field>
           </div>
           {(places.length > 0 || v.location) && (
-            <Field label="Joylashuv" hint="Instagram postida manzil ko'rinadi (joylar — Sozlamalar'da)">
+            <Field label="Joylashuv" help={<InfoButton title="Joylashuv">Instagram postida manzil ko&apos;rinadi (joylar — Sozlamalar&apos;da)</InfoButton>}>
               <div className="relative max-w-sm">
                 <MapPin size={14} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" />
                 <Select name="locationName" value={place} onChange={(e) => setPlace(e.target.value)} className="pl-8">

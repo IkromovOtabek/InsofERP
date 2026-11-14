@@ -8,7 +8,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   await requirePage("/bi-tahlil/ml");
   const { sp, range } = await biContext(searchParams);
   return (
-    <BiPage title="Bashorat" subtitle="ML tahlil — sotuv bashorati (trend × mavsumiylik), xomashyo tugash prognozi, quvvat va model registry. Sana filtriga bog'liq emas." eyebrow="ML tahlil" tab="forecast" range={range} period={false}>
+    <BiPage title="Bashorat" info="ML tahlil — sotuv bashorati (trend × mavsumiylik), xomashyo tugash prognozi, quvvat va model registry. Sana filtriga bog'liq emas." eyebrow="ML tahlil" tab="forecast" range={range} period={false}>
       <ForecastTab sp={sp} />
     </BiPage>
   );

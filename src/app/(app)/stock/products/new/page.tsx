@@ -28,7 +28,7 @@ export default async function AddStockPage() {
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
   return (
     <div>
-      <PageHeader back={{ href: "/stock?tab=capacity", label: "Sklad" }} title="Tayyor mahsulot qo'shish" subtitle="Dona mahsulotni qo'lda kirim qilish: har qatorda qaysi brigada omboriga va nechta. Bitta mahsulotni bir nechta brigadaga bo'lish — qatordagi «bo'lish» tugmasi. Qoldiq Sklad → Ishlab chiqarish imkoni → «Brigada omborlari» da ko'rinadi." />
+      <PageHeader back={{ href: "/stock?tab=capacity", label: "Sklad" }} title="Tayyor mahsulot qo'shish" info="Dona mahsulotni qo'lda kirim qilish: har qatorda qaysi brigada omboriga va nechta. Bitta mahsulotni bir nechta brigadaga bo'lish — qatordagi «bo'lish» tugmasi. Qoldiq Sklad → Ishlab chiqarish imkoni → «Brigada omborlari» da ko'rinadi." />
       <AddForm
         clientToken={crypto.randomUUID()}
         products={catalog.products}

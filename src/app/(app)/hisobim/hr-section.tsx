@@ -6,7 +6,7 @@ import { monthTitle } from "@/lib/davomat";
 import { employeeOfUser } from "@/lib/hr/requests";
 import { breakdownOf, myLines } from "@/lib/hr/payroll";
 import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
-import { Badge, Card, CardHeader, Empty, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, Empty, InfoButton, Table, Td, Th, Tr } from "@/components/ui";
 
 /**
  * "Mening hisobim" — xodimning o'z kadr ma'lumotlari: ochiq vazifalari va tasdiqlangan ish haqi hisob-kitoblari.
@@ -24,12 +24,12 @@ export async function MyHrSection({ userId }: { userId: string }) {
   return (
     <div className="mt-5 grid max-w-5xl grid-cols-1 gap-4 xl:grid-cols-2">
       <Card>
-        <CardHeader title="Vazifalarim" icon={ListTodo} description="Sizga berilgan ochiq vazifalar" />
+        <CardHeader title="Vazifalarim" icon={ListTodo} info="Sizga berilgan ochiq vazifalar" />
         <Link href="/vazifalar" className="inline-flex items-center gap-1.5 text-sm text-brand-700 hover:underline"><ListTodo size={15} /> {openTasks} ta ochiq vazifa</Link>
       </Card>
 
       <Card padded={false}>
-        <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-2 text-sm font-semibold"><Wallet size={15} /> Ish haqim</h2><p className="text-xs text-slate-500">Direktor tasdiqlagan hisob-kitoblar</p></div>
+        <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-2 text-sm font-semibold"><Wallet size={15} /> Ish haqim<InfoButton title="Ish haqim" className="-ml-1">Direktor tasdiqlagan hisob-kitoblar</InfoButton></h2></div>
         <Table>
           <thead><tr><Th>Oy</Th><Th right>Hisoblangan</Th><Th right>Ushlanma</Th><Th right>Qo&apos;lga</Th><Th>Holat</Th></tr></thead>
           <tbody>

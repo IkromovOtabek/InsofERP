@@ -164,7 +164,7 @@ export async function LogisticsHome({ day, money: showMoney = false }: { day?: D
 
       {/* ── Kun jadvali ── */}
       <Card>
-        <CardHeader title="Kun jadvali" description="Zayavkalar soat bo'yicha: ramka — rejadagi vaqt, bo'laklar — reyslar (yuklashdan topshirishgacha)" icon={Clock}
+        <CardHeader title="Kun jadvali" info="Zayavkalar soat bo'yicha: ramka — rejadagi vaqt, bo'laklar — reyslar (yuklashdan topshirishgacha)" icon={Clock}
           action={<Link href="/logistika/kalendar" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Kalendar <ArrowRight size={14} /></Link>} />
         <Timeline orders={d.orders} now={now} isToday={d.isToday} />
       </Card>
@@ -172,7 +172,7 @@ export async function LogisticsHome({ day, money: showMoney = false }: { day?: D
       {/* ── Transport + haydovchilar ── */}
       <div className="grid gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Transport holati" description="Bandlik — smena ichida yuklashdan qaytishgacha o'tgan vaqt" icon={Wrench}
+          <div className="px-5 pt-5"><CardHeader title="Transport holati" info="Bandlik — smena ichida yuklashdan qaytishgacha o'tgan vaqt" icon={Wrench}
             action={<Link href="/logistika/transport" className="text-sm text-slate-500 hover:text-slate-900">Transport →</Link>} /></div>
           <Table>
             <thead><tr><Th>Raqam</Th><Th>Holat</Th><Th>Haydovchi</Th><Th right>Reys</Th><Th>Bandlik</Th></tr></thead>
@@ -217,7 +217,8 @@ export async function LogisticsHome({ day, money: showMoney = false }: { day?: D
       {/* ── Tendensiya + nasoslar ── */}
       <div className="grid gap-5 xl:grid-cols-3 [&>*]:min-w-0">
         <Card className="xl:col-span-2">
-          <CardHeader title="So'nggi 14 kun" description="Kunlik yetkazilgan beton (m³) va o'z vaqtida yetkazish foizi" icon={Gauge} />
+          <CardHeader title="So'nggi 14 kun" icon={Gauge}
+            info={<><p>Kunlik yetkazilgan beton (m³) va o&apos;z vaqtida yetkazish foizi.</p><p>Sariq ustun — o&apos;z vaqtida yetkazish 75% dan past kun.</p></>} />
           <div className="flex h-40 items-end gap-1.5">
             {d.week.map((w) => (
               <div key={w.day.toISOString()} className="flex flex-1 flex-col items-center gap-1" title={`${date(w.day)}: ${qty(w.m3)} m³, ${w.trips} reys${w.onTime != null ? `, o'z vaqtida ${w.onTime}%` : ""}`}>
@@ -227,7 +228,6 @@ export async function LogisticsHome({ day, money: showMoney = false }: { day?: D
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs text-slate-500">Sariq ustun — o'z vaqtida yetkazish 75% dan past kun.</p>
         </Card>
         <Card>
           <CardHeader title="Nasoslar" description={`Nasos kerak: ${d.pumps.length} zayavka · nasoslar: ${pumpFleet.filter((v) => v.live === "FREE").length} bo'sh / ${pumpFleet.length}`} icon={Truck} />

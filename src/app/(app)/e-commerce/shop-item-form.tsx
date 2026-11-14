@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
 import { Check, Eye, EyeOff, History, ImageIcon, Trash2 } from "lucide-react";
-import { Badge, Button, Checkbox, Field, FormError, FormSuccess, Input, Textarea } from "@/components/ui";
+import { Badge, Button, Checkbox, Field, FormError, FormSuccess, InfoButton, Input, Textarea } from "@/components/ui";
 import { SHOP_PHOTO_ACCEPT } from "@/lib/shop-upload";
 import { suggestShopTemplate } from "@/lib/shop-templates";
 import { TemplatePicker } from "./template-picker";
@@ -111,7 +111,8 @@ export function ShopItemForm({ p, canDelete = false }: { p: ShopRowProduct; canD
           <div className="sm:col-span-6">
             <TemplatePicker value={template} onChange={setTemplate} suggested={suggested} disabled={file} hint={it?.photo ? "Joriy surat qoladi" : undefined} />
           </div>
-          <Field label="Yoki o'z suratingiz" className="sm:col-span-4" hint="JPG/PNG/WEBP, 5 MB gacha; kvadrat surat yaxshi ko'rinadi. Fayl tanlansa shablon o'rniga u qo'yiladi">
+          <Field label="Yoki o'z suratingiz" className="sm:col-span-4" hint="JPG/PNG/WEBP, 5 MB gacha"
+            help={<InfoButton title="Yoki o'z suratingiz"><p>Kvadrat surat yaxshi ko&apos;rinadi.</p><p>Fayl tanlansa shablon o&apos;rniga u qo&apos;yiladi.</p></InfoButton>}>
             <div className="flex items-center gap-2">
               <input name="photo" type="file" accept={SHOP_PHOTO_ACCEPT} onChange={(e) => setFile(!!e.currentTarget.files?.length)} className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-slate-800" />
               {it?.photo && (
@@ -121,7 +122,7 @@ export function ShopItemForm({ p, canDelete = false }: { p: ShopRowProduct; canD
               )}
             </div>
           </Field>
-          <Field label="Tavsif" className="sm:col-span-6" hint="Ilovada mahsulot kartochkasida ko'rinadi: nimaga ishlatiladi, muddati, yetkazish sharti">
+          <Field label="Tavsif" className="sm:col-span-6" help={<InfoButton title="Tavsif">Ilovada mahsulot kartochkasida ko&apos;rinadi: nimaga ishlatiladi, muddati, yetkazish sharti</InfoButton>}>
             <Textarea name="description" rows={3} defaultValue={it?.description ?? ""} />
           </Field>
           <div className="flex flex-wrap items-center gap-3 sm:col-span-6">

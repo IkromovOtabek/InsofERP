@@ -16,7 +16,7 @@ import { LEASE_SOON_DAYS, leaseDaysLeft, leaseTerm, rentCollection, rentOccupanc
 import {
   RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_SHOP_STATUS, currentMonth, rentPerM2, rentShopStates, type RentPayStatus, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, rentTxEditData, shiftMonth,
 } from "@/lib/rent";
-import { Badge, type BadgeColor, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Progress, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, type BadgeColor, Callout, Card, CardHeader, EmptyState, InfoButton, LinkButton, PageHeader, Progress, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmButton } from "../payments/confirm-button";
 import { ExcelButton } from "../logistika/excel-button";
@@ -62,7 +62,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
 
   return (
     <div>
-      <PageHeader title="Arenda" subtitle="Do'konlar ijarasi: oylik hisob, ijarachilardan tushgan pul va arenda kassasi kirim-chiqimi."
+      <PageHeader title="Arenda" info="Do'konlar ijarasi: oylik hisob, ijarachilardan tushgan pul va arenda kassasi kirim-chiqimi."
         action={canShops ? <LinkButton href="/arenda/import" variant="secondary"><FileSpreadsheet size={16} /> Excel&apos;dan import</LinkButton> : undefined} />
       {imported && (
         <Callout tone="success" title={`${monthLabel(month)} varag'i import qilindi`}>
@@ -150,7 +150,13 @@ function SheetTab({ sheet, month, monthName, canShops, hasShops, shopsHref }: {
       )}
       {sheet.groups.length > 0 && (
         <>
-          <div className="flex justify-end"><ExcelButton file={`Arenda ${monthName}`} sheets={[{ name: monthName, rows: excelRows }]} /></div>
+          <div className="flex items-center justify-end gap-2">
+            <InfoButton title="Oylik jadval">
+              <p>Qoldiq = jami to&apos;lashi kerak − jami tushgan (qizil — qarz, yashil — ortiqcha to&apos;langan).</p>
+              <p>Svet hisobidagi do&apos;konlar sveti alohida — «Svet» varag&apos;ida, soliq — ma&apos;lumot uchun. «Tushgan» — shu oy uchun yozilgan ijara kirimlari.</p>
+            </InfoButton>
+            <ExcelButton file={`Arenda ${monthName}`} sheets={[{ name: monthName, rows: excelRows }]} />
+          </div>
           <Sheet lang="uz" maxHeight="75vh">
             <SheetHead>
               <tr>
@@ -178,7 +184,6 @@ function SheetTab({ sheet, month, monthName, canShops, hasShops, shopsHref }: {
               </SheetFoot>
             )}
           </Sheet>
-          <p className="text-xs text-slate-500">Qoldiq = jami to&apos;lashi kerak − jami tushgan (qizil — qarz, yashil — ortiqcha to&apos;langan). Svet hisobidagi do&apos;konlar sveti alohida — «Svet» varag&apos;ida, soliq — ma&apos;lumot uchun. «Tushgan» — shu oy uchun yozilgan ijara kirimlari.</p>
         </>
       )}
     </div>
@@ -199,7 +204,8 @@ async function JournalTab({ month, canStorno, months }: { month: Date; canStorno
   return (
     <Card padded={false}>
       <div className="p-4 pb-2">
-        <CardHeader title="Kirim-chiqim jurnali" description={`Shu oy sanasi bilan yozilgan yozuvlar: kirim ${money(inc)}, chiqim ${money(exp)}. Xato yozuv o'chirilmaydi — qalam bilan tuzatiladi yoki sabab bilan bekor qilinadi.`} />
+        <CardHeader title="Kirim-chiqim jurnali" description={`Kirim ${money(inc)}, chiqim ${money(exp)}`}
+          info="Shu oy sanasi bilan yozilgan yozuvlar. Xato yozuv o'chirilmaydi — qalam bilan tuzatiladi yoki sabab bilan bekor qilinadi." />
       </div>
       {txs.length === 0 ? <div className="p-6 text-center text-sm text-slate-500">Bu oyda kirim-chiqim yo&apos;q</div> : (
         <Table>
@@ -362,7 +368,7 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
     <div className="space-y-4">
       {!isFilter && canShops && (
         <Card>
-          <CardHeader title={editing ? `Tahrirlash: ${editing.name}` : "Yangi do'kon"} description="Summalar — andoza: yangi oy ochilganda o'tgan oy hisobi bo'lmasa shu qiymatlar olinadi (kunlikda — kunlik summa × kunlar). Shu oy ochilgan bo'lsa yangi do'kon unga ham qo'shiladi."
+          <CardHeader title={editing ? `Tahrirlash: ${editing.name}` : "Yangi do'kon"} info="Summalar — andoza: yangi oy ochilganda o'tgan oy hisobi bo'lmasa shu qiymatlar olinadi (kunlikda — kunlik summa × kunlar). Shu oy ochilgan bo'lsa yangi do'kon unga ham qo'shiladi."
             action={editing ? <Link href={href({ tab: "dokonlar" })} className="text-sm text-slate-500 hover:text-slate-900">Bekor qilish</Link> : undefined} />
           <ShopForm key={editing?.id ?? "new"} shop={editing ? plain(editing) : undefined} locations={locations} month={month} onDoneHref={href({ tab: "dokonlar" })} />
         </Card>
@@ -370,15 +376,16 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
       {!isFilter && canShops && !editing && (
         <Card>
           <details>
-            <summary className="cursor-pointer text-sm font-semibold text-slate-900">Ijaraga beruvchi rekvizitlari (shartnoma uchun)</summary>
-            <p className="mt-1 text-xs text-slate-500">Ijara shartnomasi va dalolatnomalarda «Арендодатель / Ijaraga beruvchi» sifatida chiqadi. Bo&apos;sh maydon korxona rekvizitlaridan olinadi.</p>
+            <summary className="cursor-pointer text-sm font-semibold text-slate-900">Ijaraga beruvchi rekvizitlari (shartnoma uchun)
+              <InfoButton title="Ijaraga beruvchi rekvizitlari" className="ml-1">Ijara shartnomasi va dalolatnomalarda «Арендодатель / Ijaraga beruvchi» sifatida chiqadi. Bo&apos;sh maydon korxona rekvizitlaridan olinadi.</InfoButton>
+            </summary>
             <div className="mt-3"><LessorForm lessor={lessor} /></div>
           </details>
         </Card>
       )}
       {!isFilter && canShops && !editing && locations.length > 0 && (
         <Card>
-          <CardHeader title="Bozor bo'yicha narx o'zgarishi" description="Tanlangan joydagi ijaradagi har do'konning narxi tanlangan oydan boshlab % ga o'zgaradi (1000 so'mga yaxlitlanadi). Oy hisobi ochilganda qo'llanadi; bitta do'kon narxi — do'kon kartasida." />
+          <CardHeader title="Bozor bo'yicha narx o'zgarishi" info="Tanlangan joydagi ijaradagi har do'konning narxi tanlangan oydan boshlab % ga o'zgaradi (1000 so'mga yaxlitlanadi). Oy hisobi ochilganda qo'llanadi; bitta do'kon narxi — do'kon kartasida." />
           <BulkPriceForm locations={locations} months={priceMonths} />
         </Card>
       )}
@@ -501,7 +508,7 @@ async function AnalyticsTab() {
         <StatCard label="Bo'sh joylar sababli yo'qotish" value={total.lost !== null ? money(total.lost) : "—"} icon={TrendingDown} tone={total.lost ? "warning" : "default"} hint={total.lost !== null ? `oyiga · bo'sh ${m2(total.areaOff)} m² bozor narxida` : "bo'sh joylarga m² kiriting"} href="/arenda?tab=filter&holat=bosh" />
       </div>
       <div id="bozorlar-bandligi" className="scroll-mt-20"><Card padded={false}>
-        <div className="p-5 pb-0"><CardHeader title="Bozorlar bo'yicha" description="Daromad — ijaradagi joylarning andoza summasi (kunlik ijara × 30). Yo'qotish — bo'sh maydon shu bozorning 1 m² o'rtacha narxida ijaraga berilsa oyiga qancha tushardi." /></div>
+        <div className="p-5 pb-0"><CardHeader title="Bozorlar bo'yicha" info="Daromad — ijaradagi joylarning andoza summasi (kunlik ijara × 30). Yo'qotish — bo'sh maydon shu bozorning 1 m² o'rtacha narxida ijaraga berilsa oyiga qancha tushardi." /></div>
         <Table>
           <thead><tr><Th>Joy (bozor)</Th><Th right>Joylar</Th><Th right>Ijarada</Th><Th right>Bo&apos;sh</Th><Th right>Maydon, m²</Th><Th right>Bo&apos;sh m²</Th><Th>Bandlik (m²)</Th><Th right>Oylik daromad</Th><Th right>1 m² narx</Th><Th right>Yo&apos;qotish / oy</Th></tr></thead>
           <tbody>
@@ -523,7 +530,7 @@ async function AnalyticsTab() {
         </Table>
       </Card></div>
       <Card padded={false}>
-        <div className="p-5 pb-0"><CardHeader title="Oylar bo'yicha yig'im" icon={FileClock} description="Hisoblangan (oy hisobi) va shu oy uchun yozilgan kirimlar. Joriy oy hali tugamagan." /></div>
+        <div className="p-5 pb-0"><CardHeader title="Oylar bo'yicha yig'im" icon={FileClock} info="Hisoblangan (oy hisobi) va shu oy uchun yozilgan kirimlar. Joriy oy hali tugamagan." /></div>
         <Table>
           <thead><tr><Th>Oy</Th><Th right>Hisoblangan</Th><Th right>Tushgan</Th><Th right>Qoldiq</Th><Th>Yig&apos;im</Th></tr></thead>
           <tbody>
@@ -577,7 +584,13 @@ async function ElecTab({ month, monthName, canShops, shopsHref }: { month: Date;
           action={canShops ? <Link href={shopsHref} className="text-sm font-medium text-brand-700 hover:underline">Do&apos;konlarga o&apos;tish →</Link> : undefined} />
       ) : (
         <>
-          <div id="svet-varaq" className="flex scroll-mt-20 justify-end"><ExcelButton file={`Svet ${monthName}`} sheets={[{ name: monthName, rows: excelRows }]} /></div>
+          <div id="svet-varaq" className="flex scroll-mt-20 items-center justify-end gap-2">
+            <InfoButton title="Svet">
+              <p>Svet to&apos;lovini yuqoridagi «Kirim» → «Svet to&apos;lovi» bilan yozing (kvitansiya chiqadi); ijarachi elektr kompaniyasining litsevoy hisobiga o&apos;zi to&apos;lasa — qatorni tahrirlab «litsevoyga» summasini kiriting.</p>
+              <p>Elektr kompaniyasiga to&apos;lovni «Chiqim» → «Svet» bilan yozing. Svet qarzi ijara qarzidan alohida hisoblanadi.</p>
+            </InfoButton>
+            <ExcelButton file={`Svet ${monthName}`} sheets={[{ name: monthName, rows: excelRows }]} />
+          </div>
           <Sheet lang="uz" maxHeight="75vh">
             <SheetHead>
               <tr>{head.map((h, i) => <SheetTh key={h} tone={i === 7 ? "yellow" : i === 9 ? "green" : i === 10 ? "red" : "plain"} className={i === 1 ? "sticky left-0 z-20 min-w-60 text-left" : "whitespace-normal"}>{h}</SheetTh>)}</tr>
@@ -610,10 +623,6 @@ async function ElecTab({ month, monthName, canShops, shopsHref }: { month: Date;
               </SheetFoot>
             )}
           </Sheet>
-          <p className="text-xs text-slate-500">
-            Svet to&apos;lovini yuqoridagi «Kirim» → «Svet to&apos;lovi» bilan yozing (kvitansiya chiqadi); ijarachi elektr kompaniyasining litsevoy hisobiga o&apos;zi to&apos;lasa — qatorni tahrirlab «litsevoyga» summasini kiriting.
-            Elektr kompaniyasiga to&apos;lovni «Chiqim» → «Svet» bilan yozing. Svet qarzi ijara qarzidan alohida hisoblanadi.
-          </p>
         </>
       )}
     </div>

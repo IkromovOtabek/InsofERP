@@ -31,7 +31,14 @@ export default async function NewStockOrder() {
       <PageHeader
         back={{ href: "/production", label: "Ishlab chiqarish" }}
         title="Skladga zayavka"
-        subtitle="Zaxiraga ishlab chiqarish: mahsulot hovlida erkin qoldiq bo'lib turadi. Saqlangach brigadaga tayinlaysiz."
+        info={<>
+          <p>Zaxiraga ishlab chiqarish: mahsulot hovlida erkin qoldiq bo&apos;lib turadi. Saqlangach brigadaga tayinlaysiz.</p>
+          <p><b>Sklad zayavkasi — zaxiraga.</b>{" "}
+            Mijoz uchun emas, o&apos;zimiz uchun: ishlab chiqarilgan mahsulot hovlida <b>erkin qoldiq</b> bo&apos;lib turadi va keyin kelgan
+            har qanday mijozga darhol beriladi. Narx, dastavka va shartnoma so&apos;ralmaydi. Saqlangach zayavka matritsa va doskaga
+            tushadi va shu zahoti brigadaga tayinlaysiz.</p>
+          <p>Saqlangach brigadaga tayinlanadi. Tayyor mahsulot hech kimga band qilinmaydi. Zarur — brigadalar uchun ustuvorlik.</p>
+        </>}
       />
       <div className="space-y-5">
         <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} />

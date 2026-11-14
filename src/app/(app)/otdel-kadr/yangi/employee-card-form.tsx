@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { FileText, IdCard, Save, User } from "lucide-react";
 import { createEmployeeCard } from "../actions";
 import { DOC_KINDS, docField, EDUCATION, MARITAL, OTHER_DOC_KIND, oversizeFiles } from "@/lib/kadr";
-import { Button, Card, CardHeader, Field, FormError, Input, Select, Textarea } from "@/components/ui";
+import { Button, Card, CardHeader, Field, FormError, InfoButton, Input, Select, Textarea } from "@/components/ui";
 import { PhotoPicker } from "@/components/photo-picker";
 
 const fileCls =
@@ -67,7 +67,7 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb, ini
       </Card>
 
       <Card>
-        <CardHeader title="Hujjat nusxalari" description={`Rasm yoki PDF, har biri ${maxMb} MB gacha. Fayllar tizimda saqlanadi, tashqariga chiqmaydi.`} icon={FileText} />
+        <CardHeader title="Hujjat nusxalari" description={`Rasm yoki PDF, har biri ${maxMb} MB gacha.`} info="Fayllar tizimda saqlanadi, tashqariga chiqmaydi." icon={FileText} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {DOC_KINDS.map((k) => (
             <label key={k} className="block">
@@ -88,7 +88,7 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb, ini
       <FormError error={tooBig ?? state?.error} />
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={pending}><Save size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash va varaqani chop etish"}</Button>
-        <span className="text-xs text-slate-500">Saqlangach shaxsiy varaqa ochiladi va chop etish oynasi o&apos;zi chiqadi (PDF sifatida ham saqlash mumkin).</span>
+        <InfoButton title="Saqlash va varaqani chop etish">Saqlangach shaxsiy varaqa ochiladi va chop etish oynasi o&apos;zi chiqadi (PDF sifatida ham saqlash mumkin).</InfoButton>
       </div>
     </form>
   );

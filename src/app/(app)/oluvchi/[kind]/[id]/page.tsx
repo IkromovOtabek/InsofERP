@@ -87,7 +87,7 @@ export default async function OluvchiPage({ params, searchParams }: {
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
           <Card className="lg:col-span-2">
             <div id="ombor" className="scroll-mt-20" />
-            <CardHeader title="Omboridagi tayyor mahsulot" description="Brigada chiqargan yoki unga biriktirilgan, hali jo'natilmagan dona mahsulot. Reysga yuklanganda va brak yozilganda shu ombordan yechiladi." />
+            <CardHeader title="Omboridagi tayyor mahsulot" info="Brigada chiqargan yoki unga biriktirilgan, hali jo'natilmagan dona mahsulot. Reysga yuklanganda va brak yozilganda shu ombordan yechiladi." />
             {b.products.length === 0 ? <p className="text-sm text-slate-500">Brigada omborida tayyor mahsulot yo&apos;q.</p> : (
               <Table>
                 <thead><tr><Th>Mahsulot</Th><Th right>Qoldiq</Th></tr></thead>
@@ -104,7 +104,7 @@ export default async function OluvchiPage({ params, searchParams }: {
           </Card>
           <Card>
             <div id="qolida" className="scroll-mt-20" />
-            <CardHeader title="Qo'lidagi xomashyo" description="Brigadaga berilgan, hali sarflanmagan yoki qaytarilmagan xomashyo (o'rtacha tannarxda)." />
+            <CardHeader title="Qo'lidagi xomashyo" info="Brigadaga berilgan, hali sarflanmagan yoki qaytarilmagan xomashyo (o'rtacha tannarxda)." />
             {b.hand.length === 0 ? <p className="text-sm text-slate-500">Brigada qo&apos;lida xomashyo yo&apos;q.</p> : (
               <Table>
                 <thead><tr><Th>Nomi</Th><Th right>Miqdor</Th><Th right>Qiymat</Th></tr></thead>
@@ -122,7 +122,7 @@ export default async function OluvchiPage({ params, searchParams }: {
             )}
           </Card>
           <Card>
-            <CardHeader title="Shu xomashyo bilan chiqara oladi" description="Retsept bo'yicha: qo'lidagi xomashyodan necha birlik chiqadi va qaysi xomashyo avval tugaydi." />
+            <CardHeader title="Shu xomashyo bilan chiqara oladi" info="Retsept bo'yicha: qo'lidagi xomashyodan necha birlik chiqadi va qaysi xomashyo avval tugaydi." />
             {b.makes.length === 0 ? <p className="text-sm text-slate-500">Hozirgi qoldiq bilan retseptli mahsulot chiqarib bo&apos;lmaydi.</p> : (
               <ul className="divide-y divide-slate-100">
                 {b.makes.map((m) => (
@@ -140,7 +140,7 @@ export default async function OluvchiPage({ params, searchParams }: {
           {(b.produced.length > 0 || b.defects.length > 0) && (
             <Card className="lg:col-span-2">
               <div id="ishlab-chiqarish" className="scroll-mt-20" />
-              <CardHeader title="Ishlab chiqarish (davr)" description="Topshiriq fakti va brak — mahsulot bo'yicha." />
+              <CardHeader title="Ishlab chiqarish (davr)" info="Topshiriq fakti va brak — mahsulot bo'yicha." />
               <Table>
                 <thead><tr><Th>Mahsulot</Th><Th right>Ishlab chiqarildi</Th><Th right>Brak</Th><Th right>Brak %</Th></tr></thead>
                 <tbody>
@@ -166,7 +166,7 @@ export default async function OluvchiPage({ params, searchParams }: {
 
       <Card className="mb-6">
         <div id="tovarlar" className="scroll-mt-20" />
-        <CardHeader title="Davrda berilgan tovarlar" description="Tovar bo'yicha jami: bekor qilinganlar va qaytarishlar ayirilgan. Narx — chiqim paytidagi «Dona narxi»." />
+        <CardHeader title="Davrda berilgan tovarlar" info="Tovar bo'yicha jami: bekor qilinganlar va qaytarishlar ayirilgan. Narx — chiqim paytidagi «Dona narxi»." />
         {card.byMaterial.length === 0 ? <p className="text-sm text-slate-500">Tanlangan davrda chiqim yo&apos;q.</p> : (
           <Table>
             <thead><tr><Th>Nomi</Th><Th>Birlik</Th><Th right>Miqdor</Th><Th right>Summa</Th><Th right>Chiqimlar</Th><Th>Oxirgisi</Th></tr></thead>
@@ -189,7 +189,7 @@ export default async function OluvchiPage({ params, searchParams }: {
 
       <Card>
         <div id="chiqim-tarixi" className="scroll-mt-20" />
-        <CardHeader title="Chiqim tarixi" description={`${period.label} · ${fmtNum(card.rows.length)} qator. To'liq jurnal — Sklad → Chiqim.`} />
+        <CardHeader title="Chiqim tarixi" description={`${period.label} · ${fmtNum(card.rows.length)} qator`} info="To'liq jurnal — Sklad → Chiqim." />
         {card.rows.length === 0 ? <p className="text-sm text-slate-500">Tanlangan davrda chiqim yo&apos;q.</p> : (
           <Table>
             <thead><tr><Th>Sana</Th><Th>Nomi</Th><Th>Birlik</Th><Th right>Miqdor</Th><Th right>Narx</Th><Th right>Summa</Th><Th>Holat / izoh</Th></tr></thead>

@@ -10,7 +10,7 @@ export default async function NewShipmentPage() {
   const d = await shipmentFormData();
   return (
     <div>
-      <PageHeader back={{ href: "/jonatma", label: "Jo'natmalar" }} title="Yangi jo'natma" subtitle="Olib kelgan mahsulotlar nakladnoyini kiriting va skladga jo'nating — sklad tekshirib qabul qiladi" />
+      <PageHeader back={{ href: "/jonatma", label: "Jo'natmalar" }} title="Yangi jo'natma" info="Olib kelgan mahsulotlar nakladnoyini kiriting va skladga jo'nating — sklad tekshirib qabul qiladi" />
       <ShipmentForm {...d} initial={{ supplierId: "", warehouseId: d.warehouses[0]?.id ?? "", date: isoDate(), waybillNo: "", payment: "", carrier: "", note: "", rows: [] }} />
     </div>
   );

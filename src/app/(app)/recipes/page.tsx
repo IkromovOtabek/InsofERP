@@ -30,7 +30,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
     <div>
       <PageHeader
         title="Retseptlar"
-        subtitle="Har bir mahsulot uchun 1 birlikka (m³ yoki dona) xomashyo normasi. Bitta bosish tanlaydi, ikki marta bosish ochadi — 1C dagidek. Yangi versiya yaratiladi, eskisi tarixda qoladi."
+        info="Har bir mahsulot uchun 1 birlikka (m³ yoki dona) xomashyo normasi. Bitta bosish tanlaydi, ikki marta bosish ochadi — 1C dagidek. Yangi versiya yaratiladi, eskisi tarixda qoladi."
         action={<LinkButton href="/recipes/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>}
       />
       {imported && <Callout tone="success" title="Excel import bajarildi">{imported} ta mahsulot uchun yangi retsept versiyasi saqlandi.</Callout>}

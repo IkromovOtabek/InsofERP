@@ -5,7 +5,7 @@ import { type MonthKey, addMonths, monthKeyOf } from "@/lib/fin-report/period";
 import { loadCategories, toTree } from "@/lib/fin-report/categories";
 import { MONTHS_UZ } from "@/lib/bi/plans";
 import { fmtNum, moneyShort, pct } from "@/lib/format";
-import { Card, CardHeader, Empty, Section, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Card, CardHeader, Empty, InfoButton, Section, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
 import { CostCategoryToggle, CostMonthForm, GroupWageForm } from "./cost-forms";
@@ -62,10 +62,6 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
   return (
     <div>
       <MonthBar base={base} month={s.month} excel={<ExcelButton file={`Tannarx hisobi ${s.month}`} sheets={sheets} />} />
-      <p className="mb-4 max-w-4xl text-[13px] text-slate-500">
-        Xom-ashyo — norma yoki hisobotdagi narxdan emas, oy davomida ta&apos;minotchilardan <b>haqiqatda kelgan</b> xom-ashyodan ({s.vatPayer ? "QQSsiz" : "QQS bilan — korxona QQS to'lovchisi emas"}).
-        Tayyor mahsulot omborida ko&apos;paygan qismi ayiriladi, xom-ashyo skladi qoldig&apos;i o&apos;zgarishi hisobga olinadi. Ehtiyot qism, yoqilg&apos;i kabi xom-ashyo bo&apos;lmagan kirimlar kirmaydi.
-      </p>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label={`Kelgan xom-ashyo (${s.vatPayer ? "QQSsiz" : "QQS bilan"})`} value={moneyShort(s.arrivedNet)} hint={fmtNum(s.arrivedNet)} icon={Truck} href="#kelgan" />
@@ -74,7 +70,10 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
         <StatCard label="Ishlab chiqarish xarajatlari stavkasi" value={pct(s.overheadPct)} hint={`${fmtNum(s.overheadTotal)} xom-ashyoga nisbatan`} icon={Percent} href="#xarajatlar" />
       </div>
 
-      <Section id="kelgan" title={`1. ${monthTitle(s.month)}da kelgan xom-ashyo`}>
+      <Section id="kelgan" title={`1. ${monthTitle(s.month)}da kelgan xom-ashyo`} info={<>
+        <p>Xom-ashyo — norma yoki hisobotdagi narxdan emas, oy davomida ta&apos;minotchilardan <b>haqiqatda kelgan</b> xom-ashyodan ({s.vatPayer ? "QQSsiz" : "QQS bilan — korxona QQS to'lovchisi emas"}).</p>
+        <p>Tayyor mahsulot omborida ko&apos;paygan qismi ayiriladi, xom-ashyo skladi qoldig&apos;i o&apos;zgarishi hisobga olinadi. Ehtiyot qism, yoqilg&apos;i kabi xom-ashyo bo&apos;lmagan kirimlar kirmaydi.</p>
+      </>}>
         <Table maxHeight="60vh">
           <thead><tr><Th>Guruh</Th><Th>Ta&apos;minotchi</Th><Th right>Keldi (QQS bilan)</Th><Th>QQS bor?</Th><Th right>{s.vatPayer ? "QQSsiz" : "Tannarxga"}</Th><Th>Manba</Th></tr></thead>
           <tbody>
@@ -94,7 +93,7 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
         </Table>
       </Section>
 
-      <Section id="guruhlar" title="Guruhlar bo'yicha">
+      <Section id="guruhlar" title="Guruhlar bo'yicha" info={<p>Norma — sotilgan beton va buyumga (retsept × oyning o&apos;rtacha xarid narxi); kelgani — ishlab chiqarilgan hamma narsaga.</p>}>
         <Table>
           <thead><tr><Th>Guruh</Th><Th right>Keldi ({s.vatPayer ? "QQSsiz" : "QQS bilan"})</Th><Th right>Norma bo&apos;yicha kerak edi</Th><Th right>Farq</Th><Th right>Koeffitsiyent</Th></tr></thead>
           <tbody>
@@ -110,7 +109,6 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
             ))}
           </tbody>
         </Table>
-        <p className="mt-2 text-[13px] text-slate-500">Norma — sotilgan beton va buyumga (retsept × oyning o&apos;rtacha xarid narxi); kelgani — ishlab chiqarilgan hamma narsaga.</p>
       </Section>
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
@@ -134,7 +132,10 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
           </Card>
         </Section>
 
-        <Section id="xarajatlar" title="3. Ishlab chiqarish xarajatlari (buyumlarga taqsimlanadi)">
+        <Section id="xarajatlar" title="3. Ishlab chiqarish xarajatlari (buyumlarga taqsimlanadi)" info={<>
+          <p>Har bir buyumga materiali qiymatiga qarab taqsimlanadi. Transport, ma&apos;muriy, bank, soliq, kredit — davr xarajati, buyum tannarxiga kirmaydi.</p>
+          {canWrite && <p>Qaysi xarajatlar tannarxga kiradi: manba belgilansa — hamma sub manbalari kiradi. Brigada (sdelka) ish haqini belgilamang: u buyumga alohida qo&apos;shiladi.</p>}
+        </>}>
           <Card>
             <dl className="divide-y divide-slate-100 text-sm">
               {s.overhead.length === 0 && <div className="py-2 text-slate-400">Tannarxga kiradigan xarajat yo&apos;q</div>}
@@ -142,7 +143,6 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
               <div className="flex justify-between gap-3 bg-violet-50/60 px-1 py-2 font-bold"><dt>Jami ishlab chiqarish xarajatlari</dt><dd className="tabular">{fmtNum(s.overheadTotal)}</dd></div>
               <div className="flex justify-between gap-3 px-1 py-2"><dt className="text-slate-600">Xom-ashyoga nisbatan stavka</dt><dd className="font-semibold tabular">{pct(s.overheadPct)}</dd></div>
             </dl>
-            <p className="mt-2 text-[13px] text-slate-500">Har bir buyumga materiali qiymatiga qarab taqsimlanadi. Transport, ma&apos;muriy, bank, soliq, kredit — davr xarajati, buyum tannarxiga kirmaydi.</p>
             {canWrite && (
               <details className="mt-3 rounded-lg border border-slate-200 p-3">
                 <summary className="flex cursor-pointer select-none items-center gap-2 text-sm font-medium text-slate-700"><Settings2 size={15} /> Qaysi xarajatlar tannarxga kiradi</summary>
@@ -154,7 +154,6 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
                     </div>
                   ))}
                 </div>
-                <p className="mt-2 text-[12px] text-slate-400">Manba belgilansa — hamma sub manbalari kiradi. Brigada (sdelka) ish haqini belgilamang: u buyumga alohida qo&apos;shiladi.</p>
               </details>
             )}
           </Card>
@@ -164,9 +163,8 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
       <Section title="4. Buyum tannarxi (1 dona)">
         <ItemTable items={pieces} piece />
       </Section>
-      <Section title="5. Beton tannarxi (1 m³)">
+      <Section title="5. Beton tannarxi (1 m³)" info={<p>Sotuv narxi — shu oyda o&apos;rtacha qanchadan sotilgani (QQSsiz, dostavkasiz). Beton narxida yetkazib berish bo&apos;lsa — transport xarajati bu yerda emas.</p>}>
         <ItemTable items={volume} />
-        <p className="mt-2 text-[13px] text-slate-500">Sotuv narxi — shu oyda o&apos;rtacha qanchadan sotilgani (QQSsiz, dostavkasiz). Beton narxida yetkazib berish bo&apos;lsa — transport xarajati bu yerda emas.</p>
       </Section>
     </div>
   );
@@ -216,8 +214,11 @@ export function ProductProfitView({ p, base, canWrite }: { p: ProductProfit; bas
     <div>
       <MonthBar base={base} month={p.month} excel={<ExcelButton file={`Mahsulot foydasi ${p.month}`} sheets={sheets} />} />
       <p className="mb-4 max-w-4xl text-[13px] text-slate-500">
-        Tannarx (1 birlik) = norma bo&apos;yicha xom-ashyo (QQSsiz narxda) × haqiqiy/norma koeffitsiyenti + ishlab chiqarish xarajatlari (xom-ashyoning %) + brigada ish haqi.
-        Tushum — QQSsiz va dostavkasiz: zayavkada alohida yozilgan dostavka ayirilgan. Koeffitsiyentlar — {sourceNote}.
+        Koeffitsiyentlar — {sourceNote}.
+        <InfoButton title="Mahsulot foydasi" className="ml-1">
+          <p>Tannarx (1 birlik) = norma bo&apos;yicha xom-ashyo (QQSsiz narxda) × haqiqiy/norma koeffitsiyenti + ishlab chiqarish xarajatlari (xom-ashyoning %) + brigada ish haqi.</p>
+          <p>Tushum — QQSsiz va dostavkasiz: zayavkada alohida yozilgan dostavka ayirilgan.</p>
+        </InfoButton>
       </p>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -269,7 +270,11 @@ export function ProductProfitView({ p, base, canWrite }: { p: ProductProfit; bas
             </Table>
           </Card>
           <Card>
-            <CardHeader title="Sozlamalar" icon={Settings2} description="Koeffitsiyent = haqiqatda kelgan ÷ norma bo'yicha kerak («Tannarx hisobi»)" />
+            <CardHeader title="Sozlamalar" icon={Settings2} info={<>
+              <p>Koeffitsiyent = haqiqatda kelgan ÷ norma bo&apos;yicha kerak («Tannarx hisobi»).</p>
+              {canWrite && <p>Bo&apos;sh katak — avtomatik qiymat (kulrang).</p>}
+              <p><Link href={`/bi-tahlil/moliya/tannarx?oy=${prm.source}`} className="underline">Tannarx hisobi</Link> sahifasida koeffitsiyent qanday chiqqani ko&apos;rinadi.</p>
+            </>} />
             {canWrite ? (
               <CostMonthForm month={p.month} groups={COEF_GROUPS} coefs={prm.coefs} manualCoefs={prm.manual.coefs} autoCoefs={prm.autoCoefs} overheadPct={prm.overheadPct} autoPct={prm.autoPct} manualPct={prm.manual.overheadPct} />
             ) : (
@@ -284,7 +289,6 @@ export function ProductProfitView({ p, base, canWrite }: { p: ProductProfit; bas
                 ? <GroupWageForm key={w.id} groupId={w.id} name={w.name} value={w.pieceRate} />
                 : <div key={w.id} className="flex justify-between text-sm"><span className="text-slate-600">{w.name}</span><span className="tabular">{w.pieceRate != null ? fmtNum(w.pieceRate) : "—"}</span></div>)}
             </div>
-            <p className="mt-3 text-[12px] text-slate-400"><Link href={`/bi-tahlil/moliya/tannarx?oy=${prm.source}`} className="underline">Tannarx hisobi</Link> sahifasida koeffitsiyent qanday chiqqani ko&apos;rinadi.</p>
           </Card>
       </div>
     </div>

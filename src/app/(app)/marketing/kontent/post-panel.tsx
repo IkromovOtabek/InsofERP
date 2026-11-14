@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { Check, Crosshair, ExternalLink, RotateCw, Send, ShieldCheck, X } from "lucide-react";
 import type { SmmApproval, SmmBoostObjective, SmmChannel, SmmPublicationStatus } from "@/generated/prisma";
 import { APPROVAL, BOOST_OBJECTIVE, CHANNEL_LABEL, PUB_STATUS } from "@/lib/smm/labels";
-import { Badge, Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
+import { Badge, Button, Field, FormError, FormSuccess, InfoButton, Input, Select, Textarea } from "@/components/ui";
 import { approveContent, publishNow, rejectContent, submitForApproval } from "./actions";
 import { requestBoostAction } from "../target/actions";
 
@@ -98,7 +98,7 @@ export function BoostRequest({ contentId, audiences, currency, dailyCap }: {
   const total = (Number(daily.replace(",", ".")) || 0) * (Number(days) || 0);
   return (
     <form action={action} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-      <p className="inline-flex items-center gap-2 text-sm font-semibold"><Crosshair size={16} className="text-fuchsia-600" /> Target qilish</p>
+      <p className="inline-flex items-center gap-2 text-sm font-semibold"><Crosshair size={16} className="text-fuchsia-600" /> Target qilish<InfoButton title="Target qilish">Direktor tasdiqlagach ishga tushadi.</InfoButton></p>
       <Field label="Maqsad">
         <Select name="objective" defaultValue="REACH">{(Object.keys(BOOST_OBJECTIVE) as SmmBoostObjective[]).map((k) => <option key={k} value={k}>{BOOST_OBJECTIVE[k].label}</option>)}</Select>
       </Field>
@@ -109,7 +109,7 @@ export function BoostRequest({ contentId, audiences, currency, dailyCap }: {
         <Field label={`Kunlik, ${currency}`} hint={`limit ${dailyCap}`}><Input name="dailyBudget" inputMode="decimal" value={daily} onChange={(e) => setDaily(e.target.value)} /></Field>
         <Field label="Kun (1–30)"><Input name="days" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} /></Field>
       </div>
-      <p className="text-xs text-slate-500">Jami: <span className="font-semibold text-slate-800 tabular">{total.toFixed(2)} {currency}</span> · direktor tasdiqlagach ishga tushadi</p>
+      <p className="text-xs text-slate-500">Jami: <span className="font-semibold text-slate-800 tabular">{total.toFixed(2)} {currency}</span></p>
       <Field label="Izoh"><Input name="note" placeholder="Nega shu post? (ixtiyoriy)" /></Field>
       <Button size="sm" disabled={pending}><Crosshair size={14} /> So&apos;rov yuborish</Button>
       <FormError error={state?.error} />

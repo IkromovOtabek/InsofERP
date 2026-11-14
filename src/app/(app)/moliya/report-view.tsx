@@ -4,7 +4,7 @@ import { pnlDrill, pnlReport, type PnlMode } from "@/lib/fin-report/pnl";
 import { ddsDrill, ddsDrillable, ddsReport } from "@/lib/fin-report/dds";
 import { balanceDrill, balanceDrillable, balanceReport } from "@/lib/fin-report/balance";
 import { type MonthKey, addMonths, isMonthKey, monthDiff, monthKeyOf, monthLabel, monthRange } from "@/lib/fin-report/period";
-import { Callout, Section, Select, Tabs } from "@/components/ui";
+import { Callout, InfoButton, Section, Select, Tabs } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
 import { DrillPanel } from "@/components/drill-panel";
@@ -99,7 +99,9 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
         })}
       </div>
 
-      <h2 className="mb-3 border-l-4 border-brand-400 pl-2.5 text-[17px] font-bold text-slate-900">{title}</h2>
+      <h2 className="mb-3 border-l-4 border-brand-400 pl-2.5 text-[17px] font-bold text-slate-900">{title}
+        {bal && <span className="ml-1 inline-flex align-middle"><InfoButton title={title}>{bal.notes.slice(0, 2).map((t) => <p key={t}>{t}</p>)}</InfoButton></span>}
+      </h2>
 
       {pnl && (
         <>
@@ -112,10 +114,9 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
         <>
           {dds.check.some((v) => Math.abs(v) >= 1) && <Callout tone="danger" title="Tekshiruv 0 emas">Hisoblararo o&apos;tkazmaning bir tomoni yetishmayapti yoki bekor qilingan. Kirim-Chiqim jurnalida o&apos;tkazmalarni tekshiring.</Callout>}
           <FinTable months={months} rows={dds.rows} firstHeader="Pul oqimi turi / Manba" drill={ddsHref} />
-          <Section title="Hisoblar bo'yicha qoldiq">
+          <Section title="Hisoblar bo'yicha qoldiq" info="Boshlang'ich qoldiqlar — kassa va bank hisoblarining tizimga o'tish sanasidagi qoldig'i (Moliya → Boshlang'ich qoldiqlar).">
             <FinTable months={months} rows={dds.accountRows} totalLabel="JAMI" firstHeader="Hisob / Ko'rsatkich" drill={ddsHref} />
           </Section>
-          <p className="mt-3 text-[13px] text-slate-500">Boshlang&apos;ich qoldiqlar — kassa va bank hisoblarining tizimga o&apos;tish sanasidagi qoldig&apos;i (Moliya → Boshlang&apos;ich qoldiqlar).</p>
         </>
       )}
 
@@ -124,10 +125,8 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
       {bal && (
         <>
           <FinTable months={months} labels={bal.labels} rows={bal.rows} totalLabel={null} firstHeader="Sana" drill={balHref} />
-          <ul className="mt-3 space-y-1 text-[13px] text-slate-500">{bal.notes.slice(0, 2).map((t) => <li key={t}>{t}</li>)}</ul>
-          <Section title="KAPITALNI TEKSHIRISH (moliyaviy nazorat)">
+          <Section title="KAPITALNI TEKSHIRISH (moliyaviy nazorat)" info={bal.notes[2]}>
             <FinTable months={months} labels={bal.labels} rows={bal.capitalRows} totalLabel={null} firstHeader="Ko'rsatkich" drill={balHref} />
-            <p className="mt-2 text-[13px] text-slate-500">{bal.notes[2]}</p>
           </Section>
         </>
       )}

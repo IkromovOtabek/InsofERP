@@ -107,7 +107,7 @@ export async function ProcurementHome({ filters = {}, base = "/dashboard" }: { f
           {/* ── 2-qator: grafiklar ── */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader icon={Layers} title="Material qoldig'i" description="Qoldiq ehtiyojning necha foizini yopadi (minimal yoki rejadagi sarf)" action={more("#zaxira", "Zaxira")} />
+              <CardHeader icon={Layers} title="Material qoldig'i" info="Qoldiq ehtiyojning necha foizini yopadi (minimal yoki rejadagi sarf)" action={more("#zaxira", "Zaxira")} />
               {d.stockChart.length === 0
                 ? <p className="py-6 text-center text-sm text-slate-500">Hamma xomashyo yetarli</p>
                 : <HBarList max={100} formatValue={(v) => pct(v, 0)}

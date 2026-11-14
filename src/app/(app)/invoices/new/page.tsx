@@ -31,7 +31,7 @@ export default async function NewInvoice({ searchParams }: { searchParams: Promi
   });
   return (
     <div>
-      <PageHeader back={{ href: "/invoices", label: "Schyotlar" }} title="Yangi schyot" subtitle="Schyot yozilgach summa mijoz debitorkasiga tushadi" />
+      <PageHeader back={{ href: "/invoices", label: "Schyotlar" }} title="Yangi schyot" info="Schyot yozilgach summa mijoz debitorkasiga tushadi" />
       <InvoiceForm orders={opts} preselect={orderId} />
     </div>
   );

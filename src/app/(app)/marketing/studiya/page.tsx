@@ -32,7 +32,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
 
   return (
     <div>
-      <PageHeader title="AI studiya" subtitle="G'oyangizni oddiy so'z bilan yozing — AI ssenariy, izoh, heshteg, joylashuv, chiqish vaqti va Reels videosini tayyorlaydi. Natija qoralama bo'lib Kontent rejaga tushadi." />
+      <PageHeader title="AI studiya" info="G'oyangizni oddiy so'z bilan yozing — AI ssenariy, izoh, heshteg, joylashuv, chiqish vaqti va Reels videosini tayyorlaydi. Natija qoralama bo'lib Kontent rejaga tushadi." />
       <Tabs current={tab} items={[
         { key: "yangi", label: "Yangi kontent", href: "/marketing/studiya", icon: Sparkles },
         { key: "videolar", label: "Videolar", href: "/marketing/studiya?t=videolar", icon: Clapperboard, count: running || undefined },

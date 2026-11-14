@@ -80,7 +80,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader title="Topshiriqlar" subtitle="Zayavkadagi har bir mahsulot qatori biriktirilgan brigadaga topshiriq sifatida tushadi. Bajarilgan miqdor kiritilgach qoldiq ko'rinadi." />
+      <PageHeader title="Topshiriqlar" info="Zayavkadagi har bir mahsulot qatori biriktirilgan brigadaga topshiriq sifatida tushadi. Bajarilgan miqdor kiritilgach qoldiq ko'rinadi." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Tabs current={st ?? ""} items={tabs} className="mb-0" />
         <form className="flex flex-wrap items-center gap-2">

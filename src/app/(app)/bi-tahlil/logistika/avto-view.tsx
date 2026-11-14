@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Fuel, Gauge, Truck, Wallet } from "lucide-react";
 import type { AvtoReport, AvtoRow } from "@/lib/fin-report/avto";
 import { date, fmtNum, moneyShort } from "@/lib/format";
-import { Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { InfoButton, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
 import { type DayRange, DayRangeBar } from "../month-bar";
@@ -36,8 +36,15 @@ export function AvtoView({ r, period, base, keep }: { r: AvtoReport; period: Day
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] font-bold text-slate-900">Avtotransport tahlili — {period.label}</h2>
-        <span className="text-[13px] text-slate-500">Har bir mashina va kunlik solishtirish</span>
+        <h2 className="text-[17px] font-bold text-slate-900">
+          Avtotransport tahlili — {period.label}
+          <InfoButton title="Avtotransport tahlili" className="ml-1">
+            <p>Har bir mashina va kunlik solishtirish.</p>
+            <p>Probeg — zavod → obyekt → zavod (GPS izi, bo&apos;lmasa zayavkadagi masofa × 2), haydovchi tabeli bilan bir xil. Norma — transport kartasidagi 100 km va soatlik norma.</p>
+            <p>Daromad — zayavka dastavka haqi reyslarga hajm ulushida. Kassadan chiqqan — izohida yoki «kimga» ustunida shu mashina raqami to&apos;liq yozilgan chiqimlar.</p>
+            <p>Mexanik — to&apos;langan mexanik so&apos;rovlari. Farq 0 bo&apos;lmasa — kassa chiqimi so&apos;rovsiz qilingan yoki so&apos;rov boshqa mashinaga yozilgan.</p>
+          </InfoButton>
+        </h2>
       </div>
       <DayRangeBar base={base} range={period} keep={keep}>
         <ExcelButton file={file} sheets={[
@@ -133,12 +140,6 @@ export function AvtoView({ r, period, base, keep }: { r: AvtoReport; period: Day
           </tbody>
         </Table>
       </Section>
-
-      <ul className="space-y-1 text-[13px] text-slate-500">
-        <li>Probeg — zavod → obyekt → zavod (GPS izi, bo&apos;lmasa zayavkadagi masofa × 2), haydovchi tabeli bilan bir xil. Norma — transport kartasidagi 100 km va soatlik norma.</li>
-        <li>Daromad — zayavka dastavka haqi reyslarga hajm ulushida. Kassadan chiqqan — izohida yoki «kimga» ustunida shu mashina raqami to&apos;liq yozilgan chiqimlar.</li>
-        <li>Mexanik — to&apos;langan mexanik so&apos;rovlari. Farq 0 bo&apos;lmasa — kassa chiqimi so&apos;rovsiz qilingan yoki so&apos;rov boshqa mashinaga yozilgan.</li>
-      </ul>
     </div>
   );
 }

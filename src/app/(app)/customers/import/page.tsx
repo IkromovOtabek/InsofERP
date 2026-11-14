@@ -21,7 +21,7 @@ export default async function CustomersImportPage() {
       <PageHeader
         back={{ href: "/customers", label: "Mijozlar" }}
         title="Excel orqali mijoz qo'shish"
-        subtitle="Har qator — mijoz kartasi. INN (bo'lmasa telefon, keyin nomi) bo'yicha bazada bor mijoz topilsa yangi karta ochilmaydi. Boshlang'ich qarzlar — «Boshlang'ich qoldiqlar» bo'limida."
+        info="Har qator — mijoz kartasi. INN (bo'lmasa telefon, keyin nomi) bo'yicha bazada bor mijoz topilsa yangi karta ochilmaydi. Boshlang'ich qarzlar — «Boshlang'ich qoldiqlar» bo'limida."
       />
       <Card className="max-w-6xl">
         <ExcelImport

@@ -4,7 +4,7 @@ import { useActionState, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { UserMinus, UserRoundCheck, X } from "lucide-react";
 import { dismissEmployee, restoreEmployee } from "./actions";
-import { Button, Field, FormError, Input, Select, Textarea } from "@/components/ui";
+import { Button, Field, FormError, InfoButton, Input, Select, Textarea } from "@/components/ui";
 import { DISMISSAL_REASONS, today } from "@/lib/davomat";
 import type { ActionState } from "@/lib/action";
 import { cn } from "@/lib/utils";
@@ -72,7 +72,7 @@ export function DismissButton({ employeeId, fullName, compact }: { employeeId: s
                 Bo&apos;shatish buyrug&apos;ini tayyorlash
               </label>
               {makeOrder && (
-                <Field label="Buyruq raqami" hint="Bo'sh qoldirilsa — keyingi bo'sh raqam beriladi. Bo'shatilgach buyruq chop etishga ochiladi.">
+                <Field label="Buyruq raqami" help={<InfoButton title="Buyruq raqami"><p>Bo&apos;sh qoldirilsa — keyingi bo&apos;sh raqam beriladi.</p><p>Bo&apos;shatilgach buyruq chop etishga ochiladi.</p></InfoButton>}>
                   <Input name="orderNo" placeholder="avtomatik" />
                 </Field>
               )}

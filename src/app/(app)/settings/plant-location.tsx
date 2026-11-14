@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, MapPin } from "lucide-react";
-import { Button, Card } from "@/components/ui";
+import { Button, Card, InfoButton } from "@/components/ui";
 import { MapLocateButton } from "@/components/map-locate-button";
 import { addTiles, loadLeaflet, TASHKENT, type LMap, type LMarker } from "@/lib/leaflet";
 import { savePlantLocation } from "./actions";
@@ -55,12 +55,14 @@ export function PlantLocation({ lat, lng }: { lat: number | null; lng: number | 
 
   return (
     <Card>
-      <h2 className="mb-1 font-semibold">Zavod joyi</h2>
-      <p className="mb-3 text-sm text-slate-500">
-        Xaritadan zavod turgan joyni bosib belgilang. Zayavkadagi &quot;zavoddan necha km&quot; va
-        haydovchining marshruti shu nuqtadan hisoblanadi. Xodimlar ilovada «Keldim / Ketdim» (Face ID) bosganda
-        shu nuqtadan «Davomat radiusi» (Sozlamalar → Limitlar) ichida bo&apos;lishi shart — nuqta belgilanmasa o&apos;zi belgilash ishlamaydi.
-      </p>
+      <h2 className="mb-3 font-semibold">Zavod joyi
+        <InfoButton title="Zavod joyi" className="ml-1">
+          <p>Xaritadan zavod turgan joyni bosib belgilang. Zayavkadagi &quot;zavoddan necha km&quot; va
+            haydovchining marshruti shu nuqtadan hisoblanadi.</p>
+          <p>Xodimlar ilovada «Keldim / Ketdim» (Face ID) bosganda
+            shu nuqtadan «Davomat radiusi» (Sozlamalar → Limitlar) ichida bo&apos;lishi shart — nuqta belgilanmasa o&apos;zi belgilash ishlamaydi.</p>
+        </InfoButton>
+      </h2>
       <div className="relative isolate overflow-hidden rounded-lg border border-slate-200">
         <div ref={el} className="h-[260px] w-full bg-slate-50" />
         <MapLocateButton getMap={() => map.current} />

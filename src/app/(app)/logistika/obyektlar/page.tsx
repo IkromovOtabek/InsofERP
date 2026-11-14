@@ -33,7 +33,7 @@ export default async function SitesPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader title="Obyektlar" subtitle="Zayavka ochilganda mijoz + manzil bo'yicha avtomatik yaratiladi — kontakt va ko'rsatmani shu yerda to'ldiring"
+      <PageHeader title="Obyektlar" info="Zayavka ochilganda mijoz + manzil bo'yicha avtomatik yaratiladi — kontakt va ko'rsatmani shu yerda to'ldiring"
         action={<LinkButton href="/logistika/obyektlar/new"><Plus size={16} /> Obyekt</LinkButton>} />
       <form className="mb-3"><input name="q" aria-label="Qidirish" defaultValue={q} placeholder="Obyekt, manzil yoki mijoz…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Tabs current={all ? "all" : ""} items={[{ key: "", label: "Faol", href: "/logistika/obyektlar" }, { key: "all", label: "Hammasi", href: "/logistika/obyektlar?all=1" }]} />

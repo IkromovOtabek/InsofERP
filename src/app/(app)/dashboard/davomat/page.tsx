@@ -36,7 +36,7 @@ export default async function FaceAttendancePage({ searchParams }: { searchParam
         back={{ href: "/dashboard", label: "Bosh sahifa" }}
         eyebrow="Davomat"
         title="Face ID — yuz bilan davomat"
-        subtitle={scope === "sex"
+        info={scope === "sex"
           ? "Sex xodimlari kameraga qarab o'tadi — kelish va ketish vaqti tabelga o'zi yoziladi."
           : "Xodimlar kameraga qarab o'tadi — kelish va ketish vaqti otdel kadr tabeliga o'zi yoziladi."}
       />

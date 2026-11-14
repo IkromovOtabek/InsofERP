@@ -15,7 +15,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const kind = STOCK_DRILL_KINDS.find((k) => k === sp.drill) as StockDrillKind | undefined;
   const drill = kind && sp.prod ? await stockDrill({ productId: sp.prod, ...monthBounds(r.month), kind, period: monthTitle(r.month) }) : null;
   return (
-    <BiPage title="Ombor" subtitle="Tayyor mahsulot: oy boshi, ishlab chiqarilgan, jo'natilgan va qoldiq qiymati" tab="stock" range={range} period={false}>
+    <BiPage title="Ombor" info="Tayyor mahsulot: oy boshi, ishlab chiqarilgan, jo'natilgan va qoldiq qiymati" tab="stock" range={range} period={false}>
       <FinishedView r={r} sp={sp} base="/bi-tahlil/ombor/tayyor-mahsulot" drill={drill} />
     </BiPage>
   );

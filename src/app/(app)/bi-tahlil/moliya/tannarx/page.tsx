@@ -15,7 +15,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
   const month = isMonthKey(sp.oy) && sp.oy <= cur ? sp.oy : addMonths(cur, -1);
   const s = await costSheet(month);
   return (
-    <BiPage title="Moliya" subtitle={`Tannarx hisobi — ${monthTitle(month)} (o'zimiz hisobladik): haqiqatda kelgan xom-ashyo, norma bilan farq va 1 birlik tannarx`} tab="finance" range={range} period={false}>
+    <BiPage title="Moliya" subtitle={`Tannarx hisobi — ${monthTitle(month)}`} info="Tannarx hisobi (o'zimiz hisobladik): haqiqatda kelgan xom-ashyo, norma bilan farq va 1 birlik tannarx" tab="finance" range={range} period={false}>
       <CostSheetView s={s} base="/bi-tahlil/moliya/tannarx" canWrite={canDo(session, "moliya", "cost")} />
     </BiPage>
   );

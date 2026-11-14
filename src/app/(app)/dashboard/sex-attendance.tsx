@@ -1,7 +1,7 @@
 import { HardHat, ScanFace, UserCog, Users } from "lucide-react";
 import { markOf, dayTitle } from "@/lib/davomat";
 import type { ProductionDay } from "@/lib/production-day";
-import { Badge, Card, Empty, LinkButton, Progress, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, Empty, InfoButton, LinkButton, Progress, Td, Th, Tr } from "@/components/ui";
 import { MarkAllButton, StaffMark } from "./production-forms";
 
 /**
@@ -38,7 +38,8 @@ export function SexAttendance({ d, canStaff, isDirector }: { d: ProductionDay; c
         </Card>
         <Card className="xl:col-span-2" padded={false}>
           <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
-            <div className="flex items-center gap-2 text-sm font-medium"><ScanFace size={15} className="text-slate-400" /> Bugungi davomat · {dayTitle(iso)}</div>
+            <div className="flex items-center gap-2 text-sm font-medium"><ScanFace size={15} className="text-slate-400" /> Bugungi davomat · {dayTitle(iso)}
+              <InfoButton title="Bugungi davomat">{isDirector ? "Davomatni sex boshlig'i belgilaydi — otdel kadr tabeliga ham shu yozuv tushadi." : "Belgi bosilsa darhol saqlanadi (Keldi — hozirgi soat bilan). Otdel kadr tabeliga ham tushadi."}</InfoButton></div>
             <div className="flex flex-wrap gap-1.5">
               <Badge color="green">Keldi {presentCount}</Badge>
               {d.attendance.absent > 0 && <Badge color="red">Kelmadi {d.attendance.absent}</Badge>}
@@ -47,7 +48,6 @@ export function SexAttendance({ d, canStaff, isDirector }: { d: ProductionDay; c
               {d.attendance.notMarked.length > 0 && <Badge color="slate">Belgilanmagan {d.attendance.notMarked.length}</Badge>}
             </div>
           </div>
-          <p className="px-5 pt-1 text-xs text-slate-400">{isDirector ? "Davomatni sex boshlig'i belgilaydi — otdel kadr tabeliga ham shu yozuv tushadi." : "Belgi bosilsa darhol saqlanadi (Keldi — hozirgi soat bilan). Otdel kadr tabeliga ham tushadi."}</p>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead><tr><Th>Xodim</Th><Th>Brigada</Th><Th>Holat</Th><Th right>Keldi</Th><Th right>Ketdi</Th>{!isDirector && <Th right>Belgilash</Th>}</tr></thead>

@@ -26,7 +26,7 @@ export default async function StaffAssignPage({ searchParams }: { searchParams: 
 
   return (
     <div>
-      <PageHeader back={{ href: "/dashboard?view=production", label: "Ishlab chiqarish" }} title="Xodimlarni taqsimlash" subtitle="Brigada tanlansa darhol saqlanadi. Sex boshlig'i davomatni shu tarkib bo'yicha belgilaydi." />
+      <PageHeader back={{ href: "/dashboard?view=production", label: "Ishlab chiqarish" }} title="Xodimlarni taqsimlash" info="Brigada tanlansa darhol saqlanadi. Sex boshlig'i davomatni shu tarkib bo'yicha belgilaydi." />
       <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Sexda jami" value={String(staff.total)} icon={Users} href="#sex-tarkibi" />
         <StatCard label="Bugun keldi" value={`${staff.present} / ${staff.total}`} hint={staff.notMarked ? `${staff.notMarked} belgilanmagan` : "hammasi belgilangan"} icon={Users} tone="success" href="#sex-tarkibi" />

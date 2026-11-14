@@ -113,7 +113,15 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
       <PageHeader
         back={pathAllowed("/stock", s.role, s.perms) ? { href: "/stock", label: "Sklad" } : undefined}
         title="Chiqim"
-        subtitle="Skladdan xomashyo berish: kimga, qancha va qaysi narxda (Dona narxi). Zameslar — kuniga bitta qator."
+        info={<>
+          <p>Skladdan xomashyo berish: kimga, qancha va qaysi narxda (Dona narxi). Zameslar — kuniga bitta qator.</p>
+          <p className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 shrink-0 rounded-sm border border-blue-300 bg-blue-100" /> Ishlab chiqarish (zames) — kunlik zameslar bo&apos;yicha xomashyo sarfi</p>
+          <p><b className="text-slate-700">≈</b> — narx qayd etilmagan, joriy «Dona narxi» ko&apos;rsatilgan</p>
+          <p><b className="text-slate-700">avto</b> — brigadaga topshiriq bo&apos;yicha avtomatik berilgan</p>
+          <p>To&apos;lov turi va QQS — shu xomashyoning oxirgi kirimi bo&apos;yicha</p>
+          {!vatPayer && <p>QQS 0: korxona QQS to&apos;lovchisi emas — narx (tannarx, «Dona narxi») QQSni o&apos;z ichiga oladi</p>}
+          <p><b className="text-slate-700">Bekor qilish</b> — chiqim bekor qilindi: minusli qator, xomashyo skladga qaytdi</p>
+        </>}
         action={
           <>
             <ExcelButton file={`Chiqim ${period.fromStr} — ${period.toStr}`} sheets={[{ name: "Chiqim", rows: excelRows }]} />
@@ -221,19 +229,10 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
         )}
       </Sheet>
 
-      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-blue-300 bg-blue-100" /> Ishlab chiqarish (zames) — kunlik zameslar bo'yicha xomashyo sarfi</span>
-        <span><b className="text-slate-700">≈</b> — narx qayd etilmagan, joriy «Dona narxi» ko'rsatilgan</span>
-        <span><b className="text-slate-700">avto</b> — brigadaga topshiriq bo'yicha avtomatik berilgan</span>
-        <span>To'lov turi va QQS — shu xomashyoning oxirgi kirimi bo'yicha</span>
-        {!vatPayer && <span>QQS 0: korxona QQS to'lovchisi emas — narx (tannarx, «Dona narxi») QQSni o'z ichiga oladi</span>}
-        <span><b className="text-slate-700">Bekor qilish</b> — chiqim bekor qilindi: minusli qator, xomashyo skladga qaytdi</span>
-      </div>
-
       {canIssue && (
         <Card className="mt-8">
           <div id="recipients" className="scroll-mt-20">
-            <CardHeader title="Boshqa oluvchilar (Kimga)" description="Tizimda yo'q nomlar: shofyorlar, Traktor, Mexanik / ustaxona va h.k. Brigadalar («Brigadalar» bo'limi) va xodimlar («Xodimlar») «Kimga» ro'yxatida avtomatik bor va birinchi turadi. Oluvchi o'chirilmaydi — uni yashirish mumkin. Nomini bosib kartasini oching." />
+            <CardHeader title="Boshqa oluvchilar (Kimga)" info="Tizimda yo'q nomlar: shofyorlar, Traktor, Mexanik / ustaxona va h.k. Brigadalar («Brigadalar» bo'limi) va xodimlar («Xodimlar») «Kimga» ro'yxatida avtomatik bor va birinchi turadi. Oluvchi o'chirilmaydi — uni yashirish mumkin. Nomini bosib kartasini oching." />
             <RecipientsManager list={recipients} />
           </div>
         </Card>
@@ -241,7 +240,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
 
       {targets.length > 0 && (
         <Card className="mt-8">
-          <CardHeader title="Kimga berildi" description={`${period.label} · «Kimga» ustunidagi nomlar bo'yicha: qaysi mahsulotdan qancha va necha pullik (Jami summa). Qaytarish va bekor qilish ayirilgan.`} />
+          <CardHeader title="Kimga berildi" description={period.label} info="«Kimga» ustunidagi nomlar bo'yicha: qaysi mahsulotdan qancha va necha pullik (Jami summa). Qaytarish va bekor qilish ayirilgan." />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {targets.map((g) => <TargetCard key={g.key} g={g} />)}
           </div>

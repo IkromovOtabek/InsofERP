@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { Ban, CheckCircle2, Link2, Pencil, Plus, Save } from "lucide-react";
-import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, InfoButton, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { cancelLoanAction, closeLoanAction, createLoanAction, linkLoanTxAction, updateLoanAction } from "./actions";
 
@@ -49,12 +49,12 @@ export function LoanEditForm({ l }: { l: LoanEdit }) {
         <Field label="Nomi *"><Input name="name" defaultValue={l.name} required maxLength={160} /></Field>
         <Field label="Bank / kontragent *"><Input name="counterparty" defaultValue={l.counterparty} required maxLength={160} /></Field>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Boshlang'ich qoldiq *"><MoneyInput name="openingBalance" defaultValue={String(l.opening)} required /></Field>
+          <Field label="Boshlang'ich qoldiq *"
+            help={<InfoButton title="Boshlang'ich qoldiq">Qoldiq = boshlang&apos;ich + shu sanadan keyingi kassa harakatlari. Oldingi qiymatlar Amallar tarixida qoladi.</InfoButton>}><MoneyInput name="openingBalance" defaultValue={String(l.opening)} required /></Field>
           <Field label="Qoldiq sanasi *"><Input name="openingDate" type="date" defaultValue={l.openingDate} required /></Field>
         </div>
         <Field label="Yillik foiz, %"><Input name="rate" inputMode="decimal" defaultValue={l.rate === null ? "" : String(l.rate).replace(".", ",")} /></Field>
         <Field label="Izoh"><Input name="note" defaultValue={l.note ?? ""} maxLength={300} /></Field>
-        <p className="text-[12px] text-slate-500">Qoldiq = boshlang&apos;ich + shu sanadan keyingi kassa harakatlari. Oldingi qiymatlar Amallar tarixida qoladi.</p>
         <FormError error={state?.error} />
         <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
         <Button size="sm" disabled={pending}><Save size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>

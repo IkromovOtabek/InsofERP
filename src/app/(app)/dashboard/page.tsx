@@ -263,9 +263,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </Section>
       </div>
 
-      <Section title="Xomashyo: necha kunga yetadi" action={<Link href="/stock" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Sklad <ArrowRight size={14} /></Link>}>
+      <Section title="Xomashyo: necha kunga yetadi"
+        info={<><p>Kunlik sarf — so&apos;nggi 30 kun o&apos;rtachasi.</p><p>Rejadagi ehtiyoj — tasdiqlangan, hali ishlab chiqarilmagan zayavkalar uchun retsept bo&apos;yicha.</p></>} action={<Link href="/stock" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Sklad <ArrowRight size={14} /></Link>}>
         <Card padded={false}>
-          <div className="border-b border-slate-100 px-5 py-3 text-xs text-slate-500">Kunlik sarf — so'nggi 30 kun o'rtachasi. Rejadagi ehtiyoj — tasdiqlangan, hali ishlab chiqarilmagan zayavkalar uchun retsept bo'yicha.</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr><Th>Xomashyo</Th><Th right>Qoldiq</Th><Th right>Kunlik sarf</Th><Th className="w-48">Yetadi</Th><Th right>Rejadagi ehtiyoj</Th><Th>Holat</Th></tr></thead>

@@ -12,7 +12,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const period = parseDayRange(sp);
   const r = await avtoReport(period.from, period.to);
   return (
-    <BiPage title="Logistika" subtitle="Har bir mashina: reys, probeg, yoqilg'i normasi, xarajat, daromad va kassa bilan solishtirish" tab="logistics" range={range} period={false}>
+    <BiPage title="Logistika" info="Har bir mashina: reys, probeg, yoqilg'i normasi, xarajat, daromad va kassa bilan solishtirish" tab="logistics" range={range} period={false}>
       <AvtoView r={r} period={period} base="/bi-tahlil/logistika/avtotransport" />
     </BiPage>
   );

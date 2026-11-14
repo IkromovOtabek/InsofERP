@@ -45,7 +45,7 @@ export default async function MarketingStats({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <PageHeader title="Statistika" subtitle="Ulangan profillar ko'rsatkichlari, qaysi kontent ko'p ko'rilyapti va AI tavsiyalari."
+      <PageHeader title="Statistika" info="Ulangan profillar ko'rsatkichlari, qaysi kontent ko'p ko'rilyapti va AI tavsiyalari."
         action={<StatsButtons canAi={canAi} canSync={canSync && !!a.account} />} />
       <Tabs current={String(days)} items={[
         { key: "7", label: "7 kun", href: "/marketing?d=7" },
@@ -99,7 +99,8 @@ export default async function MarketingStats({ searchParams }: { searchParams: P
 
       <Card className="mt-6">
         <CardHeader title="AI tahlil va g'oyalar" icon={Sparkles}
-          description={report ? `${dateTime(report.createdAt)}${report.createdByName ? ` · ${report.createdByName}` : ""}` : "«AI tahlil va g'oyalar» tugmasini bosing — AI profilingiz va raqobatchilarni tahlil qilib, ko'rishni oshirish yo'llarini beradi"} />
+          description={report ? `${dateTime(report.createdAt)}${report.createdByName ? ` · ${report.createdByName}` : ""}` : undefined}
+          info={report ? undefined : "«AI tahlil va g'oyalar» tugmasini bosing — AI profilingiz va raqobatchilarni tahlil qilib, ko'rishni oshirish yo'llarini beradi"} />
         {report ? (
           <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
             <div className="text-sm"><Markdown text={report.summary} /></div>
@@ -122,7 +123,7 @@ export default async function MarketingStats({ searchParams }: { searchParams: P
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card padded={false}>
-          <div className="p-4 pb-2"><CardHeader title="Format bo'yicha" description="90 kun · ER — saqlash, ulashish va izohlar qamrovga nisbatan" /></div>
+          <div className="p-4 pb-2"><CardHeader title="Format bo'yicha" description="90 kun" info="ER — saqlash, ulashish va izohlar qamrovga nisbatan" /></div>
           {a.byFormat.length === 0 ? <Empty text="Ma'lumot yo'q" /> : (
             <Table>
               <thead><tr><Th>Format</Th><Th className="text-right">Post</Th><Th className="text-right">O&apos;rt. ko&apos;rish</Th><Th className="text-right">ER</Th><Th className="text-right">Tomosha</Th></tr></thead>

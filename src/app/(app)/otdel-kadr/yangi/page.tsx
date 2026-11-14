@@ -19,7 +19,7 @@ export default async function NewEmployeeCardPage({ searchParams }: { searchPara
       <PageHeader
         title="Yangi xodim"
         eyebrow="Otdel kadr"
-        subtitle="Ma'lumotlar va hujjat nusxalari to'ldirilgach shaxsiy varaqa chop etiladi"
+        info="Ma'lumotlar va hujjat nusxalari to'ldirilgach shaxsiy varaqa chop etiladi"
         back={{ href: "/otdel-kadr?tab=xodimlar", label: "Xodimlar ro'yxati" }}
       />
       <EmployeeCardForm

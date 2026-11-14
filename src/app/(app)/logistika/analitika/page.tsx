@@ -84,11 +84,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card>
           <div id="foydalanish" className="scroll-mt-20" />
-          <CardHeader title="Transportdan foydalanish" description="Band vaqt / ish vaqti" icon={Gauge} />
+          <CardHeader title="Transportdan foydalanish" info="Band vaqt / ish vaqti" icon={Gauge} />
           <Bars rows={util.slice().sort((a, b) => b.utilization - a.utilization).map((v) => ({ label: <Link href={`/logistika/transport/${v.id}`} className="tabular hover:underline">{v.plate} <span className="text-xs text-slate-500">{VEHICLE_TYPE[v.type]}</span></Link>, value: v.utilization, hint: `${v.trips} reys, ${qty(v.m3)} m³` }))} fmt={(n) => `${n}%`} />
         </Card>
         <Card>
-          <CardHeader title="Haydovchilar reytingi" description="O'z vaqtida (60%) + hajm (30%) + muammosizlik (10%)" icon={Truck} />
+          <CardHeader title="Haydovchilar reytingi" info="O'z vaqtida (60%) + hajm (30%) + muammosizlik (10%)" icon={Truck} />
           <Bars rows={ranked.map((d) => ({ label: <Link href={`/logistika/haydovchilar/${d.id}`} className="hover:underline">{d.name}</Link>, value: d.score, hint: `${d.delivered} reys, ${qty(d.m3)} m³, o'z vaqtida ${onTimePct(d) ?? "—"}%` }))} fmt={(n) => `${n} ball`} tone="bg-emerald-600" />
         </Card>
         {m && <Card>
@@ -102,7 +102,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         </Card>
         <Card>
           <div id="kechikish" className="scroll-mt-20" />
-          <CardHeader title="Kechikish taqsimoti" description={`E'tibor ≥ ${rep.settings.lateWarnMin} daq, kritik ≥ ${rep.settings.lateCritMin} daq`} icon={Clock} />
+          <CardHeader title="Kechikish taqsimoti" info={`E'tibor ≥ ${rep.settings.lateWarnMin} daq, kritik ≥ ${rep.settings.lateCritMin} daq`} icon={Clock} />
           <Bars rows={[
             { label: "O'z vaqtida", value: buckets.onTime }, { label: "Kechikdi", value: buckets.warn }, { label: "Kritik kechikdi", value: buckets.crit }, { label: "Soatsiz zayavka", value: buckets.unknown },
           ]} />
@@ -115,7 +115,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       </div>
 
       <Card className="mt-5">
-        <CardHeader title="Topshirish soatlari" description="Qaysi soatda eng ko'p yetkaziladi — mixer va haydovchi smenasini shunga moslang" icon={Clock} />
+        <CardHeader title="Topshirish soatlari" info="Qaysi soatda eng ko'p yetkaziladi — mixer va haydovchi smenasini shunga moslang" icon={Clock} />
         <div className="flex h-36 items-end gap-1">
           {hours.map((n, h) => (
             <div key={h} className="flex flex-1 flex-col items-center gap-1" title={`${h}:00 — ${n} reys`}>

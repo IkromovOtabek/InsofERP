@@ -48,7 +48,7 @@ export default async function HrOverviewPage({ searchParams }: { searchParams: P
 
   return (
     <div className="min-w-0">
-      <PageHeader title="Otdel kadr — umumiy ko'rinish" subtitle="Xodimlar, davomat, jarima va bonus, ish haqi, qo'ng'iroqlar va kadr taqvimi — bugungi holat va tanlangan davr bo'yicha." />
+      <PageHeader title="Otdel kadr — umumiy ko'rinish" info="Xodimlar, davomat, jarima va bonus, ish haqi, qo'ng'iroqlar va kadr taqvimi — bugungi holat va tanlangan davr bo'yicha." />
       <DayRangeBar base={BASE} range={period} />
 
       <div className="space-y-6">
@@ -162,7 +162,8 @@ export default async function HrOverviewPage({ searchParams }: { searchParams: P
         )}
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
-          <Section title={`Jarima va bonuslar — ${mt}`} className="mt-0" action={<More href={jarimaHref} />}>
+          <Section title={`Jarima va bonuslar — ${mt}`} className="mt-0"
+            info="Qoidalar (davomatdan), KPI va qo'lda yozilganlar — oy yakuni vedomostiga shunday tushadi." action={<More href={jarimaHref} />}>
             <Table>
               <thead><tr><Th>Xodim</Th><Th right>Bonus</Th><Th right>Jarima</Th></tr></thead>
               <tbody>
@@ -176,7 +177,6 @@ export default async function HrOverviewPage({ searchParams }: { searchParams: P
                 ))}
               </tbody>
             </Table>
-            <p className="mt-2 text-xs text-slate-500">Qoidalar (davomatdan), KPI va qo&apos;lda yozilganlar — oy yakuni vedomostiga shunday tushadi.</p>
           </Section>
 
           {canPay && (

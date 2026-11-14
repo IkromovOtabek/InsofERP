@@ -14,7 +14,7 @@ export default async function RecipeImport() {
   ]);
   return (
     <div>
-      <PageHeader back={{ href: "/recipes", label: "Retseptlar" }} title="Excel orqali retsept" subtitle="Har qator: mahsulot, xomashyo, 1 birlikka miqdor. Bir faylda bir nechta mahsulot bo'lishi mumkin." />
+      <PageHeader back={{ href: "/recipes", label: "Retseptlar" }} title="Excel orqali retsept" info="Har qator: mahsulot, xomashyo, 1 birlikka miqdor. Bir faylda bir nechta mahsulot bo'lishi mumkin." />
       <Card>
         <ExcelImport
           action={importRecipesFromExcel}

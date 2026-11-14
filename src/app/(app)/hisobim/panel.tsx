@@ -23,7 +23,7 @@ export async function SelfAccountPanel({ s }: { s: Session }) {
   return (
     <div className="grid max-w-3xl gap-5">
       <Card>
-        <CardHeader icon={UserRound} title="Shaxsiy ma'lumot" description={director ? "Ismingiz menyu va hujjatlarda shunday ko'rinadi" : "F.I.O. va telefon raqamini Otdel kadr yuritadi"} />
+        <CardHeader icon={UserRound} title="Shaxsiy ma'lumot" info={director ? "Ismingiz menyu va hujjatlarda shunday ko'rinadi" : "F.I.O. va telefon raqamini Otdel kadr yuritadi"} />
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <Badge color="blue">{s.superadmin ? ROLE_LABELS.SUPERADMIN : ROLE_LABELS[s.role]}</Badge>
           <span>Login: <b data-no-translit className="text-slate-900">{acc.login}</b></span>
@@ -33,21 +33,21 @@ export async function SelfAccountPanel({ s }: { s: Session }) {
       </Card>
 
       <Card>
-        <CardHeader icon={KeyRound} title="Login va parol" description={acc.phone ? "O'zgartirish Telegram'ga keladigan kod bilan tasdiqlanadi" : "Telefon raqamingiz kiritilmagan — joriy parol bilan tasdiqlanadi"} />
+        <CardHeader icon={KeyRound} title="Login va parol" info={acc.phone ? "O'zgartirish Telegram'ga keladigan kod bilan tasdiqlanadi" : "Telefon raqamingiz kiritilmagan — joriy parol bilan tasdiqlanadi"} />
         {acc.eco
           ? <p className="text-sm text-slate-600">Siz Insof ECO ilovasi hisobi bilan kirasiz — parolni ilovaning o'zida o'zgartiring.</p>
           : <CredentialsForm login={acc.login} phone={acc.phone} />}
       </Card>
 
       <Card>
-        <CardHeader icon={Palette} title="Fon" description="ERP ranglari — faqat sizda va shu qurilmada o'zgaradi" />
+        <CardHeader icon={Palette} title="Fon" info="ERP ranglari — faqat sizda va shu qurilmada o'zgaradi" />
         <PalettePicker />
       </Card>
 
       {/* Sidebar pastidagi «Menyuni sozlash» tugmasi shu yerga (#kabinet) olib keladi */}
       <div id="kabinet" className="scroll-mt-20">
         <Card>
-          <CardHeader icon={SlidersHorizontal} title="Kabinetim — menyu" description="Chap menyuni o'zingizga moslang: bo'limlarsiz ko'rinish, keraksiz bandlarni yashirish, tartib va kirish sahifasi" />
+          <CardHeader icon={SlidersHorizontal} title="Kabinetim — menyu" info="Chap menyuni o'zingizga moslang: bo'limlarsiz ko'rinish, keraksiz bandlarni yashirish, tartib va kirish sahifasi" />
           <MenuPrefsForm
             items={sortByOrder(base, prefs.order).map((i) => ({ href: i.href, label: i.label, group: i.group }))}
             hidden={prefs.hidden.filter((h) => base.some((i) => i.href === h))}

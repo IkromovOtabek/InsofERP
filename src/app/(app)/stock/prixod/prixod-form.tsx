@@ -6,7 +6,7 @@ import { fmtNum } from "@/lib/format";
 import { MATERIAL_UNITS, unitShort } from "@/lib/unit";
 import { scanToPrixod, type ScanMatch } from "@/lib/scan-receipt";
 import { cn } from "@/lib/utils";
-import { Badge, Button, Callout, Card, Field, FormActions, FormError, Input, LinkButton, Select } from "@/components/ui";
+import { Badge, Button, Callout, Card, Field, FormActions, FormError, InfoButton, Input, LinkButton, Select } from "@/components/ui";
 import { MaterialField, type MaterialGroup, type MaterialRow } from "@/components/material-picker";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
 import { MoneyInput } from "@/components/money-input";
@@ -212,7 +212,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
         {scan?.enabled && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <DocScan endpoint="/api/scan/receipt" onResult={applyScan} autoOpen={scan.autoOpen} label={scanned ? "Qayta skanerlash" : "Nakladnoyni skanerlash"} />
-            {!scanned && <span className="text-xs text-slate-500">Nakladnoyni suratga oling — sana, yetkazuvchi va qatorlar o&apos;zi to&apos;ldiriladi</span>}
+            {!scanned && <InfoButton title="Nakladnoyni skanerlash">Nakladnoyni suratga oling — sana, yetkazuvchi va qatorlar o&apos;zi to&apos;ldiriladi</InfoButton>}
           </div>
         )}
 
@@ -276,7 +276,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
 
         {/* Hisob faqat direktorga beriladi. Boshqalarda to'lovni moliya Kirim-Chiqimdan qiladi */}
         {accounts.length > 0 ? (
-          <Field label="Qaysi hisobdan to'landi" hint="Tanlansa — shu zahoti chiqim bo'lib yoziladi. «Moliya to'laydi» — Kirim-Chiqimdagi to'lanmagan kirimlarga tushadi">
+          <Field label="Qaysi hisobdan to'landi" help={<InfoButton title="Qaysi hisobdan to'landi">Tanlansa — shu zahoti chiqim bo&apos;lib yoziladi. «Moliya to&apos;laydi» — Kirim-Chiqimdagi to&apos;lanmagan kirimlarga tushadi</InfoButton>}>
             <Select name="cashAccountId" value={accountId} onChange={(e) => setAccountId(e.target.value)} className="sm:max-w-sm">
               <option value="">Moliya to&apos;laydi</option>
               {payAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === "CASH" ? " (naqd)" : " (o'tkazma)"}</option>)}
@@ -290,8 +290,9 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
         {/* Qatorlar — keng ekranda Excel'ga o'xshash jadval, telefonda har qator alohida blok */}
         <div>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <div className="text-sm font-semibold text-slate-900">Xomashyo *</div>
-            <div className="text-xs text-slate-500">Narx QQS'siz · QQS faqat tovarga hisoblanadi, yetkazib berishga emas</div>
+            <div className="text-sm font-semibold text-slate-900">Xomashyo *
+              <InfoButton title="Xomashyo" className="ml-1">Narx QQS&apos;siz · QQS faqat tovarga hisoblanadi, yetkazib berishga emas</InfoButton>
+            </div>
           </div>
           {filledRows.length > 1 && (
             <CategoryBulkBar className="mb-2" total={filledRows.length} selected={selected.length}

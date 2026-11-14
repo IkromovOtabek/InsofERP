@@ -152,7 +152,7 @@ export default async function VehiclePage({ params, searchParams }: { params: Pr
       </div>
 
       <Card padded={false} className="mt-5">
-        <div className="px-5 pt-5"><CardHeader title="Texnik xizmat jurnali" description="Moy, ta'mir, shina, ko'rik — keyingi xizmat sanasi/probegi bilan; muddati yaqinlashsa ogohlantiriladi" icon={Wrench} /></div>
+        <div className="px-5 pt-5"><CardHeader title="Texnik xizmat jurnali" info="Moy, ta'mir, shina, ko'rik — keyingi xizmat sanasi/probegi bilan; muddati yaqinlashsa ogohlantiriladi" icon={Wrench} /></div>
         {canService && <div className="px-5 pb-4"><ServiceForm vehicleId={v.id} kinds={SERVICE_KINDS} odometerKm={v.odometerKm} /></div>}
         <Table>
           <thead><tr><Th>Sana</Th><Th>Xizmat</Th><Th right>Probeg</Th><Th right>Narx</Th><Th>Keyingisi</Th><Th>Kim</Th>{canService && <Th />}</tr></thead>

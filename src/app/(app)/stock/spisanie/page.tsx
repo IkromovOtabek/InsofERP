@@ -33,16 +33,16 @@ export default async function WriteOffPage({ searchParams }: { searchParams: Pro
   return (
     <div>
       <PageHeader back={{ href: "/stock", label: "Sklad" }} title="Xomashyoni hisobdan chiqarish"
-        subtitle="Brak, yo'qotish, muddati o'tgan xomashyo — sabab bilan skladdan chiqariladi. Qoldiqdan ko'p chiqarib bo'lmaydi." />
+        info={<>
+          <p>Brak, yo&apos;qotish, muddati o&apos;tgan xomashyo — sabab bilan skladdan chiqariladi. Qoldiqdan ko&apos;p chiqarib bo&apos;lmaydi.</p>
+          <p>Summasi {money(DIRECTOR_NOTIFY_SUM)} dan katta hisobdan chiqarish direktorga xabar qilinadi. Sanoqda topilgan farq —{" "}
+            <Link href="/stock/inventarizatsiya" className="underline">Inventarizatsiya</Link> orqali.</p>
+        </>} />
       {!current ? (
         <Callout tone="warning" title="Sklad yo'q">Avval Sozlamalarda sklad oching.</Callout>
       ) : (
         <>
-          <Callout tone="info" title="Eslatma">
-            Summasi {money(DIRECTOR_NOTIFY_SUM)} dan katta hisobdan chiqarish direktorga xabar qilinadi. Sanoqda topilgan farq —{" "}
-            <Link href="/stock/inventarizatsiya" className="underline">Inventarizatsiya</Link> orqali.
-          </Callout>
-          <Card className="mt-4"><WriteOffForm warehouses={warehouses} warehouseId={current.id} materials={stock} /></Card>
+          <Card><WriteOffForm warehouses={warehouses} warehouseId={current.id} materials={stock} /></Card>
         </>
       )}
 

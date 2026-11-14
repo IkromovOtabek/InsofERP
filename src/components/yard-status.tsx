@@ -4,7 +4,7 @@ import { stockSnapshot, type SnapshotProduct } from "@/lib/stock";
 import { COMMON_KEY, ownerTurnover, type TurnCell } from "@/lib/brigade-products";
 import { dateRu, dateTime, qty } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
-import { Card, LinkButton, Section, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/components/ui";
+import { Card, InfoButton, LinkButton, Section, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/components/ui";
 import { StockPeriodBar, type StockPeriod } from "@/components/stock-period";
 import { YardMovesHost } from "@/components/yard-moves-dialog";
 import { yardMovesInfo } from "@/app/(app)/stock/yard-actions";
@@ -120,7 +120,13 @@ export async function YardStatus({ ombor, period, canDistribute = false }: {
 
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm">
-            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-900"><Boxes size={15} className="text-slate-400" /> Dona mahsulotlar — brigadalar bo&apos;yicha kirim, chiqim, qoldiq</span>
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-900"><Boxes size={15} className="text-slate-400" /> Dona mahsulotlar — brigadalar bo&apos;yicha kirim, chiqim, qoldiq
+              <InfoButton title="Dona mahsulotlar — brigadalar bo'yicha">
+                <p>Kirim: brigada topshirig&apos;i, «Tayyor mahsulot qo&apos;shish», obyektdan qaytgani va boshqa ombordan ko&apos;chirilgani; chiqim: reys, brak va boshqa omborga ko&apos;chirilgani. Ko&apos;chirish «Jami» ga qo&apos;shilmaydi.</p>
+                <p>Band / Erkin — hozirgi holat.</p>
+                <p>Kirim, chiqim yoki qoldiq sonini bosing — kim, qaysi kuni va soat nechada kiritgani ochiladi. Taqsimlash yoki ko&apos;chirish — mahsulot nomini bosing.</p>
+              </InfoButton>
+            </span>
             {canDistribute && (
               <LinkButton href={pick && pick !== "umumiy" ? `/stock/products/ajratish?to=${pick}` : "/stock/products/ajratish"} size="sm" variant="secondary">
                 <ArrowRightLeft size={15} /> Brigadalarga ajratish
@@ -211,9 +217,7 @@ export async function YardStatus({ ombor, period, canDistribute = false }: {
           </Sheet>
           </YardMovesHost>
           <p className="text-xs text-slate-500">
-            Kirim / chiqim — {period.label}; qoldiq — {dateRu(new Date(`${period.toStr}T00:00:00`))} oxiriga. Kirim: brigada topshirig&apos;i, «Tayyor mahsulot qo&apos;shish»,
-            obyektdan qaytgani va boshqa ombordan ko&apos;chirilgani; chiqim: reys, brak va boshqa omborga ko&apos;chirilgani. Ko&apos;chirish «Jami» ga qo&apos;shilmaydi.
-            Band / Erkin — hozirgi holat. Kirim, chiqim yoki qoldiq sonini bosing — kim, qaysi kuni va soat nechada kiritgani ochiladi. Taqsimlash yoki ko&apos;chirish — mahsulot nomini bosing.
+            Kirim / chiqim — {period.label}; qoldiq — {dateRu(new Date(`${period.toStr}T00:00:00`))} oxiriga.
           </p>
           {empty.length > 0 && (
             <details className="group/empty">
@@ -232,11 +236,12 @@ export async function YardStatus({ ombor, period, canDistribute = false }: {
         </div>
 
         <div>
-          <div className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900"><Warehouse size={15} className="text-slate-400" /> Beton — xomashyo qoldig&apos;idan qancha chiqadi</div>
+          <div className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900"><Warehouse size={15} className="text-slate-400" /> Beton — xomashyo qoldig&apos;idan qancha chiqadi
+            <InfoButton title="Beton — xomashyo qoldig'idan qancha chiqadi">Beton saqlanmaydi — zakaz olingach tayyorlanadi; raqam hozirgi xomashyo qoldig&apos;i bilan retsept bo&apos;yicha.</InfoButton>
+          </div>
           {concrete.length === 0
             ? <Card className="p-5 text-sm text-slate-500">Beton markasi kiritilmagan.</Card>
             : <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">{concrete.map((p) => <ConcreteCard key={p.id} p={p} />)}</div>}
-          <p className="mt-2 text-xs text-slate-500">Beton saqlanmaydi — zakaz olingach tayyorlanadi; raqam hozirgi xomashyo qoldig&apos;i bilan retsept bo&apos;yicha.</p>
         </div>
       </div>
     </Section>

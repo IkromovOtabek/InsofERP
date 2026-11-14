@@ -6,7 +6,7 @@ import { dateTime, fmtNum } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { unitLabel } from "@/lib/unit";
 import { SHOP_SOURCE } from "@/lib/shop";
-import { Badge, Callout, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, Empty, InfoButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ShopItemForm, type ShopRowProduct } from "./shop-item-form";
 import { BannerForm } from "./banner-form";
 import { ShopHistoryList } from "./history";
@@ -98,7 +98,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
     <div>
       <PageHeader
         title="E-commerce"
-        subtitle="Insof ECO ilovasidagi do'kon. Ilova ochilganda mijoz login qilmasdan shu mahsulotlarni ko'radi va buyurtma qoldiradi — buyurtma sotuv bo'limiga ariza bo'lib tushadi."
+        info="Insof ECO ilovasidagi do'kon. Ilova ochilganda mijoz login qilmasdan shu mahsulotlarni ko'radi va buyurtma qoldiradi — buyurtma sotuv bo'limiga ariza bo'lib tushadi."
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -121,8 +121,12 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
         <OrdersTab leads={leads} />
       ) : tab === "reklama" ? (
         <Card>
-          <h2 className="mb-1 font-semibold">Reklama (ADS)</h2>
-          <p className="mb-2 text-xs text-slate-500">Ilova bosh sahifasidagi swiper'da asosiy taklif, buyurtma qadamlari va "Nega biz" slaydlari bilan birga aylanadi. Muddat berilsa faqat shu kunlarda ko'rinadi.</p>
+          <h2 className="mb-2 font-semibold">Reklama (ADS)
+            <InfoButton title="Reklama (ADS)" className="ml-1">
+              <p>Ilova bosh sahifasidagi swiper&apos;da asosiy taklif, buyurtma qadamlari va "Nega biz" slaydlari bilan birga aylanadi.</p>
+              <p>Muddat berilsa faqat shu kunlarda ko&apos;rinadi.</p>
+            </InfoButton>
+          </h2>
           <div className="divide-y divide-slate-100">
             {banners.map((b) => (
               <BannerForm key={b.id} products={products.map((p) => ({ id: p.id, name: p.name }))}
@@ -141,16 +145,24 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
             </Callout>
           )}
           <Card>
-            <h2 className="mb-1 font-semibold">Do'kondagi mahsulotlar</h2>
-            <p className="mb-2 text-xs text-slate-500">Ilovada shu tartibda ko'rinadi. Nom va narx bo'sh qoldirilsa Sozlamalar → Beton markalaridagi qiymat olinadi.</p>
+            <h2 className="mb-2 font-semibold">Do&apos;kondagi mahsulotlar
+              <InfoButton title="Do'kondagi mahsulotlar" className="ml-1">
+                <p>Ilovada shu tartibda ko&apos;rinadi.</p>
+                <p>Nom va narx bo&apos;sh qoldirilsa Sozlamalar → Beton markalaridagi qiymat olinadi.</p>
+              </InfoButton>
+            </h2>
             <div className="divide-y divide-slate-100">
               {published.length === 0 && <EmptyNote text="Chiqarilgan mahsulot yo'q" icon={Store} />}
               {published.map((p) => <ShopItemForm key={p.id} p={p} canDelete={canDelete} />)}
             </div>
           </Card>
           <Card>
-            <h2 className="mb-1 font-semibold">Yashirin mahsulotlar</h2>
-            <p className="mb-2 text-xs text-slate-500">Faol mahsulotlar, lekin do'konda ko'rinmaydi. Yangi mahsulot — yuqoridagi «Mahsulot qo'shish» tugmasi.</p>
+            <h2 className="mb-2 font-semibold">Yashirin mahsulotlar
+              <InfoButton title="Yashirin mahsulotlar" className="ml-1">
+                <p>Faol mahsulotlar, lekin do&apos;konda ko&apos;rinmaydi.</p>
+                <p>Yangi mahsulot — yuqoridagi «Mahsulot qo&apos;shish» tugmasi.</p>
+              </InfoButton>
+            </h2>
             <div className="divide-y divide-slate-100">
               {hidden.length === 0 && <EmptyNote text="Hamma mahsulot do'konda" icon={ShoppingBag} />}
               {hidden.map((p) => <ShopItemForm key={p.id} p={p} canDelete={canDelete} />)}
@@ -177,8 +189,9 @@ function OrdersTab({ leads }: { leads: { id: string; name: string; phone: string
     <Card padded={false}>
       <div className="flex items-center justify-between gap-2 px-4 pt-4">
         <div>
-          <h2 className="font-semibold">Ilovadan tushgan buyurtmalar</h2>
-          <p className="text-xs text-slate-500">Ishlov (bog'landim, mijozga aylantirish) "Sayt arizalari" sahifasida — u yerda ilova buyurtmalari ham turadi.</p>
+          <h2 className="font-semibold">Ilovadan tushgan buyurtmalar
+            <InfoButton title="Ilovadan tushgan buyurtmalar" className="ml-1">Ishlov (bog&apos;landim, mijozga aylantirish) "Sayt arizalari" sahifasida — u yerda ilova buyurtmalari ham turadi.</InfoButton>
+          </h2>
         </div>
         <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-slate-700 hover:underline">Sayt arizalari <ExternalLink size={14} /></Link>
       </div>

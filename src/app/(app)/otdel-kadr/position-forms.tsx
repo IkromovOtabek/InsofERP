@@ -7,7 +7,7 @@ import { PermsTree } from "../settings/perms-tree";
 import { permModules } from "@/lib/perm-modules";
 import { describeWriteScripts, SCRIPT_PERM } from "@/lib/permissions";
 import type { Role } from "@/generated/prisma";
-import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { Button, Checkbox, Field, FormError, FormSuccess, InfoButton, Input, Select } from "@/components/ui";
 import { DeleteButton } from "@/components/delete-button";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -143,7 +143,10 @@ function PositionTemplateForm({ p, roles, logins }: { p: Pos; roles: RoleOpt[]; 
   return (
     <form action={action} className="space-y-3 border-t border-dashed border-slate-200 bg-slate-50/60 px-3 py-3">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="pb-2"><Checkbox name="login" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} label="Tizimga kiradi (ERP va ECO login)" /></div>
+        <div className="flex items-center gap-1 pb-2">
+          <Checkbox name="login" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} label="Tizimga kiradi (ERP va ECO login)" />
+          <InfoButton title="Tizimga kiradi">Belgilanmasa — lavozim o&apos;zi tizimga kirmaydi (login kerak bo&apos;lsa kadr bo&apos;limni qo&apos;lda tanlaydi).</InfoButton>
+        </div>
         {enabled && (
           <Field label="Asosiy bo'lim" hint="Login shu bo'lim huquqi bilan ochiladi">
             <Select name="loginRole" value={role} onChange={(e) => setRole(e.target.value)} required className="w-56">
@@ -153,16 +156,12 @@ function PositionTemplateForm({ p, roles, logins }: { p: Pos; roles: RoleOpt[]; 
           </Field>
         )}
       </div>
-      {enabled ? (
-        <PermsTree modules={modules} current={p.perms} />
-      ) : (
-        <p className="text-xs text-slate-500">Belgilanmasa — lavozim o&apos;zi tizimga kirmaydi (login kerak bo&apos;lsa kadr bo&apos;limni qo&apos;lda tanlaydi).</p>
-      )}
+      {enabled && <PermsTree modules={modules} current={p.perms} />}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={pending}><Check size={14} /> {pending ? "Saqlanmoqda…" : "Shablonni saqlash"}</Button>
-        <span className="text-xs text-slate-500">
+        <InfoButton title="Shablonni saqlash">
           Saqlanganda shu lavozimdagi {logins} ta login egasiga qo&apos;llanadi; asosiy bo&apos;limi o&apos;zgarganlar tizimga qayta kiradi. Direktor hisobi o&apos;zgarmaydi.
-        </span>
+        </InfoButton>
       </div>
       <FormError error={state?.error} />
       <FormSuccess text={state?.ok ? state.note : undefined} />

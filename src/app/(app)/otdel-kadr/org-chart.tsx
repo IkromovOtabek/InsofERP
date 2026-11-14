@@ -10,7 +10,7 @@ import type { LucideIcon } from "lucide-react";
 import type { Role } from "@/generated/prisma";
 import { ORG_STAGES, ORG_TREE, chainTo, departmentOf, type OrgDept, type OrgTone } from "@/lib/orgchart";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui";
+import { Badge, InfoButton } from "@/components/ui";
 
 /* ═══════════════════════ Kiruvchi ma'lumot ═══════════════════════ */
 
@@ -192,10 +192,18 @@ export function OrgChart({ employees, positions, stageCounts }: {
       <div className="relative overflow-hidden rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-900">Tashkiliy tuzilma</h2>
-            <p className="text-xs text-slate-500">
-              {activeStage ? <><span className="font-medium text-slate-700">{activeStage.label}</span> etapida ishlaydigan bo&apos;limlar yoritildi</> : "Lavozim yoki bo'lim ustiga bosing — xodimlari chiqadi"}
-            </p>
+            <h2 className="flex items-center gap-1 text-sm font-semibold text-slate-900">Tashkiliy tuzilma
+              <InfoButton title="Tashkiliy tuzilma">
+                <p>Lavozim yoki bo&apos;lim ustiga bosing — xodimlari chiqadi.</p>
+                <p>Bo&apos;limlar tizim rollariga bog&apos;langan — qo&apos;shish yoki olib tashlash uchun dasturchi kerak.</p>
+                <p>Ishchi lavozimni boshqa bo&apos;lim tagiga direktor ko&apos;chiradi: <Link href="/otdel-kadr?tab=lavozimlar" className="font-medium text-slate-700 underline-offset-2 hover:underline">Lavozimlar va login shablonlari</Link>, <span className="font-medium text-slate-700">Bo&apos;lim</span> ustuni.</p>
+              </InfoButton>
+            </h2>
+            {activeStage && (
+              <p className="text-xs text-slate-500">
+                <span className="font-medium text-slate-700">{activeStage.label}</span> etapida ishlaydigan bo&apos;limlar yoritildi
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -287,8 +295,12 @@ function StageRibbon({ counts, active, onPick }: { counts: Record<string, number
     <div className="rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-(--shadow-card)">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-slate-900">Ish qaysi etapda ketadi</h2>
-          <p className="text-xs text-slate-500">Zayavka zavod ichida shu yo&apos;ldan o&apos;tadi. Etap ustiga bossangiz — javobgar bo&apos;limlar pastdagi tuzilmada yoritiladi.</p>
+          <h2 className="flex items-center gap-1 text-sm font-semibold text-slate-900">Ish qaysi etapda ketadi
+            <InfoButton title="Ish qaysi etapda ketadi">
+              <p>Zayavka zavod ichida shu yo&apos;ldan o&apos;tadi.</p>
+              <p>Etap ustiga bossangiz — javobgar bo&apos;limlar pastdagi tuzilmada yoritiladi.</p>
+            </InfoButton>
+          </h2>
         </div>
       </div>
       <ol className="flex items-stretch gap-1 overflow-x-auto pb-1">

@@ -86,7 +86,11 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
 
   return (
     <div>
-      <PageHeader title="Dispetcher kalendari" subtitle="30 daqiqalik oraliqlar: qaysi vaqtga nechta mixer kerak, nechtasi bo'sh; transport bandligi"
+      <PageHeader title="Dispetcher kalendari" info={<>
+        <p>30 daqiqalik oraliqlar: qaysi vaqtga nechta mixer kerak, nechtasi bo&apos;sh; transport bandligi.</p>
+        <p>&quot;kerak/bo&apos;sh&quot;: qizil — shu oraliqda mixer yetishmaydi.</p>
+        <p>Band vaqti: yuklashdan qaytishgacha; hali yuklanmagan reys — rejadan 45 daq oldin boshlanib, {DEFAULT_TURN_MIN} daq davom etadi deb olinadi.</p>
+      </>}
         action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
       <div className="mb-4 flex items-center gap-1 text-sm">
         <Link href={`/logistika/kalendar?date=${isoDate(prev)}`} aria-label="Oldingi kun" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"><ChevronLeft size={16} /></Link>
@@ -154,13 +158,13 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
       </Card>
       {noTime.length > 0 && (
         <Card>
-          <CardHeader title="Soati ko'rsatilmagan zayavkalar" description="Kalendarga tushmaydi — reys ochishda rejadagi vaqtni belgilang" />
+          <CardHeader title="Soati ko'rsatilmagan zayavkalar" info="Kalendarga tushmaydi — reys ochishda rejadagi vaqtni belgilang" />
           <ul className="space-y-1 text-sm">{noTime.map((o) => <li key={o.id}><Link href={`/trips/new?orderId=${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link> · {qty(orderLogistics(o).remaining)} qoldi</li>)}</ul>
         </Card>
       )}
       {backlog.length > 0 && (
         <Card className="mt-5">
-          <CardHeader title="Oldingi kunlardan qolgan" description="Yetkazish sanasi o'tgan, hali to'liq biriktirilmagan zayavkalar — bugungi rejaga qo'shing" />
+          <CardHeader title="Oldingi kunlardan qolgan" info="Yetkazish sanasi o'tgan, hali to'liq biriktirilmagan zayavkalar — bugungi rejaga qo'shing" />
           <ul className="space-y-1 text-sm">
             {backlog.map((o) => ({ o, l: orderLogistics({ ...o, items: o.items, trips: o.trips }) })).filter((x) => x.l.remaining > 0.001).map(({ o, l }) => (
               <li key={o.id}><Link href={`/trips/new?orderId=${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link> · {date(o.deliveryDate)}{o.deliveryTime ? ` ${o.deliveryTime}` : ""} · <span className="text-amber-700">{qty(l.remaining)} qoldi</span></li>
@@ -168,7 +172,6 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
           </ul>
         </Card>
       )}
-      <p className="mt-3 text-xs text-slate-500">"kerak/bo'sh": qizil — shu oraliqda mixer yetishmaydi. Band vaqti: yuklashdan qaytishgacha; hali yuklanmagan reys — rejadan 45 daq oldin boshlanib, {DEFAULT_TURN_MIN} daq davom etadi deb olinadi.</p>
     </div>
   );
 }

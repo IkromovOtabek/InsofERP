@@ -10,7 +10,7 @@ import { MaterialPanelBody, MaterialTools, type MaterialPanel } from "@/componen
 import type { ActionState } from "@/lib/action";
 import { fmtNum } from "@/lib/format";
 import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
-import { Button, Field, FormError, IconButton, Input, Select, inputCls } from "@/components/ui";
+import { Button, Field, FormError, IconButton, InfoButton, Input, Select, inputCls } from "@/components/ui";
 import { AnchoredList } from "@/components/ui/anchored-list";
 import { cn } from "@/lib/utils";
 import type { MaterialCategory } from "@/generated/prisma";
@@ -57,7 +57,8 @@ export function EditMaterialForm({ material, groups, unitLocked = false, onDone,
   return (
     <form action={action} className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <Field label="Xomashyo nomi *" hint={`Kod: ${material.code}`} className="sm:col-span-4">
+        <Field label="Xomashyo nomi *" hint={`Kod: ${material.code}`} className="sm:col-span-4"
+          help={<InfoButton title="Xomashyo nomi">Yangi nom eski kirim, chiqim va hisobotlarda ham ko&apos;rinadi (hujjatlar xomashyoga bog&apos;langan, nomga emas).</InfoButton>}>
           <Input name="name" required autoComplete="off" maxLength={200} defaultValue={material.name} autoFocus />
         </Field>
         <Field label="O'lchov birligi" hint={unitLocked ? "sklad harakati bor — o'zgarmaydi" : "harakat yoki retsept bo'lsa o'zgarmaydi"}>
@@ -80,7 +81,6 @@ export function EditMaterialForm({ material, groups, unitLocked = false, onDone,
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={pending}><Save size={15} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
         <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
-        <span className="text-xs text-slate-600">Yangi nom eski kirim, chiqim va hisobotlarda ham ko&apos;rinadi (hujjatlar xomashyoga bog&apos;langan, nomga emas).</span>
       </div>
       <FormError error={state?.error} />
     </form>

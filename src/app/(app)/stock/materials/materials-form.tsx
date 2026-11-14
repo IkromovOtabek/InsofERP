@@ -3,7 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { Plus, X, PackagePlus, MoreHorizontal } from "lucide-react";
 import { importMaterials } from "../actions";
-import { Button, FormError, Input, Select } from "@/components/ui";
+import { Button, FormError, InfoButton, Input, Select } from "@/components/ui";
 import { MaterialPicker, type MaterialGroup } from "@/components/material-picker";
 import { MoneyInput } from "@/components/money-input";
 import { fmtNum, money } from "@/lib/format";
@@ -140,7 +140,14 @@ export function MaterialsForm({ children, existing = [], groups = [], canCreate 
         })}
       </div>
 
-      <button type="button" onClick={() => setRows((rs) => [...rs, blank(Date.now())])} className="text-sm font-medium hover:underline"><span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo&apos;shish</span></button>
+      <div className="flex items-center gap-1.5">
+        <button type="button" onClick={() => setRows((rs) => [...rs, blank(Date.now())])} className="text-sm font-medium hover:underline"><span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo&apos;shish</span></button>
+        <InfoButton title="Xomashyo qatorlari">
+          <p>Nomi katagiga bosh harfni yozsangiz mavjud xomashyolar chiqadi, o&apos;ng chetdagi «…» tugmasi butun ro&apos;yxatni ochadi — tanlaganda kodi, birligi va oxirgi narxi o&apos;zi to&apos;ladi.</p>
+          <p>NDS {fmtNum(VAT * 100)}% va jami summa qoldiq × narxdan hisoblanadi (so&apos;m) — skladga narx NDS&apos;siz yoziladi. Kodi bo&apos;sh qolsa nomdan yasaladi.</p>
+          <p>Qoldiq kiritilsa u boshlang&apos;ich qoldiq sifatida skladga yoziladi (Harakat jurnalida &quot;Qo&apos;lda&quot;). Mavjud nom bo&apos;lsa — qoldiq ustiga qo&apos;shiladi.</p>
+        </InfoButton>
+      </div>
 
       {totals.sum > 0 && (
         <div className="flex flex-wrap justify-end gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm">
@@ -149,7 +156,6 @@ export function MaterialsForm({ children, existing = [], groups = [], canCreate 
           <span className="text-slate-500">Jami: <b className="text-slate-900">{money(totals.total)}</b></span>
         </div>
       )}
-      <p className="text-xs text-slate-500">Nomi katagiga bosh harfni yozsangiz mavjud xomashyolar chiqadi, o&apos;ng chetdagi «…» tugmasi butun ro&apos;yxatni ochadi — tanlaganda kodi, birligi va oxirgi narxi o&apos;zi to&apos;ladi. NDS {fmtNum(VAT * 100)}% va jami summa qoldiq × narxdan hisoblanadi (so&apos;m) — skladga narx NDS&apos;siz yoziladi. Kodi bo&apos;sh qolsa nomdan yasaladi. Qoldiq kiritilsa u boshlang&apos;ich qoldiq sifatida skladga yoziladi (Harakat jurnalida &quot;Qo&apos;lda&quot;). Mavjud nom bo&apos;lsa — qoldiq ustiga qo&apos;shiladi.</p>
       <Button disabled={pending || filled.length === 0}><PackagePlus size={15} /> {pending ? "Saqlanmoqda…" : `Saqlash${filled.length ? ` (${filled.length})` : ""}`}</Button>
     </form>
   );

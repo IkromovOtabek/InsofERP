@@ -140,7 +140,11 @@ export function UnpayForm({ id, groups }: { id: string; groups: UnpayGroup[] }) 
   }
   return (
     <Card>
-      <CardHeader title="To'lovni bekor qilish" description="Noto'g'ri to'lov: kassadagi «Ish haqi» chiqimi sabab bilan bekor qilinadi, qatorlar yana to'lanmagan bo'ladi — kassir qayta to'laydi" />
+      <CardHeader title="To'lovni bekor qilish"
+        info={<>
+          <p>Noto&apos;g&apos;ri to&apos;lov: kassadagi «Ish haqi» chiqimi sabab bilan bekor qilinadi, qatorlar yana to&apos;lanmagan bo&apos;ladi — kassir qayta to&apos;laydi.</p>
+          <p>Belgilanmasa — barcha to&apos;lovlar. Bitta to&apos;lov (kassa chiqimi) bir nechta xodimni birga yopgan bo&apos;lsa, u butunligicha bekor qilinadi.</p>
+        </>} />
       <form action={act} className="space-y-3"
         onSubmit={(e) => { if (!window.confirm(`${people} xodim to'lovi (${money(sum)}) bekor qilinsinmi? Chiqim kassada bekor qilinadi, qatorlar yana to'lanmagan bo'ladi`)) e.preventDefault(); }}>
         {chosen.flatMap((g) => g.lines).map((l) => <input key={l.id} type="hidden" name="line" value={l.id} />)}
@@ -158,7 +162,6 @@ export function UnpayForm({ id, groups }: { id: string; groups: UnpayGroup[] }) 
             </label>
           ))}
         </div>
-        <p className="text-xs text-slate-500">Belgilanmasa — barcha to&apos;lovlar. Bitta to&apos;lov (kassa chiqimi) bir nechta xodimni birga yopgan bo&apos;lsa, u butunligicha bekor qilinadi.</p>
         <div className="flex flex-wrap items-center gap-2">
           <Input name="reason" required minLength={3} maxLength={300} placeholder="Bekor qilish sababi (majburiy)" className="w-72" />
           <Button variant="danger" disabled={pending}><Undo2 size={15} /> {pending ? "Bajarilmoqda…" : `${sel.length ? `${people} xodim` : "Hammasi"} · ${money(sum)} bekor qilish`}</Button>

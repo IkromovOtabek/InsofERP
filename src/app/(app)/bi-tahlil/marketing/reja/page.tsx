@@ -33,7 +33,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const dataHref = (kind: string) => `/bi-tahlil/marketing/malumotlar?${new URLSearchParams({ year: String(year), ...(month ? { month: String(month) } : {}), kind })}#yozuvlar`;
 
   return (
-    <BiPage title="Marketing reja nazorati" subtitle="Kanal bo'yicha reja bajarilishi — xarajat, leadlar, mijozlar, daromad; oylar bo'yicha reja va fakt." tab="marketingPlan" range={range} period={false}>
+    <BiPage title="Marketing reja nazorati" info="Kanal bo'yicha reja bajarilishi — xarajat, leadlar, mijozlar, daromad; oylar bo'yicha reja va fakt." tab="marketingPlan" range={range} period={false}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white p-2 shadow-(--shadow-card) text-[13px]">
           <Link href={href({ year: year - 1 })} className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100">‹</Link><span className="rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white">{year}</span><Link href={href({ year: year + 1 })} className="rounded-lg px-2 py-1.5 text-slate-600 hover:bg-slate-100">›</Link>

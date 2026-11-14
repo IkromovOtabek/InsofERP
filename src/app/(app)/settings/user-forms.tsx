@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Check, Copy, KeyRound, RotateCcw, Save, ShieldCheck, UserPlus } from "lucide-react";
 import { createUser, resetPassword, saveSupplyDirectorLimit, savePayablesSince, saveVatPayer, saveProductionChannel, saveUserPerms, copyUserPerms, toggleUser, updateUser, applyPermTemplate, bulkSaveUserPerms } from "./actions";
 import { MoneyInput } from "@/components/money-input";
-import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, InfoButton, Input, PasswordInput, Select } from "@/components/ui";
 import { BULK_FORM_ID, permModules, type PermModule } from "@/lib/perm-modules";
 import type { Role } from "@/generated/prisma";
 import { PermsTree } from "./perms-tree";
@@ -256,6 +256,12 @@ export function BulkPermsBar({ templates, modules, total }: { templates: PermTem
             </button>
           ))}
         </div>
+        {mode === "perms" && (
+          <InfoButton title="Ruxsatlarni tahrirlash">
+            <p>Belgilangan har bir xodimning hozirgi qo&apos;shimcha ruxsatlari shu tanlov bilan almashtiriladi.</p>
+            <p>«Rol bo&apos;yicha» — har kim o&apos;z roli bo&apos;yicha.</p>
+          </InfoButton>
+        )}
       </div>
 
       {mode === "template" && (
@@ -280,7 +286,6 @@ export function BulkPermsBar({ templates, modules, total }: { templates: PermTem
 
       {mode === "perms" && (
         <div className="space-y-2">
-          <p className="text-xs text-slate-500">Belgilangan har bir xodimning hozirgi qo&apos;shimcha ruxsatlari shu tanlov bilan almashtiriladi. «Rol bo&apos;yicha» — har kim o&apos;z roli bo&apos;yicha.</p>
           <PermsTree modules={modules} current={{}} onChange={() => setConfirming(false)}
             footer={(reset) => <Button type="button" variant="secondary" size="sm" onClick={reset}><RotateCcw size={14} /> Hammasini rol bo&apos;yicha</Button>} />
         </div>

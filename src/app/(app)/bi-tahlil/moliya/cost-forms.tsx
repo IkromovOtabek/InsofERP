@@ -26,7 +26,6 @@ export function CostMonthForm({ month, groups, coefs, manualCoefs, autoCoefs, ov
         <span className="text-slate-600">Ishlab chiqarish xarajatlari (xom-ashyoga %)</span>
         <Input name="overheadPct" inputMode="decimal" defaultValue={manualPct ? fmt(overheadPct, 1) : ""} placeholder={fmt(autoPct, 1)} className="h-8 w-24 bg-amber-50 text-right tabular" />
       </label>
-      <p className="text-[12px] text-slate-400">Bo&apos;sh katak — avtomatik qiymat (kulrang).</p>
       <div className="flex items-center gap-3">
         <Button size="sm" disabled={pending}><Save size={14} /> Saqlash</Button>
         <FormError error={state?.error} />

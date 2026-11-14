@@ -45,7 +45,10 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
     ]} />
   );
   if (tab !== "royxat") {
-    const title = <PageHeader title="Brigadalar" subtitle={tab === "xodimlar" ? "Xodimni brigadaga tayinlash yoki boshqasiga o'tkazish — tanlansa darhol saqlanadi. Sex davomati va sdelka fondi shu tarkib bo'yicha" : tab === "mahsulotlar" ? "Ochiq topshiriqlar mahsulot bo'yicha: berilgan, bajarilgan, qoldiq — nechta va necha pullik (mahsulot narxida)" : tab === "oylik" ? "Brigada oyligi = bajarilgan hajm × sdelka narxi − brak summasi. Vedomostda brak sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi" : "Brak kun va brigada bo'yicha. Summa yozilganda miqdor × sotuv narxi — ish boshqaruvchi tahrirlaydi"} />;
+    const title = <PageHeader title="Brigadalar" info={tab === "xodimlar" ? <>
+      <p>Xodimni brigadaga tayinlash yoki boshqasiga o&apos;tkazish — tanlansa darhol saqlanadi. Sex davomati va sdelka fondi shu tarkib bo&apos;yicha.</p>
+      <p>Brigadasi o&apos;zgartirilgan xodim sex davomatida yangi brigadada ko&apos;rinadi; sdelka fondi a&apos;zolarga ishlagan soati bo&apos;yicha bo&apos;linadi.</p>
+    </> : tab === "mahsulotlar" ? "Ochiq topshiriqlar mahsulot bo'yicha: berilgan, bajarilgan, qoldiq — nechta va necha pullik (mahsulot narxida)" : tab === "oylik" ? "Brigada oyligi = bajarilgan hajm × sdelka narxi − brak summasi. Vedomostda brak sdelkadagi a'zolardan fond ulushi bo'yicha ushlanadi" : "Brak kun va brigada bo'yicha. Summa yozilganda miqdor × sotuv narxi — ish boshqaruvchi tahrirlaydi"} />;
     if (tab === "xodimlar") {
       const [staff, emps] = await Promise.all([
         productionStaff(),
@@ -86,7 +89,9 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader title={undistributed.count > 0
         ? <>Brigadalar <span className="rounded-full bg-red-100 px-2 py-0.5 text-sm font-bold text-red-700">{undistributed.count}</span></>
-        : "Brigadalar"} subtitle={`Zayavkadagi mahsulotlar brigadalarga topshiriq sifatida biriktiriladi. Brigadir — Xodimlar ro'yxatidan. Qo'lidagi xomashyo topshiriq bajarilganda retsept bo'yicha kamayadi.${undistributed.count > 0 ? ` Kelgan mahsulotlardan ${undistributed.count} tasi hali taqsimlanmagan: ${undistributed.names.slice(0, 5).join(", ")}.` : ""}`}
+        : "Brigadalar"}
+        info="Zayavkadagi mahsulotlar brigadalarga topshiriq sifatida biriktiriladi. Brigadir — Xodimlar ro'yxatidan. Qo'lidagi xomashyo topshiriq bajarilganda retsept bo'yicha kamayadi."
+        subtitle={undistributed.count > 0 ? `Kelgan mahsulotlardan ${undistributed.count} tasi hali taqsimlanmagan: ${undistributed.names.slice(0, 5).join(", ")}.` : undefined}
         action={<LinkButton href="/stock?tab=brigades" variant="secondary"><Boxes size={16} /> Xomashyo taqsimlash</LinkButton>} />
       {tabs}
       {canEdit && (

@@ -7,7 +7,7 @@ import {
   addInterviewAction, assignCourseAction, decideProbationAction, hireAction, interviewResultAction, moveCandidateAction, saveCandidateAction,
   saveCourseAction, saveOnbTemplateAction, saveVacancyAction, startPlanAction, stepAction, toggleCourseAction, vacancyStatusAction,
 } from "./hr3-actions";
-import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
+import { Button, Checkbox, Field, FormError, FormSuccess, InfoButton, Input, Select, Textarea } from "@/components/ui";
 import { CANDIDATE_SOURCES, INTERVIEW_RESULT_LABEL, STAGE_LABEL } from "@/lib/hr/labels";
 import type { ActionState } from "@/lib/action";
 import type { CandidateStage, VacancyStatus } from "@/generated/prisma";
@@ -180,8 +180,10 @@ export function HireForm({ id, position, employees }: { id: string; position: st
         <Field label="Sinov muddati, oy"><Input type="number" name="probationMonths" min={0} max={12} defaultValue={3} /></Field>
       </div>
       <FormError error={state?.error} />
-      <Button variant="success" disabled={pending}><UserCheck size={15} /> {pending ? "Qabul qilinmoqda…" : "Ishga qabul qilish — kartani ochish"}</Button>
-      <p className="text-xs text-slate-500">Xodim kartasi va moslashuv rejasi ochiladi; hujjatlar (ariza, shartnoma, buyruq) — kartadagi «Kadr hujjatlari»dan.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="success" disabled={pending}><UserCheck size={15} /> {pending ? "Qabul qilinmoqda…" : "Ishga qabul qilish — kartani ochish"}</Button>
+        <InfoButton title="Ishga qabul qilish">Xodim kartasi va moslashuv rejasi ochiladi; hujjatlar (ariza, shartnoma, buyruq) — kartadagi «Kadr hujjatlari»dan.</InfoButton>
+      </div>
     </form>
   );
 }
@@ -271,7 +273,7 @@ export function CourseForm({ c, positions }: { c?: CourseVals; positions: string
       <Field label="Qisqacha"><Input name="description" defaultValue={c?.description ?? ""} /></Field>
       <Field label="Material (matn)"><Textarea name="material" rows={6} defaultValue={c?.material ?? ""} /></Field>
       <Field label="Video / hujjat havolasi"><Input name="contentUrl" type="url" defaultValue={c?.contentUrl ?? ""} placeholder="https://…" /></Field>
-      <Field label="Test savollari *" hint="Bloklar bo'sh qator bilan: birinchi qator — savol, «+» — to'g'ri javob, «-» — noto'g'ri">
+      <Field label="Test savollari *" help={<InfoButton title="Test savollari">Bloklar bo&apos;sh qator bilan: birinchi qator — savol, «+» — to&apos;g&apos;ri javob, «-» — noto&apos;g&apos;ri</InfoButton>}>
         <Textarea name="questions" rows={10} required defaultValue={c?.questionsText} placeholder={"Mikser barabani qachon tozalanadi?\n+ Har smena oxirida\n- Haftada bir marta\n- Faqat buzilganda"} className="font-mono text-xs" />
       </Field>
       <Checkbox name="mandatory" label="Majburiy kurs" defaultChecked={c?.mandatory} />

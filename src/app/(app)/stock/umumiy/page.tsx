@@ -94,7 +94,7 @@ export default async function StockOverviewPage({ searchParams }: { searchParams
   return (
     <div>
       <PageHeader title="Sklad — umumiy ko'rinish" back={{ href: "/stock", label: "Sklad" }}
-        subtitle="Xomashyo qoldig'i, davrdagi kirim-chiqim, skladlar, hovli va ta'minot — bir joyda. Har blokdan batafsil sahifaga o'ting." />
+        info="Xomashyo qoldig'i, davrdagi kirim-chiqim, skladlar, hovli va ta'minot — bir joyda. Har blokdan batafsil sahifaga o'ting." />
       <DayRangeBar base="/stock/umumiy" range={period} />
       {catLimited && <Callout tone="info">Faqat {cats.map((c) => MATERIAL_CATEGORY_LABEL[c]).join(" va ")} kategoriyalari ko&apos;rsatilmoqda.</Callout>}
 

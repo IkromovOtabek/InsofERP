@@ -34,7 +34,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   if (sp.q) { const q = sp.q.toLowerCase(); list = list.filter((x) => `${x.code} ${x.name}`.toLowerCase().includes(q)); }
 
   return (
-    <BiPage title="Klasterlar" subtitle="Mahsulotlar tezlik × o'sish × barqarorlik bo'yicha 5 klasterga bo'lingan (qoida asosida: ABC, trend, XYZ). Har klaster — o'z strategiyasi." eyebrow="ML tahlil" tab="clusters" range={range}>
+    <BiPage title="Klasterlar" info="Mahsulotlar tezlik × o'sish × barqarorlik bo'yicha 5 klasterga bo'lingan (qoida asosida: ABC, trend, XYZ). Har klaster — o'z strategiyasi." eyebrow="ML tahlil" tab="clusters" range={range}>
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Kpi label="Klasterlar" value={String(cl.filter((c) => c.key !== "Sotilmagan").length)} icon={Layers} tone="brand" hint={`${sold.length} mahsulot guruhlangan`} href="#strategiyalar" />

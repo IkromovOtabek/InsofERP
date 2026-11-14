@@ -41,7 +41,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Vazifalar" subtitle="Berilgan ishlar: muddat, holat, izohlar. Bajaruvchi «Bajarildi» bosadi — beruvchi qabul qiladi" />
+      <PageHeader title="Vazifalar" info="Berilgan ishlar: muddat, holat, izohlar. Bajaruvchi «Bajarildi» bosadi — beruvchi qabul qiladi" />
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="Menga — ochiq" value={String(counts.open)} icon={ListTodo} href="/vazifalar?scope=mine" />
         <StatCard label="Muddati o'tgan" value={String(counts.overdue)} tone={counts.overdue ? "danger" : "default"} href="/vazifalar?scope=mine" />

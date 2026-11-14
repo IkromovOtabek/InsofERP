@@ -55,7 +55,7 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
       </div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <Card className="xl:col-span-2">
-          <CardHeader title="Haydovchi kartasi" description="F.I.O., telefon, passport — Otdel kadrda" icon={IdCard} />
+          <CardHeader title="Haydovchi kartasi" info="F.I.O., telefon, passport — Otdel kadrda" icon={IdCard} />
           <DriverCardForm id={d.id} vehicles={vehicles} v={{ workSchedule: d.workSchedule, licenseNo: d.licenseNo, licenseCategory: d.licenseCategory, licenseExpiry: d.licenseExpiry ? isoDate(d.licenseExpiry) : "", vehicleId: d.vehicleId }} />
           {canLogin && (
             <div id="kirish" className="mt-6 scroll-mt-20 border-t border-slate-100 pt-5">

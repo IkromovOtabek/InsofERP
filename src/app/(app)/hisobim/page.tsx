@@ -10,7 +10,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
   const { oy } = await searchParams;
   return (
     <div>
-      <PageHeader title="Mening hisobim" subtitle="Login va parol, fon va menyu (kabinet) sozlamasi; pastda — o'z davomatingiz" />
+      <PageHeader title="Mening hisobim" info="Login va parol, fon va menyu (kabinet) sozlamasi; pastda — o'z davomatingiz" />
       <SelfAccountPanel s={s} />
       <div className="mt-5 max-w-3xl"><MyAttendanceCard userId={s.userId} month={oy ?? null} /></div>
       {/* Vazifalar va ish haqi (`lib/hr/*`) */}

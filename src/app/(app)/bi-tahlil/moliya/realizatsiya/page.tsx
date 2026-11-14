@@ -4,7 +4,7 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { realizatsiyaReport, MONTHS } from "@/lib/fin-report/realizatsiya";
 import { date, fmtNum, isoDate, moneyShort, pct } from "@/lib/format";
-import { Card, Input, Table, Td, Th, Tr } from "@/components/ui";
+import { Card, InfoButton, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { biContext, BiPage, type SP } from "../../shell";
 import { Kpi } from "../../ui";
@@ -19,10 +19,10 @@ const p1 = (v: number | null) => (v === null ? "–" : pct(v));
 const tone = (v: number | null) => (v === null ? undefined : v >= 100 ? "text-emerald-600" : v >= 70 ? "text-amber-600" : "text-red-600");
 const kpiTone = (v: number | null) => (v === null ? "default" : v >= 100 ? "success" : v >= 70 ? "warning" : "danger");
 
-function Block({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
+function Block({ title, children, id, info }: { title: string; children: React.ReactNode; id?: string; info?: React.ReactNode }) {
   return (
     <section id={id} className="min-w-0">
-      <h3 className="mb-2 rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-white">{title}</h3>
+      <h3 className="mb-2 rounded-lg bg-slate-900 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-white">{title}{info && <InfoButton title={title} className="-my-1 ml-1 text-slate-300">{info}</InfoButton>}</h3>
       {children}
     </section>
   );
@@ -44,7 +44,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
   const debt = r.pay.find((p) => p.key === "DEBT");
 
   return (
-    <BiPage title="Moliya" subtitle="Kunlik realizatsiya hisoboti — to'lov turi, hajm, reja va sotuvchilar" tab="finance" range={range} period={false}>
+    <BiPage title="Moliya" info="Kunlik realizatsiya hisoboti — to'lov turi, hajm, reja va sotuvchilar" tab="finance" range={range} period={false}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3 rounded-(--radius-card) border border-slate-200/80 bg-white px-4 py-3 shadow-(--shadow-card)">
           <div className="min-w-0">
@@ -86,7 +86,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
           </Table>
         </Block>
 
-        <Block title="2. Hajm va reja (sotilgan miqdor)">
+        <Block title="2. Hajm va reja (sotilgan miqdor)" info={<p>Kunlik reja = rekord hajmi ÷ rekord oy ish kuni. Oylik prognoz = oy boshidan ÷ {r.wdPassed} × {r.wdTotal} ish kuni.</p>}>
           <Table>
             <thead><tr><Th>Mahsulot</Th><Th>O&apos;lchov</Th><Th right>Bugun</Th><Th right>Oy boshidan</Th><Th right>Rekord oy hajmi</Th><Th>Rekord oy</Th><Th right>Ish kuni</Th><Th right>Rekorddan %</Th><Th right>Oylik prognoz</Th><Th right>Kunlik reja</Th><Th right>Bugun reja %</Th></tr></thead>
             <tbody>
@@ -102,23 +102,30 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
               ))}
             </tbody>
           </Table>
-          <p className="mt-2 text-[12.5px] text-slate-500">Kunlik reja = rekord hajmi ÷ rekord oy ish kuni. Oylik prognoz = oy boshidan ÷ {r.wdPassed} × {r.wdTotal} ish kuni.</p>
           {canEdit && (
             <Card className="mt-3">
-              <div className="mb-3 text-sm font-semibold text-slate-800">Rekord oylar (ERP&apos;gacha bo&apos;lgan) — hajm, oy, ish kuni</div>
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                Rekord oylar (ERP&apos;gacha bo&apos;lgan) — hajm, oy, ish kuni
+                <InfoButton title="Rekord oylar" className="ml-1">
+                  <p>ERP&apos;dagi biror tugagan oy shu rekorddan oshsa, hisobotda o&apos;sha oy rekord bo&apos;lib ko&apos;rinadi.</p>
+                  <p>Ish kuni bo&apos;sh — ish kalendaridan (dam olish va bayramlarsiz).</p>
+                </InfoButton>
+              </div>
               <div className="space-y-2">
                 {r.allGroups.map((g) => {
                   const m = r.groups.find((x) => x.group === g.group)?.manual;
                   return <SalesRecordForm key={g.group} group={g.group} unit={g.unit} qty={m?.qty ?? null} ym={m ? `${m.year}-${String(m.month).padStart(2, "0")}` : ""} workDays={m?.workDays ?? null} autoWd={m?.autoWorkDays ?? null} />;
                 })}
               </div>
-              <p className="mt-3 text-[12px] text-slate-400">ERP&apos;dagi biror tugagan oy shu rekorddan oshsa, hisobotda o&apos;sha oy rekord bo&apos;lib ko&apos;rinadi. Ish kuni bo&apos;sh — ish kalendaridan (dam olish va bayramlarsiz).</p>
             </Card>
           )}
         </Block>
 
         <div className="grid gap-6 xl:grid-cols-2">
-          <Block title="3. Realizatsiya rejasi (so'm, QQS bilan)">
+          <Block title="3. Realizatsiya rejasi (so'm, QQS bilan)" info={<>
+            <p>{MONTHS[r.day.getMonth()]} {r.day.getFullYear()}: bugungi reja = oylik reja ÷ {r.wdTotal} ish kuni. Ish kuni bo&apos;sh qolsa — kalendardan ({r.wdAuto}, dam olish va bayramlarsiz, <Link href="/settings/ish-tartibi" className="font-medium text-blue-600 hover:underline">Ish tartibi</Link>).</p>
+            <p>Sotuvchilar rejasi — <Link href="/bi-tahlil/reja" className="font-medium text-blue-600 hover:underline">Reja nazorati</Link>da. Fakt — yetkazilgan mahsulot, dastavkasiz.</p>
+          </>}>
             <Table>
               <thead><tr><Th>Ko&apos;rsatkich</Th><Th right>Oylik</Th><Th right>Bugun</Th></tr></thead>
               <tbody>
@@ -135,7 +142,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
                 <MonthPlanForm year={r.plan.year} month={r.plan.mon} amount={r.plan.companySet ? r.plan.month : null} workDays={r.wdManual ? r.wdTotal : null} autoWd={r.wdAuto} />
               </Card>
             )}
-            <p className="mt-2 text-[12.5px] text-slate-500">{MONTHS[r.day.getMonth()]} {r.day.getFullYear()}: bugungi reja = oylik reja ÷ {r.wdTotal} ish kuni. Ish kuni bo&apos;sh qolsa — kalendardan ({r.wdAuto}, dam olish va bayramlarsiz, <Link href="/settings/ish-tartibi" className="font-medium text-blue-600 hover:underline">Ish tartibi</Link>). Sotuvchilar rejasi — <Link href="/bi-tahlil/reja" className="font-medium text-blue-600 hover:underline">Reja nazorati</Link>da. Fakt — yetkazilgan mahsulot, dastavkasiz.</p>
           </Block>
 
           <Block title="4. Sotuvchilar (so'm, QQS bilan)">

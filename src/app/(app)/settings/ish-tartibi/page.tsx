@@ -48,14 +48,14 @@ export default async function IshTartibiPage({ searchParams }: { searchParams: P
 
       <Card>
         <CardHeader icon={Clock} title="Haftalik ish tartibi va ish vaqti"
-          description="Zavod standarti. Realizatsiya hisoboti, reja nazorati, Egasi paneli va logistika prognozlaridagi ish kunlari shundan hisoblanadi. Davomat va ish haqi xodimning o'z grafigi bo'yicha ishlaydi — bunga bog'lanmagan." />
+          info="Zavod standarti. Realizatsiya hisoboti, reja nazorati, Egasi paneli va logistika prognozlaridagi ish kunlari shundan hisoblanadi. Davomat va ish haqi xodimning o'z grafigi bo'yicha ishlaydi — bunga bog'lanmagan." />
         <WorkWeekForm restDays={[...cal.restDays]} workStart={cal.workStart} workEnd={cal.workEnd} lunchStart={cal.lunchStart} lunchEnd={cal.lunchEnd} disabled={!canEdit} />
         {!canEdit && <p className="mt-3 text-[13px] text-slate-500">Faqat ko&apos;rish: o&apos;zgartirish huquqi otdel kadrda (direktor Ruxsatlarda boshqaga berishi mumkin).</p>}
       </Card>
 
       <Card>
         <CardHeader icon={CalendarDays} title={`Bayramlar va ko'chirilgan kunlar — ${year}`}
-          description="Bayram — ish kuni hisoblanmaydi. Ko'chirilgan ish kuni — dam olish kuni bo'lsa ham ishlanadi (hukumat qarori bilan ko'chirilgan kunlar)."
+          info="Bayram — ish kuni hisoblanmaydi. Ko'chirilgan ish kuni — dam olish kuni bo'lsa ham ishlanadi (hukumat qarori bilan ko'chirilgan kunlar)."
           action={<div className="flex items-center gap-1">
             <Link href={yearHref(year - 1)} aria-label="Oldingi yil" className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"><ChevronLeft size={16} /></Link>
             <span className="px-2 text-sm font-semibold tabular">{year}</span>

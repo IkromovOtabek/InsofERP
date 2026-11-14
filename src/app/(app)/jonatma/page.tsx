@@ -26,7 +26,7 @@ export default async function ShipmentsPage({ searchParams }: { searchParams: Pr
     <div>
       <PageHeader
         title={procurement ? "Mening jo'natmalarim" : "Jo'natmalar"}
-        subtitle={procurement
+        info={procurement
           ? "Olib kelgan mahsulotlar nakladnoyini kiriting va skladga jo'nating. Sklad qabul qilganda xabar olasiz."
           : "Snabjeniye olib kelgan mahsulotlar. Tekshirib, hammasini yoki belgilaganlaringizni qabul qiling — skladga kirim bo'lib tushadi."}
         action={canSend ? <LinkButton href="/jonatma/new"><Plus size={16} /> Yangi jo&apos;natma</LinkButton> : undefined}

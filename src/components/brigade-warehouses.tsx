@@ -3,7 +3,7 @@ import { HardHat } from "lucide-react";
 import { ownerOverview } from "@/lib/brigade-products";
 import { qty } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
-import { Empty, Table, Td, Th, Tr } from "@/components/ui";
+import { Empty, InfoButton, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /**
@@ -15,7 +15,13 @@ export async function BrigadeWarehouses() {
   const totals = Object.fromEntries(columns.map((c) => [c.key, rows.reduce((s, r) => s + (r.byOwner[c.key] ?? 0), 0)]));
   return (
     <div>
-      <h2 className="mb-2 flex items-center gap-2 font-semibold"><HardHat size={18} className="text-slate-500" /> Brigada omborlari</h2>
+      <h2 className="mb-2 flex items-center gap-2 font-semibold"><HardHat size={18} className="text-slate-500" /> Brigada omborlari
+        <InfoButton title="Brigada omborlari">
+          <p>Brigada bajargan mahsulot o&apos;z omboriga tushadi, reysga yuklanganda va brak yozilganda o&apos;sha ombordan yechiladi.</p>
+          <p>«Umumiy hovli» — hech bir brigadaga biriktirilmagan qoldiq (avvalgi kirimlar).</p>
+          <p>Taqsimlash yoki ko&apos;chirish — mahsulot nomini bosing.</p>
+        </InfoButton>
+      </h2>
       <Table>
         <thead>
           <tr>
@@ -45,10 +51,6 @@ export async function BrigadeWarehouses() {
           )}
         </tbody>
       </Table>
-      <p className="mt-2 text-xs text-slate-500">
-        Brigada bajargan mahsulot o&apos;z omboriga tushadi, reysga yuklanganda va brak yozilganda o&apos;sha ombordan yechiladi. «Umumiy hovli» — hech bir brigadaga
-        biriktirilmagan qoldiq (avvalgi kirimlar). Taqsimlash yoki ko&apos;chirish — mahsulot nomini bosing.
-      </p>
     </div>
   );
 }

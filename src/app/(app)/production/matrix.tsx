@@ -144,7 +144,14 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
     <div className="mb-8 flex flex-col gap-5">
       <Card padded={false}>
         <div className="px-5 pt-5">
-          <CardHeader icon={Grid3x3} title="Sklad va zayavkalar" description="Natija = skladdagi qoldiq − zayavkalarda band. Manfiy son — shuncha quyish kerak. Sonni bossangiz — shu qatorga brigada tayinlaysiz (hammasini yoki bir qismini). Mahsulot nomini bossangiz — pastdagi doskada uni olayotgan zayavkalar chiqadi." />
+          <CardHeader icon={Grid3x3} title="Sklad va zayavkalar" info={<>
+            <p>Natija = skladdagi qoldiq − zayavkalarda band. Manfiy son — shuncha quyish kerak. Sonni bossangiz — shu qatorga brigada tayinlaysiz (hammasini yoki bir qismini). Mahsulot nomini bossangiz — pastdagi doskada uni olayotgan zayavkalar chiqadi.</p>
+            <p>Ustun rangi — tayyorlik. Son rangi — brigada:</p>
+            <p className="flex items-center gap-1.5"><span className="h-3 w-3 shrink-0 rounded bg-red-100 ring-1 ring-red-200" /> tayinlanmagan</p>
+            <p className="flex items-center gap-1.5"><span className="h-3 w-3 shrink-0 rounded bg-amber-100 ring-1 ring-amber-200" /> qisman (−qolgani)</p>
+            <p className="flex items-center gap-1.5"><span className="h-3 w-3 shrink-0 rounded bg-emerald-100 ring-1 ring-emerald-200" /> tayinlangan</p>
+            <p>Sonni bosing — brigada va miqdor tanlanadi. Sanani bosing — boshqa kunga ko&apos;chirish.</p>
+          </>} />
         </div>
         <div className="grid grid-cols-2 gap-3 px-5 lg:grid-cols-4">
           <StatCard label="Skladda tayyor" value={ut(sm.stock)} hint={`${sm.stockKinds} turdagi mahsulot · beton saqlanmaydi`} icon={Boxes} href={stockHref} />
@@ -271,13 +278,6 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
               </tr>
             </SheetFoot>
           </Sheet>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span>Ustun rangi — tayyorlik. Son rangi — brigada:</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100 ring-1 ring-red-200" /> tayinlanmagan</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-100 ring-1 ring-amber-200" /> qisman (−qolgani)</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-100 ring-1 ring-emerald-200" /> tayinlangan</span>
-            <span>Sonni bosing — brigada va miqdor tanlanadi. Sanani bosing — boshqa kunga ko&apos;chirish.</span>
-          </div>
         </div>
       </Card>
 
@@ -341,7 +341,7 @@ function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, 
       <div id="doska" className="scroll-mt-20 px-5 pt-5">
         <CardHeader icon={KanbanSquare}
           title={sel ? `Zayavkalar doskasi · ${sel.name}` : "Zayavkalar doskasi"}
-          description={sel ? "Shu mahsulotni olayotgan zayavkalar. Boshqa mahsulotni tanlash uchun jadvaldagi mahsulot nomini bosing." : "Mahsulotni tanlang — qaysi zayavkalar olayotgani shu yerda chiqadi. Filtr bo'yicha barcha zayavkalar (beton sexga tushmaydi — u logistikada)."}
+          info={sel ? "Shu mahsulotni olayotgan zayavkalar. Boshqa mahsulotni tanlash uchun jadvaldagi mahsulot nomini bosing." : "Mahsulotni tanlang — qaysi zayavkalar olayotgani shu yerda chiqadi. Filtr bo'yicha barcha zayavkalar (beton sexga tushmaydi — u logistikada)."}
           action={sel ? <button type="button" onClick={onClear} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900"><X size={14} /> Tanlovni olish</button> : undefined} />
       </div>
       <div className="px-5">{filters}</div>

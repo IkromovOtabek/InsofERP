@@ -6,7 +6,7 @@ import { dateTime, money } from "@/lib/format";
 import { monthOf, monthTitle, today } from "@/lib/davomat";
 import { canPayroll, listRuns, payrollSettings } from "@/lib/hr/payroll";
 import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
-import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { CalculateForm, PieceRatesForm, SettingsForm } from "./forms";
 
 /**
@@ -31,7 +31,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Ish haqi" subtitle="Avans va oy yakuni vedomostlari: hisoblash → direktor tasdig'i → kassadan to'lov" />
+      <PageHeader title="Ish haqi" info="Avans va oy yakuni vedomostlari: hisoblash → direktor tasdig'i → kassadan to'lov" />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={`${monthTitle(month)} — hisoblangan`} value={money(thisMonth.filter((r) => r.kind === "FINAL").reduce((x, r) => x + Number(r.gross), 0))} icon={Wallet} href="/ish-haqi#vedomostlar" />
         <StatCard label="Direktor tasdig'ida" value={String(waiting.length)} tone={waiting.length ? "warning" : "default"} hint={waiting.length ? money(waiting.reduce((x, r) => x + Number(r.net), 0)) : undefined} href={waiting.length === 1 ? `/ish-haqi/${waiting[0].id}` : "/ish-haqi#vedomostlar"} />
@@ -44,7 +44,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
         <>
           {canCalc && (
             <Card>
-              <CardHeader title="Hisoblash" description={`Avans — 1–${st.advanceDay} kunlar bo'yicha, oylikning ${st.advancePct}%; oy yakuni — tabel, smena grafigi, ta'til/kasallik, jarima/bonus, soliq va berilgan avanslar bilan`} />
+              <CardHeader title="Hisoblash" info={`Avans — 1–${st.advanceDay} kunlar bo'yicha, oylikning ${st.advancePct}%; oy yakuni — tabel, smena grafigi, ta'til/kasallik, jarima/bonus, soliq va berilgan avanslar bilan`} />
               <CalculateForm month={month} />
             </Card>
           )}
@@ -75,19 +75,20 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       {tab === "sozlamalar" && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Card>
-            <CardHeader title="Soliq, avans, kasallik" description="Barcha xodimlarga bir xil. O'zgarish keyingi hisobdan qo'llanadi — tasdiqlangan vedomostlar o'zgarmaydi" />
+            <CardHeader title="Soliq, avans, kasallik"
+              info={<>
+                <p>Barcha xodimlarga bir xil. O&apos;zgarish keyingi hisobdan qo&apos;llanadi — tasdiqlangan vedomostlar o&apos;zgarmaydi.</p>
+                <p><b>Xodimning ish haqi turi.</b> Oklad, kunbay, soatbay yoki sdelka — xodim kartasida («Ish haqi turi» va «Tarif stavka»). Jarima va bonus qoidalari — Otdel kadr → Jarima va bonuslar.</p>
+              </>} />
             <SettingsForm editable={canSettings} v={{
               incomeTaxPct: Number(st.incomeTaxPct), inpsPct: Number(st.inpsPct), socialTaxPct: Number(st.socialTaxPct), advancePct: st.advancePct, advanceDay: st.advanceDay,
               sickPctShort: st.sickPctShort, sickPctLong: st.sickPctLong, hoursPerDay: Number(st.hoursPerDay), vacationPaid: st.vacationPaid,
             }} />
           </Card>
           <Card>
-            <CardHeader title="Sdelka narxlari" description="Brigada bajargan 1 birlik uchun ish haqi fondiga qo'shiladigan summa. Fond sdelkadagi a'zolarga ishlagan soati bo'yicha bo'linadi" />
+            <CardHeader title="Sdelka narxlari" info="Brigada bajargan 1 birlik uchun ish haqi fondiga qo'shiladigan summa. Fond sdelkadagi a'zolarga ishlagan soati bo'yicha bo'linadi" />
             {products.length ? <PieceRatesForm editable={canSettings} products={products.map((p) => ({ id: p.id, name: p.name, unit: p.unit, pieceRate: p.pieceRate == null ? null : Number(p.pieceRate) }))} /> : <Empty text="Mahsulot yo'q" />}
           </Card>
-          <Callout tone="info" title="Xodimning ish haqi turi">
-            Oklad, kunbay, soatbay yoki sdelka — xodim kartasida («Ish haqi turi» va «Tarif stavka»). Jarima va bonus qoidalari — Otdel kadr → Jarima va bonuslar.
-          </Callout>
         </div>
       )}
     </div>

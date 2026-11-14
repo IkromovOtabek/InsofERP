@@ -97,7 +97,7 @@ export default async function OfferPage({ params, searchParams }: { params: Prom
           </Card>
 
           <Card>
-            <CardHeader title="QR va mijoz havolasi" icon={QrCode} description="Mijoz skanerlaydi: haqiqiyligini ko'radi, menejerga qo'ng'iroq qiladi yoki «qabul qilaman» deydi" />
+            <CardHeader title="QR va mijoz havolasi" icon={QrCode} info="Mijoz skanerlaydi: haqiqiyligini ko'radi, menejerga qo'ng'iroq qiladi yoki «qabul qilaman» deydi" />
             <div className="flex items-start gap-4">
               <div className="shrink-0 rounded-lg border border-slate-200 bg-white p-1" dangerouslySetInnerHTML={{ __html: qr }} />
               <div className="min-w-0 space-y-2 text-sm">

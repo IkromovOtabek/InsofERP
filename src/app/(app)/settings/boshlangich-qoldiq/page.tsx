@@ -26,7 +26,7 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
     <div>
       <PageHeader
         title="Boshlang'ich qoldiqlar"
-        subtitle="Tizimga o'tish sanasidagi holat: mijozlar va yetkazuvchilar bilan hisob-kitob, kassa/bank va tayyor mahsulot qoldig'i. Kiritish, tahrir va o'chirish — direktor va buxgalteriya (har o'zgarish auditda)."
+        info="Tizimga o'tish sanasidagi holat: mijozlar va yetkazuvchilar bilan hisob-kitob, kassa/bank va tayyor mahsulot qoldig'i. Kiritish, tahrir va o'chirish — direktor va buxgalteriya (har o'zgarish auditda)."
       />
       <Tabs current={kind} className="mb-4" items={KINDS.map((k) => ({ key: k, label: KIND_LABEL[k], href: `/settings/boshlangich-qoldiq?tab=${k}`, icon: OPENING_ICON[k], count: countOf(k) || undefined }))} />
       <OpeningSection kind={kind} s={s} base="/settings/boshlangich-qoldiq" keep={{ tab: kind }} showCancelled={sp.bekor === "1"} q={sp.q} />

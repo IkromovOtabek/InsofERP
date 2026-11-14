@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, Pencil, Plus, Save } from "lucide-react";
-import { Badge, Button, Field, FormError, FormSuccess, Input, Select, Td, Tr } from "@/components/ui";
+import { Badge, Button, Field, FormError, FormSuccess, InfoButton, Input, Select, Td, Tr } from "@/components/ui";
 import { DeleteButton } from "@/components/delete-button";
 import { WEEKDAY_NAMES, WEEK_ORDER } from "@/lib/work-calendar-days";
 import { addUzHolidaysAction, deleteCalendarDayAction, saveCalendarDayAction, saveWorkWeekAction } from "./actions";
@@ -17,7 +17,9 @@ export function WorkWeekForm({ restDays, workStart, workEnd, lunchStart, lunchEn
     <form action={action} className="space-y-4">
       <fieldset disabled={disabled} className="space-y-4">
         <div>
-          <div className="mb-2 text-sm font-medium text-slate-700">Dam olish kunlari</div>
+          <div className="mb-2 flex items-center gap-1 text-sm font-medium text-slate-700">Dam olish kunlari
+            <InfoButton title="Dam olish kunlari">Belgilanmagan kunlar — ish kuni. 6/1 uchun faqat yakshanbani belgilang.</InfoButton>
+          </div>
           <div className="flex flex-wrap gap-2">
             {WEEK_ORDER.map((d) => (
               <label key={d} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm has-checked:border-rose-300 has-checked:bg-rose-50 has-checked:text-rose-700">
@@ -26,7 +28,6 @@ export function WorkWeekForm({ restDays, workStart, workEnd, lunchStart, lunchEn
               </label>
             ))}
           </div>
-          <p className="mt-1.5 text-[12px] text-slate-400">Belgilanmagan kunlar — ish kuni. 6/1 uchun faqat yakshanbani belgilang.</p>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Field label="Ish boshlanishi"><Input type="time" name="workStart" defaultValue={workStart} required /></Field>

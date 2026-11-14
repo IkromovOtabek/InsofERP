@@ -210,6 +210,11 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
       <PageHeader
         title="Realizatsiya"
         subtitle={`${period} · ${trips} ta reys (TTN) · ${rows.length} qator`}
+        info={canAuto ? <>
+          <p>Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi) — faqat shu reestrda (zayavka, mijoz qarzi, kassa va sklad o&apos;zgarmaydi).</p>
+          <p>Qo&apos;lda kiritilgan qator — sariq fonda, chap chetida sariq chiziq.</p>
+          <p>Tuzatilgan qiymat <span className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">sariq tagchiziqli</span>, ustiga olib borilsa zayavkadagi qiymat ko&apos;rinadi; katak bo&apos;shatilsa o&apos;shanga qaytadi.</p>
+        </> : undefined}
         action={(
           <div className="flex flex-wrap items-center gap-2">
             {canManual && <LinkButton href="/logistika/realizatsiya/import" variant="secondary"><FileSpreadsheet size={16} /> Excel&apos;dan import</LinkButton>}
@@ -269,13 +274,6 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
       </div>
 
       {sheet}
-      {canAuto && (
-        <p className="mt-2 text-xs text-slate-500">
-          Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi) — faqat shu reestrda (zayavka, mijoz qarzi, kassa va sklad o&apos;zgarmaydi).
-          Qo&apos;lda kiritilgan qator — sariq fonda, chap chetida sariq chiziq.
-          Tuzatilgan qiymat <span className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">sariq tagchiziqli</span>, ustiga olib borilsa zayavkadagi qiymat ko&apos;rinadi; katak bo&apos;shatilsa o&apos;shanga qaytadi.
-        </p>
-      )}
     </div>
   );
   return options ? <OptionsProvider options={options}>{body}</OptionsProvider> : body;

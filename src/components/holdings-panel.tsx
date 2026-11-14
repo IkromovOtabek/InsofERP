@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, HardHat, Search, User, Users } from "lucide-react";
-import { Badge, Input } from "@/components/ui";
+import { Badge, InfoButton, Input } from "@/components/ui";
 import { fmtNum } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
 import { cn } from "@/lib/utils";
@@ -65,14 +65,17 @@ export function HoldingsPanel({ holdings, collapsible = false }: { holdings: Hol
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
-      <button type="button" onClick={() => collapsible && setOpen((o) => !o)} aria-expanded={open}
-        className={cn("flex w-full items-center justify-between gap-3 px-4 py-3 text-left", collapsible && "hover:bg-slate-50")}>
-        <span>
-          <span className="block text-sm font-semibold text-slate-900">Kimda nima bor</span>
-          <span className="block text-xs text-slate-500">Brigada — qo&apos;lidagi qoldiq; xodim va oluvchi — jami olgani</span>
-        </span>
-        {collapsible && <ChevronDown size={18} className={cn("shrink-0 text-slate-400 transition", open && "rotate-180")} />}
-      </button>
+      {/* «i» tugma sarlavha tugmasidan tashqarida: tugma ichida tugma bo'lmaydi */}
+      <div className={cn("flex items-center", collapsible && "hover:bg-slate-50")}>
+        <button type="button" onClick={() => collapsible && setOpen((o) => !o)} aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center justify-between gap-3 py-3 pl-4 pr-2 text-left">
+          <span>
+            <span className="block text-sm font-semibold text-slate-900">Kimda nima bor</span>
+          </span>
+          {collapsible && <ChevronDown size={18} className={cn("shrink-0 text-slate-400 transition", open && "rotate-180")} />}
+        </button>
+        <InfoButton title="Kimda nima bor" className="mr-3">Brigada — qo&apos;lidagi qoldiq; xodim va oluvchi — jami olgani.</InfoButton>
+      </div>
       {open && (
         <div className="space-y-3 border-t border-slate-100 p-4">
           <div className="flex flex-wrap items-center gap-2">

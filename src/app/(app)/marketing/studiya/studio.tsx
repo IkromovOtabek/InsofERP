@@ -110,7 +110,7 @@ export function Studio({ initialBrief, places, connected, caps }: {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title="1. G'oya" icon={Lightbulb} description="Qanday kontent kerakligini o'z so'zingiz bilan yozing: nimani ko'rsatish, kimga, qanday natija kutasiz" />
+        <CardHeader title="1. G'oya" icon={Lightbulb} info="Qanday kontent kerakligini o'z so'zingiz bilan yozing: nimani ko'rsatish, kimga, qanday natija kutasiz" />
         <div className="mb-3 flex flex-wrap gap-2">
           {FORMATS.map((f) => (
             <button key={f.key} type="button" onClick={() => setFormat(f.key)} title={f.hint}
@@ -137,7 +137,7 @@ export function Studio({ initialBrief, places, connected, caps }: {
         <>
           <Card>
             <CardHeader title={format === "REELS" ? `2. Ssenariy — ${scenes.length} sahna, ${total} soniya` : "2. Kadrlar"} icon={Clapperboard}
-              description={format === "REELS" ? "Video ovozsiz motion-grafika: har sahnada fon (kutubxonadagi kadr yoki Claude grafikasi) ustida animatsion matn" : "Har sahnani tahrirlang va kutubxonadan kadr tanlang"} />
+              info={format === "REELS" ? "Video ovozsiz motion-grafika: har sahnada fon (kutubxonadagi kadr yoki Claude grafikasi) ustida animatsion matn" : "Har sahnani tahrirlang va kutubxonadan kadr tanlang"} />
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
               <Field label="Sarlavha (ichki)"><Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={160} /></Field>
               <Field label="Hook — birinchi 2 soniya"><Input value={hook} onChange={(e) => setHook(e.target.value)} /></Field>
@@ -253,7 +253,7 @@ export function Studio({ initialBrief, places, connected, caps }: {
           </Card>
 
           <Card>
-            <CardHeader title="4. Saqlash" description="Post qoralama bo'lib Kontent rejaga tushadi — tekshirib, tasdiqlashga yuborasiz" />
+            <CardHeader title="4. Saqlash" info="Post qoralama bo'lib Kontent rejaga tushadi — tekshirib, tasdiqlashga yuborasiz" />
             {format === "REELS" && (
               <div className="mb-3 space-y-2">
                 <Checkbox label="Motion-video yaratish (9:16, animatsion matn va o'tishlar bilan, ovozsiz)" checked={makeVideo} disabled={!caps.video} onChange={(e) => setMakeVideo(e.target.checked)} />

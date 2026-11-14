@@ -5,7 +5,7 @@ import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_L
 import type { Akt } from "@/lib/fin-report/akt";
 import { MONTHS_UZ } from "@/lib/bi/plans";
 import { date, dateRu, dateShort, fmtFixed, fmtNum, isoDate, moneyShort } from "@/lib/format";
-import { Badge, type BadgeColor, Card, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, type BadgeColor, Card, InfoButton, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
 
@@ -236,8 +236,19 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref }: {
             <span>{company}</span>
             <span className="tabular">Oy: <span className="ml-2">{String(s.day.getMonth() + 1).padStart(2, "0")}.{s.day.getFullYear()}</span></span>
           </div>
-          <div className="mt-1 text-[22px] font-bold leading-tight text-slate-900">{sheetTitle} — {monthName(s.day)}</div>
-          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: {sort ? `${sortLabel} (katta → kichik)` : "nomi bo'yicha (A → Z)"} — {d2} ustunlari sarlavhasini bosib o&apos;zgartiring. Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</div>
+          <div className="mt-1 text-[22px] font-bold leading-tight text-slate-900">
+            {sheetTitle} — {monthName(s.day)}
+            <InfoButton title={sheetTitle} size="md" className="ml-1">
+              <p>Saralash — {d2} ustunlari sarlavhasini bosib o&apos;zgartiring. Qatorni bosing — {dateRu(s.monthStart)} – {dateRu(s.day)} davri uchun akt sverka ochiladi.</p>
+              <p>{legend}.</p>
+              <p>
+                {sup
+                  ? "Hisob: boshlang'ich qoldiq + kirim hujjatlari (QQS va dostavka bilan) − ta'minotchiga to'langan pul."
+                  : "Hisob: hisob-fakturalar − mijoz to'lovlari. Mijoz turi — oxirgi zayavkadagi to'lov usuli."}
+              </p>
+            </InfoButton>
+          </div>
+          <div className="mt-0.5 text-[13px] text-slate-500">Saralash: {sort ? `${sortLabel} (katta → kichik)` : "nomi bo'yicha (A → Z)"}</div>
         </div>
         <div className="overflow-auto" style={{ maxHeight: "70vh" }}>
           <table className="w-full min-w-[760px] border-collapse text-[14px] text-slate-900">
@@ -284,12 +295,6 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref }: {
           </table>
         </div>
       </div>
-      <p className="text-[13px] text-slate-500">
-        {legend}.{" "}
-        {sup
-          ? "Hisob: boshlang'ich qoldiq + kirim hujjatlari (QQS va dostavka bilan) − ta'minotchiga to'langan pul."
-          : "Hisob: hisob-fakturalar − mijoz to'lovlari. Mijoz turi — oxirgi zayavkadagi to'lov usuli."}
-      </p>
     </div>
   );
 }
@@ -316,8 +321,13 @@ export function DebtAgeView({ r, sp, base }: { r: AgeReport; sp: SP; base: strin
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] font-bold text-slate-900">Mijozlar qarzi — qancha vaqtdan beri turibdi</h2>
-        <span className="text-[13px] text-slate-500">To&apos;lov eng eski qarzni yopadi — qolgan qarz eng oxirgi olingan tovarlar</span>
+        <h2 className="text-[17px] font-bold text-slate-900">
+          Mijozlar qarzi — qancha vaqtdan beri turibdi
+          <InfoButton title="Mijozlar qarzi — qancha vaqtdan beri turibdi" className="ml-1">
+            <p>To&apos;lov eng eski qarzni yopadi — qolgan qarz eng oxirgi olingan tovarlar.</p>
+            <p>Naqd va perechisleniye birga. Qarz yoshi — to&apos;lanmagan schyot sanasidan {date(r.day)} gacha. Holat — mijozning eng eski to&apos;lanmagan qarzi qaysi oraliqda.</p>
+          </InfoButton>
+        </h2>
       </div>
       <Toolbar base={base} day={r.day} sp={sp} keep={{ holat: sp.holat }} placeholder="Mijoz nomi…"
         excel={<ExcelButton file={`Mijozlar qarzi ${isoDate(r.day)}`} sheets={[{ name: "Qarz yoshi", rows: excelRows }]} />} />
@@ -391,9 +401,6 @@ export function DebtAgeView({ r, sp, base }: { r: AgeReport; sp: SP; base: strin
           ))}
         </tbody>
       </Table>
-      <p className="text-[13px] text-slate-500">
-        Naqd va perechisleniye birga. Qarz yoshi — to&apos;lanmagan schyot sanasidan {date(r.day)} gacha. Holat — mijozning eng eski to&apos;lanmagan qarzi qaysi oraliqda.
-      </p>
     </div>
   );
 }

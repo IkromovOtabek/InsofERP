@@ -48,7 +48,7 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
   );
   const header = (
     <PageHeader title="Logistika moliya"
-      subtitle="Logistikaning alohida hisobi: daromad (dastavka), xarajat, foyda va pul harakati. Faqat direktor, ish boshqaruvchi va mexanik ko'radi." />
+      info="Logistikaning alohida hisobi: daromad (dastavka), xarajat, foyda va pul harakati. Faqat direktor, ish boshqaruvchi va mexanik ko'radi." />
   );
 
   // Umumiy — logistikaning hamma muhim raqami bitta joyda (kirim, chiqim, qoldiq, foyda, to'lovlar, mashinalar)
@@ -116,7 +116,7 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
 
           {write && (
             <Card className="mb-5">
-              <CardHeader title="Kirim / chiqim yozish" description="Chiqim ko'pincha zavod kassasidan — qayerdan bo'lmasin, shu jurnalda ko'rinadi. Logistika hisobidagi pul zavod kassasiga tushmaydi." />
+              <CardHeader title="Kirim / chiqim yozish" info="Chiqim ko'pincha zavod kassasidan — qayerdan bo'lmasin, shu jurnalda ko'rinadi. Logistika hisobidagi pul zavod kassasiga tushmaydi." />
               <TxForm sources={srcOpts} vehicles={vehicles.map((v) => ({ id: v.id, label: v.plate }))} drivers={drivers.map((d) => ({ id: d.id, label: d.fullName }))}
                 expense={LOGI_EXPENSE} income={LOGI_INCOME} transfer={LOGI_TRANSFER_IN} today={isoDay(new Date())} />
             </Card>
@@ -125,7 +125,7 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
           {write && links.total > 0 && (
             <Card className="mb-5">
               <CardHeader title={`Kassadagi transport yozuvlari — logistikaga olinmagan: ${links.total} ta`}
-                description="Zavod kassasida to'g'ridan yozilgan «Transport» chiqimlari va transport xizmati kirimi. Logistikaga olinsa — tafsiloti (toifa, mashina, haydovchi) shu yerda; kassa qoldig'i va PNL o'zgarmaydi, kassada qator qulflanadi. Mashinaga yozilgan ta'mir, zapchast, yo'l xarajati Foydaga ham tushadi (yoqilg'i — zapravkadan). Toifa va mashina izohdan taklif qilingan — tekshiring." />
+                info="Zavod kassasida to'g'ridan yozilgan «Transport» chiqimlari va transport xizmati kirimi. Logistikaga olinsa — tafsiloti (toifa, mashina, haydovchi) shu yerda; kassa qoldig'i va PNL o'zgarmaydi, kassada qator qulflanadi. Mashinaga yozilgan ta'mir, zapchast, yo'l xarajati Foydaga ham tushadi (yoqilg'i — zapravkadan). Toifa va mashina izohdan taklif qilingan — tekshiring." />
               <LinkCashForm
                 rows={links.rows.map((r) => ({
                   id: r.id, date: date(r.date), type: r.type as "INCOME" | "EXPENSE", amount: money(r.amount), account: r.account, source: r.source,
@@ -137,7 +137,11 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
             </Card>
           )}
 
-          <Section title={`Jurnal — ${period.label}`}>
+          <Section title={`Jurnal — ${period.label}`} info={<>
+            <p>Jurnal — pul harakati. Foyda tabidagi xarajat esa tannarx: yoqilg&apos;i zapravkadan, haydovchi haqi reys narxidan olinadi, shuning uchun
+              ularning to&apos;lovi xarajatga ikki marta qo&apos;shilmaydi.</p>
+            <p>Zavod vedomosti orqali to&apos;langan oylik reys haqi bu jurnalga kirmaydi.</p>
+          </>}>
             {j.rows.length === 0 ? <Empty text="Bu davrda logistika kirim-chiqimi yo'q" /> : (
               <Table>
                 <thead><Tr><Th>Sana</Th><Th>Hujjat</Th><Th>Hisob</Th><Th>Toifa</Th><Th>Mashina / kim</Th><Th right>Kirim</Th><Th right>Chiqim</Th><Th>Izoh</Th>{write && <Th />}</Tr></thead>
@@ -163,10 +167,6 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
               </Table>
             )}
           </Section>
-          <p className="mt-3 text-xs text-slate-500">
-            Jurnal — pul harakati. Foyda tabidagi xarajat esa tannarx: yoqilg&apos;i zapravkadan, haydovchi haqi reys narxidan olinadi, shuning uchun
-            ularning to&apos;lovi xarajatga ikki marta qo&apos;shilmaydi. Zavod vedomosti orqali to&apos;langan oylik reys haqi bu jurnalga kirmaydi.
-          </p>
         </div>
       </div>
     );
@@ -202,11 +202,12 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
           )}
         </Section>
 
-        <Section title={`Oylik reys haqi — ${monthTitle(month)}`}>
+        <Section title={`Oylik reys haqi — ${monthTitle(month)}`} info={mp.lock ? undefined : <>
+          <p>Tasdiqlangan oylik reys haqini shu yerdan zavod yoki logistika hisobidan to&apos;lashingiz mumkin — to&apos;langani zavod vedomostiga tushmaydi.</p>
+          <p>To&apos;lanmay qolgani oy yakuni vedomostiga tushadi.</p>
+        </>}>
           <MonthBar base={BASE} month={month} keep={{ tab: "tolov" }} />
-          {mp.lock
-            ? <Callout tone="info" title="Vedomost orqali">{mp.lock} — bu oyning oylik reys haqi zavod vedomosti orqali to&apos;lanadi.</Callout>
-            : <p className="mb-3 text-sm text-slate-600">Tasdiqlangan oylik reys haqini shu yerdan zavod yoki logistika hisobidan to&apos;lashingiz mumkin — to&apos;langani zavod vedomostiga tushmaydi. To&apos;lanmay qolgani oy yakuni vedomostiga tushadi.</p>}
+          {mp.lock && <Callout tone="info" title="Vedomost orqali">{mp.lock} — bu oyning oylik reys haqi zavod vedomosti orqali to&apos;lanadi.</Callout>}
           {mp.draft && !mp.lock && <Callout tone="warning" title="Vedomost qoralamasi bor">Shu oy uchun yakuniy vedomost qoralamasi hisoblangan. Bu yerdan to&apos;lasangiz, otdel kadr vedomostni qayta hisoblashi kerak.</Callout>}
           {mp.rows.length === 0 ? <Empty text="Bu oyda tasdiqlangan oylik reys haqi yo'q" /> : (
             <Table>

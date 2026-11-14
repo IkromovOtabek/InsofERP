@@ -29,7 +29,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   );
 
   return (
-    <BiPage title="Agentlar" subtitle="Sotuvchilar — qaror qatlami: kim kuchli, kim zaif, kim sekinlashdi va nega. Agent = zayavka kiritadigan sotuvchi; «tashrif» = kiritilgan zayavka." tab="agents" range={range}>
+    <BiPage title="Agentlar" info={<>
+      <p>Sotuvchilar — qaror qatlami: kim kuchli, kim zaif, kim sekinlashdi va nega.</p>
+      <p>Agent = zayavka kiritadigan sotuvchi; «tashrif» = kiritilgan zayavka.</p>
+      <p>Sekinlashuv, oflayn va bugungi ko&apos;rsatkichlar oxirgi 35 kun bo&apos;yicha jonli hisoblanadi — sana filtri scorecard, top/bottom va sifat kartalariga qo&apos;llanadi.</p>
+    </>} tab="agents" range={range}>
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Kpi label="Faol sotuvchilar" value={String(k.active.cur)} delta={k.active.delta} icon={Users} hint={`${d.sellers.length} ta ro'yxatda`} href="#scorecard" />
@@ -39,8 +43,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <Kpi label="Bugungi sotuv" value={moneyShort(k.todayRevenue)} icon={TrendingDown} tone="success" hint={`${k.todayOrders} zayavka`} href="/bi-tahlil/sotuvlar?period=day" />
           <Kpi label="Natijasiz zayavka" value={String(k.created - k.converted)} icon={Ban} tone={k.created - k.converted ? "warning" : "default"} hint="qoralama yoki bloklangan holatda qolgan" href="#sifat" />
         </div>
-
-        <Note>Sekinlashuv, oflayn va bugungi ko'rsatkichlar oxirgi 35 kun bo'yicha jonli hisoblanadi — sana filtri scorecard, top/bottom va sifat kartalariga qo'llanadi.</Note>
 
         {/* Qaror qatlami */}
         <div>

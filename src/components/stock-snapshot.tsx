@@ -4,7 +4,7 @@ import { Warehouse, ArrowRight, Boxes, Factory, PackagePlus } from "lucide-react
 import { stockSnapshot, type LastMove, type MakeInfo, type SnapshotProduct } from "@/lib/stock";
 import { qty, dateTime } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
-import { Badge, Card, CardHeader, Th, Td, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, InfoButton, Th, Td, Tr } from "@/components/ui";
 import { Fold } from "@/components/fold";
 import { cn } from "@/lib/utils";
 
@@ -31,8 +31,7 @@ function Make({ make, unit }: { make: MakeInfo; unit: string }) {
 function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="px-5 pb-1 pt-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</div>
-      {hint && <div className="text-[11px] text-slate-400">{hint}</div>}
+      <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{title}{hint && <InfoButton title={title}>{hint}</InfoButton>}</div>
     </div>
   );
 }
@@ -179,6 +178,10 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
           title={title}
           icon={Warehouse}
           description={`Sklad xodimlari kiritgan ma'lumot · ${dateTime(s.asOf)}`}
+          info={<>
+            <p>«Yana chiqadi» — hozirgi xomashyo qoldig&apos;i bilan retsept bo&apos;yicha ishlab chiqarish mumkin bo&apos;lgan miqdor.</p>
+            <p>Kirim hujjatlari va ularni kim kiritgani — <Link href="/receipts" className="underline">Kirim</Link> bo&apos;limida.</p>
+          </>}
           action={
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <Link href="/stock?tab=capacity" className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900"><Boxes size={14} /> Hovlidagi mahsulot</Link>
@@ -206,10 +209,6 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
         <>{blocks}</>
       )}
 
-      <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-        «Yana chiqadi» — hozirgi xomashyo qoldig&apos;i bilan retsept bo&apos;yicha ishlab chiqarish mumkin bo&apos;lgan miqdor.
-        Kirim hujjatlari va ularni kim kiritgani — <Link href="/receipts" className="underline">Kirim</Link> bo&apos;limida.
-      </p>
     </Card>
   );
 }

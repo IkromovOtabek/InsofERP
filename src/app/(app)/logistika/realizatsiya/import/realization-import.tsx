@@ -54,15 +54,6 @@ export function RealizationImport({ pays }: { pays: { key: PayGroupKey; label: s
         unit: "m³", qty: 8, price: 650000, delivery: 0, groupName: "", loadPlace: "BSU-1", destination: "Toshkent, Chilonzor", note: "", refName: "",
       }}
       fields={fields}
-    >
-      <p className="text-xs text-slate-500">
-        Har qator «Qo&apos;lda» qator bo&apos;ladi: faqat reestr — mijoz qarzi, kassa va skladga ta&apos;sir qilmaydi, keyin tuzatish yoki sabab bilan bekor qilish mumkin.
-        Reestrda bor jo&apos;natma qo&apos;shilmaydi: shu TTN reysdan yoki avval kiritilgan bo&apos;lsa (±1 kun), TTN&apos;siz qatorda — o&apos;sha kuni xaridor, mahsulot va miqdori bir xil qator bo&apos;lsa.
-        Shuning uchun reestrning o&apos;zidan yuklab olingan faylni ham, bir faylni qayta ham yuklash mumkin — ikki marta yozilmaydi.
-        «Summa», «QQS», «Jami», «Manba» ustunlari kerak emas. Ro&apos;yxatda yo&apos;q xaridor mijozlarga qo&apos;shiladi (standart kredit limiti bilan);
-        ro&apos;yxatda yo&apos;q mahsulot katalogga qo&apos;shiladi (narxi 0, o&apos;lchovi fayldan yoki nomidan, papkasi «Guruh» ustunidan — bunday papka bo&apos;lsa).
-        Sanasi, to&apos;lov turi yoki miqdori o&apos;qilmagan qator importni to&apos;xtatmaydi — u qo&apos;shilmaydi va sababi bilan ko&apos;rsatiladi, qolganlari qo&apos;shiladi.
-      </p>
-    </ExcelImport>
+    />
   );
 }

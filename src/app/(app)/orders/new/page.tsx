@@ -111,7 +111,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <div>
         <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />
         <PageHeader back={{ href: "/orders", label: "Zayavkalar" }} title="Yangi zayavka" action={viewTabs}
-          subtitle="Excel ko'rinish: tanlangan kunga olingan barcha zayavkalar va yangi qatorlar — perechisleniye, naqd va qarzga bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
+          info="Excel ko'rinish: tanlangan kunga olingan barcha zayavkalar va yangi qatorlar — perechisleniye, naqd va qarzga bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
         <OrderGrid day={day} existing={existing} orderCount={sheet.orderCount} customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()} brigadeStock={brigadeStock}
           products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: unitLabel(p.unit), price: Number(p.price) }))} />
       </div>
@@ -175,7 +175,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <PageHeader
         back={{ href: "/orders", label: "Zayavkalar" }}
         title="Yangi zayavka"
-        subtitle="Mijoz uchun sotuv zayavkasi. Saqlangandan keyin “Qabul qilish” bosiladi."
+        info="Mijoz uchun sotuv zayavkasi. Saqlangandan keyin “Qabul qilish” bosiladi."
         action={viewTabs}
       />
       {/* Blanka keng (QQS ustunli jadval) — to'liq kenglikda; sklad qoldig'i pastda */}

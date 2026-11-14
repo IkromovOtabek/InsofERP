@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { PackageCheck, Save, Send, Trash2, Truck, XCircle } from "lucide-react";
 import { checkIn, editItems, reject, setPrices } from "@/lib/supply-actions";
-import { Button, Field, FormError, FormSuccess, Input, Select, Table, Td, Th, Tr, Textarea } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, InfoButton, Input, Select, Table, Td, Th, Tr, Textarea } from "@/components/ui";
 import { money, fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { DELIVERY_KINDS, DELIVERY_OWN } from "@/lib/supply-const";
@@ -27,7 +27,12 @@ export function EditItemsPanel({ id, items }: { id: string; items: PanelItem[] }
   return (
     <form action={action} className="space-y-3">
       <Table>
-        <thead><tr><Th>Nomi</Th><Th>Birlik</Th><Th right>Kerak miqdor</Th><Th>Izoh</Th><Th></Th></tr></thead>
+        <thead><tr><Th>Nomi</Th><Th>Birlik</Th><Th right>
+          <span className="inline-flex items-center gap-1">
+            Kerak miqdor
+            <InfoButton title="Kerak miqdor">Miqdorni 0 qilsangiz — qator jadvaldan chiqadi.</InfoButton>
+          </span>
+        </Th><Th>Izoh</Th><Th></Th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <Tr key={r.id}>
@@ -47,7 +52,6 @@ export function EditItemsPanel({ id, items }: { id: string; items: PanelItem[] }
           ))}
         </tbody>
       </Table>
-      <p className="text-xs text-slate-500">Miqdorni 0 qilsangiz — qator jadvaldan chiqadi.</p>
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}
       <div className="flex justify-end"><Button disabled={pending} variant="secondary"><Save size={16} /> {pending ? "Saqlanmoqda…" : "Jadvalni saqlash"}</Button></div>
@@ -136,7 +140,7 @@ export function PricePanel({ id, items, suppliers, supplierId, delivery: deliver
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Yuborildi"} />}
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <span className="text-xs text-slate-500">Tasdiqlashga yuborilgach ma&apos;sul xodim ko&apos;radi</span>
+        <InfoButton title="Tasdiqlashga yuborish">Tasdiqlashga yuborilgach ma&apos;sul xodim ko&apos;radi</InfoButton>
         <Button disabled={pending || total <= 0}><Send size={16} /> {pending ? "Yuborilmoqda…" : "Narxlarni saqlab, tasdiqlashga yuborish"}</Button>
       </div>
     </form>
@@ -166,11 +170,18 @@ export function ReceivePanel({ id, items, suppliers, supplierId, delivery: deliv
 
   return (
     <form action={action} className="space-y-4">
-      <p className="text-sm text-slate-600">Kelgan molni tekshiring: <b>nima kam keldi</b> va <b>necha pulga keldi</b>. Qator noto&apos;g&apos;ri bo&apos;lsa shu yerda tuzating — «Qabul qildim» bosilganda sklad kirimi shu fakt bo&apos;yicha yoziladi.</p>
       <Table>
         <thead>
           <tr>
-            <Th>Nomi</Th><Th right>Buyurtma</Th><Th right>Kelgan miqdor</Th><Th right>Reja narx</Th><Th right>Kelgan narx</Th><Th right>Summa</Th><Th>Farq</Th>
+            <Th>
+              <span className="inline-flex items-center gap-1">
+                Nomi
+                <InfoButton title="Kelgan molni tekshirish">
+                  <p>Kelgan molni tekshiring: <b>nima kam keldi</b> va <b>necha pulga keldi</b>.</p>
+                  <p>Qator noto&apos;g&apos;ri bo&apos;lsa shu yerda tuzating — «Qabul qildim» bosilganda sklad kirimi shu fakt bo&apos;yicha yoziladi.</p>
+                </InfoButton>
+              </span>
+            </Th><Th right>Buyurtma</Th><Th right>Kelgan miqdor</Th><Th right>Reja narx</Th><Th right>Kelgan narx</Th><Th right>Summa</Th><Th>Farq</Th>
           </tr>
         </thead>
         <tbody>

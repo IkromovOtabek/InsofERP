@@ -47,7 +47,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     <div>
       <PageHeader
         title="Sayt arizalari"
-        subtitle="Saytdagi formadan tushgan so'rovlar. Bog'lanib, kerak bo'lsa mijozga aylantiriladi — mijozlar bazasi keraksiz raqamlar bilan to'lib ketmaydi."
+        info="Saytdagi formadan tushgan so'rovlar. Bog'lanib, kerak bo'lsa mijozga aylantiriladi — mijozlar bazasi keraksiz raqamlar bilan to'lib ketmaydi."
       />
 
       <Tabs current={tab} className="mb-6" items={[
