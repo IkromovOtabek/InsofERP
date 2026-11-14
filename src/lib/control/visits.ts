@@ -27,8 +27,13 @@ export function visitFilter(q: { kun?: string; u?: string; qurilma?: string; tur
   };
 }
 
+/**
+ * Jurnalda menyu bandi nomi emas, bo'lim nomi kerak bo'lgan yo'llar: `/stock` — menyuda «Umumiy eski sklad», lekin
+ * kategoriya bandlari (`/stock?kat=…`) ham shu yo'l, so'rov satri jurnalga yozilmaydi — hammasi «Sklad».
+ */
+const SECTION_NAME: Record<string, string> = { "/stock": "Sklad" };
 /** Yo'l → ERP bo'limi nomi (menyudagi eng uzun mos band, ichki bandlar bilan). Topilmasa — yo'lning o'zi. */
-const SECTIONS = NAV.flatMap((i) => [{ href: i.href, label: i.label }, ...(i.children ?? []).map((c) => ({ href: c.href, label: `${i.label} → ${c.label}` }))])
+const SECTIONS = NAV.flatMap((i) => [{ href: i.href, label: SECTION_NAME[i.href] ?? i.label }, ...(i.children ?? []).map((c) => ({ href: c.href, label: `${i.label} → ${c.label}` }))])
   .sort((a, b) => b.href.length - a.href.length);
 const EXTRA: Record<string, string> = { "/hisobim": "Mening hisobim", "/qollanma": "Qo'llanma" };
 export function sectionLabel(path: string): string {

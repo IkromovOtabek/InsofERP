@@ -344,7 +344,9 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
   }, [open]);
-  const pageLabel = currentLabel(path, items);
+  // So'rovli bandlar (`/stock?kat=avto`) — menyudagi faollik kabi avval so'rov satri bilan
+  const search = useSearchParams().toString();
+  const pageLabel = (search && currentLabel(`${path}?${search}`, items)) || currentLabel(path, items);
   // Holat — saqlangan tanlov (layout.tsx skripti uni sahifa chizilishidan oldin <html> ga qo'ygan); keng jadvalli
   // sahifalarda (kunlik «Realizatsiya zayavkasi») menyu o'zi yig'iladi, chiqilganda saqlangan holatga qaytadi
   useEffect(() => {
