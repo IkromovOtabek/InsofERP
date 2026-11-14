@@ -82,7 +82,7 @@ const leg = await db.cashTransaction.findFirstOrThrow({ where: { type: "TRANSFER
 r = await buh.action("cashflow/actions#updateCashTx", [leg.id, undefined, fd({ date: d1, cashAccountId: K, amount: "1", category: "Pitaniya", sig: cashEntrySig(leg) })], "/payments");
 check("C15 perekit oyog'i tahrirlanmaydi", /O'tkazma/.test(r.result?.error ?? ""), r.result);
 const page = await buh.get("/payments?tab=kassa");
-check("C16 Kassa jurnali: qator bosiladi (tafsilot oynasi)", page.status === 200 && page.text.includes("Qatorni bosing") && page.text.includes("aria-haspopup"), page.status);
+check("C16 Kassa jurnali: qator bosiladi (tafsilot oynasi)", page.status === 200 && page.text.includes("Batafsil — bosing") && page.text.includes("aria-haspopup"), page.status);
 
 // ───────── Har qatorni to'liq tahrirlash: kirim ⇄ chiqim, mijoz to'lovi, perekit, realizatsiya qatori ─────────
 const { paymentSig } = await import("../../src/lib/payments");

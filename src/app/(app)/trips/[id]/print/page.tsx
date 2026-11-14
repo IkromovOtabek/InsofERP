@@ -113,14 +113,15 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
       {/* Beton qaysi BRU (beton qorishma uzeli) dan olingani — reys ochilganda tanlanadi */}
       {(concrete || t.bru) && <div style={at(L.bru)}>BRU: <b>{t.bru ?? "—"}</b></div>}
       <div style={at(L.label, { fontSize: "8.5px", textAlign: "right" })}><b>{label}</b><br /><span className={GRAY}>Tekshirish uchun<br />skanerlang</span></div>
-      <div className="bg-white [&>svg]:block [&>svg]:h-full [&>svg]:w-full" style={at(L.qr)} dangerouslySetInnerHTML={{ __html: qr }} />
+      {/* Havola matni varaqda yo'q (foydalanuvchi so'rovi) — faqat QR ichida; aria-label ekran o'quvchi uchun */}
+      <div role="img" aria-label={`Tekshirish havolasi: ${verifyUrl}`} className="bg-white [&>svg]:block [&>svg]:h-full [&>svg]:w-full" style={at(L.qr)} dangerouslySetInnerHTML={{ __html: qr }} />
       <div className="bg-black" style={at(L.sepLine)} />
 
       <Party pos={L.sender} title="Yuk jo'natuvchi" name={company.legalName ?? company.name}
         sub={[`Olgan joyi: ${t.pickupAddress ?? company.address ?? "—"}`, [company.inn && `INN ${company.inn}`, company.phone].filter(Boolean).join(" · ")]} />
       <Party pos={L.receiver} title="Yuk oluvchi" name={<>{customer.name}{customer.inn && <span className="font-normal"> (INN {customer.inn})</span>}</>}
         sub={[[t.order.deliveryAddress, customer.phone].filter(Boolean).join(" · ") || "—"]} />
-      <Party pos={L.transport} title="Transport / haydovchi" name={<>{t.vehicle.plate}{t.vehicle.external && <span className="font-normal"> (ko&apos;chadan)</span>}</>}
+      <Party pos={L.transport} title="Transport / haydovchi" name={<>{t.vehicle.plate}{t.vehicle.external && <span className="font-normal"> (ko&apos;chadan chaqirilgan)</span>}</>}
         sub={[[t.driver.fullName, t.vehicle.external && t.driver.phone].filter(Boolean).join(" · ")]} />
 
       <table className="border-collapse" style={at(L.items)}>
