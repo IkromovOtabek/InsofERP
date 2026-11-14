@@ -1,15 +1,71 @@
+import type { CSSProperties, ReactNode } from "react";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
 import { db } from "@/lib/db";
 import { qty, date, dateTime, money } from "@/lib/format";
 import { tripLine } from "@/lib/trips";
-import { DRUM_MAX_MIN } from "@/lib/logistics";
 import { PrintButton } from "@/components/print-button";
 import { BackLink } from "@/components/ui";
 import { getCompany } from "@/lib/company";
 import { publicOrigin } from "@/lib/public-url";
 import { unitLabel } from "@/lib/unit";
 import { requirePage } from "@/lib/page-guard";
+
+/**
+ * Nakladnoy maketi — 4-shablon «Beton nazorati». Joylashuvni foydalanuvchi shablon muharririda o'zi
+ * tuzgan (2026-11-14). Hamma o'lcham mm da, bitta nusxa 194 × 134 mm
+ * (A4 ning yarmi, @page chetlari 8 mm). Elementni surish — shu yerdagi x/y ni o'zgartirish.
+ */
+type Pos = { x: number; y: number; w: number; h?: number };
+const L = {
+  topLine: { x: 0, y: 0, w: 194, h: 0.8 },
+  title: { x: 0, y: 1.6, w: 125 },
+  meta: { x: 0, y: 8.6, w: 135 },
+  bru: { x: 0, y: 13.2, w: 135 },
+  label: { x: 138, y: 6, w: 33 },
+  qr: { x: 174, y: 1.6, w: 20, h: 20 },
+  sepLine: { x: 0, y: 23.2, w: 194, h: 0.26 },
+  sender: { x: 0, y: 24.6, w: 62 },
+  receiver: { x: 66, y: 24.6, w: 62 },
+  transport: { x: 132, y: 24.6, w: 62 },
+  items: { x: 0, y: 43.5, w: 194 },
+  times: { x: 0, y: 66.4, h: 10.4 },
+  signs: [89.2, 105.1, 117.5].map((y) => ({ x: 0, y, w: 102 })),
+  // Muhr o'rni — faqat punktir doira, yozuvsiz (odatiy muhr 40 mm)
+  stamp: { x: 129, y: 86.1, w: 42, h: 42 },
+};
+// Vaqt nazorati kataklari, mm (oxirgisi — «Suv qo'shildi», kengroq)
+const TIME_W = [36, 36, 36, 36, 50];
+
+const at = (p: Pos, extra?: CSSProperties): CSSProperties => ({
+  position: "absolute", left: `${p.x}mm`, top: `${p.y}mm`, width: `${p.w}mm`, ...(p.h != null ? { height: `${p.h}mm` } : {}), ...extra,
+});
+const GRAY = "text-[#555]";
+const CAPS = "text-[0.714em] font-bold uppercase tracking-[.06em] text-[#555]";
+const CELL = "border border-black px-[1.6mm] py-[0.6mm]";
+const BOX = "inline-block h-[3mm] w-[3mm] border border-black align-[-0.4mm]";
+
+function Party({ pos, title, name, sub }: { pos: Pos; title: string; name: ReactNode; sub: ReactNode[] }) {
+  return (
+    <div style={at(pos)}>
+      <div className={CAPS}>{title}</div>
+      <b>{name}</b>
+      {sub.filter(Boolean).map((s, i) => <div key={i} className={`${GRAY} text-[0.857em]`}>{s}</div>)}
+    </div>
+  );
+}
+
+function SignRow({ pos, title, name }: { pos: Pos; title: string; name?: string | null }) {
+  const line = "relative h-[7mm] border-b border-black";
+  const cap = `absolute -bottom-[3.6mm] left-0 text-[0.714em] ${GRAY}`;
+  return (
+    <div style={at(pos, { display: "grid", gridTemplateColumns: "31% 1fr 27%", columnGap: "3mm", alignItems: "end", paddingBottom: "3.6mm" })}>
+      <div className="pb-[0.5mm] font-semibold">{title}</div>
+      <div className={line}>{name && <span className="absolute bottom-[0.4mm] left-0">{name}</span>}<span className={cap}>F.I.O.</span></div>
+      <div className={line}><span className={cap}>Imzo</span></div>
+    </div>
+  );
+}
 
 /** Chop etish uchun nakladnoy: bitta A4 varaqda 2 nusxa (zavod va yuk oluvchi), o'rtada qirqish chizig'i. Brauzerda Ctrl+P → PDF. */
 export default async function PrintPage({ params }: { params: Promise<{ id: string }> }) {
@@ -35,85 +91,93 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
 
   const no = t.ttn ?? t.deliveryNoteNo;
   const concrete = item?.product.unit === "m3";
-  const cell = "border border-black px-1.5 py-0.5";
+  const customer = t.order.customer;
+  // Quyish va suv — faqat beton uchun; dona mahsulotda (ustun, blok) faqat chiqish/yetish vaqti
+  const times = [
+    { title: "Zavoddan chiqdi" },
+    { title: "Obyektga yetdi" },
+    ...(concrete ? [{ title: "Quyish boshlandi" }, { title: "Quyish tugadi" }, { title: "Suv qo'shildi", water: true }] : []),
+  ];
+  const timeCols = TIME_W.slice(0, times.length);
 
-  // Bitta nusxa — A4 ning yarmi (print'da qat'iy balandlik: ikkinchisi doim pastki yarimda, qirqish chizig'i o'rtada)
+  // Bitta nusxa — A4 ning yarmi, qat'iy 194 × 134 mm: ikkinchisi doim pastki yarimda, qirqish chizig'i o'rtada
   const copy = (label: string) => (
-    <section className="flex flex-col print:h-[134mm] print:overflow-hidden">
-      <div className="flex items-start justify-between gap-4 border-b-2 border-black pb-2">
-        <div className="min-w-0">
-          <div className="text-[15px] leading-tight font-bold">TOVAR-TRANSPORT NAKLADNOYI № {no}</div>
-          <div className="mt-1 grid grid-cols-2 gap-x-6">
-            <div>Sana: <b>{date(t.loadedAt ?? t.createdAt)}</b></div>
-            <div>Yuklash vaqti: <b>{t.loadedAt ? dateTime(t.loadedAt) : "—"}</b></div>
-            {concrete && <div>Zames №: <b>{batch?.batchNo ?? "—"}</b></div>}
-            {/* Beton qaysi BRU (beton qorishma uzeli) dan olingani — reys ochilganda tanlanadi */}
-            {(concrete || t.bru) && <div>BRU: <b>{t.bru ?? "—"}</b></div>}
-            {t.ttn && <div>Tizim №: {t.deliveryNoteNo}</div>}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-start gap-2">
-          <div className="text-right text-[10px] leading-tight text-slate-600">
-            <div className="font-semibold text-black">{label}</div>
-            <div className="mt-1">Tekshirish uchun<br />skanerlang</div>
-          </div>
-          <div className="bg-white" dangerouslySetInnerHTML={{ __html: qr }} />
-        </div>
+    <section className="relative overflow-hidden" style={{ width: "194mm", height: "134mm", fontSize: "10.5px", lineHeight: 1.32 }}>
+      <div className="bg-black" style={at(L.topLine)} />
+      <div style={at(L.title, { fontSize: "14.5px", fontWeight: 800 })}>TOVAR-TRANSPORT NAKLADNOYI <span style={{ fontSize: "1.17em" }}>№ {no}</span></div>
+      <div style={at(L.meta)}>
+        Sana <b>{date(t.loadedAt ?? t.createdAt)}</b> · Yuklash vaqti <b>{t.loadedAt ? dateTime(t.loadedAt) : "—"}</b>
+        {concrete && <> · Zames № <b>{batch?.batchNo ?? "—"}</b></>}
+        {t.ttn && <> · Tizim № {t.deliveryNoteNo}</>}
       </div>
+      {/* Beton qaysi BRU (beton qorishma uzeli) dan olingani — reys ochilganda tanlanadi */}
+      {(concrete || t.bru) && <div style={at(L.bru)}>BRU: <b>{t.bru ?? "—"}</b></div>}
+      <div style={at(L.label, { fontSize: "8.5px", textAlign: "right" })}><b>{label}</b><br /><span className={GRAY}>Tekshirish uchun<br />skanerlang</span></div>
+      <div className="bg-white [&>svg]:block [&>svg]:h-full [&>svg]:w-full" style={at(L.qr)} dangerouslySetInnerHTML={{ __html: qr }} />
+      <div className="bg-black" style={at(L.sepLine)} />
 
-      <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-0.5">
-        <div><span className="text-slate-600">Yuk jo&apos;natuvchi:</span> <b>{company.legalName ?? company.name}</b>{company.inn && ` (INN ${company.inn})`}{company.phone && ` · ${company.phone}`}</div>
-        <div><span className="text-slate-600">Yuk oluvchi:</span> <b>{t.order.customer.name}</b>{t.order.customer.inn && ` (INN ${t.order.customer.inn})`}</div>
-        <div><span className="text-slate-600">Yukni olgani joyi:</span> {t.pickupAddress ?? company.address ?? "—"}</div>
-        <div><span className="text-slate-600">Yetkazish manzili:</span> {t.order.deliveryAddress}</div>
-        <div><span className="text-slate-600">Transport:</span> {t.vehicle.plate}{t.vehicle.external && " (ko'chadan chaqirilgan)"}</div>
-        <div><span className="text-slate-600">Haydovchi:</span> {t.driver.fullName}{t.vehicle.external && t.driver.phone && ` · ${t.driver.phone}`}</div>
-        <div><span className="text-slate-600">Mijoz tel:</span> {t.order.customer.phone ?? "—"}</div>
-      </div>
+      <Party pos={L.sender} title="Yuk jo'natuvchi" name={company.legalName ?? company.name}
+        sub={[`Olgan joyi: ${t.pickupAddress ?? company.address ?? "—"}`, [company.inn && `INN ${company.inn}`, company.phone].filter(Boolean).join(" · ")]} />
+      <Party pos={L.receiver} title="Yuk oluvchi" name={<>{customer.name}{customer.inn && <span className="font-normal"> (INN {customer.inn})</span>}</>}
+        sub={[[t.order.deliveryAddress, customer.phone].filter(Boolean).join(" · ") || "—"]} />
+      <Party pos={L.transport} title="Transport / haydovchi" name={<>{t.vehicle.plate}{t.vehicle.external && <span className="font-normal"> (ko&apos;chadan)</span>}</>}
+        sub={[[t.driver.fullName, t.vehicle.external && t.driver.phone].filter(Boolean).join(" · ")]} />
 
-      <table className="mt-2 w-full border-collapse border border-black">
-        <thead><tr className="bg-slate-100">
-          <th className={`${cell} text-left`}>№</th>
-          <th className={`${cell} text-left`}>Mahsulot</th>
-          <th className={`${cell} text-left`}>Klass</th>
-          <th className={`${cell} text-right`}>Miqdor, {unitLabel(item?.product.unit ?? "m3")}</th>
-          <th className={`${cell} text-right`}>Narx</th>
-          <th className={`${cell} text-right`}>Summa</th>
+      <table className="border-collapse" style={at(L.items)}>
+        <thead><tr className="bg-[#eee]">
+          <th className={`${CELL} text-left`}>№</th>
+          <th className={`${CELL} text-left`}>Mahsulot</th>
+          <th className={`${CELL} text-left`}>Klass</th>
+          <th className={`${CELL} text-right`}>Miqdor, {unitLabel(item?.product.unit ?? "m3")}</th>
+          <th className={`${CELL} text-right`}>Narx</th>
+          <th className={`${CELL} text-right`}>Summa</th>
         </tr></thead>
         <tbody><tr>
-          <td className={cell}>1</td>
-          <td className={cell}>{item?.product.name}</td>
-          <td className={cell}>{item?.product.strengthClass ?? "—"}</td>
-          <td className={`${cell} text-right`}>{qty(t.qtyM3)}</td>
-          <td className={`${cell} text-right`}>{item ? money(item.price) : "—"}</td>
-          <td className={`${cell} text-right font-semibold`}>{money(sum)}</td>
+          <td className={CELL}>1</td>
+          <td className={CELL}>{item?.product.name}</td>
+          <td className={CELL}>{item?.product.strengthClass ?? "—"}</td>
+          <td className={`${CELL} text-right`}>{qty(t.qtyM3)}</td>
+          <td className={`${CELL} text-right`}>{item ? money(item.price) : "—"}</td>
+          <td className={`${CELL} text-right font-bold`}>{money(sum)}</td>
         </tr></tbody>
       </table>
 
-      <div className="mt-5 grid grid-cols-3 gap-6">
-        {["Yukladi (zavod)", "Haydovchi", "Qabul qildi (obyekt)"].map((l) => (
-          <div key={l}><div className="text-slate-600">{l}</div><div className="mt-6 border-t border-black pt-0.5 text-[10px]">F.I.O. / imzo{l.includes("Qabul") && t.receiverName ? `: ${t.receiverName}` : ""}</div></div>
+      {/* Vaqt nazorati — qo'lda yoziladi (beton 90 daqiqa qoidasi bo'yicha da'volarda dalil) */}
+      <div className="grid border border-black" style={at({ ...L.times, w: timeCols.reduce((a, b) => a + b, 0) }, { gridTemplateColumns: timeCols.map((w) => `${w}fr`).join(" ") })}>
+        {times.map((c, i) => (
+          <div key={c.title} className={`px-[1.6mm] py-[0.8mm] ${i ? "border-l border-black" : ""}`}>
+            <div className={CAPS}>{c.title}</div>
+            {"water" in c
+              ? <div className="mt-[1.4mm] text-[0.9em] whitespace-nowrap"><span className={BOX} /> yo&apos;q <span className={`${BOX} ml-[1mm]`} /> ha ____ l</div>
+              : <div className="mt-[1.4mm] text-[1.05em] tracking-[.04em] whitespace-nowrap">____ : ____</div>}
+          </div>
         ))}
       </div>
-      <div className="mt-auto pt-2 text-[9px] text-slate-500">{concrete ? `Beton yuklangan vaqtdan boshlab ${DRUM_MAX_MIN} daqiqa ichida quyilishi shart (yuklash vaqti yuqorida). ` : ""}Da&apos;volar qabul qilish paytida bildiriladi. {verifyUrl.replace(/^https?:\/\//, "")}</div>
+
+      <SignRow pos={L.signs[0]} title="Yukladi (zavod)" />
+      <SignRow pos={L.signs[1]} title="Haydovchi" />
+      <SignRow pos={L.signs[2]} title="Qabul qildi (obyekt)" name={t.receiverName} />
+      <div className="rounded-full border-[1.2px] border-dashed border-[#8a8a8a]" style={at(L.stamp)} />
     </section>
   );
 
   return (
-    <div className="paper mx-auto max-w-[210mm] rounded-sm bg-white p-8 text-[11.5px] leading-snug text-black print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-      <style>{`@media print { @page { size: A4 portrait; margin: 8mm } aside, nav, header { display: none } body { background: #fff } }`}</style>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <BackLink href={`/trips/${id}`} label="Reys" />
-        <PrintButton />
-      </div>
-      {!fromEnv && (
-        <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 print:hidden">
-          QR havolasi <b>{origin}</b> ga ishora qiladi — telefon bu manzilni ocha olmasligi mumkin. <code>.env</code> da <code>APP_URL</code> ni serverning tashqi manzili (masalan, <code>http://192.168.1.10:3000</code> yoki domen) qilib bering.
+    <div className="overflow-x-auto print:overflow-visible">
+      <div className="paper mx-auto w-[210mm] rounded-sm bg-white p-[8mm] text-black [print-color-adjust:exact] print:w-auto print:rounded-none print:p-0 print:shadow-none">
+        <style>{`@media print { @page { size: A4 portrait; margin: 8mm } aside, nav, header { display: none } body { background: #fff } }`}</style>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-[11.5px] print:hidden">
+          <BackLink href={`/trips/${id}`} label="Reys" />
+          <PrintButton />
         </div>
-      )}
-      {copy("Zavod nusxasi")}
-      <div className="my-3 flex items-center gap-2 text-[10px] text-slate-400 print:my-0 print:h-[5mm]"><span className="flex-1 border-t border-dashed border-slate-400" />qirqish chizig&apos;i<span className="flex-1 border-t border-dashed border-slate-400" /></div>
-      {copy("Yuk oluvchi nusxasi")}
+        {!fromEnv && (
+          <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 print:hidden">
+            QR havolasi <b>{origin}</b> ga ishora qiladi — telefon bu manzilni ocha olmasligi mumkin. <code>.env</code> da <code>APP_URL</code> ni serverning tashqi manzili (masalan, <code>http://192.168.1.10:3000</code> yoki domen) qilib bering.
+          </div>
+        )}
+        {copy("Zavod nusxasi")}
+        <div className="flex h-[5mm] items-center"><span className="flex-1 border-t border-dashed border-slate-400" /></div>
+        {copy("Yuk oluvchi nusxasi")}
+      </div>
     </div>
   );
 }
