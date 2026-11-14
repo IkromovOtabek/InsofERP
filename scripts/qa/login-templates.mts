@@ -173,6 +173,7 @@ check("6.3 berilgan oyna ochiladi (Kirim: /stock/prixod, /receipts)", g.kirim.st
 check("6.4 berilmagan oynalar yopiq (Sklad, Chiqim, Jo'natmalar)", denied(g.sklad) && denied(g.chiqim) && denied(g.jonatma), [g.sklad.location, g.chiqim.location, g.jonatma.location]);
 check("6.5 yopiq modul rol sahifasida ham yopiq (Ta'minot)", denied(g.taminot), [g.taminot.status, g.taminot.location]);
 const menu = navFor("PRODUCTION", p6).map((i) => i.href);
-check("6.6 menyuda faqat berilgan oyna (Kirim bor; Sklad, Ta'minot yo'q)", menu.includes("/receipts") && !menu.includes("/stock") && !menu.includes("/taminot"), menu);
+// «Kirim» menyuda hech kimga band emas (Sklad sahifasidagi tugma orqali) — berilmagan oynalar ham chiqmaydi
+check("6.6 menyuda berilmagan oyna yo'q (Sklad, Ta'minot), Kirim menyu bandi emas", !menu.includes("/receipts") && !menu.includes("/stock") && !menu.includes("/taminot"), menu);
 
 summary("login-templates:");

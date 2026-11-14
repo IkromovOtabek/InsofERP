@@ -10,7 +10,7 @@ import { NAV } from "@/lib/nav";
 /* Menyu (sidebar) sahifalari — bo'limning boshi, ularda «Ortga» chiqmaydi; faqat ichkariga kirilganda chiqadi.
  * `?tab=` li bandlar yo'l bo'yicha olinadi; qobiqdagi «Mening hisobim» va «Yordam» ham menyu havolasi. */
 const MENU_PATHS = new Set([
-  ...NAV.filter((n) => !n.hidden && !n.menuUnless).flatMap((n) => [n.href, ...(n.children ?? []).map((c) => c.href)]).map((h) => h.split("?")[0]),
+  ...NAV.filter((n) => !n.hidden).flatMap((n) => [n.href, ...(n.children ?? []).map((c) => c.href)]).map((h) => h.split("?")[0]),
   "/hisobim", "/qollanma",
 ]);
 
