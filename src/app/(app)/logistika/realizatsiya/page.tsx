@@ -102,13 +102,13 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
           <SheetTh tone="green">Xaridor</SheetTh><SheetTh tone="green">Mahsulot</SheetTh><SheetTh tone="green" title="TTN №">TTN</SheetTh>
           <SheetTh tone="green" title="Mashina (raqami)">Mashina</SheetTh><SheetTh tone="green" title="O'lchov birligi">Birlik</SheetTh><SheetTh tone="green" right>Miqdor</SheetTh>
           <SheetTh tone="green" right title="Narx (QQSsiz)">Narx</SheetTh><SheetTh tone="yellow" right title="Dostavka (so'm)">Dost.</SheetTh><SheetTh tone="green" right title="Summa (QQSsiz)">Summa</SheetTh>
-          <SheetTh tone="green" right title="QQS 12%">QQS</SheetTh><SheetTh tone="green">Guruh</SheetTh><SheetTh tone="green" title="Ortilgan joy (BSU / Sklad)">Ortilgan</SheetTh>
+          <SheetTh tone="green" right title="QQS 12%">QQS</SheetTh><SheetTh tone="green" right title="Jami (QQS bilan)">Jami</SheetTh><SheetTh tone="green">Guruh</SheetTh><SheetTh tone="green" title="Ortilgan joy (BSU / Sklad)">Ortilgan</SheetTh>
           <SheetTh tone="green" title="Boradigan manzil">Manzil</SheetTh><SheetTh tone="green" title="Izoh (TTN, mashina, telefon)">Izoh</SheetTh><SheetTh tone="green" title="Xaridor (spravka nomi)">Spravka</SheetTh>
           {(canAuto || canManual) && <SheetTh tone="green"><span className="sr-only">Amal</span></SheetTh>}
         </tr>
       </SheetHead>
       <tbody>
-        {rows.length === 0 && <SheetTr><SheetTd colSpan={19} center muted className="py-8">Bu davrda jo&apos;natma yo&apos;q</SheetTd></SheetTr>}
+        {rows.length === 0 && <SheetTr><SheetTd colSpan={20} center muted className="py-8">Bu davrda jo&apos;natma yo&apos;q</SheetTd></SheetTr>}
         {rows.map((r) => {
           const auto = r.source === "AUTO";
           // Reysdan qatorda to'ldirilmagan maydon — taklif, kulrang
@@ -161,6 +161,7 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
               <SheetTd right tone="yellow">{edit("delivery", "Dostavka", r.delivery ? String(r.delivery) : "", n0(r.delivery), { kind: "number", right: true })}</SheetTd>
               <SheetTd right>{n0(r.net)}</SheetTd>
               <SheetTd right muted={!r.vat}>{r.vat ? n0(r.vat) : "—"}</SheetTd>
+              <SheetTd right strong>{n0(r.total)}</SheetTd>
               <SheetTd>{edit("groupName", "Guruh", r.group, clip(r.group, "max-w-24"), { list: "groups" })}</SheetTd>
               <SheetTd className={cn(hint("loadPlace"))}>{extra("loadPlace", "Ortilgan joy", clip(r.loadPlace, "max-w-20"), "loadPlaces")}</SheetTd>
               <SheetTd className={cn(hint("destination"))}>{extra("destination", "Boradigan manzil", clip(r.destination, "max-w-32"), "destinations")}</SheetTd>
@@ -197,6 +198,7 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
             <SheetTd right>{fmtNum(sum((r) => r.delivery), 0)}</SheetTd>
             <SheetTd right>{fmtNum(sum((r) => r.net), 0)}</SheetTd>
             <SheetTd right>{fmtNum(sum((r) => r.vat), 0)}</SheetTd>
+            <SheetTd right>{fmtNum(sum((r) => r.total), 0)}</SheetTd>
             <SheetTd colSpan={canAuto || canManual ? 6 : 5} />
           </tr>
         </SheetFoot>

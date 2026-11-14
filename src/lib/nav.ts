@@ -10,9 +10,11 @@ export type NavChild = { href: string; label: string };
  * ochadi (`components/section-tabs.tsx`). Ruxsat (`roles`) o'zgarmaydi.
  * `menuHide` — shu rollarning veb menyusida ko'rinmaydi, lekin ruxsat qoladi: boshqa sahifadagi havolalar,
  * Insof ECO ilovasi va amal huquqlari (`canDo`) o'zgarmaydi. Direktor modulni ruxsat bilan bergan bo'lsa — menyuda chiqadi.
+ * `menuUnless` — menyuda faqat shu yo'l bandi (masalan `/stock`) ko'rinmaganda chiqadi: sahifa o'sha bo'limning tugmasi orqali
+ * ochiladi, bandi esa faqat o'sha bo'lim berilmagan xodimga (tugma rejimida faqat shu oyna) qoladi.
  * Kabinet menyusida faqat o'z bo'limining ishi tursin: boshqa bo'lim sahifasi rolga ilova yoki havola uchun berilgan bo'lsa — shu yerga.
  */
-export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[]; hidden?: boolean; menuFor?: Role[]; menuHide?: Role[] };
+export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[]; hidden?: boolean; menuFor?: Role[]; menuHide?: Role[]; menuUnless?: string };
 
 const BI_ROLES: Role[] = ["DIRECTOR", "FINANCE", "ACCOUNTING"];
 /**
@@ -139,7 +141,8 @@ export const NAV: NavItem[] = [
   { href: "/taminot",     label: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"], group: "Sklad", menuFor: ["PROCUREMENT", "PRODUCTION", "MECHANIC", "DIRECTOR"] },
   // Hujjatning o'zi zanjirdagi hamma bo'limga ochiq (Zayavkalar va Kirim-Chiqimdagi "To'liq hujjat" havolasi)
   { href: "/taminot/",    label: "Ta'minot hujjati",     roles: ["SALES", "WAREHOUSE", "PROCUREMENT", "PRODUCTION", "FINANCE", "ACCOUNTING", "CASHIER", "MECHANIC"], group: "Sklad", hidden: true },
-  { href: "/receipts",    label: "Kirim",              roles: ["WAREHOUSE", "PROCUREMENT", "SALES"], group: "Sklad" }, // SALES — faqat ko'radi (kim, nima, qancha kiritgan)
+  // Kirim hujjatlari — Sklad sahifasidagi «Kirim» tugmasi orqali (/stock/prixod → hujjat); menyuda alohida band yo'q
+  { href: "/receipts",    label: "Kirim",              roles: ["WAREHOUSE", "PROCUREMENT", "SALES"], group: "Sklad", menuUnless: "/stock" }, // SALES — faqat ko'radi (kim, nima, qancha kiritgan)
   { href: "/suppliers",   label: "Yetkazuvchilar",     roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], group: "Sklad" },
   // Schyotlar menyudan olib tashlandi — sahifa va eski schyotlar joyida (to'lovlar shularga bog'langan)
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
@@ -309,7 +312,8 @@ export function navFor(role: Role, perms?: Perms) {
     const l = m && perms?.[m];
     return pathOff(href, m) || (!!l && (l === "none" || !windowOpen(m, href, l)));
   };
-  const open = items.map((i) => (i.children?.some((c) => off(c.href)) ? { ...i, children: i.children.filter((c) => !off(c.href)) } : i));
+  const shown = items.filter((i) => !i.menuUnless || !items.some((x) => x.href.split("?")[0] === i.menuUnless));
+  const open = shown.map((i) => (i.children?.some((c) => off(c.href)) ? { ...i, children: i.children.filter((c) => !off(c.href)) } : i));
   return OWN_PAGE_ONLY[role] ? open.filter((i) => i.roles !== "all") : open;
 }
 
