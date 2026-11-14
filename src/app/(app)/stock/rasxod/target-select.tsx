@@ -9,9 +9,10 @@ import { NEW_RECIPIENT, brigadeLabel, type TargetGroups } from "@/lib/issue-targ
  * Chiqimdagi «Kimga» — tartib: 1) bizning brigadalar (brigadir ismi bilan, "b:<id>"), 2) barcha xodimlar ("e:<id>"),
  * 3) tizimda yo'q nomlar — oluvchilar ("r:<id>"), 4) eng pastda «Qo'lda kiritish…» — yangi oluvchi oynasi ochiladi,
  * yozilgan nom darhol tanlanadi (brigada va xodim o'z bo'limlarida ochiladi).
+ * `vehiclesOnly` — chiqim formasida «Avto zapchast» kategoriyasi: ro'yxatda faqat o'z parkimiz transportlari ("v:<id>").
  */
-export function TargetSelect({ targets, value, onChange, invalid, canAdd = true, name = "to", required = true, emptyLabel = "— tanlang —" }: {
-  targets: TargetGroups; value: string; onChange: (v: string) => void; invalid?: boolean; canAdd?: boolean;
+export function TargetSelect({ targets, value, onChange, invalid, canAdd = true, name = "to", required = true, emptyLabel = "— tanlang —", vehiclesOnly = false }: {
+  targets: TargetGroups; value: string; onChange: (v: string) => void; invalid?: boolean; canAdd?: boolean; vehiclesOnly?: boolean;
   /** Kirim formasida: `autoIssueKey`, majburiy emas, bo'sh — «Skladga (chiqimsiz)» */
   name?: string; required?: boolean; emptyLabel?: string;
 }) {
@@ -21,6 +22,19 @@ export function TargetSelect({ targets, value, onChange, invalid, canAdd = true,
     if (v === NEW_RECIPIENT) { setOpen(true); return; } // tanlov o'zgarmaydi — oyna yopilsa avvalgi qiymat qoladi
     onChange(v);
   };
+  if (vehiclesOnly) {
+    const list = targets.vehicles ?? [];
+    return (
+      <Select name={name} value={value} onChange={(e) => onChange(e.target.value)} required={required} aria-invalid={invalid || undefined}>
+        <option value="">{list.length ? "— transportni tanlang —" : "Transport yo'q (Logistika → Transport)"}</option>
+        {list.length > 0 && (
+          <optgroup label="Transportlar">
+            {list.map((v) => <option key={v.id} value={`v:${v.id}`}>{v.label}</option>)}
+          </optgroup>
+        )}
+      </Select>
+    );
+  }
   return (
     <>
       <Select name={name} value={value} onChange={(e) => pick(e.target.value)} required={required} aria-invalid={invalid || undefined}>

@@ -6,9 +6,12 @@ import {
   LOGI_EXPENSE, LOGI_INCOME, LOGI_TRANSFER_IN, canLogiPay, canLogiWrite, cashLinkCandidates, driverMonthPays, logiAccounts, logiJournal, logiRequestsToPay, paySources,
 } from "@/lib/logistics-finance";
 import { driverEmployees } from "@/lib/logistics";
+import { stockIssueDrill } from "@/lib/stock-drill";
+import { pathAllowed } from "@/lib/nav";
 import { db } from "@/lib/db";
 import { date, dateTime, money, moneyShort } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { DRILL_LINK, DrillPanel } from "@/components/drill-panel";
 import { AvtoView } from "@/app/(app)/bi-tahlil/logistika/avto-view";
 import { DayRangeBar, MonthBar, monthTitle, parseDayRange, parseMonth } from "@/app/(app)/bi-tahlil/month-bar";
 import { CancelTx, LinkCashForm, MonthPayForm, TxForm, type SourceOpt } from "./forms";
@@ -26,6 +29,7 @@ const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSt
  *  · Umumiy — hamma muhim raqam bitta joyda: kirim, chiqim, foyda, kassa qoldig'i, pul harakati, to'lovlar, mashinalar (`umumiy.tsx`);
  *  · Foyda — dastavka haqi (avtomatik daromad) − tannarx (yoqilg'i, haydovchi haqi, ta'mir, boshqa), mashina va kun bo'yicha;
  *  · Kirim-chiqim — pul harakati: logistika hisobidan, zavod kassa/bankidan berilgani va o'tkazmalar (qayerdan bo'lmasin);
+ *    skladdan transportga berilgan zapchast ham shu yerda — summasi bosilsa (`?zap=<chiqim hujjati>`) zapchastlar va kirimi;
  *  · To'lovlar — tasdiqlangan logistika so'rovlari (naqd reys haqi, usta puli, ta'mir) va oylik reys haqi.
  */
 export default async function LogistikaMoliyaPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
@@ -87,10 +91,18 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
       write ? driverEmployees({ activeOnly: true }) : Promise.resolve([]),
     ]);
     const srcOpts: SourceOpt[] = sources.map((a) => ({ id: a.id, group: a.group, type: a.type, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }));
+    // Davr parametrlari saqlanadi: zapchast paneli ochilib-yopilganda jurnal o'sha davrda qoladi
+    const keep = { tab: "jurnal", davr: sp.davr, dan: sp.dan, gacha: sp.gacha, oy: sp.oy };
+    const jurnalHref = (extra: Record<string, string> = {}) =>
+      `${BASE}?${new URLSearchParams(Object.entries({ ...keep, ...extra }).filter((kv): kv is [string, string] => !!kv[1]))}`;
+    // Skladdan zapchast: faqat jurnaldagi hujjat ochiladi (ixtiyoriy chiqim id'si bilan sklad ma'lumoti ko'rinmasin)
+    const zapRef = sp.zap && j.rows.some((r) => r.stockRef === sp.zap) ? sp.zap : null;
+    const zap = zapRef ? await stockIssueDrill(zapRef, { receiptHref: pathAllowed("/receipts", s.role, s.perms) }) : null;
     return (
       <div>
         {header}
         {tabs}
+        {zap && <DrillPanel drill={zap} closeHref={jurnalHref()} />}
         <div className="mt-4">
           <DayRangeBar base={BASE} range={period} keep={{ tab: "jurnal" }} />
           <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -138,7 +150,11 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
                       <Td>{r.category}</Td>
                       <Td>{[r.vehicle, r.who].filter(Boolean).join(" · ") || "—"}</Td>
                       <Td right className="tabular text-emerald-700">{r.type === "INCOME" ? money(r.amount) : ""}</Td>
-                      <Td right className="tabular">{r.type === "EXPENSE" ? money(r.amount) : ""}</Td>
+                      <Td right className="tabular">
+                        {r.type !== "EXPENSE" ? "" : r.stockRef
+                          ? <Link href={jurnalHref({ zap: r.stockRef })} scroll={false} className={DRILL_LINK} title="Qaysi zapchastlar va ular skladga qachon, kimdan kirim bo'lgani">{money(r.amount)}</Link>
+                          : money(r.amount)}
+                      </Td>
                       <Td className="max-w-72 text-xs text-slate-500">{r.note ?? ""}</Td>
                       {write && <Td>{r.logiTxId && r.cancellable ? <CancelTx id={r.logiTxId} docNo={r.docNo} unlink={r.linked} /> : null}</Td>}
                     </Tr>

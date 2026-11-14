@@ -575,6 +575,7 @@ model Vehicle {
   entries      LogisticsEntry[]
   services     VehicleService[]
   requests     MechanicRequest[]
+  stockMoves   StockMove[]
 }
 
 /// Texnik xizmat jurnali (mexanik): moy almashtirish, ta'mir, shina, ko'rik — keyingi xizmat muddati bilan
@@ -932,6 +933,8 @@ model StockMove {
   recipientId String?
   /// ISSUE — xodimga berildi (Xodimlar ro'yxatidan: brigadir, ustoz, haydovchi…) — recipientId bilan birga emas
   employeeId  String?
+  /// ISSUE — transportga berildi (avto zapchast mashinaga): summasi Logistika moliyada chiqim (`LogisticsTx` refType "StockIssue")
+  vehicleId   String?
   qty         Decimal       @db.Decimal(18, 3)
   unitCost    Decimal?      @db.Decimal(18, 2) // kirimda — tannarx hisobi uchun
   refType     String? // "GoodsReceipt" | "ProductionBatch" | "Trip"
@@ -949,10 +952,12 @@ model StockMove {
   ownerBrigade Brigade?     @relation("ProductOwnerBrigade", fields: [ownerBrigadeId], references: [id])
   recipient StockRecipient? @relation(fields: [recipientId], references: [id])
   employee  Employee?       @relation("MoveEmployee", fields: [employeeId], references: [id])
+  vehicle   Vehicle?        @relation(fields: [vehicleId], references: [id])
   createdBy User            @relation("MoveCreatedBy", fields: [createdById], references: [id])
   opening   OpeningBalance?
 
   @@index([employeeId, date])
+  @@index([vehicleId, date])
   @@index([warehouseId, materialId, date])
   @@index([warehouseId, productId, date])
   @@index([ownerBrigadeId, productId])

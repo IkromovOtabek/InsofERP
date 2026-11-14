@@ -10,6 +10,7 @@ import { Callout, Card, PageHeader } from "@/components/ui";
 import { HoldingsPanel } from "@/components/holdings-panel";
 import { holdingsOverview } from "@/lib/holdings";
 import type { TargetGroups } from "@/lib/issue-target";
+import { categoriesFor, categoryFromSlug } from "@/lib/material-category";
 import { RasxodForm, type RasxodInitial } from "../rasxod-form";
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -23,7 +24,7 @@ async function loadCopy(ref: string, materialIds: Set<string>, all: TargetGroups
   const [moves, stornoed] = await Promise.all([
     db.stockMove.findMany({
       where: { refType: "Issue", refId: ref }, orderBy: { createdAt: "asc" },
-      select: { date: true, warehouseId: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true, qty: true, note: true, brigade: { select: { name: true } }, material: { select: { name: true } } },
+      select: { date: true, warehouseId: true, materialId: true, recipientId: true, employeeId: true, vehicleId: true, brigadeId: true, qty: true, note: true, brigade: { select: { name: true } }, material: { select: { name: true } } },
     }),
     db.stockMove.count({ where: { refType: ISSUE_STORNO, refId: ref } }),
   ]);
@@ -31,10 +32,10 @@ async function loadCopy(ref: string, materialIds: Set<string>, all: TargetGroups
   if (!first) return null;
   const sum = new Map<string, number>();
   for (const m of moves) if (m.materialId) sum.set(m.materialId, r3((sum.get(m.materialId) ?? 0) - Number(m.qty)));
-  const key = first.brigadeId ? `b:${first.brigadeId}` : first.employeeId ? `e:${first.employeeId}` : first.recipientId ? `r:${first.recipientId}` : "";
+  const key = first.brigadeId ? `b:${first.brigadeId}` : first.vehicleId ? `v:${first.vehicleId}` : first.employeeId ? `e:${first.employeeId}` : first.recipientId ? `r:${first.recipientId}` : "";
   const t = parseIssueTarget(key);
   const employee = t?.kind === "employee" ? all.employees.find((e) => e.id === t.id) ?? null : null;
-  const known = !!t && (t.kind === "brigade" ? all.brigades : t.kind === "employee" ? all.employees : all.recipients).some((x) => x.id === t.id);
+  const known = !!t && targetList(all, t.kind).some((x) => x.id === t.id);
   const brigadePrefix = first.brigade ? `${first.brigade.name} brigadasiga berildi` : null;
   const note = brigadePrefix && first.note?.startsWith(brigadePrefix) ? first.note.slice(brigadePrefix.length).replace(/^\s*·\s*/, "") : first.note ?? "";
   const initial: RasxodInitial = {
@@ -48,26 +49,37 @@ async function loadCopy(ref: string, materialIds: Set<string>, all: TargetGroups
   };
 }
 
+/** Kalit turi bo'yicha «Kimga» ro'yxati (bor-yo'qligini tekshirish uchun). */
+const targetList = (g: TargetGroups, kind: string): { id: string }[] =>
+  kind === "brigade" ? g.brigades : kind === "employee" ? g.employees : kind === "vehicle" ? g.vehicles ?? [] : g.recipients;
+
 /**
  * Sklad → «Chiqim» → Yangi chiqim: skladdan oluvchiga yoki brigadaga xomashyo berish.
+ * «Avto zapchast» kategoriyasida «Kimga» — o'z parkimiz transportlari: berilgan zapchast summasi Logistika moliyada chiqim.
  * Narx — «Dona narxi» («Дона сўм») (Snabjeniye belgilagan; bo'lmasa o'rtacha tannarx, «≈»). Qoldiq — tanlangan sklad bo'yicha.
  */
-export default async function NewRasxodPage({ searchParams }: { searchParams: Promise<{ to?: string; copy?: string }> }) {
+export default async function NewRasxodPage({ searchParams }: { searchParams: Promise<{ to?: string; copy?: string; kat?: string }> }) {
   const s = await requireRoles(["WAREHOUSE", "PROCUREMENT"], { module: "stock", actions: ["issue"] });
   // Rol mos, lekin direktor bu amalni olib qo'ygan bo'lsa — forma ochilmaydi (saqlashda baribir rad bo'lardi)
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
   const sp = await searchParams;
 
-  const [warehouses, allTargets, hints, materials, groups, sums, avg, holdings] = await Promise.all([
+  const [warehouses, baseTargets, hints, materials, groups, sums, avg, holdings, vehicles] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     issueTargetOptions(),
     issueHints(),
-    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true, unitPrice: true } }),
+    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true, unitPrice: true, category: true } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
     db.stockMove.groupBy({ by: ["warehouseId", "materialId", "type"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     avgUnitCosts(),
     holdingsOverview(),
+    // O'z parkimiz (ko'chadan yollanganlarsiz) — avto zapchast shularga beriladi
+    db.vehicle.findMany({ where: { isActive: true, external: false }, orderBy: { plate: "asc" }, select: { id: true, plate: true, brand: true, model: true } }),
   ]);
+  const allTargets: TargetGroups = {
+    ...baseTargets,
+    vehicles: vehicles.map((v) => ({ id: v.id, plate: v.plate, label: [v.plate, [v.brand, v.model].filter(Boolean).join(" ")].filter(Boolean).join(" · ") })),
+  };
   // Qoldiq — barcha harakatlar yig'indisi; «Kirim» / «Chiqim» — nom tanlashda ko'rsatish uchun (shu sklad, butun davr):
   // kirim = RECEIPT, chiqim = oluvchi/xodimga (ISSUE) + brigadaga (BRIGADE_ISSUE − BRIGADE_RETURN), stornolar ichida netlanadi
   const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -99,7 +111,7 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   if (copy && !copy.initial.copyOf && copy.initial.date < isoDate(min)) copy.initial.date = isoDate(today);
   // ?to=b:<id> | e:<id> | r:<id> (oluvchi kartasidan «Shu oluvchiga chiqim») — faqat ro'yxatda bor bo'lsa
   const t = parseIssueTarget(sp.to);
-  const known = t && (t.kind === "brigade" ? targets.brigades : t.kind === "employee" ? targets.employees : targets.recipients).some((x) => x.id === t.id);
+  const known = t && targetList(targets, t.kind).some((x) => x.id === t.id);
   const defaultTo = known ? sp.to! : "";
 
   return (
@@ -128,9 +140,11 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
             materials={materials.map((m) => {
               const own = m.unitPrice == null ? null : Number(m.unitPrice);
               const fallback = avg.get(m.id) ?? null;
-              return { id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, price: own ?? fallback, approx: own == null && fallback != null };
+              return { id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, category: m.category, price: own ?? fallback, approx: own == null && fallback != null };
             })}
             groups={groups}
+            categories={categoriesFor(s.role)}
+            defaultCategory={categoryFromSlug(sp.kat) ?? (copy?.initial.to.startsWith("v:") || defaultTo.startsWith("v:") ? "AVTO_ZAPCHAST" : null)}
             balances={balances}
             flows={flows}
             holdings={holdings}

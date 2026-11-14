@@ -1,7 +1,8 @@
 /**
  * «Kimga» (chiqim oluvchisi) — klient va serverda umumiy, bazaga tegmaydigan qism.
- * Kalit: "b:<id>" — brigada, "e:<id>" — xodim, "r:<id>" — erkin oluvchi (`lib/stock-issue.ts#parseIssueTarget`).
- * Ro'yxat tartibi hamma joyda bir xil: bizning brigadalar → barcha xodimlar → tizimda yo'q nomlar.
+ * Kalit: "b:<id>" — brigada, "e:<id>" — xodim, "r:<id>" — erkin oluvchi, "v:<id>" — transport
+ * (`lib/stock-issue.ts#parseIssueTarget`). Ro'yxat tartibi hamma joyda bir xil: bizning brigadalar → barcha xodimlar →
+ * tizimda yo'q nomlar; transportlar — faqat chiqim formasida «Avto zapchast» kategoriyasi tanlanganda, eng tepada.
  */
 
 export type TargetGroups = {
@@ -11,6 +12,11 @@ export type TargetGroups = {
   employees: { id: string; name: string; position: string }[];
   /** Tizimda yo'q nomlar (shofyorlar, Traktor, Mexanik…) — oxirida */
   recipients: { id: string; name: string }[];
+  /**
+   * O'z parkimiz transportlari ("v:<id>") — faqat «Yangi chiqim» formasi beradi: avto zapchast mashinaga berilsa,
+   * summasi Logistika moliyada chiqim bo'ladi. Boshqa joylarda (kirim, Excel import, mobil) yo'q.
+   */
+  vehicles?: { id: string; plate: string; label: string }[];
 };
 
 /** Select'dagi eng pastki band — «Qo'lda kiritish»: yangi oluvchi oynasini ochadi, qiymat sifatida yuborilmaydi. */
@@ -22,8 +28,9 @@ export const brigadeLabel = (b: { name: string; leader: string | null }) =>
 
 /** Kalit bo'yicha ko'rinadigan nom; ro'yxatda yo'q (nofaol) bo'lsa null. */
 export function targetName(g: TargetGroups, key: string): string | null {
-  const m = /^([ber]):(.+)$/.exec(key);
+  const m = /^([berv]):(.+)$/.exec(key);
   if (!m) return null;
+  if (m[1] === "v") return g.vehicles?.find((x) => x.id === m[2])?.plate ?? null;
   if (m[1] === "b") { const b = g.brigades.find((x) => x.id === m[2]); return b ? brigadeLabel(b) : null; }
   if (m[1] === "e") return g.employees.find((x) => x.id === m[2])?.name ?? null;
   return g.recipients.find((x) => x.id === m[2])?.name ?? null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
-import { AlertTriangle, History, PackageMinus, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, History, PackageMinus, Plus, Trash2, Truck } from "lucide-react";
 import { createRasxod } from "./actions";
 import { MaterialField, type MaterialGroup } from "@/components/material-picker";
 import { TargetSelect } from "./target-select";
@@ -13,9 +13,14 @@ import { unitShort } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 import { targetName, type TargetGroups } from "@/lib/issue-target";
 import type { IssueHints } from "@/lib/stock-issue";
+import type { MaterialCategory } from "@/generated/prisma";
+import { MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
 
 type Opt = { id: string; name: string };
-type Mat = { id: string; name: string; code: string; unit: string; groupId: string | null; price: number | null; approx: boolean };
+type Mat = { id: string; name: string; code: string; unit: string; groupId: string | null; category: MaterialCategory; price: number | null; approx: boolean };
+/** Avto zapchast — «Kimga»da transportlar, summasi Logistika moliyada chiqim */
+const AVTO: MaterialCategory = "AVTO_ZAPCHAST";
+const isVehicleKey = (k: string) => k.startsWith("v:");
 type Line = { key: string; materialId: string; qty: string };
 
 /**
@@ -45,9 +50,13 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * «Kimga» ro'yxati: brigadalar → xodimlar → boshqa oluvchilar → «Qo'lda kiritish…» (yangi oluvchi oynasi, darhol tanlanadi).
  * Tez tanlash (`hints`, `issueHints`): oxirgi 90 kunda ko'p olganlar tugmacha bo'lib turadi; oluvchi tanlangach — unga oxirgi
  * berilgan tovarlar: bosilsa qator oxirgi miqdori bilan qo'shiladi (miqdor tahrirlanadi). Sklad — oxirgi chiqimdagi sklad.
+ * «Kategoriya»: nomlar ro'yxati shu kategoriyaga filtrlanadi; «Avto zapchast» da «Kimga» — faqat transportlar ("v:<id>"),
+ * zapchast summasi Logistika moliyada chiqim bo'ladi (server, `issueStock`).
  */
-export function RasxodForm({ warehouses, targets, hints, materials, groups, balances, flows, holdings, clientToken, today, minDate, defaultTo, initial }: {
+export function RasxodForm({ warehouses, targets, hints, materials, groups, categories, defaultCategory, balances, flows, holdings, clientToken, today, minDate, defaultTo, initial }: {
   warehouses: Opt[]; targets: TargetGroups; hints: IssueHints; materials: Mat[]; groups: MaterialGroup[];
+  /** Rol ko'radigan kategoriyalar (mexanik — Zavod zapchastsiz); tanlovda «Hammasi» + shular */
+  categories: MaterialCategory[]; defaultCategory: MaterialCategory | null;
   balances: Record<string, Record<string, number>>;
   /** Sklad → xomashyo → jami kirim va jami chiqim (nom tanlashda «Kirim · Chiqim · Qoldi») */
   flows: Record<string, Record<string, { received: number; issued: number }>>;
@@ -60,6 +69,19 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
   // «Qayerdan» eslab qolinadi: oxirgi chiqim yozilgan sklad (faol bo'lsa), bo'lmasa birinchisi
   const [whId, setWhId] = useState(warehouses.find((w) => w.id === (initial?.warehouseId ?? hints.warehouseId))?.id ?? warehouses[0]?.id ?? "");
   const [to, setTo] = useState(initial?.to ?? defaultTo);
+  const [cat, setCat] = useState<MaterialCategory | "">(defaultCategory && categories.includes(defaultCategory) ? defaultCategory : "");
+  const vehicleMode = cat === AVTO;
+  // Kategoriya almashsa — mos kelmaydigan «Kimga» tozalanadi (transport faqat Avto zapchastda)
+  const pickCat = (c: MaterialCategory | "") => {
+    setCat(c);
+    if ((c === AVTO) !== isVehicleKey(to)) setTo("");
+  };
+  // Tez tanlash: transport bosilsa — Avto zapchast, boshqasi Avto zapchastda bosilsa — «Hammasi»
+  const chooseTarget = (key: string) => {
+    if (isVehicleKey(key) && cat !== AVTO) setCat(AVTO);
+    else if (!isVehicleKey(key) && cat === AVTO) setCat("");
+    setTo(key);
+  };
   const [date, setDate] = useState(initial?.date ?? today);
   const [note, setNote] = useState(initial?.note ?? "");
   const seq = useRef(initial?.lines.length || 1);
@@ -72,12 +94,13 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
   const pickerMats = useMemo(() => {
     const fl = flows[whId] ?? {};
     // Ro'yxatda avval skladda qolgani bor (hali chiqim qilinadigan) xomashyolar, keyin qolganlari — ikkalasi ham nom bo'yicha
-    const sorted = [...materials].sort((a, b) => Number((bal[b.id] ?? 0) > EPS) - Number((bal[a.id] ?? 0) > EPS));
+    const sorted = materials.filter((m) => (cat ? m.category === cat : categories.includes(m.category)))
+      .sort((a, b) => Number((bal[b.id] ?? 0) > EPS) - Number((bal[a.id] ?? 0) > EPS));
     return sorted.map((m) => ({
       id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, balance: bal[m.id] ?? 0,
       received: fl[m.id]?.received ?? 0, issued: fl[m.id]?.issued ?? 0,
     }));
-  }, [materials, bal, flows, whId]);
+  }, [materials, bal, flows, whId, cat, categories]);
 
   // Bir xomashyo bir necha qatorda — yig'indisi qoldiq bilan solishtiriladi
   const wanted = new Map<string, number>();
@@ -99,7 +122,7 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
     if (empty >= 0) return ls.map((l, i) => (i === empty ? { ...l, ...line } : l));
     return [...ls, { key: `l${seq.current++}`, ...line }];
   });
-  const quickTargets = hints.targets.map((t) => ({ ...t, name: targetName(targets, t.key) })).filter((t) => t.name);
+  const quickTargets = hints.targets.map((t) => ({ ...t, name: targetName(targets, t.key) })).filter((t) => t.name && (!vehicleMode || isVehicleKey(t.key)));
   const toName = to ? targetName(targets, to) : null;
   const presets = (to ? hints.materials[to] ?? [] : []).filter((p) => meta.has(p.materialId));
   const inLines = new Set(lines.map((l) => l.materialId));
@@ -124,7 +147,7 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
         </span>
       ))}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Sana *">
           <Input type="date" name="date" value={date} onChange={(e) => setDate(e.target.value)} min={minDate} max={today} required />
         </Field>
@@ -133,18 +156,33 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
             {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </Select>
         </Field>
-        <Field label="Kimga *">
-          <TargetSelect targets={targets} value={to} onChange={setTo} invalid={!to && !!state?.error} />
+        <Field label="Kategoriya">
+          <Select value={cat} onChange={(e) => pickCat(e.target.value as MaterialCategory | "")} aria-label="Kategoriya">
+            <option value="">Hammasi</option>
+            {categories.map((c) => <option key={c} value={c}>{MATERIAL_CATEGORY_LABEL[c]}</option>)}
+          </Select>
+        </Field>
+        <Field label={vehicleMode ? "Kimga (transport) *" : "Kimga *"}>
+          <TargetSelect targets={targets} value={to} onChange={setTo} invalid={!to && !!state?.error} vehiclesOnly={vehicleMode} />
         </Field>
       </div>
-      {to && <TargetHoldings holdings={holdings} targetKey={to} />}
+      {to && !isVehicleKey(to) && <TargetHoldings holdings={holdings} targetKey={to} />}
+      {isVehicleKey(to) && (
+        <p className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2 text-sm text-blue-900">
+          <Truck size={16} className="mt-0.5 shrink-0" />
+          <span>
+            <b className="font-semibold">{toName}</b> ga berilgan zapchast summasi ({`${fmtNum(total)} so'm`}) Logistika moliyada «Ehtiyot qism»
+            chiqimi bo&apos;lib yoziladi va shu mashina xarajatiga tushadi. Chiqim bekor qilinsa — u ham bekor bo&apos;ladi.
+          </span>
+        </p>
+      )}
 
       {quickTargets.length > 0 && (
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/70 p-3">
           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500"><History size={13} /> Tez tanlash — oxirgi 90 kunda ko&apos;p olganlar</div>
           <div className="flex flex-wrap gap-1.5">
             {quickTargets.map((t) => (
-              <button key={t.key} type="button" onClick={() => setTo(t.key)} aria-pressed={to === t.key}
+              <button key={t.key} type="button" onClick={() => chooseTarget(t.key)} aria-pressed={to === t.key}
                 title={`${t.count} ta chiqim · oxirgisi ${new Date(t.lastAt).toLocaleDateString("ru-RU")}`}
                 className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition",
                   to === t.key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-slate-500")}>

@@ -132,6 +132,37 @@ if (!locked) {
   check(r.ok && (await inPayroll()) === 250000, "bekor qilinsa haq yana vedomostga qaytadi", r.error);
 } else check(true, "shu oy vedomosti tasdiqlangan — oylik to'lov tekshiruvi o'tkazib yuborildi");
 
+// ── Skladdan transportga avto zapchast (2026-11-14): logistika kassasidan chiqim (minusga tushsa ham), mashina xarajati
+//    Foydaga, jurnalda summa bosilsa zapchast va kirimi; Logistika moliyadan bekor qilinmaydi, sklad chiqimi bekor — u ham ──
+const sklad = await as("sklad"), dir = await as("direktor");
+const RX = "(app)/stock/rasxod/actions";
+const wh = q1(`select id from "Warehouse" where "isActive" order by "isDefault" desc limit 1`)!;
+const MAT = `qa_lm_zap_${tag}`;
+q(`insert into "Material" (id, code, name, unit, category, "unitPrice", "isActive", "createdAt") values (${lit(MAT)}, 'QA-ZAP-${tag}', 'QA zapchast ${tag}', 'dona', 'AVTO_ZAPCHAST', 120000, true, now())`);
+q(`insert into "StockMove" (id, date, type, "warehouseId", "materialId", qty, "unitCost", "createdById", "createdAt") values ('qa_lm_zr_${tag}', now() - interval '1 day', 'RECEIPT', ${lit(wh)}, ${lit(MAT)}, 10, 100000, ${lit(prorabId)}, now())`);
+l0 = logiBal(); c0 = cashBal();
+const zTok = `qa-lm-zap-${tag}-0000000`;
+r = await sklad.action(`${RX}#createRasxod`, [undefined, fd({ warehouseId: wh, to: `v:${veh}`, date: today, clientToken: zTok, "materialId[]": [MAT], "qty[]": ["3"] })], "/stock/rasxod/new");
+check(!r.error && /saved=1/.test(r.redirect ?? ""), "zapchast: sklad transportga chiqim yozdi", r.error ?? r.redirect ?? String(r.status));
+const zRef = q1(`select "refId" from "StockMove" where "clientToken"=${lit(zTok)}`) ?? "";
+check(n1(`select count(*) from "StockMove" where "refType"='Issue' and "refId"=${lit(zRef)} and type='ISSUE' and "vehicleId"=${lit(veh)}`) === 1, "zapchast: ISSUE qatorida vehicleId = transport");
+const zLm = q1(`select id from "LogisticsTx" where "refType"='StockIssue' and "refId"=${lit(zRef)} and "cancelledAt" is null`) ?? "";
+check(!!zLm && l0 - logiBal() === 360000 && cashBal() === c0, "zapchast: logistika kassasi −360 ming (3 × Dona narxi), zavod kassasi o'zgarmadi", `${l0} → ${logiBal()}`);
+check(n1(`select count(*) from "TransportExpense" t join "LogisticsTx" l on l."transportExpenseId"=t.id where l.id=${lit(zLm)} and t.kind='PARTS' and t."vehicleId"=${lit(veh)} and t."cancelledAt" is null`) === 1,
+  "zapchast: mashina xarajati (PARTS) Foydaga tushdi");
+g = await prorab.get(P);
+check(g.status === 200 && g.text.includes(`zap=${zRef}`), "zapchast: jurnalda summa bosiladi (zap=)", g.status);
+g = await prorab.get(`${P}&zap=${zRef}`);
+check(g.status === 200 && g.text.includes(`QA zapchast ${tag}`) && g.text.includes("Skladdan zapchast"), "zapchast: panel — zapchast nomi, miqdori va manbasi", g.status);
+g = await prorab.get(`${P}&zap=boshqa-${tag}`);
+check(g.status === 200 && !g.text.includes("Skladdan zapchast"), "zapchast: jurnalda yo'q hujjat id'si bilan panel ochilmaydi", g.status);
+r = await prorab.action(`${LM}#cancelTx`, [zLm, undefined, fd({ reason: "QA urinish" })], P);
+check(!r.ok && /Sklad/.test(r.error ?? ""), "zapchast: Logistika moliyadan bekor qilinmaydi (Sklad → Chiqim orqali)", r.error);
+r = await dir.action(`${RX}#cancelRasxod`, [zRef, "QA bekor"], "/stock/rasxod");
+check(!r.error && logiBal() === l0 && !q1(`select id from "LogisticsTx" where id=${lit(zLm)} and "cancelledAt" is null`)
+  && !q1(`select t.id from "TransportExpense" t join "LogisticsTx" l on l."transportExpenseId"=t.id where l.id=${lit(zLm)} and t."cancelledAt" is null`),
+  "zapchast: sklad chiqimi bekor — logistika yozuvi va mashina xarajati ham bekor, qoldiq qaytdi", r.error);
+
 // ── Boshqa sahifalar: dispetcherga jami xarajat / foyda ko'rinmaydi, ish boshqaruvchiga ko'rinadi ──
 g = await disp.get(`/logistika/transport/${veh}`);
 check(g.status === 200 && !g.text.includes("Jami xarajat"), "transport kartasi: dispetcherga jami xarajat va foyda yo'q", g.status);

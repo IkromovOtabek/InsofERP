@@ -6,8 +6,8 @@ import { Select } from "@/components/ui";
 type Opt = { id: string; name: string };
 
 /** Chiqim jurnali filtrlari: Sklad va «Kimga» (tanlanishi bilan sahifa yangilanadi, davr va qidiruv saqlanadi). Tartib formadagidek. */
-export function RasxodFilters({ warehouses, brigades, employees, recipients, wh, komu, q, from, to }: {
-  warehouses: Opt[]; brigades: Opt[]; employees: Opt[]; recipients: Opt[];
+export function RasxodFilters({ warehouses, brigades, employees, recipients, vehicles = [], wh, komu, q, from, to }: {
+  warehouses: Opt[]; brigades: Opt[]; employees: Opt[]; recipients: Opt[]; vehicles?: Opt[];
   wh: string | null; komu: string | null; q: string; from: string; to: string;
 }) {
   const router = useRouter();
@@ -47,6 +47,12 @@ export function RasxodFilters({ warehouses, brigades, employees, recipients, wh,
           {recipients.length > 0 && (
             <optgroup label="Boshqa oluvchilar">
               {recipients.map((r) => <option key={r.id} value={`r:${r.id}`}>{r.name}</option>)}
+            </optgroup>
+          )}
+          {vehicles.length > 0 && (
+            <optgroup label="Transportlar (avto zapchast)">
+              <option value="v">Barcha transportlar</option>
+              {vehicles.map((v) => <option key={v.id} value={`v:${v.id}`}>{v.name}</option>)}
             </optgroup>
           )}
           <optgroup label="Boshqa">

@@ -52,16 +52,18 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   // «Tuzatish» = storno + shu qatorlar bilan yangi chiqim formasi: chiqim yozish huquqi ham kerak
   const canFix = canStorno && canIssue;
 
-  const [warehouses, recipients, brigades, employees, vatPayer] = await Promise.all([
+  const [warehouses, recipients, brigades, employees, vatPayer, vehicles] = await Promise.all([
     db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true, isActive: true } }),
     recipientList(),
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], select: { id: true, name: true, isActive: true, leader: { select: { fullName: true } } } }),
     // Filtrda ishdan bo'shaganlar ham: eski chiqimlari nomi bilan topilsin
     db.employee.findMany({ where: { external: false }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, isActive: true } }),
     companyVatPayer(),
+    // Transportlar (avto zapchast berilgan mashinalar) — filtr uchun, faqat o'z parkimiz
+    db.vehicle.findMany({ where: { external: false }, orderBy: [{ isActive: "desc" }, { plate: "asc" }], select: { id: true, plate: true, isActive: true } }),
   ]);
   const wh = warehouses.some((w) => w.id === sp.wh) ? sp.wh! : null;
-  const komu = sp.komu && /^(r:.+|b:.+|e:.+|b|e|prod|writeoff|inventory)$/.test(sp.komu) ? sp.komu : null;
+  const komu = sp.komu && /^(r:.+|b:.+|e:.+|v:.+|b|e|v|prod|writeoff|inventory)$/.test(sp.komu) ? sp.komu : null;
   // Qidiruv (?q=): tovar nomi, «Kimga», «Kimdan» yoki izoh bo'yicha — jami va Excel ham shu qatorlardan
   const q = (sp.q ?? "").trim().slice(0, 100);
   const qLow = q.toLowerCase();
@@ -130,6 +132,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
           brigades={brigades.map((b) => ({ id: b.id, name: `${b.leader ? `${b.name} — ${b.leader.fullName}` : b.name}${b.isActive ? "" : " (nofaol)"}` }))}
           employees={employees.map((e) => ({ id: e.id, name: e.isActive ? e.fullName : `${e.fullName} (ishdan bo'shagan)` }))}
           recipients={recipients.map((r) => ({ id: r.id, name: r.isActive ? r.name : `${r.name} (yashirilgan)` }))}
+          vehicles={vehicles.map((v) => ({ id: v.id, name: v.isActive ? v.plate : `${v.plate} (nofaol)` }))}
           wh={wh} komu={komu} q={q} from={period.fromStr} to={period.toStr}
         />
       </div>
@@ -252,12 +255,13 @@ const TARGET_KIND = {
   b: { label: "Brigada", color: "amber" as const },
   e: { label: "Xodim", color: "blue" as const },
   r: { label: "Oluvchi", color: "slate" as const },
+  v: { label: "Transport", color: "violet" as const },
 };
 
 /** «Kimga berildi» kartasi: nom (kartasiga havola), jami summa, mahsulotlar — miqdor va summa. */
 function TargetCard({ g }: { g: RasxodTarget }) {
   const href = cardHrefOf(g.key);
-  const k = /^([ber])(:|$)/.exec(g.key)?.[1] as keyof typeof TARGET_KIND | undefined;
+  const k = /^([berv])(:|$)/.exec(g.key)?.[1] as keyof typeof TARGET_KIND | undefined;
   const K = k ? TARGET_KIND[k] : null;
   return (
     <div className="flex flex-col rounded-lg border border-slate-200 p-3">

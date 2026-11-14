@@ -82,3 +82,60 @@ export async function stockDrill(o: { materialId?: string; productId?: string; f
     note: total > DRILL_LIMIT ? `${total} ta harakatdan eng so'nggi ${DRILL_LIMIT} tasi ko'rsatildi — jami songa hammasi kirgan.` : `Miqdor, ${subject.unit}.`,
   };
 }
+
+/** Kirim qatori — panelda bitta bo'lak: «05.11.2026 · KR-… · Ta'minotchi · TTN … · 4 dona × 85 000». */
+type ReceiptPick = { qty: number; price: number; vat: number; receipt: { id: string; docNo: string; date: Date; waybillNo: string | null; supplier: { name: string } } };
+const dmy = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+
+/**
+ * Skladdan transportga berilgan zapchast (sklad chiqim hujjati `ref`) — Logistika moliya jurnalidagi summa bosilganda:
+ * har zapchast qatori (miqdor × sklad narxi = summa, jami = Logistika moliyadagi chiqim) va u skladga qachon, kimdan,
+ * qanday narxda kirim bo'lgani: chiqim sanasigacha bo'lgan eng so'nggi kirimlar (bekor qilinmagan), chiqim miqdorini
+ * qoplaguncha, ko'pi bilan 3 ta. `receiptHref` — kirim hujjatini ocha oladigan foydalanuvchiga havola.
+ */
+export async function stockIssueDrill(ref: string, o: { receiptHref: boolean }): Promise<Drill | null> {
+  const moves = await db.stockMove.findMany({
+    where: { refType: "Issue", refId: ref, materialId: { not: null } }, orderBy: { createdAt: "asc" },
+    select: { date: true, materialId: true, qty: true, unitCost: true, warehouse: { select: { name: true } }, vehicle: { select: { plate: true } }, material: { select: { name: true, unit: true } } },
+  });
+  const first = moves[0];
+  if (!first) return null;
+  const ids = [...new Set(moves.map((m) => m.materialId!))];
+  const recs = await db.goodsReceiptItem.findMany({
+    where: { materialId: { in: ids }, receipt: { cancelledAt: null, date: { lte: first.date } } },
+    orderBy: [{ receipt: { date: "desc" } }, { receipt: { createdAt: "desc" } }], take: 60 * ids.length,
+    select: { materialId: true, qty: true, price: true, vatAmount: true, receipt: { select: { id: true, docNo: true, date: true, waybillNo: true, supplier: { select: { name: true } } } } },
+  });
+  const byMat = new Map<string, ReceiptPick[]>();
+  for (const r of recs) {
+    const list = byMat.get(r.materialId) ?? [];
+    list.push({ qty: Number(r.qty), price: Number(r.price), vat: Number(r.vatAmount), receipt: r.receipt });
+    byMat.set(r.materialId, list);
+  }
+  const items: DrillItem[] = moves.map((m) => {
+    const out = -Number(m.qty), cost = m.unitCost == null ? null : Number(m.unitCost), u = m.material?.unit ?? "";
+    // Oxirgi kirimlar — chiqim miqdorini qoplaguncha (ko'pi bilan 3 ta)
+    const picks: ReceiptPick[] = [];
+    let covered = 0;
+    for (const r of byMat.get(m.materialId!) ?? []) {
+      if (picks.length >= 3 || covered >= out - 1e-6) break;
+      picks.push(r); covered += r.qty;
+    }
+    const sub = picks.length
+      ? picks.map((r) => [
+          `Kirim ${dmy(r.receipt.date)}`, r.receipt.docNo, r.receipt.supplier.name,
+          r.receipt.waybillNo ? (/^ttn/i.test(r.receipt.waybillNo) ? r.receipt.waybillNo : `TTN ${r.receipt.waybillNo}`) : null,
+          `${fmtNum(r.qty, 3)} ${u} × ${fmtNum(r.price)}${r.vat > 0 ? " + QQS" : ""}`,
+        ].filter(Boolean).join(" · ")).join("; ")
+      : "Kirim topilmadi — boshlang'ich qoldiq yoki inventarizatsiyadan kelgan";
+    return {
+      date: m.date, title: `${m.material?.name ?? "?"} — ${fmtNum(out, 3)} ${u}${cost != null ? ` × ${fmtNum(cost)}` : " (narx yo'q)"}`,
+      sub, amount: Math.round(out * (cost ?? 0) * 100) / 100, href: o.receiptHref && picks[0] ? `/receipts/${picks[0].receipt.id}` : undefined,
+    };
+  });
+  const value = Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+  return {
+    title: `Skladdan zapchast — ${first.vehicle?.plate ?? "transport"}`, period: `${dmy(first.date)} · ${first.warehouse.name}`, value, parts: [], items,
+    note: "Har qatorda: berilgan zapchast, miqdori va sklad narxi («Dona narxi» yoki o'rtacha tannarx), pastida — u skladga qachon, kimdan va qanday narxda kirim bo'lgani (chiqimgacha bo'lgan oxirgi kirimlar).",
+  };
+}

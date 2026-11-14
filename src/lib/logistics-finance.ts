@@ -77,7 +77,8 @@ export const LOGI_REQUEST_WHERE = { OR: [{ target: "TRANSPORT" as const }, { pro
 export const FACTORY_REQUEST_WHERE = { NOT: LOGI_REQUEST_WHERE };
 
 export type LogiResult = { id?: string; docNo?: string; error?: string; note?: string };
-class LogiError extends Error {}
+/** Foydalanuvchiga ko'rinadigan xato (o'zbekcha) — sklad chiqimi ham shuni o'z xatosiga aylantiradi. */
+export class LogiError extends Error {}
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const clean = (s: string | null | undefined, max = 300) => { const t = (s ?? "").trim(); return t ? t.slice(0, max) : null; };
 
@@ -152,6 +153,11 @@ type CoreInput = {
   refType?: string | null; refId?: string | null; clientToken?: string | null;
   /** Mexanik so'rovi kabi o'zi transport xarajatini yozadigan oqim — bu yerda takrorlanmasin */
   skipExpense?: boolean;
+  /**
+   * Logistika hisobi qoldig'i tekshirilmaydi (minusga tushishi mumkin) — skladdan zapchast berilganda: sklad xodimi
+   * logistika qoldig'ini ko'rmaydi va chiqim pul yetmagani uchun to'xtamasligi kerak (logistika zavodga qarzdor bo'ladi).
+   */
+  allowNegative?: boolean;
 };
 
 /**
@@ -170,7 +176,7 @@ export async function writeLogiTx(tx: Tx, input: CoreInput, userId: string): Pro
   if (accountId) {
     const acc = await tx.logisticsAccount.findUnique({ where: { id: accountId }, select: { isActive: true } });
     if (!acc?.isActive) throw new LogiError("Logistika hisobi topilmadi");
-    if (input.type === "EXPENSE") { const e = await logiOutflowError(tx, accountId, amount); if (e) throw new LogiError(e); }
+    if (input.type === "EXPENSE" && !input.allowNegative) { const e = await logiOutflowError(tx, accountId, amount); if (e) throw new LogiError(e); }
   }
   // Zavod hisobidan chiqadigan pul (chiqim yoki o'tkazma) — kassa qoldig'idan oshmasin
   if (cashAccountId) {
@@ -227,9 +233,46 @@ export async function writeLogiTx(tx: Tx, input: CoreInput, userId: string): Pro
   return { id: lt.id, docNo };
 }
 
+// ───────────────────────── Skladdan transportga zapchast ─────────────────────────
+
+/** Skladdan transportga berilgan zapchast yozuvi: `refId` — sklad chiqim hujjati (`StockMove.refId`, refType "Issue"). */
+export const STOCK_ISSUE_REF = "StockIssue";
+const STOCK_ISSUE_CATEGORY = "Ehtiyot qism";
+
+/**
+ * Sklad → Chiqim: avto zapchast transportga berildi — shu tranzaksiyada Logistika moliyada chiqim (logistika kassasidan,
+ * «Ehtiyot qism», mashina bilan). Mashinaga yozilgani uchun Foydada ham xarajat (`TransportExpense` PARTS) bo'ladi.
+ * Zavod kassasiga tushmaydi. Qoldiq yetmasa ham yoziladi (minus = logistikaning zavodga qarzi).
+ */
+export async function chargeLogiStockIssue(tx: Tx, p: { ref: string; date: Date; amount: number; vehicleId: string; warehouse: string; note: string }, userId: string) {
+  // Asosiy logistika kassasi (naqd), bo'lmasa birinchi faol logistika hisobi
+  const acc = await tx.logisticsAccount.findFirst({ where: { isActive: true }, orderBy: [{ type: "asc" }, { createdAt: "asc" }], select: { id: true } });
+  if (!acc) throw new LogiError("Logistika hisobi yo'q — zapchast summasini yozib bo'lmaydi. Direktor Logistika moliyada hisob ochsin");
+  return writeLogiTx(tx, {
+    type: "EXPENSE", date: p.date, amount: p.amount, category: STOCK_ISSUE_CATEGORY, source: `${LOGI_ACC}${acc.id}`,
+    vehicleId: p.vehicleId, counterparty: `Sklad: ${p.warehouse}`, note: p.note, refType: STOCK_ISSUE_REF, refId: p.ref, allowNegative: true,
+  }, userId);
+}
+
+/** Sklad chiqimi bekor qilindi — uning Logistika moliya yozuvi va mashina xarajati ham bekor (tranzaksiya ichida). Bekor qilingan raqamlar. */
+export async function cancelLogiStockIssue(tx: Tx, ref: string, reason: string, userId: string): Promise<string[]> {
+  const list = await tx.logisticsTx.findMany({ where: { refType: STOCK_ISSUE_REF, refId: ref, cancelledAt: null }, select: { id: true, docNo: true, transportExpenseId: true } });
+  const now = new Date();
+  const why = `Sklad chiqimi bekor: ${reason}`.slice(0, 300);
+  for (const t of list) {
+    const u = await tx.logisticsTx.updateMany({ where: { id: t.id, cancelledAt: null }, data: { cancelledAt: now, cancelledById: userId, cancelReason: why } });
+    if (u.count !== 1) continue;
+    if (t.transportExpenseId) {
+      await tx.transportExpense.updateMany({ where: { id: t.transportExpenseId, cancelledAt: null }, data: { cancelledAt: now, cancelledById: userId, cancelReason: why } });
+    }
+    await audit(tx, userId, "STATUS_CHANGE", "LogisticsTx", t.id, { cancelledAt: null }, { cancelledAt: now, reason: why, docNo: t.docNo, stockIssue: ref });
+  }
+  return list.map((t) => t.docNo);
+}
+
 // ───────────────────────── Qo'lda kirim / chiqim ─────────────────────────
 
-export type LogiTxInput = Omit<CoreInput, "refType" | "refId" | "skipExpense">;
+export type LogiTxInput = Omit<CoreInput, "refType" | "refId" | "skipExpense" | "allowNegative">;
 
 export async function addLogiTx(input: LogiTxInput, userId: string): Promise<LogiResult> {
   const list: readonly string[] = input.type === "EXPENSE" ? LOGI_EXPENSE : LOGI_INCOME;
@@ -265,6 +308,7 @@ export async function cancelLogiTx(id: string, reason: string, userId: string): 
   if (!t) return { error: "Yozuv topilmadi" };
   if (t.cancelledAt) return { error: "Allaqachon bekor qilingan" };
   if (t.refType === "MechanicRequest") return { error: "Mexanik so'rovining puli — bekor qilib bo'lmaydi" };
+  if (t.refType === STOCK_ISSUE_REF) return { error: "Skladdan berilgan zapchast — Sklad → Chiqim jurnalida bekor qilinadi (zapchast skladga qaytadi)" };
   if (t.refType === DRIVER_MONTH_REF) {
     const month = (t.refId ?? "").split(":")[0] ?? "";
     const lock = await payrollMonthLock(month);
@@ -318,6 +362,8 @@ export type LogiJournalRow = {
   logiTxId: string | null; cancellable: boolean;
   /** Kassadan biriktirilgan — bekor qilish = ajratish */
   linked: boolean;
+  /** Skladdan transportga zapchast: sklad chiqim hujjati — summa bosilsa zapchastlar va ularning kirimi ko'rinadi */
+  stockRef: string | null;
 };
 
 /**
@@ -374,7 +420,8 @@ export async function logiJournal(from: Date, to: Date) {
       type: t.type, category: t.category, vehicle: t.vehicleId ? plate.get(t.vehicleId) ?? null : null,
       who: t.driverId ? drv.get(t.driverId) ?? t.counterparty : t.counterparty, amount: Number(t.amount), note: t.note,
       href: t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}` : null,
-      logiTxId: t.id, cancellable: t.refType !== "MechanicRequest", linked: t.refType === CASH_LINK_REF,
+      logiTxId: t.id, cancellable: t.refType !== "MechanicRequest" && t.refType !== STOCK_ISSUE_REF, linked: t.refType === CASH_LINK_REF,
+      stockRef: t.refType === STOCK_ISSUE_REF ? t.refId : null,
     });
   }
   for (const c of cashRows) {
@@ -384,7 +431,7 @@ export async function logiJournal(from: Date, to: Date) {
       key: `C${c.id}`, at: c.date, docNo: req?.docNo ?? "Kassa", kind: "FACTORY", account: c.cashAccount.name, type: c.type,
       category: req ? (req.problem === TRIP_PAY || req.tripId ? "Haydovchi haqi" : req.problem) : (c.subCategory ?? c.category),
       vehicle: req?.vehicle?.plate ?? null, who: req?.payee ?? c.counterparty, amount: Number(c.amount), note: c.note,
-      href: req ? `/mexanik-sorovlar/${req.id}` : null, logiTxId: null, cancellable: false, linked: false,
+      href: req ? `/mexanik-sorovlar/${req.id}` : null, logiTxId: null, cancellable: false, linked: false, stockRef: null,
     });
   }
   rows.sort((a, b) => b.at.getTime() - a.at.getTime());
