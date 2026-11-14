@@ -19,6 +19,8 @@ export type KassaRow = {
   key: string; day: string; at: string; ts: number; cts: number;
   accountId: string; account: string; method: "CASH" | "BANK";
   inc: number; exp: number; transfer: boolean;
+  /** Perekit oyog'i: ikkinchi oyoq qaysi hisobda (jamida tanlov ichidagi perekitni ajratish uchun) */
+  peerId?: string;
   manba: string; sub: string; who: string; whoHref?: string; blacklisted?: boolean; contracted?: boolean;
   note: string; by: string; href?: string; cancelled: string | null;
   /** Qator bosilganda ochiladigan tafsilot: perekit oyog'i — o'tkazma hujjati, qolganlari — yozuvning o'zi */
@@ -128,12 +130,20 @@ export function KassaJournal({ rows, accounts, from, to, initial, truncated }: {
   };
   const setFilter = (k: ColKey, v: Set<string> | null) => setFilters((f) => { const n = { ...f }; if (v) n[k] = v; else delete n[k]; return n; });
 
-  // Jami — perekit (pul kompaniya ichida ko'chgan) va bekor qilinganlarsiz; perekit alohida ko'rsatiladi
-  let inc = 0, exp = 0, trIn = 0, trOut = 0;
+  // Jami — bekor qilinganlarsiz; perekit alohida ham ko'rsatiladi. Hisob tanlanmagan bo'lsa perekit jamiga kirmaydi (pul
+  // kompaniya ichida ko'chgan). Hisob tanlanganda tanlovdan tashqaridagi hisob bilan perekit — shu hisob(lar)ning haqiqiy
+  // kirimi/chiqimi (Naqd tanlansa, bankdan yechib kelingan pul — kassa kirimi): sof oqim = qoldiq o'zgarishi, matritsadagi
+  // hisob ustuni bilan bir xil. Ikkala oyog'i ham tanlovda bo'lgan perekit esa yana kirmaydi.
+  let inc = 0, exp = 0, trIn = 0, trOut = 0, extIn = 0, extOut = 0;
   for (const r of shown) {
     if (r.cancelled) continue;
-    if (r.transfer) { trIn += r.inc; trOut += r.exp; } else { inc += r.inc; exp += r.exp; }
+    if (!r.transfer) { inc += r.inc; exp += r.exp; continue; }
+    trIn += r.inc; trOut += r.exp;
+    if (accSel.size > 0 && !(r.peerId && accSel.has(r.peerId))) { extIn += r.inc; extOut += r.exp; }
   }
+  inc += extIn; exp += extOut;
+  const totalNote = accSel.size > 0 ? "bekor qilinganlarsiz; boshqa hisob bilan perekit kirim/chiqimda" : "perekit va bekor qilinganlarsiz";
+  const ofTransfer = (v: number) => (v > 0 ? ` · shundan perekit ${money(v)}` : "");
   const days = filters.sana;
   const period = days?.size === 1 ? dayText([...days][0]) : days ? `${days.size} kun` : from === to ? dayText(from) : `${dayText(from)} — ${dayText(to)}`;
 
@@ -151,7 +161,7 @@ export function KassaJournal({ rows, accounts, from, to, initial, truncated }: {
         Manba: r.manba, "Sub manba": r.sub || null, Kontragent: r.who || null, Izoh: r.note || null, Kiritdi: r.by || null,
         Holat: r.cancelled ? `Bekor qilingan: ${r.cancelled}` : null,
       })),
-      { Sana: "Jami", Hisob: period, "To'lov turi": "", Kirim: inc, Chiqim: exp, Manba: "perekit va bekor qilinganlarsiz", "Sub manba": null, Kontragent: null, Izoh: null, Kiritdi: null, Holat: null },
+      { Sana: "Jami", Hisob: period, "To'lov turi": "", Kirim: inc, Chiqim: exp, Manba: totalNote, "Sub manba": null, Kontragent: null, Izoh: null, Kiritdi: null, Holat: null },
     ],
   }];
 
@@ -171,9 +181,9 @@ export function KassaJournal({ rows, accounts, from, to, initial, truncated }: {
   return (
     <>
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Kirim" value={money(inc)} icon={ArrowDownLeft} tone="success" hint={period} />
-        <StatCard label="Chiqim" value={money(exp)} icon={ArrowUpRight} tone={exp > 0 ? "danger" : "default"} hint={period} />
-        <StatCard label="Sof oqim" value={money(inc - exp)} icon={Wallet} tone={inc - exp >= 0 ? "success" : "danger"} hint="perekit va bekor qilinganlarsiz" />
+        <StatCard label="Kirim" value={money(inc)} icon={ArrowDownLeft} tone="success" hint={period + ofTransfer(extIn)} />
+        <StatCard label="Chiqim" value={money(exp)} icon={ArrowUpRight} tone={exp > 0 ? "danger" : "default"} hint={period + ofTransfer(extOut)} />
+        <StatCard label="Sof oqim" value={money(inc - exp)} icon={Wallet} tone={inc - exp >= 0 ? "success" : "danger"} hint={totalNote} />
       </div>
 
       <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
@@ -265,7 +275,7 @@ export function KassaJournal({ rows, accounts, from, to, initial, truncated }: {
             <SheetTd colSpan={4} className="whitespace-nowrap">
               Sof oqim: <span className={inc - exp >= 0 ? "text-emerald-700" : "text-red-600"}>{money(inc - exp)}</span>
               {(trIn > 0 || trOut > 0) && <span className="ml-3 font-normal text-sky-700">Perekit: +{money(trIn)} / −{money(trOut)}</span>}
-              <span className="ml-3 text-xs font-normal text-slate-500">perekit va bekor qilinganlar jamiga kirmaydi</span>
+              <span className="ml-3 text-xs font-normal text-slate-500">{accSel.size > 0 ? "bekor qilinganlar jamiga kirmaydi; boshqa hisob bilan perekit kirim/chiqimda" : "perekit va bekor qilinganlar jamiga kirmaydi"}</span>
             </SheetTd>
           </tr>
         </SheetFoot>

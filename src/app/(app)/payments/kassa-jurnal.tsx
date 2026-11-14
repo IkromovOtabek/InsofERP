@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
-import { money, moneyShort, date, isoDate, opAt } from "@/lib/format";
+import { money, date, isoDate, opAt } from "@/lib/format";
 import { Button, Callout, Card, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { JOURNAL_ONLY, TRANSFER_REF, isTransfer, txSign } from "@/lib/cash-tx";
@@ -16,35 +16,33 @@ import { LastImportUndo } from "./import/recent";
 
 type Account = { id: string; name: string; type: "CASH" | "BANK" };
 
-/** Hisob ustunida: +kirim / −chiqim (perekit ham shu hisobning harakati). Jami ustunida perekit yo'q — pul kompaniya ichida ko'chgan. */
-type Flow = { inc: number; exp: number };
+/**
+ * Davrdagi harakat. Hisob ustunida kirim/chiqimga perekit ham kiradi (`trIn`/`trOut` — shundan perekit), shunda har ustunda
+ * boshlang'ich + kirim − chiqim = qoldiq. Jami ustunida perekit yo'q — pul kompaniya ichida ko'chgan, oyoqlari bir-birini yopadi.
+ * `open` — davr ichiga tushgan boshlang'ich qoldiq yozuvi («Oy oxiri qoldiqlari»): oqim emas, lekin qoldiqni o'zgartiradi.
+ */
+type Flow = { inc: number; exp: number; trIn: number; trOut: number; open: number };
+const noFlow = (): Flow => ({ inc: 0, exp: 0, trIn: 0, trOut: 0, open: 0 });
 
 async function flowsSince(since: Date, accountIds: string[], until?: Date) {
   const when = { gte: since, ...(until ? { lte: until } : {}) };
   const [pay, tx] = await Promise.all([
     db.payment.groupBy({ by: ["cashAccountId"], where: { date: when, cashAccountId: { in: accountIds } }, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { ...JOURNAL_ONLY, cancelledAt: null, date: when, cashAccountId: { in: accountIds } }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null, date: when, cashAccountId: { in: accountIds } }, _sum: { amount: true } }),
   ]);
   const byAcc = new Map<string, Flow>();
-  const total: Flow = { inc: 0, exp: 0 };
-  const add = (id: string, amount: number, sign: number, transfer: boolean) => {
-    const f = byAcc.get(id) ?? { inc: 0, exp: 0 };
-    if (sign > 0) f.inc += amount; else f.exp += amount;
-    byAcc.set(id, f);
-    if (!transfer) { if (sign > 0) total.inc += amount; else total.exp += amount; }
-  };
-  for (const p of pay) add(p.cashAccountId, Number(p._sum.amount ?? 0), 1, false);
-  for (const t of tx) add(t.cashAccountId, Number(t._sum.amount ?? 0), txSign(t.type), isTransfer(t.type));
+  const total = noFlow();
+  const of = (id: string) => { const f = byAcc.get(id) ?? noFlow(); byAcc.set(id, f); return f; };
+  for (const p of pay) { const a = Number(p._sum.amount ?? 0); of(p.cashAccountId).inc += a; total.inc += a; }
+  for (const t of tx) {
+    const a = Number(t._sum.amount ?? 0), f = of(t.cashAccountId);
+    if (t.type === "OPENING") { f.open += a; total.open += a; continue; }
+    const transfer = isTransfer(t.type);
+    if (txSign(t.type) > 0) { f.inc += a; if (transfer) f.trIn += a; else total.inc += a; }
+    else { f.exp += a; if (transfer) f.trOut += a; else total.exp += a; }
+  }
   return { byAcc, total };
 }
-
-const flowText = (f?: Flow) => (
-  <span className="whitespace-nowrap">
-    <span className={f?.inc ? "text-emerald-700" : "text-slate-400"}>+{moneyShort(f?.inc ?? 0)}</span>
-    <span className="text-slate-300"> / </span>
-    <span className={f?.exp ? "text-red-600" : "text-slate-400"}>−{moneyShort(f?.exp ?? 0)}</span>
-  </span>
-);
 
 /** Matritsa ustunlarini ajratuvchi tik chiziq (birinchi — «Hisob» ustunidan boshqa hamma katakda) */
 const COL = "border-l border-l-slate-200";
@@ -66,6 +64,25 @@ export async function AccountMatrix({ accounts, range }: { accounts: Account[]; 
   ]);
   const sum = (m: Map<string, number>) => accounts.reduce((s, a) => s + (m.get(a.id) ?? 0), 0);
   const sub = (text: string) => <span className="block text-[10.5px] leading-tight font-normal text-slate-500">{text}</span>;
+  // Kirim / Chiqim qatori — aniq summa (qisqartirilmagan): ustunni qo'lda tekshirish mumkin bo'lsin
+  const flowRow = (label: string, hint: string, side: "inc" | "exp") => {
+    const tone = side === "inc" ? "text-emerald-700" : "text-red-600";
+    const cell = (v: number, tr: number) => (
+      <>
+        <span className={v ? tone : "text-slate-400"}>{side === "inc" ? "+" : "−"}{money(v)}</span>
+        {tr > 0 && <span className="block text-[10.5px] leading-tight font-normal text-sky-700">shundan perekit {money(tr)}</span>}
+      </>
+    );
+    return (
+      <Tr>
+        <Td className={cn(CELL, "whitespace-nowrap")}>{label}{sub(hint)}</Td>
+        {accounts.map((a) => { const f = flow.byAcc.get(a.id); return <Td key={a.id} right className={cn(COL, CELL, "whitespace-nowrap")}>{cell(f?.[side] ?? 0, (side === "inc" ? f?.trIn : f?.trOut) ?? 0)}</Td>; })}
+        <Td right className={cn(COL, CELL, "whitespace-nowrap font-medium")}>{cell(flow.total[side], 0)}</Td>
+      </Tr>
+    );
+  };
+  // Davr ichida «Oy oxiri qoldiqlari» yozuvi bo'lsa — alohida qator (u kirim ham, chiqim ham emas)
+  const openIn = new Map(accounts.map((a) => [a.id, flow.byAcc.get(a.id)?.open ?? 0]));
   const balanceRow = (label: string, hint: string, m: Map<string, number>, strong: boolean) => {
     const total = sum(m);
     return (
@@ -97,15 +114,13 @@ export async function AccountMatrix({ accounts, range }: { accounts: Account[]; 
         </thead>
         <tbody>
           {balanceRow("Boshlang'ich qoldiq", `${date(range.from)} boshiga`, opening, false)}
-          <Tr>
-            <Td className={cn(CELL, "whitespace-nowrap")}>Kirim / chiqim{sub(rangeLabel(range.from, range.to))}</Td>
-            {accounts.map((a) => <Td key={a.id} right className={cn(COL, CELL)}>{flowText(flow.byAcc.get(a.id))}</Td>)}
-            <Td right className={cn(COL, CELL, "font-medium")}>{flowText(flow.total)}</Td>
-          </Tr>
+          {flow.total.open !== 0 && balanceRow("Kiritilgan qoldiq", "Oy oxiri qoldiqlari", openIn, false)}
+          {flowRow("Kirim", rangeLabel(range.from, range.to), "inc")}
+          {flowRow("Chiqim", rangeLabel(range.from, range.to), "exp")}
           {balanceRow("Qoldiq", `${date(range.to)} oxiriga`, closing, true)}
         </tbody>
       </Table>
-      <p className="mt-1.5 text-xs text-slate-500">Hammasi tepadagi sana bo&apos;yicha. Hisob ustunlarida perekit ham hisobga olingan; Jami — perekitsiz (pul kompaniya ichida ko&apos;chgan). Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
+      <p className="mt-1.5 text-xs text-slate-500">Hammasi tepadagi sana bo&apos;yicha; har ustunda boshlang&apos;ich qoldiq + kirim − chiqim = qoldiq. Hisob ustunlarida perekit ham kirim/chiqimga kiradi (pul shu hisobga kirgan yoki chiqqan); Jami — perekitsiz (pul kompaniya ichida ko&apos;chgan). Hisob nomini bosing — jurnal shu hisob bo&apos;yicha ochiladi.</p>
     </div>
   );
 }
@@ -194,6 +209,11 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub 
   const editOptions = editCats ? { accounts, income: editCats[0], expense: editCats[1], customers: editCats[2], canAddSub } : null;
 
   const base = (d: Date, c: Date) => ({ day: isoDate(d), at: opAt(d, c), ts: d.getTime(), cts: c.getTime() });
+  // Perekitning ikkinchi oyog'i qaysi hisobda — jurnal jamisida tanlangan hisoblar ichidagi perekitni ajratish uchun
+  // (oyoqlar bir sanada yoziladi, shuning uchun ikkalasi ham shu davr qatorlarida bor)
+  const legs = new Map<string, { id: string; acc: string }[]>();
+  for (const t of txs) if (isTransfer(t.type) && t.refType === TRANSFER_REF && t.refId) legs.set(t.refId, [...(legs.get(t.refId) ?? []), { id: t.id, acc: t.cashAccountId }]);
+  const peerOf = (t: { id: string; refId: string | null }) => (t.refId ? legs.get(t.refId)?.find((l) => l.id !== t.id)?.acc : undefined);
   const all: KassaRow[] = [
     ...payments.map((p): KassaRow => ({
       key: `p${p.id}`, ...base(p.date, p.createdAt), accountId: p.cashAccountId, account: p.cashAccount.name, method: p.cashAccount.type,
@@ -211,7 +231,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub 
       const doc = transfer && t.refType === TRANSFER_REF && t.refId ? t.refId : null;
       return {
         key: `t${t.id}`, ...base(t.date, t.createdAt), accountId: t.cashAccountId, account: t.cashAccount.name, method: t.cashAccount.type,
-        inc: sign > 0 ? amount : 0, exp: sign < 0 ? amount : 0, transfer,
+        inc: sign > 0 ? amount : 0, exp: sign < 0 ? amount : 0, transfer, peerId: transfer ? peerOf(t) : undefined,
         manba: transfer ? "Perekit" : t.category,
         sub: transfer ? (t.counterparty ?? "") : (t.subCategory ?? ""),
         // Kontragent — yozilgan nom (tahrirda shu o'zgaradi), bo'lmasa yetkazuvchi
