@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useId } from "react";
 import { useRouter } from "next/navigation";
 import { Minus } from "lucide-react";
 import { FolderPicker, type PickerGroup } from "@/components/folder-picker";
@@ -11,6 +11,7 @@ import { deleteCatalogMaterial, deleteMaterialGroup } from "@/lib/material-actio
 import type { CatalogProduct } from "@/components/product-picker";
 import { unitLabel } from "@/lib/unit";
 import { Badge, inputCls } from "@/components/ui";
+import { AnchoredList } from "@/components/ui/anchored-list";
 import { cn } from "@/lib/utils";
 
 /** Retsept ingrediyenti — xomashyo yoki boshqa mahsulot (masalan FBS blok) bo'lishi mumkin. */
@@ -136,14 +137,17 @@ export function IngredientField({ ingredients, groups, products, canCreateMateri
   const [modal, setModal] = useState(false);
   const [cursor, setCursor] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
   const matches = useMemo(() => filterIngredients(ingredients, q ?? "").slice(0, 50), [ingredients, q]);
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => { if (!boxRef.current?.contains(e.target as Node)) { setOpen(false); setQ(null); } };
+    const onDown = (e: MouseEvent) => { const t = e.target as Node; if (!boxRef.current?.contains(t) && !listRef.current?.contains(t)) { setOpen(false); setQ(null); } };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   });
+  useEffect(() => { if (open) listRef.current?.querySelector<HTMLElement>(`[data-i="${cursor}"]`)?.scrollIntoView({ block: "nearest" }); }, [cursor, open]);
 
   const choose = (x: IngredientRow) => { onPick(x); setOpen(false); setQ(null); };
 
@@ -153,13 +157,22 @@ export function IngredientField({ ingredients, groups, products, canCreateMateri
         value={q ?? (selected ? (selected.kind === "product" ? selected.name : `${selected.name} (${selected.code})`) : "")}
         placeholder="Xomashyo yoki mahsulot nomi"
         autoComplete="off"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
         onChange={(e) => { setQ(e.target.value); setOpen(true); setCursor(0); }}
-        onFocus={() => setOpen(true)}
+        // Sichqoncha bilan bosilganda yoki yozilganda ochiladi; klaviatura bilan kelinganda ↑↓ qo'shni katakka (umumiy navigatsiya)
+        onMouseDown={() => setOpen(true)}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setCursor((c) => Math.min(c + 1, matches.length - 1)); }
+          if (!open) {
+            if ((e.key === "ArrowDown" && e.altKey) || e.key === "F4") { e.preventDefault(); setOpen(true); }
+            return;
+          }
+          if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => Math.min(c + 1, matches.length - 1)); }
           else if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
-          else if (e.key === "Enter" && open && matches[cursor]) { e.preventDefault(); choose(matches[cursor]); }
-          else if (e.key === "Escape") { setOpen(false); setQ(null); }
+          else if (e.key === "Enter" && matches[cursor]) { e.preventDefault(); choose(matches[cursor]); }
+          else if (e.key === "Escape") { e.preventDefault(); setOpen(false); setQ(null); }
+          else if (e.key === "Tab") { setOpen(false); setQ(null); }
         }}
         className={cn(inputCls, "rounded-r-none")}
       />
@@ -169,10 +182,10 @@ export function IngredientField({ ingredients, groups, products, canCreateMateri
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 min-w-[min(20rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
+        <AnchoredList id={listId} anchorRef={boxRef} listRef={listRef} watch={matches.length} label="Ingredientlar">
           {matches.length === 0 && <div className="px-3 py-2 text-sm text-slate-500">Mos yozuv topilmadi</div>}
           {matches.map((x, i) => (
-            <button key={x.id} type="button" onMouseEnter={() => setCursor(i)} onClick={() => choose(x)}
+            <button key={x.id} type="button" tabIndex={-1} data-i={i} role="option" aria-selected={i === cursor} onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setCursor(i)} onClick={() => choose(x)}
               className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm", i === cursor ? "bg-slate-100" : "hover:bg-slate-50")}>
               <Minus size={14} className="shrink-0 text-slate-400" />
               <span className="min-w-0 flex-1 truncate">{x.name}</span>
@@ -181,7 +194,7 @@ export function IngredientField({ ingredients, groups, products, canCreateMateri
               {x.kind === "material" && <span className="shrink-0 text-xs text-slate-400 tabular">{x.code}</span>}
             </button>
           ))}
-        </div>
+        </AnchoredList>
       )}
 
       <IngredientPicker open={modal} ingredients={ingredients} groups={groups} products={products} canCreateMaterial={canCreateMaterial} canCreateProduct={canCreateProduct} initialQuery={q ?? ""} onPick={choose} onClose={() => setModal(false)} />

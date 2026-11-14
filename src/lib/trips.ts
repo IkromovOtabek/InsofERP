@@ -171,7 +171,8 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
 
 /**
  * Jo'natish (SHIPMENT) yozuvi. Beton — bitta qator. Dona mahsulot brigada omborlaridan yechiladi (`lib/brigade-products.ts`):
- * avval shu zayavka qatorini ishlagan brigadalar, keyin umumiy hovli, keyin qoldig'i ko'p brigada — har ombor alohida qator.
+ * avval zayavkada «Brigadadan olish» bilan tanlangan brigada, keyin shu zayavka qatorini ishlagan brigadalar, keyin umumiy hovli,
+ * keyin qoldig'i ko'p brigada — har ombor alohida qator.
  */
 async function writeShipment(
   tx: Prisma.TransactionClient,
@@ -182,11 +183,16 @@ async function writeShipment(
     await tx.stockMove.create({ data: { ...base, qty: -p.qty, note: p.note } });
     return;
   }
-  const tasks = await tx.brigadeTask.findMany({
-    where: { orderId: p.orderId, orderItem: { productId: p.line.productId }, status: { not: "CANCELLED" } },
-    orderBy: { createdAt: "asc" }, select: { brigadeId: true },
-  });
-  const parts = await takeFromOwners(tx, { warehouseId: p.warehouseId, productId: p.line.productId, qty: p.qty, prefer: tasks.map((x) => x.brigadeId) });
+  // Tartib: zayavkada «Brigadadan olish» bilan tanlangan brigada ombori → shu qatorni ishlagan brigadalar → umumiy hovli → qolganlar
+  const [sources, tasks] = await Promise.all([
+    tx.orderItem.findMany({ where: { orderId: p.orderId, productId: p.line.productId, stockBrigadeId: { not: null } }, orderBy: { id: "asc" }, select: { stockBrigadeId: true } }),
+    tx.brigadeTask.findMany({
+      where: { orderId: p.orderId, orderItem: { productId: p.line.productId }, status: { not: "CANCELLED" } },
+      orderBy: { createdAt: "asc" }, select: { brigadeId: true },
+    }),
+  ]);
+  const prefer = [...new Set([...sources.map((x) => x.stockBrigadeId!), ...tasks.map((x) => x.brigadeId)])];
+  const parts = await takeFromOwners(tx, { warehouseId: p.warehouseId, productId: p.line.productId, qty: p.qty, prefer });
   const names = parts.some((x) => x.owner) ? await brigadeNames(tx) : new Map<string, string>();
   for (const part of parts) {
     const from = `${ownerLabel(names, part.owner)}dan`;

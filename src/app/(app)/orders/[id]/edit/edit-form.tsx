@@ -14,12 +14,14 @@ import { fmtNum, isoDate } from "@/lib/format";
 import { withNds } from "@/lib/nds";
 import { cn } from "@/lib/utils";
 import { editOrder } from "../../actions";
+import type { BrigadeStockMap } from "@/lib/brigade-stock-source";
+import { BrigadeSourceCell, BrigadeSourceToggle } from "../../brigade-source";
 import { blockEnterSubmit, siteByAddress, submitKeepingState, type SitePlace } from "../../order-form";
 
 export type OrderEditData = {
   id: string; kind: "SALE" | "STOCK"; status: OrderStatus; customerName: string;
   /** `price` — NDS'siz; `locked` — brigadaga berilgan qator, `min` — undan kam qilib bo'lmaydigan miqdor */
-  items: { id: string; productId: string; qty: number; price: number; nds: boolean; locked: boolean; min: number; /** obyekt bloki nomi, "" — yo'q */ block: string }[];
+  items: { id: string; productId: string; qty: number; price: number; nds: boolean; locked: boolean; min: number; /** obyekt bloki nomi, "" — yo'q */ block: string; /** «Brigadadan olish» brigadasi, "" — yo'q */ stockBrigadeId: string }[];
   deliveryDate: string; dateUnknown: boolean;
   deliveryAddress: string; lat: number | null; lng: number | null;
   needsPump: boolean; needsDelivery: boolean; deliveryFee: number; isUrgent: boolean; note: string;
@@ -29,19 +31,20 @@ export type OrderEditData = {
   invoices: string[];
 };
 
-type Row = { key: string; id: string | null; productId: string; qty: string; price: string; nds: boolean; locked: boolean; min: number; block: string };
+type Row = { key: string; id: string | null; productId: string; qty: string; price: string; nds: boolean; locked: boolean; min: number; block: string; src: boolean; srcId: string };
 const num = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000));
 
 /**
  * Zayavkani tahrirlash formasi. Saqlash faqat tugma bilan (Enter yubormaydi); xato qaytsa kiritilgani o'chmaydi. Server qoidalari (`orderEdit`):
  * brigadaga berilgan qator qulflanadi, tasdiqlangan zayavkada summa oshsa limit qayta tekshiriladi.
  */
-export function OrderEditForm({ data, products, groups, canCreateProduct, sites, geoSearch }: {
+export function OrderEditForm({ data, products, groups, canCreateProduct, sites, geoSearch, brigadeStock = {} }: {
   data: OrderEditData; products: CatalogProduct[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; sites: SitePlace[]; geoSearch: boolean;
+  /** «Brigadadan olish»: mahsulot → brigada omborlari (shu zayavkaning o'z bandi hisobga olinmagan) */ brigadeStock?: BrigadeStockMap;
 }) {
   const [state, action, pending] = useActionState(editOrder.bind(null, data.id), undefined);
   const isStock = data.kind === "STOCK";
-  const [rows, setRows] = useState<Row[]>(() => data.items.map((i) => ({ key: i.id, id: i.id, productId: i.productId, qty: num(i.qty), price: String(i.price), nds: i.nds, locked: i.locked, min: i.min, block: i.block })));
+  const [rows, setRows] = useState<Row[]>(() => data.items.map((i) => ({ key: i.id, id: i.id, productId: i.productId, qty: num(i.qty), price: String(i.price), nds: i.nds, locked: i.locked, min: i.min, block: i.block, src: !!i.stockBrigadeId, srcId: i.stockBrigadeId })));
   // Obyekt bloklari: «Obyekt» katagidagi manzil bo'yicha mijoz obyekti + qatorlarda yozilgani
   const [addr, setAddr] = useState(data.deliveryAddress);
   const blockOpts = [...new Set([...(siteByAddress(sites, addr)?.blocks ?? []), ...rows.map((r) => r.block.trim()).filter(Boolean)])];
@@ -56,10 +59,26 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
 
   const update = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const productOf = (id: string) => products.find((p) => p.id === id);
-  const onProduct = (key: string, productId: string) => update(key, { productId, price: productOf(productId)?.price ?? "0" });
+  const onProduct = (key: string, productId: string) => update(key, { productId, price: productOf(productId)?.price ?? "0", src: false, srcId: "" });
+  // «Brigadadan olish»: yoqilganda erkini ko'p brigada; boshqa qatorlar olgani katakda ayiriladi; yetmasa — qatorni bo'lish
+  const toggleSource = (r: Row, on: boolean) => update(r.key, { src: on, srcId: on ? (brigadeStock[r.productId]?.[0]?.brigadeId ?? "") : "" });
+  const takenFor = (r: Row) => {
+    const t: Record<string, number> = {};
+    for (const x of rows) if (x.key !== r.key && x.src && x.srcId && x.productId === r.productId) t[x.srcId] = (t[x.srcId] ?? 0) + (Number(x.qty) || 0);
+    return t;
+  };
+  const splitSource = (key: string, brigadeId: string, qty: number) => setRows((rs) => {
+    const i = rs.findIndex((x) => x.key === key);
+    const cur = rs[i];
+    if (!cur) return rs;
+    const keep = Math.max(cur.locked ? cur.min : 0, Math.round(((Number(cur.qty) || 0) - qty) * 1000) / 1000);
+    const add = Math.round(((Number(cur.qty) || 0) - keep) * 1000) / 1000;
+    if (add <= 0) return rs;
+    return [...rs.slice(0, i), { ...cur, qty: num(keep) }, { ...cur, key: `n${Date.now()}`, id: null, locked: false, min: 0, qty: num(add), srcId: brigadeId }, ...rs.slice(i + 1)];
+  });
   const addRow = () => {
     const p = products[0];
-    setRows((rs) => [...rs, { key: `n${Date.now()}`, id: null, productId: p?.id ?? "", qty: "", price: isStock ? "0" : p?.price ?? "0", nds: kind === "bank", locked: false, min: 0, block: "" }]);
+    setRows((rs) => [...rs, { key: `n${Date.now()}`, id: null, productId: p?.id ?? "", qty: "", price: isStock ? "0" : p?.price ?? "0", nds: kind === "bank", locked: false, min: 0, block: "", src: false, srcId: "" }]);
   };
 
   const lineOf = (r: Row) => (Number(r.qty) || 0) * (r.nds ? withNds(Number(r.price) || 0) : Number(r.price) || 0);
@@ -97,6 +116,7 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
                 <input type="hidden" name="productId[]" value={r.productId} />
                 {!isStock && <input type="hidden" name="nds[]" value={r.nds ? "1" : "0"} />}
                 {!isStock && <input type="hidden" name="block[]" value={r.block} />}
+                {!isStock && <input type="hidden" name="stockBrigade[]" value={r.src && p?.unit !== "m³" ? r.srcId : ""} />}
                 <div className={cn("grid grid-cols-1 gap-3", isStock ? "sm:grid-cols-[minmax(0,1fr)_160px_40px]" : "sm:grid-cols-[minmax(0,1fr)_150px_130px_170px_40px]")}>
                   <div className="min-w-0">
                     <div className="mb-1.5 text-[13px] font-medium text-slate-700">{idx + 1}. Mahsulot</div>
@@ -134,8 +154,19 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
                 </div>
                 {!isStock && (
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <Checkbox label="QQS 12% qo'shilsin" checked={r.nds} onChange={(e) => update(r.key, { nds: e.target.checked })} />
+                    <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <Checkbox label="QQS 12% qo'shilsin" checked={r.nds} onChange={(e) => update(r.key, { nds: e.target.checked })} />
+                      {/* Plita, ustun, blok… (beton emas): tayyorini brigada omboridan olish */}
+                      {p && p.unit !== "m³" && <BrigadeSourceToggle checked={r.src} options={brigadeStock[r.productId]} onChange={(on) => toggleSource(r, on)} />}
+                    </span>
                     <span className="text-slate-500">Summa: <b className="tabular text-slate-900">{fmtNum(lineOf(r))}</b> so&apos;m</span>
+                  </div>
+                )}
+                {!isStock && r.src && p && p.unit !== "m³" && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/40 p-2">
+                    <div className="mb-1 text-xs font-medium text-slate-600">Brigada omboridan — reys yuklanganda chiqim shu ombordan yoziladi</div>
+                    <BrigadeSourceCell productId={r.productId} options={brigadeStock[r.productId]} unit={unit} need={Number(r.qty) || 0} value={r.srcId}
+                      onChange={(id) => update(r.key, { srcId: id })} taken={takenFor(r)} onSplit={(b, q) => splitSource(r.key, b, q)} />
                   </div>
                 )}
               </div>

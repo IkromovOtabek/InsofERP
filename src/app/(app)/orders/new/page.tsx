@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { blacklistedIds, customersCredit, customersHistory, contractedIds, defaultCreditLimit } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
+import { brigadeStockFor } from "@/lib/brigade-stock-source";
 import { PageHeader, Tabs } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { BLOCK_ORDER } from "@/lib/site-blocks";
@@ -86,7 +87,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
   if (excel) {
     // Varaq sanasi (`?sana=YYYY-MM-DD`, sukut — ertaga): shu kunga olingan barcha zayavkalar varaq tepasida ko'rinadi
     const day = sana && /^\d{4}-\d{2}-\d{2}$/.test(sana) && isoDate(new Date(`${sana}T00:00:00`)) === sana ? sana : isoDate(new Date(Date.now() + 86_400_000));
-    const [products, customers, black, sheet] = await Promise.all([
+    const [products, customers, black, sheet, brigadeStock] = await Promise.all([
       db.product.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true, unit: true, price: true } }),
       db.customer.findMany({
         where: { isActive: true, isInternal: false }, orderBy: { name: "asc" },
@@ -97,6 +98,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       }),
       blacklistedIds(), // «limit yo'q» belgisi — bunday mijozga «Qarzga» zayavka ochilmaydi
       orderDaySheet(new Date(`${day}T00:00:00`)), // kunlik «Realizatsiya zayavkasi» bilan bir xil hisob
+      brigadeStockFor(), // «Brigadadan olish» — dona mahsulot brigada omborlarida qancha erkin
     ]);
     const SEC: Record<PayGroupKey, keyof GridExisting> = { BANK: "bank", CASH: "cash", DEBT: "credit" };
     const existing: GridExisting = { bank: [], cash: [], credit: [] };
@@ -110,15 +112,16 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
         <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />
         <PageHeader back={{ href: "/orders", label: "Zayavkalar" }} title="Yangi zayavka" action={viewTabs}
           subtitle="Excel ko'rinish: tanlangan kunga olingan barcha zayavkalar va yangi qatorlar — perechisleniye, naqd va qarzga bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
-        <OrderGrid day={day} existing={existing} orderCount={sheet.orderCount} customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()}
+        <OrderGrid day={day} existing={existing} orderCount={sheet.orderCount} customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()} brigadeStock={brigadeStock}
           products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: unitLabel(p.unit), price: Number(p.price) }))} />
       </div>
     );
   }
 
-  const [catalog, stock, lead, amoDeal] = await Promise.all([
+  const [catalog, stock, brigadeStock, lead, amoDeal] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
     stockSnapshot(),
+    brigadeStockFor(), // «Brigadadan olish»: dona mahsulot brigada omborlarida qancha erkin turibdi
     // Sayt arizasidan ochilgan zayavka: mahsulot, hajm va manzil arizadan olinadi
     leadId ? db.lead.findUnique({ where: { id: leadId }, select: { productId: true, qty: true, address: true, message: true, customerId: true } }) : null,
     // amoCRM kelishuvidan: mijoz, manzil va sdelka nomi; zayavka sdelkaga bog'lanadi (`lib/amocrm/sync.ts`)
@@ -178,7 +181,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       {/* Blanka keng (QQS ustunli jadval) — to'liq kenglikda; sklad qoldig'i pastda */}
       <div className="space-y-5">
         <div>
-          <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
+          <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} brigadeStock={brigadeStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
         </div>
         <div>
           {/* Uzun jadval formani siqib qo'ymasligi uchun bo'limlar yig'iladi */}

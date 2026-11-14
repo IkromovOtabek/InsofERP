@@ -575,6 +575,8 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   .ui-str { @apply transition-colors; }
 }
 /* SheetTd `tone` foni. Qatlamsiz: avvalgi inline `style` kabi har qanday utility (`[&_td]:bg-slate-50` …) dan ustun */
+/* Strelka navigatsiyasi (`keyboard-nav.tsx`): tanlangan katak — Excel'dagi faol katak kabi ramka */
+[data-nav-cell]:focus { outline: 2px solid var(--color-brand-500, #2563eb); outline-offset: -2px; }
 .ui-std[data-t="green"] { background: var(--st-green); }
 .ui-std[data-t="red"] { background: var(--st-red); }
 .ui-std[data-t="gray"] { background: var(--st-gray); }

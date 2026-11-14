@@ -6,6 +6,8 @@ import { dateRu, dateTime, qty } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
 import { Card, LinkButton, Section, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/components/ui";
 import { StockPeriodBar, type StockPeriod } from "@/components/stock-period";
+import { YardMovesHost } from "@/components/yard-moves-dialog";
+import { yardMovesInfo } from "@/app/(app)/stock/yard-actions";
 import { cn } from "@/lib/utils";
 
 /**
@@ -40,6 +42,18 @@ const ZERO: TurnCell = { in: 0, out: 0, close: 0 };
 /** Katak: 0 — bo'sh (Excel'dagidek) */
 const n = (v: number) => (Math.abs(v) > EPS ? qty(v) : "");
 const live = (c: TurnCell) => Math.abs(c.in) > EPS || Math.abs(c.out) > EPS || Math.abs(c.close) > EPS;
+/**
+ * Bosiladigan katak: kassa/bank kabi oyna ochiladi — shu ombordagi harakatlar, kim kiritgani, sana va soat (`YardMovesHost`).
+ * `owner`: brigada id, "" — umumiy hovli, "*" — butun sklad (Jami). `dir`: in/out — davrdagi kirim/chiqim, all — qoldiqqacha hammasi.
+ */
+function Cell({ productId, owner, dir, v, title }: { productId: string; owner: string; dir: "in" | "out" | "all"; v: number; title: string }) {
+  const t = Math.abs(v) > EPS ? qty(v) : "";
+  if (!t) return null;
+  return (
+    <button type="button" data-ym-p={productId} data-ym-o={owner} data-ym-d={dir} title={title}
+      className="-mx-1 w-[calc(100%+0.5rem)] cursor-pointer rounded px-1 text-right tabular decoration-dotted underline-offset-2 hover:bg-white/70 hover:underline focus-visible:outline-2 focus-visible:outline-brand-500">{t}</button>
+  );
+}
 
 type Row = { productId: string; name: string; unit: string; byOwner: Record<string, TurnCell>; total: TurnCell };
 
@@ -122,6 +136,7 @@ export async function YardStatus({ ombor, period, canDistribute = false }: {
               {t.columns.map((c) => chip(chipHref(urlKey(c.key)), pick === urlKey(c.key), c.name, t.rows.reduce((a, r) => a + cellOf(r, c.key).close, 0), c.owner === null))}
             </div>
           )}
+          <YardMovesHost load={yardMovesInfo} from={period.fromStr} to={period.toStr} periodLabel={`Davr: ${period.label}`}>
           <Sheet lang="uz" maxHeight="75vh">
             <SheetHead>
               <tr>
@@ -160,14 +175,14 @@ export async function YardStatus({ ombor, period, canDistribute = false }: {
                     {cols.flatMap((c) => {
                       const x = cellOf(r, c.key);
                       return [
-                        <SheetTd key={`${c.key}-i`} right tone="green">{n(x.in)}</SheetTd>,
-                        <SheetTd key={`${c.key}-o`} right tone="red">{n(x.out)}</SheetTd>,
-                        <SheetTd key={`${c.key}-q`} right tone="gray" className={cn("font-semibold", x.close < -EPS ? "text-red-600" : "text-slate-900")}>{n(x.close)}</SheetTd>,
+                        <SheetTd key={`${c.key}-i`} right tone="green"><Cell productId={r.productId} owner={c.key} dir="in" v={x.in} title={`${c.name}: kirim — kim, qachon (bosing)`} /></SheetTd>,
+                        <SheetTd key={`${c.key}-o`} right tone="red"><Cell productId={r.productId} owner={c.key} dir="out" v={x.out} title={`${c.name}: chiqim — kim, qachon (bosing)`} /></SheetTd>,
+                        <SheetTd key={`${c.key}-q`} right tone="gray" className={cn("font-semibold", x.close < -EPS ? "text-red-600" : "text-slate-900")}><Cell productId={r.productId} owner={c.key} dir="all" v={x.close} title={`${c.name}: qoldiq — barcha harakatlar (bosing)`} /></SheetTd>,
                       ];
                     })}
-                    <SheetTd right tone="green" strong>{n(r.total.in)}</SheetTd>
-                    <SheetTd right tone="red" strong>{n(r.total.out)}</SheetTd>
-                    <SheetTd right className={cn("font-bold", r.total.close > EPS ? "bg-emerald-100 text-emerald-900" : r.total.close < -EPS ? "bg-red-100 text-red-700" : "text-slate-400")}>{qty(r.total.close)}</SheetTd>
+                    <SheetTd right tone="green" strong><Cell productId={r.productId} owner="*" dir="in" v={r.total.in} title="Butun sklad: kirim — kim, qachon (bosing)" /></SheetTd>
+                    <SheetTd right tone="red" strong><Cell productId={r.productId} owner="*" dir="out" v={r.total.out} title="Butun sklad: chiqim — kim, qachon (bosing)" /></SheetTd>
+                    <SheetTd right className={cn("font-bold", r.total.close > EPS ? "bg-emerald-100 text-emerald-900" : r.total.close < -EPS ? "bg-red-100 text-red-700" : "text-slate-400")}>{Math.abs(r.total.close) > EPS ? <Cell productId={r.productId} owner="*" dir="all" v={r.total.close} title="Butun sklad: barcha harakatlar (bosing)" /> : qty(r.total.close)}</SheetTd>
                     <SheetTd right className="font-semibold text-blue-700">{n(band)}</SheetTd>
                     <SheetTd right className={cn("font-semibold", free < -EPS ? "text-red-600" : "text-emerald-700")}>
                       {free < -EPS ? <span title="Band qilingani hovlidagidan ko'p — yetishmaydi">{qty(free)}</span> : n(free)}
@@ -194,10 +209,11 @@ export async function YardStatus({ ombor, period, canDistribute = false }: {
               </SheetFoot>
             )}
           </Sheet>
+          </YardMovesHost>
           <p className="text-xs text-slate-500">
             Kirim / chiqim — {period.label}; qoldiq — {dateRu(new Date(`${period.toStr}T00:00:00`))} oxiriga. Kirim: brigada topshirig&apos;i, «Tayyor mahsulot qo&apos;shish»,
             obyektdan qaytgani va boshqa ombordan ko&apos;chirilgani; chiqim: reys, brak va boshqa omborga ko&apos;chirilgani. Ko&apos;chirish «Jami» ga qo&apos;shilmaydi.
-            Band / Erkin — hozirgi holat. Taqsimlash yoki ko&apos;chirish — mahsulot nomini bosing.
+            Band / Erkin — hozirgi holat. Kirim, chiqim yoki qoldiq sonini bosing — kim, qaysi kuni va soat nechada kiritgani ochiladi. Taqsimlash yoki ko&apos;chirish — mahsulot nomini bosing.
           </p>
           {empty.length > 0 && (
             <details className="group/empty">

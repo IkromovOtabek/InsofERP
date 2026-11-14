@@ -62,7 +62,8 @@ export function SheetTd({ children, right, center, tone, strong, muted, classNam
 }) {
   // Fon — `data-t` (globals.css), `colSpan` — faqat berilganda: har katakka `style`/`$undefined` yozilmasin
   return (
-    <td {...(colSpan ? { colSpan } : null)} {...(tone && TONED.has(tone) ? { "data-t": tone } : null)}
+    // `data-nav-cell` + tabIndex -1: katak bosilsa tanlanadi, ↑↓←→ bilan qo'shni katakka o'tiladi (`components/keyboard-nav.tsx`)
+    <td {...(colSpan ? { colSpan } : null)} {...(tone && TONED.has(tone) ? { "data-t": tone } : null)} data-nav-cell="" tabIndex={-1}
       className={cn("ui-std", right && "text-right whitespace-nowrap", center && "text-center", strong && "font-semibold text-slate-900", muted && "text-slate-400", className)}>
       {children}
     </td>

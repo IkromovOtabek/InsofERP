@@ -16,6 +16,7 @@ import { Tour, TourTrigger } from "@/components/tour";
 import { NotificationStack } from "@/components/notification-stack";
 import { NavProgress } from "@/components/nav-progress";
 import { StickyHScroll } from "@/components/sticky-hscroll";
+import { KeyboardNav } from "@/components/keyboard-nav";
 import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -401,6 +402,8 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
         </main>
         {/* Keng jadval pasti ekrandan tashqarida bo'lsa — gorizontal scroll ekran pastida */}
         <StickyHScroll />
+        {/* ↑↓←→ — qo'shni katak / maydonga (Excel'dagidek), butun ilova bo'yicha */}
+        <KeyboardNav />
       </div>
 
       {/* Instruksiya: qobiq ichida turadi — bo'limdan bo'limga o'tganda bosqich yo'qolmaydi */}

@@ -12,6 +12,7 @@ import { withoutNds } from "@/lib/nds";
 import { isEditable } from "@/lib/orders";
 import { BLOCK_ORDER } from "@/lib/site-blocks";
 import { OrderEditForm, type OrderEditData } from "./edit-form";
+import { brigadeStockFor } from "@/lib/brigade-stock-source";
 
 /**
  * Ochilgan zayavkani tahrirlash — ishlab chiqarish boshlanguncha (qoralama, bloklangan, tasdiqlangan; zames va reys yo'q).
@@ -36,9 +37,11 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
   const isStock = o.kind === "STOCK";
   if (!canDo(s, "orders", isStock ? "stock" : "edit") || !isEditable(o)) redirect(`/orders/${id}`);
 
-  const [catalog, sites] = await Promise.all([
+  const [catalog, sites, brigadeStock] = await Promise.all([
     productCatalog(isStock ? { pieceOnly: true } : {}),
     isStock ? [] : db.site.findMany({ where: { customerId: o.customerId, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, address: true, lat: true, lng: true, blocks: { where: { isActive: true }, orderBy: BLOCK_ORDER, select: { name: true } } } }),
+    // «Brigadadan olish» — shu zayavkaning o'z bandi erkin qoldiqdan ayirilmaydi
+    isStock ? {} : brigadeStockFor(undefined, id, o.items.filter((i) => i.stockBrigadeId).map((i) => ({ productId: i.productId, brigadeId: i.stockBrigadeId! }))),
   ]);
   // Arxivlangan mahsulot qatorda qolgan bo'lsa ham ro'yxatda ko'rinsin
   const products = [...catalog.products];
@@ -53,7 +56,7 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
     items: o.items.map((i) => ({
       id: i.id, productId: i.productId, qty: Number(i.qtyM3),
       // Formada narx NDS'siz turadi — saqlashda «QQS 12%» belgilangan qatorga soliq qayta qo'shiladi
-      price: i.nds ? withoutNds(Number(i.price)) : Number(i.price), nds: i.nds, block: i.block?.name ?? "",
+      price: i.nds ? withoutNds(Number(i.price)) : Number(i.price), nds: i.nds, block: i.block?.name ?? "", stockBrigadeId: i.stockBrigadeId ?? "",
       // Brigadaga berilgan qator: o'chmaydi, mahsuloti almashmaydi, soni berilgan/bajarilganidan kam bo'lmaydi
       locked: i.tasks.length > 0,
       min: Math.max(i.tasks.filter((t) => t.status !== "CANCELLED").reduce((a, t) => a + Number(t.qty), 0), i.tasks.reduce((a, t) => a + Number(t.doneQty), 0)),
@@ -69,7 +72,7 @@ export default async function EditOrderPage({ params }: { params: Promise<{ id: 
   return (
     <div>
       <PageHeader back={{ href: `/orders/${id}`, label: "Zayavka" }} title={isStock ? "Sklad zayavkasini tahrirlash" : "Zayavkani tahrirlash"} subtitle={isStock ? "Zaxiraga ishlab chiqarish" : o.customer.name} />
-      <OrderEditForm data={data} products={products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} sites={sites.map(({ blocks, ...x }) => ({ ...x, blocks: blocks.map((b) => b.name) }))} geoSearch={geoSearchEnabled()} />
+      <OrderEditForm data={data} products={products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} sites={sites.map(({ blocks, ...x }) => ({ ...x, blocks: blocks.map((b) => b.name) }))} geoSearch={geoSearchEnabled()} brigadeStock={brigadeStock} />
     </div>
   );
 }

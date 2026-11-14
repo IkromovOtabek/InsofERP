@@ -57,6 +57,8 @@ const schema = z.object({
   nds: z.array(z.string()).optional(),
   // Qator qaysi obyekt blokiga (A blok…) — bo'sh bo'lishi mumkin
   block: z.array(z.string()).optional(),
+  // «Brigadadan olish»: tayyor mahsulot qaysi brigada omboridan beriladi (bo'sh — belgilanmagan)
+  stockBrigade: z.array(z.string()).optional(),
 });
 
 /**
@@ -104,7 +106,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         items: d.productId.map((productId, i) => {
           const nds = d.nds?.[i] === "1";
           const price = d.price[i]!;
-          return { productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block?.[i] ?? null };
+          return { productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block?.[i] ?? null, stockBrigadeId: d.stockBrigade?.[i] || null };
         }).filter((i) => i.productId),
         needsPump: d.needsPump,
         needsDelivery: d.needsDelivery,
@@ -169,6 +171,7 @@ const editSchema = z.object({
   price: z.array(z.coerce.number({ message: "Narx raqam bo'lsin" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Narx juda katta")).optional(),
   nds: z.array(z.string()).optional(),
   block: z.array(z.string()).optional(),
+  stockBrigade: z.array(z.string()).optional(),
   deliveryDate: zOpt.refine((v) => !v || Number.isFinite(new Date(v).getTime()), "Yetkazish sanasi noto'g'ri"),
   dateUnknown: z.string().optional().transform((v) => v === "1"),
   isUrgent: z.string().optional().transform((v) => v === "on"),
@@ -200,7 +203,7 @@ export async function editOrder(id: string, _prev: ActionState, fd: FormData): P
       items: d.productId.map((productId, i) => {
         const nds = d.nds?.[i] === "1";
         const price = d.price?.[i] ?? 0;
-        return { id: d.itemId?.[i] || null, productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block ? d.block[i] ?? null : undefined };
+        return { id: d.itemId?.[i] || null, productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block ? d.block[i] ?? null : undefined, stockBrigadeId: d.stockBrigade ? d.stockBrigade[i] || null : undefined };
       }),
       deliveryDate: d.deliveryDate ? new Date(d.deliveryDate) : new Date(),
       dateUnknown: d.dateUnknown,
@@ -364,6 +367,8 @@ const gridSchema = z.object({
     dateUnknown: z.boolean().default(false),
     lat: z.number().min(-90).max(90).nullish(),
     lng: z.number().min(-180).max(180).nullish(),
+    // «Brigadadan olish»: tayyor dona mahsulot qaysi brigada omboridan (bo'sh — belgilanmagan)
+    stockBrigadeId: z.string().max(40).nullish(),
   })).min(1, "Jadval bo'sh").max(300, "Bir varaqda 300 qatordan ko'p bo'lmasin"),
 });
 

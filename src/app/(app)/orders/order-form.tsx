@@ -13,6 +13,8 @@ import type { ProductCreate } from "@/lib/catalog";
 import { ProductField } from "@/components/product-field";
 import { MoneyInput } from "@/components/money-input";
 import { BlockField } from "@/components/site-blocks";
+import type { BrigadeStockMap } from "@/lib/brigade-stock-source";
+import { BrigadeSourceCell, BrigadeSourceToggle } from "./brigade-source";
 import { ndsOf } from "@/lib/nds";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +53,10 @@ function defaultSite(c: CustomerOpt | null, siteId?: string): { address: string;
  */
 export type ProductStock = Record<string, { free: number; total: number; owned: number; canMake: number | null; by: string | null; kind: "piece" | "concrete" }>;
 /** `price` — kelishilgan narx (NDS'siz); `nds` — shu narxga NDS 12% qo'shilsinmi. */
-type Row = { key: number; productId: string; qtyM3: string; price: string; nds: boolean; /** Obyekt bloki nomi, "" — blokka bog'lanmagan */ block: string };
+type Row = {
+  key: number; productId: string; qtyM3: string; price: string; nds: boolean; /** Obyekt bloki nomi, "" — blokka bog'lanmagan */ block: string;
+  /** «Brigadadan olish» belgilangan va qaysi brigada omboridan (dona mahsulot) */ src: boolean; srcId: string;
+};
 export type CashAccountOpt = { id: string; name: string; type: "CASH" | "BANK" };
 
 const money = (n: number) => `${fmtNum(n)} so'm`;
@@ -203,7 +208,7 @@ function StockNote({ st, need, unit }: { st?: ProductStock[string]; need: number
  * (rekvizitlar, mijoz bloki, QQS ustunli jadval, dastavka qatori, to'lov va bosh to'lov). Dizayn manbasi:
  * `docs/design/zayavka-shablonlar.html`; oldingi forma — `git tag zayavka-forma-eski`.
  */
-export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, preselectSite, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; /** Mijoz kartasidagi obyektdan ochilgan zayavka (`?site=`) */ preselectSite?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string }) {
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, brigadeStock = {}, preselectCustomer, preselectSite, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; stock: ProductStock; /** «Brigadadan olish»: mahsulot → brigada omborlari (erkin qoldiq bilan) */ brigadeStock?: BrigadeStockMap; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; /** Mijoz kartasidagi obyektdan ochilgan zayavka (`?site=`) */ preselectSite?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   // "Yangi mijoz" telefoni ilovada ro'yxatdan o'tganmi — saqlanganda hisob o'zi ulanadi, sotuvchi buni oldindan ko'radi
@@ -245,7 +250,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const [tripNds, setTripNds] = useState(false);
   // Arizadan kelgan mahsulot ro'yxatda bo'lsa — birinchi qator shu bilan to'ldiriladi
   const firstProduct = products.find((p) => p.id === prefill?.productId) ?? products[0];
-  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false, block: "" }]);
+  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false, block: "", src: false, srcId: "" }]);
   const [pickFor, setPickFor] = useState<number | null>(null); // qaysi qator uchun spravochnik ochiq
 
   // Mahsulot yonidagi qoldiq izohi: beton — xomashyodan qancha chiqadi, dona mahsulot — hovlidagi erkin qoldiq
@@ -276,8 +281,26 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const payMethod = kind === "cash" ? "CASH" : kind === "bank" ? "BANK" : hasDeposit && Number(prepay) > 0 ? depMethod : null;
   // Izohlar uchun: bosh to'lov qaysi yo'l bilan keladi (summa hali kiritilmagan bo'lsa ham)
   const depBank = kind === "bank" || (kind === "credit" && depMethod === "BANK");
+  // Mahsulot almashsa «Brigadadan olish» tanlovi tushadi — boshqa mahsulotning omborlari boshqa
   const onProduct = (key: number, productId: string) =>
-    update(key, { productId, price: products.find((p) => p.id === productId)?.price ?? "0" });
+    update(key, { productId, price: products.find((p) => p.id === productId)?.price ?? "0", src: false, srcId: "" });
+  /** «Brigadadan olish»: yoqilganda erkin qoldig'i eng ko'p brigada tanlanadi */
+  const toggleSource = (r: Row, on: boolean) => update(r.key, { src: on, srcId: on ? (brigadeStock[r.productId]?.[0]?.brigadeId ?? "") : "" });
+  /** Boshqa qatorlar shu mahsulotdan brigadalar bo'yicha olgani — katakdagi «erkin» shu ayirilib ko'rsatiladi */
+  const takenFor = (r: Row) => {
+    const t: Record<string, number> = {};
+    for (const x of rows) if (x.key !== r.key && x.src && x.srcId && x.productId === r.productId) t[x.srcId] = (t[x.srcId] ?? 0) + (Number(x.qtyM3) || 0);
+    return t;
+  };
+  /** Tanlangan brigadada yetmasa: qatordan `qty` ajratilib, ostiga boshqa brigadadan olinadigan yangi qator */
+  const splitSource = (key: number, brigadeId: string, qty: number) => setRows((rs) => {
+    const i = rs.findIndex((x) => x.key === key);
+    const cur = rs[i];
+    if (!cur) return rs;
+    const keep = Math.max(0, Math.round(((Number(cur.qtyM3) || 0) - qty) * 1000) / 1000);
+    return [...rs.slice(0, i), { ...cur, qtyM3: String(keep) }, { ...cur, key: Date.now(), qtyM3: String(Math.round(qty * 1000) / 1000), srcId: brigadeId }, ...rs.slice(i + 1)];
+  });
+  const showSource = rows.some((r) => r.src);
 
   // Narx katagida QQS'siz narx turadi; QQS belgilangan qatorda soliq ustiga qo'shiladi (server ham shunday saqlaydi)
   const lineOf = (qty: string, price: string, nds: boolean) => {
@@ -313,7 +336,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const cell = "border border-slate-300 px-2 py-1";
   const th = `${cell} bg-slate-100 text-center font-serif text-[13px] font-bold italic leading-tight text-[#2f6fc9]`;
   const num = `${cell} text-right font-serif italic tabular-nums whitespace-nowrap`;
-  const cols = (showVat ? 8 : 6) + (showBlocks ? 1 : 0);
+  const cols = (showVat ? 8 : 6) + (showBlocks ? 1 : 0) + (showSource ? 1 : 0);
   const lbl = "text-right font-serif text-[13px] font-bold italic text-slate-900";
 
   return (
@@ -473,11 +496,12 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
         {/* ── Jadval ── */}
         <div className="mt-4 overflow-x-auto">
-          <table className={cn("w-full border-collapse text-[13px]", showVat ? "min-w-[860px]" : "min-w-[680px]")}>
+          <table className={cn("w-full border-collapse text-[13px]", showSource ? (showVat ? "min-w-[1100px]" : "min-w-[920px]") : showVat ? "min-w-[860px]" : "min-w-[680px]")}>
             <thead>
               <tr>
                 <th className={cn(th, "w-10")}>№</th>
                 <th className={th}>Mahsulot nomi, turi</th>
+                {showSource && <th className={cn(th, "w-64")} title="Tayyor mahsulot qaysi brigada omboridan beriladi — reys yuklanganda chiqim shu ombordan yoziladi">Brigada omboridan</th>}
                 {showBlocks && <th className={cn(th, "w-40")}>Blok</th>}
                 <th className={cn(th, "w-20")}>O&apos;lchov birligi</th>
                 <th className={cn(th, "w-24")}>Soni</th>
@@ -502,10 +526,21 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                       <input type="hidden" name="productId[]" value={r.productId} />
                       <input type="hidden" name="nds[]" value={showVat && r.nds ? "1" : "0"} />
                       <input type="hidden" name="block[]" value={r.block} />
+                      <input type="hidden" name="stockBrigade[]" value={r.src && unit !== "m³" ? r.srcId : ""} />
                       {/* Yozilgan harflar bo'yicha qidiradi; "…" tugmasi papkali spravochnikni ochadi */}
                       <ProductField products={products} value={r.productId} onPick={(id) => onProduct(r.key, id)} onOpenPicker={() => setPickFor(r.key)} hint={stockHint} />
                       <div className="mt-1"><StockNote st={stock[r.productId]} need={Number(r.qtyM3) || 0} unit={unit} /></div>
+                      {/* Plita, ustun, blok… (beton emas): tayyorini brigada omboridan olish — belgilansa «Brigada omboridan» ustuni chiqadi */}
+                      {p && unit !== "m³" && <BrigadeSourceToggle className="mt-1" checked={r.src} options={brigadeStock[r.productId]} onChange={(on) => toggleSource(r, on)} />}
                     </td>
+                    {showSource && (
+                      <td className={cn(cell, "min-w-[230px]")}>
+                        {r.src && unit !== "m³"
+                          ? <BrigadeSourceCell productId={r.productId} options={brigadeStock[r.productId]} unit={unit} need={Number(r.qtyM3) || 0} value={r.srcId}
+                              onChange={(id) => update(r.key, { srcId: id })} taken={takenFor(r)} onSplit={(b, q) => splitSource(r.key, b, q)} />
+                          : <span className="block pt-2 text-center text-xs text-slate-300">—</span>}
+                      </td>
+                    )}
                     {showBlocks && <td className={cell}><BlockField value={r.block} onChange={(v) => update(r.key, { block: v })} options={blockOpts} /></td>}
                     <td className={cn(cell, "pt-3 text-center font-serif italic")}>{unit}</td>
                     <td className={cell}>
@@ -531,7 +566,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               {needsDelivery ? (
                 <tr className="bg-amber-50/60 align-top">
                   <td className={cn(cell, "pt-3 text-center font-serif italic")}>{rows.length + 1}</td>
-                  <td className={cell} colSpan={showBlocks ? 2 : 1}>
+                  <td className={cell} colSpan={1 + (showBlocks ? 1 : 0) + (showSource ? 1 : 0)}>
                     <label className="flex cursor-pointer items-center gap-2 pt-1.5 font-serif font-bold italic text-slate-900">
                       <input type="checkbox" checked onChange={() => setNeedsDelivery(false)} className="h-[18px] w-[18px] accent-[#25236b]" /> Dastavka
                       <Truck size={14} className="text-slate-400" />
@@ -568,7 +603,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                 <td className={cn(cell, "text-center font-serif italic")}>{rows.length + 2}</td>
                 <td className={cell} colSpan={cols - 1}>
                   <span className="flex flex-wrap items-center gap-x-5">
-                    <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: showVat, block: "" }])}
+                    <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: showVat, block: "", src: false, srcId: "" }])}
                       className="inline-flex items-center gap-1 py-1 font-serif text-sm italic text-[#2f6fc9] hover:underline"><Plus size={14} /> mahsulot qo&apos;shish</button>
                     {/* Obyektda hali blok kiritilmagan bo'lsa ham — qatorlarni A, B… bloklarga bo'lish (yangi nom obyektga qo'shiladi) */}
                     {!showBlocks && (
@@ -580,7 +615,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
               <tr className="font-bold">
                 <td className={cell} />
-                <td className={cell} colSpan={showBlocks ? 2 : 1} />
+                <td className={cell} colSpan={1 + (showBlocks ? 1 : 0) + (showSource ? 1 : 0)} />
                 <td className={cn(cell, "text-center font-serif italic")}>Jami</td>
                 <td className={num}>{units.size === 1 ? fmtNum(totalQty) : ""}</td>
                 <td className={cell} />

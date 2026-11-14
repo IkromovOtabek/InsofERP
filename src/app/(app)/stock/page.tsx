@@ -10,9 +10,9 @@ import { canSeePrixod, canSeeRasxod } from "@/lib/stock-journal-access";
 import { requirePage } from "@/lib/page-guard";
 import { canSee, pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
-import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
+import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Gauge, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse, Search, RotateCcw } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, Gauge, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse, Search, RotateCcw, Layers, Car, Cog, Briefcase, Package, type LucideIcon } from "lucide-react";
 import { visionEnabled } from "@/lib/ai/vision";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
@@ -30,7 +30,8 @@ import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
 import { Card, CardHeader } from "@/components/ui";
 import { HoldingsPanel } from "@/components/holdings-panel";
 import { holdingsOverview } from "@/lib/holdings";
-import { CATEGORY_SLUG, MATERIAL_CATEGORY_LABEL, MATERIAL_CATEGORY_OPTIONS, categoriesFor, categoryFromSlug } from "@/lib/material-category";
+import { CATEGORY_SLUG, MATERIAL_CATEGORY_LABEL, MATERIAL_CATEGORY_OPTIONS, STOCK_TAB_ORDER, categoriesFor, categoryFromSlug } from "@/lib/material-category";
+import type { MaterialCategory } from "@/generated/prisma";
 import { avtoPartsFeed } from "@/lib/avto-parts";
 import { ForYouParts } from "./for-you-parts";
 import { RawStockStatus } from "@/components/raw-stock-status";
@@ -49,6 +50,9 @@ const cellQ = (v: number) => (Math.abs(v) < EPS ? "" : fmtNum(v, 3));
 const cellS = (v: number) => (Math.abs(v) < 0.5 ? "" : fmtNum(v, 0));
 /** Xomashyo qoldig'i jadvalidagi belgilar shu formaga tegishli (`MaterialBulkBar`). */
 const MATERIAL_FORM = "material-bulk";
+/** Sklad tepasidagi bo'lim tugmalari: kategoriya ikonkalari */
+const CAT_ICON: Record<MaterialCategory, LucideIcon> = { XOMASHYO: Layers, AVTO_ZAPCHAST: Car, ZAVOD_ZAPCHAST: Cog, OFIS: Briefcase };
+const CAT_BADGE: Record<MaterialCategory, "blue" | "violet" | "amber" | "slate"> = { XOMASHYO: "slate", AVTO_ZAPCHAST: "blue", ZAVOD_ZAPCHAST: "violet", OFIS: "amber" };
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
@@ -115,6 +119,15 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const tot = turnoverTotals(turnover);
   // Excel varag'i bosilganda serverda tayyorlanadi (`stockBalanceExcel`): 500 qatorlik ma'lumot sahifa bilan yuborilmaydi
   const excelInput = { from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...(q ? { q } : {}) };
+  // Bo'lim tugmasi havolasi: kategoriya almashadi, davr (berilgan bo'lsa), sklad va qidiruv saqlanadi; hovli/holat oynasidan — jadvalga qaytadi
+  const catTabHref = (c: MaterialCategory | null) => {
+    const qs = new URLSearchParams({
+      ...(sp.from ? { from: period.fromStr } : {}), ...(sp.to ? { to: period.toStr } : {}), ...(wh ? { wh: wh.id } : {}), ...(c ? { kat: CATEGORY_SLUG[c] } : {}), ...qQ,
+    }).toString();
+    return qs ? `/stock?${qs}` : "/stock";
+  };
+  // Tugmalardagi sonlar — faqat qoldiqlar jadvali hisoblangan oynada (hovli/holat oynasida aylanma hisoblanmaydi)
+  const countsReady = tab === "balance" && (!bolim || bolim === "xomashyo");
   const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ, ...extra }).toString();
 
   // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi);
@@ -197,10 +210,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* «Kirim» / «Chiqim» jurnallari (Excel'dagidek) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
             {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span>Kirim</span></LinkButton>}
             {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span>Chiqim</span></LinkButton>}
-            {/* Bo'limlar alohida oynada (shu tabda): «Sklad holati — xomashyo» va «Hovli va tayyor mahsulot» (mexanikka emas); ochiq oyna — to'q tugma.
-                Jo'natmalar — chap menyuda */}
+            {/* «Sklad holati — xomashyo» — alohida oyna (shu tabda, mexanikka emas); ochiq oyna — to'q tugma. «Hovli va tayyor mahsulot» —
+                pastdagi bo'lim tugmalarida («Tayyor mahsulotlar»). Jo'natmalar — chap menyuda */}
             {seeHolat && <LinkButton href="/stock?bolim=holat" variant={bolim === "holat" ? "primary" : "secondary"} size="lg"><Gauge size={18} /> <span>Sklad holati — xomashyo</span></LinkButton>}
-            {seeHovli && <LinkButton href="/stock?bolim=hovli" variant={bolim === "hovli" ? "primary" : "secondary"} size="lg"><Boxes size={18} /> <span>Hovli va tayyor mahsulot</span></LinkButton>}
             {/* Hovliga dona mahsulotni qo'lda kirim (boshlang'ich qoldiq) — hovli oynasida va «Ishlab chiqarish imkoni» da */}
             {(bolim === "hovli" || tab === "capacity") && canDo(s, "stock", "products") && <LinkButton href="/stock/products/new" variant="success" size="lg"><PackagePlus size={18} /> <span>Tayyor mahsulot qo&apos;shish</span></LinkButton>}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
@@ -223,6 +235,18 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {s?.role === "MECHANIC" && <LinkButton href="/stock/supply/new"><ClipboardList size={16} /> Snabjenetsga zayavka</LinkButton>}
           </div>
         } />
+      {/* Bo'lim tugmalari: Xomashyo, Avto zapchast, Zavod zapchast, Ofis (qoldiqlar jadvali shu kategoriya bo'yicha) va Tayyor mahsulotlar
+          (hovli). Mexanik — faqat Avto zapchast va Xomashyo (`categoriesFor`); tayyor mahsulot — hovli oynasini ko'radiganlarga */}
+      {tab === "balance" && (
+        <Tabs current={bolim === "hovli" ? "tayyor" : bolim === "holat" ? "" : kat ? CATEGORY_SLUG[kat] : "all"} items={[
+          { key: "all", label: cats.length < MATERIAL_CATEGORY_OPTIONS.length ? "Hammasi (sizga tegishli)" : "Hammasi", icon: Warehouse, href: catTabHref(null), ...(countsReady ? { count: turnoverSeen.length } : {}) },
+          ...STOCK_TAB_ORDER.filter((c) => cats.includes(c)).map((c) => ({
+            key: CATEGORY_SLUG[c], label: MATERIAL_CATEGORY_LABEL[c], icon: CAT_ICON[c], href: catTabHref(c),
+            ...(countsReady ? { count: turnoverSeen.filter((r) => r.category === c).length } : {}),
+          })),
+          ...(seeHovli ? [{ key: "tayyor", label: "Tayyor mahsulotlar", icon: Package, href: `/stock?${new URLSearchParams({ bolim: "hovli", ...(sp.from ? { from: period.fromStr } : {}), ...(sp.to ? { to: period.toStr } : {}) }).toString()}` }] : []),
+        ]} />
+      )}
       {/* Sklad kabinetida faqat «Qoldiqlar». «Ishlab chiqarish imkoni», «Brigadalar» va harakatlar ko'rinishi tab sifatida
           olib tashlangan, lekin boshqa bo'limlardagi havolalar (Brigadalar, Ta'minot, Zayavka, BI, xomashyo qatori) uchun ochiladi */}
       {tab !== "balance" && !(tab === "moves" && (ref || moveMaterial)) && (
@@ -441,7 +465,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <div id="xomashyo" className="scroll-mt-20 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Xomashyo qoldiqlari</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{kat ? `${MATERIAL_CATEGORY_LABEL[kat]} — qoldiqlar` : "Xomashyo qoldiqlari"}</h2>
               <p className="text-sm text-slate-500">{`${period.label}${wh ? ` · ${wh.name}` : perWarehouse ? " · barcha skladlar" : ""}`}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -450,22 +474,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             </div>
           </div>
           <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...bolimQ, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}), ...qQ }} />
-          {/* Kategoriya: Zavod zapchast / Avto zapchast / Xomashyo (mexanikka — ikkitasi) — chapda, qidiruv — o'ngda */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1">
-            {[null, ...cats].map((c) => {
-              const active = c === kat;
-              const n = c ? turnoverSeen.filter((r) => r.category === c).length : turnoverSeen.length;
-              const qs = new URLSearchParams({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(c ? { kat: CATEGORY_SLUG[c] } : {}), ...qQ });
-              return (
-                <Link key={c ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
-                  className={cn("inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
-                  {c ? MATERIAL_CATEGORY_LABEL[c] : cats.length < 3 ? "Hammasi (sizga tegishli)" : "Barcha kategoriyalar"}
-                  <span className="tabular opacity-70">{n}</span>
-                </Link>
-              );
-            })}
-          </div>
+          {/* Kategoriya — sahifa tepasidagi bo'lim tugmalarida; bu yerda qidiruv (o'ngda) */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
           {/* Qidiruv: nomi yoki kodi bo'yicha (davr, sklad va kategoriya saqlanadi) */}
           <form action="/stock" className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-1">
             {Object.entries({ tab: "balance", ...bolimQ, from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...(kat ? { kat: CATEGORY_SLUG[kat] } : {}) }).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
@@ -544,7 +554,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                       <span className="ml-1.5 text-[11px] text-slate-400">{r.code}</span>
                       {/* Nomi, birligi (harakati bo'lmasa), minimal qoldig'i, papkasi — Sozlamalarga (faqat direktor) bormasdan */}
                       {canDelete && <MaterialEditButton material={{ id: r.id, name: r.name, code: r.code, unit: r.unit, minStock: r.minStock, groupId: groupOf.get(r.id) ?? null, unitLocked: mb.has(r.id) }} />}
-                      {r.category !== "XOMASHYO" && <span className="ml-1.5 inline-block align-middle"><Badge color={r.category === "AVTO_ZAPCHAST" ? "blue" : "violet"} dot={false}>{MATERIAL_CATEGORY_LABEL[r.category]}</Badge></span>}
+                      {r.category !== "XOMASHYO" && !kat && <span className="ml-1.5 inline-block align-middle"><Badge color={CAT_BADGE[r.category]} dot={false}>{MATERIAL_CATEGORY_LABEL[r.category]}</Badge></span>}
                       {!r.isActive && <span className="ml-1.5 inline-block align-middle"><Badge dot={false}>arxiv</Badge></span>}
                       {!r.isActive && canDelete && (
                         <ConfirmButton action={restoreCatalogMaterial.bind(null, r.id)} label="Tiklash" question={`«${r.name}» ro'yxatga qaytarilsinmi?`} okText="Tiklandi"

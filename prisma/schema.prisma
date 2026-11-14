@@ -343,6 +343,8 @@ enum MaterialCategory {
   XOMASHYO
   ZAVOD_ZAPCHAST
   AVTO_ZAPCHAST
+  /// Ofis jihozlari va kanselyariya (qog'oz, kartrij, mebel…) — Sklad → «Ofis» tugmasi
+  OFIS
 }
 
 /// Xomashyo papkasi (mahsulot papkasining aynan o'zi, faqat xomashyo uchun):
@@ -1468,11 +1470,15 @@ model OrderItem {
   brigadeId String? // ishlab chiqarish bo'limida tayinlanadi; tasdiqlanganda topshiriq yaratiladi
   /// Obyekt ichidagi blok (A, B…): matritsada bir obyektning har bloki alohida ustun bo'ladi
   blockId   String?
+  /// «Brigadadan olish» (zayavka formasi): tayyor dona mahsulot shu brigada omboridan beriladi — reys yuklanganda chiqim avval
+  /// shu ombordan yoziladi, brigada omborida jo'natilmagan qismi «band» turadi (`lib/brigade-stock-source.ts`). Bo'sh — avvalgidek.
+  stockBrigadeId String?
 
   order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product      @relation(fields: [productId], references: [id])
   brigade Brigade?     @relation(fields: [brigadeId], references: [id])
   block   SiteBlock?   @relation(fields: [blockId], references: [id])
+  stockBrigade Brigade? @relation("OrderItemStockBrigade", fields: [stockBrigadeId], references: [id], onDelete: SetNull)
   /// Bir qatorni bir nechta brigadaga bo'lib berish mumkin: har biriga o'z miqdori (jami ≤ qator miqdori)
   tasks   BrigadeTask[]
 
@@ -1480,6 +1486,7 @@ model OrderItem {
   @@index([orderId])
   @@index([productId])
   @@index([blockId])
+  @@index([stockBrigadeId])
 }
 
 // ───────────────────────── Brigadalar va topshiriqlar ─────────────────────────
@@ -1496,6 +1503,8 @@ model Brigade {
   leader       Employee?       @relation("BrigadeLeader", fields: [leaderId], references: [id])
   members      Employee[]      @relation("BrigadeMembers")
   items        OrderItem[]
+  /// Zayavka qatorlari — tayyor mahsulot shu brigada omboridan olinadi («Brigadadan olish»)
+  stockItems   OrderItem[]     @relation("OrderItemStockBrigade")
   tasks        BrigadeTask[]
   moves        BrigadeMove[]
   stockMoves   StockMove[]
