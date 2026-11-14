@@ -106,7 +106,8 @@ async function lockCreditAndDay(tx: Prisma.TransactionClient, customerId: string
 
 /**
  * Qabul qilish: DRAFT → CONFIRMED yoki BLOCKED (kredit limiti yetmasa — direktor ochadi).
- * Limit: qarz + ochiq zayavkalar + shu zayavka ≤ limit.
+ * Limit: «Qarzga» — qarz + ochiq zayavkalar + shu zayavka ≤ limit. «Naqd» / «Perechisleniye» — zayavka limitga
+ * tushmaydi (pul yetkazilgandan keyin keladi), faqat mijoz qora ro'yxatda bo'lsa bloklanadi.
  */
 export async function orderConfirm(id: string, userId: string): Promise<OrderResult> {
   const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { include: { product: { select: { unit: true } } } }, customer: true } });
@@ -127,8 +128,7 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   }
 
   const total = orderTotal(o);
-  // Naqd to'lovli zayavka: bosh to'lov reys ochish/yuklashdan oldin majburiy (`prepayShortError`), shuning uchun
-  // kutilayotgan, hali kelmagan qismi kredit limitiga yuklanmaydi — limitga faqat qolgan (qarzga ketadigan) qism tushadi.
+  // Naqd/perechisleniye zayavkada bosh to'lov reys ochish/yuklashdan oldin majburiy (`prepayShortError`)
   const required = o.onCredit ? 0 : expectedAdvance(o);
   const res = await db.$transaction(async (tx) => {
     // Qulflar (avval mijoz, keyin kun — `lockCreditAndDay`): mijoz bo'yicha va yetkazish kuni bo'yicha navbat.
@@ -140,13 +140,20 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     const limitErr = await dailyOrderLimitError(tx, o.id, o.deliveryDate, o.items);
     if (limitErr) return { error: limitErr };
     const credit = await customerCredit(o.customerId);
-    const advance = await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } });
-    const pending = Math.max(0, required - Number(advance._sum.amount ?? 0));
-    const exposure = total - pending;
-    // `net` — ortiqcha to'lov (shu zayavkaning avansi ham) ayirilgan sof holat: to'liq oldindan to'langan zayavka bloklanmaydi.
-    // To'liq oldindan to'lovli zayavka (exposure ≤ 0) limitga hech narsa qo'shmaydi — mijozning eski qarzi bo'lsa ham
-    // (qora ro'yxat) qabul qilinadi: pul kassaga tushmaguncha reys baribir ochilmaydi (`prepayShortError`).
-    const status = exposure > 0.005 && Math.max(0, credit.net) + exposure > credit.limit && credit.net + exposure > credit.limit ? "BLOCKED" : "CONFIRMED";
+    const paid = Number((await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } }))._sum.amount ?? 0);
+    const pending = Math.max(0, required - paid);
+    // To'liq oldindan to'lovli zayavka limitga hech narsa qo'shmaydi — mijozning eski qarzi bo'lsa ham (qora ro'yxat)
+    // qabul qilinadi: pul kassaga tushmaguncha reys baribir ochilmaydi (`prepayShortError`).
+    const prepaid = Math.max(required, paid) >= total - 0.005;
+    let status: "BLOCKED" | "CONFIRMED";
+    if (o.onCredit) {
+      // «Qarzga»: butun summa limitdan joy band qiladi. `net` — ortiqcha to'lov (shu zayavkaning avansi ham) ayirilgan sof holat
+      status = !prepaid && total > 0.005 && Math.max(0, credit.net) + total > credit.limit && credit.net + total > credit.limit ? "BLOCKED" : "CONFIRMED";
+    } else {
+      // «Naqd» / «Perechisleniye»: pul yetkazilgandan keyin keladi — zayavka limitga tushmaydi (jo'natilgani keyin
+      // `orderExposure` bo'yicha qarz bo'ladi). Faqat to'lanmagan qarzi limitni to'ldirgan mijoz (qora ro'yxat) bloklanadi.
+      status = credit.blacklisted && !prepaid ? "BLOCKED" : "CONFIRMED";
+    }
     const r = await tx.order.updateMany({ where: { id, status: "DRAFT", dateUnknown: false }, data: { status } });
     if (r.count !== 1) return null;
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit, prepayPending: pending });
@@ -596,7 +603,7 @@ export type EditOrderInput = {
  *  · Brigadaga berilgan qator o'chirilmaydi va mahsuloti almashmaydi (topshiriqlar qatorga bog'liq — o'chsa ular ham o'chardi);
  *    soni brigadaga berilgan / bajarilgan miqdordan kam bo'lmaydi.
  *  · Schyot yozilgan zayavkaning summasi o'zgarmaydi — avval schyot bekor qilinadi.
- *  · Tasdiqlangan zayavkada summa (limitga tushadigan qismi) oshsa kredit limiti qayta tekshiriladi: yetmasa — BLOCKED,
+ *  · Tasdiqlangan zayavkada limitga tushadigan summa (faqat «Qarzga») oshsa kredit limiti qayta tekshiriladi: yetmasa — BLOCKED,
  *    direktor ochadi. Sana yoki beton hajmi o'zgarsa — kunlik limit. Kamaygan yoki o'zgarmagan bo'lsa — tekshirilmaydi
  *    (direktor blokdan chiqargan zayavka izoh tuzatilgani uchun qayta bloklanmasin).
  *  · Bosh to'lov so'rovi (PS-…) yangi summa/usulga keltiriladi; tushgan puldan kam qilib bo'lmaydi.
@@ -710,10 +717,10 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
     res = await db.$transaction(async (tx) => {
       let status = o.status;
       if (!isStock && o.status === "CONFIRMED") {
-        const advance = Number((await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } }))._sum.amount ?? 0);
-        const pendingOf = (cr: boolean, pre: number) => Math.max(0, (cr ? 0 : pre) - advance);
-        const oldExposure = oldTotal - pendingOf(o.onCredit, expectedAdvance(o));
-        const exposure = total - pendingOf(onCredit, prepayAmount ?? 0);
+        // Limitga tushadigan summa (`orderExposure`): «Qarzga» — butun summa; naqd/perechisleniye — reysi yo'q, demak 0
+        const exposureOf = (cr: boolean, sum: number) => (cr ? sum : 0);
+        const oldExposure = exposureOf(o.onCredit, oldTotal);
+        const exposure = exposureOf(onCredit, total);
         const needDay = dateChanged || newM3 > oldM3 + 0.0005;
         const needCredit = exposure > oldExposure + 0.005;
         if (needDay || needCredit) await lockCreditAndDay(tx, o.customerId, deliveryDate);
@@ -722,8 +729,8 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
           if (limitErr) throw new EditError(limitErr);
         }
         if (needCredit) {
-          // Tasdiqlangan (schyotsiz) zayavka `net` ichida eski summasi bilan turibdi — o'rniga yangisi qo'yiladi
-          const base = credit!.net - (o.invoices.length ? 0 : oldTotal);
+          // Tasdiqlangan (schyotsiz) zayavka `net` ichida eski limit summasi bilan turibdi — o'rniga yangisi qo'yiladi
+          const base = credit!.net - (o.invoices.length ? 0 : oldExposure);
           if (exposure > 0.005 && Math.max(0, base) + exposure > credit!.limit && base + exposure > credit!.limit) status = "BLOCKED";
         }
       }

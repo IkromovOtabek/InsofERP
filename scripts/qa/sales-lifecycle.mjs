@@ -148,4 +148,31 @@ check("D4 sotuvchi qoldiqni o'chira olmaydi (direktor va buxgalteriya) → 403",
 r = await sotuv.action("orders/actions#confirmOrder", ["yoq-id"], "/orders");
 check("D5 mavjud bo'lmagan zayavka — o'zbekcha xato (500 emas)", r.status === 200 && /topilmadi/.test(r.result?.error ?? ""), `${r.status} ${JSON.stringify(r.result)}`);
 
+// ───────── E. Naqd / perechisleniye limitga tushmaydi — faqat jo'natilgan, to'lanmagan qismi ─────────
+console.log("\nE. Naqd zayavka (pul yetkazilgandan keyin): limit 0 mijoz");
+const nameE = `QA Naqd Keyin ${T}`;
+await buh.action("customers/actions#saveCustomer", [null, undefined, fd({ name: nameE, creditLimit: 0, isActive: "on" })], "/customers/new");
+const cE = q1(`select id from "Customer" where name=${lit(nameE)}`);
+r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "prepay", items: [["M250", 10, 600000]] })], "/orders/new");
+const oE1 = orderIdFrom(r);
+r = await sotuv.action("orders/actions#confirmOrder", [oE1], `/orders/${oE1}`);
+check("E1 bosh to'lovsiz naqd zayavka (6 mln, limit 0) qabul qilindi — BLOCKED emas", !!oE1 && q1(`select status from "Order" where id=${lit(oE1)}`).status === "CONFIRMED", r.result);
+r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "prepay", items: [["M250", 5, 600000]] })], "/orders/new");
+const oE2 = orderIdFrom(r);
+r = oE2 ? await sotuv.action("orders/actions#confirmOrder", [oE2], `/orders/${oE2}`) : r;
+check("E2 ikkinchi naqd zayavka ham ochildi va qabul qilindi (ochiq naqd zayavka limitni to'ldirmaydi)", !!oE2 && q1(`select status from "Order" where id=${lit(oE2)}`).status === "CONFIRMED", r.result);
+r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "credit", items: [["M250", 1, 600000]] })], "/orders/new");
+const oE3 = orderIdFrom(r);
+r = oE3 ? await sotuv.action("orders/actions#confirmOrder", [oE3], `/orders/${oE3}`) : r;
+check("E3 qarzga zayavka esa limitga tushadi — BLOCKED", !!oE3 && q1(`select status from "Order" where id=${lit(oE3)}`).status === "BLOCKED", r.result);
+if (oE3) await sotuv.action("orders/actions#cancelOrder", [oE3, "QA: limit tekshiruvi"], `/orders/${oE3}`);
+// Logistika birinchi zayavkani yetkazdi (simulyatsiya), pul hali kelmagan — endi bu qarz
+exec(`update "Order" set status='DELIVERED' where id=${lit(oE1)}`);
+r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "prepay", items: [["M250", 1, 600000]] })], "/orders/new");
+check("E4 yetkazilgan, to'lanmagan 6 mln limitni to'ldirdi — yangi naqd zayavka faqat oldindan to'lov bilan", !orderIdFrom(r) && /Kredit limiti yo'q — faqat oldindan to'lov bilan/.test(r.result?.error ?? ""), r.result);
+r = await kassa.action("payments/actions#createPayment", [undefined, fd({ customerId: cE.id, cashAccountId: KASSA, amount: 6000000, date: today })], "/payments");
+check("E5 mijoz 6 mln to'ladi", r.result?.ok === true, r.result);
+r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "prepay", items: [["M250", 1, 600000]] })], "/orders/new");
+check("E6 to'lovdan keyin yana bosh to'lovsiz naqd zayavka ochiladi", !!orderIdFrom(r), r.result);
+
 summary("sales-lifecycle:");

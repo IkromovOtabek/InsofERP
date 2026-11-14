@@ -296,7 +296,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const minDate = isoDate(new Date(Date.now() - 86400000)); // server ham kechagidan oldingi sanani qabul qilmaydi
   const prepayN = hasDeposit ? Number(prepay) || 0 : 0;
   const remaining = Math.max(0, total - prepayN);
-  const overLimit = mode === "existing" && customer ? customer.used + total > customer.limit : false;
+  // Limitga faqat «Qarzga» zayavka tushadi: naqd/perechisleniyeda pul yetkazilgandan keyin keladi (`orderExposure`)
+  const overLimit = mode === "existing" && customer && payment === "credit" ? customer.used + total > customer.limit : false;
   // Qora ro'yxat (kredit limiti yo'q/to'lgan): faqat kredit yopiq — to'liq oldindan to'lov bilan zayavka ochiladi
   const noCredit = mode === "existing" && !!customer?.blacklisted;
   const blocked = noCredit && (payment === "credit" || total <= 0 || prepayN < total - 0.005);
@@ -437,7 +438,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             <p>
               {newCustomerLimit > 0
                 ? <>Yangi mijozga standart kredit limiti <b>{money(newCustomerLimit)}</b> beriladi — undan oshgan qarz zayavkasi qabul qilinganda bloklanadi (direktor ochadi yoki limitni oshiradi).</>
-                : <>Yangi mijozning kredit limiti <b>0</b> — qarzga zayavka qabul qilinganda bloklanadi (direktor ochadi yoki limit beradi).</>}
+                : <>Yangi mijozning kredit limiti <b>0</b> — qarzga zayavka qabul qilinganda bloklanadi (direktor ochadi yoki limit beradi). Naqd va perechisleniye zayavka limitga tushmaydi.</>}
               {" "}Mijoz zayavka bilan birga saqlanadi.
             </p>
             {appHint && (

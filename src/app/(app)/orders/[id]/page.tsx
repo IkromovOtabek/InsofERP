@@ -172,7 +172,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       )}
       {o.status === "BLOCKED" && (
         <Callout tone="danger" title="Kredit limiti yetmadi">
-          Limit {money(credit.limit)}, ishlatilgan {money(credit.used)} (qarz {money(credit.debt)} + ochiq zayavkalar {money(credit.open)}), bu zayavka {money(total)}. Faqat direktor blokdan chiqara oladi.
+          Limit {money(credit.limit)}, ishlatilgan {money(credit.used)} (qarz {money(credit.debt)} + ochiq zayavkalar {money(credit.open)}), bu zayavka {money(total)}{!o.onCredit && " — naqd/perechisleniye zayavka limitga tushmaydi, mijozning to'lanmagan qarzi limitni to'ldirgani uchun bloklangan"}. Faqat direktor blokdan chiqara oladi.
         </Callout>
       )}
       {!isStock && credit.blacklisted && (

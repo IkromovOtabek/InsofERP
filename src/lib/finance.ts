@@ -1,7 +1,8 @@
 import { db } from "./db";
 import type { Prisma } from "@/generated/prisma";
 import { customerBalances, balanceOf } from "./receivables";
-import { itemsTotal, orderTotal } from "@/lib/order-total";
+import { orderTotal } from "@/lib/order-total";
+import { tripCoveredQty } from "@/lib/trips";
 
 /**
  * Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm) — direktor Sozlamalar → Limitlar'da belgilaydi
@@ -21,38 +22,35 @@ export async function defaultCreditLimit(client: Pick<Prisma.TransactionClient, 
  *   balans    = `receivables.ts` dagi yagona mijoz balansi: schyotlar (boshlang'ich qoldiq bilan, bekor
  *               qilinganlarsiz) − mijozning BARCHA to'lovlari (schyotga bog'langan-bog'lanmagan, zayavka avansi ham)
  *   qarz      = max(0, balans) — mijoz kartasi, dashboard, BI va mobil ilova bilan bir xil raqam
- *   ochiq     = schyot yozilmagan tasdiqlangan zayavkalar (va qisman schyotlangan zayavka qoldig'i);
+ *   ochiq     = tasdiqlangan zayavkalarning limitga tushadigan, hali schyot yozilmagan qismi (`orderExposure`):
+ *                 · «Qarzga» (onCredit) — butun summa: qabul qilinganda limitdan joy band qiladi;
+ *                 · «Naqd» / «Perechisleniye» — pul yetkazilgandan keyin keladi: zayavka ochilganda limitga
+ *                   tushmaydi, faqat zavoddan chiqqan (yuklangan / yo'lda / yetkazilgan reys) qismi qarz bo'lib
+ *                   kiradi; to'liq yetkazilgan (DELIVERED) zayavka — butun summasi.
  *               mijoz avansi (manfiy balans) avval shuni qoplaydi
  *   ishlatilgan = qarz + ochiq (limitdan ayiriladi)
  *
  * Istisno — Realizatsiya jurnali to'lovlari: ular jurnaldagi sotuvning o'zini yopadi, ERP schyotlariga tegmaydi.
  */
 
-/** Ochiq (schyot yozilmagan) zayavka: bekor qilingan schyot "yozilmagan" hisoblanadi. */
-const openOrderWhere = (extra: Prisma.OrderWhereInput = {}): Prisma.OrderWhereInput => ({
-  kind: "SALE",
-  status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] },
-  invoices: { none: { status: { not: "CANCELLED" } } },
-  ...extra,
-});
+/** Limitga tushishi mumkin bo'lgan zayavka holatlari: qabul qilingan va hali to'liq to'lanmagan (CLOSED emas). */
+const OPEN_ORDER_STATUSES = ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] as const;
+/** Zavoddan chiqqan reys holatlari — naqd/perechisleniye zayavkada shu reyslardagi mahsulot qarz bo'ladi. */
+const SHIPPED_TRIP_STATUSES = ["LOADED", "ON_ROAD", "DELIVERED"] as const;
+
+/**
+ * Zayavkaning limitga tushadigan summasi (schyot ayirilmagan). Naqd/perechisleniyeda jo'natilgan ulush zayavka
+ * tarkibi bo'yicha taqsimlanadi (reys qatorga bog'lanmagan — `bi/core.ts` dagi tushum qoidasi bilan bir xil).
+ */
+export function orderExposure(o: { onCredit: boolean; status: string; total: number; qty: number; shippedQty: number }): number {
+  if (o.onCredit || o.status === "DELIVERED") return o.total;
+  if (!(o.qty > 0) || !(o.shippedQty > 0)) return 0;
+  return o.total * Math.min(1, o.shippedQty / o.qty);
+}
 
 /** Mijozning joriy qarzi (manfiy emas; ortiqcha to'lov `customerCredit` da ochiq zayavkani qoplaydi). */
 export async function customerDebt(customerId: string) {
   return Math.max(0, (await customerCredit(customerId)).debt);
-}
-
-/** Tasdiqlangan, lekin hali schyot yozilmagan zayavkalar summasi (limitga kiradi). */
-export async function customerOpenOrdersTotal(customerId: string, excludeOrderId?: string) {
-  // Sklad zaxirasi zayavkasi (kind = STOCK) limitga kirmaydi — unda mijoz ham, summa ham yo'q
-  const orderWhere = openOrderWhere({ customerId, ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}) });
-  const [items, fees, adv] = await Promise.all([
-    db.orderItem.findMany({ where: { order: orderWhere }, select: { qtyM3: true, price: true } }),
-    // dastavka summasi ham zayavka summasiga kiradi
-    db.order.aggregate({ where: orderWhere, _sum: { deliveryFee: true } }),
-    // zayavka ochilganda olingan avans ochiq summani kamaytiradi
-    db.payment.aggregate({ where: { invoiceId: null, order: orderWhere }, _sum: { amount: true } }),
-  ]);
-  return Math.max(0, itemsTotal(items) + Number(fees._sum.deliveryFee ?? 0) - Number(adv._sum?.amount ?? 0));
 }
 
 export type CustomerCredit = {
@@ -61,7 +59,7 @@ export type CustomerCredit = {
   balance: number;
   debt: number; // max(0, balans) — debitorka
   advance: number; // max(0, −balans) — mijoz avansi
-  open: number; // schyot yozilmagan tasdiqlangan zayavkalar (avans ayirilgan)
+  open: number; // schyot yozilmagan, limitga tushadigan zayavka summasi (`orderExposure`; avans ayirilgan)
   used: number; // debt + open — limitdan ayiriladi
   /** Yaxlitlanmagan sof holat (qarz + ochiq − ortiqcha to'lov): to'liq oldindan to'langan zayavka
    *  qabul qilishda limitga urilmasin — `used` 0 dan pastga tushmaydi, ortiqcha avans esa yo'qolardi. */
@@ -100,26 +98,29 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
   // Ichki "Sklad" kartochkasi mijoz emas — limit ham, reyting ham hisoblanmaydi
   const where: Prisma.CustomerWhereInput = { ...(opts?.includeInternal ? {} : { isInternal: false }), ...(ids ? { id: { in: ids } } : {}) };
   const byCustomer = ids ? { customerId: { in: ids } } : {};
-  const open = openOrderWhere(byCustomer);
-  const [customers, bal, items, fees, partly] = await Promise.all([
+  const [customers, bal, orders, trips] = await Promise.all([
     db.customer.findMany({ where, select: { id: true, creditLimit: true } }),
     // Qarz/avans — yagona balans (schyotlar − barcha to'lovlar); zayavka avansi ham shu yerda ayiriladi
     customerBalances({ ids, includeInternal: true }),
-    db.orderItem.findMany({ where: { order: open }, select: { qtyM3: true, price: true, order: { select: { customerId: true } } } }),
-    // Ochiq zayavkalarning dastavka summasi — zayavka summasiga kiradi
-    db.order.groupBy({ by: ["customerId"], where: open, _sum: { deliveryFee: true } }),
-    // Schyoti zayavka summasidan kam yozilgan ochiq zayavkalar: schyotlanmagan qoldiq ham limitga kiradi —
-    // aks holda 1 so'mlik schyot butun zayavkani limitdan chiqarib yuborardi
+    // Sklad zaxirasi zayavkasi (kind = STOCK) limitga kirmaydi — unda mijoz ham, summa ham yo'q
     db.order.findMany({
-      where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { some: { status: { not: "CANCELLED" } } }, ...byCustomer },
-      select: { customerId: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { amount: true } } },
+      where: { kind: "SALE", status: { in: [...OPEN_ORDER_STATUSES] }, ...byCustomer },
+      select: { id: true, customerId: true, onCredit: true, status: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { amount: true } } },
+    }),
+    // Naqd/perechisleniye zayavkaning jo'natilgan qismi — faqat hali yetkazib bo'linmaganlarida kerak (DELIVERED — butun summa)
+    db.trip.findMany({
+      where: { status: { in: [...SHIPPED_TRIP_STATUSES] }, order: { kind: "SALE", onCredit: false, status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, ...byCustomer } },
+      select: { orderId: true, status: true, qtyM3: true, acceptedQty: true, returnedQty: true },
     }),
   ]);
+  const shipped = new Map<string, number>();
+  for (const t of trips) shipped.set(t.orderId, (shipped.get(t.orderId) ?? 0) + tripCoveredQty(t));
   const openSum = new Map<string, number>();
-  for (const i of items) openSum.set(i.order.customerId, (openSum.get(i.order.customerId) ?? 0) + Number(i.qtyM3) * Number(i.price));
-  for (const f of fees) openSum.set(f.customerId, (openSum.get(f.customerId) ?? 0) + Number(f._sum.deliveryFee ?? 0));
-  for (const o of partly) {
-    const rest = orderTotal(o) - o.invoices.reduce((x, i) => x + Number(i.amount), 0);
+  for (const o of orders) {
+    const exposure = orderExposure({ onCredit: o.onCredit, status: o.status, total: orderTotal(o), qty: o.items.reduce((s, i) => s + Number(i.qtyM3), 0), shippedQty: shipped.get(o.id) ?? 0 });
+    // Schyot yozilgan qismi balansda turibdi; schyoti summadan kam yozilgan zayavkaning qoldig'i ham limitga kiradi —
+    // aks holda 1 so'mlik schyot butun zayavkani limitdan chiqarib yuborardi
+    const rest = exposure - o.invoices.reduce((x, i) => x + Number(i.amount), 0);
     if (rest > 0.005) openSum.set(o.customerId, (openSum.get(o.customerId) ?? 0) + rest);
   }
   return new Map(customers.map((c) => [c.id, creditOf(Number(c.creditLimit), balanceOf(bal, c.id).balance, openSum.get(c.id) ?? 0)]));

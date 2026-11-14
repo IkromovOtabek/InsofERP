@@ -66,7 +66,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         {advance > 0.005
           ? <StatCard label="Avans (oldindan to'langan)" value={money(advance)} icon={Wallet} tone="success" hint="schyotlardan ortiq to'lov" href={`/customers/${id}/akt`} />
           : <StatCard label="Qarz (debitorka)" value={money(debt)} icon={Wallet} tone={debt > 0 ? "danger" : "success"} hint={aged && aged.overdue > 0 ? `muddati o'tgan ${money(aged.overdue)} · ${aged.oldestDays} kun` : debt > 0 ? "schyotlar − barcha to'lovlar" : undefined} href={`/customers/${id}/akt`} />}
-        <StatCard label="Ochiq zayavkalar" value={money(open)} icon={ClipboardList} hint="schyot yozilmagan" href={`/orders?customer=${id}`} />
+        <StatCard label="Ochiq zayavkalar" value={money(open)} icon={ClipboardList} hint="schyotsiz: qarzga + jo'natilgan naqd" href={`/orders?customer=${id}`} />
         <StatCard label="Bo'sh limit" value={money(free)} icon={CreditCard} tone={free <= 0 ? "danger" : "info"} hint={`ishlatilgan ${money(used)}`} href="#malumotlar" />
       </div>
 
