@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
-import { dateRu, fmtNum, isoDate } from "@/lib/format";
+import { dateRu, fmtNum, fmtTiyin, isoDate } from "@/lib/format";
 import { orderDaySheet, type DaySheetGroup, type DaySheetTotals } from "@/lib/order-day-sheet";
 import { PageHeader, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot, type SheetTone } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
@@ -26,7 +26,7 @@ const GROUP_TONE: Record<string, SheetTone> = { BANK: "blue", CASH: "green", DEB
  */
 const COL_W = [11, 9, 4.5, 5, 7.5, 8, 9, 8, 9.5, 8, 8, 8, 4.5];
 
-const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
+const n0 = (v: number) => (v ? fmtTiyin(v) : ""); // summa tiyinigacha
 const nq = (v: number) => fmtNum(v, 3);
 
 export default async function OrderDayPage({ params }: { params: Promise<{ sana: string }> }) {
@@ -148,10 +148,10 @@ function GroupSheet({ g, flags }: { g: DaySheetGroup; flags: Map<string, OrderRo
           <SheetTd colSpan={3}>Jami: {g.label}</SheetTd>
           <SheetTd right className="whitespace-normal">{g.qtyText || "0"}</SheetTd>
           <SheetTd />
-          <SheetTd right>{fmtNum(g.totals.delivery, 0)}</SheetTd>
-          <SheetTd right>{fmtNum(g.totals.net, 0)}</SheetTd>
-          <SheetTd right>{fmtNum(g.totals.vat, 0)}</SheetTd>
-          <SheetTd right>{fmtNum(g.totals.total, 0)}</SheetTd>
+          <SheetTd right>{fmtTiyin(g.totals.delivery)}</SheetTd>
+          <SheetTd right>{fmtTiyin(g.totals.net)}</SheetTd>
+          <SheetTd right>{fmtTiyin(g.totals.vat)}</SheetTd>
+          <SheetTd right>{fmtTiyin(g.totals.total)}</SheetTd>
           <SheetTd colSpan={4} />
         </tr>
       </SheetFoot>
@@ -163,7 +163,7 @@ function GrandTotal({ t }: { t: DaySheetTotals }) {
   const cell = (label: string, v: number, strong?: boolean) => (
     <div className="min-w-0">
       <div className="text-[12px] text-slate-500">{label}</div>
-      <div className={cn("tabular text-slate-900", strong ? "text-xl font-semibold" : "text-base font-medium")}>{fmtNum(v, 0)}</div>
+      <div className={cn("tabular text-slate-900", strong ? "text-xl font-semibold" : "text-base font-medium")}>{fmtTiyin(v)}</div>
     </div>
   );
   return (

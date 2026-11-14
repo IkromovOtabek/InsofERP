@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { audit, auditMany } from "@/lib/audit";
 import { NDS_RATE } from "@/lib/nds";
 import { PRODUCT_UNITS, normalizeUnit, unitLabel } from "@/lib/unit";
-import { dateRu, fmtNum, isoDate } from "@/lib/format";
+import { dateRu, fmtNum, fmtTiyin, isoDate } from "@/lib/format";
 import { matchKey, num, numMoney, parseDate, str, valueMapper, type ValueMaps } from "@/lib/excel";
 import { dayField, numIn } from "@/lib/logistics-admin";
 import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
@@ -88,8 +88,8 @@ function autoEdits(r: RealizationRow, n: RealizationNote | undefined, l: Realiza
   const pay = pick("payGroup", n?.payGroup && (PAY_KEYS as string[]).includes(n.payGroup) ? (n.payGroup as PayGroupKey) : null, r.pay, (p) => PAY_LABEL[p]);
   const unitKey = pick("unit", l?.unit, r.unitKey, unitLabel);
   const qty = pick("qty", dec(l?.qty), r.qty, (v) => fmtNum(v, 3));
-  const price = pick("price", dec(l?.price), r.price, (v) => fmtNum(v, 0));
-  const delivery = pick("delivery", dec(l?.delivery), r.delivery, (v) => fmtNum(v, 0));
+  const price = pick("price", dec(l?.price), r.price, fmtTiyin);
+  const delivery = pick("delivery", dec(l?.delivery), r.delivery, fmtTiyin);
   const money = "qty" in orig || "price" in orig || "delivery" in orig;
   const line = r2(qty * price);
   const vat = money ? (r.nds ? r2(line * NDS_RATE) : 0) : r.vat;
@@ -277,7 +277,8 @@ function entryData(d: EntryInput, lk: Lookup) {
   const group = d.groupName ?? (product ? lk.group(product.groupId) : null);
   const unit = product?.unit ?? d.unit ?? "m3";
   if (!product && !PRODUCT_UNITS.some(([u]) => u === unit)) return { error: "O'lchov birligini tanlang" } as const;
-  const qty = d.qty!, price = Math.round(d.price ?? 0), delivery = Math.round(d.delivery ?? 0);
+  // Narx va dastavka tiyinigacha (Decimal(18,2))
+  const qty = d.qty!, price = r2(d.price ?? 0), delivery = r2(d.delivery ?? 0);
   return {
     data: {
       date: d.date!, payGroup: d.payGroup, seller: d.seller, customerId, customerName: d.customerName,
@@ -498,8 +499,8 @@ export async function saveRealizationLineField(key: string, field: LineCell, val
       if (p.data !== null && p.data <= 0) return { error: "Miqdor 0 dan katta bo'lsin", field };
       set.qty = p.data !== null && Math.abs(p.data - r.qty) >= 0.0005 ? p.data : null;
     } else {
-      const v = p.data === null ? null : Math.round(p.data);
-      set[field] = v !== null && Math.abs(v - r[field]) >= 0.5 ? v : null;
+      const v = p.data === null ? null : r2(p.data);
+      set[field] = v !== null && Math.abs(v - r[field]) >= 0.005 ? v : null;
     }
   }
   await db.$transaction(async (tx) => {

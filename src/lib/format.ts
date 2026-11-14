@@ -22,6 +22,12 @@ export function fmtFixed(v: number | string | { toString(): string }, frac = 2):
 }
 
 /**
+ * Summa tiyinigacha: «1 000 000.00» — pul maydoni (`MoneyInput`) ko'rinishi bilan bir xil (kasr nuqta bilan).
+ * Realizatsiya varaqlari (Logistika, Sotuv, kunlik zayavka, Tahlil hisoboti) shu bilan.
+ */
+export const fmtTiyin = (v: number | string | { toString(): string }) => fmtFixed(v, 2).replace(",", ".");
+
+/**
  * Kiritilgan raqam matni → JS o'qiydigan satr: «1 000 000,50» → «1000000.50», «1,4» → «1.4».
  * Bo'shliq va apostrof (minglik ajratgich) tashlanadi; nuqta ham, vergul ham kasr ajratgichi:
  * ikkala turi bo'lsa — oxirgisi kasr, qolganlari minglik («1,000,000.50», «1.000.000,50»);

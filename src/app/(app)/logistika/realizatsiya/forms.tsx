@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Pencil, Plus, X } from "lucide-react";
 import { createRealizationAction, saveRealizationCellAction, saveRealizationNoteAction, updateRealizationAction } from "./actions";
 import { today } from "@/lib/davomat";
-import { fmtNum } from "@/lib/format";
+import { fmtTiyin } from "@/lib/format";
 import { NDS_RATE } from "@/lib/nds";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
@@ -128,9 +128,11 @@ function EntryFields({ entry, token, action, pending, error, onClose }: {
     const p = options.products.find((x) => x.name.toLowerCase() === v.trim().toLowerCase());
     if (p) { setUnit(p.unit); setGroup(p.group); }
   };
-  const q = Number(qty.replace(",", ".")) || 0, pr = Number(price) || 0, dl = Number(delivery) || 0;
-  const net = Math.round(q * pr + dl);
-  const vat = pay === "BANK" ? Math.round(q * pr * NDS_RATE) : 0;
+  // Summa va QQS tiyinigacha — server (`entryData`) bilan bir xil yaxlitlash
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const q = Number(qty.replace(",", ".")) || 0, pr = r2(Number(price) || 0), dl = r2(Number(delivery) || 0);
+  const net = r2(q * pr + dl);
+  const vat = pay === "BANK" ? r2(q * pr * NDS_RATE) : 0;
   return (
     <form onSubmit={submitWith(action)} className="space-y-4">
       {!entry && <input type="hidden" name="clientToken" value={token} />}
@@ -164,9 +166,9 @@ function EntryFields({ entry, token, action, pending, error, onClose }: {
         <Field label="Xaridor (spravka nomi)" className="sm:col-span-2"><Input name="refName" defaultValue={entry?.refName} placeholder={customer || "Bo'sh bo'lsa — xaridor nomi"} maxLength={200} /></Field>
       </div>
       <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm tabular">
-        <span>Summa (QQSsiz): <b>{fmtNum(net)}</b></span>
-        <span>QQS 12%: <b>{vat ? fmtNum(vat) : "—"}</b></span>
-        <span>Jami: <b>{fmtNum(net + vat)}</b></span>
+        <span>Summa (QQSsiz): <b>{fmtTiyin(net)}</b></span>
+        <span>QQS 12%: <b>{vat ? fmtTiyin(vat) : "—"}</b></span>
+        <span>Jami: <b>{fmtTiyin(r2(net + vat))}</b></span>
       </div>
       <FormError error={error} />
       <div className="flex justify-end gap-2">

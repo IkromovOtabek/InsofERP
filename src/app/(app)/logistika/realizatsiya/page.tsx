@@ -4,7 +4,7 @@ import { FileSpreadsheet, PenLine, Receipt, Search, Truck, Undo2, Wallet } from 
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
-import { dateRu, fmtNum, isoDate, opAt } from "@/lib/format";
+import { dateRu, fmtNum, fmtTiyin, isoDate, opAt } from "@/lib/format";
 import { LINE_CELLS, realizationLog, realizationOptions, type AutoCell, type LogRow, type LogSource } from "@/lib/realization-log";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
@@ -27,7 +27,8 @@ const PAY_SHORT: Record<PayGroupKey, string> = { BANK: "Perech.", CASH: "Naqd", 
 const SOURCES: { key: LogSource; label: string }[] = [{ key: "AUTO", label: "Reysdan" }, { key: "MANUAL", label: "Qo'lda" }];
 const NO_PLACE = "—";
 
-const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
+/** Summa tiyinigacha («1 000 000.00»), nol — bo'sh katak */
+const n0 = (v: number) => (v ? fmtTiyin(v) : "");
 /** Varaqda kun.oy (yil — davr sarlavhasida, to'liq sana — ustiga olib borilsa) */
 const dayMonth = (d: Date) => dateRu(d).slice(0, 5);
 const nq = (v: number) => fmtNum(v, 3);
@@ -195,10 +196,10 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
             <SheetTd colSpan={8}>Jami: {rows.length} qator</SheetTd>
             <SheetTd right className="whitespace-normal">{qtyText}</SheetTd>
             <SheetTd />
-            <SheetTd right>{fmtNum(sum((r) => r.delivery), 0)}</SheetTd>
-            <SheetTd right>{fmtNum(sum((r) => r.net), 0)}</SheetTd>
-            <SheetTd right>{fmtNum(sum((r) => r.vat), 0)}</SheetTd>
-            <SheetTd right>{fmtNum(sum((r) => r.total), 0)}</SheetTd>
+            <SheetTd right>{fmtTiyin(sum((r) => r.delivery))}</SheetTd>
+            <SheetTd right>{fmtTiyin(sum((r) => r.net))}</SheetTd>
+            <SheetTd right>{fmtTiyin(sum((r) => r.vat))}</SheetTd>
+            <SheetTd right>{fmtTiyin(sum((r) => r.total))}</SheetTd>
             <SheetTd colSpan={canAuto || canManual ? 6 : 5} />
           </tr>
         </SheetFoot>
@@ -237,8 +238,8 @@ export default async function LogistikaRealizatsiyaPage({ searchParams }: { sear
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Jo'natildi" value={qtyText} hint={`${trips} ta reys`} icon={Truck} />
-        <StatCard label="Summa (QQSsiz)" value={fmtNum(sum((r) => r.net), 0)} hint={`dastavka ${fmtNum(sum((r) => r.delivery), 0)}`} icon={Receipt} />
-        <StatCard label="Jami (QQS bilan)" value={fmtNum(sum((r) => r.total), 0)} hint={`QQS 12%: ${fmtNum(sum((r) => r.vat), 0)}`} icon={Wallet} tone="success" />
+        <StatCard label="Summa (QQSsiz)" value={fmtTiyin(sum((r) => r.net))} hint={`dastavka ${fmtTiyin(sum((r) => r.delivery))}`} icon={Receipt} />
+        <StatCard label="Jami (QQS bilan)" value={fmtTiyin(sum((r) => r.total))} hint={`QQS 12%: ${fmtTiyin(sum((r) => r.vat))}`} icon={Wallet} tone="success" />
         <StatCard label="Qo'lda qatorlar" value={`${manual} ta`} hint="tizimga reys bo'lib tushmagan" icon={PenLine} href={manual ? qs({ manba: "MANUAL" }) : undefined} />
       </div>
 

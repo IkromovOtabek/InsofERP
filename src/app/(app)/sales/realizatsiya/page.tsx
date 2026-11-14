@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Search, Truck, Wallet, Receipt, FileWarning } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
-import { dateRu, fmtNum, isoDate } from "@/lib/format";
+import { dateRu, fmtNum, fmtTiyin, isoDate } from "@/lib/format";
 import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realization";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Input, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
@@ -22,7 +22,7 @@ const PAY_SHORT: Record<PayGroupKey, string> = { BANK: "Perech.", CASH: "Naqd", 
 /** Ustun kengliklari, % (`table-fixed`): Sana, To'lov, Sotuvchi, Xaridor, Mahsulot, TTN/mashina, Miqdor, Narx, Dastavka, Summa, QQS, Jami, Manzil, Hujjatlar */
 const COL_W = [6.2, 4.8, 6.4, 7.9, 6.9, 7.7, 5.3, 8, 8, 9.1, 6.4, 9.1, 6, 8.2];
 
-const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
+const n0 = (v: number) => (v ? fmtTiyin(v) : ""); // summa tiyinigacha
 const nq = (v: number) => fmtNum(v, 3);
 const parse = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : null);
 
@@ -80,8 +80,8 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Jo'natildi" value={qtyText} hint={`${trips} ta reys`} icon={Truck} />
-        <StatCard label="Summa (QQSsiz)" value={fmtNum(sum((r) => r.net), 0)} hint={`dastavka ${fmtNum(sum((r) => r.delivery), 0)}`} icon={Receipt} />
-        <StatCard label="Jami (QQS bilan)" value={fmtNum(sum((r) => r.total), 0)} hint={`QQS 12%: ${fmtNum(sum((r) => r.vat), 0)}`} icon={Wallet} tone="success" />
+        <StatCard label="Summa (QQSsiz)" value={fmtTiyin(sum((r) => r.net))} hint={`dastavka ${fmtTiyin(sum((r) => r.delivery))}`} icon={Receipt} />
+        <StatCard label="Jami (QQS bilan)" value={fmtTiyin(sum((r) => r.total))} hint={`QQS 12%: ${fmtTiyin(sum((r) => r.vat))}`} icon={Wallet} tone="success" />
         <StatCard label="Hujjati to'liq emas" value={`${missingCount} ta`} hint="perechisleniye: shartnoma yoki sch-faktura yo'q" icon={FileWarning} tone={missingCount ? "warning" : "default"} href={missingCount ? qs({ hujjat: "yoq" }) : undefined} />
       </div>
 
@@ -162,10 +162,10 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
               <SheetTd colSpan={6}>Jami: {rows.length} qator</SheetTd>
               <SheetTd right className="whitespace-normal">{qtyText}</SheetTd>
               <SheetTd />
-              <SheetTd right className="whitespace-normal">{fmtNum(sum((r) => r.delivery), 0)}</SheetTd>
-              <SheetTd right className="whitespace-normal">{fmtNum(sum((r) => r.net), 0)}</SheetTd>
-              <SheetTd right className="whitespace-normal">{fmtNum(sum((r) => r.vat), 0)}</SheetTd>
-              <SheetTd right className="whitespace-normal">{fmtNum(sum((r) => r.total), 0)}</SheetTd>
+              <SheetTd right className="whitespace-normal">{fmtTiyin(sum((r) => r.delivery))}</SheetTd>
+              <SheetTd right className="whitespace-normal">{fmtTiyin(sum((r) => r.net))}</SheetTd>
+              <SheetTd right className="whitespace-normal">{fmtTiyin(sum((r) => r.vat))}</SheetTd>
+              <SheetTd right className="whitespace-normal">{fmtTiyin(sum((r) => r.total))}</SheetTd>
               <SheetTd colSpan={2} />
             </tr>
           </SheetFoot>
