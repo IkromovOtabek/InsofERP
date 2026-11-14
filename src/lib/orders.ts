@@ -3,7 +3,7 @@ import { ensureSite } from "@/lib/logistics";
 import { blockKey, blockName, ensureBlocks } from "@/lib/site-blocks";
 import { audit } from "@/lib/audit";
 import { canDoByUserId } from "@/lib/auth";
-import { customerCredit, defaultCreditLimit } from "@/lib/finance";
+import { customerCredit, defaultCreditLimit, type CustomerCredit } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
 import { date, deliveryAt, fmtNum, isoDate, money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
@@ -28,6 +28,10 @@ import { fmtUnitTotals } from "@/lib/unit";
  * Sessiya/ruxsat tekshiruvi va `revalidatePath` — chaqiruvchida.
  */
 export type OrderResult = { changed: boolean; status?: string; error?: string };
+
+/** Qora ro'yxatdagi mijozga «Qarzga» zayavka xatosi (ochishda va tahrirda bir xil matn). */
+const qarzgaYopiq = (name: string, c: CustomerCredit) =>
+  `Kredit limiti to'lgan — qarzga berilmaydi: ${name} uchun naqd yoki perechisleniye bilan oching. Limit ${money(c.limit)}, qarz ${money(c.debt)}, ochiq zayavkalar ${money(c.open)}.`;
 
 /**
  * Beton (m³) ishlab chiqarishga tushmaydi: zayavka qabul qilingach to'g'ridan-to'g'ri logistikaga — reys ochiladi.
@@ -107,7 +111,7 @@ async function lockCreditAndDay(tx: Prisma.TransactionClient, customerId: string
 /**
  * Qabul qilish: DRAFT → CONFIRMED yoki BLOCKED (kredit limiti yetmasa — direktor ochadi).
  * Limit: «Qarzga» — qarz + ochiq zayavkalar + shu zayavka ≤ limit. «Naqd» / «Perechisleniye» — zayavka limitga
- * tushmaydi (pul yetkazilgandan keyin keladi), faqat mijoz qora ro'yxatda bo'lsa bloklanadi.
+ * tushmaydi va bloklanmaydi (pul yetkazilgandan keyin keladi), mijoz qarzdor bo'lsa ham.
  */
 export async function orderConfirm(id: string, userId: string): Promise<OrderResult> {
   const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { include: { product: { select: { unit: true } } } }, customer: true } });
@@ -142,18 +146,11 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     const credit = await customerCredit(o.customerId);
     const paid = Number((await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } }))._sum.amount ?? 0);
     const pending = Math.max(0, required - paid);
-    // To'liq oldindan to'lovli zayavka limitga hech narsa qo'shmaydi — mijozning eski qarzi bo'lsa ham (qora ro'yxat)
-    // qabul qilinadi: pul kassaga tushmaguncha reys baribir ochilmaydi (`prepayShortError`).
-    const prepaid = Math.max(required, paid) >= total - 0.005;
-    let status: "BLOCKED" | "CONFIRMED";
-    if (o.onCredit) {
-      // «Qarzga»: butun summa limitdan joy band qiladi. `net` — ortiqcha to'lov (shu zayavkaning avansi ham) ayirilgan sof holat
-      status = !prepaid && total > 0.005 && Math.max(0, credit.net) + total > credit.limit && credit.net + total > credit.limit ? "BLOCKED" : "CONFIRMED";
-    } else {
-      // «Naqd» / «Perechisleniye»: pul yetkazilgandan keyin keladi — zayavka limitga tushmaydi (jo'natilgani keyin
-      // `orderExposure` bo'yicha qarz bo'ladi). Faqat to'lanmagan qarzi limitni to'ldirgan mijoz (qora ro'yxat) bloklanadi.
-      status = credit.blacklisted && !prepaid ? "BLOCKED" : "CONFIRMED";
-    }
+    // «Naqd» / «Perechisleniye» hech qachon bloklanmaydi: pul yetkazilgandan keyin keladi, jo'natilgani keyin
+    // `orderExposure` bo'yicha qarz bo'lib limitga kiradi. Bloklash faqat «Qarzga»da: butun summa limitdan joy band qiladi;
+    // `net` — ortiqcha to'lov (shu zayavkaning avansi ham) ayirilgan sof holat, oldindan to'liq to'langani bloklanmaydi.
+    const status: "BLOCKED" | "CONFIRMED" = o.onCredit && paid < total - 0.005 && total > 0.005
+      && Math.max(0, credit.net) + total > credit.limit && credit.net + total > credit.limit ? "BLOCKED" : "CONFIRMED";
     const r = await tx.order.updateMany({ where: { id, status: "DRAFT", dateUnknown: false }, data: { status } });
     if (r.count !== 1) return null;
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit, prepayPending: pending });
@@ -481,11 +478,10 @@ export async function createOrder(
     if (!input.customerId) throw new Error("Mijoz tanlanmagan");
     const c = await db.customer.findUnique({ where: { id: input.customerId } });
     if (!c || !c.isActive) throw new Error("Mijoz topilmadi yoki nofaol");
-    const credit = await customerCredit(c.id);
-    // Qora ro'yxat (limit yo'q yoki to'lgan) — faqat KREDIT bloklanadi: to'liq oldindan to'lovli zayavka ochiladi
-    // (yangi qarz tug'dirmaydi, pul kelmaguncha reys ochilmaydi). Qisman avans — qolgani qarz, u ham mumkin emas.
-    if (credit.blacklisted && (onCredit || (prepayAmount ?? 0) < total - 0.005)) {
-      throw new Error(`Kredit limiti yo'q — faqat oldindan to'lov bilan: ${c.name} uchun bosh to'lov zayavka summasiga teng bo'lsin (${money(total)}). Limit ${money(credit.limit)}, qarz ${money(credit.debt)}, ochiq zayavkalar ${money(credit.open)}.`);
+    // Qora ro'yxat (limit yo'q yoki to'lgan) — faqat «Qarzga» yopiq; naqd/perechisleniye zayavka limitga bog'liq emas
+    if (onCredit) {
+      const credit = await customerCredit(c.id);
+      if (credit.blacklisted) throw new Error(qarzgaYopiq(c.name, credit));
     }
   }
 
@@ -692,9 +688,9 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
   const payMethod: PayMethod | null = isStock ? null
     : input.payMethod === "BANK" || input.payMethod === "CASH" ? input.payMethod : prepayAmount || !onCredit ? "CASH" : null;
   const credit = isStock ? null : await customerCredit(o.customerId);
-  // Qora ro'yxat — faqat to'liq oldindan to'lov (ochishdagi qoida bilan bir xil)
-  if (credit?.blacklisted && (onCredit || (prepayAmount ?? 0) < total - 0.005) && (totalChanged || onCredit !== o.onCredit || (prepayAmount ?? 0) !== Number(o.prepayAmount ?? 0))) {
-    return { changed: false, error: `Kredit limiti yo'q — faqat oldindan to'lov bilan: bosh to'lov zayavka summasiga teng bo'lsin (${money(total)}). Limit ${money(credit.limit)}, qarz ${money(credit.debt)}, ochiq zayavkalar ${money(credit.open)}.` };
+  // Qora ro'yxat — «Qarzga»ga o'tkazib ham, qarzga summasini oshirib ham bo'lmaydi (ochishdagi qoida bilan bir xil)
+  if (credit?.blacklisted && onCredit && (totalChanged || !o.onCredit)) {
+    return { changed: false, error: qarzgaYopiq(o.customer.name, credit) };
   }
   // Obyekt nuqtasi o'zgarsa masofa qayta hisoblanadi (serverda — brauzer raqamiga ishonmaymiz)
   const lat = isStock ? o.lat : input.lat ?? null;

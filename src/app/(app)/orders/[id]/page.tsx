@@ -172,15 +172,17 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       )}
       {o.status === "BLOCKED" && (
         <Callout tone="danger" title="Kredit limiti yetmadi">
-          Limit {money(credit.limit)}, ishlatilgan {money(credit.used)} (qarz {money(credit.debt)} + ochiq zayavkalar {money(credit.open)}), bu zayavka {money(total)}{!o.onCredit && " — naqd/perechisleniye zayavka limitga tushmaydi, mijozning to'lanmagan qarzi limitni to'ldirgani uchun bloklangan"}. Faqat direktor blokdan chiqara oladi.
+          Limit {money(credit.limit)}, ishlatilgan {money(credit.used)} (qarz {money(credit.debt)} + ochiq zayavkalar {money(credit.open)}), bu zayavka {money(total)}{!o.onCredit && " — naqd/perechisleniye zayavka endi bloklanmaydi (eski qoida bilan bloklangan), blokdan chiqarish mumkin"}. Faqat direktor blokdan chiqara oladi.
         </Callout>
       )}
       {!isStock && credit.blacklisted && (
-        <Callout tone="danger" title="Kredit limiti yo'q — faqat oldindan to'lov bilan">
+        <Callout tone={o.onCredit ? "danger" : "warning"} title="Kredit limiti to'lgan — qarzga berilmaydi">
           Limit {money(credit.limit)} to'liq ishlatilgan (qarz {money(credit.debt)}, ochiq zayavkalar {money(credit.open)}).{" "}
-          {o.status === "DRAFT"
-            ? (!o.onCredit && expected >= total - 0.005 ? "Zayavka to'liq oldindan to'lovli — qabul qilinadi, pul kassaga tushmaguncha reys ochilmaydi." : "Qabul qilinsa zayavka bloklanadi — avval qarz to'lansin yoki direktor limitni oshirsin.")
-            : "Bu mijozga faqat to'liq oldindan to'lovli zayavka ochiladi; jo'natish va schyot yozishda ehtiyot bo'ling — qarz to'langach belgi avtomatik olinadi."}{" "}
+          {!o.onCredit
+            ? "Naqd/perechisleniye zayavka limitga bog'liq emas — qabul qilinadi; mijozning eski qarzini eslatib qo'ying."
+            : o.status === "DRAFT"
+              ? "Qabul qilinsa zayavka bloklanadi — avval qarz to'lansin, direktor limitni oshirsin yoki zayavka naqd/perechisleniyega o'tkazilsin."
+              : "Qarz to'langach belgi avtomatik olinadi."}{" "}
           <Link href={`/customers/${o.customerId}`} className="underline">Mijoz kartasi</Link>
         </Callout>
       )}

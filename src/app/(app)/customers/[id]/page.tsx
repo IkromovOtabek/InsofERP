@@ -40,7 +40,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
     receivablesReport({ ids: [id], includeInternal: true }),
   ]);
   const aged = recv.byCustomer.get(id);
-  const canOrder = canDo(s, "orders", "create") && c.isActive && !blacklisted;
+  // Qora ro'yxat faqat «Qarzga»ni yopadi — naqd/perechisleniye zayavka ochilaveradi
+  const canOrder = canDo(s, "orders", "create") && c.isActive;
   // Server amali (`saveSite`) bilan bir xil ruxsat — ruxsatlar daraxtida berilgan xodimga ham tugma chiqadi
   const canEditSites = canDo(s, "customers", "sites");
   // «Ma'lumotlar» formasi va o'chirish — `saveCustomer`/`deleteCustomer` bilan bir xil ruxsat; ruxsatsiz xodim faqat ko'radi
@@ -59,7 +60,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           {canEdit && !c.isInternal && <DeleteButton action={deleteCustomer.bind(null, true)} id={id} name={c.name} title="Mijozni o'chirish (hujjatlarda ishlatilgan bo'lsa — nofaol qilinadi)" className="h-10 w-10" />}
         </>} />
       {blacklisted && (
-        <div className="mb-4"><Callout tone="danger" title="Mijoz qora ro'yxatda">Limit {money(limit)} to'liq ishlatilgan: qarz {money(debt)} + ochiq zayavkalar {money(open)}. Yangi zayavka ochilmaydi. Qarz to'langach mijoz avtomatik ro'yxatdan chiqadi; direktor, Finance yoki Buxgalteriya limitni oshirishi mumkin.</Callout></div>
+        <div className="mb-4"><Callout tone="danger" title="Mijoz qora ro'yxatda">Limit {money(limit)} to'liq ishlatilgan: qarz {money(debt)} + ochiq zayavkalar {money(open)}. Qarzga zayavka ochilmaydi — naqd yoki perechisleniye bilan ochiladi. Qarz to'langach mijoz avtomatik ro'yxatdan chiqadi; direktor, Finance yoki Buxgalteriya limitni oshirishi mumkin.</Callout></div>
       )}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Kredit limit" value={money(limit)} icon={CreditCard} hint={limit > 0 ? undefined : "0 — faqat naqd / avans"} href="#malumotlar" />

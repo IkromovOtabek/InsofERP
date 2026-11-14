@@ -18,7 +18,7 @@ import { notifyAfter, notifyRoles } from "./notify";
  * 1+ — dastavka bor (soni izohga yoziladi). «Blok» — obyekt ichidagi bino (A blok…), yangi nom obyektga qo'shiladi.
  *
  * «Bosh to'lov» ustuni — qatorlar bo'yicha yig'ilib zayavka bosh to'lovi bo'ladi (bo'lim usuli bilan: naqd — kassaga,
- * perechisleniye — buxgalterga so'rov). Qora ro'yxatdagi mijozga zayavka faqat to'liq bosh to'lov bilan ochiladi.
+ * perechisleniye — buxgalterga so'rov). Qora ro'yxatdagi mijozga «Qarzga» zayavka ochilmaydi (naqd/perechisleniye — ochiladi).
  */
 export type GridSection = "bank" | "cash" | "credit";
 export type GridRow = {

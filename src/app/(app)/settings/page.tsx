@@ -138,7 +138,7 @@ async function LimitsTab() {
 
       <div id="kredit-limit" className="scroll-mt-20"><Card>
         <CardHeader icon={Wallet} title="Mijozlar kredit limiti"
-          description="Limit — mijoz qarzga ola oladigan eng ko'p summa. Ishlatilgan = qarz + schyot yozilmagan ochiq zayavkalar. Limit to'lsa mijoz qora ro'yxatga tushadi: yangi zayavka faqat oldindan to'lov bilan, qarzga zayavka qabul qilishda bloklanadi. 0 — faqat naqd/avans." />
+          description="Limit — mijoz qarzga ola oladigan eng ko'p summa. Ishlatilgan = qarz + «Qarzga» ochiq zayavkalar + jo'natilgan, to'lanmagan naqd. Limit faqat «Qarzga»ni cheklaydi: oshsa zayavka bloklanadi, to'lsa mijoz qora ro'yxatga tushadi va qarzga zayavka ochilmaydi. Naqd va perechisleniye zayavka hech qachon bloklanmaydi. 0 — qarzga berilmaydi." />
         <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
           <DefaultCreditLimitForm value={defLimit} />
           <p className="mt-1.5 text-xs text-slate-500">Bundan keyin ochiladigan har yangi mijozga (forma, Excel, zayavka va arizadan, mobil ilova) shu limit beriladi. Mavjud mijozlarning limiti o&apos;zgarmaydi — ularni pastdagi jadvalda bering.</p>

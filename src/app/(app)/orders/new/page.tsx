@@ -95,7 +95,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
           sites: { where: { isActive: true }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, address: true, lat: true, lng: true, blocks: { where: { isActive: true }, orderBy: BLOCK_ORDER, select: { name: true } } } },
         },
       }),
-      blacklistedIds(), // «limit yo'q» belgisi — bunday mijozga faqat to'liq bosh to'lov bilan
+      blacklistedIds(), // «limit yo'q» belgisi — bunday mijozga «Qarzga» zayavka ochilmaydi
       orderDaySheet(new Date(`${day}T00:00:00`)), // kunlik «Realizatsiya zayavkasi» bilan bir xil hisob
     ]);
     const SEC: Record<PayGroupKey, keyof GridExisting> = { BANK: "bank", CASH: "cash", DEBT: "credit" };

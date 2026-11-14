@@ -23,7 +23,7 @@ import { editOrderGridCell, type GridCellField } from "./grid-cell-action";
 
 /** Mijoz obyekti va uning bloklari (A blok, B blok…) */
 export type GridSite = SavedPlace & { blocks: string[] };
-/** `blacklisted` — kredit limiti yo'q/to'lgan: zayavka faqat to'liq bosh to'lov bilan ochiladi (`lib/orders.ts`) */
+/** `blacklisted` — kredit limiti yo'q/to'lgan: «Qarzga» zayavka ochilmaydi, naqd/perechisleniye — ochiladi (`lib/orders.ts`) */
 export type GridCustomer = { id: string; name: string; aliases: string[]; phone: string | null; sites: GridSite[]; blacklisted: boolean };
 export type GridProduct = { id: string; code: string; name: string; unit: string; price: number };
 /** «Yangi mijoz» oynasida kiritilgan, hali bazada yo'q mijoz — zayavka bilan birga saqlanadi */
@@ -623,14 +623,15 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
                 const unknownProduct = f === "product" && r.product.trim() && !p;
                 const newCustomer = f === "customer" && r.customer.trim() && !c;
                 const prepared = newCustomer ? newCust.get(flat(r.customer)) : undefined;
-                const noCredit = f === "customer" && !!c?.blacklisted;
+                // Qora ro'yxat faqat «Qarzga» bo'limini yopadi — naqd/perechisleniye zayavka ochilaveradi
+                const noCredit = f === "customer" && sec === "credit" && !!c?.blacklisted;
                 const g = f === "prepay" ? grp : undefined;
-                const prepayBad = !!g && (g.prepay > g.total + 0.005 || (!!c?.blacklisted && g.prepay < g.total - 0.005));
+                const prepayBad = !!g && g.prepay > g.total + 0.005;
                 const badDate = f === "date" && !d, badTime = f === "time" && normTime(r.time) == null;
                 const off = f === "fee" && noDelivery(r);
                 return (
                   <td key={ci} className={cn(cell, "relative", col.w, (prepayBad || badDate || badTime) && "bg-red-50", off && "bg-slate-50")}
-                    title={prepayBad ? (g!.prepay > g!.total + 0.005 ? "Bosh to'lov zayavka summasidan katta" : "Kredit limiti yo'q — bosh to'lov zayavka summasiga teng bo'lsin («To'liq»)")
+                    title={prepayBad ? "Bosh to'lov zayavka summasidan katta"
                       : badDate ? "Sana noto'g'ri — masalan 10.11.2026 yoki «aniq emas»" : badTime ? "Vaqt noto'g'ri — masalan 9:00" : undefined}>
                     <input
                       value={r[f]} list={list} autoComplete="off" aria-label={`${title}, ${no}-qator: ${col.label}`}
@@ -647,7 +648,7 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
                       className={cn(inp, (col.num || f === "trips") && "text-right tabular-nums", unknownProduct && "text-red-600",
                         newCustomer && "pr-12", noCredit && "pr-16", f === "prepay" && "pl-12", (f === "site" || f === "date" || f === "time") && "cursor-pointer pr-6",
                         f === "trips" && "pr-11", f === "date" && r.date.trim().toLowerCase() === UNKNOWN && "text-amber-700")}
-                      title={unknownProduct ? "Bunday mahsulot ro'yxatda yo'q" : noCredit ? "Kredit limiti yo'q — zayavka faqat to'liq bosh to'lov bilan ochiladi" : undefined}
+                      title={unknownProduct ? "Bunday mahsulot ro'yxatda yo'q" : noCredit ? "Kredit limiti to'lgan — qarzga berilmaydi, Naqd yoki Perechisleniye bo'limida oching" : undefined}
                     />
                     {newCustomer && (
                       <button type="button" tabIndex={-1} onClick={() => setCustFor({ sec, key: r.key, initial: prepared ?? { name: r.customer.trim(), phone: r.phone, inn: "", address: r.site, lat: r.lat, lng: r.lng } })}

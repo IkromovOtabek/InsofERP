@@ -14,7 +14,7 @@ type C = { id: string; name: string; inn: string | null; phone: string | null; a
 export function CustomerForm({ customer, canEditLimit, defaultLimit = 0, readOnly = false }: { customer: C; canEditLimit: boolean; defaultLimit?: number; readOnly?: boolean }) {
   const [state, action, pending] = useActionState(saveCustomer.bind(null, customer?.id ?? null), undefined);
   const limitHint = [
-    canEditLimit ? "0 = faqat oldindan to'lov (naqd / avans). Qarz berish uchun limit kiriting" : "Faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi",
+    canEditLimit ? "0 = qarzga berilmaydi (naqd / perechisleniye ishlaydi). Qarz berish uchun limit kiriting" : "Faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi",
     customer ? "" : "Standart limit — Sozlamalar → Limitlar",
   ].filter(Boolean).join(". ");
   return (

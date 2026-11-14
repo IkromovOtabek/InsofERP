@@ -118,17 +118,19 @@ for (const [p, who] of [["/sales", buh], ["/dashboard", dir], ["/bi-tahlil/moliy
   check(`B22 ${p} ochiladi (200)`, page.status === 200, `${page.status} ${page.location ?? ""}`);
 }
 
-// ───────── C. Qora ro'yxat: faqat oldindan to'lov ─────────
-console.log("\nC. Kredit limiti yo'q (qarzdor) mijoz: kredit yopiq, to'liq oldindan to'lov ochiq");
+// ───────── C. Qora ro'yxat: faqat «Qarzga» yopiq ─────────
+console.log("\nC. Kredit limiti yo'q (qarzdor) mijoz: qarzga yopiq, naqd/perechisleniye ochiq");
 const nameC = `QA Qarzdor ${T}`;
 await buh.action("customers/actions#saveCustomer", [null, undefined, fd({ name: nameC, creditLimit: 0, isActive: "on" })], "/customers/new");
 const cC = q1(`select id from "Customer" where name=${lit(nameC)}`);
 r = await buh.action("settings/boshlangich-qoldiq/actions#createOpeningAction", [undefined, fd({ kind: "CUSTOMER", sign: "1", date: today, entityId: cC.id, amount: "3 000 000" })], "/settings/boshlangich-qoldiq");
 check("C1 boshlang'ich qarz 3 mln kiritildi", r.result?.ok === true, r.result);
 r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cC.id, payment: "credit", items: [["M200", 2, 550000]] })], "/orders/new");
-check("C2 qarzga zayavka rad: «Kredit limiti yo'q — faqat oldindan to'lov bilan»", !orderIdFrom(r) && /Kredit limiti yo'q — faqat oldindan to'lov bilan/.test(r.result?.error ?? ""), r.result);
+check("C2 qarzga zayavka rad: «Kredit limiti to'lgan — qarzga berilmaydi»", !orderIdFrom(r) && /Kredit limiti to'lgan — qarzga berilmaydi/.test(r.result?.error ?? ""), r.result);
 r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cC.id, payment: "prepay", prepay: 500000, items: [["M200", 2, 550000]] })], "/orders/new");
-check("C3 qisman avansli naqd zayavka ham rad (qolgani qarz bo'lardi)", !orderIdFrom(r) && /faqat oldindan to'lov/.test(r.result?.error ?? ""), r.result);
+const oC3 = orderIdFrom(r);
+r = oC3 ? await sotuv.action("orders/actions#confirmOrder", [oC3], `/orders/${oC3}`) : r;
+check("C3 qisman avansli naqd zayavka ochildi va qabul qilindi (qarzdor mijoz, bloklanmaydi)", !!oC3 && q1(`select status from "Order" where id=${lit(oC3)}`).status === "CONFIRMED", r.result);
 r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cC.id, payment: "prepay", prepay: 1100000, items: [["M200", 2, 550000]] })], "/orders/new");
 const oC = orderIdFrom(r);
 check("C4 to'liq oldindan to'lovli zayavka ochildi", !!oC, r.result);
@@ -166,13 +168,17 @@ const oE3 = orderIdFrom(r);
 r = oE3 ? await sotuv.action("orders/actions#confirmOrder", [oE3], `/orders/${oE3}`) : r;
 check("E3 qarzga zayavka esa limitga tushadi — BLOCKED", !!oE3 && q1(`select status from "Order" where id=${lit(oE3)}`).status === "BLOCKED", r.result);
 if (oE3) await sotuv.action("orders/actions#cancelOrder", [oE3, "QA: limit tekshiruvi"], `/orders/${oE3}`);
-// Logistika birinchi zayavkani yetkazdi (simulyatsiya), pul hali kelmagan — endi bu qarz
+// Logistika birinchi zayavkani yetkazdi (simulyatsiya), pul hali kelmagan — endi bu qarz, mijoz qora ro'yxatda
 exec(`update "Order" set status='DELIVERED' where id=${lit(oE1)}`);
 r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "prepay", items: [["M250", 1, 600000]] })], "/orders/new");
-check("E4 yetkazilgan, to'lanmagan 6 mln limitni to'ldirdi — yangi naqd zayavka faqat oldindan to'lov bilan", !orderIdFrom(r) && /Kredit limiti yo'q — faqat oldindan to'lov bilan/.test(r.result?.error ?? ""), r.result);
+const oE4 = orderIdFrom(r);
+r = oE4 ? await sotuv.action("orders/actions#confirmOrder", [oE4], `/orders/${oE4}`) : r;
+check("E4 to'lanmagan 6 mln qarz bo'lsa ham naqd zayavka ochildi va qabul qilindi (bloklanmaydi)", !!oE4 && q1(`select status from "Order" where id=${lit(oE4)}`).status === "CONFIRMED", r.result);
+r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "credit", items: [["M250", 1, 600000]] })], "/orders/new");
+check("E5 qarzga esa rad: «Kredit limiti to'lgan — qarzga berilmaydi»", !orderIdFrom(r) && /Kredit limiti to'lgan — qarzga berilmaydi/.test(r.result?.error ?? ""), r.result);
 r = await kassa.action("payments/actions#createPayment", [undefined, fd({ customerId: cE.id, cashAccountId: KASSA, amount: 6000000, date: today })], "/payments");
-check("E5 mijoz 6 mln to'ladi", r.result?.ok === true, r.result);
-r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "prepay", items: [["M250", 1, 600000]] })], "/orders/new");
-check("E6 to'lovdan keyin yana bosh to'lovsiz naqd zayavka ochiladi", !!orderIdFrom(r), r.result);
+check("E6 mijoz 6 mln to'ladi", r.result?.ok === true, r.result);
+r = await sotuv.action("orders/actions#createOrder", [undefined, orderForm({ customerId: cE.id, payment: "credit", items: [["M250", 1, 600000]] })], "/orders/new");
+check("E7 qarz yopilgach qarzga zayavka yana ochiladi (qora ro'yxatdan chiqdi)", !!orderIdFrom(r), r.result);
 
 summary("sales-lifecycle:");

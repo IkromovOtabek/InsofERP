@@ -298,9 +298,9 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const remaining = Math.max(0, total - prepayN);
   // Limitga faqat «Qarzga» zayavka tushadi: naqd/perechisleniyeda pul yetkazilgandan keyin keladi (`orderExposure`)
   const overLimit = mode === "existing" && customer && payment === "credit" ? customer.used + total > customer.limit : false;
-  // Qora ro'yxat (kredit limiti yo'q/to'lgan): faqat kredit yopiq — to'liq oldindan to'lov bilan zayavka ochiladi
+  // Qora ro'yxat (kredit limiti yo'q/to'lgan): faqat «Qarzga» yopiq — naqd/perechisleniye zayavka ochilaveradi
   const noCredit = mode === "existing" && !!customer?.blacklisted;
-  const blocked = noCredit && (payment === "credit" || total <= 0 || prepayN < total - 0.005);
+  const blocked = noCredit && payment === "credit";
   const contractN = Number(contractAmount) || 0;
   const contractLeft = contractN - total; // shartnoma summasidan zayavka summasi ayirilgan qoldiq
 
@@ -426,8 +426,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
           </div>
         )}
         {noCredit && customer && (
-          <div className="mt-3"><Callout tone="danger" title="Kredit limiti yo'q — faqat oldindan to'lov bilan">
-            Limit {money(customer.limit)}, qarz va ochiq zayavkalar {money(customer.used)}. Qarzga zayavka ochilmaydi — bosh to&apos;lov zayavka summasiga teng bo&apos;lsin (pul kassaga tushmaguncha reys ochilmaydi). Qarzga berish kerak bo&apos;lsa direktor limitni oshiradi.
+          <div className="mt-3"><Callout tone="warning" title="Kredit limiti to'lgan — qarzga berilmaydi">
+            Limit {money(customer.limit)}, qarz va ochiq zayavkalar {money(customer.used)}. Naqd yoki perechisleniye bilan zayavka ochiladi. Qarzga berish kerak bo&apos;lsa direktor limitni oshiradi.
           </Callout></div>
         )}
         {!noCredit && overLimit && customer && (
@@ -708,7 +708,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         <FormActions>
           <Button disabled={pending || blocked || (mode === "existing" && !customer)}>{pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>
           <LinkButton href="/orders" variant="secondary">Bekor</LinkButton>
-          {blocked && <span className="inline-flex items-center gap-1 text-xs text-red-600"><ShieldAlert size={14} /> Kredit limiti yo&apos;q — faqat oldindan to&apos;lov bilan: bosh to&apos;lov {money(total)} bo&apos;lsin</span>}
+          {blocked && <span className="inline-flex items-center gap-1 text-xs text-red-600"><ShieldAlert size={14} /> Kredit limiti to&apos;lgan — naqd yoki perechisleniye tanlang</span>}
           {mode === "existing" && !customer && <span className="text-xs text-slate-500">Avval mijozni tanlang</span>}
         </FormActions>
       </div>
