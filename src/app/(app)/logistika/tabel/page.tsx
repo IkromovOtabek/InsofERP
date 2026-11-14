@@ -146,7 +146,8 @@ type SectionKey = (typeof SECTIONS)[number];
 
 export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string; davr?: string; dan?: string; gacha?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
-  // Jami xarajat, daromad, foyda — faqat direktor, ish boshqaruvchi, mexanik (Logistika moliya); qolganlarga hisoblanmaydi ham
+  // Foyda, dostavka/usluga bo'yicha kirim va logistika kassasi — faqat direktor, ish boshqaruvchi, mexanik (Logistika moliya);
+  // Hisob varag'ida jami xarajat va bajarilgan ish (perech. / naqd / obyekt) dispetcherga ham ko'rinadi
   const showMoney = canSeeLogiMoney(s);
   const sp = await searchParams;
   const month = normMonth(sp.oy);

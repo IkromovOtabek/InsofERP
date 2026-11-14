@@ -43,13 +43,20 @@ const excelRow = (r: LedgerRow, money: boolean) => ({
   Mashina: r.plate, Haydovchi: r.driver, "Yuklash joyi": r.pickup, "Tushirish joyi": r.dropoff, Reys: r.trips, Yuk: r.cargo,
   "Probeg, km": r.km, "Baraban, soat": r.workHours, "Baraban sarfi": r.drumUse, Birlik: r.unit, "Qoldiq (oldin)": r.balBefore, Zapravka: r.refuel, Sarf: r.use, "Sarf, dizel l": r.useExtra, "Qoldiq (keyin)": r.balAfter,
   "Yoqilg'i, so'm": r.fuelSum, "Haydovchi haqi": r.pay, "Haq turi": r.amount == null ? (r.pay ? "Taklif" : null) : r.payType === "CASH" ? "Naqd" : "Oylik",
-  "Ta'mir": r.repair, Zapchast: r.parts, Vulkanizator: r.vulc, "Boshqa xarajat": r.other,
-  // Jami xarajat, daromad va foyda — faqat logistika moliyasini ko'radiganlarga (`canSeeLogiMoney`)
+  "Ta'mir": r.repair, Zapchast: r.parts, Vulkanizator: r.vulc, "Boshqa xarajat": r.other, "Jami xarajat": r.total,
+  // Dostavka / usluga alohida va foyda — faqat logistika moliyasini ko'radiganlarga (`canSeeLogiMoney`);
+  // qolganlarga (dispetcher) — Excel'idagi «Выполнения в суммах»: П/Р, Н/Л, Обект
   ...(money ? {
-    "Jami xarajat": r.total, "Dostavka perech.": r.revBank, "Dostavka naqd": r.revCash, "Dostavka qarzga": r.revDebt,
+    "Dostavka perech.": r.revBank, "Dostavka naqd": r.revCash, "Dostavka qarzga": r.revDebt,
     "Usluga perech.": r.svcBank, "Usluga naqd": r.svcCash, "Obyekt (zavod uchun)": r.revOther, Foyda: r.profit,
-  } : {}), Izoh: r.remarks.join("; "),
+  } : {
+    "Bajarilgan — perech.": r.revBank + r.svcBank, "Bajarilgan — naqd": r.revCash + r.svcCash, "Bajarilgan — qarzga": r.revDebt, "Obyekt (zavod uchun)": r.revOther,
+  }), Izoh: r.remarks.join("; "),
 });
+
+type Rev = Pick<LedgerTotals, "revBank" | "revCash" | "revDebt" | "svcBank" | "svcCash" | "revOther">;
+/** Bajarilgan ish ustuni: qiymat (qator yoki jami), qator katagida kirim qalami bormi. */
+type RevCol = { key: string; v: (x: Rev) => number; edit: boolean };
 
 /**
  * Haydovchi tabelining hisob varag'i (dispetcher Excel'i ko'rinishida) — `lib/driver-ledger.ts`.
@@ -58,9 +65,10 @@ const excelRow = (r: LedgerRow, money: boolean) => ({
  * Har katakdagi qalam — shu ustunni (`LedgerCell`, `CELLS`), qator oxiridagisi — hamma ustunni bitta oynada (`LedgerEditButton`,
  * `lib/ledger-edit.ts`); ikkalasi bitta server amali bilan saqlanadi.
  * Excel: bitta mashina — bitta varaq; «Hammasi» da har mashina alohida varaq + jamlanma.
- * `money` — Jami xarajat, bajarilgan ish (dostavka va usluga prixodi — perech. / naqd, «Obyekt» — zavodning o'zi uchun ish),
- * Foyda va pul jamlari: faqat direktor, ish boshqaruvchi, mexanik
- * (`lib/logistics-finance.ts` → `canSeeLogiMoney`). Qolganlarga bu ustunlar ham, Excel'da ham yuborilmaydi.
+ * Jami xarajat va bajarilgan ish (summada) — hammaga. `money` (direktor, ish boshqaruvchi, mexanik — `lib/logistics-finance.ts`
+ * → `canSeeLogiMoney`): bajarilgan ish dostavka / usluga bo'yicha alohida (perech. / naqd) va Foyda. Qolganlarga (dispetcher) —
+ * dispetcher Excel'idagidek «Общая расход» va «Выполнения в суммах»: perech., naqd (dostavka + usluga), obyekt; Foyda yo'q
+ * (ekranda ham, Excel'da ham).
  */
 export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, canEdit, money, openTrip }: {
   rows: LedgerRow[]; total: LedgerTotals; month: string; file: string; showDriver: boolean; showPlate: boolean; canEdit: boolean; money: boolean;
@@ -76,8 +84,15 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
     { name: "Jamlanma", rows: sums.map((d) => ({ Haydovchi: d.driver, Oylik: d.payroll, Naqd: d.cash, "Narxsiz (taklif)": d.suggested, Jami: d.total })) },
   ];
   // Zayavkada to'lov turi yo'q (qarzga) dostavka bo'lsa — alohida ustun (bo'lmasa ko'rsatilmaydi)
-  const debt = money && rows.some((r) => r.revDebt >= 1);
-  const cols = (money ? 26 + (debt ? 1 : 0) : 19) + (showDriver ? 1 : 0) + (canEdit ? 1 : 0);
+  const debt = rows.some((r) => r.revDebt >= 1);
+  const debtCol: RevCol[] = debt ? [{ key: "debt", v: (x) => x.revDebt, edit: false }] : [];
+  const revCols: RevCol[] = money
+    ? [{ key: "bank", v: (x) => x.revBank, edit: true }, { key: "cash", v: (x) => x.revCash, edit: true }, ...debtCol,
+      { key: "svcBank", v: (x) => x.svcBank, edit: true }, { key: "svcCash", v: (x) => x.svcCash, edit: true }, { key: "obj", v: (x) => x.revOther, edit: true }]
+    : [{ key: "bank", v: (x) => x.revBank + x.svcBank, edit: true }, { key: "cash", v: (x) => x.revCash + x.svcCash, edit: true }, ...debtCol,
+      { key: "obj", v: (x) => x.revOther, edit: true }];
+  // 19 asosiy ustun + Jami xarajat + bajarilgan ish (+ Foyda)
+  const cols = 20 + revCols.length + (money ? 1 : 0) + (showDriver ? 1 : 0) + (canEdit ? 1 : 0);
 
   return (
     <div className="space-y-3">
@@ -105,23 +120,30 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
             <SheetTh rowSpan={2} right tone="blue">Yoqilg&apos;i, so&apos;m</SheetTh>
             <SheetTh rowSpan={2} right>Haydovchi haqi</SheetTh>
             <SheetTh colSpan={4} tone="red">Xarajat</SheetTh>
-            {money && <>
-              <SheetTh rowSpan={2} right tone="red">Jami xarajat</SheetTh>
+            <SheetTh rowSpan={2} right tone="red" title="Umumiy rasxod: yoqilg'i + haydovchi haqi + ta'mir + zapchast + vulkanizator + boshqa">Jami xarajat</SheetTh>
+            {money ? <>
               <SheetTh colSpan={debt ? 3 : 2} tone="green" title="Zayavka dastavka haqi (reyslarga hajm ulushida) va qo'lda qator">Dostavka summasi</SheetTh>
               <SheetTh colSpan={2} tone="green" title="Tashqi xizmat (usluga) kirimi — qo'lda qator">Usluga prixod</SheetTh>
               <SheetTh rowSpan={2} right tone="green" title="Zavodning o'zi uchun ish — zavodga olib kelingan narsa (logistika daromadi, foydaga kiradi)">Obyekt<span className="block text-[11px] font-medium">zavod uchun</span></SheetTh>
               <SheetTh rowSpan={2} right tone="yellow">Foyda</SheetTh>
-            </>}
+            </> : (
+              <SheetTh colSpan={revCols.length} tone="green" title="Dostavka (zayavka dastavka haqi, qo'lda qator) va usluga kirimi to'lov turi bo'yicha; obyekt — zavodning o'zi uchun ish">Bajarilgan ish (summada)</SheetTh>
+            )}
             <SheetTh rowSpan={2}>Izoh</SheetTh>
             {canEdit && <SheetTh rowSpan={2}><span className="sr-only">Amal</span></SheetTh>}
           </tr>
           <tr>
             <SheetTh right tone="blue">Qoldiq</SheetTh><SheetTh right tone="blue">Zapravka</SheetTh><SheetTh right tone="blue">Sarf</SheetTh><SheetTh right tone="blue">Qoldiq</SheetTh>
             <SheetTh right tone="red">Ta&apos;mir</SheetTh><SheetTh right tone="red">Zapchast</SheetTh><SheetTh right tone="red">Vulkanizator</SheetTh><SheetTh right tone="red">Boshqa</SheetTh>
-            {money && <>
+            {money ? <>
               <SheetTh right tone="green" title="Perechisleniye">Perech.</SheetTh><SheetTh right tone="green">Naqd</SheetTh>
               {debt && <SheetTh right tone="green" title="Zayavkada to'lov turi ko'rsatilmagan — mijoz keyin to'laydi">Qarzga</SheetTh>}
               <SheetTh right tone="green" title="Perechisleniye">Perech.</SheetTh><SheetTh right tone="green">Naqd</SheetTh>
+            </> : <>
+              <SheetTh right tone="green" title="Perechisleniye (П/Р): dostavka + usluga">Perech.</SheetTh>
+              <SheetTh right tone="green" title="Naqd (Н/Л): dostavka + usluga">Naqd</SheetTh>
+              {debt && <SheetTh right tone="green" title="Zayavkada to'lov turi ko'rsatilmagan — mijoz keyin to'laydi">Qarzga</SheetTh>}
+              <SheetTh right tone="green" title="Zavodning o'zi uchun ish — zavodga olib kelingan narsa">Obyekt</SheetTh>
             </>}
           </tr>
         </SheetHead>
@@ -158,16 +180,11 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
                 <SheetTd right tone="red">{ed("parts", "Zapchast", <N v={r.parts} />, true)}</SheetTd>
                 <SheetTd right tone="red">{ed("vulc", "Vulkanizator", <N v={r.vulc} />, true)}</SheetTd>
                 <SheetTd right tone="red">{ed("other", "Boshqa xarajat", <N v={r.other} />, true)}</SheetTd>
-                {money && <>
-                  <SheetTd right tone="red" strong><N v={r.total} /></SheetTd>
-                  <SheetTd right tone="green">{ed("revenue", "Kirim (bajarilgan)", <N v={r.revBank} />, true)}</SheetTd>
-                  <SheetTd right tone="green">{ed("revenue", "Kirim (bajarilgan)", <N v={r.revCash} />, true)}</SheetTd>
-                  {debt && <SheetTd right tone="green"><N v={r.revDebt} /></SheetTd>}
-                  <SheetTd right tone="green">{ed("revenue", "Kirim (bajarilgan)", <N v={r.svcBank} />, true)}</SheetTd>
-                  <SheetTd right tone="green">{ed("revenue", "Kirim (bajarilgan)", <N v={r.svcCash} />, true)}</SheetTd>
-                  <SheetTd right tone="green">{ed("revenue", "Kirim (bajarilgan)", <N v={r.revOther} />, true)}</SheetTd>
-                  <SheetTd right tone="yellow" strong><N v={r.profit} neg /></SheetTd>
-                </>}
+                <SheetTd right tone="red" strong><N v={r.total} /></SheetTd>
+                {revCols.map((c) => (
+                  <SheetTd key={c.key} right tone="green">{c.edit ? ed("revenue", "Kirim (bajarilgan)", <N v={c.v(r)} />, true) : <N v={c.v(r)} />}</SheetTd>
+                ))}
+                {money && <SheetTd right tone="yellow" strong><N v={r.profit} neg /></SheetTd>}
                 <SheetTd className="max-w-48 text-[12px] text-slate-600">
                   {ed("note", "Izoh", <span className="block truncate" title={r.remarks.join(" · ")}>
                     {r.payType === "CASH" && <span className="mr-1 font-semibold text-amber-800">Naqd</span>}
@@ -202,23 +219,16 @@ export function LedgerSheet({ rows, total, month, file, showDriver, showPlate, c
               <SheetTd right><N v={total.refuel} frac={1} /></SheetTd>
               <SheetTd right>{[total.useGas ? `${fmtNum(total.useGas, 1)} m³` : null, total.useDt ? `${fmtNum(total.useDt, 1)} l` : null].filter(Boolean).join(" + ") || "—"}</SheetTd>
               <SheetTd />
-              {/* Pul jamlari — faqat logistika moliyasini ko'radiganlarga */}
-              {money ? <>
-                <SheetTd right><N v={total.fuelSum} /></SheetTd>
-                <SheetTd right><N v={total.pay} /></SheetTd>
-                <SheetTd right><N v={total.repair} /></SheetTd>
-                <SheetTd right><N v={total.parts} /></SheetTd>
-                <SheetTd right><N v={total.vulc} /></SheetTd>
-                <SheetTd right><N v={total.other} /></SheetTd>
-                <SheetTd right><N v={total.total} /></SheetTd>
-                <SheetTd right><N v={total.revBank} /></SheetTd>
-                <SheetTd right><N v={total.revCash} /></SheetTd>
-                {debt && <SheetTd right><N v={total.revDebt} /></SheetTd>}
-                <SheetTd right><N v={total.svcBank} /></SheetTd>
-                <SheetTd right><N v={total.svcCash} /></SheetTd>
-                <SheetTd right><N v={total.revOther} /></SheetTd>
-                <SheetTd right><N v={total.profit} neg /></SheetTd>
-              </> : <SheetTd colSpan={6} />}
+              <SheetTd right><N v={total.fuelSum} /></SheetTd>
+              <SheetTd right><N v={total.pay} /></SheetTd>
+              <SheetTd right><N v={total.repair} /></SheetTd>
+              <SheetTd right><N v={total.parts} /></SheetTd>
+              <SheetTd right><N v={total.vulc} /></SheetTd>
+              <SheetTd right><N v={total.other} /></SheetTd>
+              <SheetTd right><N v={total.total} /></SheetTd>
+              {revCols.map((c) => <SheetTd key={c.key} right><N v={c.v(total)} /></SheetTd>)}
+              {/* Foyda — faqat logistika moliyasini ko'radiganlarga */}
+              {money && <SheetTd right><N v={total.profit} neg /></SheetTd>}
               <SheetTd colSpan={canEdit ? 2 : 1} />
             </tr>
           </SheetFoot>
