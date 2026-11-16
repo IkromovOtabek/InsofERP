@@ -113,6 +113,12 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const activeCustomers = canCreate || (canDetail && canDo(s, "cashflow", "edit"))
     ? await db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } })
     : [];
+  // «Hodimlar bilan hisob-kitob» chiqimi: xodimlar, brigadalar va komandalar (formadagi «Kimga»)
+  const staff = canCreate ? await Promise.all([
+    db.employee.findMany({ where: { isActive: true, firedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } }),
+    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.team.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]).then(([e, b, t]) => ({ employees: e.map((x) => ({ id: x.id, name: `${x.fullName} · ${x.position}` })), brigades: b, teams: t, month: isoDate(now).slice(0, 7) })) : undefined;
   const editCustomers = canDetail && canDo(s, "cashflow", "edit") ? activeCustomers : [];
   const editOptions = { accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })), income: incomeCats, expense: expenseCats, customers: editCustomers, canAddSub: canCreate || canDo(s, "moliya", "categories") };
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
@@ -204,7 +210,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         {canCreate && (
           <Card className="lg:col-span-3">
             <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
-            <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} canAdd={canCreate} canEditCat={canEditCat} canDeleteCat={canDeleteCat} lockedCats={systemCats.map((c) => c.name)} clientToken={crypto.randomUUID()} suppliers={suppliers} customers={activeCustomers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
+            <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} canAdd={canCreate} canEditCat={canEditCat} canDeleteCat={canDeleteCat} lockedCats={systemCats.map((c) => c.name)} clientToken={crypto.randomUUID()} suppliers={suppliers} customers={activeCustomers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} staff={staff} />
           </Card>
         )}
         <Card className="lg:col-span-2">

@@ -16,6 +16,12 @@ export const SALES_CATEGORY = "Savdo";
  */
 export const PEREKIT_CATEGORY = "Perekit (o'z hisoblararo)";
 /**
+ * «Hodimlar bilan hisob-kitob» manbasi — chiqimda «Kimga» xodim, brigada yoki komanda tanlanadi (`CashTransaction.employeeId /
+ * brigadeId / teamId`); xodimga berilgan pulni oylikdan nasiya bilan ushlash mumkin (`EmployeeDebt`). Manba nomi korxonada
+ * har xil yozilgan bo'lishi mumkin (Hodim/Xodim, hisob-kitob/hisob kitob) — nom bo'yicha topiladi.
+ */
+export const isStaffSettleCategory = (name: string | null | undefined) => !!name && /[xh]odim/i.test(name) && /hisob/i.test(name);
+/**
  * To'lov usuli — alohida maydon emas, hisob turidan (`CashAccount.type`): naqd kassa yoki bank hisobi.
  * Kirim-Chiqim formasidagi «Naqd / Bank» tanlovi va jurnal belgisi/filtri shu yorliqlarni oladi.
  */

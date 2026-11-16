@@ -6,7 +6,7 @@ import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 import { cancelCashEntry, createCashEntry, payReceiptEntry, updateCashEntry } from "@/lib/cash-entry";
 import { createTransfer } from "@/lib/cash-transfer";
-import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
+import { PEREKIT_CATEGORY, isStaffSettleCategory } from "@/lib/cash-categories";
 
 const schema = z.object({
   type: z.enum(["INCOME", "EXPENSE"]),
@@ -28,6 +28,11 @@ const schema = z.object({
   // «Perekit» tanlanganda: pul qaysi o'z hisobimizga o'tadi
   toAccountId: zOpt,
   clientToken: zOpt,
+  // «Hodimlar bilan hisob-kitob»: "e:<xodim>" | "b:<brigada>" | "t:<komanda>"; xodimga — nasiya (oy soni, boshlanadigan oy)
+  staff: zOpt,
+  debtOn: zOpt,
+  debtMonths: zOpt,
+  debtStart: zOpt,
 });
 
 export async function createCashTx(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -44,12 +49,21 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
     return { ok: true, note: res.duplicate ? `${res.docNo} allaqachon saqlangan (qayta bosildi)` : `Perekit ${res.docNo} saqlandi` };
   }
   const s = await requireAction("cashflow", "create");
+  const { staff, debtOn, debtMonths, debtStart, ...data } = r.data;
+  const staffSettle = r.data.type === "EXPENSE" && isStaffSettleCategory(r.data.category);
+  const m = staffSettle && staff ? /^([ebt]):(\S+)$/.exec(staff) : null;
+  if (staffSettle && !m) return { error: "Kimga: xodimni (yoki «+» bilan brigada / komandani) tanlang", field: "staff" };
+  const who = { employeeId: m?.[1] === "e" ? m[2] : null, brigadeId: m?.[1] === "b" ? m[2] : null, teamId: m?.[1] === "t" ? m[2] : null };
+  const debt = who.employeeId && debtOn ? { months: Number(debtMonths), startMonth: String(debtStart ?? "") } : null;
   // Qoida `lib/cash-entry.ts` da — mobil ilovadagi kassa ham shuni chaqiradi
   // Veb formada sub manba majburiy (barcha manbalarda); mobil ilova, Excel importi va avtomatik yozuvlar — `requireSub`siz
-  const res = await createCashEntry({ ...r.data, date: new Date(r.data.date), requireSub: true }, s.userId);
+  const res = await createCashEntry({ ...data, ...who, debt, date: new Date(r.data.date), requireSub: true }, s.userId);
   if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
+  if (debt) revalidatePath("/ish-haqi", "layout");
+  if (who.teamId || who.brigadeId) revalidatePath("/otdel-kadr");
   if (r.data.customerId) revalidatePath("/bi-tahlil/mijozlar", "layout");
+  if (debt) return { ok: true, note: `Saqlandi. Qarz ${debt.months} oyga bo'lib oylikdan ushlanadi (Ish haqi → Xodim qarzlari)` };
   return { ok: true, note: r.data.category === ASSET_PURCHASE_CATEGORY ? "Saqlandi. Endi Moliya → Asosiy vositalar sahifasida shu xarid uchun kartochka oching (amortizatsiya shundan hisoblanadi)" : undefined };
 }
 

@@ -122,3 +122,16 @@ export async function savePieceRatesAction(_prev: ActionState, fd: FormData): Pr
   refresh();
   return { ok: true, note: `${changed.length} ta mahsulot sdelka narxi saqlandi` };
 }
+
+/** Ish haqi → Xodim qarzlari: nasiyani bekor qilish (keyingi vedomostlarda ushlanmaydi; kassa chiqimi o'zgarmaydi). */
+export async function cancelEmployeeDebt(id: string, reason: string): Promise<ActionState> {
+  const s = await requireAction("payroll", "debts");
+  const why = String(reason ?? "").trim();
+  if (why.length < 3) return { error: "Sababini yozing (kamida 3 belgi)" };
+  const at = new Date();
+  const r = await db.employeeDebt.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: at, cancelledById: s.userId, cancelReason: why.slice(0, 300) } });
+  if (!r.count) return { error: "Qarz topilmadi yoki allaqachon bekor qilingan" };
+  await audit(db, s.userId, "STATUS_CHANGE", "EmployeeDebt", id, { cancelledAt: null }, { cancelledAt: at, reason: why });
+  revalidatePath("/ish-haqi");
+  return { ok: true, note: "Qarz bekor qilindi" };
+}

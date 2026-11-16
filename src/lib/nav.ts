@@ -172,8 +172,9 @@ export const NAV: NavItem[] = [
   { href: "/otdel-kadr?tab=ish-vaqti",  label: "Ish vaqti",         roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=taqvim",     label: "Kadr taqvimi",      roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=jarima-bonus", label: "Jarima va bonuslar", roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=komandalar", label: "Komanda va brigadalar", roles: ["HR"], group: "Otdel kadr" },
   // Ish haqi: kadr hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`)
-  { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER"], group: "Moliya" },
+  { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER", "SECRETARY"], group: "Moliya" },
   // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)
   { href: "/settings/davomat",          label: "Davomat sozlamalari", roles: ["HR"], group: "Otdel kadr" },
   { href: "/settings/ish-tartibi",      label: "Ish tartibi va bayramlar", roles: ["HR"], group: "Otdel kadr" },

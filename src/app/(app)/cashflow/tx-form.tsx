@@ -1,14 +1,14 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Banknote, Landmark } from "lucide-react";
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Banknote, Landmark, Plus, UserRound } from "lucide-react";
 import { isoDate } from "@/lib/format";
 import { createCashTx } from "./actions";
 import { Button, Callout, Field, FormError, FormSuccess, InfoButton, Input, Select, FormActions } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { cn } from "@/lib/utils";
-import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, type CashMethod } from "@/lib/cash-categories";
+import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, isStaffSettleCategory, type CashMethod } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
 import { QuickAdd, QuickDelete, QuickEdit, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
@@ -16,6 +16,7 @@ import { quickAddCashCategory, quickAddLoan, quickAddProject, quickRemoveCashCat
 import { CategoryManager, RemoveText } from "./category-manager";
 
 type Opt = { id: string; name: string };
+const staffOptsHas = (opts: Opt[], v: string) => opts.some((o) => o.id === v);
 type LoanOpt = Opt & { kind: "BANK" | "BORROWED" | "LENT" };
 type Acc = Opt & { type?: CashMethod };
 
@@ -29,12 +30,15 @@ type Acc = Opt & { type?: CashMethod };
  * `canEditCat` / `canDeleteCat` — tanlangan manba va sub manba yonida qalam (nomini o'zgartirish) va savatcha (o'chirish;
  * ishlatilgani ro'yxatdan olinadi). `lockedCats` — tizim kategoriyalari: qalam yo'q (nomi o'zgarmaydi), savatcha faqat ro'yxatdan oladi.
  * Manba ostidagi «Ro'yxatni tahrirlash» — shu turdagi barcha manba va sub manbalar bitta oynada (`category-manager.tsx`).
+ * `staff` — «Hodimlar bilan hisob-kitob» chiqimida Yetkazuvchi o'rniga «Kimga»: barcha xodimlar, o'ng tomondagi «+» bilan
+ * brigada va komandalar; xodim tanlansa — «Oylikdan nasiya bilan ushlash» (necha oy, qaysi oydan).
  */
-export function TxForm({ accounts, suppliers, customers = [], receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, canEditCat = false, canDeleteCat = false, lockedCats = [], clientToken = "" }: {
+export function TxForm({ accounts, suppliers, customers = [], receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, canAdd = false, canEditCat = false, canDeleteCat = false, lockedCats = [], clientToken = "", staff }: {
   accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: CategoryOption[]; expenseCats: CategoryOption[];
   /** Kirimda «Mijoz qarziga» — tanlansa pul shu mijoz qarzidan ayiriladi (`lib/receivables.ts`) */
   customers?: Opt[];
   projects?: Opt[]; loans?: LoanOpt[]; canPerekit?: boolean; canAdd?: boolean; canEditCat?: boolean; canDeleteCat?: boolean; lockedCats?: string[]; clientToken?: string;
+  staff?: { employees: Opt[]; brigades: Opt[]; teams: Opt[]; month: string };
 }) {
   const [state, action, pending] = useActionState(createCashTx, undefined);
   const formRef = useRef<HTMLFormElement>(null);
@@ -47,6 +51,10 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
   const [sub, setSub] = useState("");
   const [projectId, setProjectId] = useState("");
   const [loanId, setLoanId] = useState("");
+  // «Hodimlar bilan hisob-kitob»: tanlov "e:<id>" | "b:<id>" | "t:<id>"; «+» ro'yxatni brigada va komandalarga almashtiradi
+  const [staffPick, setStaffPick] = useState("");
+  const [groupMode, setGroupMode] = useState(false);
+  const [debtOn, setDebtOn] = useState(false);
   // «+» bilan qo'shilganlar — sahifa ma'lumoti yangilanguncha ham ro'yxatda tursin
   const [added, setAdded] = useState<{ cats: (CategoryOption & { type: "INCOME" | "EXPENSE" })[]; subs: Record<string, string[]>; projects: Opt[]; suppliers: Opt[]; loans: LoanOpt[] }>({ cats: [], subs: {}, projects: [], suppliers: [], loans: [] });
   const merge = <T,>(base: T[], extra: T[], key: (x: T) => string) => [...base, ...extra.filter((x) => !base.some((b) => key(b) === key(x)))];
@@ -61,7 +69,7 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
   const [fromId, setFromId] = useState(accounts[0]?.id ?? "");
   // Perekit uchun bir martalik kalit: ikki marta bosilgan «Saqlash» ikkinchi o'tkazma ochmaydi; saqlangach yangilanadi
   const [token, setToken] = useState(clientToken);
-  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setCatNote(""); setSupplierId(""); setCustomerId(""); setCategory(""); setSub(""); setProjectId(""); setLoanId(""); setToken(crypto.randomUUID()); } }, [state]);
+  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setCatNote(""); setSupplierId(""); setCustomerId(""); setCategory(""); setSub(""); setProjectId(""); setLoanId(""); setStaffPick(""); setGroupMode(false); setDebtOn(false); setToken(crypto.randomUUID()); } }, [state]);
   const perekitOpt: CategoryOption = { name: PEREKIT_CATEGORY, needs: null, loanPart: null, subs: [] };
   const typeCats = merge(type === "INCOME" ? incomeCats : expenseCats, added.cats.filter((c) => c.type === type), (c) => c.name).map(fixCat).filter((c) => live(c.name));
   const cats = type === "EXPENSE" && canPerekit && accounts.length >= 2 ? [...typeCats, perekitOpt] : typeCats;
@@ -71,6 +79,11 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
   const supplierList = merge(suppliers, added.suppliers, (p) => p.id);
   const cat = cur?.name ?? "";
   const perekit = type === "EXPENSE" && cat === PEREKIT_CATEGORY;
+  const staffMode = type === "EXPENSE" && !!staff && isStaffSettleCategory(cat);
+  const staffOpts = !staff ? [] : groupMode
+    ? [...staff.brigades.map((b) => ({ id: `b:${b.id}`, name: `Brigada · ${b.name}` })), ...staff.teams.map((t) => ({ id: `t:${t.id}`, name: `Komanda · ${t.name}` }))]
+    : staff.employees.map((e) => ({ id: `e:${e.id}`, name: e.name }));
+  const toEmployee = staffPick.startsWith("e:");
   // Sub manba har bir kirim/chiqimda majburiy (perekitdan tashqari); sub manbasi yo'q manbada «+» bilan qo'shiladi. Qoida serverda ham (`lib/cash-entry.ts`)
   const subNeeded = !perekit && !!cur;
   // Qalam / savatcha: tanlangan haqiqiy manba / sub manbada (perekitda emas). Tizim kategoriyasida faqat savatcha —
@@ -257,6 +270,18 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
             help={<InfoButton title="Qayerga (hisob)">Pul o&apos;z hisobimizga o&apos;tadi — chiqim emas, ikkala hisob tarixida ko&apos;rinadi.</InfoButton>}>
             <Select name="toAccountId" defaultValue="" required><option value="" disabled>Hisobni tanlang…</option>{accounts.filter((a) => a.id !== accId).map((a) => <option key={a.id} value={a.id}>{accLabel(a)}</option>)}</Select>
           </Field>
+        ) : staffMode ? (
+          <Field label={groupMode ? "Kimga — brigada / komanda *" : "Kimga — xodim *"} hint={groupMode ? "xodimlarga qaytish — o'ng tomondagi tugma" : "brigada yoki komanda — o'ng tomondagi «+»"}>
+            <div className="flex">
+              <SearchSelect name="staff" value={staffOptsHas(staffOpts, staffPick) ? staffPick : ""} onChange={setStaffPick} options={staffOpts}
+                placeholder={groupMode ? "Brigada yoki komandani qidiring…" : "Xodimni yozib qidiring…"} ariaLabel="Kimga" className="min-w-0 flex-1 [&_input]:rounded-r-none" />
+              <button type="button" onClick={() => { setGroupMode((g) => !g); setStaffPick(""); setDebtOn(false); }}
+                title={groupMode ? "Xodimlar ro'yxati" : "Brigada va komandalar"} aria-label={groupMode ? "Xodimlar ro'yxati" : "Brigada va komandalar"}
+                className={cn("-ml-px flex h-10 w-10 shrink-0 items-center justify-center rounded-r-lg border border-slate-300 pointer-coarse:h-11 pointer-coarse:w-11", groupMode ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900")}>
+                {groupMode ? <UserRound size={17} /> : <Plus size={17} />}
+              </button>
+            </div>
+          </Field>
         ) : type === "EXPENSE" ? (
           <Field label="Yetkazuvchi" hint="Xomashyo uchun">
             <WithAdd add={canAdd && <SupplierAdd onCreated={(x) => { setAdded((a) => ({ ...a, suppliers: [...a.suppliers, { id: x.id, name: x.name }] })); setSupplierId(x.id); }} />}>
@@ -269,13 +294,28 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
             <SearchSelect name="customerId" value={customerId} onChange={setCustomerId} options={customers} placeholder="Mijozni yozib qidiring…" ariaLabel="Mijoz qarziga" />
           </Field>
         ) : null}
-        {type === "EXPENSE" && !perekit && shownReceipts.length > 0 && (
+        {type === "EXPENSE" && !perekit && !staffMode && shownReceipts.length > 0 && (
           <Field label="Kirim hujjati" className="sm:col-span-2"
             help={<InfoButton title="Kirim hujjati">Tanlansa — shu kirimga to&apos;lov (qisman ham), qolgandan oshmaydi.</InfoButton>}>
             <Select name="receiptId" defaultValue=""><option value="">— bog&apos;lanmagan —</option>{shownReceipts.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</Select>
           </Field>
         )}
-        {!perekit && <Field label={type === "INCOME" ? "Kimdan" : "Kimga"}><Input name="counterparty" placeholder="Nomi / F.I.O." /></Field>}
+        {staffMode && toEmployee && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 sm:col-span-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+              <input type="checkbox" name="debtOn" value="1" checked={debtOn} onChange={(e) => setDebtOn(e.target.checked)} className="h-4 w-4 accent-amber-600" />
+              Qarz — oylikdan nasiya bilan ushlansin
+            </label>
+            {debtOn && (
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label="Necha oyga *"><Input name="debtMonths" type="number" min={1} max={36} defaultValue={3} required /></Field>
+                <Field label="Qaysi oydan *"><Input name="debtStart" type="month" defaultValue={staff?.month} required /></Field>
+                <p className="self-end pb-2 text-xs text-slate-500">Summa oylarga teng bo&apos;linadi va har oy yakuni vedomostida ushlanadi.</p>
+              </div>
+            )}
+          </div>
+        )}
+        {!perekit && !staffMode && <Field label={type === "INCOME" ? "Kimdan" : "Kimga"}><Input name="counterparty" placeholder="Nomi / F.I.O." /></Field>}
         <Field label="Izoh" className="sm:col-span-3"><Input name="note" placeholder={cur?.needs === "ASSET" ? "Qanday vosita (kartochka shu nom bilan ochiladi)" : "Nima uchun"} /></Field>
       </div>
       <FormActions>

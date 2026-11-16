@@ -40,6 +40,12 @@ export type CashEntryInput = {
   loanId?: string | null;
   /** Veb forma: sub manba shart (`subCategoryMissing`). Mobil, Excel importi va avtomatik yozuvlarda berilmaydi. */
   requireSub?: boolean;
+  /** «Hodimlar bilan hisob-kitob»: kimga — xodim, brigada yoki komanda (faqat bittasi, faqat chiqim). */
+  employeeId?: string | null;
+  brigadeId?: string | null;
+  teamId?: string | null;
+  /** Xodimga chiqim — oylikdan nasiya bilan ushlash: necha oy va qaysi oydan ("YYYY-MM"). `EmployeeDebt` ochiladi. */
+  debt?: { months: number; startMonth: string } | null;
 };
 
 class CashError extends Error {}
@@ -102,13 +108,42 @@ async function customerLink(customerId: string | null | undefined, supplierId: s
   return { customerId: c.id, counterparty: who ?? c.name };
 }
 
+/**
+ * «Hodimlar bilan hisob-kitob»: xodim / brigada / komanda (bittasi) — faqat chiqimda, yetkazuvchi va mijoz bilan birga emas.
+ * Kontragent bo'sh bo'lsa — ularning nomi. Nasiya faqat xodimga.
+ */
+async function staffLink(d: Pick<CashEntryInput, "type" | "employeeId" | "brigadeId" | "teamId" | "supplierId" | "customerId" | "debt">):
+  Promise<{ error: string } | { employeeId: string | null; brigadeId: string | null; teamId: string | null; name: string | null }> {
+  const n = [d.employeeId, d.brigadeId, d.teamId].filter(Boolean).length;
+  if (!n) return d.debt ? { error: "Nasiya faqat xodimga — xodimni tanlang" } : { employeeId: null, brigadeId: null, teamId: null, name: null };
+  if (n > 1) return { error: "Kimga: yo xodim, yo brigada, yo komanda — bittasi" };
+  if (d.type !== "EXPENSE") return { error: "Xodim / brigada / komanda faqat chiqimda tanlanadi" };
+  if (d.supplierId || d.customerId) return { error: "Yozuv yo xodimga, yo yetkazuvchi / mijozga — birdan emas" };
+  if (d.debt && !d.employeeId) return { error: "Nasiya faqat xodimga (brigada / komandaga emas)" };
+  if (d.employeeId) {
+    const e = await db.employee.findUnique({ where: { id: d.employeeId }, select: { id: true, fullName: true } });
+    return e ? { employeeId: e.id, brigadeId: null, teamId: null, name: e.fullName } : { error: "Xodim topilmadi" };
+  }
+  if (d.brigadeId) {
+    const b = await db.brigade.findFirst({ where: { id: d.brigadeId, isActive: true }, select: { id: true, name: true } });
+    return b ? { employeeId: null, brigadeId: b.id, teamId: null, name: b.name } : { error: "Brigada topilmadi yoki yopilgan" };
+  }
+  const t = await db.team.findFirst({ where: { id: d.teamId!, isActive: true }, select: { id: true, name: true } });
+  return t ? { employeeId: null, brigadeId: null, teamId: t.id, name: t.name } : { error: "Komanda topilmadi yoki yopilgan" };
+}
+
 export async function createCashEntry(input: CashEntryInput, userId: string): Promise<{ id?: string; error?: string }> {
-  const { receiptId, subCategory, projectId, loanId, customerId, ...d } = { ...input, amount: r2(input.amount) };
+  const { receiptId, subCategory, projectId, loanId, customerId, employeeId, brigadeId, teamId, debt, ...d } = { ...input, amount: r2(input.amount) };
   if (!(d.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
+  const staff = await staffLink({ type: d.type, employeeId, brigadeId, teamId, supplierId: d.supplierId, customerId, debt });
+  if ("error" in staff) return { error: staff.error };
+  if (staff.name && receiptId) return { error: "Kirim hujjati to'lovi xodimga yozilmaydi" };
+  if (debt && (!Number.isInteger(debt.months) || debt.months < 1 || debt.months > 36)) return { error: "Nasiya muddati 1 dan 36 oygacha" };
+  if (debt && !/^\d{4}-(0[1-9]|1[0-2])$/.test(debt.startMonth)) return { error: "Nasiya boshlanadigan oy noto'g'ri" };
   const cust = await customerLink(customerId, d.supplierId, d.counterparty);
   if ("error" in cust) return { error: cust.error };
   if (cust.customerId && receiptId) return { error: "Kirim hujjati to'lovi mijoz qarziga yozilmaydi" };
-  d.counterparty = cust.counterparty;
+  d.counterparty = cust.counterparty ?? staff.name;
   if (receiptId && d.type !== "EXPENSE") return { error: "Kirim hujjatiga faqat chiqim (to'lov) bog'lanadi" };
   // Perekit — o'tkazma hujjati (`lib/cash-transfer.ts`), oddiy chiqim bo'lib yozilmaydi
   if (d.category === PEREKIT_CATEGORY) return { error: "Perekit — hisoblararo o'tkazma: «Kassa ⇄ bank» orqali yozing" };
@@ -150,10 +185,16 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
       data: {
         type: d.type, date: d.date, cashAccountId: d.cashAccountId, amount: d.amount, category: d.category,
         counterparty: d.counterparty ?? null, supplierId: d.supplierId ?? null, customerId: cust.customerId, note: d.note ?? null,
+        employeeId: staff.employeeId, brigadeId: staff.brigadeId, teamId: staff.teamId,
         ...links.data, ...(link ?? {}), createdById: userId,
       },
     });
     await audit(tx, userId, "CREATE", "CashTransaction", t.id, undefined, t);
+    // Xodimga berilgan pul — oylikdan nasiya bilan ushlanadi (`lib/hr/employee-debt.ts`)
+    if (debt && staff.employeeId) {
+      const de = await tx.employeeDebt.create({ data: { employeeId: staff.employeeId, amount: d.amount, months: debt.months, startMonth: debt.startMonth, note: d.note ?? null, cashTxId: t.id, createdById: userId } });
+      await audit(tx, userId, "CREATE", "EmployeeDebt", de.id, undefined, de);
+    }
     return { id: t.id };
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
 }
@@ -202,7 +243,16 @@ export async function cancelCashTxIn(tx: Prisma.TransactionClient, t: CashTransa
   const r = await tx.cashTransaction.updateMany({ where: { id: t.id, cancelledAt: null }, data: { cancelledAt, cancelledById: userId, cancelReason: why } });
   if (r.count === 0) return "Bu yozuv allaqachon bekor qilingan";
   await audit(tx, userId, "STATUS_CHANGE", "CashTransaction", t.id, { cancelledAt: null, record: t }, { cancelledAt, reason: why });
+  await cancelDebtOf(tx, t.id, `Kassa yozuvi bekor qilindi: ${why}`, userId);
   return null;
+}
+
+/** Kassa chiqimiga bog'langan xodim qarzi (nasiya) — chiqim bekor qilinsa / o'chsa / kirimga aylansa qarz ham bekor. */
+async function cancelDebtOf(tx: Prisma.TransactionClient, cashTxId: string, reason: string, userId: string) {
+  const d = await tx.employeeDebt.findFirst({ where: { cashTxId, cancelledAt: null }, select: { id: true } });
+  if (!d) return;
+  await tx.employeeDebt.update({ where: { id: d.id }, data: { cancelledAt: new Date(), cancelledById: userId, cancelReason: reason.slice(0, 300) } });
+  await audit(tx, userId, "STATUS_CHANGE", "EmployeeDebt", d.id, { cancelledAt: null }, { reason });
 }
 
 /**
@@ -240,6 +290,7 @@ export async function deleteCashEntry(id: string, reason: string, userId: string
       const err = await cashOutflowError(tx, cur.cashAccountId, Number(cur.amount));
       if (err) throw new CashError(`Bu kirim o'chirilsa kassa minusga tushadi. ${err}`);
     }
+    await cancelDebtOf(tx, id, `Kassa yozuvi o'chirildi: ${why}`, userId);
     await tx.cashTransaction.delete({ where: { id } });
     await audit(tx, userId, "DELETE", "CashTransaction", id, cur, { deleted: true, reason: why.slice(0, 300) });
     return {};
@@ -338,6 +389,9 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
     if (err) throw new CashError(type !== cur.type && type === "EXPENSE" ? `Kirim chiqimga aylansa hisob minusga tushadi. ${err}` : err);
     // Sana o'zgarmagan bo'lsa — asl vaqt (soat) qoladi: jurnal tartibi tahrirdan keyin buzilmasin
     await tx.cashTransaction.update({ where: { id }, data: { ...data, date: sameDay(d.date, cur.date) ? cur.date : d.date } });
+    // Nasiyali chiqim: summa o'zgarsa qarz ham; kirimga aylansa qarz bekor
+    if (type !== "EXPENSE") await cancelDebtOf(tx, id, "Kassa yozuvi kirimga aylantirildi", userId);
+    else if (Math.abs(amount - Number(cur.amount)) > 0.005) await tx.employeeDebt.updateMany({ where: { cashTxId: id, cancelledAt: null }, data: { amount } });
     const before = { type: cur.type, date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, customerId: cur.customerId, note: cur.note };
     await audit(tx, userId, "UPDATE", "CashTransaction", id, before, data);
     return {};

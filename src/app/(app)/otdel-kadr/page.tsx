@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, Scale, FileSpreadsheet, IdCard, Paperclip, PhoneCall, Plus, Search, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, Scale, FileSpreadsheet, IdCard, Paperclip, PhoneCall, Plus, Search, UserCheck, User, Users, UsersRound, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -25,6 +25,7 @@ import { plansFor } from "@/lib/hr/shifts";
 import { getLateFine } from "@/lib/hr/late-fine";
 import { JarimaTab } from "./hr-tabs";
 import { QongiroqTab } from "./qongiroqlar";
+import { KomandaTab } from "./komandalar";
 
 /**
  * Kabinet tablari. Smena grafigi, arizalar, cheklist, KPI, yollash, moslashuv, o'qitish, so'rovnoma, murojaatlar va
@@ -39,6 +40,7 @@ const TABS = [
   ["taqvim", "Kadr taqvimi", CakeSlice],
   ["jarima-bonus", "Jarima va bonuslar", Scale],
   ["qongiroqlar", "Qo'ng'iroqlar jurnali", PhoneCall],
+  ["komandalar", "Komanda va brigadalar", UsersRound],
 ] as const;
 
 /** Tug'ilgan kunigacha necha kun qolgani (yilni hisobga olmay). */
@@ -371,6 +373,7 @@ export default async function OtdelKadrPage({ searchParams }: {
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
       {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} oy={oy} />}
+      {tab === "komandalar" && <KomandaTab s={s} />}
       {tab === "qongiroqlar" && <QongiroqTab s={s} month={oyIso} q={q} suhbat={suhbat} lavozim={lavozim} workPositions={positions.filter((p) => p.isActive).map((p) => p.name)} />}
     </div>
   );

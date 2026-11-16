@@ -196,6 +196,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "late_fine", label: "Kechikish jarimasi (Sozlamalar → Davomat)", roles: ["HR"] },
     { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
     { key: "calls", label: "Qo'ng'iroqlar jurnali (ishga so'raganlar)", roles: ["HR"], hint: "Yozish, holatini o'zgartirish, o'chirish va Excel'dan import" },
+    { key: "teams", label: "Komanda va brigadalar (komanda tuzish)", roles: ["HR"], hint: "Komanda (svarshiklar va h.k.) ochish, tarkibi va brigadiri" },
     { key: "attendance", label: "Barcha xodimlarni davomatdan o'tkazish (skaner)", roles: ["HR", "SUPERVISOR"], hint: "Davomat sahifasi va ECO skaneri — sexdan tashqari xodimlar ham; yuzni ro'yxatga olish baribir faqat otdel kadrda" },
   ],
   // Umumiy vazifalar (`/vazifalar`, `lib/hr/tasks.ts`): o'ziga — har kim; boshqaga berish — rahbarlar
@@ -208,6 +209,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "settings", label: "Ish haqi sozlamalari (soliq, avans)", roles: ["HR", "ACCOUNTING"] },
     { key: "pay",      label: "Ish haqini kassadan to'lash",     roles: ["CASHIER"], explicit: true, hint: "Pul chiqimi — kassir" },
     { key: "approve",  label: "Vedomostni tasdiqlash",           roles: [], delegable: false, hint: "Faqat direktor" },
+    { key: "debts",    label: "Xodim qarzlari (nasiya) — ko'rish va bekor qilish", roles: ["HR", "ACCOUNTING", "SECRETARY"], hint: "Qarz Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimidan ochiladi, oy yakuni vedomostida ushlanadi" },
   ],
   "bi-tahlil": [
     { key: "ai",        label: "Insof AI (savol, hisobot, Telegram)", roles: BI },

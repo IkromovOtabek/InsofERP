@@ -16,6 +16,7 @@ import { kpiMonth } from "./kpi";
 import { tripPayByDriver } from "@/lib/driver-trip-pay";
 import { PAYROLL_KIND_LABEL } from "./labels";
 import { brigadeDefectSums, brigadeOutput, dayEnd, dayStart, type PieceUnit } from "@/lib/brigade-pay";
+import { debtsDue } from "./employee-debt";
 
 /**
  * Ish haqi — vedomost (`PayrollRun`) va qatorlar (`PayrollLine`).
@@ -43,7 +44,7 @@ export const PAYROLL_CATEGORY = "Ish haqi";
 export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
-export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings") => canDo(who, "payroll", what);
+export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts") => canDo(who, "payroll", what);
 
 export class PayrollError extends Error {}
 const STALE = "Vedomost boshqa joyda o'zgartirildi — sahifani yangilang";
@@ -139,6 +140,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       if (num(l.net) < 0) debtOf.set(l.employeeId, { amount: -num(l.net), docNo: l.run.docNo, month: l.run.month });
     }
   }
+  // Xodim qarzi (nasiya) — shu oy ulushi (`lib/hr/employee-debt.ts`)
+  const nasiya = kind === "FINAL" ? await debtsDue(month, ids) : [];
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
   const nowIso = today();
@@ -263,6 +266,10 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       if (debt) {
         hits.push({ rule: "O'tgan oydan qarz", kind: "PENALTY", amount: r0(debt.amount), days: 0, detail: `${debt.docNo} (${monthTitle(debt.month)}) — ushlanmay qolgan` });
         penalty += debt.amount;
+      }
+      for (const d of nasiya.filter((x) => x.employeeId === e.id)) {
+        hits.push({ rule: "Qarz (nasiya)", kind: "PENALTY", amount: d.amount, days: 0, detail: `${d.n}/${d.of}-oy · jami ${money(d.total)}${d.note ? ` · ${d.note}` : ""}` });
+        penalty += d.amount;
       }
       for (const k of kpi.filter((x) => x.employeeId === e.id && x.reward > 0)) {
         hits.push({ rule: `KPI: ${k.name}`, kind: "BONUS", amount: k.reward, days: 1, detail: `fakt ${k.fact ?? "—"} / reja ${k.target} ${k.unit} = ${k.pct ?? 0}%` });

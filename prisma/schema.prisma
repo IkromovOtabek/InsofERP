@@ -704,6 +704,14 @@ model Employee {
   enrollments      CourseEnrollment[]
   /// Skladdan shu xodimga berilgan xomashyo (Sklad → Chiqim, «Kimga» = xodim)
   stockIssues      StockMove[]              @relation("MoveEmployee")
+  /// Komanda (svarshiklar va h.k.) — brigadadan alohida (`Team`)
+  teamId           String?
+  team             Team?                    @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
+  teamsLed         Team[]                   @relation("TeamLeader")
+  /// Kirim-Chiqimda «Hodimlar bilan hisob-kitob» — shu xodimga chiqim
+  cashTxs          CashTransaction[]        @relation("CashTxEmployee")
+  /// Oylikdan nasiya bilan ushlanadigan qarzlar (`lib/hr/employee-debt.ts`)
+  debts            EmployeeDebt[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -1520,6 +1528,24 @@ model Brigade {
   shifts       BrigadeShift[]
   issues       BrigadeIssue[]
   autoReceipts GoodsReceipt[]  @relation("ReceiptAutoIssueBrigade")
+  /// Kirim-Chiqimda «Hodimlar bilan hisob-kitob» — brigadaga chiqim
+  cashTxs      CashTransaction[] @relation("CashTxBrigade")
+}
+
+/// Komanda (masalan, svarshiklar) — ishlab chiqarish brigadasidan alohida: topshiriq/ombor yo'q, faqat tarkib va
+/// kassa hisob-kitobi. Otdel kadr → «Komanda va brigadalar».
+model Team {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  leaderId  String?
+  phone     String?
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  leader  Employee?         @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  members Employee[]        @relation("TeamMembers")
+  cashTxs CashTransaction[]
 }
 
 enum TaskStatus {
@@ -2390,8 +2416,16 @@ model CashTransaction {
   /// Mijoz qarziga yozilgan pul (`lib/receivables.ts`): «Savdo» kirimi — qarz to'lovi (qarzdan ayiriladi), chiqim — mijozga
   /// qaytarilgan pul (qarzga qo'shiladi). Bo'sh — mijoz qarziga tegmaydi (chakana, naqd sotuv). Kontragent (kimdan) boshqa bo'lishi mumkin
   customerId    String?
+  /// «Hodimlar bilan hisob-kitob»: kimga — xodim, brigada yoki komanda (bittasi)
+  employeeId    String?
+  brigadeId     String?
+  teamId        String?
 
   cashAccount CashAccount     @relation(fields: [cashAccountId], references: [id])
+  employee    Employee?       @relation("CashTxEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  brigade     Brigade?        @relation("CashTxBrigade", fields: [brigadeId], references: [id], onDelete: Restrict)
+  team        Team?           @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  debt        EmployeeDebt?
   supplier    Supplier?       @relation(fields: [supplierId], references: [id])
   customer    Customer?       @relation(fields: [customerId], references: [id], onDelete: Restrict)
   createdBy   User            @relation("CashTxCreatedBy", fields: [createdById], references: [id])
@@ -2409,6 +2443,32 @@ model CashTransaction {
   @@index([projectId])
   @@index([loanId])
   @@index([customerId])
+  @@index([employeeId])
+  @@index([brigadeId])
+  @@index([teamId])
+}
+
+/// Xodim qarzi — oylikdan nasiya bilan ushlanadi: `startMonth` dan boshlab `months` oy, har oy `amount / months`
+/// (oxirgisi qoldiq). Oy yakuni vedomostida jarima qatori «Qarz (nasiya)» bo'lib tushadi (`lib/hr/employee-debt.ts`).
+/// Kassadagi chiqim (`cashTxId`) bekor qilinsa/o'chsa — qarz ham bekor bo'ladi.
+model EmployeeDebt {
+  id            String    @id @default(cuid())
+  employeeId    String
+  amount        Decimal   @db.Decimal(18, 2)
+  months        Int
+  startMonth    String // "2026-12"
+  note          String?
+  cashTxId      String?   @unique
+  createdById   String
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  employee Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  cashTx   CashTransaction? @relation(fields: [cashTxId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, cancelledAt])
 }
 
 /// Qarzni boshqa mijoz to'ladi: `debtor` qarzidan ayiriladi, `payer` ga yoziladi (uning puli yoki avansi bilan).
