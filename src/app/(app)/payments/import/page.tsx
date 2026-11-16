@@ -89,7 +89,8 @@ export default async function CashJournalImport() {
               },
               { key: "sub", label: "Sub manba", hint: "yo'q bo'lsa manbaga qo'shiladi", synonyms: ["sub manba", "sub", "подкатег", "подстат"] },
               { key: "who", label: "Kontragent", hint: "kimdan / kimga", synonyms: ["kontragent", "контрагент", "kimdan", "kimga", "кимдан", "кимга", "получател", "плательщ"] },
-              { key: "customer", label: "Mijoz (qarziga)", hint: "to'ldirilsa — kirim mijoz qarzidan ayiriladi", synonyms: ["mijoz", "мижоз", "клиент", "qarzdor", "қарздор", "должник"] },
+              { key: "customer", label: "Mijoz (qarziga)", hint: "bo'sh — Kontragent nomi mijozga mos kelsa o'zi bog'lanadi", synonyms: ["mijoz", "мижоз", "клиент", "qarzdor", "қарздор", "должник"] },
+              { key: "supplier", label: "Yetkazuvchi", hint: "bo'sh — Kontragent nomi yetkazuvchiga mos kelsa o'zi bog'lanadi", synonyms: ["yetkazuvchi", "етказувчи", "ta'minotchi", "taminotchi", "таъминотчи", "поставщик"] },
               { key: "note", label: "Izoh", synonyms: ["izoh", "изох", "изоҳ", "примеч", "коммент", "назначен", "note"] },
             ]}
           >

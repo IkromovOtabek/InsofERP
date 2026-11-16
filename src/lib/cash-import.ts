@@ -9,6 +9,7 @@ import { PEREKIT_CATEGORY, SALES_CATEGORY } from "@/lib/cash-categories";
 import { insertTransfer } from "@/lib/cash-transfer";
 import { DDS_FIXED } from "@/lib/fin-report/sheet-lines";
 import { MAX_AMOUNT } from "@/lib/action";
+import { loadPartyIndex, findParty, autoLink } from "@/lib/counterparty-link";
 import { matchKey, numMoney, parseDate, str, valueMapper, type ValueMaps } from "@/lib/excel";
 import { loadCategories, makeResolver, normCat, resetCategoryCache, type CatNode } from "@/lib/fin-report/categories";
 
@@ -39,13 +40,15 @@ export const CASH_IMPORT_MAX = 2000;
 
 /** Fayldagi bitta qator — kalitlar import sahifasidagi maydonlar bilan bir xil. */
 export type CashImportRow = Record<string, unknown>;
-export type CashImportResult = { error: string } | { ok: true; added: number; skipped: number; transfers: number; newSubs: string[]; newTops: string[]; from: Date; to: Date; batchId?: string };
+export type CashImportResult = { error: string } | { ok: true; added: number; skipped: number; transfers: number; newSubs: string[]; newTops: string[]; linked: number; from: Date; to: Date; batchId?: string };
 
 type Fresh = {
   date: Date; type: "INCOME" | "EXPENSE"; cashAccountId: string; amount: number;
   category: string; subCategory: string | null; counterparty: string | null; note: string | null;
   /** «Mijoz» ustuni to'ldirilgan bo'lsa — mijoz qarziga (kirim — qarz to'lovi, chiqim — qaytarilgan pul) */
   customerId?: string | null;
+  /** «Yetkazuvchi» ustuni yoki Kontragent nomi mos kelgani — ta'minotchi hisobiga (chiqim — to'lov, kirim — qaytgan pul) */
+  supplierId?: string | null;
 };
 /**
  * Fayl qatori: oddiy kirim/chiqim (`data`) yoki o'tkazma oyog'i (`leg`). `altKeys` — jurnalda boshqacha yozilgan bo'lishi
@@ -70,15 +73,11 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
   if (!list.length) return { error: "Faylda qator yo'q" };
   if (list.length > CASH_IMPORT_MAX) return { error: `Bir martada ko'pi bilan ${CASH_IMPORT_MAX} qator — faylni bo'lib yuklang` };
 
-  const needCustomers = list.some((x) => str(x.customer) !== "");
-  const [accounts, cats, customers] = await Promise.all([
+  const [accounts, cats, parties] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true, type: true, allowOverdraft: true } }),
     loadCategories(),
-    needCustomers ? db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, aliases: true } }) : Promise.resolve([]),
+    loadPartyIndex(),
   ]);
-  // «Mijoz» ustuni: nomi yoki boshqa nomi (alias) bo'yicha, kirill/lotin farqsiz; bir xil nomli ikki mijoz — null (aniqlashtirish kerak)
-  const custByKey = new Map<string, { id: string; name: string } | null>();
-  for (const c of customers) for (const n of [c.name, ...c.aliases]) { const k = matchKey(n); if (k) custByKey.set(k, custByKey.has(k) && custByKey.get(k)?.id !== c.id ? null : c); }
   const accById = new Map(accounts.map((a) => [a.id, a]));
   // Hisob nomi bo'yicha (kirill/lotin, belgilarsiz); bir xil nomli ikki hisob bo'lsa — nom yetmaydi, null
   const accByName = new Map<string, (typeof accounts)[number] | null>();
@@ -168,18 +167,30 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
       return;
     }
     const who = cell("who") || null, note = cell("note") || null;
-    // Mijoz qarziga — ixtiyoriy ustun; to'ldirilgan bo'lsa ro'yxatdagi mijozga mos kelishi shart
-    const custRaw = cell("customer");
-    const cust = custRaw ? custByKey.get(matchKey(custRaw)) : undefined;
+    // Mijoz qarziga / Yetkazuvchi — ixtiyoriy ustunlar; to'ldirilgan bo'lsa ro'yxatdagi nomga mos kelishi shart
+    const custRaw = cell("customer"), supRaw = cell("supplier");
+    if (custRaw && supRaw) return fail("Mijoz va Yetkazuvchi ikkalasi to'ldirilgan — bittasini qoldiring");
+    const cust = findParty(parties.customers, custRaw);
     if (custRaw && cust === null) return fail(`«${custRaw}» nomli mijoz bir nechta — fayldagi nomni aniqlashtiring`);
     if (custRaw && !cust) return fail(`mijoz topilmadi — «${custRaw}» (Mijozlar ro'yxatidagi nom yoki boshqa nomi bo'lsin)`);
-    const customerId = cust ? cust.id : null;
-    // Mijoz to'lovi: To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi (mijoz qarziga tegmaydi)
+    const sup = findParty(parties.suppliers, supRaw);
+    if (supRaw && sup === null) return fail(`«${supRaw}» nomli yetkazuvchi bir nechta — fayldagi nomni aniqlashtiring`);
+    if (supRaw && !sup) return fail(`yetkazuvchi topilmadi — «${supRaw}» (Yetkazuvchilar ro'yxatidagi nom bo'lsin)`);
+    // Ustun bo'sh — Kontragent nomi mijoz/yetkazuvchiga aniq mos kelsa avtomatik bog'lanadi (`lib/counterparty-link.ts`)
+    const link = (category: string, refund: boolean): { customerId: string | null; supplierId: string | null } => {
+      if (cust || sup) return { customerId: cust?.id ?? null, supplierId: sup?.id ?? null };
+      const a = autoLink(parties, { type, counterparty: who, category, refund });
+      return { customerId: a?.customerId ?? null, supplierId: a?.supplierId ?? null };
+    };
+    const named = who ?? cust?.name ?? sup?.name ?? null;
+    // Mijoz to'lovi: To'lovlarda bo'lsa o'tkaziladi, bo'lmasa «Savdo» kirimi (mijoz bog'lanmasa — qarzga tegmaydi)
     if (normCat(manba) === normCat(SALES_MANBA)) {
       if (type !== "INCOME") return fail(`«${SALES_MANBA}» — kirim, summa esa Chiqim ustunida`);
+      if (sup) return fail(`«${SALES_MANBA}» — mijoz to'lovi, Yetkazuvchi ustuni to'ldirilmaydi`);
+      const l = link(SALES_CATEGORY, false);
       parsed.push({
         no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, SALES_MANBA), altKeys: [rowKey(date, acc.id, sign, amount, SALES_CATEGORY)],
-        data: { date, type, cashAccountId: acc.id, amount, category: SALES_CATEGORY, subCategory: null, counterparty: who ?? cust?.name ?? null, note, customerId },
+        data: { date, type, cashAccountId: acc.id, amount, category: SALES_CATEGORY, subCategory: null, counterparty: named, note, customerId: l.customerId },
       });
       return;
     }
@@ -196,9 +207,10 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
       subName = r?.sub && r.top.id === top.id ? r.sub.name : subOf(top, sub);
       if (!subName) return fail(`«${sub}» — sub manba nomi band, «${top.name}» ostiga qo'shib bo'lmadi (Moliya → Kategoriyalarda qo'shing)`);
     }
+    const l = link(top.name, top.pnlLine === "CUSTOMER_REFUND");
     parsed.push({
       no: i + 1, date, accountId: acc.id, key: rowKey(date, acc.id, sign, amount, top.name),
-      data: { date, type, cashAccountId: acc.id, amount, category: top.name, subCategory: subName, counterparty: who ?? cust?.name ?? null, note, customerId },
+      data: { date, type, cashAccountId: acc.id, amount, category: top.name, subCategory: subName, counterparty: named, note, customerId: l.customerId, supplierId: l.supplierId },
     });
   });
   if (errors.length) return { error: `${errors.slice(0, 5).join("; ")}${errors.length > 5 ? `; yana ${errors.length - 5} ta qatorda xato` : ""}. Faylni tuzatib qayta yuklang — hech narsa yozilmadi` };
@@ -250,7 +262,7 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
       if (lonely.length) {
         throw new CashImportError(`${lonely.slice(0, 5).map((l) => `${l.no}-qator`).join(", ")}${lonely.length > 5 ? ` va yana ${lonely.length - 5} ta` : ""}: perekitning jufti yo'q — shu summa bilan (o'sha kuni yoki ±1 kun) boshqa hisobga kirim (yoki boshqa hisobdan chiqim) qatori bo'lishi kerak. Faylni tuzating yoki o'tkazmani Kirim-Chiqim → «Kassa ⇄ bank» orqali kiriting. Hech narsa yozilmadi`);
       }
-      if (!fresh.length && !pairs.length) return { added: 0, skipped, transfers: 0, newSubs: [], newTops: [] };
+      if (!fresh.length && !pairs.length) return { added: 0, skipped, transfers: 0, newSubs: [], newTops: [], linked: 0 };
 
       // Import tugagach hisob minusga tushmasin (naqd kassa — har doim, bank — overdraft ruxsati bo'lmasa)
       const balances = await accountBalances(tx, accIds);
@@ -293,7 +305,8 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
         await audit(tx, userId, "CREATE", "CashTransfer", t.id, undefined, { ...t, legs: [outTx.id, inTx.id], via: "kassa-import" });
         docs.push({ t, legs: [outTx.id, inTx.id] });
       }
-      const out = { added: created.length, skipped, transfers: pairs.length, newSubs: subs.map((n) => n.name), newTops: tops.map((t) => t.name) };
+      const linked = created.filter((t) => t.customerId || t.supplierId).length;
+      const out = { added: created.length, skipped, transfers: pairs.length, newSubs: subs.map((n) => n.name), newTops: tops.map((t) => t.name), linked };
       // Partiya belgisi — butun importni qaytarish uchun (`rollbackCashImport`): nima yozildi va qanday holatda
       const batchId = randomUUID();
       const batch: BatchAfter = {
@@ -323,7 +336,7 @@ type BatchAfter = {
   txIds: string[]; txSigs: string[];
   transferIds: string[]; transferSigs: string[]; transferLegs: string[][]; legTxIds: string[];
   categoryIds: string[]; categories: { id: string; name: string; parentId: string | null }[];
-  added: number; skipped: number; transfers: number; newSubs: string[]; newTops: string[];
+  added: number; skipped: number; transfers: number; newSubs: string[]; newTops: string[]; linked?: number;
   from: string; to: string; fileName: string | null;
 };
 

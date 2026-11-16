@@ -254,7 +254,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub 
   const rows = all.slice(0, MAX_LOAD);
 
   // Excel importidan qaytganda: «yozildi-o'tkazildi»
-  const [imported, dupes, transfers, newSubs, newTops] = (sp.import ?? "").split("-").map((n) => Number(n) || 0);
+  const [imported, dupes, transfers, newSubs, newTops, linked] = (sp.import ?? "").split("-").map((n) => Number(n) || 0);
   const acc = accounts.some((a) => a.id === sp.account) ? sp.account : undefined;
   // key — hisob nomi (matritsadagi havola) bosilganda filtr shu hisobdan qayta boshlansin
   const table = (
@@ -266,7 +266,7 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub 
     <>
       {sp.import && (
         <Callout tone="success" title="Excel importi">
-          {imported} ta qator Kassa jurnaliga yozildi.{transfers > 0 && ` ${transfers} ta perekit o'tkazma hujjati bo'lib yozildi.`}{newTops > 0 && ` ${newTops} ta yangi manba qo'shildi — PNL qatorini Moliya → Kategoriyalarda tekshiring.`}{newSubs > 0 && ` ${newSubs} ta yangi sub manba kategoriyalarga qo'shildi.`}{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
+          {imported} ta qator Kassa jurnaliga yozildi.{linked > 0 && ` ${linked} tasi mijoz yoki yetkazuvchi hisobiga bog'landi (debitorka / kreditorkaga tushdi).`}{transfers > 0 && ` ${transfers} ta perekit o'tkazma hujjati bo'lib yozildi.`}{newTops > 0 && ` ${newTops} ta yangi manba qo'shildi — PNL qatorini Moliya → Kategoriyalarda tekshiring.`}{newSubs > 0 && ` ${newSubs} ta yangi sub manba kategoriyalarga qo'shildi.`}{dupes > 0 && ` ${dupes} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.`} Jadval import qilingan davr bilan ko&apos;rsatilmoqda.
           <LastImportUndo added={imported} transfers={transfers} />
         </Callout>
       )}
