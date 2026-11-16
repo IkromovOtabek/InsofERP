@@ -18,6 +18,7 @@ import { approveLogisticsEntries, cancelLogisticsEntry, createLogisticsEntry, en
 import { isLedgerKind, ledgerEditData, ledgerEditSchema, updateLedgerRow, type LedgerEditData } from "@/lib/ledger-edit";
 import { driverTempLoginCore } from "@/lib/kadr-employee";
 import { LEDGER_REVENUE_REQUIRED } from "@/lib/ledger-revenue";
+import { checkLedgerImport, IMPORT_MAX_ROWS, importRowSchema, saveLedgerImport, type LinkState, type RowResult } from "@/lib/ledger-import";
 
 /**
  * Logistika kabineti amallari: transport, obyekt, haydovchi kartasi, yoqilg'i, xarajat, sozlamalar.
@@ -342,6 +343,28 @@ export async function updateLedgerRowAction(kind: string, id: string, _prev: Act
   if ("error" in res) return { error: res.error };
   refresh(); revalidatePath("/trips", "layout");
   return { ok: true, note: res.note };
+}
+
+/**
+ * «Excel orqali qo'shish» (hisob varag'i): qatorlarning sotuv reysi bilan bog'lanishi — oynadagi «Sotuv reysi» ustuni
+ * (`lib/ledger-import.ts`). Faqat o'qiydi.
+ */
+export async function ledgerImportCheckAction(rows: unknown): Promise<{ links?: Record<string, LinkState>; error?: string }> {
+  await requireAction("logistika", "ledger");
+  const p = z.array(importRowSchema.pick({ key: true, date: true, vehicleId: true, dropoff: true, cargo: true, trips: true, ttn: true, kmDt: true, kmGas: true })).max(IMPORT_MAX_ROWS).safeParse(rows);
+  if (!p.success) return { error: "Jadval ma'lumoti noto'g'ri — sahifani yangilang" };
+  return { links: await checkLedgerImport(p.data) };
+}
+
+/** «Excel orqali qo'shish»: qatorlarni saqlash — bog'langani reys qatoriga, qolgani qo'lda qator. Natija har qator uchun. */
+export async function ledgerImportSaveAction(rows: unknown, token: string): Promise<{ results?: Record<string, RowResult>; error?: string }> {
+  const s = await requireAction("logistika", "ledger");
+  const p = z.array(importRowSchema).min(1, "Qator yo'q").max(IMPORT_MAX_ROWS, `Bir martada ${IMPORT_MAX_ROWS} qatorgacha`).safeParse(rows);
+  if (!p.success) return { error: p.error.issues[0]?.message ?? "Jadval ma'lumoti noto'g'ri" };
+  if (!/^[\w-]{8,40}$/.test(token)) return { error: "Oyna kaliti noto'g'ri — sahifani yangilang" };
+  const results = await saveLedgerImport(p.data, token, s.userId, canDo(s, "logistika", "pay"));
+  refresh(); revalidatePath("/trips", "layout");
+  return { results };
 }
 
 /** Ish boshqaruvchi: qo'lda yozilgan haqni tasdiqlash (naqd — kassaga, oylik — vedomostga). */

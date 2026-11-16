@@ -31,6 +31,11 @@ export type LedgerVehicle = {
   id: string; plate: string; driverId: string | null; unit: string;
   /** Kuzatiladigan yoqilg'i normasi: 100 km ga va baraban soatiga (metan m³ yoki dizel l) */
   per100: number; perHour: number; lastPrice: number | null;
+  /**
+   * «Excel orqali qo'shish» dagi DT norma / Gaz norma: [100 km ga, baraban soatiga] (yo'q — null) va oxirgi zapravka narxi.
+   * Dizel — dizel normasi; metan — metan; «Dizel + metan» — ikkalasi (`lib/driver-ledger.ts` bilan bir xil).
+   */
+  dt: [number, number] | null; gas: [number, number] | null; dtPrice: number | null; gasPrice: number | null;
 };
 export type LedgerOptions = {
   vehicles: LedgerVehicle[]; drivers: { id: string; name: string }[];
@@ -45,6 +50,8 @@ export function LedgerFormsProvider({ options, canPay, children }: { options: Le
   return <LedgerCtx.Provider value={{ options, canPay }}>{children}</LedgerCtx.Provider>;
 }
 const EMPTY: LedgerOptions = { vehicles: [], drivers: [], pickups: [], dropoffs: [], cargos: [] };
+/** Varaq ro'yxatlari va reys haqi huquqi — «Excel orqali qo'shish» oynasi uchun. */
+export const useLedgerOptions = () => useContext(LedgerCtx) ?? { options: EMPTY, canPay: false };
 
 /**
  * Hisob varag'iga qo'lda qator — ECO'ga tushmagan reys (Excel'dagi ustunlar tartibida). Transport — ochiq varaqniki,
@@ -200,6 +207,8 @@ function editDefaults(x: LedgerEditData, payEditable: boolean): Record<string, s
     Object.assign(d, {
       date: x.date, vehicleId: x.vehicleId, driverId: x.driverId ?? "", trips: String(x.trips), dropoff: x.dropoff, cargo: x.cargo,
       revenue: val(x.revenue), revenueType: x.revenueType ?? "",
+      // DT / gazga bo'lingan qator (Excel importi) — katak tahririda bo'linish saqlansin (0 ham — «faqat DT»)
+      kmGas: x.kmGas != null ? String(x.kmGas) : "", drumHoursGas: x.hoursGas != null ? String(x.hoursGas) : "",
     });
   }
   return d;
@@ -496,6 +505,11 @@ function LedgerEditForm({ x, onClose }: { x: LedgerEditData; onClose: () => void
             : <ReadOnly label="Yuk" value={x.cargo} className="col-span-2" hint={fromTrip} />}
           <Field label="Probeg, km"><Input name="km" type="number" min="0" step="any" defaultValue={val(x.km)} className="text-right tabular" /></Field>
           <Field label="Baraban, soat"><Input name="drumHours" type="number" min="0" max="24" step="any" defaultValue={x.hours ?? ""} className="text-right tabular" /></Field>
+          {/* Excel importidagi qator: km va soat DT / gaz bo'yicha bo'lingan — gaz qismi alohida, qolgani DT */}
+          {entry && (x.kmGas != null || x.hoursGas != null) && <>
+            <Field label="shundan gazda, km" hint="qolgani — DT"><Input name="kmGas" type="number" min="0" step="any" defaultValue={x.kmGas ?? 0} className="text-right tabular" /></Field>
+            <Field label="shundan gazda, soat" hint="qolgani — DT"><Input name="drumHoursGas" type="number" min="0" max="24" step="any" defaultValue={x.hoursGas ?? 0} className="text-right tabular" /></Field>
+          </>}
         </>}
 
         <Field label={`Zapravka, ${x.unit}`}><Input name="refuel" type="number" min="0" max="1000" step="any" defaultValue={val(x.refuel)} className="text-right tabular" /></Field>

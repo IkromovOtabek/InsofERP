@@ -46,6 +46,9 @@ export const entrySchema = z.object({
   dropoff: z.string().trim().max(160).optional().transform((v) => v || null),
   cargo: z.string().trim().max(120).optional().transform((v) => v || null),
   drumHours: numIn(0, 24),
+  // «Excel orqali qo'shish»: km / baraban soatining gazda qismi (jamidan). Bo'sh — eski qator: sarf transport turidan
+  kmGas: numIn(0, 100_000),
+  drumHoursGas: numIn(0, 24),
   refuel: numIn(0, 1000),
   fuelPrice: numIn(0, 1_000_000),
   repair: numIn(0, 100_000_000),
@@ -65,7 +68,15 @@ export const activeEntryWhere = (from: Date, to: Date) => ({ cancelledAt: null, 
 /** Haqi bor, ish boshqaruvchi hali tasdiqlamagan yozuvlar. */
 export const pendingEntryWhere = () => ({ cancelledAt: null, payApprovedAt: null, payAmount: { gt: 0 }, payType: { not: null } });
 
-export async function createLogisticsEntry(d: EntryInput, userId: string): Promise<Result> {
+/** Gazda qismi jamidan oshmasin: «Probeg gazda» km dan, «Baraban gazda» baraban soatidan. */
+function gasSplitError(d: Pick<EntryInput, "km" | "kmGas" | "drumHours" | "drumHoursGas">): string | null {
+  if ((d.kmGas ?? 0) > (d.km ?? 0) + 0.05) return "Gazda km probeg jamidan ko'p bo'lmasin";
+  if ((d.drumHoursGas ?? 0) > (d.drumHours ?? 0) + 0.005) return "Gazda baraban soati jamidan ko'p bo'lmasin";
+  return null;
+}
+
+/** `silent` — ko'p qatorli import: har yozuv uchun bildirishnoma yuborilmaydi (import oxirida bitta yig'ma). */
+export async function createLogisticsEntry(d: EntryInput, userId: string, opts: { silent?: boolean } = {}): Promise<Result> {
   if (d.clientToken) {
     const dup = await db.logisticsEntry.findUnique({ where: { clientToken: d.clientToken }, select: { id: true, docNo: true, createdById: true } });
     if (dup) return dup.createdById === userId ? { ok: true, id: dup.id, docNo: dup.docNo } : { error: "Forma kaliti band — sahifani yangilang" };
@@ -82,6 +93,8 @@ export async function createLogisticsEntry(d: EntryInput, userId: string): Promi
   if ((refuel > 0 || costs.length || (d.km ?? 0) > 0 || (d.drumHours ?? 0) > 0) && !d.vehicleId) return { error: "Transportni tanlang — zapravka, xarajat va km mashinaga yoziladi" };
   const note = d.note || [d.pickup, d.dropoff].filter(Boolean).join(" → ");
   if (note.length < 3) return { error: "Izoh yoki tushirish joyini yozing (kamida 3 belgi)" };
+  const split = gasSplitError(d);
+  if (split) return { error: split };
   const date = d.date ?? new Date();
   if (date.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
 
@@ -107,6 +120,7 @@ export async function createLogisticsEntry(d: EntryInput, userId: string): Promi
           trips: Math.round(d.trips ?? 0), km: d.km ?? null,
           payAmount: pay > 0 ? pay : null, payType: pay > 0 ? (d.payType as DriverPayType) : null, revenue: revenue > 0 ? revenue : null,
           revenueType: revenue > 0 ? d.revenueType ?? null : null, pickup: d.pickup, dropoff: d.dropoff, cargo: d.cargo, drumHours: d.drumHours ?? null,
+          kmGas: d.kmGas ?? null, drumHoursGas: d.drumHoursGas ?? null,
           note, clientToken: d.clientToken, createdById: userId,
         },
       });
@@ -128,7 +142,7 @@ export async function createLogisticsEntry(d: EntryInput, userId: string): Promi
       }
       return e;
     });
-    if (pay > 0) notifyAfter(() => notifyRoles(PAY_APPROVER_ROLES, {
+    if (pay > 0 && !opts.silent) notifyAfter(() => notifyRoles(PAY_APPROVER_ROLES, {
       type: "TRIP_PAY_APPROVE", title: `Qo'lda haydovchi haqi: ${row.docNo}`,
       body: `${driver!.fullName}${vehicle ? ` · ${vehicle.plate}` : ""} · ${money(pay)} · ${PAY_TYPE_LABEL[d.payType as DriverPayType].toLowerCase()} — Haydovchilar tabelida tasdiqlang`,
     }, { except: userId }));
@@ -223,6 +237,8 @@ export async function updateLogisticsEntry(id: string, d: EntryInput, userId: st
     : "Qatorda zapravka yoki xarajat bor — transportni o'zgartirib bo'lmaydi. Bekor qilib qayta yozing" };
   const note = sheet ? d.note || [d.pickup, d.dropoff].filter(Boolean).join(" → ") : d.note;
   if (note.length < 3) return { error: sheet ? "Izoh yoki tushirish joyini yozing (kamida 3 belgi)" : "Izohni yozing (kamida 3 belgi)" };
+  const split = sheet ? gasSplitError(d) : null;
+  if (split) return { error: split };
   const date = d.date ?? e.date;
   if (date.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
 
@@ -247,13 +263,13 @@ export async function updateLogisticsEntry(id: string, d: EntryInput, userId: st
   const data = {
     date, driverId: driver?.id ?? null, vehicleId: vehicle?.id ?? null, trips: Math.round(d.trips ?? 0), km: d.km ?? null,
     payAmount: pay > 0 ? pay : null, payType, revenue: revenue > 0 ? revenue : null, revenueType: revenue > 0 ? (sheet ? d.revenueType ?? null : e.revenueType) : null, note,
-    ...(sheet ? { pickup: d.pickup, dropoff: d.dropoff, cargo: d.cargo, drumHours: d.drumHours ?? null } : {}),
+    ...(sheet ? { pickup: d.pickup, dropoff: d.dropoff, cargo: d.cargo, drumHours: d.drumHours ?? null, kmGas: d.kmGas ?? null, drumHoursGas: d.drumHoursGas ?? null } : {}),
     ...(reapprove ? { payApprovedAt: null, payApprovedById: null } : {}),
   };
   const before = {
     date: e.date, driverId: e.driverId, vehicleId: e.vehicleId, trips: e.trips, km: e.km, payAmount: e.payAmount, payType: e.payType,
     revenue: e.revenue, revenueType: e.revenueType, note: e.note, payApprovedAt: e.payApprovedAt,
-    ...(sheet ? { pickup: e.pickup, dropoff: e.dropoff, cargo: e.cargo, drumHours: e.drumHours } : {}),
+    ...(sheet ? { pickup: e.pickup, dropoff: e.dropoff, cargo: e.cargo, drumHours: e.drumHours, kmGas: e.kmGas, drumHoursGas: e.drumHoursGas } : {}),
   };
   const ok = await db.$transaction(async (tx) => {
     const u = await tx.logisticsEntry.updateMany({ where: { id, cancelledAt: null, payApprovedAt: e.payApprovedAt }, data });

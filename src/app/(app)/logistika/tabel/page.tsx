@@ -300,7 +300,8 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const monthTitleText = picked ? `${picked.name} — ${monthTitle(month)}` : `Oy bo'yicha: ${monthTitle(month)}`;
 
   return (
-    <div>
+    // Hisob varag'i — keng Excel varaq: qobiqning eni cheklovi va yon bo'shliqlari olinadi (`data-wide`, app-shell)
+    <div {...(bolim === "hisob" ? { "data-wide": "" } : {})}>
       <PageHeader title="Haydovchilar tabeli" info="Yetkazilgan reyslar o'zi tushadi · narx va to'lov turini dispetcher qo'yadi · ish boshqaruvchi tasdiqlaydi: naqd — kassa, oylik — Ish haqi" />
 
       <Tabs scroll={false} current={bolim} items={[
@@ -496,7 +497,8 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         ]} />
         {/* Qator qo'shish va qatorni tahrirlash oynasi ro'yxatlarni bitta joydan oladi */}
         <LedgerFormsProvider options={ledgerOpts} canPay={canPrice}>
-          <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger} money={showMoney} openTrip={sp.tahrir ?? null}
+          <LedgerSheet rows={ledger.rows} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger} money={showMoney} openTrip={sp.tahrir ?? null}
+            vehicleId={sp.transport ?? null}
             file={`Hisob varag'i ${ranged ? hisobRange.label : month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
           {canLedger && <div className="mt-3"><LedgerRowForm vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
         </LedgerFormsProvider>
@@ -808,10 +810,15 @@ async function ledgerOptions(withForm: boolean): Promise<LedgerOptions> {
   return {
     vehicles: list.map((v) => {
       const dual = v.fuelType === "DIESEL_METHANE", gas = dual || v.fuelType === "METHANE";
+      // DT / gaz normasi alohida (Excel importidagi «DT norma», «Gaz norma»): metan mashinada asosiy norma — metan
+      const pair = (a: unknown, b: unknown): [number, number] | null => (Number(a ?? 0) || Number(b ?? 0) ? [Number(a ?? 0), Number(b ?? 0)] : null);
       return {
         id: v.id, plate: v.plate, driverId: mainDriverOf(v)?.id ?? null, unit: gas ? "m³" : "l",
         per100: Number((dual ? v.gasNormPer100 : v.fuelNormL100) ?? 0), perHour: Number((dual ? v.gasIdlePerHour : v.idleNormPerHour) ?? 0),
         lastPrice: price.get(gas ? "METHANE" : v.fuelType ?? "DIESEL") ?? null,
+        dt: v.fuelType === "METHANE" ? null : pair(v.fuelNormL100, v.idleNormPerHour),
+        gas: dual ? pair(v.gasNormPer100, v.gasIdlePerHour) : v.fuelType === "METHANE" ? pair(v.fuelNormL100, v.idleNormPerHour) : null,
+        dtPrice: price.get("DIESEL") ?? null, gasPrice: price.get("METHANE") ?? null,
       };
     }),
     drivers: drivers.map((d) => ({ id: d.id, name: d.fullName })),

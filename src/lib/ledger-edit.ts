@@ -36,6 +36,8 @@ export type LedgerEditData = {
   kind: LedgerKind; id: string; no: string; date: string; dateText: string; vehicleId: string; plate: string; unit: string;
   driverId: string | null; driver: string | null;
   pickup: string; dropoff: string; address: string | null; cargo: string; trips: number; km: number; hours: number | null;
+  /** Excel importidagi qo'lda qator: km / baraban soatining gazda qismi (null — bo'linmagan) */
+  kmGas: number | null; hoursGas: number | null;
   refuel: number; fuelPrice: number | null; lastPrice: number | null;
   /** Haq: qo'lda qatorda — yozilgani, reysda — narxlangan bo'lsa (bo'lmasa `suggested` — taklif) */
   pay: number | null; suggested: number | null; payType: DriverPayType | null; priced: boolean; approved: boolean;
@@ -107,7 +109,7 @@ export async function ledgerEditData(kind: LedgerKind, id: string): Promise<Ledg
     kind, id, no: r.no, date: isoDay(r.at), dateText: fmtDate(r.at), vehicleId: r.vehicleId, plate: r.plate, unit: r.unit,
     driverId: r.driverId, driver: r.driver,
     pickup: r.kind === "cost" ? "" : r.src.pickup ?? "", dropoff: r.kind === "trip" ? r.dropoff : r.src.dropoff ?? "", address: r.address,
-    cargo: r.kind === "trip" ? r.cargo : r.src.cargo ?? "", trips: r.trips, km: r.km, hours: r.workHours,
+    cargo: r.kind === "trip" ? r.cargo : r.src.cargo ?? "", trips: r.trips, km: r.km, hours: r.workHours, kmGas: r.kmGas, hoursGas: r.hoursGas,
     refuel: r.refuel, fuelPrice: r.refuelPrice, lastPrice,
     pay: r.kind === "trip" ? (r.src.priced ? r.amount : null) : r.amount, suggested: r.src.suggested, payType: r.payType, priced: r.src.priced, approved: !!r.approvedAt, payLock,
     repair: r.repair, parts: r.parts, vulc: r.vulc, other: r.other,
@@ -213,7 +215,8 @@ async function applyCosts(tx: Prisma.TransactionClient, plan: Plan, ctx: Ctx, us
 
 // ───────────────────────── Saqlash ─────────────────────────
 
-export async function updateLedgerRow(kind: LedgerKind, id: string, d: LedgerEditInput, userId: string, canPay: boolean): Promise<{ ok: true; note: string } | { error: string }> {
+/** `silent` — ko'p qatorli import: reys haqi uchun bildirishnoma har reysga yuborilmaydi (`priceTrip`). */
+export async function updateLedgerRow(kind: LedgerKind, id: string, d: LedgerEditInput, userId: string, canPay: boolean, opts: { silent?: boolean } = {}): Promise<{ ok: true; note: string } | { error: string }> {
   const r = await findRow(kind, id);
   if (typeof r === "string") return { error: r };
   const v = await db.vehicle.findUnique({ where: { id: r.vehicleId }, select: { fuelType: true } });
@@ -228,7 +231,7 @@ export async function updateLedgerRow(kind: LedgerKind, id: string, d: LedgerEdi
       if ("error" in res) return res;
       return { ok: true, note: `${res.docNo} saqlandi${res.reapprove ? " — haq ish boshqaruvchi tasdig'iga qaytdi" : ""}` };
     }
-    if (kind === "trip") return await updateTripRow(r, d, plan, userId, canPay);
+    if (kind === "trip") return await updateTripRow(r, d, plan, userId, canPay, !!opts.silent);
     if (!plan.fuel && !plan.costs.length) return { ok: true, note: "O'zgarish yo'q" };
     await db.$transaction((tx) => applyCosts(tx, plan, { date: r.at, driverId: null, vehicleId: r.vehicleId, tripId: null, entryId: null, label: `reyssiz kun ${fmtDate(r.at)}` }, userId));
     return { ok: true, note: "Saqlandi" };
@@ -242,7 +245,7 @@ export async function updateLedgerRow(kind: LedgerKind, id: string, d: LedgerEdi
  * ECO reys qatori: haq — avval (`priceTrip`: yopilgan oy, kassaga o'tgan naqd, narxlanganda sabab — rad etsa hech narsa
  * yozilmaydi), keyin bitta tranzaksiyada yuklash joyi, km, baraban soati, izoh va zapravka/xarajatlar.
  */
-async function updateTripRow(r: LedgerRow, d: LedgerEditInput, plan: Plan, userId: string, canPay: boolean): Promise<{ ok: true; note: string } | { error: string }> {
+async function updateTripRow(r: LedgerRow, d: LedgerEditInput, plan: Plan, userId: string, canPay: boolean, silent = false): Promise<{ ok: true; note: string } | { error: string }> {
   const t = await db.trip.findUnique({
     where: { id: r.id },
     select: { pickupAddress: true, deliveryComment: true, payKm: true, workHours: true, waitMin: true, paySuggested: true, deliveryNoteNo: true, vehicle: { select: { type: true } } },
@@ -257,7 +260,7 @@ async function updateTripRow(r: LedgerRow, d: LedgerEditInput, plan: Plan, userI
   if (payChanged) {
     if (!canPay) return { error: "Reys haqini dispetcher qo'yadi — haq ustunini o'zgartirmang" };
     if (!type) return { error: "To'lov turini tanlang: naqd yoki oylik" };
-    const p = await priceTrip(r.id, amount, d.payReason, userId, type);
+    const p = await priceTrip(r.id, amount, d.payReason, userId, type, { silent });
     if ("error" in p) return p;
   }
 

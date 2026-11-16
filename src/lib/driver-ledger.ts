@@ -2,6 +2,10 @@ import { db } from "@/lib/db";
 import type { DriverPayType, LedgerRevenueType } from "@/generated/prisma";
 import { PAY_SINCE, payTrips, tripFuelNorm } from "@/lib/driver-trip-pay";
 import { fmtNum } from "@/lib/format";
+import { ledgerTotals } from "@/lib/ledger-totals";
+
+// Jami va haydovchi jamlanmasi — bazasiz faylda (varaq filtrlari brauzerda qayta hisoblaydi)
+export { driverPaySums, ledgerTotals, type DriverPaySum } from "@/lib/ledger-totals";
 
 /**
  * Haydovchi tabelining «hisob varag'i» (dispetcher Excel'i ko'rinishida, mashina bo'yicha varaq): har qator —
@@ -44,6 +48,8 @@ export type LedgerRow = {
   vehicleId: string; plate: string;
   pickup: string; dropoff: string; address: string | null; cargo: string;
   trips: number; km: number; workHours: number | null;
+  /** «Excel orqali qo'shish» qatori: km va baraban soatining gazda qismi (qolgani — DT); boshqa qatorda null */
+  kmGas: number | null; hoursGas: number | null;
   /** Kuzatiladigan yoqilg'i birligi (m³ yoki l) */
   unit: string;
   balBefore: number; refuel: number; use: number | null;
@@ -108,7 +114,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       where: { cancelledAt: null, date: period, vehicleId: opts.vehicleId ?? { not: null } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }],
       select: {
         id: true, docNo: true, date: true, driverId: true, vehicleId: true, trips: true, km: true, drumHours: true, payAmount: true, payType: true, payApprovedAt: true,
-        revenue: true, revenueType: true, pickup: true, dropoff: true, cargo: true, note: true, driver: { select: { fullName: true } },
+        revenue: true, revenueType: true, pickup: true, dropoff: true, cargo: true, note: true, kmGas: true, drumHoursGas: true, driver: { select: { fullName: true } },
       },
     }),
     db.fuelLog.findMany({ where: { cancelledAt: null, date: period, ...vf }, orderBy: { date: "asc" }, select: { id: true, vehicleId: true, tripId: true, entryId: true, date: true, fuelType: true, liters: true, amount: true } }),
@@ -132,7 +138,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     ...expenses.map(expVehicle).filter((x): x is string => !!x),
   ])];
 
-  const [vehicles, openFuel, openTrips, openEntries, prices] = await Promise.all([
+  const [vehicles, openFuel, openTrips, openEntries, openSplit, prices] = await Promise.all([
     db.vehicle.findMany({ where: { id: { in: vehicleIds } }, select: { id: true, plate: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } }),
     // Davr boshidagi qoldiq: PAY_SINCE dan davr boshigacha zapravka − norma (norma chiziqli: Σkm va Σsoat yetadi)
     from > PAY_SINCE
@@ -143,6 +149,13 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       : Promise.resolve([]),
     from > PAY_SINCE
       ? db.logisticsEntry.groupBy({ by: ["vehicleId"], where: { cancelledAt: null, vehicleId: { in: vehicleIds }, date: { gte: PAY_SINCE, lt: from } }, _sum: { km: true, drumHours: true } })
+      : Promise.resolve([]),
+    // DT / gazga bo'lingan qatorlar (Excel importi): kuzatiladigan yoqilg'i faqat o'z qismidan sarflanadi
+    from > PAY_SINCE
+      ? db.logisticsEntry.groupBy({
+        by: ["vehicleId"], where: { cancelledAt: null, vehicleId: { in: vehicleIds }, date: { gte: PAY_SINCE, lt: from }, OR: [{ kmGas: { not: null } }, { drumHoursGas: { not: null } }] },
+        _sum: { km: true, drumHours: true, kmGas: true, drumHoursGas: true },
+      })
       : Promise.resolve([]),
     // Narx: zapravkalardan (hamma mashina), davr oxirigacha — oxirgi yozuvlar
     db.fuelLog.findMany({ where: { cancelledAt: null, date: { lt: to }, pricePerL: { gt: 0 } }, orderBy: { date: "desc" }, select: { date: true, fuelType: true, pricePerL: true }, take: 5000 }),
@@ -169,8 +182,13 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   for (const v of vehicles) {
     const tr = trackedOf(v.fuelType);
     const given = openFuel.filter((f) => f.vehicleId === v.id && kindOfLog(f.fuelType) === tr).reduce((a, f) => a + Number(f._sum.liters ?? 0), 0);
-    const ot = openTrips.find((t) => t.vehicleId === v.id), oe = openEntries.find((e) => e.vehicleId === v.id);
-    const km = Number(ot?._sum.payKm ?? 0) + Number(oe?._sum.km ?? 0), h = Number(ot?._sum.workHours ?? 0) + Number(oe?._sum.drumHours ?? 0);
+    const ot = openTrips.find((t) => t.vehicleId === v.id), oe = openEntries.find((e) => e.vehicleId === v.id), os = openSplit.find((e) => e.vehicleId === v.id);
+    let km = Number(ot?._sum.payKm ?? 0) + Number(oe?._sum.km ?? 0), h = Number(ot?._sum.workHours ?? 0) + Number(oe?._sum.drumHours ?? 0);
+    // Bo'lingan qatorlarda kuzatiladigan yoqilg'iga faqat o'z qismi: gaz — gazda km/soat, dizel — qolgani (DT)
+    if (os) {
+      const sKm = Number(os._sum.km ?? 0), sH = Number(os._sum.drumHours ?? 0), gKm = Number(os._sum.kmGas ?? 0), gH = Number(os._sum.drumHoursGas ?? 0);
+      if (tr === "gas") { km -= sKm - gKm; h -= sH - gH; } else { km -= gKm; h -= gH; }
+    }
     const n = mainNorm(v);
     balance.set(v.id, given - ((km * Number(n.fuelNormL100 ?? 0)) / 100 + h * Number(n.idleNormPerHour ?? 0)));
   }
@@ -240,6 +258,8 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     // Qator turiga qarab: km, soat, haq, daromad va matnlar
     let row: Omit<LedgerRow, "unit" | "balBefore" | "refuel" | "use" | "drumUse" | "balAfter" | "useExtra" | "fuelSum" | "fuelPriceMissing" | "repair" | "parts" | "vulc" | "other" | "total" | "profit" | "refs" | "refuelPrice" | "ownCosts">;
     let use: number | null, useExtra: number | null;
+    /** Baraban sarfi uchun soat: kuzatiladigan yoqilg'ida ishlagan qismi (bo'lingan qatorda) */
+    let drumH: number | null | undefined;
     if (s.kind === "trip") {
       const r = tripRow.get(s.id)!, t = ex.get(s.id)!;
       // payTrips: fuelNorm — asosiy norma (metan m³ yoki dizel l), gasNorm — «Dizel + metan» dagi metan
@@ -256,7 +276,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         kind: "trip", id: r.id, no: r.no, at: r.deliveredAt, driverId: r.driverId, driver: r.driver, vehicleId: t.vehicleId, plate: r.plate,
         pickup: t.pickupAddress?.trim() || "Zavod", dropoff: t.order.site?.name ?? r.customer, address: t.order.deliveryAddress || null,
         cargo: `${names.join(", ") || "—"} · ${fmtNum(Number(t.qtyM3), 2)} ${unit}`.trim(),
-        trips: 1, km: r.km, workHours: r.workHours,
+        trips: 1, km: r.km, workHours: r.workHours, kmGas: null, hoursGas: null,
         pay: r.amount ?? r.suggested, amount: r.amount, suggestText: r.suggestText, payType: r.payType, approvedAt: r.approvedAt,
         revBank: pm === "BANK" ? revenue : 0, revCash: pm === "CASH" ? revenue : 0, revDebt: pm ? 0 : revenue, svcBank: 0, svcCash: 0, revOther: 0, revenue: r2(revenue),
         remarks: [hr >= 20 || hr < 6 ? `Tun ${String(hr).padStart(2, "0")}:${String(r.deliveredAt.getMinutes()).padStart(2, "0")}` : null, r.note, t.deliveryComment, ...e.notes].filter((x): x is string => !!x),
@@ -265,13 +285,28 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     } else if (s.kind === "entry") {
       const q = entryRow.get(s.id)!;
       const km = Number(q.km ?? 0), hours = q.drumHours != null ? Number(q.drumHours) : null;
-      use = tripFuelNorm(mainNorm(v), km, hours);
-      useExtra = dual ? tripFuelNorm(v, km, hours) : null;
+      const split = q.kmGas != null || q.drumHoursGas != null;
+      const gKm = split ? Math.min(km, Number(q.kmGas ?? 0)) : 0, gH = split ? Math.min(hours ?? 0, Number(q.drumHoursGas ?? 0)) : 0;
+      if (!split) {
+        use = tripFuelNorm(mainNorm(v), km, hours);
+        useExtra = dual ? tripFuelNorm(v, km, hours) : null;
+      } else if (tracked === "gas") {
+        // Excel importi (DT / gaz alohida): gaz qismi — gaz normasi; DT qismi — dizel normasi (faqat «Dizel + metan» da bor)
+        const dKm = km - gKm, dH = (hours ?? 0) - gH;
+        use = tripFuelNorm(mainNorm(v), gKm, gH);
+        useExtra = dual && (dKm > 0 || dH > 0) ? tripFuelNorm(v, dKm, dH) : null;
+        drumH = hours != null ? gH : null;
+      } else {
+        // Dizel mashina: sarf faqat DT qismidan (gaz normasi yo'q)
+        use = tripFuelNorm(v, km - gKm, hours != null ? hours - gH : null);
+        useExtra = null;
+        drumH = hours != null ? hours - gH : null;
+      }
       const rev = Number(q.revenue ?? 0), pay = Number(q.payAmount ?? 0);
       row = {
         kind: "entry", id: q.id, no: q.docNo, at: q.date, driverId: q.driverId, driver: q.driver?.fullName ?? null, vehicleId: v.id, plate: v.plate,
         pickup: q.pickup || "—", dropoff: q.dropoff || q.note, address: null, cargo: q.cargo || "—",
-        trips: q.trips, km, workHours: hours,
+        trips: q.trips, km, workHours: hours, kmGas: split ? gKm : null, hoursGas: split && hours != null ? gH : null,
         pay, amount: pay > 0 ? pay : null, suggestText: null, payType: q.payType, approvedAt: q.payApprovedAt,
         // Turi yozilmagan eski qator — «Obyekt» (avvalgi qoida)
         revBank: q.revenueType === "BANK" ? rev : 0, revCash: q.revenueType === "CASH" ? rev : 0, revDebt: 0,
@@ -286,7 +321,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       use = null; useExtra = null;
       row = {
         kind: "cost", id: s.id, no: "", at, driverId: null, driver: null, vehicleId: v.id, plate: v.plate,
-        pickup: "—", dropoff: "Reyssiz kun", address: null, cargo: "—", trips: 0, km: 0, workHours: null,
+        pickup: "—", dropoff: "Reyssiz kun", address: null, cargo: "—", trips: 0, km: 0, workHours: null, kmGas: null, hoursGas: null,
         pay: 0, amount: null, suggestText: null, payType: null, approvedAt: null,
         revBank: 0, revCash: 0, revDebt: 0, svcBank: 0, svcCash: 0, revOther: 0, revenue: 0, remarks: e.notes,
         src: { pickup: null, dropoff: null, cargo: null, note: null, revenueType: null, priced: false, suggested: null },
@@ -297,7 +332,8 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     const pMain = priceAt(priceList[tracked], at), pDt = dual ? priceAt(priceList.dt, at) : null;
     const fuelSum = (use != null && pMain != null ? use * pMain : 0) + (useExtra != null && pDt != null ? useExtra * pDt : 0);
     const idle = idleOf(v);
-    const drumUse = row.workHours != null && idle > 0 ? row.workHours * idle : null;
+    const dh = drumH === undefined ? row.workHours : drumH;
+    const drumUse = dh != null && idle > 0 ? dh * idle : null;
     const balBefore = balance.get(v.id) ?? 0;
     const refuel = refuelOf.get(s.id) ?? 0;
     const balAfter = balBefore + refuel - (use ?? 0);
@@ -318,38 +354,6 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
 
   const rows = opts.driverId ? all.filter((r) => r.driverId === opts.driverId) : all;
   return { rows, total: ledgerTotals(rows) };
-}
-
-/** Qatorlar jami (mashina varag'i yoki hammasi uchun). */
-export function ledgerTotals(rows: LedgerRow[]): LedgerTotals {
-  const total: LedgerTotals = {
-    rows: rows.length, trips: 0, km: 0, hours: 0, useGas: 0, useDt: 0, drumUse: 0, refuel: 0, fuelSum: 0, pay: 0, repair: 0, parts: 0, vulc: 0, other: 0, total: 0,
-    revBank: 0, revCash: 0, revDebt: 0, svcBank: 0, svcCash: 0, revOther: 0, revenue: 0, profit: 0,
-  };
-  for (const r of rows) {
-    total.trips += r.trips; total.km += r.km; total.hours += r.workHours ?? 0; total.refuel += r.refuel; total.fuelSum += r.fuelSum; total.drumUse += r.drumUse ?? 0;
-    if (r.unit === "m³") total.useGas += r.use ?? 0; else total.useDt += r.use ?? 0;
-    total.useDt += r.useExtra ?? 0;
-    total.pay += r.pay; total.repair += r.repair; total.parts += r.parts; total.vulc += r.vulc; total.other += r.other; total.total += r.total;
-    total.revBank += r.revBank; total.revCash += r.revCash; total.revDebt += r.revDebt; total.svcBank += r.svcBank; total.svcCash += r.svcCash;
-    total.revOther += r.revOther; total.revenue += r.revenue; total.profit += r.profit;
-  }
-  return total;
-}
-
-/** Varaq ostidagi jamlanma (Excel'dagi ISMI / OYLIK / NAXT): haydovchi bo'yicha haq — oylik, naqd va hali narxsiz (taklif). */
-export type DriverPaySum = { driverId: string; driver: string; payroll: number; cash: number; suggested: number; total: number };
-
-export function driverPaySums(rows: LedgerRow[]): DriverPaySum[] {
-  const out = new Map<string, DriverPaySum>();
-  for (const r of rows) {
-    if (!r.driverId || r.pay <= 0) continue;
-    const d = out.get(r.driverId) ?? { driverId: r.driverId, driver: r.driver ?? "—", payroll: 0, cash: 0, suggested: 0, total: 0 };
-    if (r.amount == null) d.suggested += r.pay; else if (r.payType === "CASH") d.cash += r.pay; else d.payroll += r.pay;
-    d.total += r.pay;
-    out.set(r.driverId, d);
-  }
-  return [...out.values()].sort((a, b) => b.total - a.total);
 }
 
 /** Transport bo'yicha yoqilg'i qoldig'i davrda: oy boshidagi, zapravka, norma sarfi, oxirgi qatordan keyingi. */

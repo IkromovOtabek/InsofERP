@@ -15,4 +15,10 @@ export const LEDGER_REVENUE_LABEL: Record<LedgerRevenueType, string> = {
   OBJECT: "Obyekt (zavod uchun)",
 };
 
+/**
+ * «Excel orqali qo'shish» matn ustunlari chegarasi — qo'lda qator maydonlari bilan bir xil (`entrySchema`); server
+ * (`lib/ledger-import.ts`) ham, oyna ham shu bo'yicha tekshiradi.
+ */
+export const LEDGER_TEXT_MAX = { pickup: 120, dropoff: 160, cargo: 120, note: 300, ttn: 120 } as const;
+
 export const LEDGER_REVENUE_REQUIRED = "Kirim turini tanlang: dostavka yoki usluga (naqd / perech.), yoki obyekt (zavod uchun)";
