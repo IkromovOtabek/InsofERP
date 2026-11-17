@@ -211,12 +211,11 @@ export function LedgerSheet({ rows, month, file, showDriver, showPlate, canEdit,
   // 19 asosiy ustun + Jami xarajat + bajarilgan ish (+ Foyda)
   const colCount = 20 + revCols.length + (money ? 1 : 0) + (showDriver ? 1 : 0) + (canEdit ? 1 : 0);
 
-  // Excel — ekrandagi filtr va tartibdagi qatorlar
+  // Excel — ekrandagi filtr va tartibdagi qatorlar, barcha mashinalar bitta varaqda («Mashina» ustuni bilan)
   const excel = async () => {
     const plates = [...new Set(shown.map((r) => r.plate))];
     return [
-      ...(plates.length > 1 ? plates.map((p) => ({ name: sheetName(p), rows: shown.filter((r) => r.plate === p).map((r) => excelRow(r, money)) }))
-        : [{ name: sheetName(plates[0] ?? "Hisob varag'i"), rows: shown.map((r) => excelRow(r, money)) }]),
+      { name: sheetName(plates.length === 1 ? plates[0]! : "Hisob varag'i"), rows: shown.map((r) => excelRow(r, money)) },
       { name: "Jamlanma", rows: sums.map((d) => ({ Haydovchi: d.driver, Oylik: d.payroll, Naqd: d.cash, "Narxsiz (taklif)": d.suggested, Jami: d.total })) },
     ];
   };
