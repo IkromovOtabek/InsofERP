@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { materialOutlook } from "@/lib/dashboard";
 import { getCompany } from "@/lib/company";
-import { productionDay } from "@/lib/production-day";
+import { localRange, productionDay } from "@/lib/production-day";
 import { dayUtc, isoDay, markOf, today } from "@/lib/davomat";
 import { fmtUnitTotals, unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
@@ -37,9 +37,51 @@ export type ReportSnapshot = {
   brigades: { id?: string; name: string; leader: string | null; today: string; month: string; open: number; overdue: number }[];
   defects: { id?: string; taskId?: string | null; time: string; code: string; name?: string; qty: number; unit: string; reason: string; brigade: string | null; by: string }[];
   stock: { id?: string; name: string; unit: string; balance: number; perDay: number; days: number | null; planned: number; minStock: number; need: number; level: StockLevel }[];
+  /**
+   * Direktor varag'i (bir qarashda): brigada × mahsulot, shu kuni ishlab chiqarilgani (dona).
+   * `reasons` — sex boshlig'i «Qayd etish»da har brigadaga yozgan sabab (jonli ko'rinishda bo'sh). Eski nusxalarda yo'q.
+   */
+  daily?: DailyMatrix;
   /** 08:00 dan qayd etilgan daqiqagacha soatma-soat + brigadirlar belgilagan muammolar (eski nusxalarda yo'q). */
   hourly?: HourlyReport;
 };
+
+export type DailyMatrix = {
+  cols: { id: string; name: string; unit: string }[];
+  rows: { id: string | null; name: string; leader: string | null; cells: Record<string, number> }[];
+  reasons: Record<string, string>; // brigada id (brigadasiz — "-") → sabab
+};
+
+/**
+ * Shu kuni qaysi brigada qaysi mahsulotdan nechta quydi — PRODUCTION_OUTPUT harakatlari (`brigadeId`) bo'yicha.
+ * Beton (m³) sexga tushmaydi — varaqda yo'q. Ustunlar: shu kuni chiqarilgan yoki shu oy plani bor mahsulotlar.
+ */
+async function dailyMatrix(iso: string, planProductIds: string[]): Promise<DailyMatrix> {
+  const { from, to } = localRange(iso);
+  const [moves, brigades] = await Promise.all([
+    db.stockMove.groupBy({
+      by: ["brigadeId", "ownerBrigadeId", "productId"],
+      where: { type: "PRODUCTION_OUTPUT", productId: { not: null }, date: { gte: from, lt: to }, product: { unit: { not: "m3" } } },
+      _sum: { qty: true },
+    }),
+    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+  ]);
+  const sums = moves.map((m) => ({ b: m.brigadeId ?? m.ownerBrigadeId, p: m.productId!, q: Number(m._sum.qty ?? 0) })).filter((m) => m.q !== 0);
+  const ids = [...new Set([...sums.map((m) => m.p), ...planProductIds])];
+  const products = ids.length ? await db.product.findMany({ where: { id: { in: ids }, unit: { not: "m3" } }, select: { id: true, name: true, unit: true, code: true } }) : [];
+  const cols = products.sort((a, b) => a.code.localeCompare(b.code)).map((p) => ({ id: p.id, name: p.name, unit: p.unit }));
+  const cellsOf = (bid: string | null) => Object.fromEntries(sums.filter((m) => m.b === bid).map((m) => [m.p, m.q]));
+  const rows: DailyMatrix["rows"] = brigades.map((b) => ({ id: b.id, name: b.name, leader: b.leader?.fullName ?? null, cells: cellsOf(b.id) }));
+  // Brigadasiz yoki nofaol brigada chiqargani ham yo'qolmasin
+  const known = new Set(brigades.map((b) => b.id));
+  const other = sums.filter((m) => m.b === null || !known.has(m.b));
+  if (other.length) {
+    const cells: Record<string, number> = {};
+    for (const m of other) cells[m.p] = (cells[m.p] ?? 0) + m.q;
+    rows.push({ id: null, name: "Boshqa / brigadasiz", leader: null, cells });
+  }
+  return { cols, rows, reasons: {} };
+}
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
@@ -70,6 +112,7 @@ export const STOCK_LEVEL_LABEL: Record<StockLevel, string> = { short: "Yetmaydi"
 /** Kun raqamlari → hisobot obyekti (serializatsiyaga tayyor). */
 export async function buildReport(iso = today(), at = new Date()): Promise<ReportSnapshot> {
   const [d, stock, hourly] = await Promise.all([productionDay(iso), stockStatus(), hourlyReport(iso, at)]);
+  const daily = await dailyMatrix(iso, d.plan.rows.map((p) => p.product.id));
   const ids = [...new Set([...d.plan.rows.map((p) => p.product.id), ...d.produced.map((r) => r.product.id)])];
   return {
     v: 1, iso, ym: d.ym,
@@ -106,6 +149,7 @@ export async function buildReport(iso = today(), at = new Date()): Promise<Repor
     // Varaqqa hamma xomashyo emas: kam qolganlar + eng tez tugaydigan 10 tasi
     stock: (() => { const h = stockHighlights(stock); return [...h.low, ...h.ok].map((s) => ({ id: s.id, name: s.name, unit: s.unit, balance: s.balance, perDay: s.perDay, days: s.days, planned: s.planned, minStock: s.minStock, need: s.need, level: s.level })); })(),
     hourly,
+    daily,
   };
 }
 
@@ -128,9 +172,10 @@ export function reportSummary(r: ReportSnapshot) {
  * "Qayd etish": hozirgi raqamlarni muzlatib saqlaydi va direktorga xabar beradi.
  * Soatma-soat qism 08:00 dan aynan shu bosilgan daqiqagacha yoziladi.
  */
-export async function submitReport(userId: string, iso: string, note: string | null) {
+export async function submitReport(userId: string, iso: string, note: string | null, reasons: Record<string, string> = {}) {
   if (iso > today()) return { error: "Kelajak kunga hisobot yozib bo'lmaydi" } as const;
   const snap = await buildReport(iso);
+  if (snap.daily) snap.daily.reasons = Object.fromEntries(Object.entries(reasons).map(([k, v]) => [k, v.trim().slice(0, 300)]).filter(([, v]) => v));
   const summary = `${snap.hourly ? `${snap.hourly.from}–${snap.hourly.to} · ` : ""}${reportSummary(snap)}`;
   const rep = await db.$transaction(async (tx) => {
     const r = await tx.productionReport.create({ data: { date: dayUtc(iso), data: snap as unknown as Prisma.InputJsonValue, summary, note, createdById: userId } });
@@ -157,6 +202,13 @@ export async function reportHistory(take = 30) {
     const n = (seen.get(iso) ?? 0) + 1; seen.set(iso, n);
     return { ...r, iso, latest: n === 1, by: r.createdBy.fullName };
   });
+}
+
+/** Shu kunning oxirgi qayd etilgan nusxasi — jonli varaqda sabab/izoh shundan oldindan to'ldiriladi. */
+export async function lastSavedFor(iso: string) {
+  const r = await db.productionReport.findFirst({ where: { date: dayUtc(iso) }, orderBy: { createdAt: "desc" }, select: { data: true, note: true } });
+  if (!r) return null;
+  return { reasons: (r.data as unknown as ReportSnapshot).daily?.reasons ?? {}, note: r.note };
 }
 
 /** Saqlangan hisobot; direktor ochsa — "ko'rildi" belgisi qo'yiladi. */

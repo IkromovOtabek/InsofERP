@@ -157,12 +157,13 @@ export function AssignSelect({ employeeId, brigadeId, brigades }: { employeeId: 
 
 /* ───────────────────────── Kunlik hisobot: "Qayd etish" ───────────────────────── */
 
-export function SaveReportForm({ iso, compact = false }: { iso: string; compact?: boolean }) {
+/** `id` berilsa varaqdagi sabab/izoh maydonlari `form={id}` orqali shu formaga qo'shiladi (izoh shunda varaqda). */
+export function SaveReportForm({ iso, compact = false, id }: { iso: string; compact?: boolean; id?: string }) {
   const [state, action, pending] = useActionState(saveReport, undefined);
   return (
-    <form action={action} className={cn("flex flex-wrap items-center gap-2", compact ? "" : "w-full")}>
+    <form id={id} action={action} className={cn("flex flex-wrap items-center gap-2", compact ? "" : "w-full")}>
       <input type="hidden" name="iso" value={iso} />
-      {!compact && <Input name="note" placeholder="Izoh (ixtiyoriy): smena, to'xtash sababi…" className="min-w-64 flex-1" />}
+      {!compact && !id && <Input name="note" placeholder="Izoh (ixtiyoriy): smena, to'xtash sababi…" className="min-w-64 flex-1" />}
       <Button type="submit" disabled={pending}><ClipboardCheck size={15} /> {pending ? "Saqlanmoqda…" : "Qayd etish"}</Button>
       {state?.ok && <span className="text-sm text-emerald-700">{state.note}</span>}
       <FormError error={state?.error} />

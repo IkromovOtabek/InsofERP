@@ -4,12 +4,13 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { PRODUCTION_HOME_ROLES } from "@/lib/production-day";
-import { buildReport, reportHistory } from "@/lib/production-report";
+import { buildReport, lastSavedFor, reportHistory } from "@/lib/production-report";
 import { dayTitle, shiftDay, today, validDay } from "@/lib/davomat";
 import { dateTime } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 import { BackLink } from "@/components/ui";
 import { ReportSheet } from "./report-sheet";
+import { DailySheet } from "./daily-sheet";
 import { SaveReportForm } from "../production-forms";
 import { ReportHistory } from "./history";
 
@@ -22,12 +23,12 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const s = await getSession();
   if (!s || !(s.role === "DIRECTOR" || (PRODUCTION_HOME_ROLES as readonly string[]).includes(s.role))) redirect("/dashboard?denied=1");
   const iso = validDay((await searchParams).kun) ?? today();
-  const [r, company, history] = await Promise.all([buildReport(iso), getCompany(), reportHistory(20)]);
+  const [r, company, history, last] = await Promise.all([buildReport(iso), getCompany(), reportHistory(20), lastSavedFor(iso)]);
   const isToday = iso === today();
   const saved = history.filter((h) => h.iso === iso);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4">
       <div className="paper min-w-0 rounded-sm bg-white p-4 sm:p-8 text-[12.5px] text-black print:max-w-none print:rounded-none print:p-0 print:shadow-none">
         <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav, header, .no-print { display: none !important } body { background: #fff } }`}</style>
 
@@ -37,6 +38,12 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             <Link href={`?kun=${shiftDay(iso, -1)}`} className="rounded-md p-1.5 hover:bg-slate-100" aria-label="Oldingi kun"><ChevronLeft size={16} /></Link>
             <span className="px-2 font-medium">{dayTitle(iso)}</span>
             {!isToday && <Link href={`?kun=${shiftDay(iso, 1)}`} className="rounded-md p-1.5 hover:bg-slate-100" aria-label="Keyingi kun"><ChevronRight size={16} /></Link>}
+            {/* Tanlangan kun bo'yicha hisobot */}
+            <form className="ml-2 flex items-center gap-1">
+              <input type="date" name="kun" defaultValue={iso} max={today()} className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
+              <button className="rounded-md border border-slate-300 px-2 py-1 text-sm hover:bg-slate-50">Ochish</button>
+            </form>
+            {!isToday && <Link href="?" className="ml-1 rounded-md px-2 py-1 text-sm text-brand-700 hover:bg-brand-50">Bugun</Link>}
           </div>
           <PrintButton />
         </div>
@@ -46,14 +53,21 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             <div className="mb-2 text-[13px] text-slate-700">
               {saved.length
                 ? <>Bu kun uchun hisobot <b>{saved.length} marta</b> qayd etilgan (oxirgisi {dateTime(saved[0].createdAt)}). Qayta qayd etsangiz yangi nusxa saqlanadi — oldingisi tarixda qoladi.</>
-                : <>Raqamlarni tekshirib, <b>&quot;Qayd etish&quot;</b> ni bosing — hisobot saqlanadi va direktor kabinetiga tushadi.</>}
-              {" "}Soatma-soat qism 08:00 dan tugma bosilgan daqiqagacha yoziladi — brigadirlar belgilagan to&apos;xtash va muammolar bilan.
+                : <>Raqamlarni tekshiring, kam quygan brigadaga <b>sababini</b> yozing va <b>&quot;Qayd etish&quot;</b> ni bosing — hisobot direktorga yuboriladi.</>}
             </div>
-            <SaveReportForm iso={iso} />
+            <SaveReportForm iso={iso} id="prod-report-form" />
           </div>
         )}
 
-        <ReportSheet r={r} company={company.name} stamp={<>Jonli ko&apos;rinish · {dateTime(new Date())} · {s.fullName}</>} />
+        <DailySheet r={r} company={company.name} stamp={<>jonli · {s.fullName}</>}
+          edit={s.role !== "DIRECTOR" ? { formId: "prod-report-form", reasons: last?.reasons ?? {}, note: last?.note ?? null } : undefined} />
+
+        <details className="mt-8 border-t border-slate-200 pt-3 print:hidden">
+          <summary className="cursor-pointer text-sm font-medium text-slate-600">Batafsil hisobot — soatma-soat, yuklash, brak, davomat, sklad</summary>
+          <div className="mt-4">
+            <ReportSheet r={r} company={company.name} stamp={<>Jonli ko&apos;rinish · {dateTime(new Date())} · {s.fullName}</>} />
+          </div>
+        </details>
       </div>
 
       <div className="no-print print:hidden">

@@ -7,6 +7,7 @@ import { dateTime } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 import { BackLink } from "@/components/ui";
 import { ReportSheet } from "../report-sheet";
+import { DailySheet } from "../daily-sheet";
 import { ReportHistory } from "../history";
 
 /** Qayd etilgan (muzlatilgan) kunlik hisobot. Direktor ochganda "ko'rildi" belgilanadi. */
@@ -18,7 +19,7 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
   if (!rep) notFound();
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4">
       <div className="paper min-w-0 rounded-sm bg-white p-4 sm:p-8 text-[12.5px] text-black print:max-w-none print:rounded-none print:p-0 print:shadow-none">
         <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav, header, .no-print { display: none !important } body { background: #fff } }`}</style>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
@@ -26,8 +27,14 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
           <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">Qayd etilgan · {dateTime(rep.createdAt)}</span>
           <PrintButton />
         </div>
-        {rep.note && <p className="mb-3 rounded border border-slate-300 bg-slate-50 px-3 py-2 print:bg-transparent"><b>Izoh:</b> {rep.note}</p>}
-        <ReportSheet r={rep.snap} company={company.name} stamp={<>Qayd etdi: {rep.by} · {dateTime(rep.createdAt)}</>} />
+        <DailySheet r={rep.snap} company={company.name} note={rep.note} stamp={<>topshirdi: {rep.by} · {dateTime(rep.createdAt)}</>} />
+        <details className="mt-8 border-t border-slate-200 pt-3 print:hidden">
+          <summary className="cursor-pointer text-sm font-medium text-slate-600">Batafsil hisobot — soatma-soat, yuklash, brak, davomat, sklad</summary>
+          <div className="mt-4">
+            {rep.note && <p className="mb-3 rounded border border-slate-300 bg-slate-50 px-3 py-2"><b>Izoh:</b> {rep.note}</p>}
+            <ReportSheet r={rep.snap} company={company.name} stamp={<>Qayd etdi: {rep.by} · {dateTime(rep.createdAt)}</>} />
+          </div>
+        </details>
       </div>
       <div className="no-print print:hidden"><ReportHistory rows={history} current={rep.id} /></div>
     </div>

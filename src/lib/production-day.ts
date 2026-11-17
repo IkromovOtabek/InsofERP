@@ -24,7 +24,7 @@ export const workDays = (ym: string) => monthDays(ym).filter((d) => !d.weekend);
 const LOAD_STATUSES = ["CONFIRMED", "IN_PRODUCTION", "DELIVERED", "CLOSED"] as const;
 
 /** "YYYY-MM-DD" (mahalliy kun) → [kun boshi, ertasi kun boshi) mahalliy vaqtda. */
-function localRange(iso: string) {
+export function localRange(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   return { from: new Date(y, m - 1, d), to: new Date(y, m - 1, d + 1), monthFrom: new Date(y, m - 1, 1) };
 }
