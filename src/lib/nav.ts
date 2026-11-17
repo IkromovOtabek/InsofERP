@@ -241,6 +241,16 @@ export const OWN_PAGE_ONLY: Partial<Record<Role, string>> = {
   SECRETARY: "/arenda",
 };
 
+/** «Faqat o'z sahifasi» rollariga qo'shimcha ochiq yo'llar (Sekretar — «Ish haqi» → Xodim qarzlari) */
+export const OWN_PAGE_EXTRA: Partial<Record<Role, string[]>> = {
+  SECRETARY: ["/ish-haqi"],
+};
+export const ownPageAllows = (role: Role, pathname: string) => {
+  const own = OWN_PAGE_ONLY[role];
+  if (!own) return true;
+  return [own, ...(OWN_PAGE_EXTRA[role] ?? [])].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+};
+
 export const ROLE_LABELS: Record<Role, string> = {
   DIRECTOR: "Direktor",
   AGENT: "Sotuv agenti",

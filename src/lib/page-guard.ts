@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession, type Session } from "./auth";
 import type { Role } from "@/generated/prisma";
 import { headers } from "next/headers";
-import { OWN_PAGE_ONLY, PATH_HEADER, alwaysOpen, moduleForPath, pathAllowed, canWrite } from "./nav";
+import { OWN_PAGE_ONLY, PATH_HEADER, alwaysOpen, moduleForPath, ownPageAllows, pathAllowed, canWrite } from "./nav";
 import { pathOff } from "./platform-modules";
 import { buttonMode } from "./perm-buttons";
 import { canDo } from "./permissions";
@@ -23,7 +23,7 @@ export async function requirePage(path: string): Promise<Session> {
   const s = await getSession();
   if (!s) redirect("/api/logout");
   const own = OWN_PAGE_ONLY[s.role];
-  if (own && !path.startsWith(own) && !alwaysOpen(path)) redirect(own);
+  if (own && !ownPageAllows(s.role, path) && !alwaysOpen(path)) redirect(own);
   // Tugma rejimidagi modulda (`@kirim`...) oyna ruxsati so'rovning aniq yo'li bo'yicha (middleware uzatadi):
   // /stock/prixod — «Kirim» oynasi, garchi sahifa "/stock" prefiksini bersa ham. Boshqa holatlar avvalgidek prefiks bo'yicha
   const actual = (await headers()).get(PATH_HEADER);
