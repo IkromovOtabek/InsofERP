@@ -36,9 +36,6 @@ export type TransferInput = {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Bir xil o'tkazma shu oraliqda qayta kelsa — ikki marta bosilgan deb hisoblanadi (to'lov va kirim/chiqimdagi kabi). */
-const DUPLICATE_WINDOW_MS = 60_000;
-
 /** Ichki: tranzaksiya ichidan "shu kalit bilan allaqachon saqlangan" natijasini chiqarish uchun. */
 class TransferDuplicate extends Error {
   constructor(readonly doc: { id: string; docNo: string }) { super("duplicate"); }
@@ -93,18 +90,13 @@ export async function createTransfer(input: TransferInput, userId: string): Prom
   try {
     return await db.$transaction(async (tx) => {
       await lockAccounts(tx, [from.id, to.id]);
-      // Dublikat tekshiruvi qulfdan keyin, shu tranzaksiyada — parallel so'rovlar navbat bilan o'tadi va ikkinchisi
-      // birinchisining hujjatini ko'radi (ilgari mobil tekshiruv qulfdan tashqarida edi: 5 parallel → 5 hujjat).
+      // Kalit tekshiruvi qulfdan keyin, shu tranzaksiyada — shu kalitli parallel so'rovlar navbat bilan o'tadi va ikkinchisi
+      // birinchisining hujjatini oladi. Kalitsiz bir xil o'tkazma cheklanmaydi (rostdan ikkinchi o'tkazma bo'lishi mumkin).
       if (input.clientToken) {
         // Shu kalitli parallel so'rov bizdan oldin saqlagan bo'lsa — o'sha hujjat qaytadi (vebdagi "qayta bosildi")
         const same = await tx.cashTransfer.findUnique({ where: { clientToken: input.clientToken }, select: { id: true, docNo: true } });
         if (same) throw new TransferDuplicate(same);
       }
-      const recent = await tx.cashTransfer.findFirst({
-        where: { createdById: userId, fromAccountId: from.id, toAccountId: to.id, amount, cancelledAt: null, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) } },
-        select: { docNo: true },
-      });
-      if (recent) throw new TransferError(`${recent.docNo} hozirgina saqlandi — ikki marta bosilgan bo'lishi mumkin. Rostdan ikkinchisi bo'lsa, bir daqiqadan keyin qayta kiriting`);
       // Manba: o'tkazma (+ komissiya shu hisobdan bo'lsa) qoldiqdan oshmasin — naqd kassa hech qachon, bank overdraftsiz
       const outErr = await cashOutflowError(tx, from.id, amount + (feeAccountId === from.id ? fee : 0));
       if (outErr) throw new TransferError(outErr);

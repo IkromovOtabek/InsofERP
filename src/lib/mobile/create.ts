@@ -1246,7 +1246,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       const d = p.data;
       const [kind, refId] = d.link ? d.link.split(":", 2) : [];
       if (d.link && !(refId && (kind === "inv" || kind === "ord"))) throw new Error("Schyot yoki zayavka noto'g'ri tanlangan");
-      // Qoidalar (qulf, mijoz mosligi, qoldiq, avans, dublikat) — veb bilan bitta joyda: `addPayment`
+      // Qoidalar (qulf, mijoz mosligi, qoldiq, avans) — veb bilan bitta joyda: `addPayment`
       const r = await addPayment({
         customerId: d.customerId,
         invoiceId: kind === "inv" ? refId : null,
@@ -1272,7 +1272,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       const expense = d.type === "EXPENSE";
       const category = (expense ? d.categoryExpense : d.categoryIncome) || d.category;
       if (!category || !(await categoryOptions(expense ? "EXPENSE" : "INCOME")).some((c) => c.name === category)) throw new Error("Kategoriya tanlanmagan");
-      // Qoidalar (qulf, kirim hujjati qoldig'i, kassa minusi/overdraft, dublikat) — veb bilan bitta joyda
+      // Qoidalar (qulf, kirim hujjati qoldig'i, kassa minusi/overdraft) — veb bilan bitta joyda
       const r = await createCashEntry({
         type: d.type, date: cashDate(d.date), cashAccountId: d.cashAccountId, amount: d.amount, category,
         counterparty: d.counterparty || null,
@@ -1288,7 +1288,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const d = p.data;
       const fee = d.fee && d.fee > 0 ? d.fee : null;
-      // Qoidalar (qulf, qoldiq, dublikat: kalit bo'yicha va 60 s oynasi — qulf ichida) — veb bilan bitta joyda: `createTransfer`
+      // Qoidalar (qulf, qoldiq, takror yuborish — faqat clientToken bo'yicha, qulf ichida) — veb bilan bitta joyda: `createTransfer`
       const r = await createTransfer({ date: cashDate(d.date), fromAccountId: d.fromAccountId, toAccountId: d.toAccountId, amount: d.amount, fee, note: d.note || null, clientToken: d.clientToken ?? null }, user.id);
       if (r.error || !r.id) throw new Error(r.error ?? "Saqlanmadi");
       // Kartochka — manba hisobdagi yozuv (Kirim-chiqim kartochkasi o'tkazmani ko'rsatadi)

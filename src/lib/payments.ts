@@ -32,9 +32,6 @@ export type PaymentInput = {
 
 class PaymentError extends Error {}
 
-/** Bir xil to'lov shu oraliqda qayta kelsa — ikki marta bosilgan deb hisoblanadi. */
-const DUPLICATE_WINDOW_MS = 60_000;
-
 /** Tiyinga yaxlitlash — Decimal(18,2) ga mos. */
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -78,7 +75,8 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
   if (!(input.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
   if (input.invoiceId && input.orderId) return { error: "Schyot yoki zayavkadan bittasini tanlang" };
   const res = await db.$transaction(async (tx) => {
-    // Mijoz bo'yicha navbat: bir vaqtdagi ikki to'lov qoldiqni ham, dublikatni ham to'g'ri ko'rsin
+    // Mijoz bo'yicha navbat: bir vaqtdagi ikki to'lov qoldiqni to'g'ri ko'rsin. Bir xil summa takror cheklanmaydi
+    // (ikki marta bosishdan formadagi tugma `pending` paytida o'chiriladi)
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.customerId}))`;
     // Mijoz: mavjud bo'lmasa — tushunarli xato (ilgari foreign key xatosi Prisma matni bilan chiqardi);
     // ichki "mijoz" (sklad zaxirasi) — haqiqiy mijoz emas, unga pul tushmaydi.
@@ -122,14 +120,6 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
       const left = total - o.payments.reduce((x, p) => x + Number(p.amount), 0);
       if (input.amount > left + 0.005) throw new PaymentError(`Avans zayavka qoldig'idan ko'p: ${money(Math.max(0, left))}`);
     }
-    const dup = await tx.payment.findFirst({
-      where: {
-        customerId: input.customerId, invoiceId: input.invoiceId ?? null, orderId: input.orderId ?? null, cashAccountId: input.cashAccountId,
-        amount: input.amount, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
-      },
-      select: { id: true },
-    });
-    if (dup) throw new PaymentError("Aynan shu to'lov hozirgina yozildi — ikki marta bosilgan bo'lishi mumkin. Rostdan ikkinchi to'lov bo'lsa, bir daqiqadan keyin qayta kiriting");
     const p = await tx.payment.create({
       data: {
         customerId: input.customerId,
