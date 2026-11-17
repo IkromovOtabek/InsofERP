@@ -158,6 +158,31 @@ Har bosqichdan keyin: `tsc`, `eslint`, QA (`run-all.sh`), haqiqiy fayl bilan sol
   - Brigadirning telefondan soat va soni yozishi (mobil ilova).
   - Tizimdagi ishlab chiqarish (topshiriq bajarilishi) sonini varaqqa taklif qilish.
 
+### 3-bosqich holati (2026-11-17, bajarildi)
+- **Joyi:** «Ish haqi» → **Ushlanmalar** (`?tab=ushlanmalar&oy=`). Bu C2026'ning G–K ustunlari: aliment/ijro, qarz to'lovi,
+  oylikdan qarz, to'y puli, jarima. Har xodim × oy × tur — `PayAdjustment.category` (PENALTY).
+  - **Takliflar (kul rang):** aliment — ijro daftaridan, qarz — nasiya jadvalidan, oylikdan qarz — shu oy kassadan
+    nasiyasiz berilgan pul, to'y puli — sozlamadan (`PayrollSettings.fundAmount`).
+  - Ustun sarlavhasidagi ✓ bo'sh kataklarga takliflarni qo'yadi.
+- **Daftarlar** («Xodim qarzlari» tabi):
+  - ijro varaqalari / aliment — `Withholding`: qarz, oylik summa yoki foiz, ish raqami, ilgari ushlangan;
+  - qarzning boshlang'ich qoldig'i — kassasiz `EmployeeDebt`.
+  - «Ushlangan» vedomost taqsimotidan olinadi (`breakdown.debts` / `breakdown.withholds`).
+- **Vedomost:**
+  - Qarz to'lovi yozilsa — shu summa qarzlarga eskisidan boshlab taqsimlanadi. Kassasiz qoldiq faqat shu yo'l bilan
+    ushlanadi; kassadan berilgan nasiya yozilmasa avvalgidek teng ulush bilan.
+  - Aliment yozilmasa — daftardan avtomatik (oylik summa yoki foiz, qoldiqdan oshmaydi).
+- **Import:**
+  - C2026 G–K → shu oy ushlanmalari;
+  - «Карз» C+D → qarz qoldig'i (oyiga J);
+  - «Миб» → ijro varaqalari.
+  - Varaqlararo nomuvofiqlik ogohlantiriladi.
+- **Tekshiruv (oktabr):**
+  - Jami ushlanmalar Excel C2026 156-qator bilan bir xil (3 050 000 / 18 200 000 / 23 350 000 / 5 815 000 / 1 850 000).
+  - Vedomost ushlagani = jadval jami.
+  - Qarz va ijro qoldiqlari Excel'dagi P va F ustunlari bilan bir xil (Mirzakarimov 100 000, Xalikov 3 200 000).
+  - Excel'dagi xato aniqlandi: Abduqodirova («Карз»da 500 000, C2026'da 0) ↔ Abdurasulov (C2026'da 500 000, qarzi yo'q).
+
 ---
 
 ## 5. Kelishib olinadigan savollar

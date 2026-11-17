@@ -215,6 +215,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "debts",    label: "Xodim qarzlari (nasiya) — ko'rish va bekor qilish", roles: ["HR", "ACCOUNTING", "SECRETARY"], hint: "Qarz Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimidan ochiladi, oy yakuni vedomostida ushlanadi" },
     { key: "sheets",   label: "Oylik varaqlari (Excel) — yuklash, ko'rish va tahrirlash", roles: ["SECRETARY"], hint: "Korxonaning oylik Excel kitobi barcha varaqlari bilan; formulalar ERP ichida qayta hisoblanadi" },
     { key: "tabel",    label: "Tabel — soatlarni kiritish va Excel'dan import", roles: ["SECRETARY"], hint: "Ish haqi → Tabel: kunlik soat (8, 4…) yoki H/K/T/D; oklad va kunbay shu soat ÷ 8 bo'yicha hisoblanadi" },
+    { key: "deductions", label: "Ushlanmalar — aliment/ijro, qarz to'lovi, oylikdan qarz, to'y puli, jarima", roles: ["SECRETARY"], hint: "Ish haqi → Ushlanmalar (Excel C2026 G–K ustunlari) va ijro/aliment daftari; oy yakuni vedomostida ushlanadi" },
   ],
   "bi-tahlil": [
     { key: "ai",        label: "Insof AI (savol, hisobot, Telegram)", roles: BI },

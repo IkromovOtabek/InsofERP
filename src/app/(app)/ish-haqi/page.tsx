@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Settings2, Sheet as SheetIcon, Wallet } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, MinusCircle, Settings2, Sheet as SheetIcon, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { date, dateTime, money } from "@/lib/format";
@@ -22,6 +22,11 @@ import { employeesInWindow } from "@/lib/attendance-report";
 import { TabelGrid } from "./tabel-grid";
 import { BrigadeSheetGrid } from "./brigade-sheet-grid";
 import { brigadeSheet } from "@/lib/hr/brigade-sheet";
+import { deductionsMonth, listWithholdings } from "@/lib/hr/deductions";
+import { DeductionsGrid } from "./deductions-grid";
+import { DeductImport } from "./deduct-import";
+import { OpeningDebtForm, WithholdingForm } from "./ushlanma-forms";
+import { cancelWithholdingAction } from "./ushlanma-actions";
 import { TabelImport } from "./tabel-import";
 
 /**
@@ -37,29 +42,33 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const canDebts = canPayroll(s, "debts");
   const canSheets = canPayroll(s, "sheets");
   const canTabel = canPayroll(s, "tabel");
+  const canDeduct = canPayroll(s, "deductions");
   // Sekretar: vedomost va sozlamalar ko'rinmaydi — faqat Tabel, «Oylik varaqlari» (Excel kitobi) va «Xodim qarzlari»
-  const limited = (canDebts || canSheets || canTabel) && !canCalc && !canSettings && !["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"].includes(s.role);
+  const limited = (canDebts || canSheets || canTabel || canDeduct) && !canCalc && !canSettings && !["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"].includes(s.role);
   const keys = limited
-    ? [...(canTabel ? ["tabel"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : [])]
-    : ["vedomostlar", ...(canTabel ? ["tabel"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : []), "sozlamalar"];
+    ? [...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : [])]
+    : ["vedomostlar", ...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : []), "sozlamalar"];
   const tab = keys.includes(sp.tab ?? "") ? sp.tab! : keys[0];
   const debts = tab === "qarzlar" ? await listDebts() : [];
   const tabItems = [
     { key: "vedomostlar", label: "Vedomostlar", href: "/ish-haqi", icon: Wallet },
     { key: "tabel", label: "Tabel", href: "/ish-haqi?tab=tabel", icon: CalendarDays },
+    { key: "ushlanmalar", label: "Ushlanmalar", href: "/ish-haqi?tab=ushlanmalar", icon: MinusCircle },
     { key: "varaqlar", label: "Oylik varaqlari", href: "/ish-haqi?tab=varaqlar", icon: SheetIcon },
     { key: "qarzlar", label: "Xodim qarzlari", href: "/ish-haqi?tab=qarzlar", icon: HandCoins },
     { key: "sozlamalar", label: "Sozlamalar", href: "/ish-haqi?tab=sozlamalar", icon: Settings2 },
   ].filter((t) => keys.includes(t.key));
   if (limited) {
     return (
-      <div className="space-y-4" {...(tab === "varaqlar" || tab === "tabel" ? { "data-wide": "" } : {})}>
+      <div className="space-y-4" {...(tab === "varaqlar" || tab === "tabel" || tab === "ushlanmalar" ? { "data-wide": "" } : {})}>
         {tab === "qarzlar"
           ? <PageHeader title="Xodim qarzlari" info="Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimi «Oylikdan nasiya» bilan yozilsa — qarz shu yerda; har oy yakuni vedomostida ulushi ushlanadi" />
-          : <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : SHEETS_INFO} />}
+          : <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : SHEETS_INFO} />}
         {tabItems.length > 1 && <Tabs current={tab} items={tabItems} />}
         {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} />
-          : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} /> : <DebtTable debts={debts} canCancel={canDebts} />}
+          : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} />
+          : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />
+          : <><DebtTable debts={debts} canCancel={canDebts} />{canDeduct && <LedgersPanel />}</>}
       </div>
     );
   }
@@ -73,12 +82,12 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const toPay = runs.filter((r) => r.status === "APPROVED");
   const thisMonth = runs.filter((r) => r.month === month && r.status !== "CANCELLED");
 
-  if (tab === "varaqlar" || tab === "tabel") {
+  if (tab === "varaqlar" || tab === "tabel" || tab === "ushlanmalar") {
     return (
       <div className="space-y-4" data-wide="">
-        <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : SHEETS_INFO} />
+        <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : SHEETS_INFO} />
         <Tabs current={tab} items={tabItems} />
-        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />}
+        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />}
       </div>
     );
   }
@@ -95,6 +104,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       <Tabs current={tab} items={tabItems} />
 
       {tab === "qarzlar" && <DebtTable debts={debts} canCancel={canDebts} />}
+      {tab === "qarzlar" && canDeduct && <LedgersPanel />}
 
       {tab === "vedomostlar" && (
         <>
@@ -160,6 +170,84 @@ const SHEETS_INFO = (
     <p>O&apos;zgarish darhol saqlanadi va formulalar shu zahoti qayta hisoblanadi. «Excel yuklab olish» — joriy holat (tahrirlar bilan) .xlsx bo&apos;lib.</p>
   </>
 );
+
+const DEDUCT_INFO = (
+  <>
+    <p><b>Ushlanmalar</b> — Excel C2026&apos;ning G–K ustunlari: har xodimga oy bo&apos;yicha aliment/ijro, qarz to&apos;lovi, oylikdan qarz, to&apos;y puli, jarima. Oy yakuni vedomosti shularni ushlaydi.</p>
+    <p>Kul rang raqam — taklif: aliment — ijro/aliment daftaridan, qarz — nasiya jadvalidan, oylikdan qarz — shu oy kassadan xodimga berilgan (nasiyasiz) pul, to&apos;y puli — sozlamadan. Ustun sarlavhasidagi ✓ bo&apos;sh kataklarga takliflarni qo&apos;yadi.</p>
+    <p>Qarz to&apos;lovi va aliment yozilsa — jadval ulushi / avtomatik summa o&apos;rniga shu ushlanadi va «Xodim qarzlari» dagi qoldiqdan kamayadi. Oy yakuni vedomosti direktorga yuborilgach jadval yopiladi.</p>
+  </>
+);
+
+/** «Ushlanmalar»: oy tanlash va C2026 G–K kabi jadval. */
+async function DeductionsTab({ oy, canEdit }: { oy?: string; canEdit: boolean }) {
+  const cur = monthOf(today());
+  const month = oy && /^\d{4}-(0[1-9]|1[0-2])$/.test(oy) && oy <= shiftMonth(cur, 1) ? oy : cur;
+  const data = await deductionsMonth(month);
+  const href = (m: string) => `/ish-haqi?tab=ushlanmalar&oy=${m}`;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <LinkButton href={href(shiftMonth(month, -1))} variant="secondary" size="sm"><ChevronLeft size={14} /> {monthTitle(shiftMonth(month, -1))}</LinkButton>
+        <span className="px-2 text-base font-semibold text-slate-900">{data.title}</span>
+        {month < shiftMonth(cur, 1) && <LinkButton href={href(shiftMonth(month, 1))} variant="secondary" size="sm">{monthTitle(shiftMonth(month, 1))} <ChevronRight size={14} /></LinkButton>}
+        <LinkButton href="/ish-haqi?tab=qarzlar" variant="ghost" size="sm"><HandCoins size={14} /> Qarzlar va ijro daftari</LinkButton>
+      </div>
+      {data.locked && <Callout tone="warning" title="Ushlanmalar yopiq">{data.locked}</Callout>}
+      <DeductionsGrid key={month} data={data} canEdit={canEdit} />
+      {canEdit && !data.locked && (
+        <Fold title="Excel'dan import (C2026 ushlanmalari, «Карз», «Миб»)">
+          <DeductImport month={month} monthLabel={data.title} employees={await activeEmployees(month)} />
+        </Fold>
+      )}
+    </div>
+  );
+}
+
+/** Oyda ishlagan xodimlar (import oynasidagi tanlov uchun). */
+async function activeEmployees(month: string) {
+  const days = monthDays(month);
+  return db.employee.findMany({ where: employeesInWindow(dayUtc(days[0]!.iso), dayUtc(days[days.length - 1]!.iso)), orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } });
+}
+
+/** «Xodim qarzlari» ostida: ijro/aliment daftari va qarzning boshlang'ich qoldig'i (Excel «Миб», «Карз»). */
+async function LedgersPanel() {
+  const cur = monthOf(today());
+  const months = Array.from({ length: 15 }, (_, i) => shiftMonth(cur, 1 - i)).map((m) => ({ key: m, label: monthTitle(m) }));
+  const [ws, employees] = await Promise.all([
+    listWithholdings(),
+    db.employee.findMany({ where: { firedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } }),
+  ]);
+  const active = ws.filter((w) => !w.cancelledAt);
+  return (
+    <div className="space-y-4">
+      <Card padded={false}>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4"><h3 className="text-sm font-semibold text-slate-900">Ijro varaqalari va aliment</h3><span className="text-xs text-slate-500">Qoldiq: {money(active.reduce((x, w) => x + (w.left ?? 0), 0))}</span></div>
+        <Table>
+          <thead><tr><Th>Xodim</Th><Th>Turi / raqami</Th><Th right>Umumiy qarz</Th><Th right>Oyiga</Th><Th>Boshlanish</Th><Th right>Ushlangan</Th><Th right>Qolgan</Th><Th>Izoh</Th><Th></Th></tr></thead>
+          <tbody>
+            {ws.length === 0 && <tr><td colSpan={9}><Empty text="Ijro varaqasi yoki aliment yozilmagan — pastdagi forma orqali qo'shing" /></td></tr>}
+            {ws.map((w) => (
+              <Tr key={w.id} className={w.cancelledAt ? "opacity-50" : ""}>
+                <Td className="font-medium">{w.employee.fullName}<div className="text-xs font-normal text-slate-500">{w.employee.position}</div></Td>
+                <Td>{w.kind === "MIB" ? "Ijro (MIB)" : "Aliment"}{w.caseNo ? <div className="text-xs text-slate-500">№{w.caseNo}</div> : null}{w.creditor ? <div className="text-xs text-slate-500">{w.creditor}</div> : null}</Td>
+                <Td right>{w.amount != null ? money(w.amount) : "muddatsiz"}</Td>
+                <Td right>{w.monthly != null ? money(w.monthly) : w.percent != null ? `${w.percent}%` : "—"}</Td>
+                <Td>{monthTitle(w.startMonth)}</Td>
+                <Td right>{money(w.held)}</Td>
+                <Td right className="font-medium">{w.cancelledAt ? <Badge color="slate">Bekor</Badge> : w.left == null ? "—" : w.left > 0 ? money(w.left) : <Badge color="green">Yopildi</Badge>}</Td>
+                <Td className="text-slate-600">{w.cancelledAt ? w.cancelReason : w.note ?? "—"}</Td>
+                <Td right>{!w.cancelledAt && <ConfirmButton action={cancelWithholdingAction.bind(null, w.id)} label="Bekor qilish" reason="required" question="Ijro/aliment yozuvi bekor qilinadi (keyingi vedomostlarda ushlanmaydi). Sababi?" className="text-xs" />}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+      <Fold title="Ijro varaqasi yoki aliment qo'shish"><WithholdingForm employees={employees} months={months} defMonth={cur} /></Fold>
+      <Fold title="Qarzning boshlang'ich qoldig'i (Excel «Карз» dan)"><OpeningDebtForm employees={employees} months={months} defMonth={cur} /></Fold>
+    </div>
+  );
+}
 
 const TABEL_INFO = (
   <>

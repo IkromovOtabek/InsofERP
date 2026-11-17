@@ -690,6 +690,7 @@ model Employee {
   documents        EmployeeDocument[]
   hrDocs           HrDocument[]
   attendance       Attendance[]
+  withholdings     Withholding[]
   nameAliases      EmployeeAlias[]
   brigadeHours     BrigadeHours[]
   faceTemplates    FaceTemplate[]
@@ -4326,6 +4327,10 @@ model PayAdjustment {
   date          DateTime?  @db.Date
   ruleId        String?
   source        String     @default("MANUAL") // MANUAL | KPI
+  /// Ushlanma turi (Ish haqi → Ushlanmalar, Excel C2026 ustunlari): ALIMENT (ijro/aliment), LOAN (qarz to'lovi),
+  /// SALARY_DEBT (oylikdan qarz), FUND (to'y / tug'ilgan kun puli), FINE (jarima). Bo'sh — oddiy jarima/bonus.
+  /// Turli yozuv xodim × oy × tur bo'yicha bitta (bekor qilinmaganlari orasida) — `lib/hr/deductions.ts`.
+  category      String?
   createdById   String
   cancelledAt   DateTime?
   cancelReason  String?
@@ -4337,6 +4342,33 @@ model PayAdjustment {
 
   @@index([employeeId, month])
   @@index([month])
+}
+
+/// Ijro varaqasi / aliment (Excel «Миб карздорлик»): xodim maoshidan har oy ushlanadi — belgilangan summa yoki
+/// qo'lga tegadigan summaning foizi; `amount` (umumiy qarz) bo'lsa — qoldiq tugaguncha. Ushlangani oy yakuni vedomostidan
+/// (tasdiqlangan) yig'iladi. O'chirilmaydi — bekor qilinadi.
+model Withholding {
+  id            String    @id @default(cuid())
+  employeeId    String
+  kind          String // MIB (ijro byurosi) | ALIMENT
+  caseNo        String? // ish / ijro varaqasi raqami
+  creditor      String? // undiruvchi (kimga)
+  amount        Decimal?  @db.Decimal(18, 2) // umumiy qarz; bo'sh — muddatsiz (aliment)
+  percent       Decimal?  @db.Decimal(5, 2) // qo'lga tegadiganning foizi
+  monthly       Decimal?  @db.Decimal(18, 2) // oyiga belgilangan summa (foizdan ustun)
+  startMonth    String // "2026-10"
+  /// Ilgari (ERP'dan tashqarida) ushlangan — Excel'dan o'tkazishda qoldiqni to'g'ri ko'rsatish uchun
+  heldBefore    Decimal   @default(0) @db.Decimal(18, 2)
+  note          String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelReason  String?
+  cancelledById String?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, cancelledAt])
 }
 
 enum PayrollKind {
@@ -4431,6 +4463,8 @@ model PayrollSettings {
   sickPctLong  Int      @default(80) // staj 8 yildan ko'p
   vacationPaid Boolean  @default(true) // mehnat ta'tili kunlari haq to'lanadimi
   hoursPerDay  Decimal  @default(8) @db.Decimal(4, 2) // soatbay xodimning ta'til/kasallik kunini hisoblash uchun
+  /// To'y / tug'ilgan kun puli — Ushlanmalar jadvalida har xodimga taklif qilinadigan oylik summa (bo'sh — taklif yo'q)
+  fundAmount   Decimal? @db.Decimal(18, 2)
   updatedById  String?
   updatedAt    DateTime @updatedAt
 }

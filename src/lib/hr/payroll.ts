@@ -18,6 +18,7 @@ import { PAYROLL_KIND_LABEL } from "./labels";
 import { brigadeDefectSums, brigadeOutput, dayEnd, dayStart, type PieceUnit } from "@/lib/brigade-pay";
 import { debtsDue } from "./employee-debt";
 import { brigadeSheetPay, type SheetPayItem } from "./brigade-sheet";
+import { allocate, ledgersFor } from "./deductions";
 
 /**
  * Ish haqi — vedomost (`PayrollRun`) va qatorlar (`PayrollLine`).
@@ -45,7 +46,7 @@ export const PAYROLL_CATEGORY = "Ish haqi";
 export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
-export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel") => canDo(who, "payroll", what);
+export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel" | "deductions") => canDo(who, "payroll", what);
 
 export class PayrollError extends Error {}
 const STALE = "Vedomost boshqa joyda o'zgartirildi — sahifani yangilang";
@@ -72,7 +73,11 @@ export type LineBreakdown = {
   /** Haydovchi: dispetcher narxlagan reyslar (oy yakuni, `lib/driver-trip-pay.ts`); narxsizlari kirmaydi. */
   trips?: { count: number; km: number; sum: number; unpriced: number };
   rules: RuleHit[];
-  manual: { id: string; kind: PayAdjKind; amount: number; reason: string }[];
+  manual: { id: string; kind: PayAdjKind; amount: number; reason: string; category?: string | null }[];
+  /** Qarz (nasiya) ushlanmasining qarzlar bo'yicha taqsimoti — «Xodim qarzlari» qoldig'i shundan (`lib/hr/employee-debt.ts`). */
+  debts?: { id: string; amount: number }[];
+  /** Ijro/aliment ushlanmasining yozuvlar bo'yicha taqsimoti (`Withholding`). */
+  withholds?: { id: string; amount: number }[];
   advances: { docNo: string; amount: number }[];
   advanceFormula?: string;
   warnings: string[];
@@ -150,6 +155,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   }
   // Xodim qarzi (nasiya) — shu oy ulushi (`lib/hr/employee-debt.ts`)
   const nasiya = kind === "FINAL" ? await debtsDue(month, ids) : [];
+  // Qarz qoldiqlari va ijro/aliment yozuvlari — Ushlanmalar jadvalidagi qo'lda summa taqsimoti va avtomatik aliment uchun
+  const led = kind === "FINAL" ? await ledgersFor(ids, month) : { debts: [], withholds: [] };
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
   const nowIso = today();
@@ -243,6 +250,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     const sickPct = tenureYears >= 8 ? st.sickPctLong : st.sickPctShort;
     let leavePay = 0, sickPay = 0, bonus = 0, penalty = 0;
     const hits: RuleHit[] = [];
+    const debtsAlloc: { id: string; amount: number }[] = [];
+    const withholdsAlloc: { id: string; amount: number }[] = [];
     const manualList: LineBreakdown["manual"] = [];
     let advanceFormula: string | undefined;
 
@@ -291,7 +300,11 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         hits.push({ rule: "O'tgan oydan qarz", kind: "PENALTY", amount: r0(debt.amount), days: 0, detail: `${debt.docNo} (${monthTitle(debt.month)}) — ushlanmay qolgan` });
         penalty += debt.amount;
       }
-      for (const d of nasiya.filter((x) => x.employeeId === e.id)) {
+      // Ushlanmalar jadvalida «Qarz to'lovi» yozilgan bo'lsa — jadval ulushi o'rniga o'sha summa (pastda, qo'lda yozuvlar bilan)
+      const loanManual = manual.filter((x) => x.employeeId === e.id && x.category === "LOAN").reduce((sm, x) => sm + num(x.amount), 0);
+      if (loanManual > 0) debtsAlloc.push(...allocate(led.debts.filter((d) => d.employeeId === e.id && d.left > 0).map((d) => ({ id: d.id, left: d.left })), loanManual));
+      for (const d of loanManual > 0 ? [] : nasiya.filter((x) => x.employeeId === e.id)) {
+        debtsAlloc.push({ id: d.id, amount: d.amount });
         hits.push({ rule: "Qarz (nasiya)", kind: "PENALTY", amount: d.amount, days: 0, detail: `${d.n}/${d.of}-oy · jami ${money(d.total)}${d.note ? ` · ${d.note}` : ""}` });
         penalty += d.amount;
       }
@@ -300,7 +313,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         bonus += k.reward;
       }
       for (const m of manual.filter((x) => x.employeeId === e.id)) {
-        manualList.push({ id: m.id, kind: m.kind, amount: num(m.amount), reason: m.reason });
+        manualList.push({ id: m.id, kind: m.kind, amount: num(m.amount), reason: m.reason, category: m.category });
         if (m.kind === "BONUS") bonus += num(m.amount); else penalty += num(m.amount);
       }
     } else {
@@ -314,6 +327,21 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     const advanceSum = adv.reduce((s, a) => s + a.amount, 0);
     const gross = r0(base) + r0(leavePay) + r0(sickPay) + r0(bonus);
     const incomeTax = kind === "FINAL" ? r0((gross * Number(st.incomeTaxPct)) / 100) : 0;
+    // Ijro / aliment: Ushlanmalar jadvalida yozilgan bo'lsa — o'sha (yozuvlarga taqsimlanadi), bo'lmasa daftardan avtomatik:
+    // oylik summa yoki qo'lga tegadigan (yalpi − soliq) summaning foizi, umumiy qarz qoldig'idan oshmaydi
+    if (kind === "FINAL") {
+      const ws = led.withholds.filter((w) => w.employeeId === e.id);
+      const alimManual = manual.filter((x) => x.employeeId === e.id && x.category === "ALIMENT").reduce((sm, x) => sm + num(x.amount), 0);
+      if (alimManual > 0) withholdsAlloc.push(...allocate(ws.map((w) => ({ id: w.id, left: w.left })), alimManual));
+      else for (const w of ws) {
+        const want = w.monthly != null ? num(w.monthly) : w.percent != null ? ((gross - incomeTax) * num(w.percent)) / 100 : 0;
+        const amt = r0(Math.max(0, Math.min(want, w.left ?? Infinity)));
+        if (amt <= 0) continue;
+        hits.push({ rule: w.kind === "MIB" ? "Ijro varaqasi" : "Aliment", kind: "PENALTY", amount: amt, days: 0, detail: `${w.caseNo ? `№${w.caseNo} · ` : ""}${w.monthly != null ? "oylik summa" : `${num(w.percent)}% qo'lga tegadigandan`}${w.left != null ? ` · qoldiq ${money(w.left)}` : ""}` });
+        penalty += amt;
+        withholdsAlloc.push({ id: w.id, amount: amt });
+      }
+    }
     const inps = kind === "FINAL" ? r0((gross * Number(st.inpsPct)) / 100) : 0;
     const employerTax = kind === "FINAL" ? r0((gross * Number(st.socialTaxPct)) / 100) : 0;
     const net = kind === "FINAL" ? gross - incomeTax - r0(penalty) - r0(advanceSum) : Math.max(0, gross - r0(advanceSum));
@@ -329,6 +357,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         sickDays: sick, absentDays: absent, dayoffDays: dayoff, minutes, dailyAvg: r0(dailyAvg), sickPct,
         ...(tabelDays ? { dayUnits: Math.round(dayUnits * 100) / 100, tabelDays } : {}),
         ...(sheetItems.length ? { sheets: sheetItems } : {}),
+        // Oy yakunida taqsimot har doim yoziladi (bo'sh bo'lsa ham) — daftar «ushlangan»ni shundan oladi, eski vedomostlarni ajratadi
+        ...(kind === "FINAL" ? { debts: debtsAlloc, withholds: withholdsAlloc } : {}),
         ...(pieceInfo ? { piece: pieceInfo } : {}), ...(tp ? { trips: { count: tp.trips, km: tp.km, sum: r0(tp.sum), unpriced: tp.unpriced } } : {}), rules: hits, manual: manualList, advances: adv,
         ...(advanceFormula ? { advanceFormula } : {}), warnings,
       },

@@ -1,3 +1,4 @@
+import type { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 
 /**
@@ -25,11 +26,15 @@ export function dueIn(d: { amount: unknown; months: number; startMonth: string }
 
 export type DebtDue = { id: string; employeeId: string; n: number; of: number; amount: number; total: number; note: string | null };
 
-/** Oy yakuni vedomosti uchun: shu oyda ushlanadigan nasiya ulushlari. */
+/**
+ * Oy yakuni vedomosti uchun: shu oyda AVTOMATIK ushlanadigan nasiya ulushlari — faqat kassadan berilgan nasiya
+ * (`cashTxId`). Qo'lda / Excel'dan kiritilgan qoldiq (kassasiz) faqat Ushlanmalar jadvalidagi «Qarz to'lovi» bilan
+ * ushlanadi (u yerda jadval ulushi taklif bo'lib turadi) — Excel'dagidek har oy summasi yoziladi.
+ */
 export async function debtsDue(month: string, employeeIds: string[]): Promise<DebtDue[]> {
   if (!employeeIds.length) return [];
   const list = await db.employeeDebt.findMany({
-    where: { employeeId: { in: employeeIds }, cancelledAt: null, startMonth: { lte: month } },
+    where: { employeeId: { in: employeeIds }, cancelledAt: null, startMonth: { lte: month }, cashTxId: { not: null } },
     select: { id: true, employeeId: true, amount: true, months: true, startMonth: true, note: true },
   });
   return list.flatMap((d) => {
@@ -48,11 +53,12 @@ export async function listDebts() {
     take: 500,
     include: { employee: { select: { id: true, fullName: true, position: true } }, cashTx: { select: { date: true, cashAccount: { select: { name: true } } } } },
   });
-  const closed = new Set((await db.payrollRun.findMany({ where: { kind: "FINAL", status: { in: ["APPROVED", "PAID"] } }, select: { month: true } })).map((r) => r.month));
+  // Ushlangani — tasdiqlangan oy yakuni vedomostlaridagi taqsimot (qo'lda yozilgan qarz to'lovi ham), eski vedomostda — jadval ulushi
+  const lines = await closedLines([...new Set(debts.map((d) => d.employeeId))]);
   return debts.map((d) => {
     const amount = Number(d.amount);
-    let held = 0, heldN = 0;
-    for (let n = 1; n <= d.months; n++) if (closed.has(addMonths(d.startMonth, n - 1))) { held += installment(amount, d.months, n); heldN++; }
+    const held = debtHeld(d, lines);
+    const heldN = lines.filter((l) => l.employeeId === d.employeeId && ((allocOf(l.breakdown, "debts") ?? []).some((x) => x.id === d.id && Number(x.amount) > 0) || (!allocOf(l.breakdown, "debts") && dueIn(d, l.month)))).length;
     return {
       id: d.id, employee: d.employee, amount, months: d.months, startMonth: d.startMonth, endMonth: addMonths(d.startMonth, d.months - 1),
       monthly: installment(amount, d.months, 1), held: d.cancelledAt ? 0 : held, heldN, left: d.cancelledAt ? 0 : Math.max(0, amount - held),
@@ -61,3 +67,41 @@ export async function listDebts() {
     };
   });
 }
+
+// ───────────────────────── Ushlangani (vedomost taqsimoti) ─────────────────────────
+
+const num = (v: unknown) => Number(v ?? 0);
+
+export type HeldLine = { employeeId: string; month: string; breakdown: Prisma.JsonValue };
+export type Alloc = { id: string; amount: number }[];
+export const allocOf = (b: Prisma.JsonValue, key: "debts" | "withholds"): Alloc | undefined => {
+  const v = b && typeof b === "object" && !Array.isArray(b) ? (b as Record<string, unknown>)[key] : undefined;
+  return Array.isArray(v) ? (v as Alloc) : undefined;
+};
+
+/** Tasdiqlangan (yoki to'langan) oy yakuni vedomosti qatorlari — daftardagi «ushlangan» shulardan. */
+export async function closedLines(employeeIds: string[], beforeMonth?: string): Promise<HeldLine[]> {
+  if (!employeeIds.length) return [];
+  const rows = await db.payrollLine.findMany({
+    where: { employeeId: { in: employeeIds }, run: { kind: "FINAL", status: { in: ["APPROVED", "PAID"] }, ...(beforeMonth ? { month: { lt: beforeMonth } } : {}) } },
+    select: { employeeId: true, breakdown: true, run: { select: { month: true } } },
+  });
+  return rows.map((r) => ({ employeeId: r.employeeId, month: r.run.month, breakdown: r.breakdown }));
+}
+
+/**
+ * Nasiya qarzining ushlangani: vedomostda taqsimot (`breakdown.debts`) bo'lsa — o'sha summa; eski vedomostlarda
+ * (taqsimotsiz) — jadvaldagi oy ulushi (avvalgi qoida).
+ */
+export function debtHeld(d: { id: string; employeeId: string; amount: unknown; months: number; startMonth: string }, lines: HeldLine[]) {
+  let held = 0;
+  for (const l of lines) {
+    if (l.employeeId !== d.employeeId) continue;
+    const a = allocOf(l.breakdown, "debts");
+    if (a) held += a.filter((x) => x.id === d.id).reduce((s, x) => s + num(x.amount), 0);
+    else { const due = dueIn({ amount: d.amount, months: d.months, startMonth: d.startMonth }, l.month); if (due) held += due.amount; }
+  }
+  return held;
+}
+
+

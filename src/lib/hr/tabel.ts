@@ -219,7 +219,8 @@ export async function saveTabel(who: Who, month: string, items: TabelItem[], opt
 
 /** Ism → solishtirish kaliti: lotin, kichik harf, apostroflar bir xil, bo'shliq bitta. */
 export function nameKey(name: string): string {
-  return toLatin(name).toLowerCase().replace(/[ʻʼ‘’`´]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
+  // Unlidan keyingi «ye» kirildan «e» bo'lib o'tadi («Тухтаев» → tuxtaev, lotinda «Tuxtayev») — ikkalasi bir xil kalit
+  return toLatin(name).toLowerCase().replace(/[ʻʼ‘’`´]/g, "'").replace(/[^a-z0-9' ]+/g, " ").replace(/([aeiou'])y(?=e)/g, "$1").replace(/\s+/g, " ").trim();
 }
 
 export type ImportPerson = {
@@ -343,6 +344,37 @@ export function extractTabel(buf: Buffer, month: string): { sheets: ExtractSheet
 }
 
 /** Import oldi ko'rinishi: varaqlardagi odamlar (bir nechta varaqda bo'lsa soatlari qo'shiladi) va ERP xodimiga moslik. */
+export type PersonMatch = { match: { employeeId: string; how: "alias" | "aynan" | "o'xshash" } | null; candidates: { id: string; fullName: string; position: string }[] };
+
+/**
+ * Excel'dagi ismlar (nameKey) → ERP xodimi: eslab qolingan moslik (EmployeeAlias), aynan bir xil ism, yoki familiya +
+ * ism (otasining ismisiz; «Д» — bosh harf) bo'yicha yagona o'xshash. Topilmaganiga — familiyasi o'xshash nomzodlar.
+ */
+export async function matchPeople(keys: string[], from: Date, to: Date): Promise<{ results: Map<string, PersonMatch> }> {
+  const [emps, aliases] = await Promise.all([
+    db.employee.findMany({ where: { AND: [employeesInWindow(from, to), { OR: [{ userId: null }, { user: { role: { notIn: ["SUPERADMIN"] } } }] }] }, select: { id: true, fullName: true, position: true } }),
+    db.employeeAlias.findMany({ where: { name: { in: keys } }, select: { name: true, employeeId: true } }),
+  ]);
+  const aliasOf = new Map(aliases.map((a) => [a.name, a.employeeId]));
+  const empKeys = emps.map((e) => ({ e, key: nameKey(e.fullName), toks: nameKey(e.fullName).split(" ") }));
+  const empIds = new Set(emps.map((e) => e.id));
+  const results = new Map<string, PersonMatch>();
+  for (const key of keys) {
+    const al = aliasOf.get(key);
+    if (al && empIds.has(al)) { results.set(key, { match: { employeeId: al, how: "alias" }, candidates: [] }); continue; }
+    const exact = empKeys.filter((x) => x.key === key);
+    if (exact.length === 1) { results.set(key, { match: { employeeId: exact[0]!.e.id, how: "aynan" }, candidates: [] }); continue; }
+    const t = key.split(" ");
+    const fuzzy = empKeys.filter((x) => x.toks[0] === t[0] && t.slice(1).every((w, i) => x.toks[i + 1] != null && (x.toks[i + 1] === w || (w.length <= 2 && x.toks[i + 1]!.startsWith(w.replace(/\.$/, ""))))));
+    const sur = empKeys.filter((x) => x.toks[0] === t[0] || (t[0]!.length >= 5 && x.toks[0]!.startsWith(t[0]!.slice(0, 5))));
+    results.set(key, {
+      match: fuzzy.length === 1 && t.length >= 2 ? { employeeId: fuzzy[0]!.e.id, how: "o'xshash" } : null,
+      candidates: (fuzzy.length > 1 ? fuzzy : sur).slice(0, 8).map((x) => ({ id: x.e.id, fullName: x.e.fullName, position: x.e.position })),
+    });
+  }
+  return { results };
+}
+
 export async function previewTabelImport(buf: Buffer, month: string): Promise<ImportPreview> {
   const { sheets, warnings } = extractTabel(buf, month);
   const nDays = monthDays(month).length;
@@ -358,27 +390,16 @@ export async function previewTabelImport(buf: Buffer, month: string): Promise<Im
   }
   const days = monthDays(month);
   const from = dayUtc(days[0]!.iso), to = dayUtc(days[days.length - 1]!.iso);
-  const [emps, aliases, brigadeList] = await Promise.all([
-    db.employee.findMany({ where: { AND: [employeesInWindow(from, to), { OR: [{ userId: null }, { user: { role: { notIn: ["SUPERADMIN"] } } }] }] }, select: { id: true, fullName: true, position: true } }),
-    db.employeeAlias.findMany({ where: { name: { in: [...byKey.keys()] } }, select: { name: true, employeeId: true } }),
+  const [{ results }, brigadeList] = await Promise.all([
+    matchPeople([...byKey.keys()], from, to),
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], select: { id: true, name: true, aliases: true, leader: { select: { fullName: true } } } }),
   ]);
-  const aliasOf = new Map(aliases.map((a) => [a.name, a.employeeId]));
-  const empKeys = emps.map((e) => ({ e, key: nameKey(e.fullName), toks: nameKey(e.fullName).split(" ") }));
-  const empIds = new Set(emps.map((e) => e.id));
   for (const p of byKey.values()) {
     p.total = Math.round((p.hours.reduce<number>((s, h) => s + (h ?? 0), 0) + p.bsheets.reduce((s, b) => s + b.hours.reduce<number>((t, h) => t + (h ?? 0), 0), 0)) * 100) / 100;
     p.maxDay = Math.max(0, ...Array.from({ length: nDays }, (_, i) => (p.hours[i] ?? 0) + p.bsheets.reduce((s, b) => s + (b.hours[i] ?? 0), 0)));
-    const al = aliasOf.get(p.key);
-    if (al && empIds.has(al)) { p.match = { employeeId: al, how: "alias" }; continue; }
-    const exact = empKeys.filter((x) => x.key === p.key);
-    if (exact.length === 1) { p.match = { employeeId: exact[0]!.e.id, how: "aynan" }; continue; }
-    // Familiya + ism (otasining ismisiz), qisqartma «Д» — ismning bosh harfi
-    const t = p.key.split(" ");
-    const fuzzy = empKeys.filter((x) => x.toks[0] === t[0] && t.slice(1).every((w, i) => x.toks[i + 1] != null && (x.toks[i + 1] === w || (w.length <= 2 && x.toks[i + 1]!.startsWith(w.replace(/\.$/, ""))))));
-    if (fuzzy.length === 1 && t.length >= 2) p.match = { employeeId: fuzzy[0]!.e.id, how: "o'xshash" };
-    const sur = empKeys.filter((x) => x.toks[0] === t[0] || (t[0]!.length >= 5 && x.toks[0]!.startsWith(t[0]!.slice(0, 5))));
-    p.candidates = (fuzzy.length > 1 ? fuzzy : sur).slice(0, 8).map((x) => ({ id: x.e.id, fullName: x.e.fullName, position: x.e.position }));
+    const m = results.get(p.key)!;
+    p.match = m.match;
+    p.candidates = m.candidates;
   }
   // Brigada varaqlari → ERP brigadasi: eslab qolingan nom, brigada nomida varaq nomi, yoki brigadir ismida
   const brigades: ImportBrigade[] = sheets.filter((s) => s.kind === "brigade").map((sh) => {
