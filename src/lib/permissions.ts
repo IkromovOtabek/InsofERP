@@ -121,7 +121,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "pay_approve", label: "Reys haqini tasdiqlash (naqd → kassa, oylik → vedomost)", roles: ["SUPERVISOR"] },
     { key: "ledger",   label: "Hisob varag'i: qo'lda qator va qatorlarni tahrirlash (hamma ustun)", roles: ["LOGISTICS", "DISPATCHER"], hint: "ECO'ga tushmagan reys qatori, km, zapravka, xarajat; reys haqi — «Reys narxi» ruxsati bilan, haq ish boshqaruvchi tasdig'iga boradi" },
     { key: "real_auto", label: "Realizatsiya: reysdan tushgan qatorni to'ldirish (ortilgan joy, manzil, izoh)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Sotuv → Realizatsiya. Qatorlar reyslardan (TTN) o'zi tushadi; miqdor, narx va mijoz zayavkadan" },
-    { key: "real_manual", label: "Realizatsiya: qo'lda qator kiritish, tuzatish, bekor qilish", roles: ["LOGISTICS", "DISPATCHER"], hint: "Tizimga reys bo'lib tushmagan jo'natma (Sotuv → Realizatsiya). To'lov turi «Qarz» bo'lsa — mijoz qarziga tushadi; kassa va skladga ta'sir qilmaydi" },
+    { key: "real_manual", label: "Realizatsiya: qo'lda qator kiritish, tuzatish, bekor qilish", roles: ["LOGISTICS", "DISPATCHER"], hint: "Tizimga reys bo'lib tushmagan jo'natma (Sotuv → Realizatsiya). Mijoz debitorkasiga «Sotib olgan» bo'lib tushadi; kassa va skladga ta'sir qilmaydi" },
     { key: "settings", label: "Logistika sozlamalari",           roles: ["LOGISTICS"] },
     // Logistika moliyasi — alohida hisob (`lib/logistics-finance.ts`). Summalar faqat direktor, ish boshqaruvchi va mexanikka
     { key: "money",     label: "Logistika summalarini ko'rish (jami xarajat, daromad, foyda)", roles: ["SUPERVISOR", "MECHANIC"], hint: "Logistika moliya oynasi; tabel, transport va hisobotlarda jami xarajat, daromad va foyda faqat shu huquq bilan ko'rinadi" },

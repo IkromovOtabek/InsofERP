@@ -277,7 +277,7 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, tr
               <p>
                 {sup
                   ? "Hisob: boshlang'ich qoldiq + kirim hujjatlari (QQS va dostavka bilan) − ta'minotchiga to'langan pul."
-                  : "Hisob: boshlang'ich qoldiq + schyotlar va Realizatsiyadagi «Qarz» turidagi sotuv − to'lovlar va kassadagi qarz to'lovlari ± boshqa mijoz to'lagan qarz. Naqd va perechisleniye sotuv qarzga tushmaydi."}
+                  : "Hisob: boshlang'ich qoldiq + schyotlar va Realizatsiyadagi barcha sotuv (Naqd, Perechisleniye, Qarz) − to'lovlar va kassada shu mijozga bog'langan kirim ± boshqa mijoz to'lagan qarz. Kassa yozuvida «Kimdan» nomi mijoz nomiga mos kelsa, o'zi bog'lanadi."}
               </p>
               {s.allTime && <p>Davr — boshidan; «Dan» sanasini tanlasangiz, shu kungacha bo&apos;lgan hammasi davr boshidagi qoldiqqa yig&apos;iladi.</p>}
             </InfoButton>

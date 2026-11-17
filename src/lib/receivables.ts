@@ -11,9 +11,9 @@ import { debtSales } from "./debt-sales";
  * schyotga bog'lanmagan avans to'laydi):
  *
  *   balans = Σ schyotlar (boshlang'ich qoldiq schyotlari ham, bekor qilinganlarsiz)
- *          + Σ qarzga sotuv — Realizatsiya reestrining «Qarz» turidagi qatorlari, schyotsiz zayavkalar (`debt-sales.ts`)
+ *          + Σ sotuv — Realizatsiya reestrining barcha qatorlari (Naqd/Perech./Qarz), schyotsiz zayavkalar (`debt-sales.ts`)
  *          − Σ mijoz to'lovlari (schyotga bog'langan yoki bog'lanmagan; storno qilingan to'lov bazadan o'chadi)
- *          − Σ kassa «Savdo» kirimi shu mijoz qarziga yozilgani (`CashTransaction.customerId`); chiqim (mijozga qaytarilgan
+ *          − Σ kassa kirimi shu mijozga bog'langani (`CashTransaction.customerId`; Kontragent nomi mos kelsa o'zi bog'lanadi); chiqim (mijozga qaytarilgan
  *            pul) — qarzga qo'shiladi
  *          ± qarz o'tkazmalari (`CustomerDebtTransfer`): qarzdordan ayiriladi, to'lovchiga qo'shiladi
  *

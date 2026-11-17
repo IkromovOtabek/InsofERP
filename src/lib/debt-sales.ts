@@ -3,13 +3,14 @@ import { db } from "./db";
 import { realizationLog, type LogRow } from "./realization-log";
 
 /**
- * Qarzga sotuv — Realizatsiya reestridagi (Sotuv → «Realizatsiya») to'lov turi «Qarz» bo'lgan qatorlar.
- * Mijoz debitorkasiga (`lib/receivables.ts`) shu qatorlarning «Jami» summasi (QQS va dastavka bilan) qo'shiladi:
- *  · reysdan qator — zayavka «Qarzga» bo'lsa (yoki dispetcher qatorda to'lov turini «Qarz» qilgan bo'lsa); dispetcher
- *    tuzatishlari (miqdor, narx, dastavka, sana) bilan — reestrdagi raqamning o'zi;
- *  · qo'lda qator — mijozga bog'langan (nomi ro'yxatdagi mijozga mos) va to'lov turi «Qarz»;
- *  · zayavkaga schyot yozilgan bo'lsa — qarz schyotdan (`Invoice`), reys qatorlari ikkinchi marta qo'shilmaydi.
- * Naqd va perechisleniye sotuv qarzga tushmaydi (pul shu payt yoki yetkazilgach keladi — Otabek qarori, 2026-11-14).
+ * Mijozga sotuv — Realizatsiya reestridagi (Sotuv → «Realizatsiya») BARCHA qatorlar: Naqd, Perechisleniye va Qarz
+ * (Otabek, 2026-11-17: «realizatsiyaga yozilgan har sotuv debitorkaga ham yozilsin»; 2026-11-14 da faqat «Qarz» edi).
+ * Mijoz debitorkasiga (`lib/receivables.ts`) «Sotib olgan» bo'lib shu qatorlarning «Jami» summasi (QQS va dastavka bilan)
+ * qo'shiladi, «To'lagan» — To'lovlar va kassada shu mijozga bog'langan kirim; qoldiq — farqi:
+ *  · reysdan qator — dispetcher tuzatishlari (miqdor, narx, dastavka, sana) bilan — reestrdagi raqamning o'zi;
+ *  · qo'lda / Excel qator — mijozga bog'langan (yo'q bo'lsa nomi bilan mijozlarga qo'shiladi, `realization-log.ts`);
+ *  · zayavkaga schyot yozilgan bo'lsa — sotuv schyotdan (`Invoice`), reys qatorlari ikkinchi marta qo'shilmaydi.
+ * Naqd sotuv puli kassada shu mijozga bog'lanmasa — mijoz qarzdor ko'rinadi (to'lov bog'lanmaganini ko'rsatadi).
  * Sana — reestrdagi sana (yuklangan vaqt yoki dispetcher ko'chirgan kun).
  */
 
@@ -21,7 +22,7 @@ const EPOCH = new Date(2000, 0, 1);
 const loadAll = cache(async (idsKey: string): Promise<DebtSale[]> => {
   const ids = idsKey === "*" ? undefined : idsKey.split(",");
   const until = new Date(); until.setDate(until.getDate() + 1);
-  const rows = (await realizationLog(EPOCH, until, { customerIds: ids })).filter((r): r is LogRow & { customerId: string } => r.pay === "DEBT" && !!r.customerId);
+  const rows = (await realizationLog(EPOCH, until, { customerIds: ids })).filter((r): r is LogRow & { customerId: string } => !!r.customerId);
   // Schyot yozilgan zayavka — qarz schyotda; reys qatorlari qo'shilmaydi
   const orderIds = [...new Set(rows.flatMap((r) => (r.orderId ? [r.orderId] : [])))];
   const invoiced = orderIds.length
@@ -40,7 +41,7 @@ export async function debtSales(opts: { ids?: string[]; asOf?: Date | null } = {
   return opts.asOf ? all.filter((r) => r.date < opts.asOf!) : all;
 }
 
-/** Zayavka bo'yicha qarzga sotuv yig'indisi — kredit limitida (`finance.ts`) balansdagi qism ikki marta olinmasin. */
+/** Zayavka bo'yicha reestrdagi sotuv yig'indisi — kredit limitida (`finance.ts`) balansdagi qism ikki marta olinmasin. */
 export async function debtSalesByOrder(ids?: string[]): Promise<Map<string, number>> {
   const m = new Map<string, number>();
   for (const s of await debtSales({ ids })) if (s.orderId) m.set(s.orderId, (m.get(s.orderId) ?? 0) + s.total);

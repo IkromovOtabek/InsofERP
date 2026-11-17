@@ -24,8 +24,9 @@ import { defaultCreditLimit } from "@/lib/credit-default";
  *    sana, to'lov turi, sotuvchi, mashina (va reyssiz qatorda TTN) — reys bo'yicha (`RealizationNote`); mahsulot, guruh, o'lchov,
  *    miqdor, narx, dastavka — zayavka qatori bo'yicha (`RealizationLine`). Bo'sh qoldirilgani yoki asliga teng qiymat — zayavkadagisi.
  *    Miqdor, narx yoki dastavka tuzatilsa summa va QQS (zayavka qatoridagi «QQS 12%» belgisi bo'yicha) qayta hisoblanadi.
- *  · Qo'lda: tizimga reys bo'lib tushmagan jo'natma (`RealizationEntry`). Faqat reestr — mijoz qarzi, kassa va skladga
- *    ta'sir qilmaydi. Mijoz (yoki aliasi) va mahsulot nomi ro'yxatdagiga mos kelsa bog'lanadi, birlik va guruh mahsulotdan.
+ *  · Qo'lda: tizimga reys bo'lib tushmagan jo'natma (`RealizationEntry`). Kassa va skladga ta'sir qilmaydi; mijoz
+ *    debitorkasiga «Sotib olgan» bo'lib tushadi (`lib/debt-sales.ts`). Mijoz (yoki aliasi) nomi ro'yxatdagiga mos kelsa
+ *    bog'lanadi, yo'q bo'lsa mijozlarga qo'shiladi (`addMissingCustomers`); mahsulot mos kelsa — birlik va guruh mahsulotdan.
  *    QQS — perechisleniyeda 12% (miqdor × narx dan, dastavkasiz). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
  *  · Summa (QQSsiz) = miqdor × narx + dastavka; Jami = Summa + QQS (`lib/realization.ts` bilan bitta qoida).
  *  · Excel'dan import: varaqdagi qatorlar qo'lda qator bo'lib tushadi. Reestrda bori (reys yoki avval kiritilgan) o'tkazib
@@ -304,7 +305,8 @@ export async function createRealizationEntry(d: EntryInput, userId: string): Pro
   if ("error" in r) return { error: r.error! };
   try {
     const e = await db.$transaction(async (tx) => {
-      const row = await tx.realizationEntry.create({ data: { ...r.data, clientToken: d.clientToken, createdById: userId } });
+      const customerId = r.data.customerId ?? (await addMissingCustomers(tx, [r.data], userId)).idOf(r.data.customerName);
+      const row = await tx.realizationEntry.create({ data: { ...r.data, customerId, clientToken: d.clientToken, createdById: userId } });
       await audit(tx, userId, "CREATE", "RealizationEntry", row.id, undefined, row);
       return row;
     });
@@ -359,9 +361,11 @@ async function writeEntry(id: string, before: RealizationEntry | null, d: EntryI
   const r = entryData(d, await entryLookup([d.customerName], [d.productName]));
   if ("error" in r) return { error: r.error! };
   const ok = await db.$transaction(async (tx) => {
-    const u = await tx.realizationEntry.updateMany({ where: { id, cancelledAt: null, updatedAt: before.updatedAt }, data: r.data });
+    // Xaridor ro'yxatda yo'q bo'lsa — mijozlarga qo'shiladi (debitorkaga tushishi uchun)
+    const data = { ...r.data, customerId: r.data.customerId ?? (await addMissingCustomers(tx, [r.data], userId)).idOf(r.data.customerName) };
+    const u = await tx.realizationEntry.updateMany({ where: { id, cancelledAt: null, updatedAt: before.updatedAt }, data });
     if (u.count !== 1) return false;
-    await audit(tx, userId, "UPDATE", "RealizationEntry", id, before, r.data);
+    await audit(tx, userId, "UPDATE", "RealizationEntry", id, before, data);
     return true;
   });
   return ok ? { ok: true, id } : { error: "Qator boshqa joyda o'zgartirildi — sahifani yangilang" };
@@ -665,7 +669,9 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
       })),
     });
     await auditMany(tx, userId, "CREATE", "RealizationEntry", created.map((row) => ({ id: row.id, after: row })));
-    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: cust.created };
+    // Avvalgi importlardagi (mijoz qo'shilmasdan oldingi) bog'lanmagan qatorlar ham shu yerda bog'lanadi
+    const old = await linkEntriesIn(tx, userId);
+    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers] };
   }, { timeout: 60_000 });
   return { ok: true, ...res, problems, guessedUnits, from, to };
 }
@@ -716,9 +722,9 @@ async function addMissingProducts(
 }
 
 /**
- * Importda ro'yxatda yo'q xaridor mijozlar ro'yxatiga ham qo'shiladi (Otabek, 2026-11-12) — boshqa Excel importlaridagidek:
- * nomi bilan, standart kredit limiti (Sozlamalar → Limitlar), AuditLog'da `via: "realization-import"`. Reestr qatori faqat
- * bog'lanadi — mijoz qarzi, kassa va skladga ta'sir yo'q. Bir xil nom (katta-kichik harfsiz) — bitta mijoz; import qulfi ostida
+ * Ro'yxatda yo'q xaridor mijozlar ro'yxatiga qo'shiladi — import (Otabek, 2026-11-12), qo'lda qator va uning tahriri
+ * (2026-11-17): nomi bilan, standart kredit limiti (Sozlamalar → Limitlar), AuditLog'da `via: "realization-import"`.
+ * Qator mijozga bog'lanadi va uning debitorkasiga tushadi (`lib/debt-sales.ts`); kassa va skladga ta'sir yo'q. Bir xil nom (katta-kichik harfsiz) — bitta mijoz; import qulfi ostida
  * nomi yoki aliasi bo'yicha qayta tekshiriladi. Faqat yoziladigan (reestrda yo'q) qatorlar uchun.
  */
 async function addMissingCustomers(
@@ -728,11 +734,13 @@ async function addMissingCustomers(
 ): Promise<{ idOf: (name: string) => string | null; created: string[] }> {
   const lc = (v: string) => v.toLowerCase();
   const want = new Map<string, string>();
-  for (const r of rows) if (!r.customerId && !want.has(lc(r.customerName))) want.set(lc(r.customerName), r.customerName);
+  for (const r of rows) if (!r.customerId && r.customerName.trim() && !want.has(lc(r.customerName))) want.set(lc(r.customerName), r.customerName);
   const idOf = new Map<string, string>();
   const created: string[] = [];
   const result = { idOf: (n: string) => idOf.get(lc(n)) ?? null, created };
   if (!want.size) return result;
+  // Qo'lda qator, tahrir va import bir vaqtda bir xil yangi nomni ikki mijoz qilib yubormasin
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"realization-customers"}))`;
 
   const names = [...want.values()];
   const have = await tx.customer.findMany({
@@ -750,4 +758,26 @@ async function addMissingCustomers(
     created.push(c.name);
   }
   return result;
+}
+
+/**
+ * Mijozga bog'lanmagan (bekor qilinmagan) qo'lda/Excel qatorlar — nomi (yoki aliasi) bo'yicha mijozga bog'lanadi, ro'yxatda
+ * yo'q bo'lsa mijoz qo'shiladi. 2026-11-12 gacha import mijoz qo'shmagan edi — o'sha qatorlar debitorkaga tushmay qolgan.
+ * Importda o'zi chaqiriladi; prodda bir martalik: `scripts/realizatsiya-mijoz-boglash.ts`.
+ */
+export async function linkEntriesIn(tx: Prisma.TransactionClient, userId: string): Promise<{ linked: number; newCustomers: string[] }> {
+  const rows = await tx.realizationEntry.findMany({ where: { cancelledAt: null, customerId: null }, select: { id: true, customerName: true } });
+  if (!rows.length) return { linked: 0, newCustomers: [] };
+  const cust = await addMissingCustomers(tx, rows.map((r) => ({ customerId: null, customerName: r.customerName })), userId);
+  const byCustomer = new Map<string, string[]>();
+  for (const r of rows) {
+    const id = cust.idOf(r.customerName);
+    if (id) byCustomer.set(id, [...(byCustomer.get(id) ?? []), r.id]);
+  }
+  let linked = 0;
+  for (const [customerId, ids] of byCustomer) {
+    linked += (await tx.realizationEntry.updateMany({ where: { id: { in: ids }, customerId: null }, data: { customerId } })).count;
+    await auditMany(tx, userId, "UPDATE", "RealizationEntry", ids.map((id) => ({ id, after: { customerId, via: "realization-link" } })));
+  }
+  return { linked, newCustomers: cust.created };
 }

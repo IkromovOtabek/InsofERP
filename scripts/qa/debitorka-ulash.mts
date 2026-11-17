@@ -1,5 +1,5 @@
-// Debitorka sotuv va kassaga ulangan (2026-11-14): Realizatsiyaning «Qarz» qatori mijoz qarziga tushadi (naqd — tushmaydi),
-// kassa kirimi «Mijoz qarziga» bilan qarzni kamaytiradi, «Qarzni boshqa mijoz to'ladi» ikki mijoz o'rtasida o'tkazadi,
+// Debitorka sotuv va kassaga ulangan (2026-11-14; 2026-11-17 — Realizatsiyaning BARCHA qatorlari, Naqd ham, «Sotib olgan»ga
+// tushadi, ro'yxatda yo'q xaridor mijozlarga qo'shiladi), kassa kirimi «Mijoz qarziga» (yoki Kontragent nomi mos) bilan qarzni kamaytiradi, «Qarzni boshqa mijoz to'ladi» ikki mijoz o'rtasida o'tkazadi,
 // «Qoldiqni tuzatish» — kun oxiridagi qoldiqni tenglaydi; 4 ustunli varaq (boshi + sotib olgan − to'lagan = oxiri),
 // tafsilot tablari, akt sverka, aging va kredit limiti bir raqam. Realizatsiya Sotuv bo'limida, eski manzil yo'naltiriladi.
 // Ishga tushirish (server ishlab turgan, .next build bor papkada):
@@ -38,15 +38,22 @@ const entry = (payGroup: string, qty: string, price: string, n: number) => logis
 let r = await entry("DEBT", "4", "500000", 10);
 check("D2 «Qarz» qator (4 m³ × 500 000) → qarz +2 000 000", r.result?.ok === true && eq2(await bal(A.id), 5_000_000), r.result);
 r = await entry("CASH", "2", "500000", 9);
-check("D3 «Naqd» qator qarzga tushmaydi", r.result?.ok === true && eq2(await bal(A.id), 5_000_000), r.result);
+check("D3 «Naqd» qator ham sotuvga tushadi (+1 000 000) — to'lovi kassada bog'lanmaguncha qarz", r.result?.ok === true && eq2(await bal(A.id), 6_000_000), r.result);
+const newName = `QA Yangi xaridor ${T}`;
+r = await logist.action(`${RA}#createRealizationAction`, [undefined, fd({ clientToken: crypto.randomUUID(), date: iso(3), payGroup: "BANK", customerName: newName, productName: `QA Beton ${T}`, unit: "m3", qty: "1", price: "100000" })], "/sales/realizatsiya");
+const C = await db.customer.findFirst({ where: { name: newName } });
+check("D3b ro'yxatda yo'q xaridor mijozlarga qo'shildi va sotuvi (QQS bilan 112 000) debitorkada", r.result?.ok === true && !!C && eq2(await bal(C.id), 112_000), [r.result, C?.id]);
 r = await sotuv.action(`${RA}#createRealizationAction`, [undefined, fd({ clientToken: crypto.randomUUID(), date: iso(1), payGroup: "DEBT", customerName: A.name, productName: "x", unit: "m3", qty: "1", price: "1" })], "/sales/realizatsiya");
 check("D4 sotuv bo'limi qo'lda qator kiritolmaydi (logistika.real_manual)", !r.result?.ok, r.result);
 
 console.log("\n── Kassa: «Mijoz qarziga» va boshqa mijoz to'lovi");
 const c1 = await createCashEntry({ type: "INCOME", date: new Date(iso(5)), cashAccountId: kassa.id, amount: 700_000, category: "Savdo", customerId: A.id, counterparty: B.name }, buhU.id);
-check("D5 kassa kirimi (kimdan: B) A qarzidan ayirildi", !!c1.id && eq2(await bal(A.id), 4_300_000) && eq2(await bal(B.id), 0), c1);
-const chak = await createCashEntry({ type: "INCOME", date: new Date(iso(5)), cashAccountId: kassa.id, amount: 111_000, category: "Savdo", counterparty: A.name }, buhU.id);
-check("D6 mijoz tanlanmagan «Savdo» kirimi qarzga tegmaydi", !!chak.id && eq2(await bal(A.id), 4_300_000), chak);
+check("D5 kassa kirimi (kimdan: B) A qarzidan ayirildi", !!c1.id && eq2(await bal(A.id), 5_300_000) && eq2(await bal(B.id), 0), c1);
+const auto = await createCashEntry({ type: "INCOME", date: new Date(iso(5)), cashAccountId: kassa.id, amount: 1_000_000, category: "Savdo", counterparty: A.name }, buhU.id);
+const autoTx = auto.id ? await db.cashTransaction.findUnique({ where: { id: auto.id }, select: { customerId: true } }) : null;
+check("D6 mijoz tanlanmagan, Kimdan = A nomi → o'zi bog'landi, qarzdan ayirildi", autoTx?.customerId === A.id && eq2(await bal(A.id), 4_300_000), auto);
+const chak = await createCashEntry({ type: "INCOME", date: new Date(iso(5)), cashAccountId: kassa.id, amount: 111_000, category: "Savdo", counterparty: `Noma'lum ${T}` }, buhU.id);
+check("D6b nomi hech kimga mos kelmagan kirim qarzga tegmaydi", !!chak.id && eq2(await bal(A.id), 4_300_000), chak);
 const QA_ = "bi-tahlil/mijozlar/actions";
 r = await sotuv.action(`${QA_}#createDebtTransferAction`, [undefined, fd({ date: iso(2), debtorId: A.id, payerId: B.id, amount: "300000" })], "/bi-tahlil/mijozlar/xaridorlar");
 check("D7 sotuv qarz o'tkazmasi yozolmaydi", !r.result?.ok, r.status);
@@ -59,7 +66,7 @@ check("D9 B A ning 300 000 qarzini to'ladi: A 4 000 000, B +300 000", r.result?.
 console.log("\n── Varaq, tafsilot, akt, aging, limit — bir raqam");
 const sheet = await customerDebtSheet(parseDebtDay());
 const rA = sheet.rows.find((x) => x.id === A.id), rB = sheet.rows.find((x) => x.id === B.id);
-check("D10 varaq A: boshlang'ich 3 mln, sotib olgan 2 mln, to'lagan 1 mln, oxiri 4 mln", !!rA && eq2(rA.open.debt, 3_000_000) && eq2(rA.sold, 2_000_000) && eq2(rA.paid, 1_000_000) && eq2(rA.now.debt, 4_000_000), rA);
+check("D10 varaq A: boshlang'ich 3 mln, sotib olgan 3 mln, to'lagan 2 mln, oxiri 4 mln", !!rA && eq2(rA.open.debt, 3_000_000) && eq2(rA.sold, 3_000_000) && eq2(rA.paid, 2_000_000) && eq2(rA.now.debt, 4_000_000), rA);
 check("D11 varaq B: to'lagan −300 000 (boshqa qarzi), qarzdorlik 300 000", !!rB && eq2(rB.paid, -300_000) && eq2(rB.now.debt, 300_000), rB);
 check("D12 varaqda hamma qator: boshi + sotib olgan − to'lagan = oxiri", sheet.rows.every((x) => eq2((x.open.debt - x.open.advance) + x.sold - x.paid, x.now.debt - x.now.advance)));
 const st = await customerStatement(A.id, new Date(iso(30)), new Date());

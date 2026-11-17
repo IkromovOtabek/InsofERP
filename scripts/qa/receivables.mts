@@ -36,7 +36,7 @@ const digits = (s: unknown) => Number(String(s ?? "").replace(/[^\d]/g, ""));
 
 /**
  * Mustaqil hisob (SQL, modulga tayanmasdan): Σ musbat (schyotlar − to'lovlar − kassa qarz to'lovi + mijozga qaytarilgan ±
- * qarz o'tkazmasi), ichki mijozsiz. Qarzga sotuv (reestrning «Qarz» qatorlari) — `debtSales` dan (reestr hisobi `realization-log.ts`).
+ * qarz o'tkazmasi), ichki mijozsiz. Sotuv (reestrning barcha qatorlari) — `debtSales` dan (reestr hisobi `realization-log.ts`).
  */
 async function expectedTotals() {
   const rows = await db.$queryRaw<{ id: string; bal: string }[]>`

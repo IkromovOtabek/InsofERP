@@ -7,6 +7,7 @@ import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 import { MAX_AMOUNT } from "@/lib/action";
 import { loadCategoriesFor, makeResolver } from "@/lib/fin-report/categories";
+import { autoLink, loadPartyIndex } from "@/lib/counterparty-link";
 
 /**
  * Qo'lda kirim/chiqim yozish — yagona joy: veb "Kirim-Chiqim" formasi ham (`cashflow/actions.ts`),
@@ -143,6 +144,14 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
   const cust = await customerLink(customerId, d.supplierId, d.counterparty);
   if ("error" in cust) return { error: cust.error };
   if (cust.customerId && receiptId) return { error: "Kirim hujjati to'lovi mijoz qarziga yozilmaydi" };
+  // Mijoz / yetkazuvchi tanlanmagan, lekin «Kimdan/Kimga» nomi ro'yxatdagiga aniq mos — o'zi bog'lanadi (kassa importidagi
+  // qoida, `lib/counterparty-link.ts`): kirim mijoz qarzidan ayiriladi, chiqim yetkazuvchi haqidan (Otabek, 2026-11-17)
+  if (!cust.customerId && !d.supplierId && !staff.name && !receiptId && !loanId && !projectId && cust.counterparty) {
+    const cat = await db.cashCategory.findFirst({ where: { name: d.category }, select: { pnlLine: true } });
+    const a = autoLink(await loadPartyIndex(), { type: d.type, counterparty: cust.counterparty, category: d.category, refund: cat?.pnlLine === "CUSTOMER_REFUND" });
+    if (a?.customerId) cust.customerId = a.customerId;
+    else if (a?.supplierId) d.supplierId = a.supplierId;
+  }
   d.counterparty = cust.counterparty ?? staff.name;
   if (receiptId && d.type !== "EXPENSE") return { error: "Kirim hujjatiga faqat chiqim (to'lov) bog'lanadi" };
   // Perekit — o'tkazma hujjati (`lib/cash-transfer.ts`), oddiy chiqim bo'lib yozilmaydi

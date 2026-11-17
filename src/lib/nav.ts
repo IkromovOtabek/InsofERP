@@ -48,7 +48,7 @@ export const NAV: NavItem[] = [
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["PRODUCTION", "LOGISTICS"] },
   // Realizatsiya (2026-11-14 Logistikadan ko'chdi, eski Sotuv reestri o'rniga): reys (TTN) qatorlari zayavkadan o'zi tushadi,
-  // tizimdan tashqari jo'natma qo'lda (`lib/realization-log.ts`); «Qarz» turidagi qatorlar mijoz qarziga (`lib/debt-sales.ts`).
+  // tizimdan tashqari jo'natma qo'lda (`lib/realization-log.ts`); barcha qatorlar mijoz debitorkasiga (`lib/debt-sales.ts`).
   // Dispetcher yuritadi (amallar `logistika.real_*`). Sex menyusida yo'q — Zayavkalar sahifasidagi tugmadan
   { href: "/sales/realizatsiya", label: "Realizatsiya",  roles: ["SALES", "PRODUCTION", "LOGISTICS", "DISPATCHER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Sotuv", menuHide: ["PRODUCTION"] },
   // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi

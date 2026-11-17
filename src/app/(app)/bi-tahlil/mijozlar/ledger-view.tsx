@@ -146,7 +146,7 @@ function SoldTable({ l, lines, canEntry }: { l: Ledger; lines: LedgerLine[]; can
         </tr>
       </thead>
       <tbody>
-        {lines.length === 0 && <Empty text={sup ? "Bu davrda kirim yo'q" : "Bu davrda qarzga sotuv yo'q (naqd va perechisleniye sotuv qarzga tushmaydi)"} />}
+        {lines.length === 0 && <Empty text={sup ? "Bu davrda kirim yo'q" : "Bu davrda sotuv yo'q"} />}
         {lines.map((x) => {
           const items = x.items?.length ? x.items : [{ name: x.doc, unit: "", qty: 0, price: 0, delivery: 0, vat: 0, total: x.amount }];
           return (

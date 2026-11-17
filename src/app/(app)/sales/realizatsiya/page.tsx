@@ -17,8 +17,8 @@ import { cn } from "@/lib/utils";
 /**
  * Sotuv → «Realizatsiya» (2026-11-14 Logistikadan ko'chdi; eski Sotuv reestri o'rniga): jo'natmalar reestri Google varag'idagi
  * ustunlar bilan. Reys (TTN) qatorlari zayavkadan o'zi tushadi — dispetcher ortilgan joy, manzil, izohni to'ldiradi
- * (`logistika.real_auto`); tizimga tushmagan jo'natma qo'lda qo'shiladi (`logistika.real_manual`). To'lov turi «Qarz»
- * qatorlar mijoz debitorkasiga tushadi (`lib/debt-sales.ts`); kassa va skladga ta'sir qilmaydi. Hisob — `lib/realization-log.ts`.
+ * (`logistika.real_auto`); tizimga tushmagan jo'natma qo'lda qo'shiladi (`logistika.real_manual`). Barcha qatorlar
+ * (Naqd/Perech./Qarz) mijoz debitorkasiga «Sotib olgan» bo'lib tushadi (`lib/debt-sales.ts`); kassa va skladga ta'sir qilmaydi. Hisob — `lib/realization-log.ts`.
  */
 type SP = { from?: string; to?: string; tur?: string; guruh?: string; manba?: string; joy?: string; q?: string; import?: string };
 
@@ -216,7 +216,7 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
         subtitle={`${period} · ${trips} ta reys (TTN) · ${rows.length} qator`}
         info={canAuto ? <>
           <p>Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi) — faqat shu reestrda (zayavka, kassa va sklad o&apos;zgarmaydi).</p>
-          <p>To&apos;lov turi «Qarz» bo&apos;lgan qator (reysdan ham, qo&apos;lda ham) mijoz qarziga tushadi — Tahlil → Mijoz debitorka, shu reestrdagi summa bilan. Naqd va perechisleniye qarzga tushmaydi.</p>
+          <p>Har qator (reysdan ham, qo&apos;lda/Excel ham; Naqd, Perechisleniye, Qarz) mijoz debitorkasiga «Sotib olgan» bo&apos;lib tushadi — Tahlil → Mijoz debitorka, shu reestrdagi summa bilan. «To&apos;lagan» — kassada shu mijozga bog&apos;langan kirim. Ro&apos;yxatda yo&apos;q xaridor mijozlarga o&apos;zi qo&apos;shiladi.</p>
           <p>Qo&apos;lda kiritilgan qator — sariq fonda, chap chetida sariq chiziq.</p>
           <p>Tuzatilgan qiymat <span className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">sariq tagchiziqli</span>, ustiga olib borilsa zayavkadagi qiymat ko&apos;rinadi; katak bo&apos;shatilsa o&apos;shanga qaytadi.</p>
         </> : undefined}
