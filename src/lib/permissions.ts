@@ -121,6 +121,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "pay_approve", label: "Reys haqini tasdiqlash (naqd → kassa, oylik → vedomost)", roles: ["SUPERVISOR"] },
     { key: "ledger",   label: "Hisob varag'i: qo'lda qator va qatorlarni tahrirlash (hamma ustun)", roles: ["LOGISTICS", "DISPATCHER"], hint: "ECO'ga tushmagan reys qatori, km, zapravka, xarajat; reys haqi — «Reys narxi» ruxsati bilan, haq ish boshqaruvchi tasdig'iga boradi" },
     { key: "real_auto", label: "Realizatsiya: reysdan tushgan qatorni to'ldirish (ortilgan joy, manzil, izoh)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Sotuv → Realizatsiya. Qatorlar reyslardan (TTN) o'zi tushadi; miqdor, narx va mijoz zayavkadan" },
+    { key: "real_source", label: "Realizatsiya: tahrir zayavka va reysga yoziladi (xaridor, sana, to'lov turi, mashina, mahsulot, miqdor, narx, dastavka)", roles: ["LOGISTICS", "DISPATCHER"], hint: "Reysdan tushgan qatordagi tahrir zayavka, reys, sklad jo'natmasi, Tahlil va debitorkada ham o'zgaradi. Bu huquqsiz «to'ldirish» huquqi bilan tahrir faqat reestrda qoladi" },
     { key: "real_manual", label: "Realizatsiya: qo'lda qator kiritish, tuzatish, bekor qilish", roles: ["LOGISTICS", "DISPATCHER"], hint: "Tizimga reys bo'lib tushmagan jo'natma (Sotuv → Realizatsiya). Mijoz debitorkasiga «Sotib olgan» bo'lib tushadi; kassa va skladga ta'sir qilmaydi" },
     { key: "settings", label: "Logistika sozlamalari",           roles: ["LOGISTICS"] },
     // Logistika moliyasi — alohida hisob (`lib/logistics-finance.ts`). Summalar faqat direktor, ish boshqaruvchi va mexanikka
@@ -139,6 +140,8 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "adjust",    label: "Inventarizatsiya va spisanie",   roles: ["WAREHOUSE"] },
     { key: "brigade",   label: "Brigadaga berish / qaytarish",   roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR"] },
     { key: "products",  label: "Tayyor mahsulot qo'shish (qatorlar, yangi mahsulot, nomini tahrirlash)", roles: ["WAREHOUSE", "PRODUCTION", "SUPERVISOR"] },
+    { key: "yard_edit", label: "Tayyor mahsulot: kirim/chiqim yozuvini tahrirlash (miqdor, sana, izoh)", roles: [], hint: "Sklad → Tayyor mahsulotlar: Kirim/Chiqim katagi bosilganda ochiladigan oynada. Reys yoki topshiriq hujjati o'zgarmaydi — faqat sklad harakati" },
+    { key: "yard_delete", label: "Tayyor mahsulot: kirim/chiqim yozuvini o'chirish", roles: [], hint: "Yozuv skladdan butunlay o'chadi (AuditLog'da qoladi) — odatda faqat direktor" },
     { key: "import",    label: "Xomashyo import",                roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"] },
     { key: "suppliers", label: "Yetkazuvchilar",                 roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
     { key: "dispatch",  label: "Dispetcher ombori: avto zapchast / yoqilg'ini skladdan o'ziga olish, mashinaga berish, qaytarish", roles: ["DISPATCHER"], hint: "Skladga qo'sha olmaydi: asosiy skladdan oladi, mashinaga bergani zapravka yoki transport xarajati bo'lib tushadi" },

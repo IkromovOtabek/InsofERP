@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import "./globals.css";
 import { ScriptProvider } from "@/components/script-provider";
+import { ModalScrollGuard } from "@/components/modal-scroll-guard";
 import { YOZUV_SCRIPT, YOZUV_STYLE } from "@/lib/translit";
 
 // Asosiy shrift — geometrik, keng, sarlavhalarda kuchli
@@ -38,7 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <style dangerouslySetInnerHTML={{ __html: YOZUV_STYLE }} />
         <script dangerouslySetInnerHTML={{ __html: YOZUV_SCRIPT }} />
       </head>
-      <body className="min-h-screen antialiased"><ScriptProvider>{children}</ScriptProvider></body>
+      <body className="min-h-screen antialiased"><ScriptProvider>{children}</ScriptProvider><ModalScrollGuard /></body>
     </html>
   );
 }

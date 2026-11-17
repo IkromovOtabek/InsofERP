@@ -81,7 +81,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "haydovchilar", label: "Haydovchilar", paths: ["/logistika/haydovchilar"], actions: ["drivers", "driver_login"] },
     { key: "tabel", label: "Haydovchilar tabeli", paths: ["/logistika/tabel"], actions: ["pay", "pay_approve", "ledger"] },
     // Oyna Sotuv bo'limida (`sales.realizatsiya`, 2026-11-14 ko'chdi) — amallar shu modulda qoldi (berilgan ruxsatlar saqlansin)
-    { key: "realizatsiya", label: "Realizatsiya amallari (Sotuv → Realizatsiya oynasida)", actions: ["real_auto", "real_manual"] },
+    { key: "realizatsiya", label: "Realizatsiya amallari (Sotuv → Realizatsiya oynasida)", actions: ["real_auto", "real_source", "real_manual"] },
     { key: "obyektlar", label: "Obyektlar", paths: ["/logistika/obyektlar"], actions: ["sites"] },
     { key: "monitoring", label: "GPS / Monitoring", paths: ["/logistika/monitoring"], actions: [] },
     { key: "nakladnoy", label: "Nakladnoylar va yetkazish", paths: ["/logistika/nakladnoylar", "/logistika/yetkazish"], actions: [] },
@@ -94,7 +94,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "kirim", label: "Kirim", paths: ["/stock/prixod", "/receipts"], actions: ["receipt", "receipt_storno"] },
     { key: "chiqim", label: "Chiqim", paths: ["/stock/rasxod", "/oluvchi"], actions: ["issue", "issue_storno"] },
     { key: "holat", label: "Sklad holati — xomashyo", inPage: true, notRoles: ["MECHANIC"], actions: [] },
-    { key: "hovli", label: "Hovli va tayyor mahsulot", inPage: true, paths: ["/stock/products"], notRoles: ["MECHANIC"], actions: ["products"] },
+    { key: "hovli", label: "Hovli va tayyor mahsulot", inPage: true, paths: ["/stock/products"], notRoles: ["MECHANIC"], actions: ["products", "yard_edit", "yard_delete"] },
     { key: "brigada", label: "Brigadalarga berish", inPage: true, actions: ["brigade"] },
     { key: "inventar", label: "Inventarizatsiya va hisobdan chiqarish", paths: ["/stock/inventarizatsiya", "/stock/spisanie"], actions: ["adjust"] },
     { key: "jonatma", label: "Jo'natmalar", paths: ["/jonatma"], actions: ["shipment", "shipment_accept"] },

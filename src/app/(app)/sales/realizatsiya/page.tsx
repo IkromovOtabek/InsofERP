@@ -5,7 +5,7 @@ import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { dateRu, fmtNum, fmtTiyin, isoDate, opAt } from "@/lib/format";
-import { LINE_CELLS, realizationLog, realizationOptions, type AutoCell, type LogRow, type LogSource } from "@/lib/realization-log";
+import { LINE_CELLS, SOURCE_LINE_CELLS, SOURCE_NOTE_CELLS, realizationLog, realizationOptions, type AutoCell, type LogRow, type LogSource } from "@/lib/realization-log";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
@@ -45,9 +45,13 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
 
   const canAuto = canDo(s, "logistika", "real_auto");
   const canManual = canDo(s, "logistika", "real_manual");
+  // Reysdan qatordagi tahrir zayavka/reysning o'ziga yoziladi (xaridor, sana, to'lov turi, mashina, mahsulot, miqdor, narx, dastavka)
+  const canSource = canDo(s, "logistika", "real_source");
+  const SOURCE = new Set<string>([...SOURCE_NOTE_CELLS, ...SOURCE_LINE_CELLS]);
+  const autoOk = (field: string) => canAuto || (canSource && SOURCE.has(field));
   // TTN reysning o'zida — reys ochuvchi yoki reestrni yurituvchi dispetcher yozadi
   const canTtn = canAuto || canDo(s, "trips", "create");
-  const [log, options] = await Promise.all([realizationLog(from, to), canAuto || canManual || canTtn ? realizationOptions() : null]);
+  const [log, options] = await Promise.all([realizationLog(from, to), canAuto || canSource || canManual || canTtn ? realizationOptions() : null]);
   // Eng yangi kun tepada (bugun, bo'lmasa oxirgi jo'natma kuni); kun ichida varaqdagi tartib (TTN) qoladi — sort barqaror
   const all = log.sort((a, b) => isoDate(b.date).localeCompare(isoDate(a.date)));
   const orderLink = pathAllowed("/orders", s.role, s.perms);
@@ -118,7 +122,7 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
           // Har katakda qalamcha: qo'lda qatorda hamma ustun; reysdan qatorda xaridordan boshqasi — faqat reestrda tuzatiladi
           // (reys bo'yicha «a:», mahsulot qatori bo'yicha «l:»), bo'shatilsa zayavkadagi qiymat qaytadi
           const manual = !auto && canManual ? `m:${r.ref}` : null;
-          const target = (field: string) => manual ?? (auto && canAuto && r.line ? ((LINE_CELLS as readonly string[]).includes(field) ? `l:${r.line}` : `a:${r.ref}`) : null);
+          const target = (field: string) => manual ?? (auto && autoOk(field) && r.line ? ((LINE_CELLS as readonly string[]).includes(field) ? `l:${r.line}` : `a:${r.ref}`) : null);
           type Opt = { kind?: "text" | "number" | "date" | "pay" | "unit"; list?: CellList; placeholder?: string; right?: boolean };
           const edit = (field: string, label: string, value: string, node: React.ReactNode, o: Opt = {}) => {
             const t = target(field);
@@ -144,9 +148,12 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
               </SheetTd>
               <SheetTd className={cn("font-medium whitespace-nowrap", PAY_COLOR[r.pay])}>{edit("payGroup", "To'lov turi", r.pay, <span title={r.payLabel}>{PAY_SHORT[r.pay]}</span>, { kind: "pay" })}</SheetTd>
               <SheetTd>{edit("seller", "Sotuvchi", r.seller, clip(r.seller, "max-w-24"), { list: "sellers" })}</SheetTd>
-              {/* Xaridor reysdan qatorda tuzatilmaydi — u zayavkada */}
+              {/* Xaridor reysdan qatorda — zayavkaning mijozi («zayavka va reysni tahrirlash» huquqi bilan almashtiriladi) */}
               <SheetTd className="font-medium text-slate-900">{auto
-                ? clip(r.customer, "max-w-36", orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="hover:underline">{r.customer}</Link> : undefined)
+                ? (() => {
+                  const node = clip(r.customer, "max-w-36", orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="hover:underline">{r.customer}</Link> : undefined);
+                  return canSource ? <CellEdit target={`a:${r.ref}`} field="customerName" label="Xaridor" value={r.customer} list="customers">{node}</CellEdit> : node;
+                })()
                 : edit("customerName", "Xaridor", r.customer, clip(r.customer, "max-w-36"), { list: "customers" })}</SheetTd>
               <SheetTd>{edit("productName", "Mahsulot", r.product, clip(r.product, "max-w-28"), { list: "products" })}</SheetTd>
               <SheetTd className="whitespace-nowrap tabular">
@@ -214,8 +221,12 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
       <PageHeader
         title="Realizatsiya"
         subtitle={`${period} · ${trips} ta reys (TTN) · ${rows.length} qator`}
-        info={canAuto ? <>
-          <p>Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi) — faqat shu reestrda (zayavka, kassa va sklad o&apos;zgarmaydi).</p>
+        info={canAuto || canSource ? <>
+          {canSource ? <>
+            <p>Reysdan tushgan qatorda har ustun katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi). Xaridor, sana, to&apos;lov turi, mashina, mahsulot, miqdor, narx va dastavka zayavka va reysning o&apos;ziga yoziladi — zayavka, reys, nakladnoy, sklad jo&apos;natmasi, Tahlil va debitorkada ham o&apos;zgaradi.</p>
+            <p>Narx va mahsulot zayavka qatoriniki — shu qatorning hamma reysida o&apos;zgaradi; to&apos;lov turi, xaridor va dastavka — butun zayavkaniki. Miqdor reys yukiga yoziladi va sklad chiqimi farqqa tuzatiladi (ko&apos;p mahsulotli zayavkada miqdor faqat reestrda). Schyot yoki to&apos;lov bog&apos;langan zayavkada xaridor almashtirilmaydi.</p>
+            <p>Sotuvchi, guruh, o&apos;lchov, ortilgan joy, manzil, izoh va spravka nomi — faqat shu reestrda. Summa, QQS va Jami miqdor, narx va dastavkadan hisoblanadi.</p>
+          </> : <p>Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi) — faqat shu reestrda (zayavka, kassa va sklad o&apos;zgarmaydi).</p>}
           <p>Har qator (reysdan ham, qo&apos;lda/Excel ham; Naqd, Perechisleniye, Qarz) mijoz debitorkasiga «Sotib olgan» bo&apos;lib tushadi — Tahlil → Mijoz debitorka, shu reestrdagi summa bilan. «To&apos;lagan» — kassada shu mijozga bog&apos;langan kirim. Ro&apos;yxatda yo&apos;q xaridor mijozlarga o&apos;zi qo&apos;shiladi.</p>
           <p>Qo&apos;lda kiritilgan qator — sariq fonda, chap chetida sariq chiziq.</p>
           <p>Tuzatilgan qiymat <span className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">sariq tagchiziqli</span>, ustiga olib borilsa zayavkadagi qiymat ko&apos;rinadi; katak bo&apos;shatilsa o&apos;shanga qaytadi.</p>

@@ -1,7 +1,8 @@
 import type { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { COMMON_YARD } from "./brigade-products";
-import { STOCK_EPS } from "./stock-lock";
+import { STOCK_EPS, lockStock } from "./stock-lock";
+import { audit } from "./audit";
 
 /**
  * Hovli (tayyor dona mahsulot) harakatlari — Sklad → «Hovli va tayyor mahsulot» jadvalidagi Kirim / Chiqim katagi bosilganda
@@ -22,6 +23,8 @@ export type YardMoveRow = {
   doc: { label: string; href: string | null } | null;
   /** Bekor qilish (storno) yozuvi */
   storno: boolean;
+  /** Tahrir formasi uchun: izoh to'liq (yuqoridagi `note` amal nomini takrorlasa bo'sh) */
+  rawNote: string | null;
 };
 export type YardMoves = {
   product: { id: string; name: string; unit: string };
@@ -31,6 +34,8 @@ export type YardMoves = {
   sumIn: number; sumOut: number; count: number;
   /** Shu ombordagi hozirgi qoldiq (davrdan qat'i nazar) */
   balance: number;
+  /** Yozuvni tahrirlash / o'chirish huquqi (`stock.yard_edit`, `stock.yard_delete`) — oynada tugmalar */
+  can?: { edit: boolean; del: boolean };
 };
 
 const LIMIT = 300;
@@ -132,7 +137,7 @@ export async function yardMoves(p: { productId: string; owner: YardOwner; dir: Y
       owner: m.ownerBrigade?.name ?? COMMON_YARD, warehouse: m.warehouse.name, who: m.createdBy?.fullName ?? null,
       // Izoh amal nomini takrorlasa («Qo'lda qo'shildi») — ko'rsatilmaydi
       note: m.note && m.note.trim().toLowerCase() !== kind.toLowerCase() ? m.note : null,
-      doc, storno: !!m.note && (m.note.startsWith("Storno ") || m.note.startsWith("Bekor qilish ")),
+      doc, storno: !!m.note && (m.note.startsWith("Storno ") || m.note.startsWith("Bekor qilish ")), rawNote: m.note,
     };
   });
   return {
@@ -145,3 +150,102 @@ export async function yardMoves(p: { productId: string; owner: YardOwner; dir: Y
     balance: (() => { const b = r3(Number(bal._sum.qty ?? 0)); return Math.abs(b) <= STOCK_EPS ? 0 : b; })(),
   };
 }
+
+// ───────────────────────── Yozuvni tahrirlash / o'chirish ─────────────────────────
+
+/**
+ * Tayyor mahsulot harakatini tuzatish (Otabek 2026-11-17: «kirim yoki chiqim — ustunlardagi qo'shilganlarni tahrirlash, o'chirish»):
+ * `stock.yard_edit` — miqdor, sana, izoh; `stock.yard_delete` — yozuv bazadan o'chadi. Har yozuv (qo'lda, reys, topshiriq, brak) —
+ * faqat sklad harakati o'zgaradi, hujjatning o'zi (reys, topshiriq) o'zgarmaydi. Oldingi va yangi qiymat AuditLog'da.
+ *  · Yo'nalish (kirim/chiqim) saqlanadi — miqdor musbat yoziladi.
+ *  · Brigadalar orasidagi ko'chirish juft yozuv: biri o'zgarsa ikkinchisi ham (qarama-qarshi ishora bilan), o'chirilsa — ikkalasi.
+ *  · Ombor qoldig'i manfiyga tushadigan o'zgarish rad etiladi (`lockStock` ostida tekshiriladi).
+ */
+export type YardEdit = { qty: number; date: string; note: string };
+type EditResult = { ok: true } | { error: string };
+
+const moveSel = { id: true, type: true, qty: true, date: true, note: true, refId: true, refType: true, productId: true, warehouseId: true, ownerBrigadeId: true } as const;
+
+async function withPair(tx: Prisma.TransactionClient, id: string) {
+  const m = await tx.stockMove.findUnique({ where: { id }, select: moveSel });
+  if (!m || !m.productId) return null;
+  const pair = m.type === "OWNER_TRANSFER"
+    ? await tx.stockMove.findFirst({ where: { type: "OWNER_TRANSFER", id: { not: m.id }, OR: [{ refId: m.id }, ...(m.refId ? [{ id: m.refId }] : [])] }, select: moveSel })
+    : null;
+  return { m, pair };
+}
+
+/** Ombor (sklad + mahsulot + brigada) qoldig'i shu o'zgarishdan keyin manfiy bo'lmasin; `delta` — qoldiqqa qo'shiladigan farq */
+async function checkBalance(tx: Prisma.TransactionClient, m: { warehouseId: string; productId: string | null; ownerBrigadeId: string | null }, delta: number): Promise<string | null> {
+  if (delta >= -STOCK_EPS) return null;
+  const b = await tx.stockMove.aggregate({ where: { warehouseId: m.warehouseId, productId: m.productId, ownerBrigadeId: m.ownerBrigadeId }, _sum: { qty: true } });
+  const now = Number(b._sum.qty ?? 0);
+  if (now + delta < -STOCK_EPS) {
+    const who = m.ownerBrigadeId ? (await tx.brigade.findUnique({ where: { id: m.ownerBrigadeId }, select: { name: true } }))?.name ?? "brigada" : COMMON_YARD;
+    return `${who} omborida qoldiq ${r3(now)} — bu o'zgarishdan keyin ${r3(now + delta)} bo'lib qoladi. Avval chiqimlarni tuzating`;
+  }
+  return null;
+}
+
+class YardError extends Error {}
+
+export async function editYardMove(id: string, input: YardEdit, userId: string): Promise<EditResult> {
+  const amount = r3(Math.abs(Number(input.qty)));
+  if (!Number.isFinite(amount) || amount <= 0) return { error: "Miqdor 0 dan katta bo'lsin" };
+  if (amount > 1_000_000) return { error: "Miqdor juda katta" };
+  const d = day(input.date);
+  if (!d) return { error: "Sanani tanlang" };
+  if (d.getTime() > Date.now() + 86_400_000) return { error: "Sana kelajakda bo'lmasin" };
+  const note = String(input.note ?? "").trim().replace(/\s+/g, " ").slice(0, 300) || null;
+  try {
+    await db.$transaction(async (tx) => {
+      await lockStock(tx);
+      const got = await withPair(tx, id);
+      if (!got) throw new YardError("Yozuv topilmadi — oynani yangilang");
+      const { m, pair } = got;
+      const old = Number(m.qty);
+      const qty = old < 0 ? -amount : amount;
+      // Sana kuni o'zgarsa — soat saqlanadi
+      const date = new Date(d); date.setHours(m.date.getHours(), m.date.getMinutes(), m.date.getSeconds(), m.date.getMilliseconds());
+      const sameDay = isoDay(m.date) === input.date;
+      const err = await checkBalance(tx, m, qty - old) ?? (pair ? await checkBalance(tx, pair, -qty - Number(pair.qty)) : null);
+      if (err) throw new YardError(err);
+      const data = { qty, date: sameDay ? m.date : date, note };
+      await tx.stockMove.update({ where: { id: m.id }, data });
+      await audit(tx, userId, "UPDATE", "StockMove", m.id, { qty: m.qty, date: m.date, note: m.note }, { ...data, via: "yard-edit" });
+      if (pair) {
+        const pd = { qty: -qty, date: data.date };
+        await tx.stockMove.update({ where: { id: pair.id }, data: pd });
+        await audit(tx, userId, "UPDATE", "StockMove", pair.id, { qty: pair.qty, date: pair.date }, { ...pd, via: "yard-edit-pair" });
+      }
+    });
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof YardError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function deleteYardMove(id: string, userId: string): Promise<EditResult> {
+  try {
+    await db.$transaction(async (tx) => {
+      await lockStock(tx);
+      const got = await withPair(tx, id);
+      if (!got) throw new YardError("Yozuv topilmadi — oynani yangilang");
+      for (const x of [got.m, ...(got.pair ? [got.pair] : [])]) {
+        const err = await checkBalance(tx, x, -Number(x.qty));
+        if (err) throw new YardError(err);
+      }
+      for (const x of [got.m, ...(got.pair ? [got.pair] : [])]) {
+        await tx.stockMove.delete({ where: { id: x.id } });
+        await audit(tx, userId, "DELETE", "StockMove", x.id, x, { via: "yard-delete" });
+      }
+    });
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof YardError) return { error: e.message };
+    throw e;
+  }
+}
+
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

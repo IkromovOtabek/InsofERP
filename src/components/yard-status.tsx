@@ -7,7 +7,7 @@ import { unitShort } from "@/lib/unit";
 import { Card, InfoButton, LinkButton, Section, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr } from "@/components/ui";
 import { StockPeriodBar, type StockPeriod } from "@/components/stock-period";
 import { YardMovesHost } from "@/components/yard-moves-dialog";
-import { yardMovesInfo } from "@/app/(app)/stock/yard-actions";
+import { deleteYardMoveAction, editYardMoveAction, yardMovesInfo } from "@/app/(app)/stock/yard-actions";
 import { cn } from "@/lib/utils";
 
 /**
@@ -142,7 +142,7 @@ export async function YardStatus({ ombor, period, canDistribute = false }: {
               {t.columns.map((c) => chip(chipHref(urlKey(c.key)), pick === urlKey(c.key), c.name, t.rows.reduce((a, r) => a + cellOf(r, c.key).close, 0), c.owner === null))}
             </div>
           )}
-          <YardMovesHost load={yardMovesInfo} from={period.fromStr} to={period.toStr} periodLabel={`Davr: ${period.label}`}>
+          <YardMovesHost load={yardMovesInfo} edit={editYardMoveAction} remove={deleteYardMoveAction} from={period.fromStr} to={period.toStr} periodLabel={`Davr: ${period.label}`}>
           <Sheet lang="uz" maxHeight="75vh">
             <SheetHead>
               <tr>

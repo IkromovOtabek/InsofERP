@@ -9,9 +9,9 @@ import { parseForm, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 import { setTripTtn } from "@/lib/trips";
 import {
-  ENTRY_CELLS, ENTRY_LABELS as LABEL, LINE_CELLS, NOTE_CELLS, TRIP_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, listProblems, noteSchema,
-  saveRealizationLineField, saveRealizationNote, saveRealizationNoteField, saveRealizationTripField, updateRealizationEntry, updateRealizationEntryField,
-  type EntryCell, type ImportRow, type LineCell, type NoteCell, type TripCell,
+  ENTRY_CELLS, ENTRY_LABELS as LABEL, LINE_CELLS, NOTE_CELLS, SOURCE_LINE_CELLS, SOURCE_NOTE_CELLS, TRIP_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, listProblems, noteSchema,
+  saveRealizationLineField, saveRealizationNote, saveRealizationNoteField, saveRealizationTripField, saveSourceLineField, saveSourceNoteField, updateRealizationEntry, updateRealizationEntryField,
+  type EntryCell, type FieldResult, type ImportRow, type LineCell, type NoteCell, type SourceLineCell, type SourceNoteCell, type TripCell,
 } from "@/lib/realization-log";
 
 /**
@@ -108,6 +108,25 @@ export async function saveRealizationNoteAction(key: string, _prev: ActionState,
 export async function saveRealizationCellAction(target: string, field: string, value: string): Promise<ActionState> {
   const v = String(value ?? "");
   const id = target.slice(2);
+  // «Zayavka va reysni tahrirlash» huquqi bilan reysdan qatordagi tahrir manbaning o'ziga (`real_source`, `lib/realization-log.ts`);
+  // manbaga yozilmaydigan holat (`null`: ko'p mahsulotli reys miqdori, yuklanmagan reys sanasi …) — reestrga, pastdagi kabi
+  const src = target.startsWith("a:") && (SOURCE_NOTE_CELLS as readonly string[]).includes(field) ? "note"
+    : target.startsWith("l:") && (SOURCE_LINE_CELLS as readonly string[]).includes(field) ? "line" : null;
+  if (src) {
+    const s = await getSession();
+    if (!s) throw notSignedIn();
+    if (canDo(s, "logistika", "real_source")) {
+      const res: FieldResult | null = src === "note"
+        ? await saveSourceNoteField(id, field as SourceNoteCell, v, s.userId)
+        : await saveSourceLineField(id, field as SourceLineCell, v, s.userId);
+      if (res) {
+        if ("error" in res) return formError(res);
+        refresh();
+        for (const p of ["/orders", "/trips", "/stock", "/customers", "/bi-tahlil"]) revalidatePath(p, "layout");
+        return { ok: true };
+      }
+    } else if (field === "customerName") throw new AccessDenied("Xaridorni o'zgartirish uchun «Realizatsiya: tahrir zayavka va reysga yoziladi» ruxsati kerak — direktordan so'rang");
+  }
   if (target.startsWith("m:") && (ENTRY_CELLS as readonly string[]).includes(field)) {
     const s = await requireAction("logistika", "real_manual");
     const res = await updateRealizationEntryField(id, field as EntryCell, v, s.userId);

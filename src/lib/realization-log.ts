@@ -11,6 +11,8 @@ import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realizatio
 import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-sheet";
 import { nextCatalogCode } from "@/lib/numbering";
 import { defaultCreditLimit } from "@/lib/credit-default";
+import { ensureSite } from "@/lib/logistics";
+import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
 
 /**
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
@@ -780,4 +782,285 @@ export async function linkEntriesIn(tx: Prisma.TransactionClient, userId: string
     await auditMany(tx, userId, "UPDATE", "RealizationEntry", ids.map((id) => ({ id, after: { customerId, via: "realization-link" } })));
   }
   return { linked, newCustomers: cust.created };
+}
+
+// ───────────────────────── Reysdan qatorni manbada tuzatish (zayavka va reys) ─────────────────────────
+
+/**
+ * «Realizatsiya: zayavka va reysni tahrirlash» (`logistika.real_source`, Otabek 2026-11-17: «tahrirlangandan keyin boshqa joylar ham
+ * o'zgarsin»): reysdan qatordagi tahrir reestrga emas, manbaning o'ziga yoziladi — zayavka, reys, Tahlil, debitorka, mijoz kartasi,
+ * nakladnoy hammasi yangi qiymatni ko'radi. Shu ustunning reestrdagi eski tuzatishi (`RealizationNote`/`RealizationLine`) olib tashlanadi.
+ *  · Xaridor → zayavka mijozi (ro'yxatda yo'q bo'lsa mijozlarga qo'shiladi). Schyot, to'lov yoki bosh to'lov so'rovi bor zayavkada — rad.
+ *  · Sana → reysning yuklangan (va yetkazilgan) vaqti soati saqlanib, sklad jo'natma yozuvi sanasi ham; reyssiz zayavkada — yetkazish sanasi.
+ *  · To'lov turi → zayavkaning «qarzga» belgisi va to'lov usuli. Mashina → reys texnikasi (raqami ro'yxatda bo'lishi shart).
+ *  · Mahsulot → zayavka qatori mahsuloti (katalogda bo'lishi, o'lchovi bir xil bo'lishi shart) va shu zayavka reyslarining sklad yozuvlari.
+ *  · Miqdor → reys yuki (bitta mahsulotli zayavkada; ko'p mahsulotlida reys yuki qatorlarga bo'lingani uchun — faqat reestrda) va
+ *    sklad jo'natmasiga farq yoziladi; reyssiz zayavkada — zayavka qatori miqdori.
+ *  · Narx → zayavka qatori narxi (QQS belgisi bo'lsa QQS qo'shib saqlanadi) — shu qatorning hamma reysiga. Dastavka → zayavka dastavkasi.
+ * Sotuvchi, guruh, o'lchov, ortilgan joy, manzil, izoh, spravka nomi va reyssiz qator TTN'i — reestrda (ular zayavka/reysning
+ * o'z maydoni emas yoki butun katalogga ta'sir qiladi). `null` qaytsa — bu katak manbaga yozilmaydi, chaqiruvchi reestrga yozadi.
+ */
+export const SOURCE_NOTE_CELLS = ["customerName", "date", "payGroup", "vehicle"] as const;
+export type SourceNoteCell = (typeof SOURCE_NOTE_CELLS)[number];
+export const SOURCE_LINE_CELLS = ["productName", "qty", "price", "delivery"] as const;
+export type SourceLineCell = (typeof SOURCE_LINE_CELLS)[number];
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const plateKey = (v: string) => v.replace(/[\s-]/g, "").toUpperCase();
+
+/** Shu ustunlarning reestrdagi tuzatishini olib tashlash (manbaga yozilgani ko'rinsin). */
+async function dropNote(tx: Prisma.TransactionClient, key: string, fields: string[]) {
+  const n = await tx.realizationNote.findUnique({ where: { key } });
+  if (n && fields.some((f) => n[f as keyof RealizationNote] != null)) await tx.realizationNote.update({ where: { key }, data: Object.fromEntries(fields.map((f) => [f, null])) });
+}
+async function dropLine(tx: Prisma.TransactionClient, keys: string[], fields: string[]) {
+  if (!keys.length) return;
+  await tx.realizationLine.updateMany({ where: { key: { in: keys } }, data: Object.fromEntries(fields.map((f) => [f, null])) });
+}
+
+class SourceError extends Error {}
+const run = async (f: () => Promise<void>, id: string, field: string): Promise<FieldResult> => {
+  try { await f(); return { ok: true, id }; } catch (e) {
+    if (e instanceof SourceError) return { error: e.message, field };
+    throw e;
+  }
+};
+
+const orderOf = (id: string) => db.order.findUnique({
+  where: { id },
+  select: {
+    id: true, kind: true, status: true, customerId: true, siteId: true, deliveryAddress: true, lat: true, lng: true, deliveryDate: true,
+    payMethod: true, onCredit: true, deliveryFee: true, updatedAt: true,
+    customer: { select: { name: true } }, site: { select: { customerId: true } },
+    trips: { where: { status: { not: "CANCELLED" } }, select: { id: true } },
+    _count: { select: { invoices: { where: { status: { not: "CANCELLED" } } }, payments: true } }, payRequest: { select: { id: true } },
+  },
+});
+
+/** Reys bo'yicha ustun (`key` — reys id yoki «o:<zayavka id>»). */
+export async function saveSourceNoteField(key: string, field: SourceNoteCell, value: string, userId: string): Promise<FieldResult | null> {
+  const tripId = key.startsWith("o:") ? null : key;
+  const trip = tripId ? await db.trip.findUnique({ where: { id: tripId }, select: { id: true, orderId: true, status: true, loadedAt: true, deliveredAt: true, vehicleId: true } }) : null;
+  if (tripId && !trip) return { error: "Reys topilmadi" };
+  const o = await orderOf(trip?.orderId ?? key.slice(2));
+  if (!o || o.kind !== "SALE") return { error: "Zayavka topilmadi" };
+  if (o.status === "CANCELLED") return { error: "Zayavka bekor qilingan", field };
+  const v = value.trim();
+
+  if (field === "customerName") {
+    if (v.length < 2) return { error: "Xaridor nomini yozing", field };
+    if (v.toLowerCase() === o.customer.name.toLowerCase()) return { ok: true, id: key };
+    if (o._count.invoices || o._count.payments || o.payRequest)
+      return { error: "Zayavkaga schyot, to'lov yoki bosh to'lov so'rovi bog'langan — xaridorni avval o'shalarda tuzating", field };
+    const found = (await entryLookup([v], [])).customer(v);
+    return run(async () => {
+      await db.$transaction(async (tx) => {
+        const customerId = found ?? (await addMissingCustomers(tx, [{ customerId: null, customerName: v }], userId)).idOf(v);
+        if (!customerId) throw new SourceError("Xaridor topilmadi");
+        // Obyekt kartasi mijozniki — yangi mijozga shu manzil bilan (bor bo'lsa o'sha)
+        const siteId = o.siteId && o.site?.customerId !== customerId ? await ensureSite(tx, customerId, o.deliveryAddress, { lat: o.lat, lng: o.lng }) : o.siteId;
+        const u = await tx.order.updateMany({ where: { id: o.id, customerId: o.customerId, updatedAt: o.updatedAt }, data: { customerId, siteId } });
+        if (u.count !== 1) throw new SourceError("Zayavka shu payt o'zgardi — sahifani yangilang");
+        await audit(tx, userId, "UPDATE", "Order", o.id, { customerId: o.customerId, siteId: o.siteId }, { customerId, siteId, via: "realizatsiya" });
+      });
+    }, key, field);
+  }
+
+  if (field === "date") {
+    const p = dayField.safeParse(v);
+    if (!p.success) return issue(p.error, field);
+    if (!p.data) return { error: "Sanani tanlang", field };
+    const day = p.data;
+    if (future(day)) return { error: "Sana kelajakda bo'lmasin", field };
+    // Hali yuklanmagan reysda yuklangan vaqt yo'q — sana faqat reestrda
+    if (trip && !trip.loadedAt) return null;
+    return run(async () => {
+      await db.$transaction(async (tx) => {
+        if (trip) {
+          const old = trip.loadedAt!;
+          const at = new Date(day); at.setHours(old.getHours(), old.getMinutes(), old.getSeconds(), old.getMilliseconds());
+          const shift = at.getTime() - old.getTime();
+          if (shift) {
+            const deliveredAt = trip.deliveredAt ? new Date(trip.deliveredAt.getTime() + shift) : null;
+            const u = await tx.trip.updateMany({ where: { id: trip.id, loadedAt: old }, data: { loadedAt: at, ...(deliveredAt ? { deliveredAt } : {}) } });
+            if (u.count !== 1) throw new SourceError("Reys shu payt o'zgardi — sahifani yangilang");
+            // Skladdagi jo'natma yozuvi ham shu kunga (qoldiq hisobotlari sana bo'yicha)
+            const moves = await tx.stockMove.findMany({ where: { refType: "Trip", refId: trip.id, type: "SHIPMENT" }, select: { id: true, date: true } });
+            for (const m of moves) await tx.stockMove.update({ where: { id: m.id }, data: { date: new Date(m.date.getTime() + shift) } });
+            await audit(tx, userId, "UPDATE", "Trip", trip.id, { loadedAt: old, deliveredAt: trip.deliveredAt }, { loadedAt: at, deliveredAt, via: "realizatsiya" });
+          }
+        } else if (isoDate(day) !== isoDate(o.deliveryDate)) {
+          const u = await tx.order.updateMany({ where: { id: o.id, updatedAt: o.updatedAt }, data: { deliveryDate: day } });
+          if (u.count !== 1) throw new SourceError("Zayavka shu payt o'zgardi — sahifani yangilang");
+          await audit(tx, userId, "UPDATE", "Order", o.id, { deliveryDate: o.deliveryDate }, { deliveryDate: day, via: "realizatsiya" });
+        }
+        await dropNote(tx, key, ["date"]);
+      });
+    }, key, field);
+  }
+
+  if (field === "payGroup") {
+    if (!(PAY_KEYS as string[]).includes(v)) return { error: "To'lov turini tanlang", field };
+    const data = v === "DEBT" ? { onCredit: true } : { onCredit: false, payMethod: v === "BANK" ? "BANK" as const : "CASH" as const };
+    return run(async () => {
+      await db.$transaction(async (tx) => {
+        const u = await tx.order.updateMany({ where: { id: o.id, updatedAt: o.updatedAt }, data });
+        if (u.count !== 1) throw new SourceError("Zayavka shu payt o'zgardi — sahifani yangilang");
+        await audit(tx, userId, "UPDATE", "Order", o.id, { onCredit: o.onCredit, payMethod: o.payMethod }, { ...data, via: "realizatsiya" });
+        await dropNote(tx, key, ["payGroup"]);
+      });
+    }, key, field);
+  }
+
+  // Mashina: reyssiz (o'zi olib ketgan) qatorda — faqat reestrda
+  if (!trip) return null;
+  if (!v) return { error: "Mashina raqamini yozing", field };
+  const vehicles = await db.vehicle.findMany({ select: { id: true, plate: true } });
+  const hit = vehicles.find((x) => plateKey(x.plate) === plateKey(v));
+  if (!hit) return { error: `«${v}» raqamli mashina ro'yxatda yo'q — Logistika → Transport'da qo'shing yoki ro'yxatdan tanlang`, field };
+  if (hit.id === trip.vehicleId) return run(() => db.$transaction((tx) => dropNote(tx, key, ["vehicle"])), key, field);
+  return run(async () => {
+    await db.$transaction(async (tx) => {
+      const u = await tx.trip.updateMany({ where: { id: trip.id, vehicleId: trip.vehicleId }, data: { vehicleId: hit.id } });
+      if (u.count !== 1) throw new SourceError("Reys shu payt o'zgardi — sahifani yangilang");
+      await audit(tx, userId, "UPDATE", "Trip", trip.id, { vehicleId: trip.vehicleId }, { vehicleId: hit.id, via: "realizatsiya" });
+      await dropNote(tx, key, ["vehicle"]);
+    });
+  }, key, field);
+}
+
+/** Zayavka qatori bo'yicha ustun (`key` — `RealizationRow.key`: «<reys yoki zayavka id>-<qator id>»). */
+export async function saveSourceLineField(key: string, field: SourceLineCell, value: string, userId: string): Promise<FieldResult | null> {
+  const [head = "", itemId = ""] = key.split("-");
+  if (!head || !itemId) return null;
+  if (itemId === "fee") {
+    // Faqat dastavkali (mahsulot qatorisiz) zayavka
+    if (field !== "delivery") return null;
+    const t = await db.trip.findUnique({ where: { id: head }, select: { orderId: true } });
+    const fo = await orderOf(t?.orderId ?? head);
+    if (!fo || fo.kind !== "SALE" || fo.status === "CANCELLED") return { error: "Zayavka topilmadi", field };
+    return saveFee(fo);
+  }
+  const trip = await db.trip.findUnique({
+    where: { id: head },
+    select: { id: true, orderId: true, status: true, qtyM3: true, acceptedQty: true },
+  });
+  const item = await db.orderItem.findUnique({
+    where: { id: itemId },
+    select: { id: true, orderId: true, productId: true, price: true, nds: true, qtyM3: true, product: { select: { name: true, unit: true } } },
+  });
+  if (!item || (trip ? trip.orderId : head) !== item.orderId) return { error: "Qator topilmadi — sahifani yangilang" };
+  const o = await orderOf(item.orderId);
+  if (!o || o.kind !== "SALE") return { error: "Zayavka topilmadi" };
+  if (o.status === "CANCELLED") return { error: "Zayavka bekor qilingan", field };
+  const itemCount = await db.orderItem.count({ where: { orderId: o.id } });
+  const v = value.trim();
+  return field === "delivery" ? saveFee(o) : field === "price" ? savePrice() : field === "qty" ? saveQty() : saveProduct();
+
+  async function saveFee(order: NonNullable<Awaited<ReturnType<typeof orderOf>>>): Promise<FieldResult> {
+    const p = numIn(0, 10_000_000_000).safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    const fee = r2(p.data ?? 0);
+    if (Math.abs(fee - Number(order.deliveryFee)) < 0.005) return { ok: true, id: key };
+    return run(async () => {
+      await db.$transaction(async (tx) => {
+        const u = await tx.order.updateMany({ where: { id: order.id, updatedAt: order.updatedAt }, data: { deliveryFee: fee } });
+        if (u.count !== 1) throw new SourceError("Zayavka shu payt o'zgardi — sahifani yangilang");
+        await audit(tx, userId, "UPDATE", "Order", order.id, { deliveryFee: order.deliveryFee }, { deliveryFee: fee, via: "realizatsiya" });
+        await dropLine(tx, [key], ["delivery"]);
+      });
+    }, key, field);
+  }
+
+  async function savePrice(): Promise<FieldResult> {
+    const p = numIn(0, 10_000_000_000).safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    if (p.data === null) return { error: "Narxni yozing", field };
+    // Reestrda narx QQSsiz; zayavka qatorida «QQS 12%» bo'lsa narx QQS bilan saqlanadi
+    const price = r2(item!.nds ? p.data * (1 + NDS_RATE) : p.data);
+    return run(async () => {
+      await db.$transaction(async (tx) => {
+        const u = await tx.orderItem.updateMany({ where: { id: item!.id, price: item!.price }, data: { price } });
+        if (u.count !== 1) throw new SourceError("Zayavka qatori shu payt o'zgardi — sahifani yangilang");
+        await audit(tx, userId, "UPDATE", "OrderItem", item!.id, { price: item!.price }, { price, orderId: o!.id, via: "realizatsiya" });
+        // Narx qatorning hamma reysiga — ularning reestrdagi narx tuzatishi ham olinadi
+        await dropLine(tx, [`${o!.id}-${item!.id}`, ...o!.trips.map((t) => `${t.id}-${item!.id}`)], ["price"]);
+      });
+    }, key, field);
+  }
+
+  async function saveQty(): Promise<FieldResult | null> {
+    const p = numIn(0, 1_000_000).safeParse(value);
+    if (!p.success) return issue(p.error, field);
+    if (p.data === null || p.data <= 0) return { error: "Miqdor 0 dan katta bo'lsin", field };
+    const q = r3(p.data);
+    if (!trip) {
+      // Reyssiz (o'zi olib ketgan) zayavka: qator miqdorining o'zi
+      return run(async () => {
+        await db.$transaction(async (tx) => {
+          const u = await tx.orderItem.updateMany({ where: { id: item!.id, qtyM3: item!.qtyM3 }, data: { qtyM3: q } });
+          if (u.count !== 1) throw new SourceError("Zayavka qatori shu payt o'zgardi — sahifani yangilang");
+          await audit(tx, userId, "UPDATE", "OrderItem", item!.id, { qtyM3: item!.qtyM3 }, { qtyM3: q, orderId: o!.id, via: "realizatsiya" });
+          await dropLine(tx, [key], ["qty"]);
+        });
+      }, key, field);
+    }
+    // Ko'p mahsulotli zayavkada reys yuki qatorlarga bo'lingan — bitta qatorning ulushini reysga yozib bo'lmaydi
+    if (itemCount > 1) return null;
+    const loaded = Number(trip.qtyM3);
+    const shown = trip.acceptedQty != null ? Number(trip.acceptedQty) : loaded;
+    const delta = r3(q - shown);
+    if (Math.abs(delta) < 0.0005) return run(() => db.$transaction((tx) => dropLine(tx, [key], ["qty"])), key, field);
+    const qtyM3 = r3(loaded + delta);
+    if (qtyM3 <= 0) return { error: "Reys yuki 0 dan katta bo'lsin", field };
+    return run(async () => {
+      await db.$transaction(async (tx) => {
+        await lockStock(tx);
+        const u = await tx.trip.updateMany({ where: { id: trip.id, qtyM3: trip.qtyM3 }, data: { qtyM3, ...(trip.acceptedQty != null ? { acceptedQty: q } : {}) } });
+        if (u.count !== 1) throw new SourceError("Reys shu payt o'zgardi — sahifani yangilang");
+        // Yuklangan reysda skladdan chiqim farqqa tuzatiladi: oxirgi jo'natma yozuvi ombori va sanasi bilan
+        const last = await tx.stockMove.findFirst({
+          where: { refType: "Trip", refId: trip.id, type: "SHIPMENT", qty: { lt: 0 } }, orderBy: { createdAt: "desc" },
+          select: { warehouseId: true, productId: true, ownerBrigadeId: true, date: true },
+        });
+        if (last) {
+          if (delta > 0 && item!.product.unit !== "m3") {
+            const have = await tx.stockMove.aggregate({ where: { warehouseId: last.warehouseId, productId: last.productId, ownerBrigadeId: last.ownerBrigadeId }, _sum: { qty: true } });
+            const left = Number(have._sum.qty ?? 0);
+            if (left + STOCK_EPS < delta) throw new SourceError(`Omborda ${item!.product.name} ${fmtNum(Math.max(0, left), 3)} ${unitLabel(item!.product.unit)} — ${fmtNum(delta, 3)} qo'shib bo'lmaydi`);
+          }
+          await tx.stockMove.create({
+            data: {
+              type: "SHIPMENT", warehouseId: last.warehouseId, productId: last.productId, ownerBrigadeId: last.ownerBrigadeId, qty: -delta, date: last.date,
+              refType: "Trip", refId: trip.id, note: `Realizatsiyada miqdor tuzatildi: ${fmtNum(shown, 3)} → ${fmtNum(q, 3)}`, createdById: userId,
+            },
+          });
+        }
+        await audit(tx, userId, "UPDATE", "Trip", trip.id, { qtyM3: trip.qtyM3, acceptedQty: trip.acceptedQty }, { qtyM3, acceptedQty: trip.acceptedQty != null ? q : null, via: "realizatsiya" });
+        await dropLine(tx, [key], ["qty"]);
+      });
+    }, key, field);
+  }
+
+  async function saveProduct(): Promise<FieldResult> {
+    if (!v) return { error: "Mahsulot nomini yozing", field };
+    const hit = (await entryLookup([], [v])).product(v);
+    if (!hit) return { error: `«${v}» katalogda yo'q — ro'yxatdan tanlang (yangi mahsulot Sklad → Tayyor mahsulotlarda qo'shiladi)`, field };
+    if (hit.id === item!.productId) return run(() => db.$transaction((tx) => dropLine(tx, [key], ["productName", "groupName", "unit"])), key, field);
+    if (hit.unit !== item!.product.unit) return { error: `O'lchovi boshqa (${unitLabel(hit.unit)}) — bunday almashtirish zayavka tahririda qilinadi`, field };
+    const same = await db.orderItem.count({ where: { orderId: o!.id, productId: item!.productId } });
+    return run(async () => {
+      await db.$transaction(async (tx) => {
+        await lockStock(tx);
+        const u = await tx.orderItem.updateMany({ where: { id: item!.id, productId: item!.productId }, data: { productId: hit.id } });
+        if (u.count !== 1) throw new SourceError("Zayavka qatori shu payt o'zgardi — sahifani yangilang");
+        // Shu zayavka reyslari skladdan qaysi mahsulotni chiqargan bo'lsa — yangisiga (zayavkada shu mahsulotli boshqa qator bo'lmasa)
+        const moved = same === 1 && o!.trips.length
+          ? (await tx.stockMove.updateMany({ where: { refType: "Trip", refId: { in: o!.trips.map((t) => t.id) }, productId: item!.productId }, data: { productId: hit.id } })).count
+          : 0;
+        await audit(tx, userId, "UPDATE", "OrderItem", item!.id, { productId: item!.productId, product: item!.product.name }, { productId: hit.id, product: hit.name, stockMoves: moved, orderId: o!.id, via: "realizatsiya" });
+        await dropLine(tx, [`${o!.id}-${item!.id}`, ...o!.trips.map((t) => `${t.id}-${item!.id}`)], ["productName", "groupName", "unit"]);
+      });
+    }, key, field);
+  }
 }
