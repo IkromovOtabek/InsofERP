@@ -17,6 +17,7 @@ import { tripPayByDriver } from "@/lib/driver-trip-pay";
 import { PAYROLL_KIND_LABEL } from "./labels";
 import { brigadeDefectSums, brigadeOutput, dayEnd, dayStart, type PieceUnit } from "@/lib/brigade-pay";
 import { debtsDue } from "./employee-debt";
+import { brigadeSheetPay, type SheetPayItem } from "./brigade-sheet";
 
 /**
  * Ish haqi — vedomost (`PayrollRun`) va qatorlar (`PayrollLine`).
@@ -65,6 +66,8 @@ export type LineBreakdown = {
   minutes: number; dailyAvg: number; sickPct: number;
   /** Tabel soati yozilgan kunlar bo'lsa — ishlagan kun = Σ(soat ÷ kunlik soat), yozilmaganlari 1 kun (Excel tabeli kabi). */
   dayUnits?: number; tabelDays?: number;
+  /** Brigada varag'i bo'yicha sdelka (Excel usuli: kunlik fond kun soatiga, 10 000 ga yaxlitlab) — har brigada alohida. */
+  sheets?: SheetPayItem[];
   piece?: { brigade: string; pool: number; share: number; units: Pick<PieceUnit, "product" | "qty" | "rate" | "sum">[] };
   /** Haydovchi: dispetcher narxlagan reyslar (oy yakuni, `lib/driver-trip-pay.ts`); narxsizlari kirmaydi. */
   trips?: { count: number; km: number; sum: number; unpriced: number };
@@ -108,6 +111,9 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   if (!emps.length) return [];
   const ids = emps.map((e) => e.id);
   const [y, m] = month.split("-").map(Number);
+  // Brigada varag'i to'ldirilgan brigadalar — sdelka va brak shu varaqdan (`lib/hr/brigade-sheet.ts`), qolganlari avvalgidek
+  const sheet = await brigadeSheetPay(month, to, { final: kind === "FINAL" });
+  const legacyPiece = pieceBrigades(emps).filter((b) => !sheet.brigades.has(b));
   const [att, plans, excused, rules, manual, advances, piece, kpi, tripPay] = await Promise.all([
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: { gte: fromD, lte: toD } }, select: { employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true, hours: true } }),
     plansInRange(emps, from, monthEnd),
@@ -120,13 +126,13 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       select: { employeeId: true, paid: true, run: { select: { docNo: true } } },
     }),
     // Sdelka fondi va brigada braki (`lib/brigade-pay.ts` — brigadalar sahifasidagi «Oylik» bilan bir xil hisob)
-    brigadeOutput(dayStart(from), dayEnd(to), pieceBrigades(emps)),
+    brigadeOutput(dayStart(from), dayEnd(to), legacyPiece),
     // KPI mukofoti — oy yakunida bonus (`lib/hr/kpi.ts`)
     kind === "FINAL" ? kpiMonth(month, { employeeIds: ids }) : Promise.resolve([]),
     // Haydovchi reys haqi — oy yakunida asosiyga qo'shiladi (avansda emas)
     kind === "FINAL" ? tripPayByDriver(new Date(y!, m! - 1, 1), new Date(y!, m!, 1), ids) : Promise.resolve(new Map<string, { trips: number; km: number; sum: number; unpriced: number }>()),
   ]);
-  const brak = kind === "FINAL" ? await brigadeDefectSums(dayStart(from), dayEnd(to), pieceBrigades(emps)) : new Map<string, { qty: number; sum: number; count: number }>();
+  const brak = kind === "FINAL" ? await brigadeDefectSums(dayStart(from), dayEnd(to), legacyPiece) : new Map<string, { qty: number; sum: number; count: number }>();
   // O'tgan oylardan ushlanmay qolgan qarz — har xodimning eng so'nggi tasdiqlangan oy yakuni qatori (qoralama / bekor qilingan hisobga olinmaydi)
   const debtOf = new Map<string, { amount: number; docNo: string; month: string }>();
   if (kind === "FINAL") {
@@ -207,9 +213,12 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     if (e.payType === "SALARY") base = normMonth > 0 ? (rate * dayUnits) / normMonth : 0;
     else if (e.payType === "DAILY") base = rate * dayUnits;
     else if (e.payType === "HOURLY") base = (rate * minutes) / 60;
-    else {
+    else if (e.brigadeId && sheet.brigades.has(e.brigadeId)) {
+      // Brigada varag'idan (pastda qo'shiladi)
+      if (!sheet.byEmp.get(e.id)?.length) warnings.push("Sdelka: brigada varag'ida shu davrda soati yo'q");
+    } else {
       const pool = e.brigadeId ? piece.get(e.brigadeId) : undefined;
-      if (!e.brigadeId) warnings.push("Sdelka: xodim brigadaga biriktirilmagan");
+      if (!e.brigadeId && !sheet.byEmp.get(e.id)?.length) warnings.push("Sdelka: xodim brigadaga biriktirilmagan");
       else if (!pool || pool.sum === 0) warnings.push("Sdelka: brigadada shu davrda bajarilgan ish yo'q yoki mahsulotlarga sdelka narxi qo'yilmagan");
       const share = shareOf.get(e.id) ?? 0;
       if (pool) {
@@ -218,12 +227,17 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         pieceInfo = { brigade: pool.brigade, pool: r0(pool.sum), share: Math.round(share * 1000) / 10, units: pool.units };
       }
     }
+    // Brigada varag'i puli: sdelkachida asosiy pulning o'zi (kunlik o'rtachaga kiradi), boshqalarda qo'shimcha (kirmaydi)
+    const sheetItems = sheet.byEmp.get(e.id) ?? [];
+    const sheetSum = sheetItems.reduce((s, x) => s + x.amount, 0);
+    if (e.payType === "PIECE") base += sheetSum;
     const dailyAvg = e.payType === "SALARY" ? (normMonth > 0 ? rate / normMonth : 0)
       : e.payType === "DAILY" ? rate
       : e.payType === "HOURLY" ? rate * shiftHours
       : present > 0 ? base / present : 0;
     // Reys haqi asosiyga qo'shiladi (kunlik o'rtachaga — ta'til/kasallik puliga — ta'sir qilmaydi)
     if (tp && tp.sum > 0) base += tp.sum;
+    if (e.payType !== "PIECE") base += sheetSum;
 
     const tenureYears = e.hiredAt ? (dayUtc(to).getTime() - e.hiredAt.getTime()) / (365.25 * 864e5) : 0;
     const sickPct = tenureYears >= 8 ? st.sickPctLong : st.sickPctShort;
@@ -268,6 +282,10 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         hits.push({ rule: "Brigada braki", kind: "PENALTY", amount: r0(amt), days: bk.count, detail: `${money(bk.sum)} × ${Math.round(bkShare * 1000) / 10}% (${bk.count} ta yozuv)` });
         penalty += amt;
       }
+      for (const it of sheetItems) if (it.brak > 0) {
+        hits.push({ rule: "Brigada braki", kind: "PENALTY", amount: it.brak, days: 0, detail: `${it.brigade}: brak × ${it.hours} soat ulushi` });
+        penalty += it.brak;
+      }
       const debt = debtOf.get(e.id);
       if (debt) {
         hits.push({ rule: "O'tgan oydan qarz", kind: "PENALTY", amount: r0(debt.amount), days: 0, detail: `${debt.docNo} (${monthTitle(debt.month)}) — ushlanmay qolgan` });
@@ -310,6 +328,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         period: { from: lo, to: hi }, normDays: normMonth, presentDays: present, paidLeaveDays: paidLeave, unpaidLeaveDays: unpaidLeave,
         sickDays: sick, absentDays: absent, dayoffDays: dayoff, minutes, dailyAvg: r0(dailyAvg), sickPct,
         ...(tabelDays ? { dayUnits: Math.round(dayUnits * 100) / 100, tabelDays } : {}),
+        ...(sheetItems.length ? { sheets: sheetItems } : {}),
         ...(pieceInfo ? { piece: pieceInfo } : {}), ...(tp ? { trips: { count: tp.trips, km: tp.km, sum: r0(tp.sum), unpriced: tp.unpriced } } : {}), rules: hits, manual: manualList, advances: adv,
         ...(advanceFormula ? { advanceFormula } : {}), warnings,
       },

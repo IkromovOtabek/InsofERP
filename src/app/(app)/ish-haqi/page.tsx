@@ -20,6 +20,8 @@ import { WorkbookPicker, WorkbookUploadForm } from "./varaq-forms";
 import { tabelMonth } from "@/lib/hr/tabel";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { TabelGrid } from "./tabel-grid";
+import { BrigadeSheetGrid } from "./brigade-sheet-grid";
+import { brigadeSheet } from "@/lib/hr/brigade-sheet";
 import { TabelImport } from "./tabel-import";
 
 /**
@@ -172,6 +174,8 @@ async function TabelTab({ oy, guruh, canEdit }: { oy?: string; guruh?: string; c
   const cur = monthOf(today());
   const month = oy && /^\d{4}-(0[1-9]|1[0-2])$/.test(oy) && oy <= cur ? oy : cur;
   const data = await tabelMonth(month, guruh);
+  // Brigada guruhi — Excel'dagi brigada varag'i (soat + mahsulot soni + narx, sdelka hisobi)
+  const sheet = data.group.startsWith("b:") ? await brigadeSheet(month, data.group.slice(2)) : null;
   const href = (m: string, g: string) => `/ish-haqi?tab=tabel&oy=${m}&guruh=${encodeURIComponent(g)}`;
   const days = monthDays(month);
   const employees = canEdit && !data.locked
@@ -186,7 +190,7 @@ async function TabelTab({ oy, guruh, canEdit }: { oy?: string; guruh?: string; c
       </div>
       <Tabs current={data.group} scroll={false} className="mb-0" items={data.groups.map((g) => ({ key: g.key, label: g.label, count: g.count, href: href(month, g.key) }))} />
       {data.locked && <Callout tone="warning" title="Tabel yopiq">{data.locked}</Callout>}
-      <TabelGrid key={`${month}|${data.group}`} data={data} canEdit={canEdit} />
+      {sheet ? <BrigadeSheetGrid key={`${month}|${data.group}`} data={sheet} canEdit={canEdit} /> : <TabelGrid key={`${month}|${data.group}`} data={data} canEdit={canEdit} />}
       {employees.length > 0 && (
         <Fold title="Excel'dan import (oylik fayldagi tabel varaqlari)">
           <TabelImport month={month} monthLabel={data.title} employees={employees} />

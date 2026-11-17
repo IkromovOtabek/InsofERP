@@ -133,6 +133,31 @@ Har bosqichdan keyin: `tsc`, `eslint`, QA (`run-all.sh`), haqiqiy fayl bilan sol
   - Brigadir telefondan soat yozishi (mobil ilovada maydon) — 2-bosqich bilan birga.
   - Brigada (sdelka) xodimlarining kunlik fondi — 2-bosqich.
 
+### 2-bosqich holati (2026-11-17, bajarildi)
+- **Joyi:** «Ish haqi» → Tabel → brigada guruhi. Excel'dagi brigada varag'i ko'rinishida:
+  - tepada a'zolar × kun (shu brigadadagi soat), har birining ulushi, 10 000 ga yaxlitlangani, brak va summasi;
+  - pastda mahsulot qatorlari × kun (soni) va narxi.
+  - «Boshqa brigadadan xodim» qo'shiladi; brak qo'lda yoziladi yoki brak yozuvlaridan olinadi.
+- **Model** (migratsiya `20261117161531_brigada_varaq`):
+  - `BrigadeHours` — bir kunda bir nechta brigadada ishlash mumkin.
+  - `BrigadeOutput`.
+  - `BrigadeMonth` — qatorlar, narxlar, brak.
+  - `Brigade.aliases` — Excel varaq nomi.
+- **Hisob:** `lib/hr/brigade-calc.ts` — Excel formulasi: kunlik fond kun soatiga bo'linadi, ROUND(−4), brak soatga qarab.
+  Varag'i to'ldirilgan brigadada vedomost sdelkani shundan oladi, boshqalarida avvalgidek. Kunbay yoki oklad xodim
+  brigadada ham ishlasa, sdelka puli asosiyga qo'shiladi.
+- **Import:** brigada varaqlari endi davomatga emas, brigada varag'iga tushadi (soat, soni, narx — Excel'dagidek qator
+  tartibi bo'yicha, brak). Varaq ERP brigadasiga nomi, brigadiri yoki eslab qolingan nom bo'yicha moslanadi yoki yangi
+  brigada ochiladi.
+- **Tekshiruv (oktabr fayli):**
+  - 7 varaqdagi 63 qatordan 62 tasi Excel'dagi «сумма + брак» bilan aynan teng. 1 tasi — Excel formulasiga qo'lda
+    yozilgan +1 000 000 bonus; ERP'da u alohida bonus bo'lib kiritiladi.
+  - Vedomost (FINAL) ham 54 sdelkachida Excel bilan mos.
+  - Brak jami 4 609 056 — Excel bilan teng.
+- **Qolgan:**
+  - Brigadirning telefondan soat va soni yozishi (mobil ilova).
+  - Tizimdagi ishlab chiqarish (topshiriq bajarilishi) sonini varaqqa taklif qilish.
+
 ---
 
 ## 5. Kelishib olinadigan savollar
