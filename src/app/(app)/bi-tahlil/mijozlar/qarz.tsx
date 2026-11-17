@@ -7,7 +7,7 @@ import { MONTHS_UZ } from "@/lib/bi/plans";
 import { date, dateRu, dateShort, fmtFixed, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, type BadgeColor, Card, InfoButton, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
-import { DebtFixButton } from "./debt-dialogs";
+import { DebtFixButton, OpeningFixButton, PartyEditButton, PencilLink } from "./debt-dialogs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -141,14 +141,17 @@ type Row = DebtSheet["rows"][number];
  *  1) davr boshidagi qarzdorlik / haqdorlik (qarzdorlik — ular bizga qarz, haqdorlik — biz ularga qarzmiz),
  *  2) shu davrda sotib olgan (ta'minotchida — bizga bergan mahsulot) — bosilsa nima, qachon, qancha olgani,
  *  3) shundan to'lagan — bosilsa to'lovlar, 4) davr oxiridagi qarzdorlik / haqdorlik.
- * Qator nomi — akt sverka; qalam — qoldiqni tuzatish (kiritish huquqi borlarga).
+ * Qator nomi — akt sverka. Har ustunda qalam (Otabek, 2026-11-17): nom — nomi va mijoz turi (naqd / perechisleniye),
+ * davr boshi — boshlang'ich qoldiq, sotib olgan / to'lagan — tafsilotda har yozuvni tahrirlash, davr oxiri — qoldiqni tuzatish.
  */
-export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, transfer }: {
+export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, canEditParty, transfer }: {
   who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; company: string;
   /** «Qarzlarni kiritish» sahifasi (Excel / qo'lda, tahrir, kamaytirish, o'chirish) — kiritish huquqi borlarga */
   entryHref?: string;
-  /** Qatordagi qalam — «Qoldiqni tuzatish» */
+  /** Summa ustunlaridagi qalamlar — boshlang'ich qoldiq, tafsilot, «Qoldiqni tuzatish» (qarz kiritish huquqi) */
   canFix?: boolean;
+  /** Nom ustunidagi qalam — nomi va mijoz turi (mijoz: «customers → edit», ta'minotchi: «stock → suppliers») */
+  canEditParty?: boolean;
   /** «Boshqa mijoz to'lovi» tugmasi (faqat xaridorlar) */
   transfer?: React.ReactNode;
 }) {
@@ -214,7 +217,12 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, tr
   /** Katakdagi summa — bosilsa tafsilot (qatorning akt havolasi ustida) */
   const CellLink = ({ href, v, title }: { href: string; v: number; title: string }) => (Math.abs(v) < 0.005 ? null
     : <Link href={href} title={title} className="relative z-10 rounded px-0.5 underline decoration-slate-300 decoration-dotted underline-offset-4 hover:bg-white/70 hover:decoration-slate-700">{fmtFixed(v)}</Link>);
-  const span = canFix ? 8 : 7;
+  /** Summa katagi: chapda qalam (huquq bo'lsa), o'ngda summa */
+  const Cell = ({ pen, children }: { pen?: React.ReactNode; children: React.ReactNode }) => (
+    <div className="flex items-center justify-end gap-1">{pen}<span className="min-w-0">{children}</span></div>
+  );
+  const fromLabel = dateRu(s.monthStart);
+  const span = 7;
 
   return (
     <div className="space-y-5">
@@ -274,6 +282,7 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, tr
             <InfoButton title={sheetTitle} size="md" className="ml-1">
               <p>Qarzdorlik — {sup ? "ta'minotchi" : "mijoz"} bizga qarz; haqdorlik — biz unga qarzmiz. Davr boshi + {soldLabel.toLowerCase()} − {paidLabel.toLowerCase()} = davr oxiri.</p>
               <p>{soldLabel} yoki {paidLabel.toLowerCase()} summasini bosing — nima, qachon va qancha ekani, har yozuvni tahrirlash yoki o&apos;chirish. Nomni bosing — akt sverka.</p>
+              <p>Har ustundagi qalam: nom — {sup ? "nomini" : "nomi va mijoz turini (naqd / perechisleniye)"} tahrirlash; davr boshi — boshlang&apos;ich qoldiqni tuzatish; {soldLabel.toLowerCase()} va {paidLabel.toLowerCase()} — tafsilotda har yozuvni tahrirlash; davr oxiri — qoldiqni tuzatish.</p>
               <p>
                 {sup
                   ? "Hisob: boshlang'ich qoldiq + kirim hujjatlari (QQS va dostavka bilan) − ta'minotchiga to'langan pul."
@@ -293,7 +302,6 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, tr
                 <SortTh k="sotuv" label={soldLabel} rowSpan={2} className={cn(SH.line, SH.headMid, "w-[13%] px-2 py-1 text-center align-middle font-normal")} />
                 <SortTh k="tolov" label={paidLabel} rowSpan={2} className={cn(SH.line, SH.headMid, "w-[13%] px-2 py-1 text-center align-middle font-normal")} />
                 <th colSpan={2} className={cn(SH.line, SH.headNow, SH.split, "px-3 py-1.5 text-center font-normal")}>{d2} holatiga</th>
-                {canFix && <th rowSpan={2} className={cn(SH.line, SH.headNow, "w-9 px-1")} aria-label="Tuzatish" />}
               </tr>
               <tr>
                 <th className={cn(SH.line, SH.head, "w-[12%] px-3 py-1 text-center font-normal")}>Qarzdorlik</th>
@@ -304,22 +312,29 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, tr
             </thead>
             <tbody>
               {rows.length === 0 && <tr><td colSpan={span} className={cn(SH.line, "px-4 py-10 text-center text-sm text-slate-500")}>{sp.q || qism ? "Filtr bo'yicha hech narsa topilmadi" : "Bu davrda hisob-kitob yo'q"}</td></tr>}
-              {rows.map((r) => (
-                <tr key={r.id} className="group relative cursor-pointer">
-                  <td className={cn(SH.line, SH.cell, SH.hover, "min-w-56 px-3 py-1.5")}>
-                    {/* Butun qator — akt sverka havolasi (after: qatorni qoplaydi); summalar o'z tafsilotiga */}
-                    <Link href={detail(r.id)} className="after:absolute after:inset-0 after:content-['']" title={`${r.name} — akt sverka`}>{r.name}</Link>
-                    {!sup && !kind && r.kind === "CASH" && <span className="ml-2 align-middle"><Badge color="green" dot={false}>naqd</Badge></span>}
-                  </td>
-                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><CellLink href={detail(r.id, "qoldiq")} v={owes(r.open)} title="Boshlang'ich qoldiq — tafsilot" /></td>
-                  <td className={cn(SH.line, SH.cell, num, SH.hover)}><CellLink href={detail(r.id, "qoldiq")} v={owed(r.open)} title="Boshlang'ich qoldiq — tafsilot" /></td>
-                  <td className={cn(SH.line, SH.cellMid, num, SH.hover)}><CellLink href={detail(r.id, "sotuv")} v={r.sold} title={`${soldLabel} — mahsulotlar, sana, miqdor`} /></td>
-                  <td className={cn(SH.line, SH.cellMid, num, SH.hover, r.paid < 0 && "text-red-700")}><CellLink href={detail(r.id, "tolov")} v={r.paid} title={`${paidLabel} — to'lovlar`} /></td>
-                  <td className={cn(SH.line, SH.cellNow, SH.split, num, SH.hover, owes(r.now) >= 1 && "font-semibold text-red-700")}><Amt v={owes(r.now)} /></td>
-                  <td className={cn(SH.line, SH.cellNow, num, SH.hover, owed(r.now) >= 1 && "font-semibold text-emerald-700")}><Amt v={owed(r.now)} /></td>
-                  {canFix && <td className={cn(SH.line, SH.cellNow, SH.hover, "px-1 text-center")}><DebtFixButton who={who} id={r.id} name={r.name} day={sana} now={owes(r.now) - owed(r.now)} /></td>}
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const open = owes(r.open) - owed(r.open), now = owes(r.now) - owed(r.now);
+                const openPen = (side: "qarz" | "haq") => canFix && <OpeningFixButton who={who} id={r.id} name={r.name} from={dan} fromLabel={fromLabel} to={sana} allTime={s.allTime} now={open} side={side} />;
+                const nowPen = (side: "qarz" | "haq") => canFix && <DebtFixButton who={who} id={r.id} name={r.name} day={sana} now={now} side={side} />;
+                return (
+                  <tr key={r.id} className="group relative cursor-pointer">
+                    <td className={cn(SH.line, SH.cell, SH.hover, "min-w-56 px-3 py-1.5")}>
+                      <div className="flex items-center gap-1">
+                        {/* Butun qator — akt sverka havolasi (after: qatorni qoplaydi); summalar o'z tafsilotiga */}
+                        <Link href={detail(r.id)} className="min-w-0 after:absolute after:inset-0 after:content-['']" title={`${r.name} — akt sverka`}>{r.name}</Link>
+                        {!sup && !kind && r.kind === "CASH" && <span className="shrink-0"><Badge color="green" dot={false}>naqd</Badge></span>}
+                        {canEditParty && <span className="ml-auto"><PartyEditButton who={who} id={r.id} name={r.name} kind={r.kind} kindSet={r.kindSet} cardHref={sup ? `/suppliers/${r.id}` : `/customers/${r.id}`} /></span>}
+                      </div>
+                    </td>
+                    <td className={cn(SH.line, SH.cell, num, SH.hover)}><Cell pen={openPen("qarz")}><CellLink href={detail(r.id, "qoldiq")} v={owes(r.open)} title="Boshlang'ich qoldiq — tafsilot" /></Cell></td>
+                    <td className={cn(SH.line, SH.cell, num, SH.hover)}><Cell pen={openPen("haq")}><CellLink href={detail(r.id, "qoldiq")} v={owed(r.open)} title="Boshlang'ich qoldiq — tafsilot" /></Cell></td>
+                    <td className={cn(SH.line, SH.cellMid, num, SH.hover)}><Cell pen={canFix && <PencilLink href={detail(r.id, "sotuv")} title={`${soldLabel} — har yozuvni tahrirlash yoki o'chirish`} />}><CellLink href={detail(r.id, "sotuv")} v={r.sold} title={`${soldLabel} — mahsulotlar, sana, miqdor`} /></Cell></td>
+                    <td className={cn(SH.line, SH.cellMid, num, SH.hover, r.paid < 0 && "text-red-700")}><Cell pen={canFix && <PencilLink href={detail(r.id, "tolov")} title={`${paidLabel} — har to'lovni tahrirlash yoki o'chirish`} />}><CellLink href={detail(r.id, "tolov")} v={r.paid} title={`${paidLabel} — to'lovlar`} /></Cell></td>
+                    <td className={cn(SH.line, SH.cellNow, SH.split, num, SH.hover, owes(r.now) >= 1 && "font-semibold text-red-700")}><Cell pen={nowPen("qarz")}><Amt v={owes(r.now)} /></Cell></td>
+                    <td className={cn(SH.line, SH.cellNow, num, SH.hover, owed(r.now) >= 1 && "font-semibold text-emerald-700")}><Cell pen={nowPen("haq")}><Amt v={owed(r.now)} /></Cell></td>
+                  </tr>
+                );
+              })}
             </tbody>
             {rows.length > 0 && (
               <tfoot className="sticky bottom-0 z-20">
@@ -331,7 +346,6 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, tr
                   <td className={cn(SH.line, SH.headMid, num, "py-2")}>{fmtFixed(ft.paid)}</td>
                   <td className={cn(SH.line, SH.headNow, SH.split, num, "py-2")}>{fmtFixed(owes(ft.now))}</td>
                   <td className={cn(SH.line, SH.headNow, num, "py-2")}>{fmtFixed(owed(ft.now))}</td>
-                  {canFix && <td className={cn(SH.line, SH.headNow)} />}
                 </tr>
               </tfoot>
             )}

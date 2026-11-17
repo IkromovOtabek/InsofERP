@@ -14,7 +14,8 @@ import { notifyAfter } from "@/lib/notify";
  *
  * Ko'chadigan bog'lanishlar — `Customer` modelining HAMMA aloqasi (prisma/schema.prisma):
  *   zayavkalar, obyektlar, schyotlar, to'lovlar, bosh to'lov so'rovlari, sotuv reyestri, realizatsiya qatorlari,
- *   boshlang'ich qoldiqlar, sayt arizalari, tijorat takliflari, amoCRM kelishuvlari. Agent (`agentId`) va bo'sh maydonlar
+ *   boshlang'ich qoldiqlar, sayt arizalari, tijorat takliflari, amoCRM kelishuvlari, kassa yozuvlari (mijoz qarziga),
+ *   qarz o'tkazmalari (ikki karta orasidagisi bekor qilinadi). Agent (`agentId`) va bo'sh maydonlar
  *   (INN, telefon, manzil, mas'ul shaxs) maqsadda bo'sh bo'lsa manbadan olinadi; kredit limiti — maqsadniki.
  * Manba nomi va boshqa nomlari maqsadning boshqa nomlariga qo'shiladi (`cleanAliases`) — importlar eski nomni ham taniydi.
  *
@@ -27,12 +28,15 @@ import { notifyAfter } from "@/lib/notify";
 export type MergeCounts = {
   orders: number; sites: number; invoices: number; payments: number; payRequests: number; register: number;
   realizations: number; openings: number; leads: number; offers: number; amoDeals: number;
+  /** Kassa kirim-chiqimi (mijoz qarziga bog'langan) va «Qarzni boshqa mijoz to'ladi» hujjatlari (qarzdor yoki to'lovchi) */
+  cashTx: number; transfers: number;
 };
 
 const COUNT_LABELS: [keyof MergeCounts, string][] = [
   ["orders", "zayavka"], ["sites", "obyekt"], ["invoices", "schyot"], ["payments", "to'lov"], ["payRequests", "bosh to'lov so'rovi"],
   ["register", "sotuv reyestri qatori"], ["realizations", "realizatsiya qatori"], ["openings", "boshlang'ich qoldiq"],
   ["leads", "sayt arizasi"], ["offers", "tijorat taklifi"], ["amoDeals", "amoCRM kelishuvi"],
+  ["cashTx", "kassa yozuvi"], ["transfers", "qarz o'tkazmasi"],
 ];
 
 /** «12 zayavka · 3 schyot · 1 obyekt» — faqat bori. */
@@ -45,12 +49,14 @@ type Client = Prisma.TransactionClient | typeof db;
 
 async function countsOf(client: Client, customerId: string): Promise<MergeCounts> {
   const where = { customerId };
-  const [orders, sites, invoices, payments, payRequests, register, realizations, openings, leads, offers, amoDeals] = await Promise.all([
+  const [orders, sites, invoices, payments, payRequests, register, realizations, openings, leads, offers, amoDeals, cashTx, transfers] = await Promise.all([
     client.order.count({ where }), client.site.count({ where }), client.invoice.count({ where }), client.payment.count({ where }),
     client.paymentRequest.count({ where }), client.salesRegister.count({ where }), client.realizationEntry.count({ where }),
     client.openingBalance.count({ where }), client.lead.count({ where }), client.commercialOffer.count({ where }), client.amoDeal.count({ where }),
+    client.cashTransaction.count({ where }),
+    client.customerDebtTransfer.count({ where: { OR: [{ debtorId: customerId }, { payerId: customerId }] } }),
   ]);
-  return { orders, sites, invoices, payments, payRequests, register, realizations, openings, leads, offers, amoDeals };
+  return { orders, sites, invoices, payments, payRequests, register, realizations, openings, leads, offers, amoDeals, cashTx, transfers };
 }
 
 /** Boshlang'ich qoldiq kaliti manbadan maqsadga: "CUSTOMER:<id>" yoki "CUSTOMER:<id>:<kun>" (`lib/opening-balances.ts`). */
@@ -164,8 +170,24 @@ export async function mergeCustomers(sourceId: string, targetId: string, reason:
         leads: (await tx.lead.updateMany({ where, data })).count,
         offers: (await tx.commercialOffer.updateMany({ where, data })).count,
         amoDeals: (await tx.amoDeal.updateMany({ where, data })).count,
+        // Kassa yozuvlari (qarz to'lovi / pul qaytarish) — debitorkadagi «To'lagan» maqsad kartaga o'tadi
+        cashTx: (await tx.cashTransaction.updateMany({ where, data })).count,
+        transfers: 0,
         openings: 0,
       };
+      // Qarz o'tkazmalari: ikki karta orasidagisi birlashgach bitta mijozning o'ziga o'tkazmasi bo'lib qoladi (qarzga ta'siri
+      // nol) — bekor qilinadi; boshqalari maqsad kartaga ko'chadi
+      const pair = { OR: [{ debtorId: source.id, payerId: target.id }, { debtorId: target.id, payerId: source.id }] };
+      const selfDocs = await tx.customerDebtTransfer.findMany({ where: { ...pair, cancelledAt: null }, select: { id: true, docNo: true } });
+      if (selfDocs.length) {
+        await tx.customerDebtTransfer.updateMany({
+          where: { id: { in: selfDocs.map((t) => t.id) } },
+          data: { cancelledAt: new Date(), cancelledById: userId, cancelReason: `Mijozlar birlashtirildi («${source.name}» → «${target.name}») — o'ziga o'tkazma bo'lib qoldi` },
+        });
+      }
+      moved.transfers =
+        (await tx.customerDebtTransfer.updateMany({ where: { debtorId: source.id }, data: { debtorId: target.id } })).count
+        + (await tx.customerDebtTransfer.updateMany({ where: { payerId: source.id }, data: { payerId: target.id } })).count;
       // Boshlang'ich qoldiq: kalit ham yangi mijoz nomiga (to'qnashuv yuqorida tekshirilgan)
       const openings = await tx.openingBalance.findMany({ where, select: { id: true, activeKey: true } });
       for (const ob of openings) {
@@ -182,6 +204,7 @@ export async function mergeCustomers(sourceId: string, targetId: string, reason:
         ...(!target.address && source.address ? { address: source.address } : {}),
         ...(!target.contactPerson && source.contactPerson ? { contactPerson: source.contactPerson } : {}),
         ...(!target.agentId && source.agentId ? { agent: { connect: { id: source.agentId } } } : {}),
+        ...(!target.payKind && source.payKind ? { payKind: source.payKind } : {}),
       };
       const after = await tx.customer.update({ where: { id: target.id }, data: fill });
       const from = { id: source.id, name: source.name, inn: source.inn, phone: source.phone, creditLimit: Number(source.creditLimit), agentId: source.agentId };

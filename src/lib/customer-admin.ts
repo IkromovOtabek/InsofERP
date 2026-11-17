@@ -1,10 +1,11 @@
-import type { Role } from "@/generated/prisma";
+import type { PayMethod, Role } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { defaultCreditLimit } from "@/lib/finance";
 import { parseInn } from "@/lib/inn";
 import { money } from "@/lib/format";
 import { flatName } from "@/lib/excel";
+import { customerNameKey, findSameNameCustomer, lockCustomerName, NameTaken, sameNameError } from "@/lib/customer-name";
 
 /**
  * Mijoz kartasini saqlash va agentga biriktirish — veb (`customers/actions.ts`, `employees/agent-actions.ts`)
@@ -52,6 +53,14 @@ export async function saveCustomerLib(id: string | null, input: CustomerInput, w
   const cur = id ? await db.customer.findUnique({ where: { id } }) : null;
   if (id && !cur) return { ok: false, error: "Mijoz topilmadi" };
 
+  // Bir xil nomli mijoz bo'lmasin: yangi karta ham, nomi o'zgargan karta ham boshqa mijoz nomini (yoki boshqa nomini) olmaydi.
+  // Bu yerda tez javob; tranzaksiya ichida qulf ostida qayta tekshiriladi (ikki oyna bir vaqtda bir xil nomni ochmasin)
+  const nameChanged = !cur || customerNameKey(cur.name) !== customerNameKey(d.name);
+  if (nameChanged) {
+    const same = await findSameNameCustomer(d.name, id);
+    if (same) return { ok: false, error: sameNameError(same, d.name, !!id) };
+  }
+
   // INN: 9 (STIR) yoki 14 (JSHSHIR) raqam. Tahrirda o'zgartirilmagan eski qiymat qayta tekshirilmaydi
   if (!(cur && d.inn === cur.inn)) {
     const inn = parseInn(d.inn);
@@ -81,6 +90,11 @@ export async function saveCustomerLib(id: string | null, input: CustomerInput, w
   let savedId = id;
   try {
     await db.$transaction(async (tx) => {
+      if (nameChanged) {
+        await lockCustomerName(tx, d.name);
+        const same = await findSameNameCustomer(d.name, id, tx);
+        if (same) throw new NameTaken(sameNameError(same, d.name, !!id));
+      }
       if (id) {
         // Limit o'zgarsa — zayavka qabul qilish va Limitlar jadvali bilan bir xil `credit:` navbati; limitga tegilmagan bo'lsa
         // uni yozmaymiz (o'qish va yozish orasida boshqa joyda o'zgargan limit saqlanib qolsin)
@@ -101,11 +115,48 @@ export async function saveCustomerLib(id: string | null, input: CustomerInput, w
       }
     });
   } catch (e) {
+    if (e instanceof NameTaken) return { ok: false, error: e.message };
     if (String(e).includes("Unique constraint")) return { ok: false, error: "Bu INN bilan mijoz allaqachon bor" };
     if (String(e).includes("LIMIT_CONFLICT")) return { ok: false, error: "Kredit limiti shu orada boshqa joyda o'zgartirilgan. Sahifani yangilab, qayta kiriting" };
     throw e;
   }
   return { ok: true, id: savedId! };
+}
+
+/**
+ * Qarz varag'idagi qalam (Tahlil → Mijoz debitorka): mijoz nomi va turi (naqd / perechisleniye, `Customer.payKind`;
+ * null — oxirgi zayavka bo'yicha). Nom boshqa mijoznikiga (yoki uning boshqa nomiga) to'g'ri kelsa — rad etiladi, birlashtirish
+ * mijoz kartasida. Eski nom «boshqa nomlari»ga o'tadi: Realizatsiya, kassa «Kimdan» va importlar eski yozilishni ham taniydi.
+ */
+export async function updateCustomerNameKind(id: string, input: { name: string; payKind: PayMethod | null }, userId: string): Promise<{ ok: true; note: string } | { ok: false; error: string }> {
+  const name = input.name.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!customerNameKey(name)) return { ok: false, error: "Nomi to'ldirilishi shart" };
+  const cur = await db.customer.findUnique({ where: { id }, select: { name: true, isInternal: true } });
+  if (!cur || cur.isInternal) return { ok: false, error: "Mijoz topilmadi" };
+  const nameChanged = customerNameKey(cur.name) !== customerNameKey(name);
+  if (nameChanged) {
+    const same = await findSameNameCustomer(name, id);
+    if (same) return { ok: false, error: sameNameError(same, name, true) };
+  }
+  try {
+    const note = await db.$transaction(async (tx) => {
+      if (nameChanged) {
+        await lockCustomerName(tx, name);
+        const same = await findSameNameCustomer(name, id, tx);
+        if (same) throw new NameTaken(sameNameError(same, name, true));
+      }
+      const before = await tx.customer.findUniqueOrThrow({ where: { id } });
+      const aliases = before.name !== name ? cleanAliases([...before.aliases, before.name], name) : before.aliases;
+      if (before.name === name && before.payKind === input.payKind) return "O'zgarish yo'q";
+      const after = await tx.customer.update({ where: { id }, data: { name, payKind: input.payKind, aliases } });
+      await audit(tx, userId, "UPDATE", "Customer", id, { name: before.name, payKind: before.payKind, aliases: before.aliases }, { name: after.name, payKind: after.payKind, aliases: after.aliases, via: "debt-sheet" });
+      return "Saqlandi";
+    });
+    return { ok: true, note };
+  } catch (e) {
+    if (e instanceof NameTaken) return { ok: false, error: e.message };
+    throw e;
+  }
 }
 
 /**

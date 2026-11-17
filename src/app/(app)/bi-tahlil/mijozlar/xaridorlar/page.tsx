@@ -6,6 +6,7 @@ import { DebtSheetView } from "../qarz";
 import { canEnterDebts, debtEntryHref } from "../kiritish";
 import { DebtTransferButton } from "../debt-dialogs";
 import { db } from "@/lib/db";
+import { canDo } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       <p>Summani bosing — tafsilot (mahsulot, sana, to&apos;lovlar); nomni bosing — akt sverka.</p>
     </>} tab="customers" range={range} period={false}>
       <DebtSheetView who="customer" s={s} sp={sp} base="/bi-tahlil/mijozlar/xaridorlar" company={company.legalName ?? company.name} entryHref={canFix ? debtEntryHref("customer") : undefined}
-        canFix={canFix} transfer={canFix ? <DebtTransferButton customers={customers} /> : undefined} />
+        canFix={canFix} canEditParty={canDo(session, "customers", "edit")} transfer={canFix ? <DebtTransferButton customers={customers} /> : undefined} />
     </BiPage>
   );
 }

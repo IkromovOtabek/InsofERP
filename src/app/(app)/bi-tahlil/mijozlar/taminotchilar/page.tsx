@@ -4,6 +4,7 @@ import { getCompany } from "@/lib/company";
 import { parseDebtDay, parseDebtStart, supplierDebtSheet } from "@/lib/fin-report/debts";
 import { DebtSheetView } from "../qarz";
 import { canEnterDebts, debtEntryHref } from "../kiritish";
+import { canDo } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       <p>Ta&apos;minotchilar bilan hisob-kitob: davr boshidagi qarzdorlik/haqdorlik, bizga bergan (kirim), biz to&apos;lagan va hozirgi holat.</p>
       <p>Summani bosing — tafsilot (material, sana, to&apos;lovlar); nomni bosing — akt sverka.</p>
     </>} tab="customers" range={range} period={false}>
-      <DebtSheetView who="supplier" s={s} sp={sp} base="/bi-tahlil/mijozlar/taminotchilar" company={company.legalName ?? company.name} entryHref={canEnterDebts(session) ? debtEntryHref("supplier") : undefined} canFix={canEnterDebts(session)} />
+      <DebtSheetView who="supplier" s={s} sp={sp} base="/bi-tahlil/mijozlar/taminotchilar" company={company.legalName ?? company.name} entryHref={canEnterDebts(session) ? debtEntryHref("supplier") : undefined} canFix={canEnterDebts(session)} canEditParty={canDo(session, "stock", "suppliers")} />
     </BiPage>
   );
 }

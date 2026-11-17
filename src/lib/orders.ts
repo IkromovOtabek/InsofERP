@@ -14,6 +14,7 @@ import type { PayMethod, Prisma, Role } from "@/generated/prisma";
 import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest, OPEN_STATUSES, syncPaymentRequest } from "@/lib/payment-requests";
 import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
+import { findSameNameCustomer, lockCustomerName, sameNameError } from "@/lib/customer-name";
 import { linkOrderTx, syncDealLater } from "@/lib/amocrm/sync";
 import { orderTotal } from "@/lib/order-total";
 import { purgeOrderTx } from "@/lib/purge-cancelled";
@@ -474,6 +475,9 @@ export async function createOrder(
     // INN: 9 (STIR) yoki 14 (JSHSHIR) raqam — veb forma ham, mobil ilova ham shu yerdan o'tadi
     const innR = parseInn(input.newCustomer.inn);
     if (innR.error !== undefined) throw new Error(innR.error);
+    // Bir xil nomli mijoz qo'shilmaydi — mavjudini ro'yxatdan tanlash kerak (tranzaksiyada qulf ostida qayta tekshiriladi)
+    const same = await findSameNameCustomer(input.newCustomer.name);
+    if (same) throw new Error(sameNameError(same, input.newCustomer.name.trim()));
     input = { ...input, newCustomer: { ...input.newCustomer, inn: innR.inn } };
     if (input.newCustomer?.inn) {
       const dup = await db.customer.findUnique({ where: { inn: input.newCustomer.inn } });
@@ -493,6 +497,9 @@ export async function createOrder(
   const res = await db.$transaction(async (tx) => {
     let customerId = input.customerId!;
     if (input.newCustomer) {
+      await lockCustomerName(tx, input.newCustomer.name);
+      const same = await findSameNameCustomer(input.newCustomer.name, null, tx);
+      if (same) throw new Error(sameNameError(same, input.newCustomer.name.trim()));
       const c = await tx.customer.create({
         data: { name: input.newCustomer.name, phone: input.newCustomer.phone ?? undefined, inn: input.newCustomer.inn ?? undefined, address: input.newCustomer.address ?? undefined, creditLimit: await defaultCreditLimit(tx) },
       });

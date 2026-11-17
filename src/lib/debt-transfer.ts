@@ -6,6 +6,8 @@ import { money } from "./format";
 import { cancelOpeningTx, createOpeningTx, lockOpening, OpeningError, updateOpeningTx } from "./opening-balances";
 import { customerBalance } from "./receivables";
 import { supplierPositions } from "./fin-report/balance";
+import { customerLedger, supplierLedger } from "./fin-report/ledger";
+import { isDebtEpoch } from "./fin-report/debts";
 
 /**
  * Qarz varag'idagi qo'lda amallar (Tahlil → Mijozlar):
@@ -78,32 +80,60 @@ export async function setDebtBalance(kind: "CUSTOMER" | "SUPPLIER", id: string, 
   if (Math.abs(target) > MAX_AMOUNT) return { error: "Summa juda katta" };
   const today = new Date(); today.setHours(23, 59, 59, 999);
   if (day > today) return { error: "Kelajak sanasi bo'lmaydi" };
-  const iso = isoDay(day), at = new Date(iso), end = endOfDay(day);
-  const ref = kind === "CUSTOMER" ? { kind, customerId: id } : { kind, supplierId: id };
+  const iso = isoDay(day), end = endOfDay(day);
   const now = kind === "CUSTOMER" ? (await customerBalance(id, { asOf: end })).balance : (await supplierPositions(end)).get(id) ?? 0;
   const diff = r2(target - now);
   if (Math.abs(diff) < 0.005) return { changed: 0 };
+  const err = await writeOpeningDiff(kind, id, day, diff, [`Qoldiq tuzatish: ${iso} kun oxiri ${money(target)}`, note].filter(Boolean).join(" · "), note, userId);
+  return err ? { error: err } : { changed: diff };
+}
+
+/**
+ * Qarz varag'idagi «davr boshi» ustuni (boshlang'ich qoldiq) — `target` ga tenglash (ishora `setDebtBalance` dagidek).
+ * Ustundagi qiymat = davr boshidagi qoldiq + davrdagi boshlang'ich qoldiq yozuvlari (`Ledger.open`); farq bitta yozuvga:
+ * davr «boshidan» bo'lsa — birinchi boshlang'ich qoldiq yozuvi kuniga (yo'q bo'lsa — birinchi harakat kuniga, u ham
+ * yo'q bo'lsa — davr oxiriga), aks holda davr boshi kuniga. Sotuv va to'lovlarga tegilmaydi — davr oxiri ham shuncha o'zgaradi.
+ */
+export async function setOpeningTotal(kind: "CUSTOMER" | "SUPPLIER", id: string, from: Date, to: Date, target: number, note: string | null, userId: string): Promise<{ error?: string; changed?: number; day?: Date }> {
+  if (Math.abs(target) > MAX_AMOUNT) return { error: "Summa juda katta" };
+  const l = kind === "CUSTOMER" ? await customerLedger(id, from, to) : await supplierLedger(id, from, to);
+  if (!l) return { error: kind === "CUSTOMER" ? "Mijoz topilmadi" : "Ta'minotchi topilmadi" };
+  const diff = r2(target - l.open);
+  if (Math.abs(diff) < 0.005) return { changed: 0 };
+  const firstOpen = l.lines.filter((x) => x.col === "open").reduce<Date | null>((a, x) => (!a || x.date < a ? x.date : a), null);
+  const firstAny = l.lines.reduce<Date | null>((a, x) => (!a || x.date < a ? x.date : a), null);
+  const day = isDebtEpoch(from) ? firstOpen ?? firstAny ?? l.to : l.from;
+  const text = [`Boshlang'ich qoldiq tuzatish: ${isDebtEpoch(from) ? "boshidan" : `${isoDay(l.from)} davr boshi`} ${money(target)}`, note].filter(Boolean).join(" · ");
+  const err = await writeOpeningDiff(kind, id, day, diff, text, note, userId);
+  return err ? { error: err } : { changed: diff, day };
+}
+
+/**
+ * `day` kunidagi boshlang'ich qoldiq yozuviga `diff` qo'shadi (`opening-balances.ts → sameDayDebt` qoidasi): o'sha kunda faol
+ * yozuv bo'lsa — summasi o'zgaradi (nolga tushsa bekor qilinadi), bo'lmasa yangisi ochiladi. Xato bo'lsa — matni.
+ */
+async function writeOpeningDiff(kind: "CUSTOMER" | "SUPPLIER", id: string, day: Date, diff: number, text: string, note: string | null, userId: string): Promise<string | null> {
+  const iso = isoDay(day), at = new Date(iso);
+  const ref = kind === "CUSTOMER" ? { kind, customerId: id } : { kind, supplierId: id };
   try {
     await db.$transaction(async (tx) => {
       await lockOpening(tx, ref);
-      // Shu kundagi faol yozuv (eski kalitli yozuv ham sanasi bo'yicha) — `opening-balances.ts → sameDayDebt` qoidasi
+      // Shu kundagi faol yozuv (eski kalitli yozuv ham sanasi bo'yicha)
       const mine = await tx.openingBalance.findFirst({
         where: { ...ref, cancelledAt: null, date: { gte: at, lt: new Date(at.getTime() + 86_400_000) } },
         select: { id: true, amount: true },
       });
-      const text = [`Qoldiq tuzatish: ${iso} kun oxiri ${money(target)}`, note].filter(Boolean).join(" · ");
       if (mine) {
         const need = r2(Number(mine.amount) + diff);
-        if (Math.abs(need) < 0.005) await cancelOpeningTx(tx, mine.id, `Qoldiq tuzatish: ${iso} — yozuv kerak emas`, userId);
+        if (Math.abs(need) < 0.005) await cancelOpeningTx(tx, mine.id, `${text} — yozuv kerak emas`, userId);
         else await updateOpeningTx(tx, mine.id, { date: at, amount: need, note: text, reason: note }, userId);
       } else {
         await createOpeningTx(tx, { ...ref, date: at, amount: diff, note: text }, userId);
       }
     });
   } catch (e) {
-    if (e instanceof OpeningError) return { error: e.message };
+    if (e instanceof OpeningError) return e.message;
     throw e;
   }
-  return { changed: diff };
+  return null;
 }
-

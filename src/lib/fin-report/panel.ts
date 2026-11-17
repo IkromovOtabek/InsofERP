@@ -7,6 +7,7 @@ import { materialTurnover } from "@/lib/stock-turnover";
 import { loanBalances } from "./loans";
 import { pnlReport } from "./pnl";
 import { supplierPositions } from "./balance";
+import { customerKinds } from "./debts";
 import { monthKeyOf } from "./period";
 import { r2 } from "./rows";
 
@@ -161,8 +162,8 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
 
   // ── Qarzlar: haqdorlik (bizga) va qarzdorlik (bizdan) ──
   const custIds = [...customers.keys()];
-  const lastOrders = custIds.length ? await db.order.findMany({ where: { customerId: { in: custIds }, payMethod: { not: null } }, orderBy: { date: "desc" }, distinct: ["customerId"], select: { customerId: true, payMethod: true } }) : [];
-  const methodOf = new Map(lastOrders.map((o) => [o.customerId, o.payMethod]));
+  // Mijoz turi — qarz varag'idagi bilan bir qoida (qo'lda belgilangan, bo'lmasa oxirgi zayavka to'lov usuli)
+  const methodOf = await customerKinds(custIds);
   const cashCustomers: [number, number] = [0, 0], bankCustomers: [number, number] = [0, 0];
   for (const c of customers.values()) {
     const t = methodOf.get(c.customerId) === "CASH" ? cashCustomers : bankCustomers;

@@ -43,7 +43,12 @@ export type DebtSide = { debt: number; advance: number };
  * sotib olgan (`sold`: mijozda — schyot + qarzga sotuv, ta'minotchida — kirim), to'lagan (`paid`, sof), davr oxiridagi
  * qarzdorlik/haqdorlik (`now`). open + sold − paid = now. `debt` — musbat qoldiq (mijoz bizga / biz ta'minotchiga qarz).
  */
-export type DebtRow = { id: string; name: string; kind?: CustomerKind | null; open: DebtSide; sold: number; paid: number; now: DebtSide; change: number };
+export type DebtRow = {
+  id: string; name: string;
+  /** Mijoz turi (amaldagisi) va qo'lda belgilangani (`Customer.payKind`; null — oxirgi zayavka bo'yicha) */
+  kind?: CustomerKind | null; kindSet?: CustomerKind | null;
+  open: DebtSide; sold: number; paid: number; now: DebtSide; change: number;
+};
 export type DebtSheet = {
   /** `monthStart` — davr boshi (sukut boshidan — `allTime`, `dan` bilan o'zgaradi) */
   day: Date; monthStart: Date; allTime: boolean; rows: DebtRow[];
@@ -84,14 +89,19 @@ export async function supplierDebtSheet(day: Date, start?: Date): Promise<DebtSh
 }
 
 /**
- * Mijoz turi — oxirgi zayavkadagi to'lov usuli (Bosh sahifadagi «Qarzlar» bloki bilan bir xil):
- * CASH — naqd, BANK — perechisleniye; zayavkasi yo'q yoki usuli yozilmagan mijoz — perechisleniye.
+ * Mijoz turi (Moliya panelidagi «Qarzlar» bloki bilan bir xil): qo'lda belgilangani (`Customer.payKind` — qarz varag'idagi
+ * qalam, Otabek 2026-11-17), bo'lmasa oxirgi zayavkadagi to'lov usuli. CASH — naqd, BANK — perechisleniye; zayavkasi yo'q
+ * yoki usuli yozilmagan mijoz — perechisleniye.
  */
-async function customerKinds(ids: string[]): Promise<Map<string, CustomerKind>> {
+export async function customerKinds(ids: string[]): Promise<Map<string, CustomerKind>> {
   if (!ids.length) return new Map();
-  const last = await db.order.findMany({ where: { customerId: { in: ids }, payMethod: { not: null } }, orderBy: { date: "desc" }, distinct: ["customerId"], select: { customerId: true, payMethod: true } });
+  const [set, last] = await Promise.all([
+    db.customer.findMany({ where: { id: { in: ids }, payKind: { not: null } }, select: { id: true, payKind: true } }),
+    db.order.findMany({ where: { customerId: { in: ids }, payMethod: { not: null } }, orderBy: { date: "desc" }, distinct: ["customerId"], select: { customerId: true, payMethod: true } }),
+  ]);
+  const manual = new Map(set.map((c) => [c.id, c.payKind as CustomerKind]));
   const m = new Map(last.map((o) => [o.customerId, o.payMethod as CustomerKind]));
-  return new Map(ids.map((id) => [id, m.get(id) ?? "BANK"]));
+  return new Map(ids.map((id) => [id, manual.get(id) ?? m.get(id) ?? "BANK"]));
 }
 
 /** Xaridorlar qarzdorligi: `debt` — mijoz bizga qarz (qarzdorlik), `advance` — mijoz oldindan to'lagan (haqdorlik). `kind` — Mijoz turi filtri. */
@@ -100,11 +110,14 @@ export async function customerDebtSheet(day: Date, kind?: CustomerKind | null, s
   const [openB, turn] = await Promise.all([customerBalances({ asOf: monthStart }), customerTurnover(monthStart, nextDay(day))]);
   const open = new Map([...openB.values()].map((b) => [b.customerId, b.balance]));
   const ids = [...new Set([...open.keys(), ...turn.keys()])];
-  const [names, kinds] = await Promise.all([
-    db.customer.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }).then((l) => new Map(l.map((c) => [c.id, c.name]))),
+  const [list, kinds] = await Promise.all([
+    db.customer.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, payKind: true } }),
     customerKinds(ids),
   ]);
-  const all = sheet(day, monthStart, open, turn, names, kinds);
+  const names = new Map(list.map((c) => [c.id, c.name]));
+  const kindSet = new Map(list.map((c) => [c.id, (c.payKind as CustomerKind | null) ?? null]));
+  const base = sheet(day, monthStart, open, turn, names, kinds);
+  const all = { ...base, rows: base.rows.map((r) => ({ ...r, kindSet: kindSet.get(r.id) ?? null })) };
   const kindsCount = { ALL: all.rows.length, CASH: all.rows.filter((r) => r.kind === "CASH").length, BANK: all.rows.filter((r) => r.kind === "BANK").length };
   if (!kind) return { ...all, kinds: kindsCount };
   const rows = all.rows.filter((r) => r.kind === kind);

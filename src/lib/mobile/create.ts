@@ -28,6 +28,7 @@ import type { DayCell, FormField, FormOption } from "./detail";
 import { ListError } from "./list";
 import { MATERIAL_UNITS, unitLabel, unitShort } from "@/lib/unit";
 import { codeFromName } from "@/lib/excel";
+import { findSameNameCustomer, sameNameError } from "@/lib/customer-name";
 import { canDo } from "@/lib/permissions";
 import { dateRu, fmtNum } from "@/lib/format";
 import { createGoodsReceipt, receiptNote, receiptTokenOf } from "@/lib/receipts";
@@ -1193,6 +1194,9 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const d = p.data;
       if (d.inn && (await db.customer.findUnique({ where: { inn: d.inn } }))) throw new Error("Bu INN bilan mijoz allaqachon bor");
+      // Bir xil nomli mijoz qo'shilmaydi (veb forma bilan bir qoida — `lib/customer-admin.ts`)
+      const same = await findSameNameCustomer(d.name);
+      if (same) throw new Error(sameNameError(same, d.name));
       // Mobil formada limit maydoni yo'q — yangi mijozga standart limit (Sozlamalar → Limitlar)
       const c = await db.customer.create({ data: { name: d.name, phone: d.phone || null, inn: d.inn || null, address: d.address || null, creditLimit: await defaultCreditLimit() } });
       await audit(db, user.id, "CREATE", "Customer", c.id, undefined, c);

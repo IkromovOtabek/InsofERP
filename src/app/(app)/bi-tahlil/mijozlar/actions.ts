@@ -2,10 +2,17 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireModuleWrite } from "@/lib/auth";
+import { requireAction, requireModuleWrite } from "@/lib/auth";
 import { parseForm, validDate, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
 import { OPENING_WRITERS } from "@/lib/opening-balances";
-import { cancelDebtTransfer, createDebtTransfer, setDebtBalance, updateDebtTransfer } from "@/lib/debt-transfer";
+import { cancelDebtTransfer, createDebtTransfer, setDebtBalance, setOpeningTotal, updateDebtTransfer } from "@/lib/debt-transfer";
+import { updateCustomerNameKind } from "@/lib/customer-admin";
+import { syncCustomerLater } from "@/lib/eco/customers";
+import { audit } from "@/lib/audit";
+import { db } from "@/lib/db";
+import { flatName } from "@/lib/excel";
+import { toLatin } from "@/lib/translit";
+import { DEBT_EPOCH } from "@/lib/fin-report/debts";
 
 /**
  * Qarz varaqlaridagi qo'lda amallar — qoldiqni tuzatish va «Qarzni boshqa mijoz to'ladi». Huquq «Qarzlarni kiritish» bilan
@@ -40,6 +47,66 @@ export async function fixDebtBalanceAction(who: "customer" | "supplier", id: str
   if (res.error) return { error: res.error };
   refresh();
   return { ok: true, note: res.changed ? "Qoldiq tuzatildi" : "Qoldiq allaqachon shu summada — o'zgarish yo'q" };
+}
+
+const isoDay = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) && validDate(v) ? new Date(`${v}T00:00:00`) : null);
+
+/**
+ * «Davr boshi» ustunidagi qalam: boshlang'ich qoldiqni (davrdagi boshlang'ich qoldiq yozuvlari bilan) kiritilgan summaga
+ * tenglash — `lib/debt-transfer.ts → setOpeningTotal`. `from` / `to` — varaqdagi davr (`dan`, `sana`; boshidan — 2000-01-01).
+ */
+export async function fixOpeningAction(who: "customer" | "supplier", id: string, from: string, to: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const r = parseForm(fixSchema.omit({ date: true }), fd);
+  if ("error" in r) return { error: r.error, field: r.field };
+  const a = isoDay(from) ?? DEBT_EPOCH, b = isoDay(to);
+  if (!b || a > b) return { error: "Davr noto'g'ri — sahifani yangilang" };
+  const d = r.data;
+  const owesUs = d.side === "qarz" ? d.amount : -d.amount;
+  const target = who === "customer" ? owesUs : -owesUs;
+  const res = await setOpeningTotal(who === "customer" ? "CUSTOMER" : "SUPPLIER", id, a, b, target, d.note, s.userId);
+  if (res.error) return { error: res.error };
+  refresh();
+  return { ok: true, note: res.changed ? "Boshlang'ich qoldiq tuzatildi" : "Boshlang'ich qoldiq allaqachon shu summada — o'zgarish yo'q" };
+}
+
+const partySchema = z.object({
+  name: zStr("Nomi to'ldirilishi shart").max(200, "Nomi juda uzun"),
+  // Mijoz turi: CASH — naqd, BANK — perechisleniye, bo'sh — oxirgi zayavka bo'yicha (o'zgartirilmagan)
+  payKind: z.enum(["CASH", "BANK", ""]).optional(),
+});
+
+/**
+ * Nom ustunidagi qalam: mijoz — nomi va turi (naqd / perechisleniye), ta'minotchi — nomi. Huquq kartadagi bilan bir xil:
+ * mijoz — «customers → edit», ta'minotchi — «stock → suppliers». Bir xil nomli ikkinchi karta bo'lmaydi.
+ */
+export async function editPartyAction(who: "customer" | "supplier", id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const r = parseForm(partySchema, fd);
+  if (who === "customer") {
+    const s = await requireAction("customers", "edit");
+    if ("error" in r) return { error: r.error, field: r.field };
+    const res = await updateCustomerNameKind(id, { name: r.data.name, payKind: r.data.payKind || null }, s.userId);
+    if (!res.ok) return { error: res.error };
+    syncCustomerLater(id); // ilovadagi tashkilot nomi ham yangilansin
+    refresh();
+    return { ok: true, note: res.note };
+  }
+  const s = await requireAction("stock", "suppliers");
+  if ("error" in r) return { error: r.error, field: r.field };
+  const name = r.data.name.replace(/\s+/g, " ").trim();
+  const key = (v: string) => flatName(toLatin(v));
+  const before = await db.supplier.findUnique({ where: { id } });
+  if (!before) return { error: "Ta'minotchi topilmadi" };
+  if (before.name === name) return { ok: true, note: "O'zgarish yo'q" };
+  if (key(before.name) !== key(name)) {
+    const others = await db.supplier.findMany({ where: { id: { not: id } }, select: { name: true, isActive: true } });
+    const same = others.find((x) => key(x.name) === key(name));
+    if (same) return { error: `«${same.name}» nomli ta'minotchi allaqachon bor${same.isActive ? "" : " (nofaol)"} — bir xil nomli ikkinchi karta bo'lmaydi` };
+  }
+  const after = await db.supplier.update({ where: { id }, data: { name } });
+  await audit(db, s.userId, "UPDATE", "Supplier", id, { name: before.name }, { name: after.name, via: "debt-sheet" });
+  refresh();
+  return { ok: true, note: "Saqlandi" };
 }
 
 const transferSchema = z.object({

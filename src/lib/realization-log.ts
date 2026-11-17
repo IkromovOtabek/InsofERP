@@ -11,6 +11,7 @@ import { realizationRows, shortTtn, type RealizationRow } from "@/lib/realizatio
 import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-sheet";
 import { nextCatalogCode } from "@/lib/numbering";
 import { defaultCreditLimit } from "@/lib/credit-default";
+import { customerNameKey, lockCustomerName } from "@/lib/customer-name";
 import { ensureSite } from "@/lib/logistics";
 import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
 
@@ -251,15 +252,16 @@ type ProductHit = { id: string; name: string; unit: string; groupId: string | nu
 type Lookup = { customer: (name: string) => string | null; product: (name: string) => ProductHit | null; group: (groupId: string | null) => string };
 
 /**
- * Mijoz (nomi yoki aliasi) va mahsulot (nomi yoki kodi) ro'yxatdan: katta-kichik harfsiz, faoli ustun, nomi aliasdan ustun.
- * Bitta forma ham, Excel import ham shu bilan — importda hamma nom bitta so'rovda.
+ * Mijoz (nomi yoki aliasi) va mahsulot (nomi yoki kodi) ro'yxatdan: faoli ustun, nomi aliasdan ustun. Mahsulot —
+ * katta-kichik harfsiz; mijoz — nom kaliti bilan (`customerNameKey`: kirill/lotin, bo'shliq va belgilarsiz), «Kirpichniy dom»
+ * va «KIRPICHNIY  DOM.» bitta mijoz bo'lsin. Bitta forma ham, Excel import ham shu bilan — importda hamma nom bitta so'rovda.
  */
 async function entryLookup(customerNames: string[], productNames: string[]): Promise<Lookup> {
   const cn = uniq(customerNames), pn = uniq(productNames);
   const ci = (v: string) => ({ equals: v, mode: "insensitive" as const });
   const [customers, products, groups] = await Promise.all([
     cn.length
-      ? db.customer.findMany({ where: { isInternal: false, OR: [...cn.map((n) => ({ name: ci(n) })), { aliases: { hasSome: cn } }] }, orderBy: { isActive: "desc" }, select: { id: true, name: true, aliases: true } })
+      ? db.customer.findMany({ where: { isInternal: false }, orderBy: [{ isActive: "desc" }, { createdAt: "asc" }], select: { id: true, name: true, aliases: true } })
       : [],
     pn.length
       ? db.product.findMany({ where: { OR: pn.flatMap((n) => [{ name: ci(n) }, { code: ci(n) }]) }, orderBy: { isActive: "desc" }, select: { id: true, name: true, code: true, unit: true, groupId: true } })
@@ -267,13 +269,14 @@ async function entryLookup(customerNames: string[], productNames: string[]): Pro
     pn.length ? db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }) : [],
   ]);
   const lc = (v: string) => v.toLowerCase();
+  const ck = customerNameKey;
   const cust = new Map<string, string>();
-  for (const c of customers) if (!cust.has(lc(c.name))) cust.set(lc(c.name), c.id);
-  for (const c of customers) for (const a of c.aliases) if (!cust.has(lc(a))) cust.set(lc(a), c.id);
+  for (const c of customers) { const k = ck(c.name); if (k && !cust.has(k)) cust.set(k, c.id); }
+  for (const c of customers) for (const a of c.aliases) { const k = ck(a); if (k && !cust.has(k)) cust.set(k, c.id); }
   const prod = new Map<string, ProductHit>();
   for (const p of products) if (!prod.has(lc(p.name))) prod.set(lc(p.name), p);
   for (const p of products) if (p.code && !prod.has(lc(p.code))) prod.set(lc(p.code), p);
-  return { customer: (n) => cust.get(lc(n)) ?? null, product: (n) => prod.get(lc(n)) ?? null, group: rootGroupName(groups) };
+  return { customer: (n) => cust.get(ck(n)) ?? null, product: (n) => prod.get(lc(n)) ?? null, group: rootGroupName(groups) };
 }
 
 /** Forma qiymatlari → jadval qatori: mijoz/mahsulot ro'yxatga bog'lanadi, birlik va guruh mahsulotdan, QQS to'lov turidan. */
@@ -734,23 +737,22 @@ async function addMissingCustomers(
   rows: readonly { customerId: string | null; customerName: string }[],
   userId: string,
 ): Promise<{ idOf: (name: string) => string | null; created: string[] }> {
-  const lc = (v: string) => v.toLowerCase();
+  // Nom kaliti (`customerNameKey`) — «Kirpichniy dom», «KIRPICHNIY  DOM.» va «Кирпичный дом» bitta mijoz (takror ochilmasin)
+  const ck = customerNameKey;
   const want = new Map<string, string>();
-  for (const r of rows) if (!r.customerId && r.customerName.trim() && !want.has(lc(r.customerName))) want.set(lc(r.customerName), r.customerName);
+  for (const r of rows) { const k = ck(r.customerName); if (!r.customerId && k && !want.has(k)) want.set(k, r.customerName.replace(/\s+/g, " ").trim()); }
   const idOf = new Map<string, string>();
   const created: string[] = [];
-  const result = { idOf: (n: string) => idOf.get(lc(n)) ?? null, created };
+  const result = { idOf: (n: string) => idOf.get(ck(n)) ?? null, created };
   if (!want.size) return result;
   // Qo'lda qator, tahrir va import bir vaqtda bir xil yangi nomni ikki mijoz qilib yubormasin
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"realization-customers"}))`;
+  // Mijoz kartasi / zayavka formasi bilan ham bir navbat (`lib/customer-name.ts`)
+  for (const name of [...want.values()].sort()) await lockCustomerName(tx, name);
 
-  const names = [...want.values()];
-  const have = await tx.customer.findMany({
-    where: { isInternal: false, OR: [...names.map((n) => ({ name: { equals: n, mode: "insensitive" as const } })), { aliases: { hasSome: names } }] },
-    orderBy: { isActive: "desc" }, select: { id: true, name: true, aliases: true },
-  });
-  for (const c of have) if (!idOf.has(lc(c.name))) idOf.set(lc(c.name), c.id);
-  for (const c of have) for (const a of c.aliases) if (!idOf.has(lc(a))) idOf.set(lc(a), c.id);
+  const have = await tx.customer.findMany({ where: { isInternal: false }, orderBy: [{ isActive: "desc" }, { createdAt: "asc" }], select: { id: true, name: true, aliases: true } });
+  for (const c of have) { const k = ck(c.name); if (k && !idOf.has(k)) idOf.set(k, c.id); }
+  for (const c of have) for (const a of c.aliases) { const k = ck(a); if (k && !idOf.has(k)) idOf.set(k, c.id); }
   const limit = await defaultCreditLimit(tx);
   for (const [key, name] of want) {
     if (idOf.has(key)) continue;
