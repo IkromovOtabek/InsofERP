@@ -1,33 +1,59 @@
 import Link from "next/link";
-import { HandCoins, Settings2, Wallet } from "lucide-react";
+import { FileSpreadsheet, HandCoins, Settings2, Sheet as SheetIcon, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { date, dateTime, money } from "@/lib/format";
-import { monthOf, monthTitle, today } from "@/lib/davomat";
+import { monthOf, monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { canPayroll, listRuns, payrollSettings } from "@/lib/hr/payroll";
 import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
-import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, Empty, EmptyState, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Fold } from "@/components/fold";
 import { CalculateForm, PieceRatesForm, SettingsForm } from "./forms";
 import { listDebts } from "@/lib/hr/employee-debt";
+import { listWorkbooks, loadWorkbook } from "@/lib/payroll-sheets";
+import type { SheetData } from "@/lib/sheet-calc";
 import { ConfirmButton } from "../payments/confirm-button";
 import { cancelEmployeeDebt } from "./actions";
+import { cancelWorkbookAction } from "./varaq-actions";
+import { SheetGrid } from "./sheet-grid";
+import { WorkbookPicker, WorkbookUploadForm } from "./varaq-forms";
 
 /**
  * Ish haqi: otdel kadr / buxgalteriya hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`).
  * Har vedomost — oy uchun avans, oy yakuni yoki alohida to'lov (xodimning avans arizasi).
  */
-export default async function PayrollPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function PayrollPage({ searchParams }: { searchParams: Promise<{ tab?: string; kitob?: string; varaq?: string }> }) {
   const s = await requirePage("/ish-haqi");
   const sp = await searchParams;
   const month = monthOf(today());
   const canCalc = canPayroll(s, "calc");
   const canSettings = canPayroll(s, "settings");
   const canDebts = canPayroll(s, "debts");
-  // Faqat qarzlar huquqi bor (Sekretar) — vedomost va sozlamalar ko'rinmaydi, faqat «Xodim qarzlari»
-  const debtsOnly = canDebts && !canCalc && !canSettings && !["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"].includes(s.role);
-  const tab = debtsOnly ? "qarzlar" : sp.tab === "qarzlar" && canDebts ? "qarzlar" : sp.tab === "sozlamalar" ? "sozlamalar" : "vedomostlar";
+  const canSheets = canPayroll(s, "sheets");
+  // Sekretar: vedomost va sozlamalar ko'rinmaydi — faqat «Oylik varaqlari» (Excel kitobi) va «Xodim qarzlari»
+  const limited = (canDebts || canSheets) && !canCalc && !canSettings && !["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"].includes(s.role);
+  const keys = limited
+    ? [...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : [])]
+    : ["vedomostlar", ...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : []), "sozlamalar"];
+  const tab = keys.includes(sp.tab ?? "") ? sp.tab! : keys[0];
   const debts = tab === "qarzlar" ? await listDebts() : [];
-  if (debtsOnly) return <DebtsView debts={debts} canCancel />;
+  const tabItems = [
+    { key: "vedomostlar", label: "Vedomostlar", href: "/ish-haqi", icon: Wallet },
+    { key: "varaqlar", label: "Oylik varaqlari", href: "/ish-haqi?tab=varaqlar", icon: SheetIcon },
+    { key: "qarzlar", label: "Xodim qarzlari", href: "/ish-haqi?tab=qarzlar", icon: HandCoins },
+    { key: "sozlamalar", label: "Sozlamalar", href: "/ish-haqi?tab=sozlamalar", icon: Settings2 },
+  ].filter((t) => keys.includes(t.key));
+  if (limited) {
+    return (
+      <div className="space-y-4" {...(tab === "varaqlar" ? { "data-wide": "" } : {})}>
+        {tab === "qarzlar"
+          ? <PageHeader title="Xodim qarzlari" info="Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimi «Oylikdan nasiya» bilan yozilsa — qarz shu yerda; har oy yakuni vedomostida ulushi ushlanadi" />
+          : <PageHeader title="Ish haqi" info={SHEETS_INFO} />}
+        {tabItems.length > 1 && <Tabs current={tab} items={tabItems} />}
+        {tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} /> : <DebtTable debts={debts} canCancel={canDebts} />}
+      </div>
+    );
+  }
 
   const [runs, st, products] = await Promise.all([
     listRuns({ take: 80 }),
@@ -38,6 +64,16 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const toPay = runs.filter((r) => r.status === "APPROVED");
   const thisMonth = runs.filter((r) => r.month === month && r.status !== "CANCELLED");
 
+  if (tab === "varaqlar") {
+    return (
+      <div className="space-y-4" data-wide="">
+        <PageHeader title="Ish haqi" info={SHEETS_INFO} />
+        <Tabs current={tab} items={tabItems} />
+        <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader title="Ish haqi" info="Avans va oy yakuni vedomostlari: hisoblash → direktor tasdig'i → kassadan to'lov" />
@@ -47,11 +83,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
         <StatCard label="To'lov kutmoqda" value={String(toPay.length)} tone={toPay.length ? "brand" : "default"} hint={toPay.length ? money(toPay.reduce((x, r) => x + Number(r.net) - Number(r.paid), 0)) : undefined} href={toPay.length === 1 ? `/ish-haqi/${toPay[0].id}` : "/ish-haqi#vedomostlar"} />
         <StatCard label={`${monthTitle(month)} — to'langan`} value={money(thisMonth.reduce((x, r) => x + Number(r.paid), 0))} href="/ish-haqi#vedomostlar" />
       </div>
-      <Tabs current={tab} items={[
-        { key: "vedomostlar", label: "Vedomostlar", href: "/ish-haqi", icon: Wallet },
-        ...(canDebts ? [{ key: "qarzlar", label: "Xodim qarzlari", href: "/ish-haqi?tab=qarzlar", icon: HandCoins }] : []),
-        { key: "sozlamalar", label: "Sozlamalar", href: "/ish-haqi?tab=sozlamalar", icon: Settings2 },
-      ]} />
+      <Tabs current={tab} items={tabItems} />
 
       {tab === "qarzlar" && <DebtTable debts={debts} canCancel={canDebts} />}
 
@@ -112,12 +144,45 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
 
 type Debt = Awaited<ReturnType<typeof listDebts>>[number];
 
-/** Sekretar ko'rinishi: faqat xodim qarzlari. */
-function DebtsView({ debts, canCancel }: { debts: Debt[]; canCancel: boolean }) {
+const SHEETS_INFO = (
+  <>
+    <p><b>Oylik varaqlari</b> — korxonaning oylik Excel kitobi (tabellar, vedomostlar, qarzlar) ERP ichida, barcha varaqlari bilan. Har oy uchun fayl bir marta yuklanadi.</p>
+    <p>Katakni tanlab yozing (yoki F2 / ikki marta bosing): Enter — pastga, Tab — o&apos;ngga, Esc — bekor, Delete — tozalash, Ctrl+Z — orqaga. Formula «=» bilan boshlanadi (SUM, SUMPRODUCT, IFERROR, ROUND, IF…); formula yozilayotganda katak bosilsa — manzili qo&apos;shiladi. Excel&apos;dan blokni nusxa olib Ctrl+V bilan joylash mumkin.</p>
+    <p>O&apos;zgarish darhol saqlanadi va formulalar shu zahoti qayta hisoblanadi. «Excel yuklab olish» — joriy holat (tahrirlar bilan) .xlsx bo&apos;lib.</p>
+  </>
+);
+
+/** «Oylik varaqlari»: kitob tanlash, yuklash, Excel kabi jadval. */
+async function SheetsTab({ kitob, varaq, canEdit }: { kitob?: string; varaq?: string; canEdit: boolean }) {
+  const list = await listWorkbooks();
+  const cur = list.find((w) => w.id === kitob) ?? list.find((w) => !w.cancelledAt) ?? list[0];
+  const wb = cur ? await loadWorkbook(cur.id) : null;
+  const thisMonth = monthOf(today());
+  const months = Array.from({ length: 15 }, (_, i) => shiftMonth(thisMonth, 1 - i)).map((m) => ({ key: m, label: monthTitle(m) }));
+  const upload = canEdit && <WorkbookUploadForm months={months} defMonth={shiftMonth(thisMonth, -1)} />;
+  if (!wb) {
+    return (
+      <Card>
+        <EmptyState icon={FileSpreadsheet} title="Hali Excel kitobi yuklanmagan" text={canEdit ? "Oylik Excel faylini yuklang — barcha varaqlari shu yerda Excel'dagidek ochiladi va tahrirlanadi" : "Sekretar oylik Excel faylini yuklagach shu yerda ko'rinadi"} />
+        {upload && <div className="border-t border-slate-100 pt-4">{upload}</div>}
+      </Card>
+    );
+  }
+  const editable = canEdit && !wb.cancelledAt;
   return (
-    <div className="space-y-4">
-      <PageHeader title="Xodim qarzlari" info="Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimi «Oylikdan nasiya» bilan yozilsa — qarz shu yerda; har oy yakuni vedomostida ulushi ushlanadi" />
-      <DebtTable debts={debts} canCancel={canCancel} />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <WorkbookPicker current={wb.id} items={list.map((w) => ({ id: w.id, label: `${monthTitle(w.month)} — ${w.title}${w.cancelledAt ? " (bekor)" : ""}` }))} />
+        <span className="text-xs text-slate-500">{wb.sheets.length} varaq · yuklangan {dateTime(wb.createdAt)}{+wb.updatedAt - +wb.createdAt > 60_000 ? ` · oxirgi tahrir ${dateTime(wb.updatedAt)}` : ""}</span>
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          <LinkButton href={`/ish-haqi/varaq-excel?id=${wb.id}`} variant="secondary" size="sm"><FileSpreadsheet size={14} /> Excel yuklab olish</LinkButton>
+          {editable && <ConfirmButton action={cancelWorkbookAction.bind(null, wb.id)} label="Bekor qilish" reason="required" question="Kitob bekor qilinadi (o'chirilmaydi, ro'yxatda «bekor» bo'lib qoladi, tahrir yopiladi). Sababi?" className="text-xs" />}
+        </span>
+      </div>
+      {wb.cancelledAt && <Callout tone="warning" title="Kitob bekor qilingan">{wb.cancelReason ?? "Sabab ko'rsatilmagan"} — faqat ko&apos;rish mumkin.</Callout>}
+      <SheetGrid key={wb.id} canEdit={editable} initial={varaq}
+        sheets={wb.sheets.map((x) => ({ id: x.id, name: x.name, hidden: x.hidden, data: x.data as unknown as SheetData }))} />
+      {upload && <Fold title="Yangi Excel yuklash (boshqa oy yoki yangilangan fayl)">{upload}</Fold>}
     </div>
   );
 }

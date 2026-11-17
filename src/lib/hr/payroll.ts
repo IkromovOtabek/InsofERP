@@ -44,7 +44,7 @@ export const PAYROLL_CATEGORY = "Ish haqi";
 export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
-export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts") => canDo(who, "payroll", what);
+export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets") => canDo(who, "payroll", what);
 
 export class PayrollError extends Error {}
 const STALE = "Vedomost boshqa joyda o'zgartirildi — sahifani yangilang";

@@ -4361,6 +4361,41 @@ model PayrollSettings {
   updatedAt    DateTime @updatedAt
 }
 
+/// Oylik Excel kitobi (Sekretar, «Ish haqi» → «Oylik varaqlari»): korxonaning o'z Excel fayli barcha varaqlari bilan
+/// ERP ichida — Excel'dagidek ko'rinadi, kataklari tahrirlanadi, formulalar qayta hisoblanadi (`lib/sheet-calc.ts`).
+/// ERP vedomostlariga (PayrollRun) bog'lanmaydi. O'chirilmaydi — bekor qilinadi (sabab bilan).
+model PayrollWorkbook {
+  id            String    @id @default(cuid())
+  month         String // "2026-10"
+  title         String // fayl nomi (kengaytmasiz)
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  sheets PayrollSheet[]
+
+  @@index([month, cancelledAt])
+}
+
+/// Kitob varag'i: kataklar, formulalar, uslublar, birlashgan kataklar — `data` JSON (`lib/payroll-sheets.ts`, `SheetData`).
+/// Katak tahriri `jsonb_set` bilan faqat o'sha katakni yozadi — bir vaqtda turli kataklar tahriri bir-birini o'chirmaydi.
+model PayrollSheet {
+  id         String   @id @default(cuid())
+  workbookId String
+  position   Int // Excel'dagi tartib (0 dan)
+  name       String
+  hidden     Boolean  @default(false) // Excel'da yashirin varaq
+  data       Json
+  updatedAt  DateTime @updatedAt
+
+  workbook PayrollWorkbook @relation(fields: [workbookId], references: [id], onDelete: Restrict)
+
+  @@unique([workbookId, position])
+}
+
 /**
  * ═══════════════════════ Tijorat taklifi (Kommercheskoe predlojenie) ═══════════════════════
  */
