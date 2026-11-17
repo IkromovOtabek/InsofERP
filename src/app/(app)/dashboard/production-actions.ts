@@ -133,10 +133,9 @@ export async function saveReport(_prev: ActionState, fd: FormData): Promise<Acti
   const s = await requireAction("production", "report");
   const iso = validDay(String(fd.get("iso") ?? "")) ?? today();
   const note = String(fd.get("note") ?? "").trim() || null;
-  // Brigada sabablari: "reason:<brigadeId>" (brigadasiz qator — "reason:-")
-  const reasons: Record<string, string> = {};
-  for (const [k, v] of fd.entries()) if (k.startsWith("reason:") && typeof v === "string" && v.trim()) reasons[k.slice(7)] = v;
-  const r = await submitReport(s.userId, iso, note, reasons);
+  // Varaq maydonlari: cell:<brigada>:<ustun>, reason:<brigada>, plan:<ustun>:month|day (brigadasiz qator — "-")
+  const fields = [...fd.entries()].filter((e): e is [string, string] => typeof e[1] === "string" && /^(cell|reason|plan):/.test(e[0]));
+  const r = await submitReport(s.userId, iso, note, fields);
   if ("error" in r) return { error: r.error };
   revalidatePath("/dashboard/hisobot");
   return { ok: true, note: "Hisobot saqlandi va direktorga yuborildi" };

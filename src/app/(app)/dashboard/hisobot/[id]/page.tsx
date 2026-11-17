@@ -27,7 +27,7 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
           <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">Qayd etilgan · {dateTime(rep.createdAt)}</span>
           <PrintButton />
         </div>
-        <DailySheet r={rep.snap} company={company.name} note={rep.note} stamp={<>topshirdi: {rep.by} · {dateTime(rep.createdAt)}</>} />
+        <DailySheet m={rep.snap.daily} iso={rep.snap.iso} ym={rep.snap.ym} workDays={rep.snap.plan.workDays} elapsed={rep.snap.plan.elapsed} company={company.name} note={rep.note} stamp={<>topshirdi: {rep.by} · {dateTime(rep.createdAt)}</>} />
         <details className="mt-8 border-t border-slate-200 pt-3 print:hidden">
           <summary className="cursor-pointer text-sm font-medium text-slate-600">Batafsil hisobot — soatma-soat, yuklash, brak, davomat, sklad</summary>
           <div className="mt-4">

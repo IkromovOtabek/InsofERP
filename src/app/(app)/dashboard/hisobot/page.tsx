@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { PRODUCTION_HOME_ROLES } from "@/lib/production-day";
-import { buildReport, lastSavedFor, reportHistory } from "@/lib/production-report";
+import { buildReport, lastNoteFor, reportHistory } from "@/lib/production-report";
 import { dayTitle, shiftDay, today, validDay } from "@/lib/davomat";
 import { dateTime } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
@@ -23,7 +23,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const s = await getSession();
   if (!s || !(s.role === "DIRECTOR" || (PRODUCTION_HOME_ROLES as readonly string[]).includes(s.role))) redirect("/dashboard?denied=1");
   const iso = validDay((await searchParams).kun) ?? today();
-  const [r, company, history, last] = await Promise.all([buildReport(iso), getCompany(), reportHistory(20), lastSavedFor(iso)]);
+  const [r, company, history, last] = await Promise.all([buildReport(iso), getCompany(), reportHistory(20), lastNoteFor(iso)]);
   const isToday = iso === today();
   const saved = history.filter((h) => h.iso === iso);
 
@@ -53,14 +53,15 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             <div className="mb-2 text-[13px] text-slate-700">
               {saved.length
                 ? <>Bu kun uchun hisobot <b>{saved.length} marta</b> qayd etilgan (oxirgisi {dateTime(saved[0].createdAt)}). Qayta qayd etsangiz yangi nusxa saqlanadi — oldingisi tarixda qoladi.</>
-                : <>Raqamlarni tekshiring, kam quygan brigadaga <b>sababini</b> yozing va <b>&quot;Qayd etish&quot;</b> ni bosing — hisobot direktorga yuboriladi.</>}
+                : <>Raqamlarni tekshiring, brigadalar quygan sonini va kam quyganiga <b>sababini</b> yozing va <b>&quot;Qayd etish&quot;</b> ni bosing — hisobot direktorga yuboriladi.</>}
             </div>
             <SaveReportForm iso={iso} id="prod-report-form" />
           </div>
         )}
 
-        <DailySheet r={r} company={company.name} stamp={<>jonli · {s.fullName}</>}
-          edit={s.role !== "DIRECTOR" ? { formId: "prod-report-form", reasons: last?.reasons ?? {}, note: last?.note ?? null } : undefined} />
+        <DailySheet key={iso} m={r.daily} iso={r.iso} ym={r.ym} workDays={r.plan.workDays} elapsed={r.plan.elapsed} company={company.name}
+          stamp={<>{saved.length ? "qayd etilgan" : "jonli"} · {s.fullName}</>} note={last}
+          edit={s.role !== "DIRECTOR" ? { formId: "prod-report-form", note: last } : undefined} />
 
         <details className="mt-8 border-t border-slate-200 pt-3 print:hidden">
           <summary className="cursor-pointer text-sm font-medium text-slate-600">Batafsil hisobot — soatma-soat, yuklash, brak, davomat, sklad</summary>
