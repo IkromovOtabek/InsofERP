@@ -43,11 +43,11 @@ export type TabelMonth = {
 
 const DRIVER_RE = /haydovchi|shofyor|шофер|водител/i;
 
-type Emp = { id: string; fullName: string; position: string; payType: PayType; subdivision: string | null; brigadeId: string | null; teamId: string | null; brigade: { name: string } | null; team: { name: string } | null };
+export type TabelEmp = { id: string; fullName: string; position: string; payType: PayType; subdivision: string | null; brigadeId: string | null; teamId: string | null; brigade: { name: string } | null; team: { name: string } | null };
 const PAY_GROUP: Record<PayType, string> = { SALARY: "Oklad (AUP)", DAILY: "Kunbay", HOURLY: "Soatbay", PIECE: "Sdelka" };
 
 /** Xodim guruhi: brigada → komanda → shofyor → bo'linma → ish haqi turi (Excel'dagi varaqlar kabi). */
-function groupOf(e: Emp): { key: string; label: string } {
+export function groupOf(e: TabelEmp): { key: string; label: string } {
   if (e.brigadeId && e.brigade) return { key: `b:${e.brigadeId}`, label: e.brigade.name };
   if (e.teamId && e.team) return { key: `t:${e.teamId}`, label: e.team.name };
   if (DRIVER_RE.test(e.position)) return { key: "drivers", label: "Shofyorlar" };

@@ -183,6 +183,26 @@ Har bosqichdan keyin: `tsc`, `eslint`, QA (`run-all.sh`), haqiqiy fayl bilan sol
   - Qarz va ijro qoldiqlari Excel'dagi P va F ustunlari bilan bir xil (Mirzakarimov 100 000, Xalikov 3 200 000).
   - Excel'dagi xato aniqlandi: Abduqodirova («Карз»da 500 000, C2026'da 0) ↔ Abdurasulov (C2026'da 500 000, qarzi yo'q).
 
+### 4-bosqich holati (2026-11-17, bajarildi)
+- **Vedomost sahifasi** (`/ish-haqi/<id>`):
+  - «C2026 ko'rinish»: bo'limlar va ustunlar — hisoblandi · 12% · qo'lga · brak · aliment · qarz · oylikdan qarz ·
+    to'y puli · jarima · boshqa · avans · qoldiq · plastik · naqd (`lib/hr/vedomost-sheet.ts`).
+  - «Excel» (`/excel`) — shu ko'rinishda.
+  - «To'lov ro'yxati — naqd / plastik» (`/chop`) — imzo ustuni, jami so'z bilan, imzolar.
+- **Avans:** xodimga qo'lda summa (`Employee.advanceAmount`, Excel «Аванс наличка») — avans vedomosti shu summani oladi;
+  bo'sh bo'lsa avvalgidek foiz.
+- **Plastik:** xodimning oylik plastik summasi (`Employee.cardAmount`) → qatordagi `cardAmount` (qo'lgadan oshmaydi).
+  Kassir naqd qismini kassadan, plastik qismini bank hisobidan to'laydi — ikki chiqim (`cashTxId` + `cardTxId`).
+  To'lovni bekor qilish ikkalasini qaytaradi. Mobil to'lov `bankAccountId` ni qabul qiladi.
+- **Kiritish:** Ushlanmalar tabi → «Avans va plastik summalari». Excel importi «Аванс наличка» va C2026 «пластик»
+  ustunini ham o'qiydi.
+- **Tekshiruv (oktabr):**
+  - Avans jami 137 447 000 — Excel bilan teng.
+  - Oy yakuni qatori Excel C2026 qatoriga mos (ushlanmalar, avans).
+  - Naqd + plastik to'lov va uni bekor qilish sinaldi.
+- **Qolgan (5-bosqich):** bir oy parallel yuritish. O'tish oyida Excel orqali berilgan avans ERP'da avans vedomosti
+  sifatida yozilishi kerak, aks holda oy yakunida ushlanmaydi.
+
 ---
 
 ## 5. Kelishib olinadigan savollar

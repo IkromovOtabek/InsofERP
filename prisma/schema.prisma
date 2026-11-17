@@ -635,6 +635,10 @@ model Employee {
   tabelNo     String? // табельный номер — buxgalteriya tabelidagi raqam
   subdivision String? // подразделение — brigada / uchastka nomi
   tariffRate  Decimal?  @db.Decimal(18, 2) // тарифная ставка — kelishilgan tarif stavkasi
+  /// Avans — har oy qo'lda belgilangan summa (Excel «Аванс наличка»); bo'sh — avans foiz bo'yicha hisoblanadi
+  advanceAmount Decimal? @db.Decimal(18, 2)
+  /// Oylikning plastik kartaga o'tkaziladigan qismi (oyiga, so'm); qolgani naqd. Bo'sh — hammasi naqd
+  cardAmount    Decimal? @db.Decimal(18, 2)
   phone       String?
   hiredAt     DateTime? // ishga kirgan sana — otdel kadr yuritadi
   firedAt     DateTime? // ishdan bo'shagan sana (to'ldirilsa xodim nofaol bo'ladi)
@@ -4442,6 +4446,10 @@ model PayrollLine {
   paidAt          DateTime?
   paidById        String?
   cashTxId        String?
+  /// Qo'lga tegadiganning plastik kartaga qismi (xodim kartasidagi `cardAmount`, qo'lgadan oshmaydi); qolgani naqd
+  cardAmount      Decimal   @default(0) @db.Decimal(18, 2)
+  /// Plastik qismi alohida (bank) chiqimi — naqd qismi bilan birga to'langanda (`cashTxId` — naqd)
+  cardTxId        String?
   breakdown       Json?
 
   run      PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)

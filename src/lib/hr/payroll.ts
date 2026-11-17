@@ -88,10 +88,12 @@ type CalcLine = {
   normDays: number; workedDays: number; workedMinutes: number; units: number;
   base: number; leavePay: number; sickPay: number; bonus: number; penalty: number; gross: number;
   incomeTax: number; inps: number; advanceDeducted: number; net: number; employerTax: number;
+  /** Qo'lga tegadiganning plastik kartaga qismi (xodim kartasidagi summa, qo'lgadan oshmaydi) */
+  cardAmount: number;
   breakdown: LineBreakdown;
 };
 
-type Emp = { id: string; fullName: string; position: string; payType: PayType; tariffRate: unknown; hiredAt: Date | null; firedAt: Date | null; workSchedule: string | null; brigadeId: string | null };
+type Emp = { id: string; fullName: string; position: string; payType: PayType; tariffRate: unknown; hiredAt: Date | null; firedAt: Date | null; workSchedule: string | null; brigadeId: string | null; advanceAmount: unknown; cardAmount: unknown };
 
 const ruleFits = (r: PayRule, position: string) => !r.position || r.position.trim().toLowerCase() === position.trim().toLowerCase();
 
@@ -111,7 +113,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   const emps: Emp[] = await db.employee.findMany({
     where: { AND: [employeesInWindow(fromD, toD), { OR: [{ userId: null }, { user: { role: { notIn: ["SUPERADMIN"] } } }] }, ...(opts.employeeIds ? [{ id: { in: opts.employeeIds } }] : [])] },
     orderBy: [{ position: "asc" }, { fullName: "asc" }],
-    select: { id: true, fullName: true, position: true, payType: true, tariffRate: true, hiredAt: true, firedAt: true, workSchedule: true, brigadeId: true },
+    select: { id: true, fullName: true, position: true, payType: true, tariffRate: true, hiredAt: true, firedAt: true, workSchedule: true, brigadeId: true, advanceAmount: true, cardAmount: true },
   });
   if (!emps.length) return [];
   const ids = emps.map((e) => e.id);
@@ -317,10 +319,17 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         if (m.kind === "BONUS") bonus += num(m.amount); else penalty += num(m.amount);
       }
     } else {
-      // Avans: shu kungacha hisoblangan summadan oylik bashorat × foiz (oklad, to'liq kelgan — oylikning foizi)
-      const projected = normPeriod > 0 ? (base * normMonth) / normPeriod : base;
-      advanceFormula = `${money(r0(base))} (1–${advDay} kun) → oyga ${money(r0(projected))} × ${st.advancePct}%`;
-      base = thousand((projected * st.advancePct) / 100);
+      // Avans: xodimga qo'lda belgilangan summa bo'lsa — o'sha (Excel «Аванс наличка» kabi, davrda ishda bo'lsa);
+      // aks holda shu kungacha hisoblangan summadan oylik bashorat × foiz (oklad, to'liq kelgan — oylikning foizi)
+      const fixedAdv = num(e.advanceAmount);
+      if (fixedAdv > 0) {
+        base = lo <= hi ? r0(fixedAdv) : 0;
+        advanceFormula = lo <= hi ? `qo'lda belgilangan avans: ${money(r0(fixedAdv))}` : "avans davrida ishda emas";
+      } else {
+        const projected = normPeriod > 0 ? (base * normMonth) / normPeriod : base;
+        advanceFormula = `${money(r0(base))} (1–${advDay} kun) → oyga ${money(r0(projected))} × ${st.advancePct}%`;
+        base = thousand((projected * st.advancePct) / 100);
+      }
     }
 
     const adv = advances.filter((a) => a.employeeId === e.id).map((a) => ({ docNo: a.run.docNo, amount: num(a.paid) }));
@@ -347,8 +356,10 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     const net = kind === "FINAL" ? gross - incomeTax - r0(penalty) - r0(advanceSum) : Math.max(0, gross - r0(advanceSum));
     if (kind === "FINAL" && net < 0) warnings.push(`Ushlanmalar hisoblangandan ko'p — xodim qarzi ${money(-net)}: vedomost tasdiqlangach keyingi oy yakunida ushlanadi`);
 
+    // Plastik qismi — faqat oy yakunida (avans naqd, Excel'dagidek), qo'lga tegadigandan oshmaydi
+    const cardAmount = kind === "FINAL" ? Math.max(0, Math.min(net, r0(num(e.cardAmount)))) : 0;
     out.push({
-      employeeId: e.id, fullName: e.fullName, position: e.position, payType: e.payType, rate,
+      employeeId: e.id, fullName: e.fullName, position: e.position, payType: e.payType, rate, cardAmount,
       normDays: normMonth, workedDays: present, workedMinutes: minutes, units: Math.round(units * 1000) / 1000,
       base: r0(base), leavePay: r0(leavePay), sickPay: r0(sickPay), bonus: r0(bonus), penalty: r0(penalty), gross,
       incomeTax, inps, advanceDeducted: r0(advanceSum), net, employerTax,
@@ -395,7 +406,7 @@ async function writeLines(tx: Prisma.TransactionClient, runId: string, lines: Ca
       data: lines.map((l) => ({
         runId, employeeId: l.employeeId, payType: l.payType, rate: l.rate, normDays: l.normDays, workedDays: l.workedDays, workedMinutes: l.workedMinutes,
         units: l.units, base: l.base, leavePay: l.leavePay, sickPay: l.sickPay, bonus: l.bonus, penalty: l.penalty, gross: l.gross,
-        incomeTax: l.incomeTax, inps: l.inps, advanceDeducted: l.advanceDeducted, net: l.net, employerTax: l.employerTax,
+        incomeTax: l.incomeTax, inps: l.inps, advanceDeducted: l.advanceDeducted, net: l.net, employerTax: l.employerTax, cardAmount: l.cardAmount,
         breakdown: l.breakdown as unknown as Prisma.InputJsonValue,
       })),
     });
@@ -513,13 +524,16 @@ export async function cancelRun(id: string, reason: string, user: PayrollWho) {
  * Kassadan to'lash: tanlangan (yoki hamma) to'lanmagan qatorlar — bitta "Ish haqi" chiqimi. Kassa qoldig'i qulf ostida
  * tekshiriladi; qatorlar shartli yoziladi (ikki marta bosish ikki marta to'lamaydi).
  */
-export async function payRun(id: string, input: { cashAccountId: string; lineIds?: string[] | null; note?: string | null }, user: PayrollWho) {
+export async function payRun(id: string, input: { cashAccountId: string; bankAccountId?: string | null; lineIds?: string[] | null; note?: string | null }, user: PayrollWho) {
   if (!canPayroll(user, "pay")) return { error: "Ish haqini kassir to'laydi" };
   const run = await db.payrollRun.findUnique({ where: { id }, select: { id: true, docNo: true, status: true, month: true, kind: true } });
   if (!run) return { error: "Vedomost topilmadi" };
   if (run.status !== "APPROVED") return { error: run.status === "PAID" ? "Vedomost to'liq to'langan" : "Vedomost hali direktor tomonidan tasdiqlanmagan" };
   const acc = input.cashAccountId ? await db.cashAccount.findUnique({ where: { id: input.cashAccountId } }) : null;
   if (!acc || !acc.isActive) return { error: "Kassa / hisob tanlanmagan" };
+  // Plastik qismi (qatordagi `cardAmount`) — alohida hisobdan (bank); tanlanmasa plastik qismi bo'lgan qator to'lanmaydi
+  const bank = input.bankAccountId ? await db.cashAccount.findUnique({ where: { id: input.bankAccountId } }) : null;
+  if (input.bankAccountId && (!bank || !bank.isActive)) return { error: "Plastik uchun hisob topilmadi" };
 
   return wrap(async () => {
     const res = await db.$transaction(async (tx) => {
@@ -527,34 +541,45 @@ export async function payRun(id: string, input: { cashAccountId: string; lineIds
       await tx.$queryRaw`SELECT id FROM "PayrollRun" WHERE id = ${id} FOR UPDATE`;
       const lines = await tx.payrollLine.findMany({
         where: { runId: id, paidAt: null, net: { gt: 0 }, ...(input.lineIds?.length ? { id: { in: input.lineIds } } : {}) },
-        select: { id: true, net: true, employeeId: true, employee: { select: { fullName: true } } },
+        select: { id: true, net: true, cardAmount: true, employeeId: true, employee: { select: { fullName: true } } },
       });
       if (!lines.length) throw new PayrollError("To'lanadigan qator yo'q — hammasi to'langan");
-      const total = lines.reduce((s, l) => s + num(l.net), 0);
-      const cashErr = await cashOutflowError(tx, acc.id, total);
+      const cardOf = (l: (typeof lines)[number]) => Math.min(num(l.net), num(l.cardAmount));
+      const cardTotal = lines.reduce((s, l) => s + cardOf(l), 0);
+      const cashTotal = lines.reduce((s, l) => s + num(l.net) - cardOf(l), 0);
+      const total = cashTotal + cardTotal;
+      if (cardTotal > 0 && !bank) throw new PayrollError(`Plastik qismi ${money(cardTotal)} — uni qaysi hisobdan (bank) o'tkazishni tanlang`);
+      const cashErr = cashTotal > 0 ? await cashOutflowError(tx, acc.id, cashTotal) : null;
       if (cashErr) throw new PayrollError(cashErr);
+      if (cardTotal > 0) { const e2 = await cashOutflowError(tx, bank!.id, cardTotal); if (e2) throw new PayrollError(e2); }
       const now = new Date();
-      const ct = await tx.cashTransaction.create({
+      const who = lines.length === 1 ? lines[0]!.employee.fullName : `${lines.length} xodim`;
+      const baseNote = [`Ish haqi ${run.docNo} · ${monthTitle(run.month)} · ${PAYROLL_KIND_LABEL[run.kind]}`, input.note?.trim()].filter(Boolean).join(" · ");
+      const mk = (accountId: string, amount: number, part: string) => tx.cashTransaction.create({
         data: {
-          type: "EXPENSE", date: now, cashAccountId: acc.id, amount: total, category: PAYROLL_CATEGORY,
-          counterparty: lines.length === 1 ? lines[0]!.employee.fullName : `${lines.length} xodim`,
-          refType: PAYROLL_REF, refId: id, createdById: user.userId,
-          note: [`Ish haqi ${run.docNo} · ${monthTitle(run.month)} · ${PAYROLL_KIND_LABEL[run.kind]}`, input.note?.trim()].filter(Boolean).join(" · ").slice(0, 500),
+          type: "EXPENSE", date: now, cashAccountId: accountId, amount, category: PAYROLL_CATEGORY, counterparty: who,
+          refType: PAYROLL_REF, refId: id, createdById: user.userId, note: `${baseNote}${part}`.slice(0, 500),
         },
       });
+      const cashTx = cashTotal > 0 ? await mk(acc.id, cashTotal, cardTotal > 0 ? " · naqd qismi" : "") : null;
+      const cardTx = cardTotal > 0 ? await mk(bank!.id, cardTotal, " · plastik") : null;
+      const ct = (cashTx ?? cardTx)!;
       for (const l of lines) {
-        const n = await tx.payrollLine.updateMany({ where: { id: l.id, paidAt: null }, data: { paid: l.net, paidAt: now, paidById: user.userId, cashTxId: ct.id } });
+        const card = cardOf(l), cash = num(l.net) - card;
+        // cashTxId — asosiy chiqim (naqd, u bo'lmasa plastik); cardTxId — plastik alohida chiqim bo'lsa
+        const main = cash > 0 ? cashTx! : cardTx!;
+        const n = await tx.payrollLine.updateMany({ where: { id: l.id, paidAt: null }, data: { paid: l.net, paidAt: now, paidById: user.userId, cashTxId: main.id, cardTxId: cash > 0 && card > 0 ? cardTx!.id : null } });
         if (n.count !== 1) throw new PayrollError(STALE);
       }
       const left = await tx.payrollLine.count({ where: { runId: id, paidAt: null, net: { gt: 0 } } });
       const paidSum = await tx.payrollLine.aggregate({ where: { runId: id }, _sum: { paid: true } });
       await tx.payrollRun.update({ where: { id }, data: { paid: paidSum._sum.paid ?? 0, ...(left === 0 ? { status: "PAID" } : {}) } });
-      await audit(tx, user.userId, "CREATE", "CashTransaction", ct.id, undefined, ct);
-      await audit(tx, user.userId, "UPDATE", "PayrollRun", id, undefined, { tolandi: lines.length, summa: total, cashTxId: ct.id, qoldi: left });
-      return { total, count: lines.length, employees: lines.map((l) => l.employeeId), left };
+      for (const t of [cashTx, cardTx]) if (t) await audit(tx, user.userId, "CREATE", "CashTransaction", t.id, undefined, t);
+      await audit(tx, user.userId, "UPDATE", "PayrollRun", id, undefined, { tolandi: lines.length, summa: total, naqd: cashTotal, plastik: cardTotal, cashTxId: ct.id, cardTxId: cardTx?.id ?? null, qoldi: left });
+      return { total, card: cardTotal, count: lines.length, employees: lines.map((l) => l.employeeId), left };
     });
     notifyAfter(() => notifyEmployees(res.employees, { type: "PAYROLL_PAID", title: `Ish haqi berildi — ${monthTitle(run.month)}`, body: `${PAYROLL_KIND_LABEL[run.kind]} · ${run.docNo}`, link: { key: "oyligim", id: run.id }, channel: "oddiy" }));
-    return { ok: true as const, note: `${res.count} xodimga ${money(res.total)} to'landi${res.left ? ` · yana ${res.left} ta qator qoldi` : " · vedomost yopildi"}` };
+    return { ok: true as const, note: `${res.count} xodimga ${money(res.total)} to'landi${res.card ? ` (naqd ${money(res.total - res.card)}, plastik ${money(res.card)})` : ""}${res.left ? ` · yana ${res.left} ta qator qoldi` : " · vedomost yopildi"}` };
   });
 }
 
@@ -584,15 +609,16 @@ export async function unpayRun(id: string, input: { lineIds?: string[] | null; r
       await tx.$queryRaw`SELECT id FROM "PayrollRun" WHERE id = ${id} FOR UPDATE`;
       const lines = await tx.payrollLine.findMany({
         where: { runId: id, paidAt: { not: null }, ...(input.lineIds?.length ? { id: { in: input.lineIds } } : {}) },
-        select: { id: true, paid: true, paidAt: true, paidById: true, cashTxId: true, employeeId: true, employee: { select: { fullName: true } } },
+        select: { id: true, paid: true, paidAt: true, paidById: true, cashTxId: true, cardTxId: true, employeeId: true, employee: { select: { fullName: true } } },
       });
       if (!lines.length) throw new PayrollError("Bekor qilinadigan to'lov yo'q — qatorlar to'lanmagan yoki allaqachon qaytarilgan");
       const noTx = lines.filter((l) => !l.cashTxId);
       if (noTx.length) throw new PayrollError(`${noTx.map((l) => l.employee.fullName).join(", ")}: to'lov chiqimi bog'lanmagan — bekor qilib bo'lmaydi`);
-      const txIds = [...new Set(lines.map((l) => l.cashTxId!))];
+      // Naqd va plastik chiqimlari (plastik alohida bo'lsa — `cardTxId`)
+      const txIds = [...new Set(lines.flatMap((l) => [l.cashTxId!, ...(l.cardTxId ? [l.cardTxId] : [])]))];
       // Bitta chiqim bo'linmaydi: shu chiqimdagi qolgan qatorlar ham tanlangan bo'lsin
       const picked = new Set(lines.map((l) => l.id));
-      const rest = await tx.payrollLine.findMany({ where: { cashTxId: { in: txIds }, id: { notIn: [...picked] } }, select: { employee: { select: { fullName: true } } } });
+      const rest = await tx.payrollLine.findMany({ where: { OR: [{ cashTxId: { in: txIds } }, { cardTxId: { in: txIds } }], id: { notIn: [...picked] } }, select: { employee: { select: { fullName: true } } } });
       if (rest.length) throw new PayrollError(`Bitta to'lov (chiqim) bo'linmaydi — u bilan birga to'langan: ${rest.map((l) => l.employee.fullName).join(", ")}. Ularni ham belgilang`);
       const cts = await tx.cashTransaction.findMany({ where: { id: { in: txIds } }, orderBy: { cashAccountId: "asc" } });
       if (cts.length !== txIds.length || cts.some((c) => c.refType !== PAYROLL_REF || c.refId !== id)) throw new PayrollError("To'lov chiqimi topilmadi yoki boshqa hujjatga tegishli — sahifani yangilang");
@@ -615,17 +641,17 @@ export async function unpayRun(id: string, input: { lineIds?: string[] | null; r
           const err = await cancelCashTxIn(tx, c, `Ish haqi to'lovi bekor qilindi (${run.docNo}): ${why}`, user.userId);
           if (err) throw new PayrollError(err);
         }
-        const mine = lines.filter((l) => l.cashTxId === c.id);
-        const n = await tx.payrollLine.updateMany({ where: { id: { in: mine.map((l) => l.id) }, cashTxId: c.id, paidAt: { not: null } }, data: { paid: 0, paidAt: null, paidById: null, cashTxId: null } });
-        if (n.count !== mine.length) throw new PayrollError(STALE);
       }
+      // Qatorlar bo'shatiladi (naqd va plastik chiqim havolalari bilan) — chiqimlar yuqorida bekor qilindi
+      const n = await tx.payrollLine.updateMany({ where: { id: { in: lines.map((l) => l.id) }, paidAt: { not: null } }, data: { paid: 0, paidAt: null, paidById: null, cashTxId: null, cardTxId: null } });
+      if (n.count !== lines.length) throw new PayrollError(STALE);
       const paidSum = await tx.payrollLine.aggregate({ where: { runId: id }, _sum: { paid: true } });
       const paid = paidSum._sum.paid ?? 0;
       // Qator yana to'lanmagan — vedomost to'liq to'langan bo'lolmaydi: PAID → APPROVED (shartli, poyga bo'lmasin)
       const u = await tx.payrollRun.updateMany({ where: { id, status: { in: ["APPROVED", "PAID"] } }, data: { paid, status: "APPROVED" } });
       if (u.count !== 1) throw new PayrollError(STALE);
       await auditMany(tx, user.userId, "UPDATE", "PayrollLine", lines.map((l) => ({
-        id: l.id, before: { paid: l.paid, paidAt: l.paidAt, paidById: l.paidById, cashTxId: l.cashTxId }, after: { paid: 0, paidAt: null, cashTxId: null, reason: why },
+        id: l.id, before: { paid: l.paid, paidAt: l.paidAt, paidById: l.paidById, cashTxId: l.cashTxId, cardTxId: l.cardTxId }, after: { paid: 0, paidAt: null, cashTxId: null, cardTxId: null, reason: why },
       })));
       const total = lines.reduce((s, l) => s + num(l.paid), 0);
       await audit(tx, user.userId, "STATUS_CHANGE", "PayrollRun", id, { status: run.status }, { status: "APPROVED", action: "unpay", reason: why, qaytarildi: lines.length, summa: total, cashTxIds: txIds, paid });

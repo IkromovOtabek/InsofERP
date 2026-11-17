@@ -3,7 +3,7 @@ import { dayUtc, monthDays } from "@/lib/davomat";
 import { parseWorkbook } from "@/lib/payroll-sheets";
 import { colName } from "@/lib/sheet-calc";
 import { matchPeople, nameKey, type PersonMatch } from "./tabel";
-import { createOpeningDebt, createWithholding, saveDeductions } from "./deductions";
+import { createOpeningDebt, createWithholding, saveDeductions, savePayoutAmounts } from "./deductions";
 import type { DeductionCat } from "./deduction-cats";
 
 /**
@@ -25,6 +25,8 @@ export type DeductImportPerson = PersonMatch & {
   values: Partial<Record<DeductionCat, number>>;
   loan: { balance: number; monthly: number } | null;
   cases: { caseNo: string | null; percent: number | null; debt: number; held: number }[];
+  /** «Аванс наличка» varag'idagi avans (xodimning oylik avans summasi bo'ladi) va C2026 «Зарплата пластик» */
+  advance: number | null; card: number | null;
   warnings: string[];
 };
 export type DeductImportPreview = { month: string; sources: string[]; people: DeductImportPerson[]; totals: Partial<Record<DeductionCat, number>>; warnings: string[] };
@@ -34,7 +36,7 @@ export async function previewDeductImport(buf: Buffer, month: string): Promise<D
   const byKey = new Map<string, Omit<DeductImportPerson, keyof PersonMatch>>();
   const person = (name: string) => {
     const key = nameKey(name);
-    const p = byKey.get(key) ?? { key, name: name.replace(/\s+/g, " ").trim(), values: {}, loan: null, cases: [], warnings: [] };
+    const p = byKey.get(key) ?? { key, name: name.replace(/\s+/g, " ").trim(), values: {}, loan: null, cases: [], advance: null, card: null, warnings: [] };
     byKey.set(key, p);
     return p;
   };
@@ -58,12 +60,15 @@ export async function previewDeductImport(buf: Buffer, month: string): Promise<D
       // C2026: «подоход» + ushlanma ustunlari
       if (cols.some((x) => /подоход/i.test(x)) && cols.some((x) => /штраф/i.test(x))) {
         const map = C2026_COLS.map(([re, cat]) => ({ cat, c: cols.findIndex((x) => re.test(x)) })).filter((x) => x.c >= 0);
+        const cardC = cols.findIndex((x) => /пластик/i.test(x));
         sources.push(`${sh.name.trim()} (ushlanmalar)`);
         rows((r, name) => {
           const vals = map.map((m) => ({ cat: m.cat, v: r0(num(at(r, m.c))) })).filter((x) => x.v > 0);
-          if (!vals.length) return;
+          const card = cardC >= 0 ? r0(num(at(r, cardC))) : 0;
+          if (!vals.length && !card) return;
           const p = person(name);
           for (const v of vals) p.values[v.cat] = (p.values[v.cat] ?? 0) + v.v;
+          if (card > 0) p.card = (p.card ?? 0) + card;
         });
         break;
       }
@@ -80,6 +85,14 @@ export async function previewDeductImport(buf: Buffer, month: string): Promise<D
           p.loan = { balance: (p.loan?.balance ?? 0) + balance, monthly: (p.loan?.monthly ?? 0) + j };
           carzJ.set(p.key, (carzJ.get(p.key) ?? 0) + j);
         });
+        break;
+      }
+      // «Аванс наличка» (to'lov vedomosti): sarlavha ustida «аванс» so'zi, ustunlar «Ф.И.О.» + «сумма»
+      const titleAbove = Array.from({ length: hr }, (_, i) => Array.from({ length: sh.data.nc }, (_, c) => text(i, c)).join(" ")).join(" ");
+      const sumC = cols.findIndex((x) => /^сумма$/i.test(x));
+      if (sumC >= 0 && /аванс/i.test(`${titleAbove} ${sh.name}`)) {
+        sources.push(`${sh.name.trim()} (avans)`);
+        rows((r, name) => { const v = r0(num(at(r, sumC))); if (v > 0) { const p = person(name); p.advance = (p.advance ?? 0) + v; } });
         break;
       }
       // Миб: «ушлаб колинадиган фоиз» / «карздорлик суммаси»
@@ -127,10 +140,13 @@ export async function previewDeductImport(buf: Buffer, month: string): Promise<D
  * Qo'llash: oy ushlanmalari (`saveDeductions`), qarz qoldiqlari va ijro varaqalari (takror yozilmaydi — xodimda shu oy
  * Excel'dan ochilgan qarz / shu raqamli ijro bo'lsa o'tkazib yuboriladi). Qo'lda tanlangan moslik eslab qolinadi.
  */
-export async function applyDeductImport(who: Who, month: string, people: { key: string; employeeId: string; remember?: boolean; values: Partial<Record<DeductionCat, number>>; loan: { balance: number; monthly: number } | null; cases: { caseNo: string | null; percent: number | null; debt: number; held: number }[] }[]) {
+export async function applyDeductImport(who: Who, month: string, people: { key: string; employeeId: string; remember?: boolean; values: Partial<Record<DeductionCat, number>>; loan: { balance: number; monthly: number } | null; cases: { caseNo: string | null; percent: number | null; debt: number; held: number }[]; advance?: number | null; card?: number | null }[]) {
   const items = people.flatMap((p) => Object.entries(p.values).filter(([, v]) => typeof v === "number" && v > 0).map(([category, v]) => ({ employeeId: p.employeeId, category, value: String(v) })));
   const r = await saveDeductions(who, month, items, { source: "Excel import" });
   if ("error" in r && r.error) return { error: r.error };
+  // Avans (qo'lda) va plastik summalari xodim kartasiga — keyingi oylarda ham shu
+  const pay = people.flatMap((p) => [...(p.advance ? [{ employeeId: p.employeeId, field: "advance" as const, value: String(p.advance) }] : []), ...(p.card ? [{ employeeId: p.employeeId, field: "card" as const, value: String(p.card) }] : [])]);
+  if (pay.length) { const pr = await savePayoutAmounts(who, pay, { source: "Excel import" }); if ("error" in pr) return { error: pr.error }; }
   let debts = 0, cases = 0;
   const skipped: string[] = [];
   for (const p of people) {

@@ -74,7 +74,7 @@ function NoteAction({ action, field, label, placeholder, icon: Icon, danger }: {
   );
 }
 
-export type PayLine = { id: string; fullName: string; net: number };
+export type PayLine = { id: string; fullName: string; net: number; card?: number };
 export type PayAccount = { id: string; name: string; type: string; balance: number };
 
 /** Kassadan to'lash: hammasi yoki belgilanganlar. */
@@ -82,7 +82,9 @@ export function PayForm({ id, lines, accounts }: { id: string; lines: PayLine[];
   const [state, act, pending] = useActionState(payAction.bind(null, id), undefined);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   useRefresh(state);
-  const sum = (picked.size ? lines.filter((l) => picked.has(l.id)) : lines).reduce((s, l) => s + l.net, 0);
+  const sel = picked.size ? lines.filter((l) => picked.has(l.id)) : lines;
+  const sum = sel.reduce((s, l) => s + l.net, 0);
+  const card = sel.reduce((s, l) => s + Math.min(l.net, l.card ?? 0), 0);
   if (!lines.length) return null;
   return (
     <form action={act} className="space-y-3">
@@ -92,8 +94,17 @@ export function PayForm({ id, lines, accounts }: { id: string; lines: PayLine[];
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.type === "CASH" ? "naqd" : "bank"} · qoldiq {money(a.balance)}</option>)}
           </Select>
         </Field>
-        <Field label="Izoh"><Input name="note" placeholder="Masalan: plastik kartaga" /></Field>
-        <Button variant="success" disabled={pending}><Wallet size={15} /> {pending ? "To'lanmoqda…" : `${picked.size ? `${picked.size} xodimga` : "Hammaga"} ${money(sum)} to'lash`}</Button>
+        {card > 0
+          ? (
+            <Field label={`Plastik qismi (${money(card)}) — qaysi hisobdan`}>
+              <Select name="bankAccountId" required defaultValue={accounts.find((a) => a.type === "BANK")?.id ?? ""}>
+                <option value="" disabled>— bank hisobi —</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.type === "CASH" ? "naqd" : "bank"} · qoldiq {money(a.balance)}</option>)}
+              </Select>
+            </Field>
+          )
+          : <Field label="Izoh"><Input name="note" placeholder="Masalan: 1-smena" /></Field>}
+        <Button variant="success" disabled={pending}><Wallet size={15} /> {pending ? "To'lanmoqda…" : `${picked.size ? `${picked.size} xodimga` : "Hammaga"} ${money(sum)} to'lash${card > 0 ? ` (naqd ${money(sum - card)})` : ""}`}</Button>
       </div>
       <details className="rounded-lg border border-slate-200 p-2 text-sm">
         <summary className="cursor-pointer text-slate-600">Faqat ayrim xodimlarga to&apos;lash ({lines.length} ta to&apos;lanmagan)</summary>

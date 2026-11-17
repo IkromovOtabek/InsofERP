@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
 import { numText } from "@/lib/format";
-import { cancelWithholding, createOpeningDebt, createWithholding, saveDeductions, saveFundAmount } from "@/lib/hr/deductions";
+import { cancelWithholding, createOpeningDebt, createWithholding, saveDeductions, saveFundAmount, savePayoutAmounts } from "@/lib/hr/deductions";
 import { applyDeductImport, previewDeductImport, type DeductImportPreview } from "@/lib/hr/deduction-import";
 import { DEDUCTION_CATS, type DeductionCat } from "@/lib/hr/deduction-cats";
 import { SHEETS_MAX_BYTES, SheetImportError } from "@/lib/payroll-sheets";
@@ -85,26 +85,38 @@ export async function previewDeductImportAction(_prev: DeductPreviewState, fd: F
   }
 }
 
-type DeductPersonIn = { key: string; employeeId: string; remember?: boolean; values: Record<string, number>; loan: { balance: number; monthly: number } | null; cases: { caseNo: string | null; percent: number | null; debt: number; held: number }[] };
+type DeductPersonIn = { key: string; employeeId: string; remember?: boolean; values: Record<string, number>; loan: { balance: number; monthly: number } | null; cases: { caseNo: string | null; percent: number | null; debt: number; held: number }[]; advance?: number | null; card?: number | null };
 
 export async function applyDeductImportAction(month: string, people: DeductPersonIn[]): Promise<{ error?: string; saved?: number; debts?: number; cases?: number; skipped?: string[] }> {
   const s = await requireAction("payroll", "deductions");
   if (!MONTH_RE.test(month) || !Array.isArray(people)) return { error: "So'rov noto'g'ri" };
   const pos = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0);
   // Bir xodimga bir nechta Excel ismi (kirill/lotin, otasining ismi bilan/siz) — summalar qo'shiladi
-  const byEmp = new Map<string, { key: string; employeeId: string; remember: boolean; values: Partial<Record<DeductionCat, number>>; loan: { balance: number; monthly: number } | null; cases: DeductPersonIn["cases"] }>();
+  const byEmp = new Map<string, { key: string; employeeId: string; remember: boolean; values: Partial<Record<DeductionCat, number>>; loan: { balance: number; monthly: number } | null; cases: DeductPersonIn["cases"]; advance: number | null; card: number | null }>();
   const aliases: { key: string; employeeId: string }[] = [];
   for (const p of people) {
     if (!p || typeof p.employeeId !== "string" || !p.employeeId) continue;
     if (p.remember && p.key) aliases.push({ key: String(p.key), employeeId: p.employeeId });
-    const cur = byEmp.get(p.employeeId) ?? { key: "", employeeId: p.employeeId, remember: false, values: {}, loan: null, cases: [] };
+    const cur = byEmp.get(p.employeeId) ?? { key: "", employeeId: p.employeeId, remember: false, values: {}, loan: null, cases: [], advance: null, card: null };
+    if (pos(p.advance)) cur.advance = (cur.advance ?? 0) + pos(p.advance);
+    if (pos(p.card)) cur.card = (cur.card ?? 0) + pos(p.card);
     for (const c of DEDUCTION_CATS) { const v = pos(p.values?.[c.key]); if (v) cur.values[c.key] = (cur.values[c.key] ?? 0) + v; }
     if (p.loan && pos(p.loan.balance)) cur.loan = { balance: (cur.loan?.balance ?? 0) + pos(p.loan.balance), monthly: (cur.loan?.monthly ?? 0) + pos(p.loan.monthly) };
     for (const c of Array.isArray(p.cases) ? p.cases : []) if (pos(c?.debt)) cur.cases.push({ caseNo: typeof c.caseNo === "string" ? c.caseNo.slice(0, 40) : null, percent: typeof c.percent === "number" && c.percent > 0 && c.percent <= 100 ? c.percent : null, debt: pos(c.debt), held: pos(c.held) });
     byEmp.set(p.employeeId, cur);
   }
-  const r = await applyDeductImport(s, month, [...byEmp.values(), ...aliases.map((a) => ({ key: a.key, employeeId: a.employeeId, remember: true, values: {}, loan: null, cases: [] }))]);
+  const r = await applyDeductImport(s, month, [...byEmp.values(), ...aliases.map((a) => ({ key: a.key, employeeId: a.employeeId, remember: true, values: {}, loan: null, cases: [], advance: null, card: null }))]);
   if ("error" in r && r.error) return { error: r.error };
   refresh();
   return r;
+}
+
+/** Avans (qo'lda) va plastik summalari — xodim bo'yicha. */
+export async function savePayoutAmountsAction(items: { employeeId: string; field: "advance" | "card"; value: string }[]): Promise<{ error?: string; saved?: number }> {
+  const s = await requireAction("payroll", "deductions");
+  if (!Array.isArray(items)) return { error: "So'rov noto'g'ri" };
+  const r = await savePayoutAmounts(s, items.filter((x) => x && typeof x.employeeId === "string" && (x.field === "advance" || x.field === "card") && typeof x.value === "string").slice(0, 2000));
+  if ("error" in r) return { error: r.error };
+  refresh();
+  return { saved: r.saved };
 }

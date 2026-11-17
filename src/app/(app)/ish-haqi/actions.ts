@@ -64,7 +64,7 @@ export async function cancelAction(id: string, _prev: ActionState, fd: FormData)
 }
 export async function payAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const lineIds = fd.getAll("line").map(String).filter(Boolean);
-  const r = await payRun(id, { cashAccountId: String(fd.get("cashAccountId") ?? ""), lineIds: lineIds.length ? lineIds : null, note: String(fd.get("note") ?? "") }, await who());
+  const r = await payRun(id, { cashAccountId: String(fd.get("cashAccountId") ?? ""), bankAccountId: String(fd.get("bankAccountId") ?? "") || null, lineIds: lineIds.length ? lineIds : null, note: String(fd.get("note") ?? "") }, await who());
   refresh(id);
   return asState(r);
 }

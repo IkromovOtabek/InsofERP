@@ -29,7 +29,7 @@ export function DeductImport({ month, monthLabel, employees }: { month: string; 
     if (!preview) return;
     setApplying(true);
     setResult(null);
-    const payload = ready.map((p) => ({ key: p.key, employeeId: chosen(p.key, p.match?.employeeId), remember: p.key in pick || p.match?.how === "o'xshash", values: p.values as Record<string, number>, loan: p.loan, cases: p.cases }));
+    const payload = ready.map((p) => ({ key: p.key, employeeId: chosen(p.key, p.match?.employeeId), remember: p.key in pick || p.match?.how === "o'xshash", values: p.values as Record<string, number>, loan: p.loan, cases: p.cases, advance: p.advance, card: p.card }));
     let r: { error?: string; saved?: number; debts?: number; cases?: number; skipped?: string[] };
     try { r = await applyDeductImportAction(preview.month, payload); } catch { r = { error: "Saqlanmadi — internet yoki sessiyani tekshiring" }; }
     setApplying(false);
@@ -59,7 +59,7 @@ export function DeductImport({ month, monthLabel, employees }: { month: string; 
           <div className="max-h-[55vh] overflow-auto rounded-lg border border-slate-200">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500">
-                <tr><th className="px-3 py-2 text-left">Excel&apos;dagi ism</th><th className="px-3 py-2 text-left">Shu oy ushlanmalari</th><th className="px-3 py-2 text-left">Qarz / ijro daftari</th><th className="px-3 py-2 text-left">ERP xodimi</th></tr>
+                <tr><th className="px-3 py-2 text-left">Excel&apos;dagi ism</th><th className="px-3 py-2 text-left">Shu oy ushlanmalari</th><th className="px-3 py-2 text-left">Avans · plastik · qarz · ijro</th><th className="px-3 py-2 text-left">ERP xodimi</th></tr>
               </thead>
               <tbody>
                 {people.map((p) => {
@@ -73,9 +73,11 @@ export function DeductImport({ month, monthLabel, employees }: { month: string; 
                       </td>
                       <td className="px-3 py-1.5 text-xs text-slate-700">{DEDUCTION_CATS.filter((c) => p.values[c.key]).map((c) => `${c.label} ${fmtNum(p.values[c.key]!)}`).join(" · ") || "—"}</td>
                       <td className="px-3 py-1.5 text-xs text-slate-700">
+                        {p.advance ? <div>Avans (oyiga): {fmtNum(p.advance)}</div> : null}
+                        {p.card ? <div>Plastik (oyiga): {fmtNum(p.card)}</div> : null}
                         {p.loan && <div>Qarz qoldig&apos;i {fmtNum(p.loan.balance)}{p.loan.monthly ? `, oyiga ${fmtNum(p.loan.monthly)}` : ""}</div>}
                         {p.cases.map((c, i) => <div key={i}>Ijro{c.caseNo ? ` №${c.caseNo}` : ""}: {fmtNum(c.debt)}{c.percent ? ` (${c.percent}%)` : ""}{c.held ? `, shu oy ${fmtNum(c.held)}` : ""}</div>)}
-                        {!p.loan && !p.cases.length && "—"}
+                        {!p.loan && !p.cases.length && !p.advance && !p.card && "—"}
                       </td>
                       <td className="px-3 py-1.5">
                         <div className="flex items-center gap-2">

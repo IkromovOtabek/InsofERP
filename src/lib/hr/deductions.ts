@@ -231,3 +231,39 @@ export async function createOpeningDebt(who: Who, x: { employeeId: string; amoun
   return { ok: true as const, id: d.id, months };
 }
 
+
+// ───────────────────────── Avans va plastik summalari (xodim bo'yicha) ─────────────────────────
+
+/** Avans (qo'lda, oyiga) va plastik qismi — `Employee.advanceAmount` / `cardAmount`. Bo'sh — avans foiz bo'yicha, hammasi naqd. */
+export async function payoutAmounts() {
+  return db.employee.findMany({
+    where: { firedAt: null, OR: [{ userId: null }, { user: { role: { notIn: ["SUPERADMIN"] } } }] },
+    orderBy: { fullName: "asc" },
+    select: { id: true, fullName: true, position: true, advanceAmount: true, cardAmount: true },
+  }).then((r) => r.map((e) => ({ id: e.id, fullName: e.fullName, position: e.position, advance: e.advanceAmount != null ? num(e.advanceAmount) : null, card: e.cardAmount != null ? num(e.cardAmount) : null })));
+}
+
+export async function savePayoutAmounts(who: Who, items: { employeeId: string; field: "advance" | "card"; value: string }[], opts: { source?: string } = {}) {
+  const parsed: { employeeId: string; field: "advance" | "card"; amount: number | null }[] = [];
+  for (const it of items) {
+    if (it.field !== "advance" && it.field !== "card") return { error: "Maydon noto'g'ri" };
+    const t = String(it.value ?? "").replace(/[\s'’]/g, "").replace(",", ".");
+    const n = t === "" || t === "-" ? null : Number(t);
+    if (n != null && (!Number.isFinite(n) || n < 0 || n > 1e11)) return { error: `«${it.value}» — summa noto'g'ri` };
+    parsed.push({ employeeId: it.employeeId, field: it.field, amount: n == null || n === 0 ? null : r0(n) });
+  }
+  let saved = 0;
+  await db.$transaction(async (tx) => {
+    for (const p of parsed) {
+      const cur = await tx.employee.findUnique({ where: { id: p.employeeId }, select: { fullName: true, advanceAmount: true, cardAmount: true } });
+      if (!cur) continue;
+      const key = p.field === "advance" ? "advanceAmount" : "cardAmount";
+      const before = cur[key] != null ? num(cur[key]) : null;
+      if (before === p.amount) continue;
+      await tx.employee.update({ where: { id: p.employeeId }, data: { [key]: p.amount } });
+      await audit(tx, who.userId, "UPDATE", "Employee", p.employeeId, { [key]: before }, { [key]: p.amount, xodim: cur.fullName, manba: opts.source ?? "Ish haqi → Ushlanmalar" });
+      saved++;
+    }
+  });
+  return { saved };
+}

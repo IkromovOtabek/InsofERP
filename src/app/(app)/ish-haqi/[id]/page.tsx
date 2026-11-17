@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
@@ -7,17 +8,22 @@ import { hoursShort, monthTitle } from "@/lib/davomat";
 import { breakdownOf, canPayroll, runWithLines } from "@/lib/hr/payroll";
 import { payAccounts } from "@/lib/mechanic-requests";
 import { PAY_TYPE_LABEL, PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
-import { Badge, Callout, Card, CardHeader, InfoButton, PageHeader, StatCard, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, InfoButton, LinkButton, PageHeader, StatCard, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
 import { PayForm, RunActions, UnpayForm, type UnpayGroup } from "../forms";
+import { CreditCard, FileSpreadsheet, Printer, Table2 } from "lucide-react";
+import { Sheet, SheetHead, SheetTd, SheetTh, SheetTr, SheetFoot } from "@/components/ui/sheet";
+import { SHEET_COLS, runSheet, type RunSheet } from "@/lib/hr/vedomost-sheet";
 
 const STEPS = [{ key: "DRAFT", label: "Hisoblandi" }, { key: "SUBMITTED", label: "Direktor tasdig'ida" }, { key: "APPROVED", label: "Tasdiqlandi" }, { key: "PAID", label: "To'landi" }];
 
 /** Vedomost: qatorlar (xodim bo'yicha hisob tafsiloti), tasdiq va kassadan to'lov. */
-export default async function PayrollRunPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PayrollRunPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ view?: string }> }) {
   const s = await requirePage("/ish-haqi");
   const { id } = await params;
+  const sp = await searchParams;
   const run = await runWithLines(id);
   if (!run) notFound();
+  const sheet = sp.view === "c2026" ? await runSheet(id) : null;
   const canPay = canPayroll(s, "pay") && run.status === "APPROVED";
   const accounts = canPay ? await payAccounts() : [];
   const unpaid = run.lines.filter((l) => !l.paidAt && Number(l.net) > 0);
@@ -64,15 +70,24 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
       <RunActions id={run.id} status={run.status} kind={run.kind} net={n(run.net) - n(run.paid)} canCalc={canPayroll(s, "calc")} canApprove={canPayroll(s, "approve")} />
       {canUndo && <UnpayForm id={run.id} groups={undoGroups} />}
 
+      {/* Excel C2026 ko'rinishi, eksport va imzo ustunli to'lov ro'yxatlari */}
+      <div className="flex flex-wrap items-center gap-2">
+        <LinkButton href={sp.view === "c2026" ? `/ish-haqi/${run.id}` : `/ish-haqi/${run.id}?view=c2026`} variant={sp.view === "c2026" ? "primary" : "secondary"} size="sm"><Table2 size={14} /> {sp.view === "c2026" ? "Oddiy ko'rinish" : "C2026 ko'rinish (Excel kabi)"}</LinkButton>
+        <a href={`/ish-haqi/${run.id}/excel`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"><FileSpreadsheet size={14} /> Excel</a>
+        <LinkButton href={`/ish-haqi/${run.id}/chop?tur=naqd`} variant="secondary" size="sm"><Printer size={14} /> To&apos;lov ro&apos;yxati — naqd</LinkButton>
+        {run.lines.some((l) => n(l.cardAmount) > 0) && <LinkButton href={`/ish-haqi/${run.id}/chop?tur=plastik`} variant="secondary" size="sm"><CreditCard size={14} /> Plastik ro&apos;yxati</LinkButton>}
+      </div>
+      {sheet && <C2026View sheet={sheet} />}
+
       {canPay && unpaid.length > 0 && (
         <Card>
           <div id="tolash" className="scroll-mt-20" />
           <CardHeader title="Kassadan to'lash" info="Har to'lov Kirim-Chiqimda «Ish haqi» chiqimi bo'lib yoziladi; kassa qoldig'i tekshiriladi" />
-          <PayForm id={run.id} accounts={accounts} lines={unpaid.map((l) => ({ id: l.id, fullName: l.employee.fullName, net: n(l.net) }))} />
+          <PayForm id={run.id} accounts={accounts} lines={unpaid.map((l) => ({ id: l.id, fullName: l.employee.fullName, net: n(l.net), card: n(l.cardAmount) }))} />
         </Card>
       )}
 
-      <Card padded={false}>
+      <Card padded={false} className={sheet ? "hidden" : undefined}>
         <div id="qatorlar" className="scroll-mt-20" />
         <Table>
           <thead>
@@ -142,5 +157,39 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
         </div>
       )}
     </div>
+  );
+}
+
+/** Excel C2026 kabi: bo'limlar, ushlanmalar turi bo'yicha ustunlar, bo'lim va umumiy jami. */
+function C2026View({ sheet }: { sheet: RunSheet }) {
+  const cell = (v: number) => (v ? fmtNum(Math.round(v)) : "");
+  let no = 0;
+  return (
+    <Sheet maxHeight="75vh">
+      <SheetHead>
+        <tr>
+          <SheetTh>№</SheetTh><SheetTh>F.I.O.</SheetTh>
+          {SHEET_COLS.map((c) => <SheetTh key={c.key} right title={c.excel} tone={c.key === "net" || c.key === "cash" ? "green" : ["brak", "aliment", "loan", "salaryDebt", "fund", "fine", "other", "advance"].includes(c.key) ? "red" : "head"}>{c.label}</SheetTh>)}
+        </tr>
+      </SheetHead>
+      <tbody>
+        {sheet.groups.map((g) => (
+          <Fragment key={g.label}>
+            <SheetTr key={`h-${g.label}`}><SheetTd colSpan={SHEET_COLS.length + 2} tone="yellow" strong center>{g.label}</SheetTd></SheetTr>
+            {g.rows.map((r) => (
+              <SheetTr key={r.lineId}>
+                <SheetTd center muted>{++no}</SheetTd>
+                <SheetTd>{r.fullName}<div className="text-[11px] text-slate-500">{r.position}{r.paid ? " · to'langan" : ""}</div></SheetTd>
+                {SHEET_COLS.map((c) => <SheetTd key={c.key} right strong={c.key === "net"}>{cell(r.v[c.key])}</SheetTd>)}
+              </SheetTr>
+            ))}
+            <SheetTr key={`t-${g.label}`}><SheetTd /><SheetTd strong>Jami: {g.label}</SheetTd>{SHEET_COLS.map((c) => <SheetTd key={c.key} right strong tone="gray">{cell(g.total[c.key])}</SheetTd>)}</SheetTr>
+          </Fragment>
+        ))}
+      </tbody>
+      <SheetFoot sticky>
+        <tr><SheetTd /><SheetTd strong>JAMI</SheetTd>{SHEET_COLS.map((c) => <SheetTd key={c.key} right strong>{cell(sheet.total[c.key])}</SheetTd>)}</tr>
+      </SheetFoot>
+    </Sheet>
   );
 }

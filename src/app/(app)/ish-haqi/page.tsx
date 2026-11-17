@@ -22,7 +22,8 @@ import { employeesInWindow } from "@/lib/attendance-report";
 import { TabelGrid } from "./tabel-grid";
 import { BrigadeSheetGrid } from "./brigade-sheet-grid";
 import { brigadeSheet } from "@/lib/hr/brigade-sheet";
-import { deductionsMonth, listWithholdings } from "@/lib/hr/deductions";
+import { deductionsMonth, listWithholdings, payoutAmounts } from "@/lib/hr/deductions";
+import { PayoutGrid } from "./payout-grid";
 import { DeductionsGrid } from "./deductions-grid";
 import { DeductImport } from "./deduct-import";
 import { OpeningDebtForm, WithholdingForm } from "./ushlanma-forms";
@@ -195,8 +196,11 @@ async function DeductionsTab({ oy, canEdit }: { oy?: string; canEdit: boolean })
       </div>
       {data.locked && <Callout tone="warning" title="Ushlanmalar yopiq">{data.locked}</Callout>}
       <DeductionsGrid key={month} data={data} canEdit={canEdit} />
+      <Fold title="Avans va plastik summalari (xodim bo'yicha, har oy)">
+        <PayoutGrid rows={await payoutAmounts()} canEdit={canEdit} />
+      </Fold>
       {canEdit && !data.locked && (
-        <Fold title="Excel'dan import (C2026 ushlanmalari, «Карз», «Миб»)">
+        <Fold title="Excel'dan import (C2026 ushlanmalari, «Карз», «Миб», «Аванс наличка»)">
           <DeductImport month={month} monthLabel={data.title} employees={await activeEmployees(month)} />
         </Fold>
       )}

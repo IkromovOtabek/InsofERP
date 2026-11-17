@@ -307,7 +307,7 @@ export async function runHrAction(user: MobileUser, action: string, id: string, 
     case "payroll.submit": return out(await submitRun(id, who));
     case "payroll.approve": return out(await approveRun(id, who));
     case "payroll.return": return out(await returnRun(id, note, who));
-    case "payroll.pay": return out(await payRun(id, { cashAccountId: String(payload.cashAccountId ?? ""), lineIds: payLineIds(payload), note }, who));
+    case "payroll.pay": return out(await payRun(id, { cashAccountId: String(payload.cashAccountId ?? ""), bankAccountId: payload.bankAccountId ? String(payload.bankAccountId) : null, lineIds: payLineIds(payload), note }, who));
     case "payroll.recalc": return out(await payrollRecalc(user, id));
   }
   throw new ListError("ACTION_FAILED", "Bunday amal yo'q", 404);
