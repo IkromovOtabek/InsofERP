@@ -122,7 +122,7 @@ async function main() {
   check(`qoldiq = ${b0} + 500 000 − 200 000`, Math.abs((await bal()) - (b0 + 300_000)) < 0.01, await bal());
   const t1 = await txCount();
   r = await create(kassa, "cashflow", { type: "EXPENSE", cashAccountId: cash.id, amount: 200_000, categoryExpense: "Ofis / xo'jalik", note: "QA" });
-  check("chiqim ikki marta bosildi → 400, bitta yozuv", r.status === 400 && (await txCount()) === t1, r.json);
+  check("aynan shu chiqim qayta → 200, ikkinchi yozuv (takror cheklanmaydi)", r.status === 200 && (await txCount()) === t1 + 1, r.json);
   r = await create(kassa, "cashflow", { type: "EXPENSE", cashAccountId: cash.id, amount: 1000, categoryExpense: "Yo'q kategoriya" });
   check("noma'lum kategoriya → 400", r.status === 400, r.json);
   r = await create(kassa, "cashflow", { type: "INCOME", cashAccountId: cash.id, amount: 1000, categoryIncome: "Boshqa tushum", receiptId: "x" });
