@@ -690,6 +690,7 @@ model Employee {
   documents        EmployeeDocument[]
   hrDocs           HrDocument[]
   attendance       Attendance[]
+  nameAliases      EmployeeAlias[]
   faceTemplates    FaceTemplate[]
   deletionRequests AccountDeletionRequest[]
   fuelLogs         FuelLog[]
@@ -830,6 +831,9 @@ model Attendance {
   checkInPlacePhoto      String?
   checkOutOutside        Boolean          @default(false)
   checkOutPlacePhoto     String?
+  /// Tabelda qo'lda yozilgan soat (Excel tabeli kabi: 8, 4, 2…; «Ish haqi» → Tabel yoki Excel importi).
+  /// Bo'lsa — ishlagan vaqt shu (kelish/ketish vaqti o'rniga), oklad/kunbay uchun kun = soat ÷ kunlik soat (8).
+  hours                  Decimal?         @db.Decimal(5, 2)
   createdAt              DateTime         @default(now())
   updatedAt              DateTime         @updatedAt
 
@@ -837,6 +841,20 @@ model Attendance {
 
   @@unique([employeeId, date])
   @@index([date])
+}
+
+/// Excel'dagi ism → xodim (tabel importi): bir marta moslangan ism keyingi importda so'ralmasdan shu xodimga tushadi.
+/// `name` — normallashgan (lotin, kichik harf, bitta bo'shliq).
+model EmployeeAlias {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  employeeId  String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
 }
 
 /// Xodim yuzining namunasi — ERP'ning o'z Face ID skaneri uchun (`lib/face-id.ts`).

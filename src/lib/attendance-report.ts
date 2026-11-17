@@ -73,7 +73,7 @@ async function markerRoles(ids: (string | null)[]) {
 }
 
 const ATT_SELECT = {
-  employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true, source: true,
+  employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true, source: true, hours: true,
   facePhoto: true, faceVerifiedAt: true, markedById: true, note: true,
   id: true, checkInLat: true, checkInLng: true, checkInDistance: true, checkInOutside: true, checkInPlacePhoto: true,
   checkOutLat: true, checkOutLng: true, checkOutDistance: true, checkOutOutside: true, checkOutPlacePhoto: true,

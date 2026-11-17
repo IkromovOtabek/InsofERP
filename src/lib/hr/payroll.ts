@@ -44,7 +44,7 @@ export const PAYROLL_CATEGORY = "Ish haqi";
 export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
-export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets") => canDo(who, "payroll", what);
+export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel") => canDo(who, "payroll", what);
 
 export class PayrollError extends Error {}
 const STALE = "Vedomost boshqa joyda o'zgartirildi — sahifani yangilang";
@@ -63,6 +63,8 @@ export type LineBreakdown = {
   period: { from: string; to: string };
   normDays: number; presentDays: number; paidLeaveDays: number; unpaidLeaveDays: number; sickDays: number; absentDays: number; dayoffDays: number;
   minutes: number; dailyAvg: number; sickPct: number;
+  /** Tabel soati yozilgan kunlar bo'lsa — ishlagan kun = Σ(soat ÷ kunlik soat), yozilmaganlari 1 kun (Excel tabeli kabi). */
+  dayUnits?: number; tabelDays?: number;
   piece?: { brigade: string; pool: number; share: number; units: Pick<PieceUnit, "product" | "qty" | "rate" | "sum">[] };
   /** Haydovchi: dispetcher narxlagan reyslar (oy yakuni, `lib/driver-trip-pay.ts`); narxsizlari kirmaydi. */
   trips?: { count: number; km: number; sum: number; unpriced: number };
@@ -107,7 +109,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   const ids = emps.map((e) => e.id);
   const [y, m] = month.split("-").map(Number);
   const [att, plans, excused, rules, manual, advances, piece, kpi, tripPay] = await Promise.all([
-    db.attendance.findMany({ where: { employeeId: { in: ids }, date: { gte: fromD, lte: toD } }, select: { employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true } }),
+    db.attendance.findMany({ where: { employeeId: { in: ids }, date: { gte: fromD, lte: toD } }, select: { employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true, hours: true } }),
     plansInRange(emps, from, monthEnd),
     excusedDays(ids, from, to),
     kind === "FINAL" ? db.payRule.findMany({ where: { isActive: true } }) : Promise.resolve([] as PayRule[]),
@@ -145,6 +147,9 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
   const nowIso = today();
+  // Tabel soati (qo'lda yozilgan) bo'lsa — kun = soat ÷ kunlik soat; yo'q bo'lsa kelgan kun 1 kun (avvalgidek)
+  const shiftHours = Number(st.hoursPerDay) || 8;
+  const dayUnit = (a: { hours: Prisma.Decimal | null }) => (a.hours != null ? Number(a.hours) / shiftHours : 1);
 
   // Sdelka: brigada fondi a'zolarga ishlagan daqiqasi bo'yicha (daqiqa yo'q bo'lsa — kelgan kuni bo'yicha)
   const minutesOf = (id: string) => (attBy.get(id) ?? []).reduce((s, a) => s + (a.status === "PRESENT" ? minutesFor(a, plans.get(id)?.get(isoDay(a.date)), nowIso) : 0), 0);
@@ -172,7 +177,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     const ex = excused.get(e.id);
     const rows = (attBy.get(e.id) ?? []).filter((a) => inJob(isoDay(a.date)));
 
-    let present = 0, minutes = 0, paidLeave = 0, unpaidLeave = 0, sick = 0, absent = 0, dayoff = 0;
+    let present = 0, minutes = 0, paidLeave = 0, unpaidLeave = 0, sick = 0, absent = 0, dayoff = 0, dayUnits = 0, tabelDays = 0;
     const lateDays: { iso: string; min: number }[] = [];
     const earlyDays: { iso: string; min: number }[] = [];
     for (const a of rows) {
@@ -180,6 +185,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       const p = plan.get(iso);
       if (a.status === "PRESENT") {
         present++;
+        dayUnits += dayUnit(a);
+        if (a.hours != null) tabelDays++;
         minutes += minutesFor(a, p, nowIso);
         const late = a.lateMinutes != null ? a.lateMinutes : lateBy(a.checkIn, p?.start ?? "08:00") ?? 0;
         if (late > 0 && !ex?.late.has(iso)) lateDays.push({ iso, min: late });
@@ -197,8 +204,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     // Asosiy
     let base = 0, units = 0;
     let pieceInfo: LineBreakdown["piece"];
-    if (e.payType === "SALARY") base = normMonth > 0 ? (rate * present) / normMonth : 0;
-    else if (e.payType === "DAILY") base = rate * present;
+    if (e.payType === "SALARY") base = normMonth > 0 ? (rate * dayUnits) / normMonth : 0;
+    else if (e.payType === "DAILY") base = rate * dayUnits;
     else if (e.payType === "HOURLY") base = (rate * minutes) / 60;
     else {
       const pool = e.brigadeId ? piece.get(e.brigadeId) : undefined;
@@ -211,7 +218,6 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         pieceInfo = { brigade: pool.brigade, pool: r0(pool.sum), share: Math.round(share * 1000) / 10, units: pool.units };
       }
     }
-    const shiftHours = Number(st.hoursPerDay) || 8;
     const dailyAvg = e.payType === "SALARY" ? (normMonth > 0 ? rate / normMonth : 0)
       : e.payType === "DAILY" ? rate
       : e.payType === "HOURLY" ? rate * shiftHours
@@ -303,6 +309,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       breakdown: {
         period: { from: lo, to: hi }, normDays: normMonth, presentDays: present, paidLeaveDays: paidLeave, unpaidLeaveDays: unpaidLeave,
         sickDays: sick, absentDays: absent, dayoffDays: dayoff, minutes, dailyAvg: r0(dailyAvg), sickPct,
+        ...(tabelDays ? { dayUnits: Math.round(dayUnits * 100) / 100, tabelDays } : {}),
         ...(pieceInfo ? { piece: pieceInfo } : {}), ...(tp ? { trips: { count: tp.trips, km: tp.km, sum: r0(tp.sum), unpriced: tp.unpriced } } : {}), rules: hits, manual: manualList, advances: adv,
         ...(advanceFormula ? { advanceFormula } : {}), warnings,
       },
@@ -312,7 +319,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
 }
 
 /** Ishlangan daqiqa: "Ketdi" belgilanmagan o'tgan kun — smena oxirigacha deb olinadi (tabel ochiq qolmasin). */
-function minutesFor(a: { checkIn: string | null; checkOut: string | null; date: Date }, p: DayPlan | undefined, nowIso: string): number {
+function minutesFor(a: { checkIn: string | null; checkOut: string | null; date: Date; hours?: Prisma.Decimal | null }, p: DayPlan | undefined, nowIso: string): number {
+  if (a.hours != null) return Math.round(Number(a.hours) * 60); // tabelda qo'lda yozilgan soat
   const m = workedMinutes(a.checkIn, a.checkOut);
   if (m != null) return m;
   if (a.checkIn && p && isoDay(a.date) < nowIso && toMinutes(p.end) != null) return workedMinutes(a.checkIn, p.end) ?? 0;

@@ -93,12 +93,13 @@ export type DayTimes = { minutes: number | null; lateMin: number | null; earlyMi
  * `storedLate` — bazadagi `Attendance.lateMinutes` (belgilangan paytdagi smena bo'yicha); bo'lmasa hisoblanadi.
  */
 export function dayTimes(
-  r: { status: string | null; checkIn: string | null; checkOut: string | null; lateMinutes?: number | null } | null | undefined,
+  r: { status: string | null; checkIn: string | null; checkOut: string | null; lateMinutes?: number | null; hours?: { toString(): string } | number | null } | null | undefined,
   shift: Shift,
 ): DayTimes {
   if (!r || r.status !== "PRESENT") return { minutes: null, lateMin: null, earlyMin: null };
   return {
-    minutes: workedMinutes(r.checkIn, r.checkOut),
+    // Tabelda qo'lda yozilgan soat (Ish haqi → Tabel) — kelish/ketish vaqtidan ustun
+    minutes: r.hours != null ? Math.round(Number(r.hours) * 60) : workedMinutes(r.checkIn, r.checkOut),
     lateMin: r.lateMinutes != null ? r.lateMinutes || null : lateBy(r.checkIn, shift.start),
     earlyMin: r.checkOut ? earlyBy(r.checkOut, shift.end) : null,
   };

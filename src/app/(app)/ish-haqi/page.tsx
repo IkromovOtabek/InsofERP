@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { FileSpreadsheet, HandCoins, Settings2, Sheet as SheetIcon, Wallet } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Settings2, Sheet as SheetIcon, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { date, dateTime, money } from "@/lib/format";
-import { monthOf, monthTitle, shiftMonth, today } from "@/lib/davomat";
+import { dayUtc, monthDays, monthOf, monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { canPayroll, listRuns, payrollSettings } from "@/lib/hr/payroll";
 import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
 import { Badge, Callout, Card, CardHeader, Empty, EmptyState, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
@@ -17,12 +17,16 @@ import { cancelEmployeeDebt } from "./actions";
 import { cancelWorkbookAction } from "./varaq-actions";
 import { SheetGrid } from "./sheet-grid";
 import { WorkbookPicker, WorkbookUploadForm } from "./varaq-forms";
+import { tabelMonth } from "@/lib/hr/tabel";
+import { employeesInWindow } from "@/lib/attendance-report";
+import { TabelGrid } from "./tabel-grid";
+import { TabelImport } from "./tabel-import";
 
 /**
  * Ish haqi: otdel kadr / buxgalteriya hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`).
  * Har vedomost — oy uchun avans, oy yakuni yoki alohida to'lov (xodimning avans arizasi).
  */
-export default async function PayrollPage({ searchParams }: { searchParams: Promise<{ tab?: string; kitob?: string; varaq?: string }> }) {
+export default async function PayrollPage({ searchParams }: { searchParams: Promise<{ tab?: string; kitob?: string; varaq?: string; oy?: string; guruh?: string }> }) {
   const s = await requirePage("/ish-haqi");
   const sp = await searchParams;
   const month = monthOf(today());
@@ -30,27 +34,30 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const canSettings = canPayroll(s, "settings");
   const canDebts = canPayroll(s, "debts");
   const canSheets = canPayroll(s, "sheets");
-  // Sekretar: vedomost va sozlamalar ko'rinmaydi — faqat «Oylik varaqlari» (Excel kitobi) va «Xodim qarzlari»
-  const limited = (canDebts || canSheets) && !canCalc && !canSettings && !["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"].includes(s.role);
+  const canTabel = canPayroll(s, "tabel");
+  // Sekretar: vedomost va sozlamalar ko'rinmaydi — faqat Tabel, «Oylik varaqlari» (Excel kitobi) va «Xodim qarzlari»
+  const limited = (canDebts || canSheets || canTabel) && !canCalc && !canSettings && !["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"].includes(s.role);
   const keys = limited
-    ? [...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : [])]
-    : ["vedomostlar", ...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : []), "sozlamalar"];
+    ? [...(canTabel ? ["tabel"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : [])]
+    : ["vedomostlar", ...(canTabel ? ["tabel"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts ? ["qarzlar"] : []), "sozlamalar"];
   const tab = keys.includes(sp.tab ?? "") ? sp.tab! : keys[0];
   const debts = tab === "qarzlar" ? await listDebts() : [];
   const tabItems = [
     { key: "vedomostlar", label: "Vedomostlar", href: "/ish-haqi", icon: Wallet },
+    { key: "tabel", label: "Tabel", href: "/ish-haqi?tab=tabel", icon: CalendarDays },
     { key: "varaqlar", label: "Oylik varaqlari", href: "/ish-haqi?tab=varaqlar", icon: SheetIcon },
     { key: "qarzlar", label: "Xodim qarzlari", href: "/ish-haqi?tab=qarzlar", icon: HandCoins },
     { key: "sozlamalar", label: "Sozlamalar", href: "/ish-haqi?tab=sozlamalar", icon: Settings2 },
   ].filter((t) => keys.includes(t.key));
   if (limited) {
     return (
-      <div className="space-y-4" {...(tab === "varaqlar" ? { "data-wide": "" } : {})}>
+      <div className="space-y-4" {...(tab === "varaqlar" || tab === "tabel" ? { "data-wide": "" } : {})}>
         {tab === "qarzlar"
           ? <PageHeader title="Xodim qarzlari" info="Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimi «Oylikdan nasiya» bilan yozilsa — qarz shu yerda; har oy yakuni vedomostida ulushi ushlanadi" />
-          : <PageHeader title="Ish haqi" info={SHEETS_INFO} />}
+          : <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : SHEETS_INFO} />}
         {tabItems.length > 1 && <Tabs current={tab} items={tabItems} />}
-        {tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} /> : <DebtTable debts={debts} canCancel={canDebts} />}
+        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} />
+          : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} /> : <DebtTable debts={debts} canCancel={canDebts} />}
       </div>
     );
   }
@@ -64,12 +71,12 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const toPay = runs.filter((r) => r.status === "APPROVED");
   const thisMonth = runs.filter((r) => r.month === month && r.status !== "CANCELLED");
 
-  if (tab === "varaqlar") {
+  if (tab === "varaqlar" || tab === "tabel") {
     return (
       <div className="space-y-4" data-wide="">
-        <PageHeader title="Ish haqi" info={SHEETS_INFO} />
+        <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : SHEETS_INFO} />
         <Tabs current={tab} items={tabItems} />
-        <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />
+        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />}
       </div>
     );
   }
@@ -151,6 +158,43 @@ const SHEETS_INFO = (
     <p>O&apos;zgarish darhol saqlanadi va formulalar shu zahoti qayta hisoblanadi. «Excel yuklab olish» — joriy holat (tahrirlar bilan) .xlsx bo&apos;lib.</p>
   </>
 );
+
+const TABEL_INFO = (
+  <>
+    <p><b>Tabel</b> — Excel tabeli kabi: guruhni tanlang (oklad, brigada, komanda…), katakka kunlik soatni yozing (8, 4, 7,5) yoki H — kelmadi, K — kasal, T — ta&apos;til, D — dam olish. O&apos;zgarish o&apos;zi saqlanadi; ↑↓←→ va Enter bilan yuriladi, Excel&apos;dan blokni nusxa olib Ctrl+V bilan joylash mumkin.</p>
+    <p>Oklad: <b>oklad × kun ÷ norma</b>, kunbay: <b>stavka × kun</b>, soatbay: <b>stavka × soat</b>; kun = soat ÷ 8. Kul rang raqam — Face ID yoki kelish-ketish vaqtidan (1 kun), ustiga yozilsa qo&apos;lda soat bo&apos;ladi. Sdelka (brigada) hisobi — keyingi bosqichda.</p>
+    <p>«Excel&apos;dan import» — oylik Excel faylidagi barcha tabel varaqlari (Ауп, brigadalar, Поврименшики, Сваршики, БРУ) bir marta yuklanadi; ismlar xodimlarga moslanadi. Oy yakuni vedomosti direktorga yuborilgach tabel yopiladi.</p>
+  </>
+);
+
+/** «Tabel»: oy va guruh tanlash, Excel kabi soat jadvali, Excel'dan import. */
+async function TabelTab({ oy, guruh, canEdit }: { oy?: string; guruh?: string; canEdit: boolean }) {
+  const cur = monthOf(today());
+  const month = oy && /^\d{4}-(0[1-9]|1[0-2])$/.test(oy) && oy <= cur ? oy : cur;
+  const data = await tabelMonth(month, guruh);
+  const href = (m: string, g: string) => `/ish-haqi?tab=tabel&oy=${m}&guruh=${encodeURIComponent(g)}`;
+  const days = monthDays(month);
+  const employees = canEdit && !data.locked
+    ? await db.employee.findMany({ where: employeesInWindow(dayUtc(days[0]!.iso), dayUtc(days[days.length - 1]!.iso)), orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } })
+    : [];
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <LinkButton href={href(shiftMonth(month, -1), data.group)} variant="secondary" size="sm"><ChevronLeft size={14} /> {monthTitle(shiftMonth(month, -1))}</LinkButton>
+        <span className="px-2 text-base font-semibold text-slate-900">{data.title}</span>
+        {month < cur && <LinkButton href={href(shiftMonth(month, 1), data.group)} variant="secondary" size="sm">{monthTitle(shiftMonth(month, 1))} <ChevronRight size={14} /></LinkButton>}
+      </div>
+      <Tabs current={data.group} scroll={false} className="mb-0" items={data.groups.map((g) => ({ key: g.key, label: g.label, count: g.count, href: href(month, g.key) }))} />
+      {data.locked && <Callout tone="warning" title="Tabel yopiq">{data.locked}</Callout>}
+      <TabelGrid key={`${month}|${data.group}`} data={data} canEdit={canEdit} />
+      {employees.length > 0 && (
+        <Fold title="Excel'dan import (oylik fayldagi tabel varaqlari)">
+          <TabelImport month={month} monthLabel={data.title} employees={employees} />
+        </Fold>
+      )}
+    </div>
+  );
+}
 
 /** «Oylik varaqlari»: kitob tanlash, yuklash, Excel kabi jadval. */
 async function SheetsTab({ kitob, varaq, canEdit }: { kitob?: string; varaq?: string; canEdit: boolean }) {

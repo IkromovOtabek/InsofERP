@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
 import { db } from "@/lib/db";
-import { dateTime, money } from "@/lib/format";
+import { dateTime, fmtNum, money } from "@/lib/format";
 import { hoursShort, monthTitle } from "@/lib/davomat";
 import { breakdownOf, canPayroll, runWithLines } from "@/lib/hr/payroll";
 import { payAccounts } from "@/lib/mechanic-requests";
@@ -107,7 +107,7 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
                     )}
                   </Td>
                   <Td className="text-sm">{PAY_TYPE_LABEL[l.payType]}<div className="text-xs text-slate-500">{l.payType === "PIECE" ? `${Number(l.units)} birlik` : money(n(l.rate))}</div></Td>
-                  <Td right>{l.workedDays}{l.normDays ? `/${l.normDays}` : ""}<div className="text-xs text-slate-500">{l.workedMinutes ? `${hoursShort(l.workedMinutes)} soat` : ""}</div></Td>
+                  <Td right>{b?.dayUnits != null ? fmtNum(b.dayUnits, 2) : l.workedDays}{l.normDays ? `/${l.normDays}` : ""}<div className="text-xs text-slate-500">{l.workedMinutes ? `${hoursShort(l.workedMinutes)} soat` : ""}</div></Td>
                   <Td right>{money(n(l.base))}</Td>
                   {final && (
                     <>
