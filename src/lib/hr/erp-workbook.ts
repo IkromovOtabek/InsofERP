@@ -8,7 +8,7 @@ import { DEDUCTION_CATS } from "./deduction-cats";
 import { deductionsMonth, listWithholdings } from "./deductions";
 import { listDebts } from "./employee-debt";
 import { calculate } from "./payroll";
-import { tabelMonth } from "./tabel";
+import { groupOf, groupOrder, tabelMonth, type TabelEmp } from "./tabel";
 import { parseTabelValue } from "./tabel-value";
 import { SHEET_COLS, sheetGroups, type SheetSrcLine } from "./vedomost-sheet";
 
@@ -17,7 +17,9 @@ import { SHEET_COLS, sheetGroups, type SheetSrcLine } from "./vedomost-sheet";
  * ko'rish va .xlsx yuklab olish). Varaqlar — Excel'dagi oylik fayl tartibida:
  *   · har komanda / biriktirilmaganlar — tabel (kun × soat, jami, hisob);
  *   · har brigada — brigada varag'i (a'zolar soati, mahsulot soni × narx, kunlik fond, ulush, brak);
- *   · Ushlanmalar (C2026 G–K), C2026 (oy yakuni vedomosti — hisoblanmagan bo'lsa taxminiy), Avans, Qarzlar (Карз), Ijro (Миб).
+ *   · Ushlanmalar (C2026 G–K), C2026 (oy yakuni vedomosti — hisoblanmagan bo'lsa taxminiy), Avans («Аванс наличка»,
+ *     vedomost №1), Zarplata 2 («Зарплата 2», vedomost №2 — qoldiq naqd/plastik, imzo), Qarzlar (Карз), Ijro (Миб).
+ *     Avans va Zarplata 2 — Excel'dagidek komanda / brigada bo'limlari bilan, imzo ustuni va imzolar.
  * Raqamlar sahifalardagi bilan bir xil manbadan (`tabelMonth`, `brigadeSheet`, `deductionsMonth`, vedomost qatorlari);
  * soat jamilari — Excel formulasi (SUM), pul — ERP hisobi.
  */
@@ -88,6 +90,54 @@ function sheetName(name: string, used: Set<string>) {
   while (used.has(n.toLowerCase())) n = `${base.slice(0, 26)} ${i++}`;
   used.add(n.toLowerCase());
   return n;
+}
+
+type PayRow = { name: string; pos: string; emp?: TabelEmp; a: number; b: number };
+type PayGroup = { label: string; rows: PayRow[] };
+
+/** Qatorlarni komanda / brigada bo'limlariga (tabel va C2026 dagi `groupOf` tartibida), bo'lim ichida — ism bo'yicha. */
+function groupRows(rows: PayRow[]): PayGroup[] {
+  const m = new Map<string, PayGroup & { order: number }>();
+  for (const x of rows) {
+    const g = x.emp ? groupOf(x.emp) : { key: "-", label: "Biriktirilmagan" };
+    const cur = m.get(g.key) ?? { label: g.label, rows: [], order: groupOrder(g.key) };
+    cur.rows.push(x);
+    m.set(g.key, cur);
+  }
+  return [...m.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)).map((g) => ({ label: g.label, rows: g.rows.sort((p, q) => p.name.localeCompare(q.name)) }));
+}
+
+/**
+ * To'lov vedomosti (Excel «Аванс наличка» / «Зарплата 2» kabi): bo'lim sarlavhasi, № · F.I.O. · Lavozim · ikki summa · Imzo,
+ * bo'lim jami, umumiy jami (SUM) va imzolar.
+ */
+function payList(caption: string, cols: [string, string], groups: PayGroup[]): Sheet {
+  const sh = new Sheet();
+  sh.line(0, caption, S.title);
+  const H = 2;
+  ["№", "F.I.O.", "Lavozim", cols[0], cols[1], "Imzo"].forEach((t, i) => sh.set(H, i, t, S.head));
+  let r = H + 1, n = 0;
+  const totals: number[] = [];
+  for (const g of groups) {
+    const gr = r++;
+    sh.set(gr, 0, null, S.group); sh.set(gr, 1, g.label, S.group); sh.set(gr, 2, `${g.rows.length} kishi`, S.group);
+    for (const x of g.rows) {
+      sh.set(r, 0, ++n, S.hrs); sh.set(r, 1, x.name, S.txt); sh.set(r, 2, x.pos, S.txt);
+      sh.set(r, 3, x.a || null, S.num); sh.set(r, 4, x.b || null, S.num); sh.set(r, 5, null, S.txt);
+      r++;
+    }
+    for (const c of [3, 4]) sh.set(gr, c, null, S.groupNum, sumF(gr + 1, c, Math.max(gr + 1, r - 1), c));
+    sh.set(gr, 5, null, S.group);
+    totals.push(gr);
+  }
+  sh.set(r, 1, `Jami (${n})`, S.tot);
+  for (const c of [3, 4]) sh.set(r, c, null, S.tot, totals.length ? totals.map((gr) => addrOf(gr, c)).join("+") : "0");
+  sh.set(r, 5, null, S.tot);
+  r += 2;
+  for (const t of ["Direktor  ___________", "Bosh buxgalter  ___________", "Hisobchi  ___________", "Kassir  ___________"]) sh.set(r++, 1, t);
+  sh.width(0, 32); sh.width(1, 220); sh.width(2, 140); sh.width(3, 110); sh.width(4, 110); sh.width(5, 140);
+  sh.frz = [H + 1, 2];
+  return sh;
 }
 
 export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
@@ -254,6 +304,8 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
   }
 
   // ── C2026 (oy yakuni vedomosti) ──
+  let finalGroups: ReturnType<typeof sheetGroups>["groups"] = [];
+  let finalCaption = "";
   {
     const run = await db.payrollRun.findFirst({ where: { month, kind: "FINAL", status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, select: { id: true, docNo: true } });
     let lines: SheetSrcLine[];
@@ -270,6 +322,7 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
       caption = "taxminiy — oy yakuni vedomosti hali hisoblanmagan";
     }
     const { groups, total } = sheetGroups(lines);
+    finalGroups = groups; finalCaption = caption;
     const sh = new Sheet();
     sh.line(0, `C2026 — ${title} (${caption})`, S.title);
     const H = 2, c0 = 3;
@@ -293,33 +346,30 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
     push("C2026", sh);
   }
 
-  // ── Avans ──
+  // ── Avans («Аванс наличка», vedomost №1) ──
   {
     const runs = await db.payrollRun.findMany({ where: { month, kind: "ADVANCE", status: { not: "CANCELLED" } }, orderBy: { createdAt: "asc" }, select: { id: true, docNo: true } });
-    const sh = new Sheet();
-    const H = 2;
-    ["№", "F.I.O.", "Lavozim", "Avans", "To'langan", "Imzo"].forEach((t, i) => sh.set(H, i, t, S.head));
-    let rows: { name: string; pos: string; net: number; paid: number }[];
+    const empSel = { fullName: true, position: true, brigadeId: true, teamId: true, brigade: { select: { name: true } }, team: { select: { name: true } } } as const;
+    let rows: PayRow[];
+    let caption: string;
     if (runs.length) {
-      const ls = await db.payrollLine.findMany({ where: { runId: { in: runs.map((x) => x.id) } }, include: { employee: { select: { fullName: true, position: true } } }, orderBy: { employee: { fullName: "asc" } } });
-      rows = ls.map((l) => ({ name: l.employee.fullName, pos: l.employee.position, net: Number(l.net), paid: Number(l.paid) }));
-      sh.line(0, `Avans — ${title} (${runs.map((x) => x.docNo).join(", ")})`, S.title);
+      const ls = await db.payrollLine.findMany({ where: { runId: { in: runs.map((x) => x.id) } }, include: { employee: { select: empSel } }, orderBy: { employee: { fullName: "asc" } } });
+      rows = ls.map((l) => ({ name: l.employee.fullName, pos: l.employee.position, emp: l.employee, a: Number(l.net), b: Number(l.paid) }));
+      caption = runs.map((x) => x.docNo).join(", ");
     } else {
-      const calc = await calculate(month, "ADVANCE");
-      rows = calc.filter((c) => c.net > 0).sort((a, b) => a.fullName.localeCompare(b.fullName)).map((c) => ({ name: c.fullName, pos: c.position, net: c.net, paid: 0 }));
-      sh.line(0, `Avans — ${title} (taxminiy — avans vedomosti hali hisoblanmagan)`, S.title);
+      const calc = (await calculate(month, "ADVANCE")).filter((c) => c.net > 0);
+      const emps = await db.employee.findMany({ where: { id: { in: calc.map((c) => c.employeeId) } }, select: { id: true, ...empSel } });
+      const eOf = new Map(emps.map((e) => [e.id, e]));
+      rows = calc.filter((c) => eOf.has(c.employeeId)).map((c) => ({ name: c.fullName, pos: c.position, emp: eOf.get(c.employeeId)!, a: c.net, b: 0 }));
+      caption = "taxminiy — avans vedomosti hali hisoblanmagan";
     }
-    rows.forEach((x, i) => {
-      const rr = H + 1 + i;
-      sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, x.name, S.txt); sh.set(rr, 2, x.pos, S.txt);
-      sh.set(rr, 3, x.net, S.num); sh.set(rr, 4, x.paid || null, S.num); sh.set(rr, 5, null, S.txt);
-    });
-    const tr = H + 1 + rows.length;
-    sh.set(tr, 1, `Jami (${rows.length})`, S.tot);
-    sh.set(tr, 3, null, S.tot, sumF(H + 1, 3, Math.max(H + 1, tr - 1), 3)); sh.set(tr, 4, null, S.tot, sumF(H + 1, 4, Math.max(H + 1, tr - 1), 4));
-    sh.width(0, 32); sh.width(1, 220); sh.width(2, 140); sh.width(3, 110); sh.width(4, 110); sh.width(5, 140);
-    sh.frz = [H + 1, 2];
-    push("Avans", sh);
+    push("Avans", payList(`To'lov vedomosti №1 — avans, ${title} (${caption})`, ["Avans", "To'langan"], groupRows(rows)));
+  }
+
+  // ── Zarplata 2 («Зарплата 2», vedomost №2): oy yakuni qoldig'i — naqd va plastik qismi ──
+  {
+    const groups = finalGroups.map((g) => ({ label: g.label, rows: g.rows.filter((x) => x.v.net > 0).map((x) => ({ name: x.fullName, pos: x.position, a: x.v.cash, b: x.v.card })) })).filter((g) => g.rows.length);
+    push("Zarplata 2", payList(`To'lov vedomosti №2 — oylik qoldig'i, ${title} (${finalCaption})`, ["Naqd", "Plastik"], groups));
   }
 
   // ── Qarzlar (Карз) va Ijro (Миб) ──

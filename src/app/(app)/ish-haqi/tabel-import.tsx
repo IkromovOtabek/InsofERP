@@ -12,7 +12,8 @@ import { applyTabelImportAction, previewTabelImportAction, type PreviewState } f
  * Excel'dan tabel importi: 1) fayl → oddiy tabel varaqlari (Ауп, Поврименшики, Сваршики) va brigada varaqlari
  * (Илхом, Столба, БРУ… — soat, kunlik soni, narx, brak) hamda ismlarning xodimlarga mosligi;
  * 2) topilmaganlari tanlanadi (tanlov eslab qolinadi) → oddiy soat davomatga, brigada varaqlari brigada varag'iga yoziladi.
- * Brigada uchun ERP hisobi Excel'dagi «сумма» bilan solishtirib ko'rsatiladi.
+ * Brigada uchun ERP hisobi Excel'dagi «сумма» bilan solishtirib ko'rsatiladi. Oddiy varaqlar komandaga moslanadi
+ * (tabel, C2026, Avans va Zarplata 2 bo'limlari shu komandalar bo'yicha).
  */
 export function TabelImport({ month, monthLabel, employees }: { month: string; monthLabel: string; employees: { id: string; fullName: string; position: string }[] }) {
   const router = useRouter();
@@ -20,6 +21,7 @@ export function TabelImport({ month, monthLabel, employees }: { month: string; m
   const preview = state?.preview;
   const [pick, setPick] = useState<Record<string, string>>({});
   const [bpick, setBpick] = useState<Record<string, string>>({});
+  const [tpick, setTpick] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState<{ error?: string; note?: string; skipped?: string[] } | null>(null);
 
@@ -29,22 +31,26 @@ export function TabelImport({ month, monthLabel, employees }: { month: string; m
   const brigades = useMemo(() => preview?.brigades ?? [], [preview]);
   const ready = people.filter((p) => chosen(p.key, p.match?.employeeId));
   const bready = brigades.filter((b) => bchosen(b.sheet, b.match?.brigadeId));
+  const teams = useMemo(() => preview?.teams ?? [], [preview]);
+  const tchosen = (sheet: string, auto?: string) => (sheet in tpick ? tpick[sheet]! : auto ?? "");
+  const tready = teams.filter((t) => tchosen(t.sheet, t.match?.teamId));
   const empName = useMemo(() => new Map(employees.map((e) => [e.id, e.fullName])), [employees]);
 
   async function apply() {
     if (!preview) return;
     setApplying(true);
     setResult(null);
-    const payload = ready.map((p) => ({ key: p.key, employeeId: chosen(p.key, p.match?.employeeId), hours: p.hours, bsheets: p.bsheets, remember: p.key in pick || p.match?.how === "o'xshash" }));
+    const payload = ready.map((p) => ({ key: p.key, employeeId: chosen(p.key, p.match?.employeeId), hours: p.hours, bsheets: p.bsheets, sheets: p.sheets, remember: p.key in pick || p.match?.how === "o'xshash" }));
     const bpayload = bready.map((b) => {
       const v = bchosen(b.sheet, b.match?.brigadeId);
       return { sheet: b.sheet, brigadeId: v, newName: v === "new" ? b.sheet : undefined, remember: b.sheet in bpick, lines: b.lines, brak: b.brak };
     });
-    let r: { error?: string; saved?: number; skipped?: string[] };
-    try { r = await applyTabelImportAction(preview.month, payload, bpayload); } catch { r = { error: "Saqlanmadi — internet yoki sessiyani tekshiring" }; }
+    const tpayload = tready.map((t) => { const v = tchosen(t.sheet, t.match?.teamId); return { sheet: t.sheet, teamId: v, newName: v === "new" ? t.suggest : undefined }; });
+    let r: { error?: string; saved?: number; skipped?: string[]; assigned?: number };
+    try { r = await applyTabelImportAction(preview.month, payload, bpayload, tpayload); } catch { r = { error: "Saqlanmadi — internet yoki sessiyani tekshiring" }; }
     setApplying(false);
     if (r.error) { setResult({ error: r.error }); return; }
-    setResult({ note: `${ready.length} xodim, ${bready.length} brigada varag'i — ${fmtNum(r.saved ?? 0)} katak yozildi`, skipped: r.skipped });
+    setResult({ note: `${ready.length} xodim, ${bready.length} brigada varag'i — ${fmtNum(r.saved ?? 0)} katak yozildi${r.assigned ? ` · ${r.assigned} xodim komandaga biriktirildi` : ""}`, skipped: r.skipped });
     router.refresh();
   }
 
@@ -53,7 +59,7 @@ export function TabelImport({ month, monthLabel, employees }: { month: string; m
       <form action={action} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="month" value={month} />
         <Field label={`Excel fayli (.xlsx) — ${monthLabel} tabeliga`} className="min-w-72 flex-1" hint="«Ф.И.О.» va 1..31 kun ustunlari bor barcha varaqlar: oddiy tabel (Ауп, Поврименшики…) va brigada varaqlari (soni va narx bloki bilan)">
-          <Input name="file" type="file" accept=".xlsx" required className="pt-1.5" onChange={() => { setPick({}); setBpick({}); setResult(null); }} />
+          <Input name="file" type="file" accept=".xlsx" required className="pt-1.5" onChange={() => { setPick({}); setBpick({}); setTpick({}); setResult(null); }} />
         </Field>
         <Button variant="secondary" disabled={pending}><FileSpreadsheet size={15} /> {pending ? "O'qilmoqda…" : "Ko'rib chiqish"}</Button>
       </form>
@@ -104,6 +110,40 @@ export function TabelImport({ month, monthLabel, employees }: { month: string; m
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {teams.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-slate-900">Oddiy tabel varaqlari → komanda (tabel, C2026, Avans, Zarplata 2 bo&apos;limlari)</h4>
+              <div className="overflow-auto rounded-lg border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs text-slate-500">
+                    <tr><th className="px-3 py-2 text-left">Varaq</th><th className="px-3 py-2 text-left">ERP komandasi</th></tr>
+                  </thead>
+                  <tbody>
+                    {teams.map((t) => {
+                      const v = tchosen(t.sheet, t.match?.teamId);
+                      return (
+                        <tr key={t.sheet} className="border-t border-slate-100">
+                          <td className="px-3 py-1.5"><div className="font-medium text-slate-900">{t.sheet}</div><div className="text-xs text-slate-500">{t.people} kishi</div></td>
+                          <td className="px-3 py-1.5">
+                            <div className="flex items-center gap-2">
+                              <Select value={v} onChange={(e) => setTpick((x) => ({ ...x, [t.sheet]: e.target.value }))} className="h-8 min-w-52 text-sm" aria-label={`${t.sheet} — ERP komandasi`}>
+                                <option value="">— komandaga biriktirmaslik —</option>
+                                <option value="new">+ Yangi komanda: «{t.suggest}»</option>
+                                {preview.allTeams.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                              </Select>
+                              {t.match && !(t.sheet in tpick) && <Badge color="green">nomi</Badge>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-500">Faqat hali komanda yoki brigadaga biriktirilmagan xodimlar biriktiriladi; qo&apos;lda biriktirilgani o&apos;zgarmaydi.</p>
             </div>
           )}
 

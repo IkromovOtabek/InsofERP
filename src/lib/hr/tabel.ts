@@ -255,9 +255,15 @@ export type ImportBrigade = {
   /** Excel bilan solishtirish: har a'zoning ERP hisobi (10 000 ga yaxlitlangan) = Excel'dagi «сумма + брак» */
   check: { ok: number; diff: { name: string; erp: number; excel: number }[] };
 };
+/**
+ * Oddiy tabel varag'i (Ауп, Сваршики, Поврименшики…) → ERP komandasi (Otdel kadr → «Komanda va brigadalar»): tabel,
+ * C2026, Avans va Zarplata 2 bo'limlari shu komanda bo'yicha. Moslik — komanda nomi varaq nomiga teng (lotinda).
+ */
+export type ImportTeam = { sheet: string; people: number; suggest: string; match: { teamId: string; how: "nomi" } | null };
 export type ImportPreview = {
   month: string; days: number; sheets: { name: string; people: number; kind: "plain" | "brigade" }[];
-  people: ImportPerson[]; brigades: ImportBrigade[]; allBrigades: { id: string; name: string }[]; warnings: string[];
+  people: ImportPerson[]; brigades: ImportBrigade[]; allBrigades: { id: string; name: string }[];
+  teams: ImportTeam[]; allTeams: { id: string; name: string }[]; warnings: string[];
 };
 
 const HEADER_RE = /^(ф\.?\s*и\.?\s*о\.?|f\.?\s*i\.?\s*o\.?|фамилия.*|xodim|исм.*)$/i;
@@ -390,6 +396,12 @@ export async function matchPeople(keys: string[], from: Date, to: Date): Promise
   return { results };
 }
 
+/** Varaq nomidan komanda nomi: lotinda, qisqa nom (АУП kabi, 4 harfgacha) — katta harf bilan. */
+function teamName(sheet: string): string {
+  const t = toLatin(sheet.replace(/\s+/g, " ").trim()).slice(0, 80);
+  return t.replace(/\s/g, "").length <= 4 ? t.replace(/\s/g, "").toUpperCase() : t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 export async function previewTabelImport(buf: Buffer, month: string): Promise<ImportPreview> {
   const { sheets, warnings } = extractTabel(buf, month);
   const nDays = monthDays(month).length;
@@ -405,9 +417,10 @@ export async function previewTabelImport(buf: Buffer, month: string): Promise<Im
   }
   const days = monthDays(month);
   const from = dayUtc(days[0]!.iso), to = dayUtc(days[days.length - 1]!.iso);
-  const [{ results }, brigadeList] = await Promise.all([
+  const [{ results }, brigadeList, teamList] = await Promise.all([
     matchPeople([...byKey.keys()], from, to),
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], select: { id: true, name: true, aliases: true, leader: { select: { fullName: true } } } }),
+    db.team.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   for (const p of byKey.values()) {
     p.total = Math.round((p.hours.reduce<number>((s, h) => s + (h ?? 0), 0) + p.bsheets.reduce((s, b) => s + b.hours.reduce<number>((t, h) => t + (h ?? 0), 0), 0)) * 100) / 100;
@@ -439,9 +452,18 @@ export async function previewTabelImport(buf: Buffer, month: string): Promise<Im
     return { sheet: sh.name, title: sh.title ?? null, lines: sh.lines ?? [], brak: sh.brak ?? 0, people: sh.rows.length, pool: Math.round(c.total.pool), match, check: { ok, diff } };
   });
   const people = [...byKey.values()].sort((a, b) => Number(!!a.match) - Number(!!b.match) || a.name.localeCompare(b.name));
+  // Oddiy tabel varaqlari → komanda (nomi bir xil bo'lsa — o'zi tanlanadi; «Ауп» → «AUP»)
+  const teams: ImportTeam[] = sheets.filter((s) => s.kind === "plain").map((sh) => {
+    const k = nameKey(sh.name);
+    // Aynan bir xil yoki bir o'zakli («Сваршики» ↔ «Svarshiklar»): umumiy boshi kamida 5 harf va qisqasining 75%
+    const same = (a: string, b: string) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return a === b || (i >= 5 && i >= 0.75 * Math.min(a.length, b.length)); };
+    const exact = teamList.filter((t) => nameKey(t.name) === k);
+    const byName = exact.length ? exact : teamList.filter((t) => same(nameKey(t.name), k));
+    return { sheet: sh.name, people: sh.rows.length, suggest: teamName(sh.name), match: byName.length === 1 ? { teamId: byName[0]!.id, how: "nomi" as const } : null };
+  });
   return {
     month, days: nDays, sheets: sheets.map((s) => ({ name: s.name, people: s.rows.length, kind: s.kind })),
-    people, brigades, allBrigades: brigadeList.map((b) => ({ id: b.id, name: b.name })), warnings,
+    people, brigades, allBrigades: brigadeList.map((b) => ({ id: b.id, name: b.name })), teams, allTeams: teamList, warnings,
   };
 }
 
@@ -452,9 +474,10 @@ export async function previewTabelImport(buf: Buffer, month: string): Promise<Im
  */
 export async function applyTabelImport(
   who: Who, month: string,
-  people: { key: string; employeeId: string; hours: (number | null)[]; bsheets?: { sheet: string; hours: (number | null)[] }[]; remember?: boolean }[],
+  people: { key: string; employeeId: string; hours: (number | null)[]; bsheets?: { sheet: string; hours: (number | null)[] }[]; sheets?: string[]; remember?: boolean }[],
   brigades: { sheet: string; brigadeId: string; newName?: string; remember?: boolean; lines: { name: string; rate: number; qty: (number | null)[] }[]; brak: number }[] = [],
-): Promise<{ error?: string; saved: number; skipped: string[] }> {
+  teams: { sheet: string; teamId: string; newName?: string }[] = [],
+): Promise<{ error?: string; saved: number; skipped: string[]; assigned?: number }> {
   const items: TabelItem[] = [];
   for (const p of people) p.hours.forEach((h, i) => { if (h != null && h > 0) items.push({ employeeId: p.employeeId, day: i + 1, value: String(h) }); });
   const res = items.length ? await saveTabel(who, month, items, { source: "Excel import" }) : { saved: 0, skipped: [] as string[] };
@@ -520,5 +543,45 @@ export async function applyTabelImport(
   for (const p of people.filter((x) => x.remember && x.key)) {
     await db.employeeAlias.upsert({ where: { name: p.key }, create: { name: p.key, employeeId: p.employeeId, createdById: who.userId }, update: { employeeId: p.employeeId } });
   }
-  return { saved, skipped: skipped.slice(0, 50) };
+  const assigned = await assignImportTeams(who, people, teams);
+  return { saved, skipped: skipped.slice(0, 50), assigned };
+}
+
+/**
+ * Oddiy tabel varaqlari → komanda: «yangi» tanlangan varaq uchun komanda ochiladi (shu nomli bo'lsa — o'sha), varaqdagi
+ * xodimlar komandaga biriktiriladi — faqat hali hech qaysi komanda va brigadaga biriktirilmaganlari (qo'lda biriktirilgani
+ * o'zgarmaydi). Bir xodim bir nechta varaqda bo'lsa — birinchi tanlangan varaq. Har o'zgarish AuditLog'da.
+ */
+async function assignImportTeams(who: Who, people: { employeeId: string; sheets?: string[] }[], teams: { sheet: string; teamId: string; newName?: string }[]): Promise<number> {
+  const teamOf = new Map<string, string>();
+  for (const t of teams) {
+    let id = t.teamId;
+    if (id === "new") {
+      const name = (t.newName ?? teamName(t.sheet)).trim().slice(0, 80);
+      if (!name) continue;
+      const cur = await db.team.findFirst({ where: { name: { equals: name, mode: "insensitive" } }, select: { id: true, isActive: true } });
+      if (cur) {
+        if (!cur.isActive) await db.team.update({ where: { id: cur.id }, data: { isActive: true } });
+        id = cur.id;
+      } else {
+        const created = await db.team.create({ data: { name }, select: { id: true } });
+        await audit(db, who.userId, "CREATE", "Team", created.id, undefined, { name, manba: "Excel tabel importi" });
+        id = created.id;
+      }
+    }
+    if (id) teamOf.set(t.sheet, id);
+  }
+  if (!teamOf.size) return 0;
+  const want = new Map<string, string>();
+  for (const p of people) {
+    const sheet = (p.sheets ?? []).find((s) => teamOf.has(s));
+    if (sheet && !want.has(p.employeeId)) want.set(p.employeeId, teamOf.get(sheet)!);
+  }
+  const free = await db.employee.findMany({ where: { id: { in: [...want.keys()] }, teamId: null, brigadeId: null }, select: { id: true, fullName: true } });
+  for (const e of free) {
+    // Shartli: shu orada boshqa joyda biriktirilgan bo'lsa — tegilmaydi
+    const n = await db.employee.updateMany({ where: { id: e.id, teamId: null, brigadeId: null }, data: { teamId: want.get(e.id)! } });
+    if (n.count) await audit(db, who.userId, "UPDATE", "Employee", e.id, { teamId: null }, { teamId: want.get(e.id), xodim: e.fullName, manba: "Excel tabel importi" });
+  }
+  return free.length;
 }

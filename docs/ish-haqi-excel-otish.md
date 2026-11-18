@@ -222,6 +222,17 @@ Har bosqichdan keyin: `tsc`, `eslint`, QA (`run-all.sh`), haqiqiy fayl bilan sol
 - **Oylik varaqlari** — Excel yuklanmasa ham «ERP ma'lumotidan» kitob (`lib/hr/erp-workbook.ts`): har komanda tabeli,
   brigada varaqlari, Ushlanmalar, C2026 (vedomost yoki taxminiy), Avans, Qarzlar, Ijro; faqat ko'rish, .xlsx yuklab olish.
 - Vedomost sahifasi, Excel va chop — faqat vedomost ko'radiganlarga (`canSeeRuns`), Sekretar havola bilan ham ochmaydi.
+- **Excel varaqlari ↔ ERP (17 varaq, 2026-11-18 tekshiruvi):** C2026 → C2026; Миб карздорлик → Ijro; Карз → Qarzlar;
+  Аванс Наличка → «Avans» (vedomost №1, komanda/brigada bo'limlari, imzo); **Зарплата 2 → «Zarplata 2»** (vedomost №2:
+  oy yakuni qoldig'i naqd/plastik, bo'limlar, imzolar); Ауп, Сваршики, Поврименшики → komanda tabellari; Илхом, Сардор,
+  Шухрат, Исмоил, Столба, БРУ 1/2 → brigada varaqlari; Повр/сварш (yashirin, 2025) — o'tkazilmaydi.
+- **Excel importi → komanda:** oddiy tabel varaqlari (Ауп, Сваршики, Поврименшики) komandaga moslanadi — nomi o'xshash
+  komanda o'zi tanlanadi, yo'q bo'lsa «+ Yangi komanda» (Ауп → «AUP»). Varaqdagi hali komanda/brigadaga biriktirilmagan
+  xodimlar shu komandaga o'tadi (qo'lda biriktirilgani o'zgarmaydi).
+- **Mobil (brigadir):** «Brigada varag'i» — o'z brigadasiga kunlik soat va mahsulot soni (o'tgan kunlarga ham, tabel
+  yopilguncha). «Ish haqim»: ushlanmalar turi bo'yicha, qarz va ijro qoldig'i. Kassir to'lovida plastik uchun bank hisobi.
+- **Himoyalar:** oy yakuni yopilgach shu oy avansi to'lanmaydi; to'lanmagan yoki hisobdan keyin to'langan avans bo'lsa
+  oy yakuni yuborilmaydi; tabel yopiq oyda kadr davomati va ariza davomatga yozilmaydi.
 
 ## 5. Kelishib olinadigan savollar
 

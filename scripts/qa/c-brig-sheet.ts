@@ -3,7 +3,9 @@
  *   · brigadir «Brigada varag'i» (`brig-sheet`, `bsheet.hours` / `bsheet.output`): faqat BRIGADIER, faqat o'z brigadasi,
  *     kelajak kuni va yopiq oy rad etiladi, noma'lum xodim — xato, yozuv bazaga tushadi va tozalanadi;
  *   · «Oyligim»: ushlanmalar turi bo'yicha (C2026 ustunlari), «Kassadan berilgan» → «Oylikdan qarz», qarz/ijro qoldig'i qatori;
- *   · kassir to'lovi: plastik qismi bo'lsa formada `bankAccountId` (majburiy), bankisiz yuborilsa — tushunarli xato.
+ *   · kassir to'lovi: plastik qismi bo'lsa formada `bankAccountId` (majburiy), bankisiz yuborilsa — tushunarli xato;
+ *   · ERP «Oylik varaqlari» kitobi: «Avans» va «Zarplata 2» (Excel «Аванс наличка» / «Зарплата 2») — naqd va plastik;
+ *   · Excel tabel importi: oddiy varaq («Ауп») → komanda ochiladi, biriktirilmagan xodim unga o'tadi.
  *   npx tsx scripts/qa/c-brig-sheet.ts   (server QA_BASE da, baza insof_test…)
  */
 import { api, check, done, section, tok } from "./c-lib";
@@ -30,7 +32,7 @@ async function main() {
   if (!own || !brUser.employee) { check("brigadirning brigadasi / xodim kartasi yo'q — test ma'lumoti yetarli emas", false); return; }
   const brEmp = brUser.employee.id;
   const LINE = "QA blok 20x20";
-  const created = { emp: null as string | null, month: false, run: null as string | null, debt: null as string | null, wh: null as string | null };
+  const created = { emp: null as string | null, month: false, run: null as string | null, debt: null as string | null, wh: null as string | null, aup: null as string | null, team: null as string | null };
 
   try {
     // Brigadaga sdelkachi a'zo va oy qatori (golden bazada yo'q)
@@ -171,6 +173,39 @@ async function main() {
     check("bank tanlanmasa → 400 «Plastik qismi …»", r.status === 400 && /Plastik qismi/.test(r.json?.message ?? ""), `${r.status} ${r.json?.message}`);
     const paid = await db.payrollLine.findUniqueOrThrow({ where: { id: lineId } });
     check("qator to'lanmagan bo'lib qoldi", paid.paidAt == null);
+
+    section("ERP kitobi — «Avans» va «Zarplata 2» (Excel «Аванс наличка», «Зарплата 2»)");
+    const { erpWorkbook } = await import("@/lib/hr/erp-workbook");
+    const wb = await erpWorkbook(LOCK_MONTH);
+    const z = wb.find((w) => w.name === "Zarplata 2");
+    check("kitobda «Avans» va «Zarplata 2» varaqlari", !!z && wb.some((w) => w.name === "Avans"), wb.map((w) => w.name));
+    const zv = Object.values(z?.data.cells ?? {}).map((c) => c.v);
+    check("Zarplata 2: brigadir qatori — naqd 380 000, plastik 200 000, imzolar", zv.includes(brUser.fullName) && zv.includes(380_000) && zv.includes(200_000) && zv.some((v) => typeof v === "string" && v.startsWith("Direktor")), zv.slice(0, 20));
+
+    section("Excel tabel importi — oddiy varaq → komanda");
+    const XLSX = await import("xlsx");
+    const aup = await db.employee.create({ data: { fullName: "QA Aup Hisobchi", position: "Hisobchi", hiredAt: new Date(2020, 0, 1) } });
+    created.aup = aup.id;
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["№", "Ф.И.О.", ...Array.from({ length: 29 }, (_, i) => i + 1)], [1, "QA Aup Hisobchi", 8, 8]]), "Ауп");
+    const buf = XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const { previewTabelImport, applyTabelImport } = await import("@/lib/hr/tabel");
+    const pv = await previewTabelImport(buf, "2020-02");
+    const tm = pv.teams.find((x) => x.sheet === "Ауп");
+    const person = pv.people.find((x) => x.match?.employeeId === aup.id);
+    check("«Ауп» varag'i komanda moslashida, taklif «AUP»", tm?.suggest === "AUP" && tm.people === 1 && !tm.match, tm);
+    check("ism xodimga mos keldi", !!person, pv.people.map((x) => x.name));
+    if (person) {
+      const ar = await applyTabelImport({ userId: dirUser.id }, "2020-02", [{ key: person.key, employeeId: aup.id, hours: person.hours, sheets: person.sheets }], [], [{ sheet: "Ауп", teamId: "new" }]);
+      const e2 = await db.employee.findUniqueOrThrow({ where: { id: aup.id }, select: { teamId: true, team: { select: { name: true } } } });
+      created.team = e2.teamId;
+      check("yangi «AUP» komandasi ochildi, xodim biriktirildi", !ar.error && ar.assigned === 1 && e2.team?.name === "AUP", { ar, team: e2.team });
+      const pv2 = await previewTabelImport(buf, "2020-02");
+      check("qayta importda «Ауп» → «AUP» o'zi tanlanadi", pv2.teams.find((x) => x.sheet === "Ауп")?.match?.teamId === e2.teamId);
+      const memberTeam = (await db.employee.findUniqueOrThrow({ where: { id: member.id }, select: { teamId: true } })).teamId;
+      const ar2 = await applyTabelImport({ userId: dirUser.id }, "2020-02", [{ key: "x", employeeId: member.id, hours: [], sheets: ["Ауп"] }], [], [{ sheet: "Ауп", teamId: e2.teamId! }]);
+      check("brigadadagi xodim komandaga o'tkazilmaydi", !ar2.error && ar2.assigned === 0 && (await db.employee.findUniqueOrThrow({ where: { id: member.id }, select: { teamId: true } })).teamId === memberTeam);
+    }
   } finally {
     if (created.run) await db.payrollRun.delete({ where: { id: created.run } }).catch(() => undefined);
     if (created.debt) await db.employeeDebt.delete({ where: { id: created.debt } }).catch(() => undefined);
@@ -179,6 +214,11 @@ async function main() {
     await db.brigadeOutput.deleteMany({ where: { brigadeId: own.id, line: LINE } }).catch(() => undefined);
     if (created.month) await db.brigadeMonth.delete({ where: { brigadeId_month: { brigadeId: own.id, month } } }).catch(() => undefined);
     if (created.emp) await db.employee.delete({ where: { id: created.emp } }).catch(() => undefined);
+    if (created.aup) {
+      await db.attendance.deleteMany({ where: { employeeId: created.aup } }).catch(() => undefined);
+      await db.employee.delete({ where: { id: created.aup } }).catch(() => undefined);
+    }
+    if (created.team) await db.team.delete({ where: { id: created.team } }).catch(() => undefined);
   }
 }
 
