@@ -45,6 +45,7 @@ import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { approveContentLib, rejectContentLib } from "@/lib/smm/approval";
 import { approveBoost, rejectBoost } from "@/lib/smm/boosts";
 import { TODAY_PREFIX } from "./brigadier";
+import { BSHEET_ACTIONS, runBrigSheetAction } from "./brig-sheet";
 import { clearDashCache } from "./dashboard";
 import { problemAction } from "./problems";
 import { assertAtSite, knownPoint } from "./geofence";
@@ -197,6 +198,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (action.startsWith("task.")) await assertOwnTask(user, id);
   if (["att.present", "att.face", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
 
+  // ── Brigada varag'i: brigadir o'z brigadasiga kunlik soat va mahsulot soni (`./brig-sheet.ts`) ──
+  if (BSHEET_ACTIONS.has(action)) return { ok: true, message: await runBrigSheetAction(user, action, id, payload) };
   // ── Otdel kadr: ish haqi vedomosti, vazifalar (`./hr.ts`) ──
   if (action.startsWith("payroll.") || action.startsWith("wtask.")) return { ok: true, message: await runHrAction(user, action, id, payload) };
   // ── Otdel kadr kabineti: xodim kartasi, jarima/bonus (`./kadr-extra.ts`) ──

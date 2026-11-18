@@ -44,6 +44,7 @@ import { repDetail } from "./report-detail";
 import { dashDetail } from "./dash-detail";
 import { problemDetail } from "./problems";
 import { brigDayDetail, brigIssueDetail, brigShiftDetail, defectAction, issueActions, brigStockDetail } from "./brigadier";
+import { brigSheetDetail } from "./brig-sheet";
 import { BRIGADE_ISSUE, ISSUE_RESOLVERS, taskPhase } from "@/lib/brigade-shift";
 import { DEFECT_REASONS } from "@/lib/production-day";
 import { TASK_ROLES } from "@/lib/tasks";
@@ -332,6 +333,9 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "shift.open": [],
   "shift.close": [],
   "shift.defect": ["BRIGADIER"],
+  // Brigada varag'i (Ish haqi → Tabel): kunlik soat va mahsulot soni — faqat brigadir, faqat o'z brigadasi (`./brig-sheet.ts`)
+  "bsheet.hours": ["BRIGADIER"],
+  "bsheet.output": ["BRIGADIER"],
   "issue.equipment": ["BRIGADIER"],
   "issue.material": ["BRIGADIER"],
   "issue.staff": ["BRIGADIER"],
@@ -546,6 +550,8 @@ const PERM_PREFIX: [string, { module: string; action?: string }][] = [
   ["shift.", { module: "tasks" }],
   ["issue.", { module: "tasks" }],
   ["att.", { module: "production" }],
+  // Brigada varag'i — ish haqi moduli: tarifda o'chsa yoki direktor brigadirga «yo'q»/«ko'rish» qilsa — yozilmaydi
+  ["bsheet.", { module: "payroll" }],
 ];
 function permFor(action: string): { module: string; action?: string } | undefined {
   return PERM_EXACT[action] ?? PERM_PREFIX.find(([p]) => action.startsWith(p))?.[1];
@@ -577,6 +583,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Brigadaning sklad kartasi: qo'lidagi xomashyo, berilgani, samaradorlik (`./brigadier.ts` → `brigStockDetail`)
   "brig-stock": ["PRODUCTION", "SUPERVISOR", "BRIGADIER", "WAREHOUSE", "PROCUREMENT"],
   "brig-day": ["BRIGADIER"],
+  "brig-sheet": ["BRIGADIER"],
   "prod-report": ["PRODUCTION", "SUPERVISOR"],
   // Hisobotdan bosib ochiladigan soat / brigada / mahsulot / brak kartalari — faqat ko'rish (`./report-detail.ts`)
   rep: ["PRODUCTION", "SUPERVISOR"],
@@ -616,7 +623,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   ...SOTUV_DETAIL_ROLES,
 };
 
-const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-day", "brig-issue", "brig-stock", "sex-emp", "dash", ...SELF_CARDS];
+const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-day", "brig-sheet", "brig-issue", "brig-stock", "sex-emp", "dash", ...SELF_CARDS];
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
@@ -690,6 +697,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "rep": return repDetail(user, id);
     case "brig-shift": return brigShiftDetail(user, id);
     case "brig-day": return brigDayDetail(user, id);
+    case "brig-sheet": return brigSheetDetail(user, id, (a) => can(user, a));
     case "brig-issue": return brigIssueDetail(user, id);
     case "brig-stock": return brigStockDetail(user, id);
     // Egasi qarori kerak bo'lgan masala (direktor dashboardidagi "Muammolar") — `./problems.ts`

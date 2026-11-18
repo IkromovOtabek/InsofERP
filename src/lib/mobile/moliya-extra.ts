@@ -563,8 +563,11 @@ export async function payrollRecalc(user: MobileUser, id: string): Promise<{ err
 }
 
 /** To'lov formasiga — har to'lanmagan xodim uchun belgi (`line_<id>`): vebdagi kabi tanlanganlargagina to'lash mumkin. */
-export function payLineFields(lines: { id: string; net: unknown; employee: { fullName: string } }[]): FormField[] {
-  return lines.map((l) => ({ name: `line_${l.id}`, label: `${l.employee.fullName} · ${money(n(l.net))}`, type: "switch" as const, value: "true" }));
+export function payLineFields(lines: { id: string; net: unknown; cardAmount?: unknown; employee: { fullName: string } }[]): FormField[] {
+  return lines.map((l) => {
+    const card = Math.min(n(l.net), n(l.cardAmount));
+    return { name: `line_${l.id}`, label: `${l.employee.fullName} · ${money(n(l.net))}${card > 0 ? ` (plastik ${money(card)})` : ""}`, type: "switch" as const, value: "true" };
+  });
 }
 
 /** Formadan tanlangan qatorlar: belgilar bo'lmasa (eski ilova) — null, ya'ni hammasi; hech biri tanlanmasa — xato. */

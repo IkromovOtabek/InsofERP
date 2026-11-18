@@ -6,7 +6,7 @@ import { dayUtc, monthDays, monthTitle, shiftMonth } from "@/lib/davomat";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { isStaffSettleCategory } from "@/lib/cash-categories";
 import { tabelLock } from "./tabel-lock";
-import { allocOf, closedLines, debtHeld, debtsDue, dueIn, type Alloc, type HeldLine } from "./employee-debt";
+import { allocOf, closedLines, debtHeld, debtsDue, dueIn, listDebts, type Alloc, type HeldLine } from "./employee-debt";
 import { deductionLabel, isDeductionCat, type DeductionCat } from "./deduction-cats";
 
 /**
@@ -224,8 +224,9 @@ export async function saveFundAmount(who: Who, amount: number | null) {
 
 // ───────────────────────── Ijro / aliment daftari ─────────────────────────
 
-export async function listWithholdings() {
+export async function listWithholdings(employeeId?: string) {
   const ws = await db.withholding.findMany({
+    ...(employeeId ? { where: { employeeId } } : {}),
     orderBy: [{ cancelledAt: { sort: "desc", nulls: "first" } }, { createdAt: "desc" }], take: 500,
     include: { employee: { select: { id: true, fullName: true, position: true } } },
   });
@@ -240,6 +241,22 @@ export async function listWithholdings() {
     };
   });
 }
+
+/**
+ * Xodimning o'z qarz va ijro/aliment qoldig'i («oyligim», «Mening hisobim») — Ish haqi → Xodim qarzlari / Ijro daftari bilan
+ * bir hisob (`listDebts` / `listWithholdings`): bekor qilinmagan va qoldig'i bor (summasi belgilanmagan ijro — muddatsiz).
+ */
+export async function employeeLedger(employeeId: string) {
+  const [debts, withs] = await Promise.all([listDebts(employeeId), listWithholdings(employeeId)]);
+  const d = debts.filter((x) => !x.cancelledAt && x.left > 0);
+  const w = withs.filter((x) => !x.cancelledAt && (x.left == null || x.left > 0));
+  return {
+    debts: d, withholds: w,
+    debtLeft: d.reduce((s, x) => s + x.left, 0),
+    withholdLeft: w.reduce((s, x) => s + (x.left ?? 0), 0),
+  };
+}
+export type EmployeeLedger = Awaited<ReturnType<typeof employeeLedger>>;
 
 export type WithholdingInput = { employeeId: string; kind: "MIB" | "ALIMENT"; caseNo?: string | null; creditor?: string | null; amount?: number | null; percent?: number | null; monthly?: number | null; startMonth: string; heldBefore?: number; note?: string | null };
 

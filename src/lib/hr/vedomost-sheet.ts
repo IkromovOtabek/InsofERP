@@ -34,9 +34,33 @@ export type SheetGroup = { label: string; rows: SheetRow[]; total: Record<SheetC
 const zero = (): Record<SheetColKey, number> => Object.fromEntries(SHEET_COLS.map((c) => [c.key, 0])) as Record<SheetColKey, number>;
 const add = (a: Record<SheetColKey, number>, b: Record<SheetColKey, number>) => { for (const c of SHEET_COLS) a[c.key] += b[c.key]; };
 
+/** Ushlanma ustunlari (C2026 G–K va boshqalar) — vedomost, xodimning «oyligim» kartasi va «Mening hisobim» bir xil ajratadi. */
+export const DEDUCTION_KEYS = ["brak", "aliment", "loan", "salaryDebt", "fund", "fine", "other"] as const;
+export type DeductionKey = (typeof DEDUCTION_KEYS)[number];
+export const sheetColLabel = (k: SheetColKey) => SHEET_COLS.find((c) => c.key === k)!.label;
+
 /** Qoidaning (avtomatik ushlanma) ustuni. */
-const RULE_COL = (rule: string): SheetColKey => (rule === "Brigada braki" ? "brak" : rule === "Qarz (nasiya)" ? "loan" : rule === "Ijro varaqasi" || rule === "Aliment" ? "aliment" : rule === STAFF_CASH_RULE ? "salaryDebt" : rule === "O'tgan oydan qarz" ? "other" : "fine");
-const CAT_COL: Record<string, SheetColKey> = { ALIMENT: "aliment", LOAN: "loan", SALARY_DEBT: "salaryDebt", FUND: "fund", FINE: "fine" };
+const RULE_COL = (rule: string): DeductionKey => (rule === "Brigada braki" ? "brak" : rule === "Qarz (nasiya)" ? "loan" : rule === "Ijro varaqasi" || rule === "Aliment" ? "aliment" : rule === STAFF_CASH_RULE ? "salaryDebt" : rule === "O'tgan oydan qarz" ? "other" : "fine");
+const CAT_COL: Record<string, DeductionKey> = { ALIMENT: "aliment", LOAN: "loan", SALARY_DEBT: "salaryDebt", FUND: "fund", FINE: "fine" };
+/** Qo'lda yozilgan ushlanma (`PayAdjustment.category`) ustuni; turi yo'q (eski jarima) — «Jarima». */
+export const manualCol = (category: string | null | undefined): DeductionKey => (category && CAT_COL[category]) || "fine";
+export const ruleCol = RULE_COL;
+
+/** Qoida nomi xodimga: kassadan berilgan pul — «Oylikdan qarz», nasiya ulushi — «Qarz to'lovi» (C2026 ustunlari bo'yicha). */
+export function deductionRuleTitle(rule: string): string {
+  if (rule === STAFF_CASH_RULE) return `${sheetColLabel("salaryDebt")} — kassadan berilgan`;
+  if (rule === "Qarz (nasiya)") return `${sheetColLabel("loan")} — nasiya`;
+  return rule;
+}
+
+/** Vedomost qatoridagi ushlanmalar turi bo'yicha (qoidalar nomi, qo'lda yozuvlar `category` bo'yicha). */
+export function lineDeductions(breakdown: unknown): Record<DeductionKey, number> {
+  const b = breakdownOf(breakdown);
+  const v = Object.fromEntries(DEDUCTION_KEYS.map((k) => [k, 0])) as Record<DeductionKey, number>;
+  for (const h of b?.rules ?? []) if (h.kind === "PENALTY") v[RULE_COL(h.rule)] += h.amount;
+  for (const m of b?.manual ?? []) if (m.kind === "PENALTY") v[manualCol(m.category)] += m.amount;
+  return v;
+}
 
 /** Vedomost qatori (bazadagi `PayrollLine` yoki hisoblangan `CalcLine`) — C2026 qatoriga aylantirish uchun. */
 export type SheetSrcLine = {
@@ -48,11 +72,9 @@ export type SheetSrcLine = {
 export function sheetGroups(lines: SheetSrcLine[]) {
   const groups = new Map<string, SheetGroup & { order: number }>();
   for (const l of lines) {
-    const b = breakdownOf(l.breakdown);
     const v = zero();
     v.gross = Number(l.gross); v.tax = Number(l.incomeTax); v.hand = v.gross - v.tax;
-    for (const h of b?.rules ?? []) if (h.kind === "PENALTY") v[RULE_COL(h.rule)] += h.amount;
-    for (const m of b?.manual ?? []) if (m.kind === "PENALTY") v[(m.category && CAT_COL[m.category]) || "fine"] += m.amount;
+    Object.assign(v, lineDeductions(l.breakdown));
     v.advance = Number(l.advanceDeducted);
     v.net = Number(l.net);
     v.card = Number(l.cardAmount);

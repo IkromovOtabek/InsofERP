@@ -257,7 +257,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
 /** Tezkor amal katakchasi ikonlari (ilovadagi `design/icons.tsx` nomlari). */
 const LIST_ICON: Record<string, string> = {
   orders: "document-text", sales: "trending-up", customers: "users", leads: "inbox", invoices: "receipt",
-  production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat", "brig-issues": "triangle-alert", "brig-shifts": "clipboard-check", "brig-days": "clipboard-check",
+  production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat", "brig-issues": "triangle-alert", "brig-shifts": "clipboard-check", "brig-days": "clipboard-check", "brig-sheet": "calendar-days",
   trips: "bus", drivers: "id-card",
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
   prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse", "avto-zapchast": "car",

@@ -47,8 +47,9 @@ export async function debtsDue(month: string, employeeIds: string[]): Promise<De
  * Qarzlar ro'yxati (Ish haqi → Xodim qarzlari): ushlangan — jadvaldagi oylardan oy yakuni vedomosti tasdiqlangan
  * (yoki to'langan) oylar ulushi; qolgan — summa − ushlangan.
  */
-export async function listDebts() {
+export async function listDebts(employeeId?: string) {
   const debts = await db.employeeDebt.findMany({
+    ...(employeeId ? { where: { employeeId } } : {}),
     orderBy: [{ cancelledAt: { sort: "desc", nulls: "first" } }, { createdAt: "desc" }],
     take: 500,
     include: { employee: { select: { id: true, fullName: true, position: true } }, cashTx: { select: { date: true, cashAccount: { select: { name: true } } } } },

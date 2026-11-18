@@ -6,6 +6,9 @@ import { cancelHrRequest, createHrRequest, decideHrRequest, employeeOfUser, list
 import { plansInRange } from "@/lib/hr/shifts";
 import { approveRun, breakdownOf, canPayroll, listRuns, myLines, payRun, returnRun, runWithLines, submitRun, PAYROLL_VIEW_ROLES } from "@/lib/hr/payroll";
 import { payAccounts } from "@/lib/mechanic-requests";
+import { deductionLabel } from "@/lib/hr/deduction-cats";
+import { employeeLedger, type EmployeeLedger } from "@/lib/hr/deductions";
+import { DEDUCTION_KEYS, deductionRuleTitle, lineDeductions, sheetColLabel } from "@/lib/hr/vedomost-sheet";
 import { canDo } from "@/lib/permissions";
 import {
   PAYROLL_KIND_LABEL, PAYROLL_STATUS_LABEL, PAYROLL_STATUS_TONE, REQUEST_KIND, REQUEST_KINDS, REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE,
@@ -25,7 +28,8 @@ import { payLineFields, payLineIds, payrollRecalc, payrollRecalcActions } from "
  *   · "arizalarim" — xodimning o'z arizalari (har bir rol), "+" — "ariza" formasi;
  *   · "arizalar"   — otdel kadr: kelgan arizalar, tasdiqlash / rad etish;
  *   · "grafigim"   — xodimning 2 haftalik smena grafigi;
- *   · "oyligim"    — xodimning tasdiqlangan ish haqi hisob-kitoblari (qator id — vedomost id);
+ *   · "oyligim"    — xodimning tasdiqlangan ish haqi hisob-kitoblari (qator id — vedomost id); qarz/ijro qoldig'i bo'lsa — tepada
+ *                    `qarz` qatori (kartochkasi — qarzlar va ijro/aliment yozuvlari, `employeeLedger`);
  *   · "ish-haqi"   — vedomostlar: kadr yuboradi, direktor tasdiqlaydi, kassir to'laydi.
  * Qoidalar — `lib/hr/*` (veb bilan bitta).
  */
@@ -91,14 +95,14 @@ export async function hrList(user: MobileUser, key: string, q?: string, filter?:
   }
   if (key === "oyligim") {
     const e = await myEmployee(user);
-    const lines = await myLines(e.id, 24);
+    const [lines, led] = await Promise.all([myLines(e.id, 24), employeeLedger(e.id)]);
     return {
       key, title,
-      rows: lines.map((l) => ({
+      rows: [...ledgerRow(led), ...lines.map((l) => ({
         id: l.run.id, title: `${monthTitle(l.run.month)} · ${PAYROLL_KIND_LABEL[l.run.kind]}`,
         subtitle: `Hisoblangan ${money(Number(l.gross))}${Number(l.incomeTax) + Number(l.penalty) + Number(l.advanceDeducted) ? ` · ushlanma ${money(Number(l.incomeTax) + Number(l.penalty) + Number(l.advanceDeducted))}` : ""}`,
         right: money(Number(l.net)), status: l.paidAt ? "Berildi" : PAYROLL_STATUS_LABEL[l.run.status], tone: (l.paidAt ? "success" : "warning") as Tone,
-      })),
+      }))],
     };
   }
   // "ish-haqi" — vedomostlar; kassirga sukut — to'lov kutayotganlar
@@ -127,7 +131,7 @@ export async function hrDetail(user: MobileUser, key: string, id: string): Promi
   if (PEOPLE_KEYS.includes(key)) return peopleDetail(user, key, id);
   if (VOICE_KEYS.includes(key)) return voiceDetail(user, key, id);
   if (key === "arizalarim" || key === "arizalar") return requestDetail(user, key, id);
-  if (key === "oyligim") return payslipDetail(user, id);
+  if (key === "oyligim") return id === LEDGER_ID ? ledgerDetail(user) : payslipDetail(user, id);
   if (key === "ish-haqi") return runDetail(user, id);
   if (key === "grafigim") return shiftDayDetail(user, id);
   throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
@@ -181,12 +185,59 @@ async function requestDetail(user: MobileUser, key: string, id: string): Promise
   return { key, id: r.id, title: meta.label, subtitle: `${r.docNo} · ${r.employee.fullName}`, status: REQUEST_STATUS_LABEL[r.status], fields, sections: [], actions };
 }
 
+/** «oyligim» ro'yxatidagi qarz/ijro qoldig'i qatori id'si (vedomost id'lari cuid — to'qnashmaydi). */
+const LEDGER_ID = "qarz";
+const whKind = (k: string) => (k === "MIB" ? "Ijro varaqasi" : "Aliment");
+
+function ledgerRow(led: EmployeeLedger): HomeRow[] {
+  if (!led.debts.length && !led.withholds.length) return [];
+  const parts = [
+    ...(led.debts.length ? [`qarz ${money(led.debtLeft)}`] : []),
+    ...(led.withholds.length ? [`ijro / aliment ${led.withholdLeft ? money(led.withholdLeft) : "muddatsiz"}`] : []),
+  ];
+  return [{ id: LEDGER_ID, title: "Qarz va ushlanmalar qoldig'i", subtitle: `${parts.join(" · ")} — oylikdan ushlanadi`, right: money(led.debtLeft + led.withholdLeft), tone: "warning" }];
+}
+
+/** Xodimning qarzlari (nasiya, boshlang'ich qoldiq) va ijro/aliment yozuvlari — Ish haqi → Xodim qarzlari / Ijro daftari kabi. */
+async function ledgerDetail(user: MobileUser): Promise<MobileDetail> {
+  const e = await myEmployee(user);
+  const led = await employeeLedger(e.id);
+  return {
+    key: "oyligim", id: LEDGER_ID, title: "Qarz va ushlanmalar qoldig'i", subtitle: e.fullName,
+    fields: [
+      { label: "Qarz qoldig'i", value: money(led.debtLeft), tone: led.debtLeft ? "warning" : "success" },
+      { label: "Ijro / aliment qoldig'i", value: led.withholds.length ? (led.withholdLeft ? money(led.withholdLeft) : "muddatsiz") : "yo'q", tone: led.withholds.length ? "warning" : "success" },
+    ],
+    sections: [
+      {
+        title: "Qarzlar", empty: "Qarz yo'q",
+        rows: led.debts.map((d) => ({
+          id: d.id, title: `${d.note ?? "Qarz"} · ${money(d.amount)}`,
+          subtitle: `${monthTitle(d.startMonth)} – ${monthTitle(d.endMonth)} · oyiga ${money(d.monthly)} · ushlangan ${money(d.held)}${d.account ? ` · ${d.account}` : ""}`,
+          right: money(d.left), tone: "warning" as Tone,
+        })),
+      },
+      {
+        title: "Ijro / aliment", empty: "Yozuv yo'q",
+        rows: led.withholds.map((w) => ({
+          id: w.id, title: `${whKind(w.kind)}${w.caseNo ? ` №${w.caseNo}` : ""}${w.creditor ? ` · ${w.creditor}` : ""}`,
+          subtitle: `${monthTitle(w.startMonth)} dan · ${w.monthly != null ? `oyiga ${money(w.monthly)}` : w.percent != null ? `${w.percent}% qo'lga tegadigandan` : ""}${w.amount != null ? ` · jami ${money(w.amount)}` : ""} · ushlangan ${money(w.held)}`,
+          right: w.left != null ? money(w.left) : "muddatsiz", tone: "warning" as Tone,
+        })),
+      },
+    ],
+    actions: [],
+  };
+}
+
 async function payslipDetail(user: MobileUser, runId: string): Promise<MobileDetail> {
   const e = await myEmployee(user);
   const l = await db.payrollLine.findFirst({ where: { runId, employeeId: e.id, run: { status: { in: ["APPROVED", "PAID"] } } }, include: { run: { select: { docNo: true, month: true, kind: true, status: true } } } });
   if (!l) throw new ListError("NOT_FOUND", "Hisob-kitob topilmadi", 404);
   const b = breakdownOf(l.breakdown);
   const n = (v: unknown) => Number(v ?? 0);
+  const ded = lineDeductions(l.breakdown);
+  const led = await employeeLedger(e.id);
   const fields: DetailField[] = [
     { label: "Qo'lga", value: money(n(l.net)), tone: "brand" },
     { label: "Holat", value: l.paidAt ? `Berildi · ${dt(l.paidAt)}` : PAYROLL_STATUS_LABEL[l.run.status], tone: l.paidAt ? "success" : "warning" },
@@ -199,13 +250,19 @@ async function payslipDetail(user: MobileUser, runId: string): Promise<MobileDet
     ...(n(l.bonus) ? [{ label: "Bonus", value: money(n(l.bonus)), tone: "success" as Tone }] : []),
     { label: "Hisoblangan", value: money(n(l.gross)) },
     ...(n(l.incomeTax) ? [{ label: "JShDS", value: `−${money(n(l.incomeTax))}` }] : []),
-    ...(n(l.penalty) ? [{ label: "Jarima", value: `−${money(n(l.penalty))}`, tone: "danger" as Tone }] : []),
+    // Ushlanmalar turi bo'yicha — vedomost (C2026) ustunlari bilan bir xil (`lib/hr/vedomost-sheet.ts`)
+    ...DEDUCTION_KEYS.filter((k) => ded[k]).map((k) => ({ label: sheetColLabel(k), value: `−${money(ded[k])}`, tone: "danger" as Tone })),
     ...(n(l.advanceDeducted) ? [{ label: "Berilgan avans", value: `−${money(n(l.advanceDeducted))}` }] : []),
+    ...(led.debtLeft ? [{ label: "Qarz qoldig'i (hozir)", value: money(led.debtLeft), tone: "warning" as Tone }] : []),
+    ...(led.withholds.length ? [{ label: "Ijro / aliment qoldig'i (hozir)", value: led.withholdLeft ? money(led.withholdLeft) : "muddatsiz", tone: "warning" as Tone }] : []),
   ];
   const detailRows = [
     ...(b?.advanceFormula ? [{ id: "f", title: b.advanceFormula }] : []),
-    ...(b?.rules ?? []).map((h, i) => ({ id: `r${i}`, title: h.rule, subtitle: h.detail, right: `${h.kind === "BONUS" ? "+" : "−"}${money(h.amount)}`, tone: (h.kind === "BONUS" ? "success" : "danger") as Tone })),
-    ...(b?.manual ?? []).map((m) => ({ id: m.id, title: m.kind === "BONUS" ? "Bonus" : "Jarima", subtitle: m.reason, right: `${m.kind === "BONUS" ? "+" : "−"}${money(m.amount)}`, tone: (m.kind === "BONUS" ? "success" : "danger") as Tone })),
+    ...(b?.rules ?? []).map((h, i) => ({ id: `r${i}`, title: deductionRuleTitle(h.rule), subtitle: h.detail, right: `${h.kind === "BONUS" ? "+" : "−"}${money(h.amount)}`, tone: (h.kind === "BONUS" ? "success" : "danger") as Tone })),
+    ...(b?.manual ?? []).map((m) => {
+      const t = m.kind === "BONUS" ? "Bonus" : deductionLabel(m.category) ?? "Jarima";
+      return { id: m.id, title: t, subtitle: m.reason && m.reason !== t ? m.reason : undefined, right: `${m.kind === "BONUS" ? "+" : "−"}${money(m.amount)}`, tone: (m.kind === "BONUS" ? "success" : "danger") as Tone };
+    }),
   ];
   return {
     key: "oyligim", id: runId, title: `${monthTitle(l.run.month)} · ${PAYROLL_KIND_LABEL[l.run.kind]}`, subtitle: l.run.docNo, status: l.paidAt ? "Berildi" : PAYROLL_STATUS_LABEL[l.run.status],
@@ -229,9 +286,16 @@ async function runDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   if (r.status === "APPROVED" && unpaid.length && canPayroll(user, "pay")) {
     const accounts = await payAccounts();
     const left = unpaid.reduce((s, l) => s + n(l.net), 0);
+    // Plastik qismi (qatordagi `cardAmount`, oy yakunida) — alohida hisobdan (bank), vebdagi `PayForm` kabi: bo'lsa — tanlov majburiy
+    const card = unpaid.reduce((s, l) => s + Math.min(n(l.net), n(l.cardAmount)), 0);
+    const accOpts = accounts.map((a) => ({ value: a.id, label: `${a.name} · ${a.type === "CASH" ? "naqd" : "bank"}`, hint: `qoldiq ${money(a.balance)}` }));
     const form: FormField[] = [
-      { name: "cashAccountId", label: "Qaysi kassadan", type: "select", required: true, value: accounts.find((a) => a.type === "CASH")?.id ?? accounts[0]?.id,
-        options: accounts.map((a) => ({ value: a.id, label: `${a.name} · ${a.type === "CASH" ? "naqd" : "bank"}`, hint: `qoldiq ${money(a.balance)}` })), hint: `Hammaga ${money(left)} — Kirim-Chiqimda «Ish haqi» chiqimi` },
+      { name: "cashAccountId", label: card > 0 ? "Naqd qismi — qaysi kassadan" : "Qaysi kassadan", type: "select", required: true, value: accounts.find((a) => a.type === "CASH")?.id ?? accounts[0]?.id,
+        options: accOpts, hint: `Hammaga ${money(left)}${card > 0 ? ` (naqd ${money(left - card)}, plastik ${money(card)})` : ""} — Kirim-Chiqimda «Ish haqi» chiqimi` },
+      ...(card > 0 ? [{
+        name: "bankAccountId", label: `Plastik qismi (${money(card)}) — qaysi hisobdan`, type: "select" as const, required: true, value: accounts.find((a) => a.type === "BANK")?.id,
+        options: accOpts, hint: "Kartaga o'tkaziladigan qism alohida chiqim bo'lib yoziladi",
+      }] : []),
       { name: "note", label: "Izoh", type: "text" },
       ...payLineFields(unpaid), // kimga to'lanadi — vebdagi kabi tanlab (`./moliya-extra.ts`)
     ];

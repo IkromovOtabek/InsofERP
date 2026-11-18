@@ -17,6 +17,7 @@ import { canDo } from "@/lib/permissions";
 import type { MobileUser } from "./auth";
 import { reportRows } from "./sex";
 import { brigDaysList, brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
+import { brigSheetList } from "./brig-sheet";
 import type { HomeRow, Tone } from "./home";
 import type { LeadStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
@@ -83,6 +84,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // Brigadir smena ochmaydi (ish tartibida smena yo'q) — eski yopilgan smenalar faqat ishlab chiqarishga; brigadirga «Ish tarixi»
   "brig-shifts": { title: "Smena hisobotlari", roles: ["PRODUCTION", "SUPERVISOR"] },
   "brig-days": { title: "Ish tarixi", roles: ["BRIGADIER"] },
+  // Brigada varag'i: kunlik soat va mahsulot soni (Ish haqi → Tabel bilan bitta) — `./brig-sheet.ts`; direktor to'rida keraksiz (bo'sh)
+  "brig-sheet": { title: "Brigada varag'i", roles: ["BRIGADIER"], menuHide: ["DIRECTOR"] },
   // ── Logistika ──
   trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC", "DISPATCHER"] },
   drivers: { title: "Haydovchilar", roles: ["LOGISTICS", "HR", "DISPATCHER"] },
@@ -170,7 +173,7 @@ const KEY_MODULE: Record<string, string> = {
   orders: "orders", sales: "sales", leads: "sales", customers: "customers",
   invoices: "payments", payments: "payments", cashflow: "cashflow",
   production: "production", recipes: "production", "prod-report": "production", defect: "production",
-  tasks: "tasks", brigades: "tasks",
+  tasks: "tasks", brigades: "tasks", "brig-sheet": "payroll",
   trips: "trips", drivers: "trips",
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
   prixod: "stock", rasxod: "stock", ostatki: "stock", "avto-zapchast": "stock",
@@ -280,6 +283,7 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "brig-issues") return brigIssuesList(user, meta.title, s, filter);
   if (key === "brig-shifts") return brigShiftsList(user, meta.title, s);
   if (key === "brig-days") return brigDaysList(user, meta.title);
+  if (key === "brig-sheet") return brigSheetList(user, meta.title);
   // Sklad / snabjeniye qo'shimcha ro'yxatlari (`./sklad-extra.ts`)
   if (SKLAD_LISTS.has(key)) return skladList(user, key, meta.title, s, filter);
   // Sklad jurnallari (ruscha) — davr chiplari bilan
