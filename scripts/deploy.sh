@@ -23,7 +23,7 @@
 #   SKIP_ECO=1      ECO API'ni yangilamaslik
 #   SKIP_RESTART=1  faqat build + migratsiya + symlink (birinchi ko'chishda — PLATFORMA.md)
 #   KEEP_RELEASES=3 nechta reliz saqlansin
-#   BUILD_HEAP_MB=3072  next build uchun Node heap chegarasi (MB)
+#   BUILD_HEAP_MB=4608  next build uchun Node heap chegarasi (MB); VPS 8 GB — 3072 da OOM bo'ldi (2026-11-18)
 #   ROLLBACK=1      xizmatlarni oldingi relizga qaytarish (build qilmasdan)
 #   SKIP_AGENT_RESTART=1  insof-agent ni qayta ishga tushirmaslik (agent deploy'ni o'zi ishga tushirgan va o'zi qayta
 #                   ishga tushadi — scripts/agent/devops.ts, «detached» rejim)
@@ -283,7 +283,7 @@ else
     fi
     # VPS 4 GB RAM: Node standart heap chegarasi (~2 GB) next build uchun yetmay qoldi (2026-10-17, OOM).
     # BUILD_HEAP_MB bilan o'zgartiriladi; NODE_OPTIONS tashqaridan berilsa — o'shasi ishlatiladi
-    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=${BUILD_HEAP_MB:-3072}}"
+    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=${BUILD_HEAP_MB:-4608}}"
     npm run build
   ) || { rm -rf "$REL.tmp"; die "Build xato — ishlayotgan xizmatlarga tegilmadi"; }
   echo "$SHA" > "$REL.tmp/RELEASE"
