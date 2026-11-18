@@ -4,7 +4,7 @@ import { FileSpreadsheet, PenLine, Receipt, Search, Truck, Undo2, Wallet } from 
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
-import { dateRu, fmtNum, fmtTiyin, isoDate, opAt } from "@/lib/format";
+import { dateRu, fmtJami, fmtNum, fmtTiyin, isoDate, opAt } from "@/lib/format";
 import { LINE_CELLS, SOURCE_LINE_CELLS, SOURCE_NOTE_CELLS, realizationLog, realizationOptions, type AutoCell, type LogRow, type LogSource } from "@/lib/realization-log";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
@@ -30,6 +30,8 @@ const NO_PLACE = "—";
 
 /** Summa 3 xonali kasr bilan («1 000 000.000»), nol — bo'sh katak */
 const n0 = (v: number) => (v ? fmtTiyin(v) : "");
+/** «Jami» ustuni va jami qatori — kasrsiz («4 200 000») */
+const nj = (v: number) => (v ? fmtJami(v) : "");
 /** Varaqda kun.oy (yil — davr sarlavhasida, to'liq sana — ustiga olib borilsa) */
 const dayMonth = (d: Date) => dateRu(d).slice(0, 5);
 const nq = (v: number) => fmtNum(v, 3);
@@ -170,7 +172,7 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
               <SheetTd right tone="yellow">{edit("delivery", "Dostavka", r.delivery ? String(r.delivery) : "", n0(r.delivery), { kind: "number", right: true })}</SheetTd>
               <SheetTd right>{n0(r.net)}</SheetTd>
               <SheetTd right muted={!r.vat}>{r.vat ? n0(r.vat) : "—"}</SheetTd>
-              <SheetTd right strong>{n0(r.total)}</SheetTd>
+              <SheetTd right strong>{nj(r.total)}</SheetTd>
               <SheetTd>{edit("groupName", "Guruh", r.group, clip(r.group, "max-w-24"), { list: "groups" })}</SheetTd>
               <SheetTd className={cn(hint("loadPlace"))}>{extra("loadPlace", "Ortilgan joy", clip(r.loadPlace, "max-w-20"), "loadPlaces")}</SheetTd>
               <SheetTd className={cn(hint("destination"))}>{extra("destination", "Boradigan manzil", clip(r.destination, "max-w-32"), "destinations")}</SheetTd>
@@ -204,10 +206,10 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
             <SheetTd colSpan={8}>Jami: {rows.length} qator</SheetTd>
             <SheetTd right className="whitespace-normal">{qtyText}</SheetTd>
             <SheetTd />
-            <SheetTd right>{fmtTiyin(sum((r) => r.delivery))}</SheetTd>
-            <SheetTd right>{fmtTiyin(sum((r) => r.net))}</SheetTd>
-            <SheetTd right>{fmtTiyin(sum((r) => r.vat))}</SheetTd>
-            <SheetTd right>{fmtTiyin(sum((r) => r.total))}</SheetTd>
+            <SheetTd right>{fmtJami(sum((r) => r.delivery))}</SheetTd>
+            <SheetTd right>{fmtJami(sum((r) => r.net))}</SheetTd>
+            <SheetTd right>{fmtJami(sum((r) => r.vat))}</SheetTd>
+            <SheetTd right>{fmtJami(sum((r) => r.total))}</SheetTd>
             <SheetTd colSpan={canAuto || canManual ? 6 : 5} />
           </tr>
         </SheetFoot>
@@ -251,8 +253,8 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Jo'natildi" value={qtyText} hint={`${trips} ta reys`} icon={Truck} />
-        <StatCard label="Summa (QQSsiz)" value={fmtTiyin(sum((r) => r.net))} hint={`dastavka ${fmtTiyin(sum((r) => r.delivery))}`} icon={Receipt} />
-        <StatCard label="Jami (QQS bilan)" value={fmtTiyin(sum((r) => r.total))} hint={`QQS 12%: ${fmtTiyin(sum((r) => r.vat))}`} icon={Wallet} tone="success" />
+        <StatCard label="Summa (QQSsiz)" value={fmtJami(sum((r) => r.net))} hint={`dastavka ${fmtJami(sum((r) => r.delivery))}`} icon={Receipt} />
+        <StatCard label="Jami (QQS bilan)" value={fmtJami(sum((r) => r.total))} hint={`QQS 12%: ${fmtJami(sum((r) => r.vat))}`} icon={Wallet} tone="success" />
         <StatCard label="Qo'lda qatorlar" value={`${manual} ta`} hint="tizimga reys bo'lib tushmagan" icon={PenLine} href={manual ? qs({ manba: "MANUAL" }) : undefined} />
       </div>
 

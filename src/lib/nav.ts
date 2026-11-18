@@ -302,19 +302,6 @@ function roleOpens(pathname: string, role: Role) {
 }
 
 export function navFor(role: Role, perms?: Perms) {
-  const items = NAV.filter((i) => {
-    if (i.hidden) return false;
-    if (pathOff(i.href, moduleForPath(i.href))) return false;
-    if (i.menuFor && !i.menuFor.includes(role)) return false;
-    if (i.roles === "all") return true;
-    // Modul ruxsati rol o'rniga: granted modul rol ko'rmasa ham menyuda chiqadi, "none" esa yashiriladi
-    const mod = moduleForPath(i.href);
-    const lvl = mod && perms?.[mod];
-    if (lvl) return lvl !== "none" && windowOpen(mod, i.href, lvl);
-    if (i.menuHide?.includes(role)) return false;
-    return role === "DIRECTOR" || i.roles.includes(role);
-  });
-  // Haydovchi, brigadir va sotuv agenti vebda faqat o'z sahifasini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
   // Bo'lim ichidagi bandlar boshqa modulga tegishli bo'lishi mumkin (Tahlil → Kassa jurnali) — o'chirilganlari olib tashlanadi
   // Tugma rejimida berilmagan oyna ichki bandlardan ham olib tashlanadi (Tahlil → Moliya → PNL...)
   const off = (href: string) => {
@@ -322,7 +309,32 @@ export function navFor(role: Role, perms?: Perms) {
     const l = m && perms?.[m];
     return pathOff(href, m) || (!!l && (l === "none" || !windowOpen(m, href, l)));
   };
+  const lifted = new Set<NavItem>();
+  const all = NAV.flatMap((i): NavItem[] => {
+    if (i.hidden) return [];
+    if (pathOff(i.href, moduleForPath(i.href))) return [];
+    if (i.menuFor && !i.menuFor.includes(role)) return [];
+    if (i.roles === "all") return [i];
+    // Modul ruxsati rol o'rniga: granted modul rol ko'rmasa ham menyuda chiqadi, "none" esa yashiriladi
+    const mod = moduleForPath(i.href);
+    const lvl = mod && perms?.[mod];
+    if (lvl) {
+      if (lvl === "none") return [];
+      if (windowOpen(mod, i.href, lvl)) return [i];
+      // Bandning o'z oynasi berilmagan, ichki bandi esa alohida oyna bo'lib berilgan — o'sha ichki band o'zi menyuda
+      // (Tahlil → «Mijozlar» yopiq, «Mijoz debitorka / kreditorka» berilgan)
+      const kids = (i.children ?? []).filter((c) => !off(c.href)).map((c): NavItem => ({ href: c.href, label: c.label, roles: i.roles, group: i.group }));
+      kids.forEach((k) => lifted.add(k));
+      return kids;
+    }
+    if (i.menuHide?.includes(role)) return [];
+    return role === "DIRECTOR" || i.roles.includes(role) ? [i] : [];
+  });
+  // Ko'tarilgan ichki band o'z bandi bilan ham menyuda bo'lsa (Tahlil → Mexanik) — ikki marta chiqmasin
+  const own = new Set(all.filter((i) => !lifted.has(i)).map((i) => i.href));
+  const items = all.filter((i) => !lifted.has(i) || !own.has(i.href));
   const open = items.map((i) => (i.children?.some((c) => off(c.href)) ? { ...i, children: i.children.filter((c) => !off(c.href)) } : i));
+  // Haydovchi, brigadir va sotuv agenti vebda faqat o'z sahifasini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
   return OWN_PAGE_ONLY[role] ? open.filter((i) => i.roles !== "all") : open;
 }
 

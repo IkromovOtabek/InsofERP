@@ -4,7 +4,7 @@ import { type SP } from "../shell";
 import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_LABEL } from "@/lib/fin-report/debts";
 import type { Akt } from "@/lib/fin-report/akt";
 import { MONTHS_UZ } from "@/lib/bi/plans";
-import { date, dateRu, dateShort, fmtFixed, fmtNum, isoDate, moneyShort } from "@/lib/format";
+import { date, dateRu, dateShort, fmtFixed, fmtJami, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, type BadgeColor, Card, InfoButton, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { DebtFixButton, OpeningFixButton, PartyEditButton, PencilLink } from "./debt-dialogs";
@@ -340,12 +340,12 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, ca
               <tfoot className="sticky bottom-0 z-20">
                 <tr className="font-bold">
                   <td className={cn(SH.line, SH.head, "px-3 py-2")}>Jami</td>
-                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(owes(ft.open))}</td>
-                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtFixed(owed(ft.open))}</td>
-                  <td className={cn(SH.line, SH.headMid, num, "py-2")}>{fmtFixed(ft.sold)}</td>
-                  <td className={cn(SH.line, SH.headMid, num, "py-2")}>{fmtFixed(ft.paid)}</td>
-                  <td className={cn(SH.line, SH.headNow, SH.split, num, "py-2")}>{fmtFixed(owes(ft.now))}</td>
-                  <td className={cn(SH.line, SH.headNow, num, "py-2")}>{fmtFixed(owed(ft.now))}</td>
+                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtJami(owes(ft.open))}</td>
+                  <td className={cn(SH.line, SH.head, num, "py-2")}>{fmtJami(owed(ft.open))}</td>
+                  <td className={cn(SH.line, SH.headMid, num, "py-2")}>{fmtJami(ft.sold)}</td>
+                  <td className={cn(SH.line, SH.headMid, num, "py-2")}>{fmtJami(ft.paid)}</td>
+                  <td className={cn(SH.line, SH.headNow, SH.split, num, "py-2")}>{fmtJami(owes(ft.now))}</td>
+                  <td className={cn(SH.line, SH.headNow, num, "py-2")}>{fmtJami(owed(ft.now))}</td>
                 </tr>
               </tfoot>
             )}

@@ -5,6 +5,9 @@ import { money } from "./format";
 import { cashOutflowError } from "./payments";
 import { lockStock } from "./stock-lock";
 import { txSign } from "./cash-tx";
+import { moduleWriteAllowed, requireSession, type Session } from "./auth";
+import { canDo } from "./permissions";
+import { AccessDenied } from "./access-denied";
 import type { OpeningKind, Prisma } from "@/generated/prisma";
 
 /**
@@ -32,6 +35,22 @@ export const OPENING_REF = "OpeningBalance";
 export const OPENING_CATEGORY = "Boshlang'ich qoldiq";
 /** Qoldiq kirita oladigan rollar (direktordan tashqari) — action guard'i ham, sahifadagi formalar ham shu ro'yxatdan. */
 export const OPENING_WRITERS = ["ACCOUNTING"] as const;
+
+/**
+ * Debitorka / kreditorka varag'idagi «Qarzlarni kiritish», katak qalamlari va «Qarzni boshqa mijoz to'ladi» huquqi:
+ * Ruxsatlar → Tahlil → «Mijoz debitorka» / «Ta'minotchi kreditorka» amali (rol bo'yicha — buxgalteriya) yoki
+ * «Boshlang'ich qoldiqlar»ni yozish huquqi (avvalgidek). Sahifa tugmalari ham, action'lar ham shu qoidadan.
+ */
+export const DEBT_ACTION = { customer: "debts", supplier: "supplier_debts" } as const;
+export type DebtSide = keyof typeof DEBT_ACTION;
+export const canEnterDebts = (s: Pick<Session, "role" | "perms">, who: DebtSide) =>
+  canDo(s, "bi-tahlil", DEBT_ACTION[who]) || moduleWriteAllowed(s, "opening", OPENING_WRITERS) === true;
+export async function requireDebtWriter(who: DebtSide): Promise<Session> {
+  const s = await requireSession();
+  // `who` klientdan (bog'langan argument) keladi — noma'lum qiymat bilan «write» darajasi hamma amalni ochib yubormasin
+  if ((who !== "customer" && who !== "supplier") || !canEnterDebts(s, who)) throw new AccessDenied(`${who === "customer" ? "Mijoz" : "Ta'minotchi"} qarzlarini kiritish huquqi yo'q — direktordan ruxsat so'rang`);
+  return s;
+}
 
 export const KIND_LABEL: Record<OpeningKind, string> = {
   CUSTOMER: "Mijozlar qarzi",

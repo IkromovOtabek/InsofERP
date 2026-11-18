@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireAction, requireModuleWrite, requireSession } from "@/lib/auth";
 import { AccessDenied } from "@/lib/access-denied";
 import { parseForm, zOpt, zStr, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, reduceOpening, reverseSupplierOpeningPayment, updateOpening } from "@/lib/opening-balances";
+import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, reduceOpening, requireDebtWriter, reverseSupplierOpeningPayment, updateOpening } from "@/lib/opening-balances";
+import { db } from "@/lib/db";
 import { importDebtBalances, importOpenings, type OpeningRow } from "@/lib/import-openings";
 import type { OpeningKind } from "@/generated/prisma";
 
@@ -14,6 +15,10 @@ import type { OpeningKind } from "@/generated/prisma";
  * Finance sahifani ko'radi (yetkazuvchi qarzini to'lash uchun), lekin qoldiq kiritmaydi. Sahifa ham shu ro'yxatdan.
  */
 const writer = () => requireModuleWrite("opening", OPENING_WRITERS);
+/** Mijoz / ta'minotchi qoldig'i — debitorka varag'idagi «Qarzlarni kiritish» huquqi bilan ham (`canEnterDebts`) */
+const writerFor = (kind: unknown) =>
+  kind === "CUSTOMER" ? requireDebtWriter("customer") : kind === "SUPPLIER" ? requireDebtWriter("supplier") : writer();
+const writerOf = async (id: string) => writerFor((await db.openingBalance.findUnique({ where: { id }, select: { kind: true } }))?.kind);
 
 /**
  * Ta'minotchi qoldig'iga yozilgan to'lovni storno qilish — faqat direktor (kassaga pul qaytadi).
@@ -53,7 +58,7 @@ const createSchema = z.object({
 });
 
 export async function createOpeningAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await writerFor(fd.get("kind"));
   const r = parseForm(createSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -94,7 +99,7 @@ const list = (l: string[], n = 5) => `${l.slice(0, n).join(", ")}${l.length > n 
 const dm = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
 
 export async function importOpeningsAction(kind: OpeningKind, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await writerFor(kind);
   const debt = kind === "CUSTOMER" || kind === "SUPPLIER";
   const r = debt ? parseForm(debtImportSchema, fd) : parseForm(importSchema, fd);
   if ("error" in r) return { error: r.error };
@@ -149,7 +154,7 @@ const updateSchema = z.object({
 });
 
 export async function updateOpeningAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await writerOf(id);
   const r = parseForm(updateSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -166,7 +171,7 @@ const reduceSchema = z.object({
 
 /** Mijoz / yetkazuvchi qoldig'ini kamaytirish (masalan kelishuv bo'yicha qisman kechildi). */
 export async function reduceOpeningAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await writerOf(id);
   const r = parseForm(reduceSchema, fd);
   if ("error" in r) return { error: r.error };
   const res = await reduceOpening(id, r.data.by!, r.data.reason, s.userId);
@@ -176,7 +181,7 @@ export async function reduceOpeningAction(id: string, _prev: ActionState, fd: Fo
 }
 
 export async function cancelOpeningAction(id: string, reason: string): Promise<ActionState> {
-  const s = await writer();
+  const s = await writerOf(id);
   if (reason.trim().length < 3) return { error: "Sababini yozing" };
   const res = await cancelOpening(id, reason.trim(), s.userId);
   if (res.error) return { error: res.error };

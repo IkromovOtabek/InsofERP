@@ -28,6 +28,15 @@ export function fmtFixed(v: number | string | { toString(): string }, frac = 2):
 export const fmtTiyin = (v: number | string | { toString(): string }) => fmtFixed(v, 3).replace(",", ".");
 
 /**
+ * Jami summa — kasrsiz, so'mgacha yaxlitlab: «4 200 000». «Jami» ustuni, «Jami» qatori va kartalari shu bilan;
+ * narx va qator summalari o'z kasri bilan qoladi (`fmtTiyin`, `fmtFixed`).
+ */
+export function fmtJami(v: number | string | { toString(): string }): string {
+  const n = Math.round(Number(v));
+  return fmtNum(n === 0 ? 0 : n, 0); // -0 «-0» bo'lib chiqmasin
+}
+
+/**
  * Kiritilgan raqam matni → JS o'qiydigan satr: «1 000 000,50» → «1000000.50», «1,4» → «1.4».
  * Bo'shliq va apostrof (minglik ajratgich) tashlanadi; nuqta ham, vergul ham kasr ajratgichi:
  * ikkala turi bo'lsa — oxirgisi kasr, qolganlari minglik («1,000,000.50», «1.000.000,50»);

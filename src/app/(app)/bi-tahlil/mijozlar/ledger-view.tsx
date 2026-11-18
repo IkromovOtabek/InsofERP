@@ -10,7 +10,7 @@ import { customerAkt, parseAktRange, supplierAkt } from "@/lib/fin-report/akt";
 import { customerLedger, supplierLedger, type Ledger, type LedgerLine } from "@/lib/fin-report/ledger";
 import { categoryOptions } from "@/lib/fin-report/categories";
 import { DEBT_EPOCH, isDebtEpoch } from "@/lib/fin-report/debts";
-import { dateRu, dateShort, fmtFixed, fmtNum, isoDate, moneyShort } from "@/lib/format";
+import { dateRu, dateShort, fmtFixed, fmtJami, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, Empty, Input, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { BackLink } from "@/components/ui/back-link";
 import { PrintButton } from "@/components/print-button";
@@ -21,7 +21,8 @@ import { cancelOpeningAction } from "@/app/(app)/settings/boshlangich-qoldiq/act
 import { cancelRealizationAction } from "@/app/(app)/sales/realizatsiya/actions";
 import { cancelDebtTransferAction } from "./actions";
 import { DebtFixButton, DebtTransferButton, ReasonButton } from "./debt-dialogs";
-import { canEnterDebts, debtEntryHref } from "./kiritish";
+import { debtEntryHref } from "./kiritish";
+import { canEnterDebts } from "@/lib/opening-balances";
 import { AktStats } from "./qarz";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +46,7 @@ export async function LedgerPage({ who, id, sp, session }: { who: "customer" | "
   const range = parseAktRange(sp.dan ?? isoDate(DEBT_EPOCH), sp.gacha);
   const { from, to } = range;
   const tab: Tab = TABS.includes(sp.tab as Tab) ? (sp.tab as Tab) : "akt";
-  const canFix = canEnterDebts(session);
+  const canFix = canEnterDebts(session, who);
   const [l, company] = await Promise.all([sup ? supplierLedger(id, from, to) : customerLedger(id, from, to), getCompany()]);
   if (!l) notFound();
   const allTime = isDebtEpoch(from);
@@ -182,7 +183,7 @@ function SoldTable({ l, lines, canEntry }: { l: Ledger; lines: LedgerLine[]; can
       </tbody>
       {lines.length > 0 && (
         <tfoot>
-          <tr className="font-bold"><Td colSpan={lead}>Jami</Td><Td right><Money v={total} /></Td><Td colSpan={sup ? 2 : 3} /></tr>
+          <tr className="font-bold"><Td colSpan={lead}>Jami</Td><Td right><span className="tabular">{fmtJami(total)}</span></Td><Td colSpan={sup ? 2 : 3} /></tr>
         </tfoot>
       )}
     </Table>
@@ -243,7 +244,7 @@ function PaidTable({ l, lines, canFix, customers, trOf, cashRows }: {
         })}
       </tbody>
       {lines.length > 0 && (
-        <tfoot><tr className="font-bold"><Td colSpan={5}>Jami</Td><Td right><Money v={total} /></Td><Td /></tr></tfoot>
+        <tfoot><tr className="font-bold"><Td colSpan={5}>Jami</Td><Td right><span className="tabular">{fmtJami(total)}</span></Td><Td /></tr></tfoot>
       )}
     </Table>
   );

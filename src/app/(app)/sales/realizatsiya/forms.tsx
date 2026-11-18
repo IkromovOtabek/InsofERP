@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Pencil, Plus, X } from "lucide-react";
 import { createRealizationAction, saveRealizationCellAction, saveRealizationNoteAction, updateRealizationAction } from "./actions";
 import { today } from "@/lib/davomat";
-import { fmtTiyin } from "@/lib/format";
+import { fmtJami, fmtTiyin } from "@/lib/format";
 import { NDS_RATE } from "@/lib/nds";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
@@ -168,7 +168,7 @@ function EntryFields({ entry, token, action, pending, error, onClose }: {
       <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm tabular">
         <span>Summa (QQSsiz): <b>{fmtTiyin(net)}</b></span>
         <span>QQS 12%: <b>{vat ? fmtTiyin(vat) : "—"}</b></span>
-        <span>Jami: <b>{fmtTiyin(r3(net + vat))}</b></span>
+        <span>Jami: <b>{fmtJami(r3(net + vat))}</b></span>
       </div>
       <FormError error={error} />
       <div className="flex justify-end gap-2">

@@ -3,7 +3,7 @@ import { CalendarDays, FileWarning, Gauge, ShoppingCart, Target, TrendingUp } fr
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { realizatsiyaReport, MONTHS } from "@/lib/fin-report/realizatsiya";
-import { date, fmtNum, fmtTiyin, isoDate, moneyShort, pct } from "@/lib/format";
+import { date, fmtJami, fmtNum, fmtTiyin, isoDate, moneyShort, pct } from "@/lib/format";
 import { Card, InfoButton, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { biContext, BiPage, type SP } from "../../shell";
@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 /** «KUNLIK REALIZATSIYA HISOBOTI» — Sheets varag'idagi 5 bo'lim (`lib/fin-report/realizatsiya.ts`). */
 const n0 = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.0005 ? "–" : fmtTiyin(v)); // summa 3 xonali kasr bilan
+const nj = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.5 ? "–" : fmtJami(v)); // «Jami» — kasrsiz
 const n1 = (v: number | null | undefined) => (v === null || v === undefined || Math.abs(v) < 0.0005 ? "–" : fmtNum(v, 1));
 const p1 = (v: number | null) => (v === null ? "–" : pct(v));
 const tone = (v: number | null) => (v === null ? undefined : v >= 100 ? "text-emerald-600" : v >= 70 ? "text-amber-600" : "text-red-600");
@@ -76,11 +77,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
           <Table>
             <thead><tr><Th>To&apos;lov turi</Th><Th right>Summa QQSsiz</Th><Th right>Shu jumladan dostavka</Th><Th right>QQS 12%</Th><Th right>Bugun jami</Th><Th right>Oy boshidan jami</Th><Th right>Oydagi ulushi</Th></tr></thead>
             <tbody>
-              {r.pay.map((p) => <Tr key={p.key}><Td>{p.label}</Td><Td right>{n0(p.net)}</Td><Td right>{n0(p.delivery)}</Td><Td right>{n0(p.vat)}</Td><Td right className="font-semibold">{n0(p.total)}</Td><Td right>{n0(p.month)}</Td><Td right>{pct(p.share)}</Td></Tr>)}
-              <TotalTr><td>JAMI</td><td>{n0(r.payTotal.net)}</td><td>{n0(r.payTotal.delivery)}</td><td>{n0(r.payTotal.vat)}</td><td>{n0(r.payTotal.total)}</td><td>{n0(r.payTotal.month)}</td><td>{pct(r.payTotal.share)}</td></TotalTr>
+              {r.pay.map((p) => <Tr key={p.key}><Td>{p.label}</Td><Td right>{n0(p.net)}</Td><Td right>{n0(p.delivery)}</Td><Td right>{n0(p.vat)}</Td><Td right className="font-semibold">{nj(p.total)}</Td><Td right>{nj(p.month)}</Td><Td right>{pct(p.share)}</Td></Tr>)}
+              <TotalTr><td>JAMI</td><td>{nj(r.payTotal.net)}</td><td>{nj(r.payTotal.delivery)}</td><td>{nj(r.payTotal.vat)}</td><td>{nj(r.payTotal.total)}</td><td>{nj(r.payTotal.month)}</td><td>{pct(r.payTotal.share)}</td></TotalTr>
               <tr className={cn("text-[13px] italic [&>td]:border-t [&>td]:border-slate-100 [&>td]:px-4 [&>td]:py-2", r.unset.month ? "text-red-600" : "text-slate-400")}>
                 <td colSpan={4}>Nazorat: to&apos;lov turi yozilmagan{r.unset.orders ? ` (${r.unset.orders} ta zayavka — NDS bo'yicha taxminan joylandi)` : ""}</td>
-                <td className="text-right">{n0(r.unset.today)}</td><td className="text-right">{n0(r.unset.month)}</td><td />
+                <td className="text-right">{nj(r.unset.today)}</td><td className="text-right">{nj(r.unset.month)}</td><td />
               </tr>
             </tbody>
           </Table>
@@ -150,7 +151,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
               <tbody>
                 {r.sellers.length === 0 && <tr><td colSpan={5} className="px-4 py-3 text-sm text-slate-500">Sotuv va reja yo&apos;q</td></tr>}
                 {r.sellers.map((x) => <Tr key={x.id}><Td>{x.name}</Td><Td right>{n0(x.today)}</Td><Td right>{n0(x.month)}</Td><Td right>{n0(x.plan)}</Td><Td right className={cn("font-semibold", tone(x.pct))}>{p1(x.pct)}</Td></Tr>)}
-                <TotalTr><td>JAMI</td><td>{n0(r.sellersTotal.today)}</td><td>{n0(r.sellersTotal.month)}</td><td>{n0(r.sellersTotal.plan)}</td><td>{r.sellersTotal.plan ? pct((r.sellersTotal.month / r.sellersTotal.plan) * 100) : "–"}</td></TotalTr>
+                <TotalTr><td>JAMI</td><td>{nj(r.sellersTotal.today)}</td><td>{nj(r.sellersTotal.month)}</td><td>{nj(r.sellersTotal.plan)}</td><td>{r.sellersTotal.plan ? pct((r.sellersTotal.month / r.sellersTotal.plan) * 100) : "–"}</td></TotalTr>
               </tbody>
             </Table>
           </Block>
@@ -162,9 +163,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
             <tbody>
               {r.rows.length === 0 && <tr><td colSpan={12} className="px-4 py-3 text-sm text-slate-500">Shu kuni yetkazilgan sotuv yo&apos;q</td></tr>}
               {r.rows.map((x, i) => (
-                <Tr key={i}><Td>{x.payLabel}</Td><Td>{x.seller}</Td><Td>{x.customer}</Td><Td>{x.product}</Td><Td>{x.unit}</Td><Td right>{fmtNum(x.qty, 3)}</Td><Td right>{n0(x.price)}</Td><Td right>{n0(x.delivery)}</Td><Td right>{n0(x.net)}</Td><Td right>{n0(x.vat)}</Td><Td right className="font-semibold">{n0(x.total)}</Td><Td className="min-w-48 text-[13px] text-slate-500">{x.address}</Td></Tr>
+                <Tr key={i}><Td>{x.payLabel}</Td><Td>{x.seller}</Td><Td>{x.customer}</Td><Td>{x.product}</Td><Td>{x.unit}</Td><Td right>{fmtNum(x.qty, 3)}</Td><Td right>{n0(x.price)}</Td><Td right>{n0(x.delivery)}</Td><Td right>{n0(x.net)}</Td><Td right>{n0(x.vat)}</Td><Td right className="font-semibold">{nj(x.total)}</Td><Td className="min-w-48 text-[13px] text-slate-500">{x.address}</Td></Tr>
               ))}
-              {r.rows.length > 0 && <TotalTr><td colSpan={5}>JAMI</td><td /><td /><td>{n0(r.payTotal.delivery)}</td><td>{n0(r.payTotal.net)}</td><td>{n0(r.payTotal.vat)}</td><td>{n0(r.payTotal.total)}</td><td /></TotalTr>}
+              {r.rows.length > 0 && <TotalTr><td colSpan={5}>JAMI</td><td /><td /><td>{nj(r.payTotal.delivery)}</td><td>{nj(r.payTotal.net)}</td><td>{nj(r.payTotal.vat)}</td><td>{nj(r.payTotal.total)}</td><td /></TotalTr>}
             </tbody>
           </Table>
         </Block>

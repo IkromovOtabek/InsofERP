@@ -9,6 +9,7 @@ import { TOUR_COOKIE } from "./tour";
 import { authSecret, JWT_ALGS } from "./secret";
 import { companySuspension, effectiveRole, loadPlatformGate } from "./tenant";
 import { isModuleOff } from "./platform-modules";
+import { upgradeButtons } from "./perm-buttons";
 import { AccessDenied, notSignedIn } from "./access-denied";
 import { recordLogin } from "./visits";
 
@@ -48,7 +49,8 @@ export function parsePerms(raw: unknown): Perms | undefined {
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v === "string" && (VALID_LEVELS as string[]).includes(v)) out[k] = v as PermLevel;
     // Amal kalitlari va `@tugma` — oynani ko'rish huquqi (`lib/perm-buttons.ts`)
-    else if (Array.isArray(v)) out[k] = [...new Set(v.filter((a): a is string => typeof a === "string" && /^@?[a-z_]{1,32}$/.test(a)))];
+    // Bo'lingan oynaning eski kaliti — yangi oynalarga (`upgradeButtons`)
+    else if (Array.isArray(v)) out[k] = [...new Set(upgradeButtons(k, v.filter((a): a is string => typeof a === "string" && /^@?[a-z_]{1,32}$/.test(a))))];
   }
   return Object.keys(out).length ? out : undefined;
 }

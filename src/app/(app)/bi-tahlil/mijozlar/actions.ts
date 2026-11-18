@@ -2,9 +2,9 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireAction, requireModuleWrite } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { parseForm, validDate, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
-import { OPENING_WRITERS } from "@/lib/opening-balances";
+import { requireDebtWriter } from "@/lib/opening-balances";
 import { cancelDebtTransfer, createDebtTransfer, setDebtBalance, setOpeningTotal, updateDebtTransfer } from "@/lib/debt-transfer";
 import { updateCustomerNameKind } from "@/lib/customer-admin";
 import { syncCustomerLater } from "@/lib/eco/customers";
@@ -16,9 +16,8 @@ import { DEBT_EPOCH } from "@/lib/fin-report/debts";
 
 /**
  * Qarz varaqlaridagi qo'lda amallar — qoldiqni tuzatish va «Qarzni boshqa mijoz to'ladi». Huquq «Qarzlarni kiritish» bilan
- * bir xil: direktor va buxgalteriya (yoki direktor bergan «opening» ruxsati) — `kiritish.tsx → canEnterDebts`.
+ * bir xil: Tahlil → debitorka / kreditorka amali yoki «opening» yozish huquqi — `lib/opening-balances.ts → canEnterDebts`.
  */
-const writer = () => requireModuleWrite("opening", OPENING_WRITERS);
 
 function refresh() {
   revalidatePath("/bi-tahlil/mijozlar", "layout");
@@ -37,7 +36,7 @@ const fixSchema = z.object({
 
 /** Qatordagi qalam: tanlangan kun oxiridagi qoldiqni kiritilgan summaga tenglash. */
 export async function fixDebtBalanceAction(who: "customer" | "supplier", id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await requireDebtWriter(who);
   const r = parseForm(fixSchema, fd);
   if ("error" in r) return { error: r.error, field: r.field };
   const d = r.data;
@@ -56,7 +55,7 @@ const isoDay = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) && validDate(v) ? n
  * tenglash — `lib/debt-transfer.ts → setOpeningTotal`. `from` / `to` — varaqdagi davr (`dan`, `sana`; boshidan — 2000-01-01).
  */
 export async function fixOpeningAction(who: "customer" | "supplier", id: string, from: string, to: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await requireDebtWriter(who);
   const r = parseForm(fixSchema.omit({ date: true }), fd);
   if ("error" in r) return { error: r.error, field: r.field };
   const a = isoDay(from) ?? DEBT_EPOCH, b = isoDay(to);
@@ -126,7 +125,7 @@ function transferInput(fd: FormData) {
 
 /** «Qarzni boshqa mijoz to'ladi» — yangi hujjat. */
 export async function createDebtTransferAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await requireDebtWriter("customer");
   const r = transferInput(fd);
   if ("error" in r) return { error: r.error, field: r.field };
   const res = await createDebtTransfer(r.data, s.userId);
@@ -136,7 +135,7 @@ export async function createDebtTransferAction(_prev: ActionState, fd: FormData)
 }
 
 export async function updateDebtTransferAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await writer();
+  const s = await requireDebtWriter("customer");
   const r = transferInput(fd);
   if ("error" in r) return { error: r.error, field: r.field };
   const res = await updateDebtTransfer(id, r.data, s.userId);
@@ -146,7 +145,7 @@ export async function updateDebtTransferAction(id: string, _prev: ActionState, f
 }
 
 export async function cancelDebtTransferAction(id: string, reason: string): Promise<ActionState> {
-  const s = await writer();
+  const s = await requireDebtWriter("customer");
   const res = await cancelDebtTransfer(id, reason, s.userId);
   if (res.error) return { error: res.error };
   refresh();

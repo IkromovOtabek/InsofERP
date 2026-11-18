@@ -218,6 +218,10 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "deductions", label: "Ushlanmalar — aliment/ijro, qarz to'lovi, oylikdan qarz, to'y puli, jarima", roles: ["SECRETARY"], hint: "Ish haqi → Ushlanmalar (Excel C2026 G–K ustunlari) va ijro/aliment daftari; oy yakuni vedomostida ushlanadi" },
   ],
   "bi-tahlil": [
+    // Debitorka / kreditorka varag'idagi qo'lda amallar (`lib/opening-balances.ts → canEnterDebts`). «Boshlang'ich qoldiqlar»ni
+    // yozish huquqi ham beradi (bir mexanizm), shu sabab buxgalteriyada ikkalasi yopilsagina yopiladi
+    { key: "debts",     label: "Mijoz qarzlarini kiritish va tuzatish", roles: ["ACCOUNTING"], hint: "«Qarzlarni kiritish» (Excel yoki qo'lda), katakdagi qalamlar (qoldiqni tuzatish, o'chirish) va «Qarzni boshqa mijoz to'ladi»; har o'zgarish Amallar tarixida" },
+    { key: "supplier_debts", label: "Ta'minotchi qarzlarini kiritish va tuzatish", roles: ["ACCOUNTING"], hint: "«Qarzlarni kiritish» (Excel yoki qo'lda) va katakdagi qalamlar (qoldiqni tuzatish, o'chirish)" },
     { key: "ai",        label: "Insof AI (savol, hisobot, Telegram)", roles: BI },
     { key: "marketing", label: "Marketing ma'lumotlari",         roles: BI },
     { key: "plan",      label: "Sotuv rejasi",                   roles: ["FINANCE"] },

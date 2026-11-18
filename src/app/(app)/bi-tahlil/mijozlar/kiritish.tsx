@@ -1,5 +1,5 @@
-import { moduleWriteAllowed, type Session } from "@/lib/auth";
-import { OPENING_WRITERS } from "@/lib/opening-balances";
+import type { Session } from "@/lib/auth";
+import { canEnterDebts } from "@/lib/opening-balances";
 import { PageHeader } from "@/components/ui";
 import { OpeningSection } from "@/app/(app)/settings/boshlangich-qoldiq/section";
 
@@ -15,9 +15,6 @@ const SIDE = {
     info: "Ta'minotchiga qarzimiz (+) yoki bergan avansimiz (−) — Excel'dan yoki qo'lda. Kiritilgani varaqda va ta'minotchi kartasida ko'rinadi; to'lov shu ro'yxatdan yoki kartadan yoziladi." },
 } as const;
 
-/** Varaq tepasidagi tugma kimga ko'rinadi — kiritish huquqi borlarga (direktor, buxgalteriya yoki «opening» ruxsati). */
-export const canEnterDebts = (s: Session) => moduleWriteAllowed(s, "opening", OPENING_WRITERS) === true;
-
 export function debtEntryHref(who: keyof typeof SIDE) { return `${SIDE[who].sheet}/kiritish`; }
 
 export async function DebtEntry({ who, s, sp }: { who: keyof typeof SIDE; s: Session; sp: { bekor?: string; q?: string } }) {
@@ -25,7 +22,7 @@ export async function DebtEntry({ who, s, sp }: { who: keyof typeof SIDE; s: Ses
   return (
     <div className="min-w-0">
       <PageHeader back={{ href: side.sheet, label: side.back }} eyebrow="Tahlil" title={side.title} info={side.info} />
-      <OpeningSection kind={side.kind} s={s} base={debtEntryHref(who)} showCancelled={sp.bekor === "1"} q={sp.q} help={false} />
+      <OpeningSection kind={side.kind} s={s} base={debtEntryHref(who)} showCancelled={sp.bekor === "1"} q={sp.q} help={false} canEdit={canEnterDebts(s, who)} />
     </div>
   );
 }

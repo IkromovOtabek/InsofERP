@@ -3,7 +3,8 @@ import { requirePage } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { customerDebtSheet, parseDebtDay, parseDebtStart } from "@/lib/fin-report/debts";
 import { DebtSheetView } from "../qarz";
-import { canEnterDebts, debtEntryHref } from "../kiritish";
+import { debtEntryHref } from "../kiritish";
+import { canEnterDebts } from "@/lib/opening-balances";
 import { DebtTransferButton } from "../debt-dialogs";
 import { db } from "@/lib/db";
 import { canDo } from "@/lib/permissions";
@@ -14,7 +15,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const session = await requirePage("/bi-tahlil/mijozlar/xaridorlar");
   const { sp, range } = await biContext(searchParams, "/bi-tahlil/mijozlar/xaridorlar");
   const day = parseDebtDay(sp.sana);
-  const canFix = canEnterDebts(session);
+  const canFix = canEnterDebts(session, "customer");
   const [s, company, customers] = await Promise.all([
     customerDebtSheet(day, sp.tur === "CASH" || sp.tur === "BANK" ? sp.tur : null, parseDebtStart(sp.dan, day)),
     getCompany(),

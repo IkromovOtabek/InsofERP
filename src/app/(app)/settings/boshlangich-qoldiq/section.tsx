@@ -78,7 +78,7 @@ function searchWhere(kind: OpeningKind, q: string): Prisma.OpeningBalanceWhereIn
   }
 }
 
-export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, q, help = true }: {
+export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, q, help = true, canEdit: canEditProp }: {
   kind: OpeningKind;
   s: Session;
   /** Sahifa yo'li — qidiruv va «bekor qilinganlar» havolalari shu yerga */
@@ -88,8 +88,10 @@ export async function OpeningSection({ kind, s, base, keep = {}, showCancelled, 
   showCancelled: boolean;
   q?: string;
   help?: boolean;
+  /** Debitorka varag'idagi «Qarzlarni kiritish» — o'z huquqi bilan (`canEnterDebts`) */
+  canEdit?: boolean;
 }) {
-  const canEdit = moduleWriteAllowed(s, "opening", OPENING_WRITERS) === true; // Finance — faqat ko'radi va to'laydi
+  const canEdit = canEditProp ?? moduleWriteAllowed(s, "opening", OPENING_WRITERS) === true; // Finance — faqat ko'radi va to'laydi
   const isDirector = s.role === "DIRECTOR"; // ta'minotchi to'lovini storno qilish — faqat direktor
   const canPay = canDo(s, "cashflow", "pay");
   const term = q?.trim() ?? "";

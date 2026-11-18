@@ -148,7 +148,10 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "sotuvlar", label: "Sotuvlar", paths: ["/bi-tahlil/sotuvlar"], actions: [] },
     { key: "moliya", label: "Moliya hisobotlari", paths: ["/bi-tahlil/moliya"], actions: [] },
     { key: "agentlar", label: "Agentlar", paths: ["/bi-tahlil/agentlar"], actions: [] },
-    { key: "mijozlar", label: "Debitorka / kreditorka", paths: ["/bi-tahlil/mijozlar"], actions: [] },
+    // Eski «mijozlar» oynasi (tahlil + ikkala qarz varag'i birga) uchga bo'lindi — `LEGACY_BUTTONS`
+    { key: "mijoz_tahlil", label: "Mijozlar tahlili (segmentlar, qarz yoshi)", paths: ["/bi-tahlil/mijozlar"], actions: [] },
+    { key: "debitorka", label: "Mijoz debitorka / kreditorka", paths: ["/bi-tahlil/mijozlar/xaridorlar"], actions: ["debts"] },
+    { key: "kreditorka", label: "Ta'minotchi kreditorka / debitorka", paths: ["/bi-tahlil/mijozlar/taminotchilar"], actions: ["supplier_debts"] },
     { key: "ombor", label: "Ombor", paths: ["/bi-tahlil/ombor"], actions: [] },
     { key: "logistika", label: "Logistika tahlili", paths: ["/bi-tahlil/logistika"], actions: [] },
     { key: "mexanik", label: "Mexanik tahlili", paths: ["/bi-tahlil/mexanik"], actions: [] },
@@ -167,6 +170,20 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
 export const BTN = "@";
 export const isBtnKey = (a: string) => a.startsWith(BTN);
 export const btnKey = (button: string) => BTN + button;
+
+/**
+ * Bo'lingan oynalarning eski kalitlari: saqlangan ro'yxatda eski `@kalit` bo'lsa — o'rniga yangi oynalar berilgan hisoblanadi
+ * (`parsePerms` o'qishda almashtiradi, daraxtda belgili chiqadi, keyingi saqlashda yangi kalitlar yoziladi).
+ * Eski kalit yangi oyna nomi sifatida qayta ishlatilmasin.
+ */
+const LEGACY_BUTTONS: Record<string, Record<string, string[]>> = {
+  // 2026-11-18: Tahlil → «Debitorka / kreditorka» (mijozlar tahlili + mijoz va ta'minotchi varag'i) — uchta oyna
+  "bi-tahlil": { mijozlar: ["mijoz_tahlil", "debitorka", "kreditorka"] },
+};
+export function upgradeButtons(module: string, list: string[]): string[] {
+  const map = LEGACY_BUTTONS[module];
+  return map ? list.flatMap((a) => (isBtnKey(a) && map[a.slice(1)] ? map[a.slice(1)].map(btnKey) : [a])) : list;
+}
 /** Tugma alohida oyna (ko'rish huquqi bor) yoki faqat amallar guruhi */
 export const hasWindow = (b: PermButton) => !!(b.paths?.length || b.inPage);
 export const buttonsOf = (module: string): PermButton[] => PERM_BUTTONS[module] ?? [];
