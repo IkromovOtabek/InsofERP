@@ -1,24 +1,28 @@
 
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { dayUtc, monthDays, monthTitle } from "@/lib/davomat";
+import { fmtNum } from "@/lib/format";
+import { dayUtc, monthDays, monthTitle, shiftMonth } from "@/lib/davomat";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { isStaffSettleCategory } from "@/lib/cash-categories";
 import { tabelLock } from "./tabel-lock";
-import { allocOf, closedLines, debtHeld, dueIn, type Alloc, type HeldLine } from "./employee-debt";
+import { allocOf, closedLines, debtHeld, debtsDue, dueIn, type Alloc, type HeldLine } from "./employee-debt";
 import { deductionLabel, isDeductionCat, type DeductionCat } from "./deduction-cats";
 
 /**
  * Ushlanmalar (Ish haqi → Ushlanmalar) — Excel C2026'ning G–K ustunlari: aliment/ijro, qarz to'lovi, oylikdan qarz,
  * to'y puli, jarima. Har xodim × oy × tur — bitta `PayAdjustment` (PENALTY, `category`). Oy yakuni vedomosti ularni ushlaydi.
  *
- * Takliflar (kul rang): aliment — ijro/aliment daftaridan (`Withholding`), qarz — nasiya jadvalidan (`EmployeeDebt`),
- * oylikdan qarz — shu oy kassadan xodimga «Hodimlar bilan hisob-kitob» bilan berilgan (nasiyasiz) pul, to'y puli — sozlamadan.
- * Qarz va aliment uchun yozilgan summa jadvaldagi/avtomatik ulush o'rniga ushlanadi va daftardagi qoldiqdan kamayadi
- * (`lib/hr/payroll.ts` → `breakdown.debts` / `breakdown.withholds`).
+ * Avtomatik (yozilmasa ham vedomost ushlaydi, ko'k): oylikdan qarz — Kirim-Chiqimda xodimga «Hodimlar bilan hisob-kitob»
+ * bilan berilgan (nasiyasiz) pul (`staffCashFor`), qarz to'lovi — kassadan berilgan nasiyaning shu oy ulushi, aliment —
+ * daftardagi oylik summa. Takliflar (kul rang, ✓ bilan qo'yiladi): kassasiz qarz qoldig'i ulushi, to'y puli — sozlamadan.
+ * Yozilgan summa avtomatik o'rniga ushlanadi; qarz va aliment daftardagi qoldiqdan kamayadi
+ * (`lib/hr/payroll.ts` → `breakdown.debts` / `breakdown.withholds`). «Oylikdan qarz» ga 0 yozilsa — kassadagi pul ushlanmaydi.
  */
 
 type Who = { userId: string };
+/** Aniq 0 saqlanadigan tur: «Oylikdan qarz» = 0 — kassadan berilgan pul shu oy ushlanmaydi. */
+const ZERO_KEEP: DeductionCat = "SALARY_DEBT";
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 const num = (v: unknown) => Number(v ?? 0);
 const r0 = (n: number) => Math.round(n);
@@ -58,11 +62,56 @@ export function allocate<T extends { id: string; left: number | null }>(items: T
   return out;
 }
 
+// ───────────────────────── Kassadan berilgan pul ─────────────────────────
+
+export type StaffCash = { id: string; date: Date; amount: number; account: string; sub: string | null; note: string | null; carried: boolean };
+
+/**
+ * Kirim-Chiqimda xodimga berilgan pul («Hodimlar bilan hisob-kitob» chiqimi, «Oylikdan nasiya»siz) — shu oy yakunida
+ * «Oylikdan qarz» bo'lib ushlanadi. Oyi — chiqim sanasi. O'tgan oy vedomosti yopilgan (direktorga yuborilgan) bo'lsa,
+ * uning oxirgi hisobidan KEYIN kiritilgan o'tgan oy sanali chiqim — shu oyga o'tadi. Bekor qilingan chiqim olinmaydi.
+ */
+export async function staffCashFor(month: string, employeeIds: string[]): Promise<Map<string, StaffCash[]>> {
+  const out = new Map<string, StaffCash[]>();
+  if (!employeeIds.length || !MONTH_RE.test(month)) return out;
+  const [y, m] = month.split("-").map(Number);
+  const prev = shiftMonth(month, -1);
+  const [py, pm] = prev.split("-").map(Number);
+  // O'tgan oy yakuni vedomosti yopilgan bo'lsa — uning qatorlari oxirgi hisoblangan paytdan keyin kiritilgan o'tgan oy
+  // sanali chiqimlar unga tushmagan, shu oyga o'tadi. O'tgan oyda «Oylikdan qarz» qo'lda yozilgan xodimga — o'tmaydi
+  // (Excel C2026 / qo'lda summa odatda shu pulni ham o'z ichiga oladi, ikki marta ushlanmasin).
+  const prevRun = await db.payrollRun.findFirst({ where: { month: prev, kind: "FINAL", status: { in: ["SUBMITTED", "APPROVED", "PAID"] }, calculatedAt: { not: null } }, orderBy: { calculatedAt: "desc" }, select: { calculatedAt: true } });
+  const prevManual = prevRun ? new Set((await db.payAdjustment.findMany({ where: { month: prev, category: "SALARY_DEBT", cancelledAt: null, employeeId: { in: employeeIds } }, select: { employeeId: true } })).map((x) => x.employeeId)) : new Set<string>();
+  const base = { type: "EXPENSE" as const, employeeId: { in: employeeIds }, cancelledAt: null, debt: { is: null } };
+  const rows = await db.cashTransaction.findMany({
+    where: {
+      ...base,
+      OR: [
+        { date: { gte: new Date(y!, m! - 1, 1), lt: new Date(y!, m!, 1) } },
+        ...(prevRun?.calculatedAt ? [{ date: { gte: new Date(py!, pm! - 1, 1), lt: new Date(y!, m! - 1, 1) }, createdAt: { gt: prevRun.calculatedAt } }] : []),
+      ],
+    },
+    orderBy: { date: "asc" },
+    select: { id: true, employeeId: true, date: true, amount: true, category: true, subCategory: true, note: true, cashAccount: { select: { name: true } } },
+  });
+  const from = new Date(y!, m! - 1, 1);
+  for (const r of rows) {
+    if (!r.employeeId || !isStaffSettleCategory(r.category)) continue;
+    if (r.date < from && prevManual.has(r.employeeId)) continue;
+    const list = out.get(r.employeeId) ?? [];
+    list.push({ id: r.id, date: r.date, amount: num(r.amount), account: r.cashAccount.name, sub: r.subCategory, note: r.note, carried: r.date < from });
+    out.set(r.employeeId, list);
+  }
+  return out;
+}
+
 // ───────────────────────── Oy jadvali ─────────────────────────
 
 export type DeductionRow = {
   id: string; fullName: string; position: string; group: string;
   values: Partial<Record<DeductionCat, number>>;
+  /** Yozilmasa ham vedomost avtomatik ushlaydigan summa (kassa, nasiya, aliment daftari) */
+  auto: Partial<Record<DeductionCat, number>>;
   suggest: Partial<Record<DeductionCat, number>>;
   hints: Partial<Record<DeductionCat, string>>;
 };
@@ -71,47 +120,51 @@ export type DeductionMonth = { month: string; title: string; rows: DeductionRow[
 export async function deductionsMonth(month: string): Promise<DeductionMonth> {
   const days = monthDays(month);
   const from = dayUtc(days[0]!.iso), to = dayUtc(days[days.length - 1]!.iso);
-  const [y, m] = month.split("-").map(Number);
-  const [emps, adj, st, locked, cash] = await Promise.all([
+  const [emps, adj, st, locked] = await Promise.all([
     db.employee.findMany({
       where: { AND: [employeesInWindow(from, to), { OR: [{ userId: null }, { user: { role: { notIn: ["SUPERADMIN"] } } }] }] },
       orderBy: { fullName: "asc" },
-      select: { id: true, fullName: true, position: true, subdivision: true, brigade: { select: { name: true } }, team: { select: { name: true } } },
+      select: { id: true, fullName: true, position: true, brigade: { select: { name: true } }, team: { select: { name: true } } },
     }),
     db.payAdjustment.findMany({ where: { month, cancelledAt: null, category: { not: null } }, select: { employeeId: true, category: true, amount: true } }),
     db.payrollSettings.findUnique({ where: { id: "main" }, select: { fundAmount: true } }),
     tabelLock(month),
-    // Shu oy kassadan xodimga berilgan (nasiyasiz) pul — «oylikdan qarz» taklifi
-    db.cashTransaction.findMany({
-      where: { type: "EXPENSE", employeeId: { not: null }, cancelledAt: null, debt: { is: null }, date: { gte: new Date(y!, m! - 1, 1), lt: new Date(y!, m!, 1) } },
-      select: { employeeId: true, amount: true, category: true },
-    }),
   ]);
   const ids = emps.map((e) => e.id);
-  const led = await ledgersFor(ids, month);
+  const [led, cash, nasiya] = await Promise.all([ledgersFor(ids, month), staffCashFor(month, ids), debtsDue(month, ids)]);
+  const dmy = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
   const fund = st?.fundAmount != null ? num(st.fundAmount) : null;
   const rows: DeductionRow[] = emps.map((e) => {
     const values: DeductionRow["values"] = {};
     for (const a of adj) if (a.employeeId === e.id && isDeductionCat(a.category)) values[a.category] = (values[a.category] ?? 0) + num(a.amount);
-    const suggest: DeductionRow["suggest"] = {}, hints: DeductionRow["hints"] = {};
+    const auto: DeductionRow["auto"] = {}, suggest: DeductionRow["suggest"] = {}, hints: DeductionRow["hints"] = {};
+    // Aliment / ijro: daftardagi oylik summa — vedomost o'zi ushlaydi; foizlisi vedomostda qo'lga tegadigandan
     const ws = led.withholds.filter((w) => w.employeeId === e.id);
     if (ws.length) {
       const fixed = ws.reduce((s, w) => s + (w.monthly != null ? Math.min(num(w.monthly), w.left ?? Infinity) : 0), 0);
-      if (fixed > 0) suggest.ALIMENT = r0(fixed);
+      if (fixed > 0) auto.ALIMENT = r0(fixed);
       const pct = ws.filter((w) => w.monthly == null && w.percent != null);
-      hints.ALIMENT = [...ws.map((w) => `${w.kind === "MIB" ? "Ijro" : "Aliment"}${w.caseNo ? ` №${w.caseNo}` : ""}${w.left != null ? `: qoldiq ${r0(w.left)}` : ""}`), ...(pct.length ? [`${pct.map((w) => num(w.percent)).join("%, ")}% — vedomostda qo'lga tegadigandan`] : [])].join("; ");
+      hints.ALIMENT = [...ws.map((w) => `${w.kind === "MIB" ? "Ijro" : "Aliment"}${w.caseNo ? ` №${w.caseNo}` : ""}${w.left != null ? `: qoldiq ${fmtNum(r0(w.left))}` : ""}`), ...(pct.length ? [`${pct.map((w) => num(w.percent)).join("%, ")}% — vedomostda qo'lga tegadigandan`] : [])].join("; ");
     }
+    // Qarz: kassadan berilgan nasiya ulushi — avtomatik; kassasiz (Excel «Карз» / qo'lda) qoldiq ulushi — taklif
+    const ns = nasiya.filter((d) => d.employeeId === e.id);
+    const nsIds = new Set(ns.map((d) => d.id));
+    const nsSum = ns.reduce((s, d) => s + d.amount, 0);
+    if (nsSum > 0) auto.LOAN = r0(nsSum);
     const ds = led.debts.filter((d) => d.employeeId === e.id && d.left > 0);
-    if (ds.length) {
-      const due = ds.reduce((s, d) => s + Math.min(d.due, d.left), 0);
-      if (due > 0) suggest.LOAN = r0(due);
-      hints.LOAN = `qarz qoldig'i ${r0(ds.reduce((s, d) => s + d.left, 0))}`;
+    const opening = ds.filter((d) => !nsIds.has(d.id)).reduce((s, d) => s + Math.min(d.due, d.left), 0);
+    if (opening > 0) suggest.LOAN = r0(nsSum + opening);
+    if (ds.length || ns.length) hints.LOAN = [`qarz qoldig'i ${fmtNum(r0(ds.reduce((s, d) => s + d.left, 0)))}`, ...(nsSum > 0 ? [`kassadan nasiya ulushi ${fmtNum(r0(nsSum))} — avtomatik`] : [])].join("; ");
+    // Oylikdan qarz: Kirim-Chiqimda xodimga berilgan pul — avtomatik
+    const given = cash.get(e.id) ?? [];
+    const givenSum = given.reduce((s, c) => s + c.amount, 0);
+    if (givenSum > 0) {
+      auto.SALARY_DEBT = r0(givenSum);
+      hints.SALARY_DEBT = `Kirim-Chiqimdan: ${given.slice(0, 6).map((c) => `${dmy(c.date)} — ${fmtNum(r0(c.amount))}${c.sub ? ` (${c.sub})` : ""}${c.carried ? " [o'tgan oy, vedomostdan keyin]" : ""}`).join("; ")}${given.length > 6 ? ` va yana ${given.length - 6}` : ""}`;
     }
-    const given = cash.filter((c) => c.employeeId === e.id && isStaffSettleCategory(c.category)).reduce((s, c) => s + num(c.amount), 0);
-    if (given > 0) { suggest.SALARY_DEBT = r0(given); hints.SALARY_DEBT = "shu oy kassadan berilgan (nasiyasiz)"; }
     if (fund) suggest.FUND = fund;
-    const group = e.brigade?.name ?? e.team?.name ?? e.subdivision?.trim() ?? "";
-    return { id: e.id, fullName: e.fullName, position: e.position, group, values, suggest, hints };
+    const group = e.brigade?.name ?? e.team?.name ?? "";
+    return { id: e.id, fullName: e.fullName, position: e.position, group, values, auto, suggest, hints };
   });
   return { month, title: monthTitle(month), rows, locked, fundAmount: fund };
 }
@@ -122,13 +175,14 @@ export async function deductionsMonth(month: string): Promise<DeductionMonth> {
  */
 export async function saveDeductions(who: Who, month: string, items: { employeeId: string; category: string; value: string }[], opts: { source?: string } = {}) {
   if (!MONTH_RE.test(month)) return { error: "Oy noto'g'ri" };
-  const parsed: { employeeId: string; category: DeductionCat; amount: number }[] = [];
+  const parsed: { employeeId: string; category: DeductionCat; amount: number; keep: boolean }[] = [];
   for (const it of items) {
     if (!isDeductionCat(it.category)) return { error: "Ushlanma turi noto'g'ri" };
     const t = String(it.value ?? "").replace(/[\s'’]/g, "").replace(",", ".");
     const n = t === "" || t === "-" ? 0 : Number(t);
     if (!Number.isFinite(n) || n < 0 || n > 1e11) return { error: `«${it.value}» — summa noto'g'ri` };
-    parsed.push({ employeeId: it.employeeId, category: it.category, amount: r0(n) });
+    // «Oylikdan qarz» ga aniq 0 — kassadan berilgan pul shu oy ushlanmasin (bo'sh — avtomatik)
+    parsed.push({ employeeId: it.employeeId, category: it.category, amount: r0(n), keep: r0(n) > 0 || (n === 0 && t !== "" && t !== "-" && it.category === ZERO_KEEP) });
   }
   if (!parsed.length) return { saved: 0 };
   const ids = [...new Set(parsed.map((p) => p.employeeId))];
@@ -144,11 +198,11 @@ export async function saveDeductions(who: Who, month: string, items: { employeeI
     for (const p of parsed) {
       const rows = cur.filter((c) => c.employeeId === p.employeeId && c.category === p.category);
       const before = rows.reduce((s, r) => s + num(r.amount), 0);
-      if (before === p.amount) continue;
+      if (before === p.amount && (rows.length > 0) === p.keep) continue;
       // Shu tur bo'yicha bitta yozuv qoladi: ortiqchasi bekor qilinadi, birinchisi yangilanadi (yoki yaratiladi)
       for (const extra of rows.slice(1)) await tx.payAdjustment.update({ where: { id: extra.id }, data: { cancelledAt: new Date(), cancelledById: who.userId, cancelReason: "Ushlanmalar jadvalida birlashtirildi" } });
       const first = rows[0];
-      if (p.amount === 0) {
+      if (!p.keep) {
         if (first) await tx.payAdjustment.update({ where: { id: first.id }, data: { cancelledAt: new Date(), cancelledById: who.userId, cancelReason: "Ushlanmalar jadvalida tozalandi" } });
       } else if (first) await tx.payAdjustment.update({ where: { id: first.id }, data: { amount: p.amount } });
       else await tx.payAdjustment.create({ data: { employeeId: p.employeeId, month, kind: "PENALTY", category: p.category, amount: p.amount, reason: deductionLabel(p.category)!, createdById: who.userId } });

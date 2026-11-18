@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { NextResponse, type NextRequest } from "next/server";
 import { requirePage } from "@/lib/page-guard";
+import { canSeeRuns } from "@/lib/hr/payroll";
 import { SHEET_COLS, runSheet } from "@/lib/hr/vedomost-sheet";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,8 @@ export const runtime = "nodejs";
 
 /** GET /ish-haqi/<id>/excel — vedomost Excel C2026 ko'rinishida: bo'limlar, ushlanma ustunlari, bo'lim va umumiy jami. */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  await requirePage("/ish-haqi");
+  const s = await requirePage("/ish-haqi");
+  if (!canSeeRuns(s)) return new NextResponse("Ruxsat yo'q", { status: 403 });
   const { id } = await params;
   const sh = await runSheet(id);
   if (!sh) return new NextResponse("Topilmadi", { status: 404 });

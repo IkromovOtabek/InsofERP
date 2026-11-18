@@ -11,7 +11,8 @@ import { saveDeductionsAction, saveFundAmountAction } from "./ushlanma-actions";
 
 /**
  * Ushlanmalar jadvali — Excel C2026'ning G–K ustunlari: har xodimga oy bo'yicha aliment/ijro, qarz to'lovi, oylikdan qarz,
- * to'y puli, jarima. Kul rang — taklif (daftar, nasiya jadvali, kassa, sozlama); ustun sarlavhasidagi ✓ — bo'sh kataklarga
+ * to'y puli, jarima. Ko'k — avtomatik (Kirim-Chiqimdan berilgan pul, kassadan nasiya ulushi, aliment daftari: yozilmasa ham
+ * vedomost ushlaydi), kul rang — taklif (kassasiz qarz ulushi, to'y puli); ustun sarlavhasidagi ✓ — bo'sh kataklarga
  * takliflarni qo'yadi. O'zgarish o'zi saqlanadi; oy yakuni vedomosti shularni ushlaydi.
  */
 
@@ -23,7 +24,7 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
   const editable = canEdit && !data.locked;
   const init = useCallback(() => {
     const o: Record<string, string> = {};
-    for (const r of data.rows) for (const [c, v] of Object.entries(r.values)) if (v) o[k(r.id, c)] = String(v);
+    for (const r of data.rows) for (const [c, v] of Object.entries(r.values)) if (v != null) o[k(r.id, c)] = String(v);
     return o;
   }, [data]);
   const [vals, setVals] = useState(init);
@@ -60,7 +61,7 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
     return data.rows.filter((r) => (!t || r.fullName.toLowerCase().includes(t) || r.group.toLowerCase().includes(t) || r.position.toLowerCase().includes(t))
-      && (!onlyFilled || DEDUCTION_CATS.some((c) => vals[k(r.id, c.key)] || r.suggest[c.key])));
+      && (!onlyFilled || DEDUCTION_CATS.some((c) => vals[k(r.id, c.key)] || r.suggest[c.key] || r.auto[c.key])));
   }, [data.rows, q, onlyFilled, vals]);
 
   const acceptColumn = (cat: DeductionCat) => {
@@ -98,8 +99,10 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
     void flush();
   };
 
-  const colTotal = (cat: DeductionCat) => rows.reduce((s, r) => s + toNum(vals[k(r.id, cat)] ?? ""), 0);
-  const rowTotal = (id: string) => DEDUCTION_CATS.reduce((s, c) => s + toNum(vals[k(id, c.key)] ?? ""), 0);
+  // Vedomost ushlaydigan summa: yozilgani, bo'sh bo'lsa — avtomatik
+  const eff = (r: DeductionMonth["rows"][number], cat: DeductionCat) => { const v = (vals[k(r.id, cat)] ?? "").trim(); return v ? toNum(v) : r.auto[cat] ?? 0; };
+  const colTotal = (cat: DeductionCat) => rows.reduce((s, r) => s + eff(r, cat), 0);
+  const rowTotal = (r: DeductionMonth["rows"][number]) => DEDUCTION_CATS.reduce((s, c) => s + eff(r, c.key), 0);
 
   return (
     <div className="space-y-2">
@@ -118,6 +121,7 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
         )}
         <span className="flex items-center gap-1 text-xs text-slate-500">{busy > 0 ? <><Loader2 size={13} className="animate-spin" /> Saqlanmoqda…</> : editable ? <><Check size={13} className="text-emerald-600" /> Saqlangan</> : "Faqat ko'rish"}</span>
       </div>
+      <p className="text-xs text-slate-500"><span className="font-medium text-sky-700">Ko&apos;k</span> — avtomatik, yozilmasa ham oy yakunida ushlanadi: Kirim-Chiqimda xodimga «Hodimlar bilan hisob-kitob» bilan berilgan pul (Oylikdan qarz), kassadan nasiya ulushi (Qarz to&apos;lovi), aliment daftari. Ustiga yozilsa — yozilgani; «Oylikdan qarz» ga 0 — ushlanmaydi. <i className="text-slate-400">Kul rang</i> — taklif, ✓ bilan qo&apos;yiladi.</p>
       {msg && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700"><span>{msg}</span><button type="button" className="opacity-70 hover:underline" onClick={() => setMsg(null)}>Yopish</button></div>}
       <div className="relative max-w-full overflow-auto overscroll-contain rounded-(--radius-card) border border-slate-300/80 bg-white shadow-(--shadow-card)" style={{ maxHeight: "calc(100dvh - 320px)", minHeight: 300 }}>
         <table ref={tableRef} className="w-full border-separate border-spacing-0 font-(family-name:--font-inter) text-[13px] tabular text-slate-800">
@@ -148,19 +152,21 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
                 </td>
                 {DEDUCTION_CATS.map((c, ci) => {
                   const key = k(r.id, c.key);
-                  const sug = r.suggest[c.key];
+                  const sug = r.suggest[c.key], au = r.auto[c.key];
+                  const tip = [r.hints[c.key], au ? `Avtomatik ushlanadi: ${fmtNum(au)}${c.key === "SALARY_DEBT" ? " (0 yozilsa — ushlanmaydi)" : ""}` : null, sug ? `Taklif: ${fmtNum(sug)}` : null].filter(Boolean).join("\n");
                   return (
-                    <td key={c.key} className="border-r border-b border-slate-200 p-0" title={r.hints[c.key]}>
+                    <td key={c.key} className="border-r border-b border-slate-200 p-0" title={tip || undefined}>
                       <input data-r={ri} data-c={ci} value={vals[key] ?? ""} disabled={!editable} inputMode="decimal" autoComplete="off"
-                        placeholder={sug ? fmtNum(sug) : ""} aria-label={`${r.fullName} — ${c.label}`}
+                        placeholder={au ? fmtNum(au) : sug ? fmtNum(sug) : ""} aria-label={`${r.fullName} — ${c.label}`}
                         onChange={(e) => { setVals((p) => ({ ...p, [key]: e.target.value })); dirty.current.add(key); schedule(); }}
                         onFocus={(e) => e.currentTarget.select()} onBlur={() => void flush()}
                         onKeyDown={(e) => onKey(e, ri, ci)} onPaste={(e) => onPaste(e, ri, ci)}
-                        className={cn("h-9 w-full bg-transparent px-2 text-right outline-none placeholder:text-slate-400 placeholder:italic focus:bg-brand-50 focus:ring-2 focus:ring-brand-500 focus:ring-inset disabled:cursor-not-allowed", r.hints[c.key] && !vals[key] && "bg-amber-50/40")} />
+                        className={cn("h-9 w-full bg-transparent px-2 text-right outline-none placeholder:text-slate-400 placeholder:italic focus:bg-brand-50 focus:ring-2 focus:ring-brand-500 focus:ring-inset disabled:cursor-not-allowed",
+                          !vals[key] && (au ? "bg-sky-50/60 placeholder:font-medium placeholder:text-sky-700 placeholder:not-italic" : r.hints[c.key] && "bg-amber-50/40"))} />
                     </td>
                   );
                 })}
-                <td className="border-b border-slate-200 bg-red-50/40 px-2 text-right font-semibold">{rowTotal(r.id) ? fmtNum(rowTotal(r.id)) : ""}</td>
+                <td className="border-b border-slate-200 bg-red-50/40 px-2 text-right font-semibold">{rowTotal(r) ? fmtNum(rowTotal(r)) : ""}</td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={DEDUCTION_CATS.length + 3} className="px-3 py-8 text-center text-slate-500">Xodim topilmadi</td></tr>}

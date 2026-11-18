@@ -4,7 +4,7 @@ import type { Perms } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
 import { audit, auditMany } from "@/lib/audit";
 import { money } from "@/lib/format";
-import { dayUtc, isoDay, monthDays, monthTitle, today, toMinutes, workedMinutes } from "@/lib/davomat";
+import { MAX_SHIFT_MINUTES, dayUtc, isoDay, monthDays, monthTitle, shiftMonth, today, toMinutes, workedMinutes } from "@/lib/davomat";
 import { earlyBy, lateBy } from "@/lib/attendance-time";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { cashOutflowError } from "@/lib/payments";
@@ -18,7 +18,7 @@ import { PAYROLL_KIND_LABEL } from "./labels";
 import { brigadeDefectSums, brigadeOutput, dayEnd, dayStart, type PieceUnit } from "@/lib/brigade-pay";
 import { debtsDue } from "./employee-debt";
 import { brigadeSheetPay, type SheetPayItem } from "./brigade-sheet";
-import { allocate, ledgersFor } from "./deductions";
+import { allocate, ledgersFor, staffCashFor, type StaffCash } from "./deductions";
 
 /**
  * Ish haqi — vedomost (`PayrollRun`) va qatorlar (`PayrollLine`).
@@ -47,6 +47,16 @@ export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHI
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
 export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel" | "deductions") => canDo(who, "payroll", what);
+/** Ish haqi bo'yicha mas'ul rollar — vedomostlarni har doim ko'radi. */
+const RUN_ROLES = ["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"];
+/**
+ * Vedomostlarni (ro'yxat, `/ish-haqi/<id>`, Excel, chop) ko'rish: mas'ul rol, hisoblash yoki sozlama huquqi bor —
+ * ko'radi; faqat tabel / ushlanma / varaq / qarzlar bilan ishlaydigan (Sekretar) — ko'rmaydi.
+ */
+export function canSeeRuns(who: Pick<PayrollWho, "role" | "perms">) {
+  if (RUN_ROLES.includes(who.role) || canPayroll(who, "calc") || canPayroll(who, "settings")) return true;
+  return !(["debts", "sheets", "tabel", "deductions"] as const).some((w) => canPayroll(who, w));
+}
 
 export class PayrollError extends Error {}
 const STALE = "Vedomost boshqa joyda o'zgartirildi — sahifani yangilang";
@@ -159,6 +169,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   const nasiya = kind === "FINAL" ? await debtsDue(month, ids) : [];
   // Qarz qoldiqlari va ijro/aliment yozuvlari — Ushlanmalar jadvalidagi qo'lda summa taqsimoti va avtomatik aliment uchun
   const led = kind === "FINAL" ? await ledgersFor(ids, month) : { debts: [], withholds: [] };
+  // Kirim-Chiqimda xodimga berilgan pul («Hodimlar bilan hisob-kitob», nasiyasiz) — «Oylikdan qarz» (`lib/hr/deductions.ts`)
+  const staffCash = kind === "FINAL" ? await staffCashFor(month, ids) : new Map<string, StaffCash[]>();
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
   const nowIso = today();
@@ -314,7 +326,16 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         hits.push({ rule: `KPI: ${k.name}`, kind: "BONUS", amount: k.reward, days: 1, detail: `fakt ${k.fact ?? "—"} / reja ${k.target} ${k.unit} = ${k.pct ?? 0}%` });
         bonus += k.reward;
       }
-      for (const m of manual.filter((x) => x.employeeId === e.id)) {
+      // Oylikdan qarz: Ushlanmalar jadvalida yozilmagan bo'lsa — Kirim-Chiqimda shu xodimga berilgan pul (0 yozilgan — ushlanmaydi)
+      const sdWritten = manual.some((x) => x.employeeId === e.id && x.category === "SALARY_DEBT");
+      const given = sdWritten ? [] : staffCash.get(e.id) ?? [];
+      const givenSum = r0(given.reduce((sm, c) => sm + c.amount, 0));
+      if (givenSum > 0) {
+        const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+        hits.push({ rule: STAFF_CASH_RULE, kind: "PENALTY", amount: givenSum, days: given.length, detail: `Kirim-Chiqim: ${given.slice(0, 6).map((c) => `${dm(c.date)} ${money(c.amount)}${c.carried ? " (o'tgan oy)" : ""}`).join(", ")}${given.length > 6 ? ` va yana ${given.length - 6}` : ""}` });
+        penalty += givenSum;
+      }
+      for (const m of manual.filter((x) => x.employeeId === e.id && num(x.amount) !== 0)) {
         manualList.push({ id: m.id, kind: m.kind, amount: num(m.amount), reason: m.reason, category: m.category });
         if (m.kind === "BONUS") bonus += num(m.amount); else penalty += num(m.amount);
       }
@@ -383,9 +404,16 @@ function minutesFor(a: { checkIn: string | null; checkOut: string | null; date: 
   if (a.hours != null) return Math.round(Number(a.hours) * 60); // tabelda qo'lda yozilgan soat
   const m = workedMinutes(a.checkIn, a.checkOut);
   if (m != null) return m;
-  if (a.checkIn && p && isoDay(a.date) < nowIso && toMinutes(p.end) != null) return workedMinutes(a.checkIn, p.end) ?? 0;
+  if (a.checkIn && p && isoDay(a.date) < nowIso && toMinutes(p.end) != null) {
+    // Ketish yozilmagan: smena oxirigacha; kelgan vaqt smena oxiridan keyin (16 soatdan uzun chiqadi) — hisoblanmaydi
+    const m2 = workedMinutes(a.checkIn, p.end) ?? 0;
+    return m2 <= MAX_SHIFT_MINUTES ? m2 : 0;
+  }
   return 0;
 }
+
+/** Vedomost qoidasi nomi: Kirim-Chiqimda xodimga berilgan pul (C2026 «Oylikdan qarz» ustuni — `vedomost-sheet.ts`). */
+export const STAFF_CASH_RULE = "Kassadan berilgan";
 
 const pieceBrigades = (emps: Emp[]) => [...new Set(emps.filter((e) => e.payType === "PIECE").map((e) => e.brigadeId).filter((x): x is string => !!x))];
 
@@ -481,6 +509,13 @@ const wrap = async <T>(fn: () => Promise<T>): Promise<T | { error: string }> => 
 
 export async function submitRun(id: string, user: PayrollWho) {
   if (!canPayroll(user, "calc")) return { error: "Ruxsat yo'q" };
+  // Oy yakuni: o'tgan oy vedomosti shu qoralamadan keyin qayta hisoblangan bo'lsa — kassadan o'tgan pul (Oylikdan qarz)
+  // eskirgan, ikki marta ushlanmasin: avval qayta hisoblash kerak
+  const cur = await db.payrollRun.findUnique({ where: { id }, select: { kind: true, month: true, calculatedAt: true } });
+  if (cur?.kind === "FINAL" && cur.calculatedAt) {
+    const prev = await db.payrollRun.findFirst({ where: { kind: "FINAL", month: shiftMonth(cur.month, -1), status: { not: "CANCELLED" }, calculatedAt: { gt: cur.calculatedAt } }, select: { docNo: true } });
+    if (prev) return { error: `${prev.docNo} (o'tgan oy) shu vedomostdan keyin qayta hisoblangan — avval «Qayta hisoblash» ni bosing` };
+  }
   return wrap(async () => {
     const r = await transition(id, ["DRAFT"], { status: "SUBMITTED", submittedAt: new Date(), rejectNote: null }, user.userId, "submit");
     notifyAfter(() => notifyRoles(["DIRECTOR"], { type: "PAYROLL_SUBMITTED", title: `${PAYROLL_KIND_LABEL[r.kind]} — tasdiqlang`, body: `${r.docNo} · ${monthTitle(r.month)} · qo'lga ${money(num(r.net))}`, link: { key: "ish-haqi", id } }));

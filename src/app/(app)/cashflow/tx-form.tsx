@@ -313,6 +313,7 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
                 <p className="self-end pb-2 text-xs text-slate-500">Summa oylarga teng bo&apos;linadi va har oy yakuni vedomostida ushlanadi.</p>
               </div>
             )}
+            {!debtOn && <p className="mt-1.5 text-xs text-slate-600">Belgilanmasa — summa shu oy yakunida oylikdan to&apos;liq ushlanadi (Ish haqi → Ushlanmalar → «Oylikdan qarz»).</p>}
           </div>
         )}
         {!perekit && !staffMode && <Field label={type === "INCOME" ? "Kimdan" : "Kimga"}><Input name="counterparty" placeholder="Nomi / F.I.O." /></Field>}

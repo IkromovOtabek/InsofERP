@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
 import { monthTitle } from "@/lib/davomat";
-import { breakdownOf } from "./payroll";
-import { groupOf } from "./tabel";
+import { STAFF_CASH_RULE, breakdownOf } from "./payroll";
+import { groupOf, groupOrder } from "./tabel";
 import { PAYROLL_KIND_LABEL } from "./labels";
 
 /**
- * Vedomost Excel'dagi C2026 ko'rinishida: bo'limlar (AUP, vaqtbay, brigadalar, shofyorlar…) va ustunlar
+ * Vedomost Excel'dagi C2026 ko'rinishida: bo'limlar (yaratilgan komanda va brigadalar, biriktirilmaganlar) va ustunlar
  *   hisoblandi · 12% · qo'lga · brak · aliment/ijro · qarz · oylikdan qarz · to'y puli · jarima · boshqa · avans · qoldiq · plastik · naqd.
  * Ushlanmalar qatorning `breakdown` idan turi bo'yicha ajratiladi (qo'lda yozuvlar `category`, qoidalar nomi bo'yicha).
  * Sahifa, Excel eksporti va chop etiladigan ro'yxatlar shu bitta joydan oladi.
@@ -35,8 +35,39 @@ const zero = (): Record<SheetColKey, number> => Object.fromEntries(SHEET_COLS.ma
 const add = (a: Record<SheetColKey, number>, b: Record<SheetColKey, number>) => { for (const c of SHEET_COLS) a[c.key] += b[c.key]; };
 
 /** Qoidaning (avtomatik ushlanma) ustuni. */
-const RULE_COL = (rule: string): SheetColKey => (rule === "Brigada braki" ? "brak" : rule === "Qarz (nasiya)" ? "loan" : rule === "Ijro varaqasi" || rule === "Aliment" ? "aliment" : rule === "O'tgan oydan qarz" ? "other" : "fine");
+const RULE_COL = (rule: string): SheetColKey => (rule === "Brigada braki" ? "brak" : rule === "Qarz (nasiya)" ? "loan" : rule === "Ijro varaqasi" || rule === "Aliment" ? "aliment" : rule === STAFF_CASH_RULE ? "salaryDebt" : rule === "O'tgan oydan qarz" ? "other" : "fine");
 const CAT_COL: Record<string, SheetColKey> = { ALIMENT: "aliment", LOAN: "loan", SALARY_DEBT: "salaryDebt", FUND: "fund", FINE: "fine" };
+
+/** Vedomost qatori (bazadagi `PayrollLine` yoki hisoblangan `CalcLine`) — C2026 qatoriga aylantirish uchun. */
+export type SheetSrcLine = {
+  id: string; employeeId: string; gross: unknown; incomeTax: unknown; breakdown: unknown; advanceDeducted: unknown; net: unknown; cardAmount: unknown; paidAt?: Date | null;
+  employee: { fullName: string; position: string; brigadeId: string | null; teamId: string | null; brigade: { name: string } | null; team: { name: string } | null };
+};
+
+/** Qatorlar → bo'limlar (komanda / brigada / biriktirilmagan) va C2026 ustunlari. Sahifa, Excel va ERP kitobi shu yerdan. */
+export function sheetGroups(lines: SheetSrcLine[]) {
+  const groups = new Map<string, SheetGroup & { order: number }>();
+  for (const l of lines) {
+    const b = breakdownOf(l.breakdown);
+    const v = zero();
+    v.gross = Number(l.gross); v.tax = Number(l.incomeTax); v.hand = v.gross - v.tax;
+    for (const h of b?.rules ?? []) if (h.kind === "PENALTY") v[RULE_COL(h.rule)] += h.amount;
+    for (const m of b?.manual ?? []) if (m.kind === "PENALTY") v[(m.category && CAT_COL[m.category]) || "fine"] += m.amount;
+    v.advance = Number(l.advanceDeducted);
+    v.net = Number(l.net);
+    v.card = Number(l.cardAmount);
+    v.cash = Math.max(0, v.net - v.card);
+    const g = groupOf(l.employee);
+    const cur = groups.get(g.key) ?? { label: g.label, rows: [], total: zero(), order: groupOrder(g.key) };
+    cur.rows.push({ lineId: l.id, employeeId: l.employeeId, fullName: l.employee.fullName, position: l.employee.position, paid: !!l.paidAt, v });
+    add(cur.total, v);
+    groups.set(g.key, cur);
+  }
+  const list = [...groups.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+  const total = zero();
+  for (const g of list) add(total, g.total);
+  return { groups: list.map((g) => ({ label: g.label, rows: g.rows, total: g.total })), total };
+}
 
 export async function runSheet(runId: string) {
   const run = await db.payrollRun.findUnique({
@@ -49,30 +80,9 @@ export async function runSheet(runId: string) {
     },
   });
   if (!run) return null;
-  const groups = new Map<string, SheetGroup & { order: number }>();
-  const order = (k: string) => (k.startsWith("p:SALARY") ? 0 : k.startsWith("s:") ? 1 : k.startsWith("p:") ? 2 : k.startsWith("t:") ? 3 : k.startsWith("b:") ? 4 : 5);
-  for (const l of run.lines) {
-    const b = breakdownOf(l.breakdown);
-    const v = zero();
-    v.gross = Number(l.gross); v.tax = Number(l.incomeTax); v.hand = v.gross - v.tax;
-    for (const h of b?.rules ?? []) if (h.kind === "PENALTY") v[RULE_COL(h.rule)] += h.amount;
-    for (const m of b?.manual ?? []) if (m.kind === "PENALTY") v[(m.category && CAT_COL[m.category]) || "fine"] += m.amount;
-    v.advance = Number(l.advanceDeducted);
-    v.net = Number(l.net);
-    v.card = Number(l.cardAmount);
-    v.cash = Math.max(0, v.net - v.card);
-    const g = groupOf(l.employee);
-    const cur = groups.get(g.key) ?? { label: g.label, rows: [], total: zero(), order: order(g.key) };
-    cur.rows.push({ lineId: l.id, employeeId: l.employeeId, fullName: l.employee.fullName, position: l.employee.position, paid: !!l.paidAt, v });
-    add(cur.total, v);
-    groups.set(g.key, cur);
-  }
-  const list = [...groups.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
-  const total = zero();
-  for (const g of list) add(total, g.total);
   return {
     run: { id: run.id, docNo: run.docNo, month: run.month, kind: run.kind, status: run.status, title: `${run.docNo} · ${monthTitle(run.month)} · ${PAYROLL_KIND_LABEL[run.kind]}` },
-    groups: list.map((g) => ({ label: g.label, rows: g.rows, total: g.total })), total,
+    ...sheetGroups(run.lines),
   };
 }
 export type RunSheet = NonNullable<Awaited<ReturnType<typeof runSheet>>>;

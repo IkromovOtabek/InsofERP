@@ -53,11 +53,11 @@ export function WorkbookUploadForm({ months, defMonth }: { months: { key: string
   );
 }
 
-/** Kitob tanlash — tanlansa shu kitob ochiladi. */
-export function WorkbookPicker({ items, current }: { items: { id: string; label: string }[]; current: string }) {
+/** Kitob tanlash — tanlansa shu kitob ochiladi («ERP ma'lumotidan» yoki yuklangan Excel). */
+export function WorkbookPicker({ items, current }: { items: { id: string; label: string; href: string }[]; current: string }) {
   const router = useRouter();
   return (
-    <Select value={current} onChange={(e) => router.push(`/ish-haqi?tab=varaqlar&kitob=${e.target.value}`)} className="h-9 w-auto min-w-64 max-w-full" aria-label="Kitob">
+    <Select value={current} onChange={(e) => { const it = items.find((x) => x.id === e.target.value); if (it) router.push(it.href); }} className="h-9 w-auto min-w-64 max-w-full" aria-label="Kitob">
       {items.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
     </Select>
   );

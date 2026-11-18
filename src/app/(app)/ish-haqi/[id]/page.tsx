@@ -1,11 +1,11 @@
 import { Fragment } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
 import { db } from "@/lib/db";
 import { dateTime, fmtNum, money } from "@/lib/format";
 import { hoursShort, monthTitle } from "@/lib/davomat";
-import { breakdownOf, canPayroll, runWithLines } from "@/lib/hr/payroll";
+import { breakdownOf, canPayroll, canSeeRuns, runWithLines } from "@/lib/hr/payroll";
 import { payAccounts } from "@/lib/mechanic-requests";
 import { PAY_TYPE_LABEL, PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
 import { Badge, Callout, Card, CardHeader, InfoButton, LinkButton, PageHeader, StatCard, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
@@ -19,6 +19,8 @@ const STEPS = [{ key: "DRAFT", label: "Hisoblandi" }, { key: "SUBMITTED", label:
 /** Vedomost: qatorlar (xodim bo'yicha hisob tafsiloti), tasdiq va kassadan to'lov. */
 export default async function PayrollRunPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ view?: string }> }) {
   const s = await requirePage("/ish-haqi");
+  // Sekretar (faqat tabel / ushlanma / varaqlar) vedomostni to'g'ridan-to'g'ri havola bilan ham ochmasin
+  if (!canSeeRuns(s)) redirect("/ish-haqi?denied=1");
   const { id } = await params;
   const sp = await searchParams;
   const run = await runWithLines(id);

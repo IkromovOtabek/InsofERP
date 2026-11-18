@@ -1,7 +1,7 @@
 import type { AttendanceStatus, PayType, Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { dayUtc, isoDay, monthDays, monthTitle, today, workedMinutes } from "@/lib/davomat";
+import { dayUtc, isoDay, monthDays, monthTitle, today } from "@/lib/davomat";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { normDaysOf, plansInRange } from "./shifts";
 import { payrollSettings } from "./payroll";
@@ -10,10 +10,11 @@ import { parseWorkbook } from "@/lib/payroll-sheets";
 import { colName } from "@/lib/sheet-calc";
 import { TABEL_CODE_OF, TABEL_MAX_HOURS, parseTabelValue, type TabelParsed } from "./tabel-value";
 import { tabelLock } from "./tabel-lock";
+import { attendanceHours } from "./attendance-hours";
 import { calcBrigadeSheet } from "./brigade-calc";
-import { saveBrigadeHours, saveBrigadeMonth, saveBrigadeOutput } from "./brigade-sheet";
+import { autoBrigadeHours, saveBrigadeHours, saveBrigadeMonth, saveBrigadeOutput } from "./brigade-sheet";
 
-export { parseTabelValue, tabelLock };
+export { parseTabelValue, tabelLock, attendanceHours };
 
 /**
  * Tabel (Ish haqi → Tabel): Excel tabeli kabi — guruh (brigada, komanda, bo'linma), qatorda xodim, ustunda 1..31 kun,
@@ -27,9 +28,12 @@ const CODE_OF = TABEL_CODE_OF;
 const MAX_HOURS = TABEL_MAX_HOURS;
 
 export type TabelGroup = { key: string; label: string; count: number };
-export type TabelCell = { v: string; auto?: boolean; face?: boolean };
+/** `auto` — davomatdan (qo'lda yozilmagan), `live` — bugun ishda, davom etmoqda (soat hozirgacha). */
+export type TabelCell = { v: string; auto?: boolean; face?: boolean; live?: boolean };
 export type TabelRow = {
   id: string; fullName: string; position: string; payType: PayType; rate: number; normDays: number;
+  /** Guruh kaliti (`groupOf`): «t:…» komanda, «b:…» brigada, «none» */
+  group: string;
   /** Ishga kirgan/bo'shagan kun chegarasi — undan tashqari kunlar yopiq. */
   from: number; to: number;
   cells: Record<number, TabelCell>;
@@ -41,22 +45,25 @@ export type TabelMonth = {
   locked: string | null;
 };
 
-const DRIVER_RE = /haydovchi|shofyor|шофер|водител/i;
+export type TabelEmp = { brigadeId: string | null; teamId: string | null; brigade: { name: string } | null; team: { name: string } | null };
 
-export type TabelEmp = { id: string; fullName: string; position: string; payType: PayType; subdivision: string | null; brigadeId: string | null; teamId: string | null; brigade: { name: string } | null; team: { name: string } | null };
-const PAY_GROUP: Record<PayType, string> = { SALARY: "Oklad (AUP)", DAILY: "Kunbay", HOURLY: "Soatbay", PIECE: "Sdelka" };
+/** Komanda yoki brigadaga biriktirilmagan xodimlar guruhi. */
+export const NO_GROUP = { key: "none", label: "Biriktirilmagan" } as const;
 
-/** Xodim guruhi: brigada → komanda → shofyor → bo'linma → ish haqi turi (Excel'dagi varaqlar kabi). */
+/**
+ * Xodim guruhi — Otdel kadr → «Komanda va brigadalar» da yaratilgan brigada yoki komanda (oklad / AUP / bo'linma kabi
+ * avtomatik guruhlar yo'q). Hech qayerga biriktirilmagan — «Biriktirilmagan». Tabel, vedomost (C2026 bo'limlari) va
+ * Ushlanmalar shu guruhlashni oladi.
+ */
 export function groupOf(e: TabelEmp): { key: string; label: string } {
   if (e.brigadeId && e.brigade) return { key: `b:${e.brigadeId}`, label: e.brigade.name };
   if (e.teamId && e.team) return { key: `t:${e.teamId}`, label: e.team.name };
-  if (DRIVER_RE.test(e.position)) return { key: "drivers", label: "Shofyorlar" };
-  if (e.subdivision?.trim()) return { key: `s:${e.subdivision.trim()}`, label: e.subdivision.trim() };
-  return { key: `p:${e.payType}`, label: PAY_GROUP[e.payType] };
+  return { ...NO_GROUP };
 }
+/** Guruhlar tartibi: komandalar → brigadalar → biriktirilmagan → barchasi. */
+export const groupOrder = (k: string) => (k.startsWith("t:") ? 0 : k.startsWith("b:") ? 1 : k === NO_GROUP.key ? 2 : 3);
 
 const fmtH = (n: number) => String(Math.round(n * 100) / 100);
-
 export async function tabelMonth(month: string, group?: string): Promise<TabelMonth> {
   const days = monthDays(month);
   const from = dayUtc(days[0]!.iso), to = dayUtc(days[days.length - 1]!.iso);
@@ -71,6 +78,13 @@ export async function tabelMonth(month: string, group?: string): Promise<TabelMo
     tabelLock(month),
   ]);
   const counts = new Map<string, TabelGroup>();
+  // Otdel kadr → «Komanda va brigadalar» da yaratilgan faol komanda va brigadalar — a'zosi bo'lmasa ham ro'yxatda
+  const [teams, brigades] = await Promise.all([
+    db.team.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
+    db.brigade.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
+  ]);
+  for (const t of teams) counts.set(`t:${t.id}`, { key: `t:${t.id}`, label: t.name, count: 0 });
+  for (const b of brigades) counts.set(`b:${b.id}`, { key: `b:${b.id}`, label: b.name, count: 0 });
   for (const e of emps) {
     const g = groupOf(e);
     const cur = counts.get(g.key) ?? { key: g.key, label: g.label, count: 0 };
@@ -92,9 +106,9 @@ export async function tabelMonth(month: string, group?: string): Promise<TabelMo
     if (!cur) counts.set(key, { key, label: b.name, count: n });
     else cur.count = Math.max(cur.count, n);
   }
-  const order = (k: string) => (k.startsWith("p:SALARY") ? 0 : k.startsWith("s:") ? 1 : k.startsWith("p:") ? 2 : k.startsWith("t:") ? 3 : k.startsWith("b:") ? 4 : 5);
-  const groups = [...counts.values()].sort((a, b) => order(a.key) - order(b.key) || a.label.localeCompare(b.label));
+  const groups = [...counts.values()].sort((a, b) => groupOrder(a.key) - groupOrder(b.key) || a.label.localeCompare(b.label));
   groups.push({ key: "all", label: "Barchasi", count: emps.length });
+  // Eski havola (?guruh=p:SALARY, s:…) — birinchi guruhga
   const g = groups.some((x) => x.key === group) ? group! : groups[0]?.key ?? "all";
   const mine = g === "all" ? emps : emps.filter((e) => groupOf(e).key === g);
 
@@ -113,14 +127,15 @@ export async function tabelMonth(month: string, group?: string): Promise<TabelMo
       if (a.status === "PRESENT") {
         if (a.hours != null) cells[day] = { v: fmtH(Number(a.hours)), face };
         else {
-          const m = workedMinutes(a.checkIn, a.checkOut);
-          cells[day] = { v: m != null ? fmtH(Math.round((m / 60) * 4) / 4) : "+", auto: true, face };
+          // Davomatdan: kelish-ketish vaqti, bugun ishda bo'lsa — hozirgacha (davom etmoqda)
+          const ah = attendanceHours(a, plans.get(e.id)?.get(isoDay(a.date))?.end, now);
+          cells[day] = { v: ah.h != null ? fmtH(ah.h) : "+", auto: true, face, ...(ah.live ? { live: true } : {}) };
         }
       } else cells[day] = { v: CODE_OF[a.status] ?? "", face };
     }
     const hi = e.hiredAt ? isoDay(e.hiredAt) : first, fi = e.firedAt ? isoDay(e.firedAt) : last;
     return {
-      id: e.id, fullName: e.fullName, position: e.position, payType: e.payType, rate: Number(e.tariffRate ?? 0),
+      id: e.id, fullName: e.fullName, position: e.position, payType: e.payType, rate: Number(e.tariffRate ?? 0), group: groupOf(e).key,
       normDays: normDaysOf(plans.get(e.id)!, month),
       from: hi > first ? Number(hi.slice(8, 10)) : 1, to: fi < last ? Number(fi.slice(8, 10)) : days.length,
       cells,
@@ -489,6 +504,18 @@ export async function applyTabelImport(
     if ("error" in r) return { error: r.error, saved, skipped };
     saved += r.saved;
     skipped.push(...r.skipped);
+  }
+  // Excel varag'ida bo'sh qolgan katak — «0» (brigadada ishlamadi): import qilingan oy Excel'dagidek qolsin, davomatdan
+  // avtomatik soat qo'shilmasin. Bugun hali ishda bo'lganlar bundan mustasno.
+  const imported = [...new Set(brigadeOf.values())];
+  if (imported.length) {
+    const auto = await autoBrigadeHours(month, monthDays(month).at(-1)!.iso, imported);
+    for (const [bid, byEmp] of auto) {
+      const zeros = [...byEmp].flatMap(([employeeId, byDay]) => [...byDay].filter(([, c]) => !c.live).map(([day]) => ({ employeeId, day, value: "0" })));
+      if (!zeros.length) continue;
+      const r = await saveBrigadeHours(who, month, bid, zeros);
+      if ("error" in r) return { error: r.error, saved, skipped };
+    }
   }
   for (const p of people.filter((x) => x.remember && x.key)) {
     await db.employeeAlias.upsert({ where: { name: p.key }, create: { name: p.key, employeeId: p.employeeId, createdById: who.userId }, update: { employeeId: p.employeeId } });

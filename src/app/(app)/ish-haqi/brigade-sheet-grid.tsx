@@ -99,15 +99,24 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
     return [...data.members, ...add];
   }, [data, extra, nDays]);
 
+  // Qo'lda soat yozilmagan (bo'sh) katak — sdelkachi a'zoning davomatdagi soati (kul rang) hisobga olinadi; «0» — ishlamadi
+  const autoOf = (id: string, d: number) => (!(hv[`${id}:${d}`] ?? "").trim() ? data.auto[id]?.[d] : undefined);
+
   const calc = useMemo(() => {
     const hours: Record<string, (number | null)[]> = {};
-    for (const m of members) hours[m.id] = Array.from({ length: nDays }, (_, i) => toNum(hv[`${m.id}:${i + 1}`] ?? ""));
+    for (const m of members) hours[m.id] = Array.from({ length: nDays }, (_, i) => {
+      const v = (hv[`${m.id}:${i + 1}`] ?? "").trim();
+      if (v) return toNum(v);
+      // Bugun hali ishda — vedomost kabi pulga ketgach kiradi (katakda yashil ko'rinadi)
+      const a = data.auto[m.id]?.[i + 1];
+      return a && !a.live ? a.h : null;
+    });
     const brak = brakTxt.trim() ? Number(numText(brakTxt)) || 0 : data.brakAuto;
     return calcBrigadeSheet({
       days: nDays, hours, brak,
       lines: lines.map((l) => ({ ...l, qty: Array.from({ length: nDays }, (_, i) => toNum(qv[`${l.name}${SEP}${i + 1}`] ?? "")) })),
     });
-  }, [members, hv, qv, lines, brakTxt, data.brakAuto, nDays]);
+  }, [members, hv, qv, lines, brakTxt, data.brakAuto, data.auto, nDays]);
 
   const dayOk = (d: number, from = 1, to = nDays) => editable && !data.days[d - 1]?.future && d >= from && d <= to;
 
@@ -124,7 +133,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
     e.preventDefault();
     focus(g, Math.min(rows - 1, Math.max(0, r + mv[0])), Math.min(nDays, Math.max(1, d + mv[1])));
   };
-  const paste = (e: React.ClipboardEvent<HTMLInputElement>, keyOf: (r: number, d: number) => string | null, r0: number, d0: number, setter: typeof setHv, dirty: Set<string>) => {
+  const paste = (e: React.ClipboardEvent<HTMLInputElement>, keyOf: (r: number, d: number) => string | null, r0: number, d0: number, apply: (next: Record<string, string>) => void) => {
     const text = e.clipboardData.getData("text/plain");
     if (!/[\t\n]/.test(text.replace(/\n$/, ""))) return;
     e.preventDefault();
@@ -133,11 +142,11 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
       const k = keyOf(r0 + i, d0 + j);
       if (k) next[k] = v.trim();
     }));
-    setter((p) => ({ ...p, ...next }));
-    for (const k of Object.keys(next)) dirty.add(k);
+    apply(next);
     void flush();
   };
-
+  const applyQ = (next: Record<string, string>) => { setQv((p) => ({ ...p, ...next })); for (const k of Object.keys(next)) dirtyQ.current.add(k); };
+  const applyH = (next: Record<string, string>) => { setHv((p) => ({ ...p, ...next })); for (const k of Object.keys(next)) dirtyH.current.add(k); };
   const [newLine, setNewLine] = useState({ name: "", rate: "" });
   const [addEmp, setAddEmp] = useState("");
   const brakUsed = brakTxt.trim() ? Number(numText(brakTxt)) || 0 : data.brakAuto;
@@ -149,7 +158,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
   return (
     <div ref={rootRef} className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
-        <span>Kunlik fond = Σ soni × narx → shu kungi soatga bo&apos;linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab.</span>
+        <span>Kunlik fond = Σ soni × narx → shu kungi soatga bo&apos;linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. <i className="text-slate-400">Kul rang soat</i> — davomatdan (qo&apos;lda yozilmagan katak), <i className="font-medium text-emerald-600">yashil</i> — bugun ishda; <b>0</b> — shu kuni brigadada ishlamadi.</span>
         {data.inherited && <span className="text-amber-700">Qatorlar va narxlar o&apos;tgan oydan — o&apos;zgartirsangiz shu oy uchun saqlanadi.</span>}
         <span className="ml-auto flex items-center gap-1">{busy > 0 ? <><Loader2 size={13} className="animate-spin" /> Saqlanmoqda…</> : editable ? <><Check size={13} className="text-emerald-600" /> Saqlangan</> : "Faqat ko'rish"}</span>
       </div>
@@ -188,14 +197,17 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
                   </td>
                   {data.days.map((d) => {
                     const k = `${m.id}:${d.day}`;
+                    const au = !(hv[k] ?? "").trim() ? autoOf(m.id, d.day) : undefined;
                     return (
                       <td key={d.day} className={cn("border-r border-b border-slate-200 p-0", d.weekend && "bg-sky-50/70", !dayOk(d.day, m.from, m.to) && "bg-slate-50")}>
                         <input data-g="h" data-r={ri} data-d={d.day} value={hv[k] ?? ""} disabled={!dayOk(d.day, m.from, m.to)} inputMode="decimal" autoComplete="off" aria-label={`${m.fullName}, ${d.day}-kun soati`}
-                          onChange={(e) => { setHv((p) => ({ ...p, [k]: e.target.value })); dirtyH.current.add(k); schedule(); }}
+                          placeholder={au ? fmtNum(au.h, 2) : undefined}
+                          title={au ? (au.live ? "Bugun ishda — davom etmoqda: davomatdagi kelgan vaqtdan hozirgacha (vedomostga ketgach kiradi)" : "Davomatdan (Face ID / kelish-ketish). Ustiga yozilsa — qo'lda, 0 — brigadada ishlamadi") : undefined}
+                          onChange={(e) => { applyH({ [k]: e.target.value }); schedule(); }}
                           onFocus={(e) => e.currentTarget.select()} onBlur={() => void flush()}
                           onKeyDown={(e) => onKey(e, "h", ri, d.day, members.length)}
-                          onPaste={(e) => paste(e, (r, dd) => { const mm = members[r]; return mm && dd <= nDays && dayOk(dd, mm.from, mm.to) ? `${mm.id}:${dd}` : null; }, ri, d.day, setHv, dirtyH.current)}
-                          className={cellCls} />
+                          onPaste={(e) => paste(e, (r, dd) => { const mm = members[r]; return mm && dd <= nDays && dayOk(dd, mm.from, mm.to) ? `${mm.id}:${dd}` : null; }, ri, d.day, applyH)}
+                          className={cn(cellCls, au && (au.live ? "placeholder:font-medium placeholder:text-emerald-600 placeholder:italic" : "placeholder:text-slate-400 placeholder:italic"))} />
                       </td>
                     );
                   })}
@@ -274,7 +286,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
                           onChange={(e) => { setQv((p) => ({ ...p, [k]: e.target.value })); dirtyQ.current.add(k); schedule(); }}
                           onFocus={(e) => e.currentTarget.select()} onBlur={() => void flush()}
                           onKeyDown={(e) => onKey(e, "q", li, d.day, lines.length)}
-                          onPaste={(e) => paste(e, (r, dd) => (lines[r] && dd <= nDays && dayOk(dd) ? `${lines[r]!.name}${SEP}${dd}` : null), li, d.day, setQv, dirtyQ.current)}
+                          onPaste={(e) => paste(e, (r, dd) => (lines[r] && dd <= nDays && dayOk(dd) ? `${lines[r]!.name}${SEP}${dd}` : null), li, d.day, applyQ)}
                           className={cellCls} />
                       </td>
                     );

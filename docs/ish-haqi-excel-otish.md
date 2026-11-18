@@ -205,6 +205,24 @@ Har bosqichdan keyin: `tsc`, `eslint`, QA (`run-all.sh`), haqiqiy fayl bilan sol
 
 ---
 
+### Qo'shimcha (2026-11-18)
+- **Tabel guruhlari** — faqat Otdel kadr → «Komanda va brigadalar» da yaratilgan komanda va brigadalar (a'zosiz bo'lsa ham),
+  qolganlari «Biriktirilmagan». Oklad (AUP) / bo'linma / shofyor kabi avtomatik guruhlar olib tashlandi. C2026 bo'limlari
+  va Ushlanmalardagi guruh ham shunday (`lib/hr/tabel.ts` → `groupOf`).
+- **Davomat → tabel** (`lib/hr/attendance-hours.ts`): kelish-ketish vaqtidan soat; ketishi yozilmagan o'tgan kun — smena
+  oxirigacha (16 soatdan oshsa — noma'lum); **bugun ishda bo'lganlar — kelgan vaqtdan hozirgacha (yashil, «davom etmoqda»)**.
+  Brigada varag'ida sdelkachi a'zoga qo'lda soat yozilmagan katakka davomat soati tushadi (kul rang), vedomost ham shuni
+  oladi (bugungi davom etayotgan soat — ketgach). «0» — shu kuni brigadada ishlamadi. Excel importi bo'sh kataklarga
+  «0» qo'yadi — import qilingan oy Excel'dagidek. Cheklov: a'zolik tarixi yo'q — oy ichida brigadasi almashgan xodimning
+  davomati joriy brigadasiga tushadi (kerak bo'lsa eski brigadada qo'lda yoziladi).
+- **Kirim-Chiqim → Ushlanmalar**: «Hodimlar bilan hisob-kitob» chiqimi xodimga (nasiyasiz) — oy yakunida «Oylikdan qarz»
+  bo'lib avtomatik ushlanadi (`deductions.ts` → `staffCashFor`, vedomostda «Kassadan berilgan»). Ushlanmalar jadvalida ko'k
+  (avtomatik): kassadan berilgan pul, kassa nasiyasi ulushi, aliment daftari. Yozilgan summa avtomatik o'rniga; «Oylikdan
+  qarz» ga 0 — ushlanmaydi. O'tgan oy vedomosti yopilgandan keyin kiritilgan o'tgan oy chiqimi keyingi oyga o'tadi.
+- **Oylik varaqlari** — Excel yuklanmasa ham «ERP ma'lumotidan» kitob (`lib/hr/erp-workbook.ts`): har komanda tabeli,
+  brigada varaqlari, Ushlanmalar, C2026 (vedomost yoki taxminiy), Avans, Qarzlar, Ijro; faqat ko'rish, .xlsx yuklab olish.
+- Vedomost sahifasi, Excel va chop — faqat vedomost ko'radiganlarga (`canSeeRuns`), Sekretar havola bilan ham ochmaydi.
+
 ## 5. Kelishib olinadigan savollar
 
 1. **Narxlar yalpimi yoki qo'lga?** Excel'da narx va okladlarning ko'pi «qo'lga ÷ 0,88» qilib yozilgan, payvandchilar

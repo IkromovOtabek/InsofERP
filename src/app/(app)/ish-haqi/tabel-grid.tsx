@@ -49,8 +49,8 @@ export function TabelGrid({ data, canEdit }: { data: TabelMonth; canEdit: boolea
   }, [init]);
 
   const autoOf = useMemo(() => {
-    const m = new Map<Key, { auto?: boolean; face?: boolean; orig: string }>();
-    for (const r of data.rows) for (const [d, c] of Object.entries(r.cells)) m.set(k(r.id, Number(d)), { auto: c.auto, face: c.face, orig: c.v });
+    const m = new Map<Key, { auto?: boolean; face?: boolean; live?: boolean; orig: string }>();
+    for (const r of data.rows) for (const [d, c] of Object.entries(r.cells)) m.set(k(r.id, Number(d)), { auto: c.auto, face: c.face, live: c.live, orig: c.v });
     return m;
   }, [data]);
 
@@ -142,7 +142,8 @@ export function TabelGrid({ data, canEdit }: { data: TabelMonth; canEdit: boolea
   const totals = (r: TabelRow) => {
     let hours = 0, days = 0;
     const codes: Record<string, number> = {};
-    for (let d = 1; d <= data.days.length; d++) {
+    // Ishga kirishdan oldingi / bo'shagandan keyingi kun hisobga kirmaydi (vedomost kabi)
+    for (let d = r.from; d <= Math.min(r.to, data.days.length); d++) {
       const v = (vals[k(r.id, d)] ?? "").trim();
       if (!v) continue;
       const p = parseTabelValue(v);
@@ -168,7 +169,7 @@ export function TabelGrid({ data, canEdit }: { data: TabelMonth; canEdit: boolea
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        <span>Katakka soat yozing (8, 4, 7,5) yoki <b className="text-red-600">H</b> — kelmadi, <b className="text-amber-600">K</b> — kasal, <b className="text-sky-600">T</b> — ta&apos;til, <b className="text-slate-500">D</b> — dam olish; bo&apos;sh — tozalash.</span>
+        <span>Katakka soat yozing (8, 4, 7,5) yoki <b className="text-red-600">H</b> — kelmadi, <b className="text-amber-600">K</b> — kasal, <b className="text-sky-600">T</b> — ta&apos;til, <b className="text-slate-500">D</b> — dam olish; bo&apos;sh — tozalash. <i className="text-slate-400">Kul rang</i> — davomatdan, <i className="font-medium text-emerald-600">yashil</i> — bugun ishda, davom etmoqda.</span>
         <span className="ml-auto flex items-center gap-1">
           {busy ? <><Loader2 size={13} className="animate-spin" /> Saqlanmoqda…</> : editable ? <><Check size={13} className="text-emerald-600" /> Saqlangan</> : "Faqat ko'rish"}
         </span>
@@ -217,14 +218,14 @@ export function TabelGrid({ data, canEdit }: { data: TabelMonth; canEdit: boolea
                         <input
                           data-r={ri} data-d={d.day} value={v} disabled={!ok} inputMode="decimal" spellCheck={false} autoComplete="off"
                           aria-label={`${r.fullName}, ${d.day}-kun`}
-                          title={bad[key] ?? (a?.face ? "Face ID / o'zi belgilagan — vaqtdan" : isAuto ? "Kelish-ketish vaqtidan" : undefined)}
+                          title={bad[key] ?? (isAuto && a?.live ? "Bugun ishda — davom etmoqda: kelgan vaqtdan hozirgacha (ketganda o'zi yangilanadi)" : a?.face ? "Face ID / o'zi belgilagan — vaqtdan" : isAuto ? "Kelish-ketish vaqtidan" : undefined)}
                           onChange={(e) => setVal(key, e.target.value)}
                           onFocus={(e) => e.currentTarget.select()}
                           onBlur={() => { if (dirty.current.size) void flush(); }}
                           onKeyDown={(e) => onKey(e, ri, d.day)}
                           onPaste={(e) => onPaste(e, ri, d.day)}
                           className={cn("h-8 w-full min-w-9 bg-transparent px-0.5 text-center outline-none focus:bg-brand-50 focus:ring-2 focus:ring-brand-500 focus:ring-inset disabled:cursor-not-allowed",
-                            isAuto && "text-slate-400 italic", code && cn("font-semibold", CODE_CLS[code]), bad[key] && "bg-red-50 text-red-700 ring-1 ring-red-400 ring-inset")}
+                            isAuto && (a?.live ? "font-medium text-emerald-600 italic" : "text-slate-400 italic"), code && cn("font-semibold", CODE_CLS[code]), bad[key] && "bg-red-50 text-red-700 ring-1 ring-red-400 ring-inset")}
                         />
                       </td>
                     );
@@ -240,7 +241,7 @@ export function TabelGrid({ data, canEdit }: { data: TabelMonth; canEdit: boolea
                 </tr>
               );
             })}
-            {data.rows.length === 0 && <tr><td colSpan={data.days.length + 7} className="px-3 py-8 text-center text-slate-500">Bu guruhda shu oyda ishlagan xodim yo&apos;q</td></tr>}
+            {data.rows.length === 0 && <tr><td colSpan={data.days.length + 7} className="px-3 py-8 text-center text-slate-500">Bu guruhda shu oyda ishlagan xodim yo&apos;q — a&apos;zolarni Otdel kadr → «Komanda va brigadalar» da qo&apos;shing</td></tr>}
           </tbody>
           {data.rows.length > 0 && (
             <tfoot className="sticky bottom-0 z-20">

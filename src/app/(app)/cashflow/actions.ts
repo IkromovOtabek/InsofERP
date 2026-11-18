@@ -60,10 +60,11 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   const res = await createCashEntry({ ...data, ...who, debt, date: new Date(r.data.date), requireSub: true }, s.userId);
   if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
-  if (debt) revalidatePath("/ish-haqi", "layout");
+  if (who.employeeId) revalidatePath("/ish-haqi", "layout");
   if (who.teamId || who.brigadeId) revalidatePath("/otdel-kadr");
   if (r.data.customerId) revalidatePath("/bi-tahlil/mijozlar", "layout");
   if (debt) return { ok: true, note: `Saqlandi. Qarz ${debt.months} oyga bo'lib oylikdan ushlanadi (Ish haqi → Xodim qarzlari)` };
+  if (who.employeeId) return { ok: true, note: "Saqlandi. Ish haqi → Ushlanmalar → «Oylikdan qarz» ga tushdi — oy yakunida oylikdan ushlanadi" };
   return { ok: true, note: r.data.category === ASSET_PURCHASE_CATEGORY ? "Saqlandi. Endi Moliya → Asosiy vositalar sahifasida shu xarid uchun kartochka oching (amortizatsiya shundan hisoblanadi)" : undefined };
 }
 

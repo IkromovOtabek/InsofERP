@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requirePage } from "@/lib/page-guard";
+import { canSeeRuns } from "@/lib/hr/payroll";
 import { getCompany } from "@/lib/company";
 import { fmtNum, dateTime } from "@/lib/format";
 import { monthTitle } from "@/lib/davomat";
@@ -14,7 +15,8 @@ import { BackLink } from "@/components/ui";
  * imzo ustuni, jami so'z bilan, imzolar. `?tur=naqd` — naqd qismi (avansda — hammasi), `?tur=plastik` — plastik qismi.
  */
 export default async function PayrollPrintPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tur?: string; print?: string }> }) {
-  await requirePage("/ish-haqi");
+  const s = await requirePage("/ish-haqi");
+  if (!canSeeRuns(s)) redirect("/ish-haqi?denied=1");
   const { id } = await params;
   const sp = await searchParams;
   const [sh, company] = await Promise.all([runSheet(id), getCompany()]);

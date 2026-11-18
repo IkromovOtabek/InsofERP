@@ -6,6 +6,8 @@ import { employeesInWindow } from "@/lib/attendance-report";
 import { calcBrigadeSheet, type SheetLine } from "./brigade-calc";
 import { tabelLock } from "./tabel-lock";
 import { parseTabelValue } from "./tabel-value";
+import { attendanceHours } from "./attendance-hours";
+import { plansInRange } from "./shifts";
 
 /**
  * Brigada varag'i (Ish haqi → Tabel → brigada): Excel'dagi brigada varag'ining ERP'dagi o'rni.
@@ -21,6 +23,8 @@ export type BrigadeSheetData = {
   days: { day: number; iso: string; weekend: boolean; future: boolean }[];
   members: { id: string; fullName: string; position: string; payType: string; guest: boolean; from: number; to: number }[];
   hours: Record<string, Record<number, number>>;
+  /** Davomatdan (qo'lda soat yozilmagan kunlar, sdelkachi a'zolar) — kul rang, ustiga yozilsa qo'lda bo'ladi */
+  auto: Record<string, Record<number, AutoCell>>;
   lines: SheetLine[];
   qty: Record<string, Record<number, number>>;
   brakManual: number | null; brakAuto: number;
@@ -59,7 +63,7 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
   const brigade = await db.brigade.findUnique({ where: { id: brigadeId }, select: { id: true, name: true } });
   if (!brigade) return null;
   const now = today();
-  const [hoursRows, outRows, bm, prevBm, members, locked, brak] = await Promise.all([
+  const [hoursRows, outRows, bm, prevBm, members, locked, brak, autoAll] = await Promise.all([
     db.brigadeHours.findMany({ where: { brigadeId, date: { gte: from, lte: to } }, select: { employeeId: true, date: true, hours: true } }),
     db.brigadeOutput.findMany({ where: { brigadeId, date: { gte: from, lte: to } }, select: { line: true, date: true, qty: true } }),
     db.brigadeMonth.findUnique({ where: { brigadeId_month: { brigadeId, month } } }),
@@ -67,7 +71,10 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
     db.employee.findMany({ where: { AND: [{ brigadeId }, employeesInWindow(from, to)] }, select: { id: true } }),
     tabelLock(month),
     defectSum([brigadeId], month),
+    autoBrigadeHours(month, days[days.length - 1]!.iso, [brigadeId]),
   ]);
+  const auto: BrigadeSheetData["auto"] = {};
+  for (const [emp, byDay] of autoAll.get(brigadeId) ?? []) auto[emp] = Object.fromEntries(byDay);
   const guestIds = [...new Set(hoursRows.map((h) => h.employeeId))].filter((id) => !members.some((m) => m.id === id));
   const emps = await db.employee.findMany({ where: { id: { in: [...members.map((m) => m.id), ...guestIds] } }, select: { id: true, fullName: true, position: true, payType: true, hiredAt: true, firedAt: true } });
   const first = days[0]!.iso, last = days[days.length - 1]!.iso;
@@ -92,10 +99,64 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
         return { id: e.id, fullName: e.fullName, position: e.position, payType: e.payType, guest: !memberSet.has(e.id), from: hi > first ? Number(hi.slice(8, 10)) : 1, to: fi < last ? Number(fi.slice(8, 10)) : days.length };
       })
       .sort((a, b) => Number(a.guest) - Number(b.guest) || a.fullName.localeCompare(b.fullName)),
-    hours, lines, qty,
+    hours, auto, lines, qty,
     brakManual: bm?.brak != null ? Number(bm.brak) : null, brakAuto: brak.get(brigadeId) ?? 0,
     inherited, locked, addable,
   };
+}
+
+// ───────────────────────── Davomatdan soat ─────────────────────────
+
+export type AutoCell = { h: number; live?: boolean };
+/** brigada id → xodim id → kun (1..31) → soat */
+export type AutoHours = Map<string, Map<string, Map<number, AutoCell>>>;
+
+/**
+ * Davomatdan brigada soati («tabelda ham ish vaqti yozilib borsin»): sdelkachi a'zoning (Employee.brigadeId, PIECE)
+ * kelgan kuni, agar shu kunga unga HECH QAYSI brigada varag'ida qatori yo'q bo'lsa — davomatdagi soati
+ * (`attendanceHours`; vaqtsiz «keldi» — kunlik soat). Qo'lda yozilgan soat (yoki «0» — brigadada ishlamadi) — o'sha.
+ * Excel importi varaqdagi bo'sh kataklarga «0» qo'yadi — import qilingan oy Excel'dagidek qoladi.
+ * Cheklov: brigada a'zoligi tarixi yo'q — oy ichida brigadasi almashgan xodimning davomati joriy brigadasiga tushadi.
+ * `toIso` — shu kungacha (avans davri).
+ */
+export async function autoBrigadeHours(month: string, toIso: string, brigadeIds?: string[]): Promise<AutoHours> {
+  const out: AutoHours = new Map();
+  if (brigadeIds && !brigadeIds.length) return out;
+  const { days, from } = monthRangeUtc(month);
+  const nowIso = today();
+  const lastIso = [toIso, nowIso, days[days.length - 1]!.iso].sort()[0]!;
+  if (lastIso < days[0]!.iso) return out;
+  const to = dayUtc(lastIso);
+  const members = await db.employee.findMany({
+    where: { AND: [{ brigadeId: brigadeIds ? { in: brigadeIds } : { not: null } }, { payType: "PIECE" }, employeesInWindow(from, to)] },
+    select: { id: true, brigadeId: true, hiredAt: true, firedAt: true, workSchedule: true },
+  });
+  if (!members.length) return out;
+  const ids = members.map((m) => m.id);
+  const [manual, att, plans, st] = await Promise.all([
+    db.brigadeHours.findMany({ where: { date: { gte: from, lte: to }, employeeId: { in: ids } }, select: { employeeId: true, date: true } }),
+    db.attendance.findMany({ where: { employeeId: { in: ids }, status: "PRESENT", date: { gte: from, lte: to } }, select: { employeeId: true, date: true, hours: true, checkIn: true, checkOut: true } }),
+    plansInRange(members, days[0]!.iso, lastIso),
+    db.payrollSettings.findUnique({ where: { id: "main" }, select: { hoursPerDay: true } }),
+  ]);
+  const perDay = Number(st?.hoursPerDay ?? 8) || 8;
+  const written = new Set(manual.map((r) => `${r.employeeId}|${isoDay(r.date)}`));
+  const memberOf = new Map(members.map((m) => [m.id, m]));
+  for (const a of att) {
+    const e = memberOf.get(a.employeeId)!;
+    const iso = isoDay(a.date);
+    if ((e.hiredAt && iso < isoDay(e.hiredAt)) || (e.firedAt && iso > isoDay(e.firedAt))) continue;
+    if (written.has(`${e.id}|${iso}`)) continue;
+    const ah = attendanceHours(a, plans.get(e.id)?.get(iso)?.end, nowIso);
+    const h = ah.h ?? perDay;
+    if (!(h > 0)) continue;
+    const byEmp = out.get(e.brigadeId!) ?? new Map<string, Map<number, AutoCell>>();
+    const byDay = byEmp.get(e.id) ?? new Map<number, AutoCell>();
+    byDay.set(Number(iso.slice(8, 10)), { h: Math.min(h, 24), ...(ah.live ? { live: true } : {}) });
+    byEmp.set(e.id, byDay);
+    out.set(e.brigadeId!, byEmp);
+  }
+  return out;
 }
 
 // ───────────────────────── Saqlash ─────────────────────────
@@ -111,7 +172,10 @@ async function guard(month: string, brigadeId: string, tx: Prisma.TransactionCli
   return null;
 }
 
-/** Brigada a'zolari soati: «8», «2», bo'sh — tozalash. Kelajak kuni va ishda bo'lmagan kun yozilmaydi. */
+/**
+ * Brigada a'zolari soati: «8», «2», «0» — shu kuni brigadada ishlamadi (davomatdan soat ham olinmaydi), bo'sh — tozalash
+ * (sdelkachi a'zoga davomatdagi soat qaytadi). Kelajak kuni va ishda bo'lmagan kun yozilmaydi.
+ */
 export async function saveBrigadeHours(who: Who, month: string, brigadeId: string, items: { employeeId: string; day: number; value: string }[]) {
   if (!MONTH_RE.test(month)) return { error: "Oy noto'g'ri" };
   const { days } = monthRangeUtc(month);
@@ -119,7 +183,9 @@ export async function saveBrigadeHours(who: Who, month: string, brigadeId: strin
   const parsed: { employeeId: string; iso: string; hours: number | null }[] = [];
   for (const it of items) {
     if (!Number.isInteger(it.day) || it.day < 1 || it.day > days.length) return { error: `Kun noto'g'ri: ${it.day}` };
-    const p = parseTabelValue(String(it.value ?? ""));
+    const raw = String(it.value ?? "").trim().replace(",", ".");
+    if (/^0(\.0+)?$/.test(raw)) { parsed.push({ employeeId: it.employeeId, iso: days[it.day - 1]!.iso, hours: 0 }); continue; }
+    const p = parseTabelValue(raw);
     if ("error" in p) return { error: p.error };
     if (p.kind === "status") return { error: "Brigada varag'ida faqat soat yoziladi (H/K/T/D — oddiy tabelda)" };
     parsed.push({ employeeId: it.employeeId, iso: days[it.day - 1]!.iso, hours: p.kind === "clear" ? null : p.hours ?? 8 });
@@ -238,6 +304,8 @@ export async function brigadeSheetPay(month: string, toIso: string, opts: { fina
   }
   const nDays = days.length;
   const dayIdx = (d: Date) => Number(isoDay(d).slice(8, 10)) - 1;
+  // Qo'lda soat yozilmagan kunlar — davomatdan (varaqdagi kul rang soat bilan bir xil)
+  const auto = await autoBrigadeHours(month, toIso, [...brigades]);
   for (const bid of brigades) {
     const bm = months.find((m) => m.brigadeId === bid);
     const lines = bm ? linesOf(bm.lines) : prevLines.get(bid) ?? [];
@@ -249,6 +317,8 @@ export async function brigadeSheetPay(month: string, toIso: string, opts: { fina
     }
     const hours: Record<string, (number | null)[]> = {};
     for (const h of hoursRows) if (h.brigadeId === bid) (hours[h.employeeId] ??= Array<number | null>(nDays).fill(null))[dayIdx(h.date)] = Number(h.hours);
+    // Bugun hali ishda («davom etmoqda») — ketgach kiradi: hisob vaqtiga bog'liq bo'lmasin
+    for (const [emp, byDay] of auto.get(bid) ?? []) for (const [day, c] of byDay) if (!c.live) (hours[emp] ??= Array<number | null>(nDays).fill(null))[day - 1] ??= c.h;
     const brak = opts.final ? (bm?.brak != null ? Number(bm.brak) : defects.get(bid) ?? 0) : 0;
     const c = calcBrigadeSheet({ days: nDays, hours, lines: lines.map((l) => ({ ...l, qty: qtyByLine.get(l.name) ?? [] })), brak, round: opts.final });
     for (const [emp, r] of Object.entries(c.emp)) {

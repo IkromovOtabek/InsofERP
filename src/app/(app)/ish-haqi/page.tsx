@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { date, dateTime, money } from "@/lib/format";
 import { dayUtc, monthDays, monthOf, monthTitle, shiftMonth, today } from "@/lib/davomat";
-import { canPayroll, listRuns, payrollSettings } from "@/lib/hr/payroll";
+import { canPayroll, canSeeRuns, listRuns, payrollSettings } from "@/lib/hr/payroll";
 import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL } from "@/lib/hr/labels";
 import { Badge, Callout, Card, CardHeader, Empty, EmptyState, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { Fold } from "@/components/fold";
@@ -17,7 +17,7 @@ import { cancelEmployeeDebt } from "./actions";
 import { cancelWorkbookAction } from "./varaq-actions";
 import { SheetGrid } from "./sheet-grid";
 import { WorkbookPicker, WorkbookUploadForm } from "./varaq-forms";
-import { tabelMonth } from "@/lib/hr/tabel";
+import { NO_GROUP, tabelMonth } from "@/lib/hr/tabel";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { TabelGrid } from "./tabel-grid";
 import { BrigadeSheetGrid } from "./brigade-sheet-grid";
@@ -29,6 +29,7 @@ import { DeductImport } from "./deduct-import";
 import { OpeningDebtForm, WithholdingForm } from "./ushlanma-forms";
 import { cancelWithholdingAction } from "./ushlanma-actions";
 import { TabelImport } from "./tabel-import";
+import { erpWorkbook } from "@/lib/hr/erp-workbook";
 
 /**
  * Ish haqi: otdel kadr / buxgalteriya hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`).
@@ -45,7 +46,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const canTabel = canPayroll(s, "tabel");
   const canDeduct = canPayroll(s, "deductions");
   // Sekretar: vedomost va sozlamalar ko'rinmaydi — faqat Tabel, «Oylik varaqlari» (Excel kitobi) va «Xodim qarzlari»
-  const limited = (canDebts || canSheets || canTabel || canDeduct) && !canCalc && !canSettings && !["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"].includes(s.role);
+  const limited = !canSeeRuns(s);
   const keys = limited
     ? [...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : [])]
     : ["vedomostlar", ...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : []), "sozlamalar"];
@@ -68,7 +69,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
         {tabItems.length > 1 && <Tabs current={tab} items={tabItems} />}
         {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} />
           : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} />
-          : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />
+          : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />
           : <><DebtTable debts={debts} canCancel={canDebts} />{canDeduct && <LedgersPanel />}</>}
       </div>
     );
@@ -88,7 +89,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       <div className="space-y-4" data-wide="">
         <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : SHEETS_INFO} />
         <Tabs current={tab} items={tabItems} />
-        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} canEdit={canSheets} />}
+        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />}
       </div>
     );
   }
@@ -166,7 +167,7 @@ type Debt = Awaited<ReturnType<typeof listDebts>>[number];
 
 const SHEETS_INFO = (
   <>
-    <p><b>Oylik varaqlari</b> — korxonaning oylik Excel kitobi (tabellar, vedomostlar, qarzlar) ERP ichida, barcha varaqlari bilan. Har oy uchun fayl bir marta yuklanadi.</p>
+    <p><b>Oylik varaqlari</b> — oylik Excel kitobi ko&apos;rinishi. Excel yuklanmasa ham «ERP ma&apos;lumotidan» kitob o&apos;zi tuziladi: har komanda tabeli, brigada varaqlari, Ushlanmalar, C2026, Avans, Qarzlar, Ijro (faqat ko&apos;rish, .xlsx yuklab olish mumkin). O&apos;tish davrida korxonaning o&apos;z Excel fayli ham yuklanadi — u barcha varaqlari bilan tahrirlanadi.</p>
     <p>Katakni tanlab yozing (yoki F2 / ikki marta bosing): Enter — pastga, Tab — o&apos;ngga, Esc — bekor, Delete — tozalash, Ctrl+Z — orqaga. Formula «=» bilan boshlanadi (SUM, SUMPRODUCT, IFERROR, ROUND, IF…); formula yozilayotganda katak bosilsa — manzili qo&apos;shiladi. Excel&apos;dan blokni nusxa olib Ctrl+V bilan joylash mumkin.</p>
     <p>O&apos;zgarish darhol saqlanadi va formulalar shu zahoti qayta hisoblanadi. «Excel yuklab olish» — joriy holat (tahrirlar bilan) .xlsx bo&apos;lib.</p>
   </>
@@ -255,8 +256,8 @@ async function LedgersPanel() {
 
 const TABEL_INFO = (
   <>
-    <p><b>Tabel</b> — Excel tabeli kabi: guruhni tanlang (oklad, brigada, komanda…), katakka kunlik soatni yozing (8, 4, 7,5) yoki H — kelmadi, K — kasal, T — ta&apos;til, D — dam olish. O&apos;zgarish o&apos;zi saqlanadi; ↑↓←→ va Enter bilan yuriladi, Excel&apos;dan blokni nusxa olib Ctrl+V bilan joylash mumkin.</p>
-    <p>Oklad: <b>oklad × kun ÷ norma</b>, kunbay: <b>stavka × kun</b>, soatbay: <b>stavka × soat</b>; kun = soat ÷ 8. Kul rang raqam — Face ID yoki kelish-ketish vaqtidan (1 kun), ustiga yozilsa qo&apos;lda soat bo&apos;ladi. Sdelka (brigada) hisobi — keyingi bosqichda.</p>
+    <p><b>Tabel</b> — Excel tabeli kabi: guruh — Otdel kadr → «Komanda va brigadalar» da yaratilgan komanda yoki brigada (hech qayerga biriktirilmaganlar — «Biriktirilmagan»). Katakka kunlik soatni yozing (8, 4, 7,5) yoki H — kelmadi, K — kasal, T — ta&apos;til, D — dam olish. O&apos;zgarish o&apos;zi saqlanadi; ↑↓←→ va Enter bilan yuriladi, Excel&apos;dan blokni nusxa olib Ctrl+V bilan joylash mumkin.</p>
+    <p>Oklad: <b>oklad × kun ÷ norma</b>, kunbay: <b>stavka × kun</b>, soatbay: <b>stavka × soat</b>; kun = soat ÷ 8. Kul rang raqam — davomatdan (Face ID yoki kelish-ketish vaqti, 1 kun), yashil — bugun ishda, davom etmoqda (kelgan vaqtdan hozirgacha). Ustiga yozilsa qo&apos;lda soat bo&apos;ladi. Brigada guruhida — brigada varag&apos;i (sdelka): qo&apos;lda soat yozilmagan kunga a&apos;zolarning davomat soati o&apos;zi tushadi.</p>
     <p>«Excel&apos;dan import» — oylik Excel faylidagi barcha tabel varaqlari (Ауп, brigadalar, Поврименшики, Сваршики, БРУ) bir marta yuklanadi; ismlar xodimlarga moslanadi. Oy yakuni vedomosti direktorga yuborilgach tabel yopiladi.</p>
   </>
 );
@@ -282,6 +283,11 @@ async function TabelTab({ oy, guruh, canEdit }: { oy?: string; guruh?: string; c
       </div>
       <Tabs current={data.group} scroll={false} className="mb-0" items={data.groups.map((g) => ({ key: g.key, label: g.label, count: g.count, href: href(month, g.key) }))} />
       {data.locked && <Callout tone="warning" title="Tabel yopiq">{data.locked}</Callout>}
+      {data.group === NO_GROUP.key && data.rows.length > 0 && (
+        <Callout tone="info" title="Komanda yoki brigadaga biriktirilmagan xodimlar">
+          Ular uchun ham tabel shu yerda yuritiladi. Guruhga o&apos;tkazish — <Link href="/otdel-kadr?tab=komandalar" className="font-medium text-brand-700 hover:underline">Otdel kadr → Komanda va brigadalar</Link>.
+        </Callout>
+      )}
       {sheet ? <BrigadeSheetGrid key={`${month}|${data.group}`} data={sheet} canEdit={canEdit} /> : <TabelGrid key={`${month}|${data.group}`} data={data} canEdit={canEdit} />}
       {employees.length > 0 && (
         <Fold title="Excel'dan import (oylik fayldagi tabel varaqlari)">
@@ -292,19 +298,47 @@ async function TabelTab({ oy, guruh, canEdit }: { oy?: string; guruh?: string; c
   );
 }
 
-/** «Oylik varaqlari»: kitob tanlash, yuklash, Excel kabi jadval. */
-async function SheetsTab({ kitob, varaq, canEdit }: { kitob?: string; varaq?: string; canEdit: boolean }) {
+/**
+ * «Oylik varaqlari»: kitob tanlash — «ERP ma'lumotidan» (Excel yuklanmasa ham, oy bo'yicha avtomatik: tabel, brigada
+ * varaqlari, ushlanmalar, C2026, avans, qarzlar — faqat ko'rish) yoki yuklangan Excel kitobi (tahrirlanadi).
+ */
+async function SheetsTab({ kitob, varaq, oy, canEdit }: { kitob?: string; varaq?: string; oy?: string; canEdit: boolean }) {
   const list = await listWorkbooks();
-  const cur = list.find((w) => w.id === kitob) ?? list.find((w) => !w.cancelledAt) ?? list[0];
-  const wb = cur ? await loadWorkbook(cur.id) : null;
   const thisMonth = monthOf(today());
   const months = Array.from({ length: 15 }, (_, i) => shiftMonth(thisMonth, 1 - i)).map((m) => ({ key: m, label: monthTitle(m) }));
   const upload = canEdit && <WorkbookUploadForm months={months} defMonth={shiftMonth(thisMonth, -1)} />;
+  // Kitob tanlanmagan: yuklangan kitob bo'lsa — eng so'nggisi, bo'lmasa — ERP ma'lumotidan joriy oy
+  const uploaded = kitob && kitob !== "erp" ? list.find((w) => w.id === kitob) : !kitob ? list.find((w) => !w.cancelledAt) : undefined;
+  const erpMonth = oy && /^\d{4}-(0[1-9]|1[0-2])$/.test(oy) && oy <= thisMonth ? oy : thisMonth;
+  const erpHref = (m: string) => `/ish-haqi?tab=varaqlar&kitob=erp&oy=${m}`;
+  const pickItems = [
+    { id: "erp", label: "ERP ma'lumotidan (avtomatik)", href: erpHref(erpMonth) },
+    ...list.map((w) => ({ id: w.id, label: `${monthTitle(w.month)} — ${w.title}${w.cancelledAt ? " (bekor)" : ""}`, href: `/ish-haqi?tab=varaqlar&kitob=${w.id}` })),
+  ];
+  if (!uploaded) {
+    const sheets = await erpWorkbook(erpMonth);
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <WorkbookPicker current="erp" items={pickItems} />
+          <LinkButton href={erpHref(shiftMonth(erpMonth, -1))} variant="secondary" size="sm"><ChevronLeft size={14} /> {monthTitle(shiftMonth(erpMonth, -1))}</LinkButton>
+          <span className="px-1 text-base font-semibold text-slate-900">{monthTitle(erpMonth)}</span>
+          {erpMonth < thisMonth && <LinkButton href={erpHref(shiftMonth(erpMonth, 1))} variant="secondary" size="sm">{monthTitle(shiftMonth(erpMonth, 1))} <ChevronRight size={14} /></LinkButton>}
+          <span className="ml-auto"><LinkButton href={`/ish-haqi/varaq-excel?erp=${erpMonth}`} variant="secondary" size="sm"><FileSpreadsheet size={14} /> Excel yuklab olish</LinkButton></span>
+        </div>
+        <Callout tone="info" title="Excel yuklanmagan — kitob ERP ma'lumotidan">
+          Varaqlar Tabel, brigada varaqlari, Ushlanmalar, Vedomostlar va qarzlar daftaridan o&apos;zi tuziladi (faqat ko&apos;rish). O&apos;zgartirish — shu bo&apos;limlarning o&apos;zida; bu yerda darhol ko&apos;rinadi.
+        </Callout>
+        <SheetGrid key={`erp:${erpMonth}`} canEdit={false} initial={varaq} sheets={sheets} />
+        {upload && <Fold title="Oylik Excel faylini yuklash (o'tish davrida solishtirish uchun)">{upload}</Fold>}
+      </div>
+    );
+  }
+  const wb = await loadWorkbook(uploaded.id);
   if (!wb) {
     return (
       <Card>
-        <EmptyState icon={FileSpreadsheet} title="Hali Excel kitobi yuklanmagan" text={canEdit ? "Oylik Excel faylini yuklang — barcha varaqlari shu yerda Excel'dagidek ochiladi va tahrirlanadi" : "Sekretar oylik Excel faylini yuklagach shu yerda ko'rinadi"} />
-        {upload && <div className="border-t border-slate-100 pt-4">{upload}</div>}
+        <EmptyState icon={FileSpreadsheet} title="Kitob topilmadi" text="Ro'yxatdan boshqa kitobni yoki «ERP ma'lumotidan» ni tanlang" />
       </Card>
     );
   }
@@ -312,9 +346,10 @@ async function SheetsTab({ kitob, varaq, canEdit }: { kitob?: string; varaq?: st
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <WorkbookPicker current={wb.id} items={list.map((w) => ({ id: w.id, label: `${monthTitle(w.month)} — ${w.title}${w.cancelledAt ? " (bekor)" : ""}` }))} />
+        <WorkbookPicker current={wb.id} items={pickItems} />
         <span className="text-xs text-slate-500">{wb.sheets.length} varaq · yuklangan {dateTime(wb.createdAt)}{+wb.updatedAt - +wb.createdAt > 60_000 ? ` · oxirgi tahrir ${dateTime(wb.updatedAt)}` : ""}</span>
         <span className="ml-auto flex flex-wrap items-center gap-2">
+          <LinkButton href={erpHref(wb.month <= thisMonth ? wb.month : thisMonth)} variant="ghost" size="sm">ERP ma&apos;lumotidan — {monthTitle(wb.month)}</LinkButton>
           <LinkButton href={`/ish-haqi/varaq-excel?id=${wb.id}`} variant="secondary" size="sm"><FileSpreadsheet size={14} /> Excel yuklab olish</LinkButton>
           {editable && <ConfirmButton action={cancelWorkbookAction.bind(null, wb.id)} label="Bekor qilish" reason="required" question="Kitob bekor qilinadi (o'chirilmaydi, ro'yxatda «bekor» bo'lib qoladi, tahrir yopiladi). Sababi?" className="text-xs" />}
         </span>
