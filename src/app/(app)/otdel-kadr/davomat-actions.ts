@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { dayUtc, isAttendanceStatus, shiftProblem, toMinutes, validDay, workedMinutes } from "@/lib/davomat";
+import { tabelLock } from "@/lib/hr/tabel-lock";
 import { lateToStore, shiftOf } from "@/lib/attendance-time";
 import { plansFor } from "@/lib/hr/shifts";
 import { notifyLateAfter, type LateEvent } from "@/lib/attendance-late";
@@ -70,6 +71,9 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
   const r = readRows(fd);
   if ("error" in r) return { error: r.error };
   if (!r.rows.length) return { ok: true, note: "O'zgarish yo'q — hech narsa saqlanmadi" };
+  // Oy yakuni vedomosti yuborilgan / tasdiqlangan oy — tabel yopiq: davomat o'zgarsa vedomost bilan farq chiqadi (Ish haqi → Tabel bilan bir qoida)
+  const locked = await tabelLock(day.slice(0, 7));
+  if (locked) return { error: locked };
 
   const date = dayUtc(day);
   // Xodim mavjud bo'lsin (eskirgan id FK xatosi — 500 berardi) va o'sha kuni hali ishdan bo'shamagan bo'lsin

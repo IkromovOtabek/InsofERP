@@ -1,5 +1,6 @@
 import { Prisma as P, type AttendanceStatus, type HrRequestKind, type HrRequestStatus, type Prisma, type Role } from "@/generated/prisma";
 import { db } from "@/lib/db";
+import { tabelLock } from "./tabel-lock";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { money } from "@/lib/format";
@@ -142,7 +143,7 @@ export async function decideHrRequest(id: string, approve: boolean, note: string
     await notifyEmployees([before.employeeId], { type: approve ? "HR_REQUEST_APPROVED" : "HR_REQUEST_REJECTED", title, body: approve ? (res.runId ? "Avans direktor tasdig'idan keyin kassadan beriladi" : "Arizangiz tasdiqlandi") : `Sabab: ${note}`, link: { key: "arizalarim", id } });
     if (res.runId) await notifyRoles(["DIRECTOR"], { type: "PAYROLL_SUBMITTED", title: "Avans tasdig'ingizni kutmoqda", body: `${before.employee.fullName} · ${money(Number(before.amount))}`, link: { key: "ish-haqi", id: res.runId } });
   });
-  const keptNote = res.kept.length ? ` · ${res.kept.length} kun «Keldi» bo'lgani uchun o'zgartirilmadi (${res.kept.join(", ")})` : "";
+  const keptNote = res.kept.length ? ` · ${res.kept.length} kun o'zgartirilmadi — «Keldi» yoki tabel yopiq (${res.kept.join(", ")})` : "";
   return {
     id, docNo: before.docNo,
     note: approve
@@ -153,16 +154,21 @@ export async function decideHrRequest(id: string, approve: boolean, note: string
 
 /**
  * Tasdiqlangan ta'til / kasallik / dam olish kunlarini davomatga yozadi. "Keldi" belgisi bor kun (xodim baribir ishga
- * chiqqan) va ishga kirgan sanadan oldingi kun o'zgarmaydi. Kelajak kunlari ham oldindan yoziladi — tabelda ko'rinadi.
+ * chiqqan), ishga kirgan sanadan oldingi kun va tabeli yopiq oy (oy yakuni vedomosti yuborilgan) kunlari o'zgarmaydi.
+ * Kelajak kunlari ham oldindan yoziladi — tabelda ko'rinadi.
  */
 async function applyToAttendance(tx: Prisma.TransactionClient, employeeId: string, from: string, to: string, status: AttendanceStatus, note: string, userId: string, hiredAt: Date | null) {
   await lockEmployeeAttendance(tx, employeeId);
   const cur = await tx.attendance.findMany({ where: { employeeId, date: { gte: dayUtc(from), lte: dayUtc(to) } }, select: { date: true, status: true } });
   const by = new Map(cur.map((a) => [isoDay(a.date), a.status]));
+  const closed = new Map<string, boolean>();
   let applied = 0;
   const kept: string[] = [];
   for (let d = from; d <= to; d = shiftDay(d, 1)) {
     if (hiredAt && d < isoDay(hiredAt)) continue;
+    const m = d.slice(0, 7);
+    if (!closed.has(m)) closed.set(m, !!(await tabelLock(m, tx)));
+    if (closed.get(m)) { kept.push(`${fmt(d)} (tabel yopiq)`); continue; }
     if (by.get(d) === "PRESENT") { kept.push(fmt(d)); continue; }
     await tx.attendance.upsert({
       where: { employeeId_date: { employeeId, date: dayUtc(d) } },

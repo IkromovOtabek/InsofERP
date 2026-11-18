@@ -516,6 +516,15 @@ export async function submitRun(id: string, user: PayrollWho) {
     const prev = await db.payrollRun.findFirst({ where: { kind: "FINAL", month: shiftMonth(cur.month, -1), status: { not: "CANCELLED" }, calculatedAt: { gt: cur.calculatedAt } }, select: { docNo: true } });
     if (prev) return { error: `${prev.docNo} (o'tgan oy) shu vedomostdan keyin qayta hisoblangan — avval «Qayta hisoblash» ni bosing` };
   }
+  // Oy yakuni avans / alohida to'lovlarni faqat to'langanini ushlaydi (`calculate`): to'lanmagani yakun yopilgach to'lansa
+  // yoki hisobdan keyin to'langan bo'lsa — hech qaysi vedomostda ushlanmay qoladi (ikki marta to'lov)
+  if (cur?.kind === "FINAL") {
+    const other = { month: cur.month, kind: { in: ["ADVANCE", "EXTRA"] as PayrollKind[] } };
+    const pending = await db.payrollLine.findFirst({ where: { paidAt: null, net: { gt: 0 }, run: { ...other, status: { in: ["SUBMITTED", "APPROVED"] } } }, select: { run: { select: { docNo: true } } } });
+    if (pending) return { error: `${pending.run.docNo} (avans / alohida to'lov) hali to'lanmagan — avval to'lang yoki bekor qiling, keyin yakuniy vedomostni qayta hisoblang` };
+    const late = cur.calculatedAt ? await db.payrollLine.findFirst({ where: { paidAt: { gt: cur.calculatedAt }, run: other }, select: { run: { select: { docNo: true } } } }) : null;
+    if (late) return { error: `${late.run.docNo} shu vedomost hisoblangandan keyin to'langan — avval «Qayta hisoblash» ni bosing (avans ushlansin)` };
+  }
   return wrap(async () => {
     const r = await transition(id, ["DRAFT"], { status: "SUBMITTED", submittedAt: new Date(), rejectNote: null }, user.userId, "submit");
     notifyAfter(() => notifyRoles(["DIRECTOR"], { type: "PAYROLL_SUBMITTED", title: `${PAYROLL_KIND_LABEL[r.kind]} — tasdiqlang`, body: `${r.docNo} · ${monthTitle(r.month)} · qo'lga ${money(num(r.net))}`, link: { key: "ish-haqi", id } }));
@@ -564,6 +573,11 @@ export async function payRun(id: string, input: { cashAccountId: string; bankAcc
   const run = await db.payrollRun.findUnique({ where: { id }, select: { id: true, docNo: true, status: true, month: true, kind: true } });
   if (!run) return { error: "Vedomost topilmadi" };
   if (run.status !== "APPROVED") return { error: run.status === "PAID" ? "Vedomost to'liq to'langan" : "Vedomost hali direktor tomonidan tasdiqlanmagan" };
+  // Avans / alohida to'lov: oy yakuni yopilgan bo'lsa (yuborilgan / tasdiqlangan) — u bu pulni ushlamaydi, ikki marta to'lanadi
+  if (run.kind !== "FINAL") {
+    const fin = await db.payrollRun.findFirst({ where: { month: run.month, kind: "FINAL", status: { in: ["SUBMITTED", "APPROVED", "PAID"] } }, select: { docNo: true } });
+    if (fin) return { error: `${fin.docNo} (oy yakuni) yopilgan — bu to'lov yakunda ushlanmay qoladi. Avval oy yakuni vedomostini qoralamaga qaytaring yoki bu vedomostni bekor qiling` };
+  }
   const acc = input.cashAccountId ? await db.cashAccount.findUnique({ where: { id: input.cashAccountId } }) : null;
   if (!acc || !acc.isActive) return { error: "Kassa / hisob tanlanmagan" };
   // Plastik qismi (qatordagi `cardAmount`) — alohida hisobdan (bank); tanlanmasa plastik qismi bo'lgan qator to'lanmaydi

@@ -159,6 +159,43 @@ r = await kadr.action(`${PA}#calculateAction`, [undefined, fd({ month: today.sli
 const aRun = idFrom(r.redirect);
 check(!!aRun && Number(q1(`select "advanceDeducted" from "PayrollLine" where "runId"=${lit(aRun!)} and "employeeId"=${lit(E)}`)) === 300_000, "joriy oy avansida berilgan 300 000 hisobga olindi", r.error ?? r.redirect);
 
+// ── 7) Yopiq oy davomati, avans va oy yakuni (ikki marta to'lov bo'lmasin) ──
+console.log("\n7. Tabel yopiq oy, avans ↔ oy yakuni");
+// O'tgan oy yakuni (RUN) tasdiqlangan — o'sha oy davomati kadr sahifasida ham o'zgarmaydi (Ish haqi → Tabel bilan bir qoida)
+const sunday = days.find((d) => !work.includes(d))!;
+r = await kadr.action("(app)/otdel-kadr/davomat-actions#saveAttendance", [sunday, undefined, fd({ "emp[]": E, [`st:${E}`]: "ABSENT", [`ver:${E}`]: "" })], "/otdel-kadr?tab=davomat");
+check(/tabel yopiq/.test(r.error ?? "") && n1(`select count(*) from "Attendance" where "employeeId"=${lit(E)} and date='${sunday}'`) === 0, "yopiq oyga kadr davomat belgilay olmaydi", r.error);
+// Joriy oy: to'lanmagan alohida to'lov bor — oy yakuni yuborilmaydi; hisobdan keyin to'langan bo'lsa — qayta hisob shart
+const CM = today.slice(0, 7);
+const XR = `qa_x_${tag}`, XR2 = `qa_x2_${tag}`;
+const mkRun = (id: string, status: string) => {
+  q(`insert into "PayrollRun" (id, "docNo", month, kind, status, gross, net, "createdById", "submittedAt", "createdAt", "updatedAt") values (${lit(id)}, ${lit(`QA-${id}`)}, '${CM}', 'EXTRA', '${status}', 1000, 1000, ${lit(dirId)}, now(), now(), now())`);
+  q(`insert into "PayrollLine" (id, "runId", "employeeId", "payType", base, gross, net) values (${lit(`${id}_l`)}, ${lit(id)}, ${lit(E)}, 'SALARY', 1000, 1000, 1000)`);
+};
+mkRun(XR, "SUBMITTED");
+r = await kadr.action(`${PA}#calculateAction`, [undefined, fd({ month: CM, kind: "FINAL" })], "/ish-haqi");
+const FR = idFrom(r.redirect);
+check(!!FR, "joriy oy yakuni hisoblandi (qoralama)", r.error ?? r.redirect);
+r = await kadr.action(`${PA}#submitAction`, [FR], `/ish-haqi/${FR}`);
+check(/hali to'lanmagan/.test(r.error ?? "") && q1(`select status from "PayrollRun" where id=${lit(FR!)}`) === "DRAFT", "to'lanmagan alohida to'lov bor — oy yakuni yuborilmadi", r.error);
+await dir.action(`${PA}#approveAction`, [XR], `/ish-haqi/${XR}`);
+r = await kassa.action(`${PA}#payAction`, [XR, undefined, fd({ cashAccountId: acc })], `/ish-haqi/${XR}`);
+check(r.ok && q1(`select status from "PayrollRun" where id=${lit(XR)}`) === "PAID", "oy yakuni qoralamada — alohida to'lov to'landi", r.error);
+r = await kadr.action(`${PA}#submitAction`, [FR], `/ish-haqi/${FR}`);
+check(/keyin to'langan/.test(r.error ?? ""), "hisobdan keyin to'langan to'lov — avval qayta hisoblash", r.error);
+r = await kadr.action(`${PA}#recalcAction`, [FR], `/ish-haqi/${FR}`);
+const advPaid = n1(`select coalesce(sum(l.paid),0) from "PayrollLine" l join "PayrollRun" x on x.id=l."runId" where l."employeeId"=${lit(E)} and x.month='${CM}' and x.kind in ('ADVANCE','EXTRA') and x.status in ('APPROVED','PAID')`);
+check(r.ok && advPaid >= 1000 && Number(q1(`select "advanceDeducted" from "PayrollLine" where "runId"=${lit(FR!)} and "employeeId"=${lit(E)}`)) === advPaid, `qayta hisobda to'langan ${advPaid} yakunda ushlandi`, r.error);
+r = await kadr.action(`${PA}#submitAction`, [FR], `/ish-haqi/${FR}`);
+check(r.ok && q1(`select status from "PayrollRun" where id=${lit(FR!)}`) === "SUBMITTED", "endi oy yakuni yuborildi", r.error);
+mkRun(XR2, "APPROVED");
+r = await kassa.action(`${PA}#payAction`, [XR2, undefined, fd({ cashAccountId: acc })], `/ish-haqi/${XR2}`);
+check(/yopilgan/.test(r.error ?? "") && n1(`select count(*) from "CashTransaction" where "refType"='Payroll' and "refId"=${lit(XR2)}`) === 0, "oy yakuni yopilgach alohida to'lov to'lanmaydi (kassaga chiqim yozilmadi)", r.error);
+// Joriy oyni ochiq qoldiramiz — keyingi testlar tabel/davomat yozadi
+await dir.action(`${PA}#cancelAction`, [FR, undefined, fd({ reason: "QA tozalash" })], `/ish-haqi/${FR}`);
+await dir.action(`${PA}#cancelAction`, [XR2, undefined, fd({ reason: "QA tozalash" })], `/ish-haqi/${XR2}`);
+check(q1(`select status from "PayrollRun" where id=${lit(FR!)}`) === "CANCELLED", "joriy oy yakuni bekor qilindi (oy ochiq)");
+
 // ── 6) Sahifalar ──
 for (const p of ["/ish-haqi", `/ish-haqi/${RUN}`, "/ish-haqi?tab=sozlamalar", "/otdel-kadr?tab=grafik", "/otdel-kadr?tab=arizalar", "/otdel-kadr?tab=jarima-bonus", "/hisobim"]) {
   const x = await kadr.get(p); check(x.status === 200, `kadr ${p} → ${x.status}`);
