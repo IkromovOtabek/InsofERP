@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { userLimitError } from "@/lib/tenant";
+import { isModuleOff } from "@/lib/platform-modules";
 import { AccessDenied } from "@/lib/access-denied";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -208,6 +209,7 @@ export async function createUser(_prev: ActionState, fd: FormData): Promise<Acti
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(userSchema, fd);
   if ("error" in r) return { error: r.error };
+  if (r.data.role === "AGENT" && isModuleOff("agent")) return { error: AGENT_OFF };
   const limit = await userLimitError();
   if (limit) return { error: limit };
   try {
@@ -226,6 +228,8 @@ async function isPlatformUser(id: string) {
   return u?.role === "SUPERADMIN";
 }
 const PLATFORM_ERR = "Bu IT (platforma) hisobi — uni faqat markaziy panel boshqaradi";
+/** «Sotuv agentlari» moduli platformada o'chirilgan — yangi agent ochilmaydi (mavjudining roli saqlanadi) */
+const AGENT_OFF = "«Sotuv agenti» roli korxonangiz tarifiga kirmaydi";
 
 const editUserSchema = z.object({ fullName: zStr("F.I.O. kerak"), role: z.enum(ROLES) });
 
@@ -237,6 +241,7 @@ export async function updateUser(id: string, _prev: ActionState, fd: FormData): 
   const before = await db.user.findUniqueOrThrow({ where: { id }, select: { id: true, fullName: true, role: true, isActive: true } });
   if (before.role === "SUPERADMIN") return { error: PLATFORM_ERR };
   if (before.role !== r.data.role) {
+    if (r.data.role === "AGENT" && isModuleOff("agent")) return { error: AGENT_OFF };
     if (id === s.userId) return { error: "O'z rolingizni o'zgartirib bo'lmaydi" };
     if (before.role === "DIRECTOR" && before.isActive) {
       const directors = await db.user.count({ where: { role: "DIRECTOR", isActive: true } });

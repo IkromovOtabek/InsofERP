@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { ROLE_LABELS, MODULES } from "@/lib/nav";
+import { isModuleOff } from "@/lib/platform-modules";
 import { describeModuleValue } from "@/lib/perm-buttons";
 import { describeWriteScripts, SCRIPT_PERM } from "@/lib/permissions";
 import { BULK_FORM_ID, permModules } from "@/lib/perm-modules";
@@ -514,7 +515,8 @@ async function UsersTab({ me }: { me: string }) {
   // IT superadmin (platforma hisobi) ro'yxatda ko'rinmaydi — uni markaziy panel boshqaradi
   const users = await db.user.findMany({ where: { role: { not: "SUPERADMIN" } }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { employee: true } });
   // SUPERADMIN — platforma (IT) roli: direktor uni bera olmaydi (server ham rad etadi), tanlovda ko'rinmasin
-  const roles = Object.entries(ROLE_LABELS).filter(([r]) => r !== "DRIVER" && r !== "BRIGADIER" && r !== "SUPERADMIN");
+  // «Sotuv agenti» — platformada agent moduli o'chirilgan bo'lsa tanlovda yo'q (server ham rad etadi)
+  const roles = Object.entries(ROLE_LABELS).filter(([r]) => r !== "DRIVER" && r !== "BRIGADIER" && r !== "SUPERADMIN" && !(r === "AGENT" && isModuleOff("agent")));
   return (
     <div className="space-y-4">
       <Card><h2 className="mb-3 font-semibold">Yangi foydalanuvchi<InfoButton title="Yangi foydalanuvchi" className="ml-1">Xodim bilan bog&apos;lash uchun Xodimlar sahifasidan qo&apos;shing — u yerda lavozim bo&apos;yicha rol avtomatik beriladi.</InfoButton></h2><UserForm roles={roles} /></Card>
@@ -531,7 +533,7 @@ async function UsersTab({ me }: { me: string }) {
         <tbody>
           {users.map((u) => (
             <Tr key={u.id}>
-              <Td><UserEditForm userId={u.id} fullName={u.fullName} role={u.role} roles={u.role === "DRIVER" || u.role === "BRIGADIER" ? [[u.role, ROLE_LABELS[u.role]], ...roles] : roles} self={u.id === me} /></Td>
+              <Td><UserEditForm userId={u.id} fullName={u.fullName} role={u.role} roles={roles.some(([r]) => r === u.role) ? roles : [[u.role, ROLE_LABELS[u.role]], ...roles]} self={u.id === me} /></Td>
               <Td><code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{u.login}</code></Td>
               <Td className="text-slate-500">{u.employee ? u.employee.position : "—"}</Td>
               <Td>{u.isActive ? <Badge color="green">Faol</Badge> : <Badge>Bloklangan</Badge>}</Td>

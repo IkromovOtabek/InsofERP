@@ -188,11 +188,14 @@ const KEY_MODULE: Record<string, string> = {
   ...SOTUV_KEY_MODULE,
 };
 
+/** Modul ichidagi, platforma alohida o'chiradigan qism (`PLATFORM_SUB_LABELS`): perms modulidan tashqari tekshiriladi. */
+const KEY_PLATFORM: Record<string, string> = { leads: "leads" };
+
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
 export function moduleClosed(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
   const mod = Object.hasOwn(KEY_MODULE, key) ? KEY_MODULE[key] : undefined;
   // Platforma tarifida o'chirilgan modul — hamma uchun yopiq, direktor ham (lib/platform-modules.ts)
-  if (isModuleOff(mod)) return true;
+  if (isModuleOff(mod) || (Object.hasOwn(KEY_PLATFORM, key) && isModuleOff(KEY_PLATFORM[key]))) return true;
   if (user.role === "DIRECTOR") return false;
   if ((user.role === "DRIVER" && key === "trips") || (user.role === "BRIGADIER" && key === "tasks")) return false;
   return !!mod && user.perms?.[mod] === "none";

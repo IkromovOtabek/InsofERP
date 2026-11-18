@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isModuleOff } from "@/lib/platform-modules";
 import { FLOW_ONLY, balanceFromGroups } from "@/lib/cash-tx";
 import { receivablesReport, OWNER_EDGES } from "@/lib/receivables";
 import { loadSales, type SaleRow } from "@/lib/bi/core";
@@ -145,6 +146,7 @@ async function salesVolume({ r }: Ctx): Promise<Part> {
 }
 
 async function salesLeads({ r }: Ctx): Promise<Part> {
+  if (isModuleOff("leads")) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   const leads = await db.lead.findMany({
     where: { createdAt: { gte: r.from, lt: r.to } }, orderBy: { createdAt: "desc" },
     select: { id: true, name: true, phone: true, status: true, source: true, qty: true, createdAt: true, product: { select: { name: true, unit: true } }, handledBy: { select: { fullName: true } } },

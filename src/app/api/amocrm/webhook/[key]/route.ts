@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { notifyAfter } from "@/lib/notify";
 import { AMO_ID, isActive } from "@/lib/amocrm/store";
+import { moduleOffNow } from "@/lib/tenant";
 import { landWebhookLead, pullDeal } from "@/lib/amocrm/sync";
 import { parseWebhookLeads, webhookInfo, webhookSubdomain } from "@/lib/amocrm/webhook";
 
@@ -20,6 +21,7 @@ export const runtime = "nodejs";
  */
 export async function POST(req: Request, ctx: { params: Promise<{ key: string }> }) {
   const { key } = await ctx.params;
+  if (await moduleOffNow("amocrm")) return new Response("not found", { status: 404 }); // platformada o'chirilgan
   const c = await db.amoConnection.findUnique({ where: { id: AMO_ID } });
   const ok = isActive(c) && key.length === c.webhookKey.length && timingSafeEqual(Buffer.from(key), Buffer.from(c.webhookKey));
   if (!ok) return new Response("not found", { status: 404 });

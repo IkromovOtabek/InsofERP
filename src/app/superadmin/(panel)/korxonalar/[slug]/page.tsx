@@ -19,11 +19,14 @@ import { HelpButton, PageHelp, WithHelp } from "../../_help/help";
 import { billingState, isoOf, PAYMENT_METHODS, paymentPeriod, PLAN_LABEL, STAGE_LABEL, todayIso } from "@/lib/control/billing";
 import { BillingSettingsForm, CancelPaymentButton, PaymentForm, TariffForm } from "./billing";
 import { MODULES } from "@/lib/nav";
-import { PLATFORM_MODULES } from "@/lib/platform-modules";
+import { PLATFORM_MODULES, PLATFORM_SUB_LABELS } from "@/lib/platform-modules";
 import { visitFilter } from "@/lib/control/visits";
 import { TenantVisitsTab } from "./visits";
 
 export const dynamic = "force-dynamic";
+
+/** Tarifdagi modul nomi: Sotuv ichidagi qismlar (Sayt arizalari, amoCRM) — «Sotuv → …» */
+const moduleLabel = (k: string) => (PLATFORM_SUB_LABELS[k] ? `Sotuv → ${PLATFORM_SUB_LABELS[k]}` : MODULES.find((m) => m.key === k)?.label ?? k);
 
 /** Korxona sahifasi tablari (`?tab=`): holat va statistika, tashriflar, obuna va modullar, boshqaruv. */
 const TABS = [
@@ -176,10 +179,10 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
         </div>
         {owner ? (
           <TariffForm slug={t.slug} userLimit={t.userLimit} activeUsers={s ? s.users.active : null}
-            modules={PLATFORM_MODULES.map((k) => ({ key: k, label: MODULES.find((m) => m.key === k)?.label ?? k, on: !t.modulesOff.includes(k) }))} />
+            modules={PLATFORM_MODULES.map((k) => ({ key: k, label: moduleLabel(k), on: !t.modulesOff.includes(k) }))} />
         ) : (
           <p className="text-sm text-slate-600">
-            {t.modulesOff.length ? <>O&apos;chiq: {t.modulesOff.map((k) => MODULES.find((m) => m.key === k)?.label ?? k).join(", ")}.</> : "Barcha qo'shimcha modullar yoqiq."}
+            {t.modulesOff.length ? <>O&apos;chiq: {t.modulesOff.map(moduleLabel).join(", ")}.</> : "Barcha qo'shimcha modullar yoqiq."}
             {" "}Foydalanuvchi chegarasi: {t.userLimit ?? "cheklovsiz"}.
           </p>
         )}

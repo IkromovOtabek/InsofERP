@@ -3,6 +3,7 @@ import { faceKioskAccess } from "./face-kiosk";
 import { attendanceAccess, type AttendanceAccess } from "./staff-attendance";
 import { avtoNotice, type HomeNotice } from "./avto-zapchast";
 import { db } from "@/lib/db";
+import { isModuleOff } from "@/lib/platform-modules";
 import { txSign } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
 import { loadSales } from "@/lib/bi/core";
@@ -550,10 +551,12 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "blocked", label: "Bloklangan", value: String(blocked), tone: blocked ? "danger" : "success", icon: "lock-closed", open: { key: "dash", id: "blocked.month" } },
       );
       // Vebdagi "Zayavkalar" sahifasi tepasidagi ikki karta: ta'minot tasdig'i va sayt arizalari
+      // Sayt arizalari platformada o'chirilgan bo'lsa — karta ham, bo'lim ham yo'q
+      const leadsOn = !isModuleOff("leads");
       const [supplyWait, newLeads, leadRows] = await Promise.all([
         db.supplyRequest.count({ where: { status: "PRICED" } }),
-        db.lead.count({ where: { status: "NEW" } }),
-        db.lead.findMany({ where: { status: "NEW" }, orderBy: { createdAt: "desc" }, take: 5, include: { product: { select: { name: true } } } }),
+        leadsOn ? db.lead.count({ where: { status: "NEW" } }) : 0,
+        leadsOn ? db.lead.findMany({ where: { status: "NEW" }, orderBy: { createdAt: "desc" }, take: 5, include: { product: { select: { name: true } } } }) : [],
       ]);
       if (supplyWait) cards.push({ key: "supply", label: "Ta'minot tasdig'i", value: String(supplyWait), hint: "sizni kutmoqda", tone: "warning", icon: "clipboard-list", open: { key: "supply" } });
       if (newLeads) cards.push({ key: "leads", label: "Yangi ariza", value: String(newLeads), hint: "saytdan", tone: "brand", icon: "inbox" });

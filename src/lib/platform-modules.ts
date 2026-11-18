@@ -10,8 +10,14 @@
  * bo'sh (hech narsa yopilmaydi), haqiqiy tekshiruv serverda.
  */
 export const PLATFORM_MODULES = [
-  "marketing", "arenda", "offers", "agent", "bi-tahlil", "kirim-qqs", "moliya", "payroll", "mexanik", "taminot", "vazifalar",
+  "leads", "amocrm", "marketing", "arenda", "offers", "agent", "bi-tahlil", "kirim-qqs", "moliya", "payroll", "mexanik", "taminot", "vazifalar",
 ] as const;
+
+/**
+ * Asosiy modul ichidagi qism (`lib/nav.ts` MODULES'da alohida modul emas): Sayt arizalari va amoCRM — «Sotuv» ichida.
+ * Ruxsatlar (perms) avvalgidek «sales» modulida qoladi, platforma esa ularni alohida o'chiradi.
+ */
+export const PLATFORM_SUB_LABELS: Record<string, string> = { leads: "Sayt arizalari", amocrm: "amoCRM" };
 
 const g = globalThis as { __insofModulesOff?: ReadonlySet<string> };
 
@@ -31,7 +37,19 @@ export const MODULE_OFF_MESSAGE = "Bu bo'lim korxonangiz tarifiga kirmaydi — u
  */
 const DEPENDENT_PATHS: [prefix: string, module: string][] = [
   ["/bi-tahlil/marketing", "marketing"], ["/bi-tahlil/agentlar", "agent"], ["/bi-tahlil/mexanik", "mexanik"], ["/bi-tahlil/moliya/ish-haqi", "payroll"],
+  ["/leads", "leads"], ["/amocrm", "amocrm"],
 ];
+
+/** Boshqa modul katalogidagi, lekin o'chiriladigan modulga tegishli amallar (`lib/permissions.ts` MODULE_ACTIONS). */
+const DEPENDENT_ACTIONS: [module: string, action: string, platform: string][] = [
+  ["sales", "leads", "leads"], ["sales", "amocrm", "amocrm"], ["sales", "amocrm_settings", "amocrm"], ["customers", "agent", "agent"],
+];
+
+/** Amal platforma tomonidan yopilganmi: modulning o'zi yoki amal tegishli qism (Sotuv → Sayt arizalari) o'chirilgan. */
+export function actionOff(module: string | null | undefined, action: string | null | undefined): boolean {
+  if (isModuleOff(module)) return true;
+  return !!action && DEPENDENT_ACTIONS.some(([m, a, p]) => m === module && a === action && isModuleOff(p));
+}
 
 /** Yo'l platforma tomonidan yopilganmi. `module` — `moduleForPath(path)` (lib/nav.ts; bu yerda import qilinmaydi — aylana bog'lanish). */
 export function pathOff(path: string, module: string | null): boolean {

@@ -1,7 +1,7 @@
 import { cache } from "react";
 import type { Prisma, Role } from "@/generated/prisma";
 import { db } from "./db";
-import { setModulesOff } from "./platform-modules";
+import { isModuleOff, setModulesOff } from "./platform-modules";
 
 /**
  * Ko'p korxonali platforma — korxona (tenant) jarayoni tomonidagi yordamchilar.
@@ -51,6 +51,12 @@ export const companySuspension = cache(async (): Promise<Suspension> => {
 export async function loadPlatformGate(): Promise<void> {
   const p = platformJson((await companyPlatform())?.platform);
   setModulesOff(Array.isArray(p.modulesOff) ? p.modulesOff.filter((x): x is string => typeof x === "string") : []);
+}
+
+/** Sessiyasiz joylar (fon vazifa, ommaviy forma, webhook) uchun: holatni bazadan yangilab, modul o'chirilganmi. */
+export async function moduleOffNow(key: string): Promise<boolean> {
+  await loadPlatformGate();
+  return isModuleOff(key);
 }
 
 /** Faol foydalanuvchilar chegarasi (panel belgilaydi). null — cheklovsiz. IT (SUPERADMIN) va o'chiq tizim hisoblari sanalmaydi. */

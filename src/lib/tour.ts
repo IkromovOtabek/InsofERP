@@ -1,5 +1,6 @@
 import type { Role } from "@/generated/prisma";
-import { OWN_PAGE_ONLY, ROLE_LABELS } from "./nav";
+import { OWN_PAGE_ONLY, ROLE_LABELS, moduleForPath } from "./nav";
+import { pathOff } from "./platform-modules";
 
 /**
  * Tizimga kirgan har bir xodim uchun bosqichma-bosqich instruksiya.
@@ -335,7 +336,10 @@ const BY_ROLE: Record<Role, TourStep[]> = {
 export function tourFor(role: Role): TourStep[] {
   // Haydovchi va brigadir vebda faqat bitta sahifani ko'radi — bosh sahifa bosqichi ularga tegishli emas
   const base = OWN_PAGE_ONLY[role] ? [] : DASHBOARD;
-  return [intro(role), ...SHELL_START, ...base, ...BY_ROLE[role], ...SHELL_END];
+  // Platformada o'chirilgan bo'lim (Sayt arizalari…) bosqichi tushib qoladi — u menyuda yo'q
+  const off = (href?: string) => !!href && pathOff(href, moduleForPath(href));
+  return [intro(role), ...SHELL_START, ...base, ...BY_ROLE[role], ...SHELL_END]
+    .filter((t) => !off(t.id.startsWith("nav:") ? t.id.slice(4) : t.path));
 }
 
 /** Instruksiya holati saqlanadigan cookie. Sessiya cookie'si: chiqishda o'chiriladi. */

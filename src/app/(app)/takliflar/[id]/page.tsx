@@ -5,6 +5,7 @@ import { Printer, Copy, FilePlus2, Eye, EyeOff, QrCode, ScrollText, Inbox } from
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
+import { isModuleOff } from "@/lib/platform-modules";
 import { publicOrigin } from "@/lib/public-url";
 import { date, dateTime, fmtNum, money } from "@/lib/format";
 import { OFFER_STATE, offerPublicPath, offerState, offerTotals, offerUnitLabel } from "@/lib/offers";
@@ -90,7 +91,7 @@ export default async function OfferPage({ params, searchParams }: { params: Prom
               { k: "Obyekt", v: o.objectName ?? "—" },
               { k: "Muddat", v: o.deadline ?? "—" },
               ...(o.order ? [{ k: "Zayavka", v: <Link href={`/orders/${o.order.id}`} className="hover:underline">{date(o.order.deliveryDate)}</Link> }] : []),
-              ...(o.lead ? [{ k: "Sayt arizasi", v: <Link href="/leads" className="inline-flex items-center gap-1 hover:underline"><Inbox size={13} /> {o.lead.name}</Link> }] : []),
+              ...(o.lead ? [{ k: "Sayt arizasi", v: isModuleOff("leads") ? o.lead.name : <Link href="/leads" className="inline-flex items-center gap-1 hover:underline"><Inbox size={13} /> {o.lead.name}</Link> }] : []),
               ...(o.note ? [{ k: "Ichki izoh", v: o.note }] : []),
             ]} />
             <div className="mt-4"><OfferStateButtons id={o.id} canCancel={canCancel} active={st === "ACTIVE" || st === "EXPIRED"} /></div>

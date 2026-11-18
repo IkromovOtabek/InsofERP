@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isModuleOff } from "@/lib/platform-modules";
 import { FLOW_ONLY, SALES_INCOME, isSalesIncome, balanceFromGroups } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
 import { loadSales } from "@/lib/bi/core";
@@ -385,7 +386,8 @@ async function sales(user: MobileUser, r: DashRange): Promise<RoleDashboard> {
   const [cur, prev, orders, leads, newCustomers, plans] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
     db.order.findMany({ where: { date: { gte: r.from, lt: r.to }, kind: "SALE" }, select: { status: true, createdById: true } }),
-    db.lead.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { status: true } }),
+    // Sayt arizalari platformada o'chirilgan bo'lsa — plitka ham, so'rov ham yo'q
+    isModuleOff("leads") ? null : db.lead.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { status: true } }),
     db.customer.count({ where: { createdAt: { gte: r.from, lt: r.to }, isInternal: false } }),
     db.salesPlan.findMany({ where: { OR: months } }),
   ]);
@@ -398,7 +400,7 @@ async function sales(user: MobileUser, r: DashRange): Promise<RoleDashboard> {
     ...(planAll > 0 ? [progressItem(`Umumiy plan (${r.label})`, revenue, planAll, short)] : []),
     ...(planMine > 0 ? [progressItem(`Mening planim (${r.label})`, mine, planMine, short)] : []),
   ];
-  const converted = leads.filter((l) => l.status === "CONVERTED").length;
+  const converted = leads?.filter((l) => l.status === "CONVERTED").length ?? 0;
   const bars = barsChart(r, cur, (x) => x.date, [
     { label: "Jami", value: (x) => x.revenue, fmt: short },
     { label: "Mening", value: (x) => (x.sellerId === user.id ? x.revenue : 0), fmt: short },
@@ -408,7 +410,7 @@ async function sales(user: MobileUser, r: DashRange): Promise<RoleDashboard> {
     tiles: [
       { key: "mine", label: "Mening sotuvim", value: short(mine), hint: revenue > 0 ? `jamining ${pctText((mine / revenue) * 100)}` : undefined, tone: "brand", icon: "user" },
       { key: "volume", label: "Hajm", value: totalsText(cur.map((x) => ({ unit: x.unit, qty: x.qty }))), tone: "info", icon: "cube" },
-      { key: "leads", label: "Arizalar", value: String(leads.length), hint: leads.length ? `${converted} mijozga aylandi · ${pctText((converted / leads.length) * 100)}` : "ariza kelmadi", tone: leads.length && !converted ? "warning" : "success", icon: "inbox" },
+      ...(leads ? [{ key: "leads", label: "Arizalar", value: String(leads.length), hint: leads.length ? `${converted} mijozga aylandi · ${pctText((converted / leads.length) * 100)}` : "ariza kelmadi", tone: leads.length && !converted ? "warning" as const : "success" as const, icon: "inbox" }] : []),
       { key: "customers", label: "Yangi mijozlar", value: String(newCustomers), tone: "success", icon: "user-plus" },
     ],
     charts: pick(

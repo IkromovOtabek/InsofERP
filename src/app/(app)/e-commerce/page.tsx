@@ -14,6 +14,7 @@ import { shopHistory } from "@/lib/shop-history";
 import { isoDate } from "@/lib/format";
 import { canEditProducts, PRODUCT_CATALOG_ROLES } from "@/lib/catalog";
 import { moduleWriteAllowed } from "@/lib/auth";
+import { isModuleOff } from "@/lib/platform-modules";
 import { NewProductForm } from "./new-product-form";
 
 const LEAD_STATUS = {
@@ -190,10 +191,13 @@ function OrdersTab({ leads }: { leads: { id: string; name: string; phone: string
       <div className="flex items-center justify-between gap-2 px-4 pt-4">
         <div>
           <h2 className="font-semibold">Ilovadan tushgan buyurtmalar
-            <InfoButton title="Ilovadan tushgan buyurtmalar" className="ml-1">Ishlov (bog&apos;landim, mijozga aylantirish) "Sayt arizalari" sahifasida — u yerda ilova buyurtmalari ham turadi.</InfoButton>
+            {/* Sayt arizalari platformada o'chirilgan bo'lsa — ro'yxat faqat ko'rish uchun, so'rov sotuvchiga Telegram orqali boradi */}
+            {isModuleOff("leads")
+              ? <InfoButton title="Ilovadan tushgan buyurtmalar" className="ml-1">Har buyurtma sotuv bo&apos;limiga Telegram orqali yuboriladi (bot ulangan bo&apos;lsa).</InfoButton>
+              : <InfoButton title="Ilovadan tushgan buyurtmalar" className="ml-1">Ishlov (bog&apos;landim, mijozga aylantirish) &quot;Sayt arizalari&quot; sahifasida — u yerda ilova buyurtmalari ham turadi.</InfoButton>}
           </h2>
         </div>
-        <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-slate-700 hover:underline">Sayt arizalari <ExternalLink size={14} /></Link>
+        {!isModuleOff("leads") && <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-slate-700 hover:underline">Sayt arizalari <ExternalLink size={14} /></Link>}
       </div>
       <Table className="mt-3">
         <thead><tr><Th>Vaqt</Th><Th>Mijoz</Th><Th>Telefon</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th>Manzil / izoh</Th><Th>Holat</Th></tr></thead>

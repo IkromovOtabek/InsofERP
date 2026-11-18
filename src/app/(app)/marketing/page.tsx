@@ -3,6 +3,7 @@ import { ArrowRight, Eye, Inbox, Lightbulb, MousePointerClick, Send, Sparkles, T
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canView } from "@/lib/nav";
+import { isModuleOff } from "@/lib/platform-modules";
 import { canDo } from "@/lib/permissions";
 import { date, dateTime, fmtNum, pct } from "@/lib/format";
 import { analytics } from "@/lib/smm/insights";
@@ -23,7 +24,8 @@ export default async function MarketingStats({ searchParams }: { searchParams: P
   const s = await requirePage("/marketing");
   const sp = await searchParams;
   const days = sp.d === "7" ? 7 : sp.d === "90" ? 90 : 30;
-  const seeLeads = canView(s, "sales");
+  // Sayt arizalari platformada o'chirilgan bo'lsa — arizalar o'rniga saytga o'tishlar
+  const seeLeads = canView(s, "sales") && !isModuleOff("leads");
   const now = new Date();
   const since = new Date(now.getTime() - days * 86_400_000);
 

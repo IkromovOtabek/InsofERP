@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { canDo } from "@/lib/permissions";
 import { canView } from "@/lib/nav";
+import { isModuleOff } from "@/lib/platform-modules";
 import type { Session } from "@/lib/auth";
 import { campaignStats } from "@/lib/marketing";
 
@@ -49,7 +50,7 @@ const CONTENT_STATUS = ["IDEA", "SCRIPT", "FILMED", "EDITING", "PUBLISHED", "CAN
 export function marketingTools(s: Session) {
   const canWriteContent = canDo(s, "marketing", "content");
   // Arizalar — Sotuv moduli ma'lumoti: direktor yopib qo'ygan bo'lsa agent ham ko'rsatmaydi
-  const canSeeLeads = canView(s, "sales");
+  const canSeeLeads = canView(s, "sales") && !isModuleOff("leads");
 
   const company = betaZodTool({
     name: "get_company",

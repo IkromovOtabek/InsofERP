@@ -18,6 +18,7 @@ import { PAY_APPROVER_ROLES, PAY_SINCE, PRICER_ROLES, pendingApprovalWhere, unpr
 import { releaseDueRequests } from "@/lib/mechanic-requests";
 import { pruneVisits } from "@/lib/visits";
 import { isLogiRequest } from "@/lib/logistics-finance";
+import { moduleOffNow } from "@/lib/tenant";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
@@ -116,7 +117,8 @@ const RULES: Rule[] = [
   },
   {
     type: "REMIND_LEAD",
-    find: async (now) => (await db.lead.findMany({
+    // Sayt arizalari platformada o'chirilgan bo'lsa — eslatma yo'q (sahifa yopiq)
+    find: async (now) => (await moduleOffNow("leads")) ? [] : (await db.lead.findMany({
       where: { status: "NEW", createdAt: { lt: ago(now, 2) } }, take: 50, select: { id: true, name: true, createdAt: true },
     })).map((l) => ({ id: l.id, link: { key: "leads", id: l.id }, roles: ["SALES"], title: "Javobsiz ariza", body: `${l.name} · ${hrs(l.createdAt, now)} soatdan beri bog'lanilmagan` })),
   },

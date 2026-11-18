@@ -57,10 +57,12 @@ export async function requireWrite(module: string): Promise<Session> {
 export async function requireRoles(allowed: readonly Role[], grant?: Grant): Promise<Session> {
   const s = await getSession();
   if (!s) redirect("/api/logout");
-  if (s.role !== "DIRECTOR" && !allowed.includes(s.role) && !(grant && granted(s, grant))) redirect(OWN_PAGE_ONLY[s.role] ?? "/dashboard?denied=1");
-  // Direktor modulni yopgan ("none") yoki tugmalar bo'yicha bergan bo'lsa (`@jonatma`...) — yopiq oyna rol mos kelsa ham ochilmaydi
   const actual = (await headers()).get(PATH_HEADER);
   const mod = actual ? moduleForPath(actual) : null;
+  // Platforma tarifida o'chirilgan modul (yoki uning qismi — Sotuv → Sayt arizalari) — hamma uchun yopiq, direktor ham
+  if (actual && pathOff(actual, mod)) redirect("/dashboard?denied=modul");
+  if (s.role !== "DIRECTOR" && !allowed.includes(s.role) && !(grant && granted(s, grant))) redirect(OWN_PAGE_ONLY[s.role] ?? "/dashboard?denied=1");
+  // Direktor modulni yopgan ("none") yoki tugmalar bo'yicha bergan bo'lsa (`@jonatma`...) — yopiq oyna rol mos kelsa ham ochilmaydi
   if (actual && mod && s.perms?.[mod] && !pathAllowed(actual, s.role, s.perms)) redirect("/dashboard?denied=1");
   return s;
 }

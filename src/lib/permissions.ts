@@ -1,6 +1,6 @@
 import type { Role } from "@/generated/prisma";
 import type { Perms } from "./auth";
-import { isModuleOff } from "./platform-modules";
+import { actionOff } from "./platform-modules";
 
 /* ───────────────────────── Amal darajasidagi ruxsat (direktor taqsimlaydi) ─────────────────────────
  *
@@ -240,7 +240,7 @@ type Who = { role: Role; perms?: Perms };
  * `fallbackRoles` — katalogda bo'lmagan yoki chaqiruvchi o'z ro'yxatini bergan holat uchun.
  */
 export function canDo(who: Who, module: string, action: string, fallbackRoles?: readonly Role[]): boolean {
-  if (isModuleOff(module)) return false; // platforma tarifida o'chirilgan — direktor ham bajarmaydi
+  if (actionOff(module, action)) return false; // platforma tarifida o'chirilgan — direktor ham bajarmaydi
   if (who.role === "DIRECTOR") return true;
   const def = actionDef(module, action);
   if (def?.delegable === false) return false;

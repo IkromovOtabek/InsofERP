@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { SITE_URL } from "@/lib/site";
 import { isTestMode } from "@/lib/test-mode";
+import { moduleOffNow } from "@/lib/tenant";
 import { makeVault } from "@/lib/smm/vault";
 
 export const vault = makeVault("insof-amocrm", "amocrm-token-vault-v1");
@@ -38,6 +39,8 @@ export const webhookUrl = (key: string) => `${appUrl()}/api/amocrm/webhook/${key
 export const newWebhookKey = () => randomBytes(24).toString("base64url");
 
 export async function getConnection(): Promise<AmoConnection | null> {
+  // Platformada o'chirilgan bo'lsa — sinxron to'xtaydi; ulanish va kelishuvlar saqlanadi, yoqilsa davom etadi
+  if (await moduleOffNow("amocrm")) return null;
   const c = await db.amoConnection.findUnique({ where: { id: AMO_ID } });
   return c && c.status !== "DISCONNECTED" ? c : null;
 }

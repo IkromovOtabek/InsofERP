@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
+import { isModuleOff, MODULE_OFF_MESSAGE } from "@/lib/platform-modules";
 import { createOrder } from "@/lib/orders";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 
@@ -38,6 +39,7 @@ function userError(e: unknown): string {
 
 export async function createAgentOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["AGENT"]);
+  if (isModuleOff("agent")) return { error: MODULE_OFF_MESSAGE }; // platforma tarifida o'chirilgan
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;

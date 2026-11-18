@@ -4,6 +4,7 @@ import type { SmmChannel } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
+import { isModuleOff } from "@/lib/platform-modules";
 import { date, fmtNum } from "@/lib/format";
 import { CONTENT_FLOW, CONTENT_STATUS, CONTENT_TYPE } from "@/lib/marketing";
 import { APPROVAL } from "@/lib/smm/labels";
@@ -83,7 +84,7 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
         <StatCard label="Chiqdi" value={`${pub.length} / ${active.length}`} hint="nashr / rejada" href="/marketing/kontent?v=kanban" />
         <StatCard label="Tasdiq kutmoqda" value={fmtNum(pendingApproval)} tone={pendingApproval ? "warning" : "default"} href="/marketing/kontent?v=kanban" />
         <StatCard label="Ko'rishlar" value={fmtNum(sum("views"))} hint={`Layk: ${fmtNum(sum("likes"))}`} href="/marketing" />
-        <StatCard label="Kontentdan lid" value={fmtNum(sum("leads"))} href="/leads" />
+        <StatCard label="Kontentdan lid" value={fmtNum(sum("leads"))} href={isModuleOff("leads") ? undefined : "/leads"} />
       </div>
 
       {(ideas.length > 0 || goodDays.size > 0) && (

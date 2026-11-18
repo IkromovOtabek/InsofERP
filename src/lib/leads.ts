@@ -9,6 +9,7 @@ import { syncCustomerLater } from "./eco/customers";
 import { defaultCreditLimit } from "./finance";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { pushLeadLater } from "./amocrm/sync";
+import { moduleOffNow } from "./tenant";
 
 /**
  * Saytdan tushgan ariza (`Lead`). Qoida shu yerda — server action ham,
@@ -66,13 +67,18 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
   // Direktorga ketmaydi: ariza bilan bog'lanish sotuvning ishi, direktor natijani hisobotda ko'radi.
   // Javobdan keyin: Telegram sekin bo'lsa mehmonning formasi kutib qolmasin (u qayta yuborib dublikat qilardi)
   const forSales = { ...lead, qty: lead.qty ? Number(lead.qty) : null };
+  // Sayt arizalari platformada o'chirilgan bo'lsa — ariza baribir saqlanadi va Telegram'ga boradi (mijoz yo'qolmasin),
+  // ilova/veb xabari esa yo'q: u yopiq sahifaga olib boradi
   notifyAfter(() => notifySales(forSales));
-  notifyAfter(() => notifyRoles(["SALES"], {
-    type: "LEAD_NEW",
-    title: "Saytdan yangi so'rov",
-    body: `${lead.name} · ${lead.phone}${lead.product ? ` · ${lead.product.name}` : ""}`,
-    link: { key: "leads", id: lead.id },
-  }));
+  notifyAfter(async () => {
+    if (await moduleOffNow("leads")) return;
+    await notifyRoles(["SALES"], {
+      type: "LEAD_NEW",
+      title: "Saytdan yangi so'rov",
+      body: `${lead.name} · ${lead.phone}${lead.product ? ` · ${lead.product.name}` : ""}`,
+      link: { key: "leads", id: lead.id },
+    });
+  });
   // amoCRM ulangan bo'lsa — sdelka bo'lib voronkaga tushadi (yiqilsa navbatda qoladi)
   pushLeadLater(lead.id);
   return { ok: true };
