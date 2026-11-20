@@ -1,12 +1,13 @@
 // QA (B) — Chiqim «Kimga»: xodimga berish ("e:<id>", StockMove.employeeId), jurnal va «Kimga» filtri, oluvchi kartasi
 // (/oluvchi/b|e|r — sklad, ish boshqaruvchi ko'radi; sotuvchi yo'q; noto'g'ri tur 404), tez tanlash (issueHints — oxirgi
 // oluvchi va tovari formada chiqadi), storno xodim qatorini ham teskari yozadi, mobil: «Kimga» tartibi (brigada → xodim →
-// oluvchi) va brigadirning «Mening skladim» kartochkasi (o'ziniki ochiladi, begona brigada — 404).
+// oluvchi) va brigadirning «Mening skladim» kartochkasi (o'ziniki ochiladi, begona brigada — 404); «Haydovchilar» guruhi
+// (mashina raqami + F.I.O.), haydovchiga chiqim → dispetcherga bildirishnoma va Haydovchilar tabeli → «Ombor».
 // Ishga tushirish: npx tsx scripts/qa/b-oluvchi.mts (b-all.sh ichida)
 import { as, check, summary, fd, q1, n1, BASE, Client } from "./b-client.mjs";
 
 const RX = "(app)/stock/rasxod/actions";
-const sklad = await as("sklad"), dir = await as("direktor"), prorab = await as("prorab"), sotuv = await as("sotuv");
+const sklad = await as("sklad"), dir = await as("direktor"), prorab = await as("prorab"), sotuv = await as("sotuv"), disp = await as("dispetcher");
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 /** HTML'da apostrof `&#x27;` bo'lib chiqadi — ikkala ko'rinishda qidiradi. */
 const has = (t: string, s: string) => t.includes(s) || t.includes(s.replace(/'/g, "&#x27;"));
@@ -19,6 +20,7 @@ const wh = q1(`select id from "Warehouse" where "isActive" order by "isDefault" 
 const mat = q1(`select "materialId" from "StockMove" where "warehouseId"=${lit(wh)} and "materialId" is not null group by "materialId" having sum(qty) > 5 order by sum(qty) desc limit 1`) as string | null;
 const emp = q1(`select e.id from "Employee" e join "User" u on u.id=e."userId" where u.login='test.prorab'`) as string;
 const empName = q1(`select "fullName" from "Employee" where id=${lit(emp)}`) as string;
+const drv = q1(`select e.id from "Employee" e join "User" u on u.id=e."userId" where u.login='test.haydovchi'`) as string | null;
 const brig = q1(`select b.id from "Brigade" b join "Employee" e on e.id=b."leaderId" join "User" u on u.id=e."userId" where u.login='test.brigadir' and b."isActive" limit 1`) as string | null;
 check(!!mat && !!emp, "tayyorgarlik: qoldiqli xomashyo va test xodim bor", `mat=${mat} emp=${emp}`);
 
@@ -40,14 +42,16 @@ check(j.status === 200 && j.text.includes(empName) && j.text.includes(`/oluvchi/
 const jAll = await sklad.get(`/stock/rasxod?komu=e`);
 check(jAll.status === 200 && jAll.text.includes(empName), "2.2 «Barcha xodimlar» filtri", String(jAll.status));
 const nf = await sklad.get("/stock/rasxod/new");
-// Yangi chiqimda «Kimga» ro'yxatida xodimlar yo'q (2026-10-24) — na select'da, na «Tez tanlash» tugmalarida
-check(nf.status === 200 && has(nf.text, "Qo'lda kiritish") && !nf.text.includes(`value="e:`), "2.3 forma: «Qo'lda kiritish» bor, xodim tanlovi yo'q", String(nf.status));
+// Yangi chiqimda «Kimga» ro'yxatida xodimlar yo'q (2026-10-24) — na select'da, na «Tez tanlash» tugmalarida;
+// 2026-11-20 dan haydovchilar alohida «Haydovchilar» guruhida ("e:<id>")
+check(nf.status === 200 && has(nf.text, "Qo'lda kiritish") && !nf.text.includes(`value="e:${emp}"`), "2.3 forma: «Qo'lda kiritish» bor, oddiy xodim tanlovi yo'q", String(nf.status));
 // Select guruhlari (menyudagi «Xodimlar» havolasi emas — optgroup label'lari) ketma-ketligi; «Boshqa oluvchilar» guruhi
 // test bazasida oluvchi bo'lmasa chiqmaydi — bo'lsa, brigadalardan keyin va «Qo'lda kiritish» dan oldin turishi kerak
 const grp = (l: string) => nf.text.indexOf(`label="${l.replace(/'/g, "&#x27;")}"`);
-const gB = grp("Bizning brigadalar"), gE = grp("Xodimlar"), gR = grp("Boshqa oluvchilar"), gN = grp("Ro'yxatda yo'q");
-check(gB >= 0 && gE === -1 && gB < gN && (gR === -1 || (gB < gR && gR < gN)),
-  "2.4 «Kimga» tartibi: brigadalar → boshqa oluvchilar → qo'lda kiritish (xodimlarsiz)", [gB, gE, gR, gN].join(","));
+const gB = grp("Bizning brigadalar"), gD = grp("Haydovchilar"), gE = grp("Xodimlar"), gR = grp("Boshqa oluvchilar"), gN = grp("Ro'yxatda yo'q");
+check(gB >= 0 && gE === -1 && gB < gN && (gR === -1 || (gB < gR && gR < gN)) && (gD === -1 || (gB < gD && gD < gN && (gR === -1 || gD < gR))),
+  "2.4 «Kimga» tartibi: brigadalar → haydovchilar → boshqa oluvchilar → qo'lda kiritish (xodimlarsiz)", [gB, gD, gE, gR, gN].join(","));
+if (drv) check(gD >= 0 && nf.text.includes(`value="e:${drv}"`), "2.5 «Haydovchilar» guruhida test haydovchi bor", String(gD));
 
 // ── 3. Oluvchi kartasi ──
 const ce = await sklad.get(`/oluvchi/e/${emp}`);
@@ -94,6 +98,34 @@ if (brig) {
   }
 }
 
-// Tozalash: hujjat storno qilingan (o'chirilmaydi); boshqa narsa yaratilmadi
+// ── 6. Haydovchiga chiqim → dispetcher: bildirishnoma va tabel «Ombor» ──
+if (drv) {
+  const drvName = q1(`select "fullName" from "Employee" where id=${lit(drv)}`) as string;
+  const matName = q1(`select name from "Material" where id=${lit(mat!)}`) as string;
+  const tok2 = `qa-haydovchi-${Date.now()}`;
+  const r6 = await sklad.action(`${RX}#createRasxod`, [undefined, fd({ warehouseId: wh, to: `e:${drv}`, date: today, note: "QA haydovchiga", clientToken: tok2, "materialId[]": [mat!], "qty[]": ["1"] })], "/stock/rasxod/new");
+  check(!r6.error && /saved=1/.test(r6.redirect ?? ""), "6.1 sklad haydovchiga chiqim yozdi", r6.error ?? r6.redirect ?? String(r6.status));
+  const ref6 = q1(`select "refId" from "StockMove" where "clientToken"=${lit(tok2)}`) as string | null;
+  check(n1(`select count(*) from "StockMove" where "refId"=${lit(ref6 ?? "")} and type='ISSUE' and "employeeId"=${lit(drv)} and "vehicleId" is null`) === 1, "6.2 ISSUE: employeeId = haydovchi, transport bo'sh");
+  // Bildirishnoma javobdan keyin (`after`) yoziladi — bir oz kutiladi
+  let notes = 0;
+  for (let i = 0; i < 20 && !notes; i++) {
+    notes = n1(`select count(*) from "Notification" n join "User" u on u.id=n."userId" where u.login='test.dispetcher' and n.type='DRIVER_STOCK' and n.link->>'id'=${lit(`employees:${drv}`)} and n."createdAt" > now() - interval '5 minutes'`);
+    if (!notes) await new Promise((r) => setTimeout(r, 250));
+  }
+  check(notes >= 1, "6.3 dispetcherga «Skladdan haydovchiga» bildirishnomasi", String(notes));
+  const om = await disp.get(`/logistika/tabel?bolim=ombor&driver=${drv}`);
+  check(om.status === 200 && om.text.includes(drvName) && has(om.text, matName) && om.text.includes("Kimda nima bor"), "6.4 dispetcher tabel → «Ombor» da haydovchi va narsa ko'rinadi", String(om.status));
+  // Jurnaldagi «Summa» ustuni faqat `canSeeLogiMoney` (direktor, ish boshqaruvchi, mexanik)
+  check(!om.text.includes(">Summa<"), "6.5 dispetcherga «Summa» ustuni ko'rinmaydi");
+  const omD = await dir.get(`/logistika/tabel?bolim=ombor`);
+  check(omD.status === 200 && omD.text.includes(drvName) && omD.text.includes(">Summa<"), "6.6 direktor «Ombor» ni summa bilan ko'radi", String(omD.status));
+  const st6 = await dir.action(`${RX}#cancelRasxod`, [ref6, "QA storno haydovchi"], "/stock/rasxod");
+  check(!st6.error, "6.7 haydovchiga chiqim storno qilindi", st6.error ?? "");
+  const om2 = await disp.get(`/logistika/tabel?bolim=ombor&driver=${drv}`);
+  check(om2.status === 200 && om2.text.includes("Bekor qilingan"), "6.8 bekor qilingan chiqim «Ombor» jurnalida belgilangan", String(om2.status));
+}
+
+// Tozalash: hujjatlar storno qilingan (o'chirilmaydi); boshqa narsa yaratilmadi
 void Client;
 summary("b-oluvchi");

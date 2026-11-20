@@ -3,6 +3,8 @@
  * Kalit: "b:<id>" — brigada, "e:<id>" — xodim, "r:<id>" — erkin oluvchi, "v:<id>" — transport
  * (`lib/stock-issue.ts#parseIssueTarget`). Ro'yxat tartibi hamma joyda bir xil: bizning brigadalar → barcha xodimlar →
  * tizimda yo'q nomlar; transportlar — faqat chiqim formasida «Avto zapchast» kategoriyasi tanlanganda, eng tepada.
+ * Haydovchilar — chiqim formasida brigadalardan keyin alohida guruh («01A123BC · F.I.O.»), kaliti xodimniki ("e:<id>"):
+ * berilgani dispetcherga Haydovchilar tabeli → «Ombor» da ko'rinadi (`lib/driver-stock.ts`).
  */
 
 export type TargetGroups = {
@@ -17,6 +19,11 @@ export type TargetGroups = {
    * summasi Logistika moliyada chiqim bo'ladi. Boshqa joylarda (kirim, Excel import, mobil) yo'q.
    */
   vehicles?: { id: string; plate: string; label: string }[];
+  /**
+   * Faol haydovchilar ("e:<id>" — xodim sifatida yoziladi), mashina raqami bilan — faqat «Yangi chiqim» formasi beradi.
+   * Ro'yxatda brigadalardan keyin «Haydovchilar» guruhi; xodimlar guruhida takrorlanmaydi.
+   */
+  drivers?: { id: string; name: string; plate: string | null }[];
 };
 
 /** Select'dagi eng pastki band — «Qo'lda kiritish»: yangi oluvchi oynasini ochadi, qiymat sifatida yuborilmaydi. */
@@ -26,13 +33,19 @@ export const NEW_RECIPIENT = "__new__";
 export const brigadeLabel = (b: { name: string; leader: string | null }) =>
   (b.leader && !normTargetName(b.name).includes(normTargetName(b.leader)) ? `${b.name} — ${b.leader}` : b.name);
 
+/** Haydovchi yorlig'i «Kimga» ro'yxatida: «01A123BC · Aliyev Vali» (mashinasi bo'lmasa — faqat F.I.O.). */
+export const driverLabel = (d: { name: string; plate: string | null }) => (d.plate ? `${d.plate} · ${d.name}` : d.name);
+
 /** Kalit bo'yicha ko'rinadigan nom; ro'yxatda yo'q (nofaol) bo'lsa null. */
 export function targetName(g: TargetGroups, key: string): string | null {
   const m = /^([berv]):(.+)$/.exec(key);
   if (!m) return null;
   if (m[1] === "v") return g.vehicles?.find((x) => x.id === m[2])?.plate ?? null;
   if (m[1] === "b") { const b = g.brigades.find((x) => x.id === m[2]); return b ? brigadeLabel(b) : null; }
-  if (m[1] === "e") return g.employees.find((x) => x.id === m[2])?.name ?? null;
+  if (m[1] === "e") {
+    const d = g.drivers?.find((x) => x.id === m[2]);
+    return d ? driverLabel(d) : g.employees.find((x) => x.id === m[2])?.name ?? null;
+  }
   return g.recipients.find((x) => x.id === m[2])?.name ?? null;
 }
 

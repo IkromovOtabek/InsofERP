@@ -34,6 +34,7 @@ import { dateRu, fmtNum } from "@/lib/format";
 import { createGoodsReceipt, receiptNote, receiptTokenOf } from "@/lib/receipts";
 import { scanAllowed, scanEnabled } from "./scan";
 import { ISSUE_STORNO, IssueError, issueDate, issueStock, issueToken, parseIssueTarget, type IssueTarget } from "@/lib/stock-issue";
+import { notifyDriverIssue } from "@/lib/driver-stock";
 import { activeRecipients, brigadeLabel, issueTargetOptions } from "@/lib/stock-recipients";
 import { issuePrices } from "@/lib/stock-price";
 import { STOCK_EPS } from "@/lib/stock-lock";
@@ -1104,6 +1105,8 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       // Kartochka — berish hujjati (`detail.ts` → `rasxod`, id = ref): nima, kimga, qancha, qaysi narxda
       if (dup) return { key: "rasxod", id: dup, message: "Xuddi shunday chiqim hozirgina saqlangan — qayta yozilmadi" };
       const r = await issueStock({ warehouseId: d.warehouseId, date: d.date || null, to, items, note: d.note || null, clientToken: token }, { userId: user.id, role: user.role });
+      // Haydovchiga / transportga — dispetcherga xabar (veb chiqim bilan bir qoida, `lib/driver-stock.ts`)
+      if (!r.existed && (to.kind === "employee" || to.kind === "vehicle")) notifyDriverIssue(r.ref, user.id);
       return { key: "rasxod", id: r.ref, message: r.existed ? "Bu chiqim allaqachon saqlangan" : `Chiqim saqlandi: ${r.count} ta xomashyo — skladdagi qoldiq kamaydi` };
     }
 

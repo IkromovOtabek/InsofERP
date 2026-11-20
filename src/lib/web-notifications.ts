@@ -35,6 +35,8 @@ const WEB_PATH: Record<string, (id: string) => string> = {
   payreq: () => "/pul-qabul",
   invoices: () => "/invoices",
   customers: (id) => `/customers/${id}`,
+  // Skladdan haydovchiga / transportga chiqim (`lib/driver-stock.ts`): id "employees:<haydovchi>" | "vehicles:<transport>"
+  "driver-stock": (id) => `/logistika/tabel?bolim=ombor${id.startsWith("employees:") ? `&driver=${encodeURIComponent(id.slice(10))}` : ""}`,
 };
 
 /** Bosilganda ochiladigan sahifa — xodimga yopiq bo'lsa null (kartochka bosilmaydi). */

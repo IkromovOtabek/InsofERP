@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, BellRing, Calculator, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Landmark, PencilLine, Route, Settings2, ShieldCheck, Timer, TrendingUp, Truck, Undo2, Users, Wrench } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, BellRing, Calculator, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Landmark, Package, PencilLine, Route, Settings2, ShieldCheck, Timer, TrendingUp, Truck, Undo2, Users, Wrench } from "lucide-react";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
@@ -24,6 +24,8 @@ import { costOptions } from "../cost-data";
 import { cancelEntryAction } from "../actions";
 import { canSeeLogiMoney, logiAccounts } from "@/lib/logistics-finance";
 import { DayRangeBar, parseDayRange } from "@/app/(app)/bi-tahlil/month-bar";
+import { pathAllowed } from "@/lib/nav";
+import { OmborSection } from "./ombor-section";
 
 export const dynamic = "force-dynamic";
 
@@ -139,9 +141,10 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
  * dastavka daromadi, foyda. Reyslar ECO'dan o'zi tushadi, tushmagani — qo'lda qator (logistika va dispetcher, `ledger`).
  * «Oylik hisoblash» — BARCHA faol haydovchi va transport (reysi yo'q, ECO'ga ulanmagani ham); «Qo'lda yozuvlar» — reys tizimga
  * tushmagan ish, haq, kirim (`lib/logistics-entry.ts`) va transport chiqimi.
+ * «Ombor» — skladdan haydovchilarga va transportga berilgan narsalar: kimda nima bor + oy jurnali (`lib/driver-stock.ts`).
  */
 /** Sahifa bo'limlari — sarlavha ostidagi bar. Eski havolalar (`?view=hisob`) ham ishlaydi. */
-const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "qolda", "tarif"] as const;
+const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "qolda", "ombor", "tarif"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string; davr?: string; dan?: string; gacha?: string }> }) {
@@ -313,6 +316,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         { key: "hisob", label: "Hisob varag'i", href: qs({ bolim: "hisob" }), icon: FileSpreadsheet },
         { key: "oylik", label: "Oylik hisoblash", href: qs({ bolim: "oylik" }), icon: Calculator },
         { key: "qolda", label: "Qo'lda yozuvlar", href: qs({ bolim: "qolda" }), icon: PencilLine },
+        { key: "ombor", label: "Ombor", href: qs({ bolim: "ombor" }), icon: Package },
         { key: "tarif", label: "Tarif", href: qs({ bolim: "tarif" }), icon: Settings2 },
       ]} />
 
@@ -746,6 +750,10 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           {monthEntries.length === 0 ? <Empty text="Bu oyda qo'lda yozuv yo'q" icon={PencilLine} /> : <EntryTable rows={monthEntries} canCancel={canPrice} edit={canPrice && opts ? { drivers: opts.drivers, vehicles: opts.vehicles.map((v) => ({ id: v.id, label: v.label })) } : null} />}
         </Card>
       </Section>}
+
+      {/* ── Ombor: skladdan haydovchilarga va transportga berilgani (kimda nima bor) ── */}
+      {bolim === "ombor" && <OmborSection from={from} to={to} title={monthTitle(month)} driverId={sp.driver ?? null} showMoney={showMoney} monthNav={monthNav}
+        driverHref={(id) => qs({ driver: id })} dispatchHref={pathAllowed("/stock/dispetcher", s.role, s.perms) ? "/stock/dispetcher" : null} />}
 
       {bolim === "tarif" && <Section title="Tarif" className="mt-0">
         <Card>

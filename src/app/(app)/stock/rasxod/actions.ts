@@ -11,6 +11,7 @@ import { dateRu, isoDate } from "@/lib/format";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { canDo } from "@/lib/permissions";
+import { notifyDriverIssue } from "@/lib/driver-stock";
 import type { BulkStornoResult } from "../prixod/actions";
 
 /**
@@ -22,6 +23,7 @@ import type { BulkStornoResult } from "../prixod/actions";
 const refresh = () => {
   revalidatePath("/stock"); revalidatePath("/stock/rasxod"); revalidatePath("/brigades");
   revalidatePath("/production"); revalidatePath("/dashboard"); revalidatePath("/snabjeniye");
+  revalidatePath("/logistika/tabel");
 };
 
 const schema = z.object({
@@ -77,6 +79,8 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
   }
   // Orqa sana ruxsati bir martalik: shu nusxa ishlatildi
   if (anyPastDate && d.copyOf) await audit(db, s.userId, "CREATE", "IssueCopy", d.copyOf, undefined, { date: d.date, count: res.count });
+  // Haydovchiga / transportga berilsa — dispetcherga xabar (oddiy xodim bo'lsa funksiya o'zi jim qoladi)
+  if (!res.existed && (to.kind === "employee" || to.kind === "vehicle")) notifyDriverIssue(res.ref, s.userId);
   refresh();
   redirect(savedUrl(res.count, d.date));
 }

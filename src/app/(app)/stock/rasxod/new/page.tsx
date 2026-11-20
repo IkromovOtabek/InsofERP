@@ -9,6 +9,8 @@ import { dateRu, isoDate } from "@/lib/format";
 import { Callout, Card, PageHeader } from "@/components/ui";
 import { HoldingsPanel } from "@/components/holdings-panel";
 import { holdingsOverview } from "@/lib/holdings";
+import { driverTargets } from "@/lib/driver-stock";
+import { mainDriverOf } from "@/lib/logistics";
 import type { TargetGroups } from "@/lib/issue-target";
 import { categoriesFor, categoryFromSlug } from "@/lib/material-category";
 import { RasxodForm, type RasxodInitial } from "../rasxod-form";
@@ -34,7 +36,8 @@ async function loadCopy(ref: string, materialIds: Set<string>, all: TargetGroups
   for (const m of moves) if (m.materialId) sum.set(m.materialId, r3((sum.get(m.materialId) ?? 0) - Number(m.qty)));
   const key = first.brigadeId ? `b:${first.brigadeId}` : first.vehicleId ? `v:${first.vehicleId}` : first.employeeId ? `e:${first.employeeId}` : first.recipientId ? `r:${first.recipientId}` : "";
   const t = parseIssueTarget(key);
-  const employee = t?.kind === "employee" ? all.employees.find((e) => e.id === t.id) ?? null : null;
+  // Haydovchi o'z guruhida ko'rinadi — xodimlar ro'yxatiga qo'shilmaydi
+  const employee = t?.kind === "employee" && !all.drivers?.some((d) => d.id === t.id) ? all.employees.find((e) => e.id === t.id) ?? null : null;
   const known = !!t && targetList(all, t.kind).some((x) => x.id === t.id);
   const brigadePrefix = first.brigade ? `${first.brigade.name} brigadasiga berildi` : null;
   const note = brigadePrefix && first.note?.startsWith(brigadePrefix) ? first.note.slice(brigadePrefix.length).replace(/^\s*·\s*/, "") : first.note ?? "";
@@ -51,7 +54,7 @@ async function loadCopy(ref: string, materialIds: Set<string>, all: TargetGroups
 
 /** Kalit turi bo'yicha «Kimga» ro'yxati (bor-yo'qligini tekshirish uchun). */
 const targetList = (g: TargetGroups, kind: string): { id: string }[] =>
-  kind === "brigade" ? g.brigades : kind === "employee" ? g.employees : kind === "vehicle" ? g.vehicles ?? [] : g.recipients;
+  kind === "brigade" ? g.brigades : kind === "employee" ? [...(g.drivers ?? []), ...g.employees] : kind === "vehicle" ? g.vehicles ?? [] : g.recipients;
 
 /**
  * Sklad → «Chiqim» → Yangi chiqim: skladdan oluvchiga yoki brigadaga xomashyo berish.
@@ -64,7 +67,7 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
   const sp = await searchParams;
 
-  const [warehouses, baseTargets, hints, materials, groups, sums, avg, holdings, vehicles] = await Promise.all([
+  const [warehouses, baseTargets, hints, materials, groups, sums, avg, holdings, vehicles, drivers] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     issueTargetOptions(),
     issueHints(),
@@ -73,12 +76,18 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
     db.stockMove.groupBy({ by: ["warehouseId", "materialId", "type"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     avgUnitCosts(),
     holdingsOverview(),
-    // O'z parkimiz (ko'chadan yollanganlarsiz) — avto zapchast shularga beriladi
-    db.vehicle.findMany({ where: { isActive: true, external: false }, orderBy: { plate: "asc" }, select: { id: true, plate: true, brand: true, model: true } }),
+    // O'z parkimiz (ko'chadan yollanganlarsiz) — avto zapchast shularga beriladi; yorlig'ida asosiy haydovchi ham
+    db.vehicle.findMany({
+      where: { isActive: true, external: false }, orderBy: { plate: "asc" },
+      select: { id: true, plate: true, brand: true, model: true, mainDriverId: true, drivers: { where: { isActive: true }, select: { id: true, fullName: true } } },
+    }),
+    // «Haydovchilar» guruhi: mashina raqami + F.I.O. — berilgani dispetcherga tabel → «Ombor» da ko'rinadi
+    driverTargets(),
   ]);
   const allTargets: TargetGroups = {
     ...baseTargets,
-    vehicles: vehicles.map((v) => ({ id: v.id, plate: v.plate, label: [v.plate, [v.brand, v.model].filter(Boolean).join(" ")].filter(Boolean).join(" · ") })),
+    vehicles: vehicles.map((v) => ({ id: v.id, plate: v.plate, label: [v.plate, [v.brand, v.model].filter(Boolean).join(" "), mainDriverOf(v)?.fullName].filter(Boolean).join(" · ") })),
+    drivers,
   };
   // Qoldiq — barcha harakatlar yig'indisi; «Kirim» / «Chiqim» — nom tanlashda ko'rsatish uchun (shu sklad, butun davr):
   // kirim = RECEIPT, chiqim = oluvchi/xodimga (ISSUE) + brigadaga (BRIGADE_ISSUE − BRIGADE_RETURN), stornolar ichida netlanadi
@@ -98,8 +107,8 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   // «Tuzatish» / nusxa: ?copy=<ref> (chiqim hujjati — UUID)
   const copyRef = sp.copy && /^[A-Za-z0-9_-]{1,64}$/.test(sp.copy) ? sp.copy : null;
   const copy = copyRef ? await loadCopy(copyRef, new Set(materials.map((m) => m.id)), allTargets) : null;
-  // «Kimga» ro'yxatida xodimlar ko'rsatilmaydi — faqat brigadalar va oluvchilar (Tez tanlash va ?to=e: ham tushib qoladi);
-  // nusxadagi xodim bundan mustasno — tanlangan holda ko'rinsin
+  // «Kimga» ro'yxatida xodimlar ko'rsatilmaydi — faqat brigadalar, haydovchilar va oluvchilar (Tez tanlash va ?to=e: ham
+  // tushib qoladi, haydovchidan boshqa); nusxadagi xodim bundan mustasno — tanlangan holda ko'rinsin
   const targets = { ...allTargets, employees: copy?.employee ? [copy.employee] : [] };
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);

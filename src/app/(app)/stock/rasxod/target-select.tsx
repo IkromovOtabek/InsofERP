@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { Select } from "@/components/ui";
 import { RecipientAddDialog } from "@/components/quick-add";
-import { NEW_RECIPIENT, brigadeLabel, type TargetGroups } from "@/lib/issue-target";
+import { NEW_RECIPIENT, brigadeLabel, driverLabel, type TargetGroups } from "@/lib/issue-target";
 
 /**
- * Chiqimdagi «Kimga» — tartib: 1) bizning brigadalar (brigadir ismi bilan, "b:<id>"), 2) barcha xodimlar ("e:<id>"),
+ * Chiqimdagi «Kimga» — tartib: 1) bizning brigadalar (brigadir ismi bilan, "b:<id>"), 1a) haydovchilar — mashina raqami va
+ * F.I.O. («Yangi chiqim» formasi beradi, kaliti xodimniki "e:<id>"), 2) barcha xodimlar ("e:<id>"),
  * 3) tizimda yo'q nomlar — oluvchilar ("r:<id>"), 4) eng pastda «Qo'lda kiritish…» — yangi oluvchi oynasi ochiladi,
  * yozilgan nom darhol tanlanadi (brigada va xodim o'z bo'limlarida ochiladi).
  * `vehiclesOnly` — chiqim formasida «Avto zapchast» kategoriyasi: ro'yxatda faqat o'z parkimiz transportlari ("v:<id>").
@@ -35,6 +36,10 @@ export function TargetSelect({ targets, value, onChange, invalid, canAdd = true,
       </Select>
     );
   }
+  // Haydovchi «Xodimlar» guruhida takrorlanmaydi (bir xil qiymatli ikki band bo'lmasin)
+  const drivers = targets.drivers ?? [];
+  const driverIds = new Set(drivers.map((d) => d.id));
+  const employees = targets.employees.filter((e) => !driverIds.has(e.id));
   return (
     <>
       <Select name={name} value={value} onChange={(e) => pick(e.target.value)} required={required} aria-invalid={invalid || undefined}>
@@ -44,9 +49,14 @@ export function TargetSelect({ targets, value, onChange, invalid, canAdd = true,
             {targets.brigades.map((b) => <option key={b.id} value={`b:${b.id}`}>{brigadeLabel(b)}</option>)}
           </optgroup>
         )}
-        {targets.employees.length > 0 && (
+        {drivers.length > 0 && (
+          <optgroup label="Haydovchilar">
+            {drivers.map((d) => <option key={d.id} value={`e:${d.id}`}>{driverLabel(d)}</option>)}
+          </optgroup>
+        )}
+        {employees.length > 0 && (
           <optgroup label="Xodimlar">
-            {targets.employees.map((e) => <option key={e.id} value={`e:${e.id}`}>{`${e.name} · ${e.position}`}</option>)}
+            {employees.map((e) => <option key={e.id} value={`e:${e.id}`}>{`${e.name} · ${e.position}`}</option>)}
           </optgroup>
         )}
         {recipients.length > 0 && (
