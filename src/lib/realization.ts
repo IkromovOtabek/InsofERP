@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { ndsPart, withoutNds } from "@/lib/nds";
+import { feeHasNds, ndsPart, splitNds, withoutNds } from "@/lib/nds";
 import { unitLabel } from "@/lib/unit";
 import { PAY_GROUPS, payGroupOf, rootGroupName, type PayGroupKey } from "@/lib/order-day-sheet";
 
@@ -11,8 +11,9 @@ import { PAY_GROUPS, payGroupOf, rootGroupName, type PayGroupKey } from "@/lib/o
  *  · Sana — yuklangan vaqt (bo'lmasa reys ochilgan vaqt). Bekor qilingan reys va zayavka kirmaydi.
  *  · Bir nechta mahsulotli zayavkada reyslar qatorlarni navbat bilan to'ldiradi (oldingi reyslar yukidan keyin): 12 + 5 dona
  *    zayavkaning 17 talik reysi — 12 va 5, 10 + 7 lik ikki reysi — 10; 2 + 5 (bir TTN — bir necha qator, dona kasrga bo'linmaydi).
- *  · Dastavka zayavkaning birinchi reysiga yoziladi (kunlik varaqdagi qoida — `lib/order-day-sheet.ts`).
- *  · Summa (QQSsiz) = miqdor × narx (QQSsiz) + dastavka; Jami = Summa + QQS.
+ *  · Dastavka zayavkaning birinchi reysiga yoziladi (kunlik varaqdagi qoida — `lib/order-day-sheet.ts`). Zayavkada dastavka
+ *    QQS bilan saqlanadi (qatorlarda «NDS 12%» bo'lsa — `feeHasNds`): «Dostavka» ustunida QQS'siz qismi, QQS'i «QQS» ga qo'shiladi.
+ *  · Summa (QQSsiz) = miqdor × narx (QQSsiz) + dastavka (QQSsiz); Jami = Summa + QQS (mahsulot va dastavka QQS'i).
  *  · Reyssiz yetkazilgan zayavka (mijoz o'zi olib ketgan) — yetkazish sanasi bilan, mashina «o'zi oldi».
  *  · Perechisleniye qatorida shartnoma yoki schyot-faktura bo'lmasa — «Hujjatlar» ustunida ogohlantirish.
  */
@@ -25,7 +26,10 @@ export type RealizationRow = {
   ttn: string | null; tripTtn: string | null; vehicle: string | null; unit: string; qty: number;
   /** Mahsulot birligi kaliti (m3, dona…) va zayavka qatorida «QQS 12%» belgisi — Logistika reestridagi tuzatish qayta hisobi uchun */
   unitKey: string; nds: boolean;
-  price: number; delivery: number; net: number; vat: number; total: number;
+  /** Zayavka dastavkasi QQS bilanmi (`feeHasNds`) — reestrdagi dastavka tuzatishi shu bo'yicha */
+  feeNds: boolean;
+  /** `delivery` — dastavka QQS'siz; `deliveryVat` — uning QQS'i (`vat` ichida) */
+  price: number; delivery: number; deliveryVat: number; net: number; vat: number; total: number;
   address: string; phone: string | null; contractNo: string | null; invoiceNo: string | null; missing: string[];
   /** Reys ma'lumoti (Logistika → Realizatsiya): yuk olingan joy — BRU yoki manzil, haydovchi */
   loadPlace: string | null; driver: string | null; driverPhone: string | null;
@@ -96,6 +100,8 @@ export async function realizationRows(from: Date, to: Date, extra?: { tripIds: s
       loadPlace: trip?.loadPlace ?? null, driver: trip?.driver ?? null, driverPhone: trip?.driverPhone ?? null,
     };
     const fee = withFee ? Number(o.deliveryFee) : 0;
+    const feeNds = feeHasNds(o.items);
+    const feePart = feeNds ? splitNds(fee) : { net: fee, vat: 0 };
     let start = 0;
     o.items.forEach((i, n) => {
       const q = Number(i.qtyM3);
@@ -108,16 +114,17 @@ export async function realizationRows(from: Date, to: Date, extra?: { tripIds: s
       const price = Number(i.price);
       const line = r2(qty * price);
       const vat = i.nds ? ndsPart(line) : 0;
-      const delivery = n === 0 ? fee : 0;
+      const delivery = n === 0 ? feePart.net : 0, deliveryVat = n === 0 ? feePart.vat : 0;
       rows.push({
         // Kalit zayavka qatori id si bilan — qator qo'shilsa/olinsa ham dispetcher tuzatishi (`RealizationLine`) o'z qatorida qoladi
         ...base, key: `${trip?.id ?? o.id}-${i.id}`, product: i.product.name, group: rootName(i.product.groupId), unit: unitLabel(i.product.unit),
-        unitKey: i.product.unit, nds: i.nds, qty, price: i.nds ? withoutNds(price) : price, delivery, net: r2(line - vat + delivery), vat, total: r2(line + delivery),
+        unitKey: i.product.unit, nds: i.nds, feeNds, qty, price: i.nds ? withoutNds(price) : price, delivery, deliveryVat,
+        net: r2(line - vat + delivery), vat: r2(vat + deliveryVat), total: r2(line + delivery + deliveryVat),
       });
     });
     // Mahsulot qatorisiz zayavka (faqat dastavka)
     if (o.items.length === 0 && fee > 0) {
-      rows.push({ ...base, key: `${trip?.id ?? o.id}-fee`, product: "Dastavka", group: "Boshqa", unit: "", unitKey: "", nds: false, qty: 0, price: 0, delivery: fee, net: fee, vat: 0, total: fee });
+      rows.push({ ...base, key: `${trip?.id ?? o.id}-fee`, product: "Dastavka", group: "Boshqa", unit: "", unitKey: "", nds: false, feeNds, qty: 0, price: 0, delivery: fee, deliveryVat: 0, net: fee, vat: 0, total: fee });
     }
   };
 

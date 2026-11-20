@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Prisma, type RealizationEntry, type RealizationLine, type RealizationNote } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit, auditMany } from "@/lib/audit";
-import { NDS_RATE } from "@/lib/nds";
+import { NDS_RATE, entryNds, feeHasNds, splitNds, withNds, withoutNds } from "@/lib/nds";
 import { PRODUCT_UNITS, normalizeUnit, unitLabel } from "@/lib/unit";
 import { dateRu, fmtNum, fmtTiyin, isoDate } from "@/lib/format";
 import { matchKey, num, numMoney, parseDate, str, valueMapper, type ValueMaps } from "@/lib/excel";
@@ -27,10 +27,11 @@ import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
  *    sana, to'lov turi, sotuvchi, mashina (va reyssiz qatorda TTN) — reys bo'yicha (`RealizationNote`); mahsulot, guruh, o'lchov,
  *    miqdor, narx, dastavka — zayavka qatori bo'yicha (`RealizationLine`). Bo'sh qoldirilgani yoki asliga teng qiymat — zayavkadagisi.
  *    Miqdor, narx yoki dastavka tuzatilsa summa va QQS (zayavka qatoridagi «QQS 12%» belgisi bo'yicha) qayta hisoblanadi.
+ *    Dastavka ustunida QQS'siz summa; zayavkada dastavka QQS bilan bo'lsa, uning QQS'i QQS ustuniga qo'shiladi (`lib/realization.ts`).
  *  · Qo'lda: tizimga reys bo'lib tushmagan jo'natma (`RealizationEntry`). Kassa va skladga ta'sir qilmaydi; mijoz
  *    debitorkasiga «Sotib olgan» bo'lib tushadi (`lib/debt-sales.ts`). Mijoz (yoki aliasi) nomi ro'yxatdagiga mos kelsa
  *    bog'lanadi, yo'q bo'lsa mijozlarga qo'shiladi (`addMissingCustomers`); mahsulot mos kelsa — birlik va guruh mahsulotdan.
- *    QQS — perechisleniyeda 12% (miqdor × narx dan, dastavkasiz). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
+ *    QQS — perechisleniyeda 12%: miqdor × narx dan ham, dastavkadan ham (`entryNds`). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
  *  · Summa (QQSsiz) = miqdor × narx + dastavka; Jami = Summa + QQS (`lib/realization.ts` bilan bitta qoida).
  *  · Excel'dan import: varaqdagi qatorlar qo'lda qator bo'lib tushadi. Reestrda bori (reys yoki avval kiritilgan) o'tkazib
  *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`). Ro'yxatda yo'q xaridor mijozlarga,
@@ -94,10 +95,12 @@ function autoEdits(r: RealizationRow, n: RealizationNote | undefined, l: Realiza
   const unitKey = pick("unit", l?.unit, r.unitKey, unitLabel);
   const qty = pick("qty", dec(l?.qty), r.qty, (v) => fmtNum(v, 3));
   const price = pick("price", dec(l?.price), r.price, fmtTiyin);
-  const delivery = pick("delivery", dec(l?.delivery), r.delivery, fmtTiyin);
+  // Dastavka tuzatishi zayavka dastavkasidek saqlanadi — zayavkada QQS bo'lsa QQS bilan; ustunda QQS'siz qismi
+  const over = l?.delivery == null ? null : r.feeNds ? splitNds(Number(l.delivery)) : { net: Number(l.delivery), vat: 0 };
+  const delivery = pick("delivery", over?.net, r.delivery, fmtTiyin);
   const money = "qty" in orig || "price" in orig || "delivery" in orig;
   const line = r3(qty * price);
-  const vat = money ? (r.nds ? r3(line * NDS_RATE) : 0) : r.vat;
+  const vat = money ? r3((r.nds ? line * NDS_RATE : 0) + (over ? over.vat : r.deliveryVat)) : r.vat;
   const net = money ? r3(line + delivery) : r.net;
   return {
     date: pick("date", n?.date, r.date, dateRu),
@@ -150,9 +153,11 @@ export async function realizationLog(from: Date, to: Date, opts?: { customerIds?
     });
   }
   for (const e of entries) {
-    const qty = Number(e.qty), price = Number(e.price), delivery = Number(e.delivery), vat = Number(e.vat);
+    const qty = Number(e.qty), price = Number(e.price), delivery = Number(e.delivery);
     const net = r3(qty * price + delivery);
     const pay = (PAY_KEYS as string[]).includes(e.payGroup) ? (e.payGroup as PayGroupKey) : "CASH";
+    // QQS qoidadan (saqlangan `vat` dan emas): dastavka QQS'i qo'shilishidan oldin yozilgan qatorlar ham bir xil hisoblansin
+    const vat = entryNds(pay, qty, price, delivery).total;
     rows.push({
       key: `m-${e.id}`, source: "MANUAL", ref: e.id, orderId: null, tripId: null, customerId: e.customerId,
       date: e.date, at: e.createdAt, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer: e.customerName, product: e.productName, group: e.groupName,
@@ -292,7 +297,7 @@ function entryData(d: EntryInput, lk: Lookup) {
     data: {
       date: d.date!, payGroup: d.payGroup, seller: d.seller, customerId, customerName: d.customerName,
       productId: product?.id ?? null, productName: product?.name ?? d.productName, groupName: group ?? "Boshqa",
-      ttn: d.ttn, vehicle: d.vehicle, unit, qty, price, delivery, vat: d.payGroup === "BANK" ? r3(qty * price * NDS_RATE) : 0,
+      ttn: d.ttn, vehicle: d.vehicle, unit, qty, price, delivery, vat: entryNds(d.payGroup, qty, price, delivery).total,
       loadPlace: d.loadPlace, destination: d.destination, note: d.note, refName: d.refName,
     },
   } as const;
@@ -510,6 +515,10 @@ export async function saveRealizationLineField(key: string, field: LineCell, val
     if (field === "qty") {
       if (p.data !== null && p.data <= 0) return { error: "Miqdor 0 dan katta bo'lsin", field };
       set.qty = p.data !== null && Math.abs(p.data - r.qty) >= 0.0005 ? p.data : null;
+    } else if (field === "delivery") {
+      // Ustunda QQS'siz; tuzatish zayavka dastavkasidek saqlanadi — zayavkada QQS bo'lsa QQS bilan (`autoEdits`)
+      const same = p.data !== null && Math.abs(p.data - r.delivery) < 0.005;
+      set.delivery = p.data === null || same ? null : r3(r.feeNds ? p.data * (1 + NDS_RATE) : p.data);
     } else {
       const v = p.data === null ? null : r3(p.data);
       set[field] = v !== null && Math.abs(v - r[field]) >= 0.0005 ? v : null;
@@ -832,7 +841,7 @@ const orderOf = (id: string) => db.order.findUnique({
   where: { id },
   select: {
     id: true, kind: true, status: true, customerId: true, siteId: true, deliveryAddress: true, lat: true, lng: true, deliveryDate: true,
-    payMethod: true, onCredit: true, deliveryFee: true, updatedAt: true,
+    payMethod: true, onCredit: true, deliveryFee: true, updatedAt: true, items: { select: { nds: true } },
     customer: { select: { name: true } }, site: { select: { customerId: true } },
     trips: { where: { status: { not: "CANCELLED" } }, select: { id: true } },
     _count: { select: { invoices: { where: { status: { not: "CANCELLED" } } }, payments: true } }, payRequest: { select: { id: true } },
@@ -962,8 +971,10 @@ export async function saveSourceLineField(key: string, field: SourceLineCell, va
   async function saveFee(order: NonNullable<Awaited<ReturnType<typeof orderOf>>>): Promise<FieldResult> {
     const p = numIn(0, 10_000_000_000).safeParse(value);
     if (!p.success) return issue(p.error, field);
-    const fee = r2(p.data ?? 0);
-    if (Math.abs(fee - Number(order.deliveryFee)) < 0.005) return { ok: true, id: key };
+    // Reestrda dastavka QQS'siz; zayavkada QQS bo'lsa QQS qo'shib saqlanadi (`feeHasNds`)
+    const nds = feeHasNds(order.items), cur = Number(order.deliveryFee);
+    if (Math.abs((p.data ?? 0) - (nds ? withoutNds(cur) : cur)) < 0.005) return { ok: true, id: key };
+    const fee = nds ? withNds(p.data ?? 0) : r2(p.data ?? 0);
     return run(async () => {
       await db.$transaction(async (tx) => {
         const u = await tx.order.updateMany({ where: { id: order.id, updatedAt: order.updatedAt }, data: { deliveryFee: fee } });

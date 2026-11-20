@@ -25,3 +25,28 @@ export const ndsPart = (priceWithNds: number) => r2((priceWithNds * NDS_RATE) / 
 
 /** NDS qo'shilgan narxdan soliqsiz qismini ajratadi: 1 120 000 → 1 000 000. */
 export const withoutNds = (priceWithNds: number) => r2(priceWithNds / (1 + NDS_RATE));
+
+/** QQS bilan summani QQS'siz qismi va QQS'iga bo'ladi, yig'indisi aynan asl summa: 1 120 000 → 1 000 000 + 120 000. */
+export function splitNds(gross: number) {
+  const net = withoutNds(gross);
+  return { net, vat: r2(gross - net) };
+}
+
+/**
+ * Zayavka dastavkasi (`Order.deliveryFee`) QQS bilanmi. Alohida belgi yo'q: zayavka formasida va Excel ko'rinishda dastavka
+ * QQS'i mahsulot qatorlari bilan birga yoqiladi (perechisleniyeda — doim) va summa QQS qo'shilib saqlanadi.
+ * Shuning uchun qatorlardan birida «NDS 12%» bo'lsa — dastavka ham QQS bilan.
+ */
+export const feeHasNds = (items: { nds: boolean }[]) => items.some((i) => i.nds);
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * Realizatsiya reestrining qo'lda / Excel qatori (`RealizationEntry`) QQS'i: narx va dastavka QQS'siz kiritiladi,
+ * perechisleniyeda 12% — mahsulotdan (miqdor × narx) ham, dastavkadan ham; naqd va qarzga — QQS yo'q. Summalar 3 xonagacha.
+ */
+export function entryNds(payGroup: string, qty: number, price: number, delivery: number) {
+  if (payGroup !== "BANK") return { goods: 0, delivery: 0, total: 0 };
+  const goods = r3(qty * price * NDS_RATE), fee = r3(delivery * NDS_RATE);
+  return { goods, delivery: fee, total: r3(goods + fee) };
+}

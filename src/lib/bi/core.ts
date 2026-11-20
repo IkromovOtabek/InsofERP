@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { isoDate } from "@/lib/format";
 import { avgUnitCosts } from "@/lib/stock";
 import { companyVatPayer } from "@/lib/receipt-vat";
-import { withoutNds } from "@/lib/nds";
+import { entryNds, withoutNds } from "@/lib/nds";
 import { normalizeUnit } from "@/lib/unit";
 import { countWorkDays, monthWorkDays, type WorkCalendar } from "@/lib/work-calendar";
 
@@ -108,8 +108,8 @@ export type SaleRow = {
    * foydadan tushib qolmasin va 100% foyda bo'lib ham ko'rinmasin. Marja jadvallari (`grossOf`, `marginOf`) buni olmaydi.
    */
   estCost?: number;
-  /** Faqat Realizatsiya reestri qatorida: zayavka yo'q — to'lov turi, dastavka, guruh va manzil qatorning o'zidan */
-  rz?: { payGroup: "BANK" | "CASH" | "DEBT"; delivery: number; group: string; address: string };
+  /** Faqat Realizatsiya reestri qatorida: zayavka yo'q — to'lov turi, dastavka (QQS'siz) va uning QQS'i, guruh va manzil qatorning o'zidan */
+  rz?: { payGroup: "BANK" | "CASH" | "DEBT"; delivery: number; deliveryVat: number; group: string; address: string };
 };
 
 /* ───────────── Yalpi foyda: faqat tannarxi ma'lum qatorlar bo'yicha ───────────── */
@@ -357,7 +357,9 @@ async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<t
   for (const e of entries) {
     const k = ttnKey(e.ttn);
     if (k && (tripDays.get(k) ?? []).some((d) => Math.abs(d - e.date.getTime()) <= DAY)) continue;
-    const qty = Number(e.qty), price = Number(e.price), vat = Number(e.vat);
+    const qty = Number(e.qty), price = Number(e.price), delivery = Number(e.delivery);
+    // Tushumga faqat mahsulot QQS'i — dastavka (va uning QQS'i) tushumga kirmaydi
+    const nds = entryNds(e.payGroup, qty, price, delivery), vat = nds.goods;
     const customer = e.customer?.name ?? e.customerName, customerId = e.customerId ?? `${REALIZATION_PREFIX}c:${nameKey(e.customerName)}`;
     const u = e.seller ? userByName.get(nameKey(e.seller)) : undefined;
     const seller = e.customer?.agentId && e.customer.agent ? { sellerId: e.customer.agentId, seller: e.customer.agent.fullName }
@@ -374,7 +376,7 @@ async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<t
       productId: pid ?? `${REALIZATION_PREFIX}p:${nameKey(e.productName)}`, product: e.product?.name ?? lp?.name ?? e.productName, code: e.product?.code ?? lp?.code ?? "", unit: e.product?.unit ?? lp?.unit ?? e.unit,
       qty, price: qty > 0 ? gross / qty : price, basePrice: qty > 0 ? gross / qty : price, revenue: gross, cost: qty * (c ?? 0),
       net: vatPayer ? qty * price : gross, costKnown: c !== null,
-      rz: { payGroup: e.payGroup === "BANK" || e.payGroup === "DEBT" ? e.payGroup : "CASH", delivery: Number(e.delivery), group: e.groupName, address: e.destination ?? "" },
+      rz: { payGroup: e.payGroup === "BANK" || e.payGroup === "DEBT" ? e.payGroup : "CASH", delivery, deliveryVat: nds.delivery, group: e.groupName, address: e.destination ?? "" },
     });
   }
   return out;

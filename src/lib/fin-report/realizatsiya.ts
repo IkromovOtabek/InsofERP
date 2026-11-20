@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { addDays, goLiveDate, loadRevenue, sum, workingDays } from "@/lib/bi/core";
 import { isoDate } from "@/lib/format";
+import { feeHasNds, splitNds } from "@/lib/nds";
+import { companyVatPayer } from "@/lib/receipt-vat";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { unitLabel } from "@/lib/unit";
 import { countWorkDays, monthWorkDays, workCalendar, weekLabel, type WorkCalendar } from "@/lib/work-calendar";
@@ -12,7 +14,8 @@ import { r2 } from "./rows";
  * to'lov turi bo'yicha summa, guruhlar hajmi va rekord oy, realizatsiya rejasi, sotuvchilar, shu kungi sotuvlar.
  *
  * Sotuv — yetkazilgan reyslar (`loadRevenue`, Tahlil va Bosh sahifa bilan bir raqam). Dastavka zayavkadan
- * reysga yetkazilgan ulushi bo'yicha bo'linadi va QQS'siz summaga qo'shiladi (`order-day-sheet` kabi, QQS'siz).
+ * reysga yetkazilgan ulushi bo'yicha bo'linadi: QQS'siz qismi «Summa QQSsiz»ga, QQS'i (zayavkada QQS bilan saqlangan bo'lsa —
+ * `feeHasNds`; reestr qatorida perechisleniyeda 12%) «QQS»ga qo'shiladi — Realizatsiya reestri bilan bir qoida.
  * To'lov turi — `order-day-sheet` qoidasi: qarzga → «Qarz», keyin `payMethod`; usul yozilmagan zayavka NDS'li
  * bo'lsa perechisleniyega, aks holda naqdga tushadi va «Nazorat» qatorida ko'rsatiladi.
  * Reja va sotuvchilar — QQS bilan, dastavkasiz (Reja nazorati bilan bir xil). Ish kuni — Dushanba–Shanba.
@@ -63,13 +66,14 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   // Rekord uchun ERP tarixi — tizimga o'tilgan oydan (bo'lmasa bir yil oldin) tanlangan kungacha
   const histFrom = live ? new Date(live.getFullYear(), live.getMonth(), 1) : new Date(y - 1, mo - 1, 1);
 
-  const [revMonth, hist, prods, records, plans, users] = await Promise.all([
+  const [revMonth, hist, prods, records, plans, users, vatPayer] = await Promise.all([
     loadRevenue(monthStart, next),
     loadRevenue(histFrom < monthStart ? histFrom : monthStart, monthStart),
     groupsOf(),
     db.salesRecord.findMany({ orderBy: { createdAt: "asc" } }),
     db.salesPlan.findMany({ where: { year: y, month: mo } }),
     db.user.findMany({ select: { id: true, fullName: true } }),
+    companyVatPayer(),
   ]);
   const orders = await db.order.findMany({
     where: { id: { in: [...new Set(revMonth.map((r) => r.orderId))] } },
@@ -84,13 +88,16 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
     const o = orderOf.get(r.orderId);
     const totalQty = o ? sum(o.items.map((i) => Number(i.qtyM3))) : 0;
     // Realizatsiya reestri qatori (`r.rz`) — zayavkasi yo'q: dastavka, to'lov turi, guruh va manzil qatorning o'zidan
-    const delivery = r.rz ? r.rz.delivery : o && totalQty > 0 ? (Number(o.deliveryFee) * r.qty) / totalQty : 0;
+    // Dastavka mijoz to'laydigani (QQS bilan); QQS'i mahsulotnikidek faqat QQS to'lovchisi korxonada ajratiladi (`r.net`)
+    const fee = r.rz ? r.rz.delivery + r.rz.deliveryVat : o && totalQty > 0 ? (Number(o.deliveryFee) * r.qty) / totalQty : 0;
+    const feeVat = !vatPayer ? 0 : r.rz ? r.rz.deliveryVat : o && feeHasNds(o.items) ? splitNds(fee).vat : 0;
+    const delivery = fee - feeVat;
     const pay: PayGroupKey = r.rz ? r.rz.payGroup : o?.onCredit ? "DEBT" : o?.payMethod ? (o.payMethod === "BANK" ? "BANK" : "CASH") : o?.items.some((i) => i.nds) ? "BANK" : "CASH";
     return {
       src: r, unset: !!o && !o.onCredit && !o.payMethod, group: prods.get(r.productId)?.group ?? r.rz?.group ?? "Boshqalar",
       row: {
         pay, payLabel: payLabel.get(pay) ?? pay, seller: r.seller, customer: r.customer, product: r.product, unit: unitLabel(r.unit),
-        qty: r.qty, price: r.qty ? r.net / r.qty : r.price, delivery, net: r.net + delivery, vat: r.revenue - r.net, total: r.revenue + delivery,
+        qty: r.qty, price: r.qty ? r.net / r.qty : r.price, delivery, net: r.net + delivery, vat: r.revenue - r.net + feeVat, total: r.revenue + fee,
         address: o?.site?.name || o?.deliveryAddress || r.rz?.address || "",
       } satisfies RzRow,
     };
