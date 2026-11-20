@@ -4,7 +4,7 @@ import { type SP } from "../shell";
 import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_LABEL } from "@/lib/fin-report/debts";
 import type { Akt } from "@/lib/fin-report/akt";
 import { MONTHS_UZ } from "@/lib/bi/plans";
-import { date, dateRu, dateShort, fmtFixed, fmtJami, fmtNum, isoDate, moneyShort } from "@/lib/format";
+import { date, dateRu, dateShort, fmtJami, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, type BadgeColor, Card, InfoButton, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { DebtFixButton, OpeningFixButton, PartyEditButton, PencilLink } from "./debt-dialogs";
@@ -212,11 +212,12 @@ export function DebtSheetView({ who, s, sp, base, company, entryHref, canFix, ca
     [soldLabel]: r.sold || null, [paidLabel]: r.paid || null,
     [`Qarzdorlik ${d2}`]: owes(r.now) || null, [`Haqdorlik ${d2}`]: owed(r.now) || null,
   }));
-  const Amt = ({ v }: { v: number }) => (Math.abs(v) < 0.005 ? null : <>{fmtFixed(v)}</>);
+  // Debitorka / kreditorka summalari kasrsiz, so'mgacha yaxlitlab (2026-11-20, foydalanuvchi talabi) — Jami qatori bilan bir xil
+  const Amt = ({ v }: { v: number }) => (Math.abs(v) < 0.5 ? null : <>{fmtJami(v)}</>);
   const num = "whitespace-nowrap px-3 py-1.5 text-right tabular";
   /** Katakdagi summa — bosilsa tafsilot (qatorning akt havolasi ustida) */
-  const CellLink = ({ href, v, title }: { href: string; v: number; title: string }) => (Math.abs(v) < 0.005 ? null
-    : <Link href={href} title={title} className="relative z-10 rounded px-0.5 underline decoration-slate-300 decoration-dotted underline-offset-4 hover:bg-white/70 hover:decoration-slate-700">{fmtFixed(v)}</Link>);
+  const CellLink = ({ href, v, title }: { href: string; v: number; title: string }) => (Math.abs(v) < 0.5 ? null
+    : <Link href={href} title={title} className="relative z-10 rounded px-0.5 underline decoration-slate-300 decoration-dotted underline-offset-4 hover:bg-white/70 hover:decoration-slate-700">{fmtJami(v)}</Link>);
   /** Summa katagi: chapda qalam (huquq bo'lsa), o'ngda summa */
   const Cell = ({ pen, children }: { pen?: React.ReactNode; children: React.ReactNode }) => (
     <div className="flex items-center justify-end gap-1">{pen}<span className="min-w-0">{children}</span></div>

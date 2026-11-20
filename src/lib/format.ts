@@ -29,7 +29,8 @@ export const fmtTiyin = (v: number | string | { toString(): string }) => fmtFixe
 
 /**
  * Jami summa — kasrsiz, so'mgacha yaxlitlab: «4 200 000». «Jami» ustuni, «Jami» qatori va kartalari shu bilan;
- * narx va qator summalari o'z kasri bilan qoladi (`fmtTiyin`, `fmtFixed`).
+ * narx va qator summalari o'z kasri bilan qoladi (`fmtTiyin`, `fmtFixed`). Istisno: mijoz va ta'minotchi debitorka /
+ * kreditorkasi (varaq, karta va akt sverka) — u yerda hamma summa shu bilan, kasrsiz.
  */
 export function fmtJami(v: number | string | { toString(): string }): string {
   const n = Math.round(Number(v));

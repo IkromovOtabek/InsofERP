@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { type Akt } from "@/lib/fin-report/akt";
-import { dateRu, dateShort, fmtFixed, isoDate } from "@/lib/format";
+import { dateRu, dateShort, fmtJami, isoDate } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 import { BackLink } from "@/components/ui";
 
@@ -15,7 +15,8 @@ const SOFT = "#dde7f3";
 
 type Company = { name: string; legalName: string | null; directorName: string | null };
 
-const n = (v: number) => (Math.abs(v) < 0.005 ? "" : fmtFixed(v));
+/** Summa — kasrsiz, so'mgacha yaxlitlab (debitorka / kreditorka summalari bilan bir xil, 2026-11-20) */
+const n = (v: number) => (Math.abs(v) < 0.5 ? "" : fmtJami(v));
 
 /** Davr tanlash, orqaga va chop etish — hujjat tepasida, chop etishda yashirinadi. */
 export function AktToolbar({ akt, back }: { akt: Akt; back: { href: string; label: string } }) {
@@ -42,8 +43,8 @@ export function AktSverkaDoc({ akt, company }: { akt: Akt; company: Company }) {
   const sum = "px-3 py-2.5 text-right tabular-nums whitespace-nowrap";
   const opening = akt.opening, closing = akt.closing;
   // Saldo: musbat — ular bizga qarz (debet), manfiy — biz ularga qarzmiz (kredit)
-  const debt = closing > 0.005 ? `${dateRu(akt.to)} holatiga ${us} foydasiga qarzdorlik: ${fmtFixed(closing)} so'm.`
-    : closing < -0.005 ? `${dateRu(akt.to)} holatiga ${us} ning ${party} oldidagi qarzdorligi: ${fmtFixed(-closing)} so'm.`
+  const debt = closing >= 0.5 ? `${dateRu(akt.to)} holatiga ${us} foydasiga qarzdorlik: ${fmtJami(closing)} so'm.`
+    : closing <= -0.5 ? `${dateRu(akt.to)} holatiga ${us} ning ${party} oldidagi qarzdorligi: ${fmtJami(-closing)} so'm.`
       : `${dateRu(akt.to)} holatiga tomonlar o'rtasida qarzdorlik yo'q.`;
 
   return (
@@ -92,8 +93,8 @@ export function AktSverkaDoc({ akt, company }: { akt: Akt; company: Company }) {
               <tr className="font-bold" style={{ background: SOFT, color: NAVY }}>
                 <td className={cell} />
                 <td className={cell}>Davr aylanmasi</td>
-                <td className={sum}>{fmtFixed(akt.debit)}</td>
-                <td className={sum}>{fmtFixed(akt.credit)}</td>
+                <td className={sum}>{fmtJami(akt.debit)}</td>
+                <td className={sum}>{fmtJami(akt.credit)}</td>
               </tr>
               <tr className="font-bold" style={{ background: SOFT, color: NAVY }}>
                 <td className={cell} />

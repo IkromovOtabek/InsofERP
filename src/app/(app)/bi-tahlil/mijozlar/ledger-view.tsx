@@ -10,7 +10,7 @@ import { customerAkt, parseAktRange, supplierAkt } from "@/lib/fin-report/akt";
 import { customerLedger, supplierLedger, type Ledger, type LedgerLine } from "@/lib/fin-report/ledger";
 import { categoryOptions } from "@/lib/fin-report/categories";
 import { DEBT_EPOCH, isDebtEpoch } from "@/lib/fin-report/debts";
-import { dateRu, dateShort, fmtFixed, fmtJami, fmtNum, isoDate, moneyShort } from "@/lib/format";
+import { dateRu, dateShort, fmtJami, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { Badge, Empty, Input, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { BackLink } from "@/components/ui/back-link";
 import { PrintButton } from "@/components/print-button";
@@ -128,7 +128,8 @@ export async function LedgerPage({ who, id, sp, session }: { who: "customer" | "
   );
 }
 
-const Money = ({ v, className }: { v: number; className?: string }) => <span className={cn("tabular", className)}>{fmtFixed(v)}</span>;
+/** Summa — kasrsiz, so'mgacha yaxlitlab (debitorka / kreditorka kartasi, 2026-11-20) */
+const Money = ({ v, className }: { v: number; className?: string }) => <span className={cn("tabular", className)}>{fmtJami(v)}</span>;
 
 function SoldTable({ l, lines, canEntry }: { l: Ledger; lines: LedgerLine[]; canEntry: boolean }) {
   const sup = l.who === "supplier";
@@ -159,9 +160,9 @@ function SoldTable({ l, lines, canEntry }: { l: Ledger; lines: LedgerLine[]; can
               </Td>
               <Td className="min-w-44">{items.map((i, k) => <div key={k} className="truncate">{i.name}</div>)}</Td>
               <Td right className="whitespace-nowrap">{items.map((i, k) => <div key={k}>{i.qty ? `${fmtNum(i.qty, 3)} ${i.unit}` : ""}</div>)}</Td>
-              <Td right className="whitespace-nowrap">{items.map((i, k) => <div key={k}>{i.price ? fmtFixed(i.price) : ""}</div>)}</Td>
-              {hasDel && <Td right className="whitespace-nowrap">{items.map((i, k) => <div key={k}>{i.delivery ? fmtFixed(i.delivery) : ""}</div>)}</Td>}
-              {hasVat && <Td right className="whitespace-nowrap">{items.map((i, k) => <div key={k}>{i.vat ? fmtFixed(i.vat) : ""}</div>)}</Td>}
+              <Td right className="whitespace-nowrap">{items.map((i, k) => <div key={k}>{i.price ? fmtJami(i.price) : ""}</div>)}</Td>
+              {hasDel && <Td right className="whitespace-nowrap">{items.map((i, k) => <div key={k}>{i.delivery ? fmtJami(i.delivery) : ""}</div>)}</Td>}
+              {hasVat && <Td right className="whitespace-nowrap">{items.map((i, k) => <div key={k}>{i.vat ? fmtJami(i.vat) : ""}</div>)}</Td>}
               <Td right className="whitespace-nowrap font-semibold text-slate-900"><Money v={x.amount} /></Td>
               {!sup && <Td className="min-w-40 text-[13px] text-slate-600">{[x.ttn && `TTN ${x.ttn}`, x.vehicle, x.address].filter(Boolean).join(" · ") || <span className="text-slate-300">—</span>}{x.note && <div className="text-[12px] text-slate-500">{x.note}</div>}</Td>}
               <Td className="whitespace-nowrap text-[13px] text-slate-600">{x.seller ?? x.by ?? ""}</Td>
@@ -256,7 +257,7 @@ function OpenTable({ l, lines, canFix, entryHref }: { l: Ledger; lines: LedgerLi
   return (
     <div className="space-y-3">
       <div className="rounded-lg bg-slate-50 px-3 py-2 text-[13px] text-slate-600">
-        Davr boshidagi qoldiq: <b className="tabular text-slate-900">{fmtFixed(Math.abs(owes(l.start)))}</b> ({side(owes(l.start))}).
+        Davr boshidagi qoldiq: <b className="tabular text-slate-900">{fmtJami(Math.abs(owes(l.start)))}</b> ({side(owes(l.start))}).
         Quyida — shu davrda kiritilgan boshlang&apos;ich qoldiq / tuzatish yozuvlari (Excel yoki qo&apos;lda).
         {entryHref && <> Summani o&apos;zgartirish — <Link href={entryHref} className="font-medium text-slate-900 underline">Qarzlarni kiritish</Link> sahifasida yoki «Qoldiqni tuzatish» tugmasi bilan.</>}
       </div>
