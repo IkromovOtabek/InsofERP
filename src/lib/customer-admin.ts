@@ -125,7 +125,7 @@ export async function saveCustomerLib(id: string | null, input: CustomerInput, w
 
 /**
  * Qarz varag'idagi qalam (Tahlil → Mijoz debitorka): mijoz nomi va turi (naqd / perechisleniye, `Customer.payKind`;
- * null — oxirgi zayavka bo'yicha). Nom boshqa mijoznikiga (yoki uning boshqa nomiga) to'g'ri kelsa — rad etiladi, birlashtirish
+ * null — oxirgi zayavka, bo'lmasa Realizatsiya qatori bo'yicha, `customerKinds`). Nom boshqa mijoznikiga (yoki uning boshqa nomiga) to'g'ri kelsa — rad etiladi, birlashtirish
  * mijoz kartasida. Eski nom «boshqa nomlari»ga o'tadi: Realizatsiya, kassa «Kimdan» va importlar eski yozilishni ham taniydi.
  */
 export async function updateCustomerNameKind(id: string, input: { name: string; payKind: PayMethod | null }, userId: string): Promise<{ ok: true; note: string } | { ok: false; error: string }> {

@@ -123,7 +123,7 @@ type Kind = "CASH" | "BANK";
 
 /**
  * Nom ustunidagi qalam: mijoz — nomi va turi (naqd / perechisleniye), ta'minotchi — nomi. Tur tanlanmasa (qo'lda belgilanmagan
- * bo'lsa) — avvalgidek oxirgi zayavka bo'yicha qoladi. Bir xil nomli boshqa karta bo'lsa — saqlanmaydi.
+ * bo'lsa) — avvalgidek oxirgi zayavka (yo'q bo'lsa Realizatsiya qatori) bo'yicha qoladi (`customerKinds`). Bir xil nomli boshqa karta bo'lsa — saqlanmaydi.
  */
 export function PartyEditButton({ who, id, name, kind, kindSet, cardHref }: { who: "customer" | "supplier"; id: string; name: string; kind?: Kind | null; kindSet?: Kind | null; cardHref?: string }) {
   const [open, setOpen] = useState(false);
@@ -154,7 +154,7 @@ export function PartyEditButton({ who, id, name, kind, kindSet, cardHref }: { wh
                     </button>
                   ))}
                 </div>
-                {!payKind && <span className="mt-1 block text-[12px] text-slate-500">Hozir oxirgi zayavka bo&apos;yicha — tanlasangiz, shu qoladi</span>}
+                {!payKind && <span className="mt-1 block text-[12px] text-slate-500">Hozir oxirgi zayavka (zayavkasi yo&apos;q bo&apos;lsa Realizatsiya qatori) bo&apos;yicha — tanlasangiz, shu qoladi</span>}
               </Field>
             )}
           </div>

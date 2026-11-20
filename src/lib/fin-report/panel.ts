@@ -162,7 +162,7 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
 
   // ── Qarzlar: haqdorlik (bizga) va qarzdorlik (bizdan) ──
   const custIds = [...customers.keys()];
-  // Mijoz turi — qarz varag'idagi bilan bir qoida (qo'lda belgilangan, bo'lmasa oxirgi zayavka to'lov usuli)
+  // Mijoz turi — qarz varag'idagi bilan bir qoida (qo'lda belgilangan, bo'lmasa oxirgi zayavka, u ham yo'q bo'lsa Realizatsiya qatori)
   const methodOf = await customerKinds(custIds);
   const cashCustomers: [number, number] = [0, 0], bankCustomers: [number, number] = [0, 0];
   for (const c of customers.values()) {

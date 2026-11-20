@@ -68,6 +68,9 @@ const sheet = await customerDebtSheet(parseDebtDay());
 const rA = sheet.rows.find((x) => x.id === A.id), rB = sheet.rows.find((x) => x.id === B.id);
 check("D10 varaq A: boshlang'ich 3 mln, sotib olgan 3 mln, to'lagan 2 mln, oxiri 4 mln", !!rA && eq2(rA.open.debt, 3_000_000) && eq2(rA.sold, 3_000_000) && eq2(rA.paid, 2_000_000) && eq2(rA.now.debt, 4_000_000), rA);
 check("D11 varaq B: to'lagan −300 000 (boshqa qarzi), qarzdorlik 300 000", !!rB && eq2(rB.paid, -300_000) && eq2(rB.now.debt, 300_000), rB);
+const rC = sheet.rows.find((x) => x.id === C?.id);
+check("D11b zayavkasiz mijoz turi — Realizatsiyadagi oxirgi Naqd/Perech. qatoridan (A Naqd, C Perech.), qatorsiz B — Perech.",
+  rA?.kind === "CASH" && rC?.kind === "BANK" && rB?.kind === "BANK" && (await customerDebtSheet(parseDebtDay(), "CASH")).rows.some((x) => x.id === A.id), [rA?.kind, rC?.kind, rB?.kind]);
 check("D12 varaqda hamma qator: boshi + sotib olgan − to'lagan = oxiri", sheet.rows.every((x) => eq2((x.open.debt - x.open.advance) + x.sold - x.paid, x.now.debt - x.now.advance)));
 const st = await customerStatement(A.id, new Date(iso(30)), new Date());
 check("D13 akt sverka yakuniy = balans", eq2(st.closing, 4_000_000) && st.lines.some((l) => l.kind === "SALE") && st.lines.some((l) => l.kind === "CASH") && st.lines.some((l) => l.kind === "TRANSFER"), st.lines.map((l) => l.kind));

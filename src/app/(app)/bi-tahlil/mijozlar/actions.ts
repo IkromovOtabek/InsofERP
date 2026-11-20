@@ -71,7 +71,7 @@ export async function fixOpeningAction(who: "customer" | "supplier", id: string,
 
 const partySchema = z.object({
   name: zStr("Nomi to'ldirilishi shart").max(200, "Nomi juda uzun"),
-  // Mijoz turi: CASH — naqd, BANK — perechisleniye, bo'sh — oxirgi zayavka bo'yicha (o'zgartirilmagan)
+  // Mijoz turi: CASH — naqd, BANK — perechisleniye, bo'sh — `customerKinds` qoidasi (oxirgi zayavka / Realizatsiya qatori; o'zgartirilmagan)
   payKind: z.enum(["CASH", "BANK", ""]).optional(),
 });
 

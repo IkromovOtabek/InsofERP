@@ -261,7 +261,8 @@ model Customer {
   aliases       String[] @default([])
   creditLimit   Decimal  @default(0) @db.Decimal(18, 2) // yangi mijozga 0 (direktor/moliya oshiradi); ishlatilgan qismi = qarz + ochiq zayavkalar; to'liq ishlatilsa — qora ro'yxat
   /// Mijoz turi qo'lda (Tahlil → Mijoz debitorka, Moliya paneli): CASH — naqd, BANK — perechisleniye.
-  /// Bo'sh — oxirgi zayavkadagi to'lov usuli (zayavkasi yo'q bo'lsa perechisleniye), `fin-report/debts.ts → customerKinds`.
+  /// Bo'sh — oxirgi zayavkadagi to'lov usuli (zayavkasi yo'q bo'lsa Realizatsiyadagi oxirgi Naqd/Perech. qatori, u ham yo'q
+  /// bo'lsa perechisleniye), `fin-report/debts.ts → customerKinds`.
   payKind       PayMethod?
   /// Ichki "mijoz" — haqiqiy mijoz emas, tizimning o'zi ishlatadi (sklad zaxirasi zayavkasi shu nomga ochiladi).
   /// Mijozlar ro'yxati, limit, reyting va ECO sinxronidan chiqarib tashlanadi.

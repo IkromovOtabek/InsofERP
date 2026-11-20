@@ -45,7 +45,7 @@ export type DebtSide = { debt: number; advance: number };
  */
 export type DebtRow = {
   id: string; name: string;
-  /** Mijoz turi (amaldagisi) va qo'lda belgilangani (`Customer.payKind`; null — oxirgi zayavka bo'yicha) */
+  /** Mijoz turi (amaldagisi) va qo'lda belgilangani (`Customer.payKind`; null — `customerKinds` qoidasi: oxirgi zayavka, bo'lmasa Realizatsiya qatori) */
   kind?: CustomerKind | null; kindSet?: CustomerKind | null;
   open: DebtSide; sold: number; paid: number; now: DebtSide; change: number;
 };
@@ -90,8 +90,9 @@ export async function supplierDebtSheet(day: Date, start?: Date): Promise<DebtSh
 
 /**
  * Mijoz turi (Moliya panelidagi «Qarzlar» bloki bilan bir xil): qo'lda belgilangani (`Customer.payKind` — qarz varag'idagi
- * qalam, Otabek 2026-11-17), bo'lmasa oxirgi zayavkadagi to'lov usuli. CASH — naqd, BANK — perechisleniye; zayavkasi yo'q
- * yoki usuli yozilmagan mijoz — perechisleniye.
+ * qalam, Otabek 2026-11-17), bo'lmasa oxirgi zayavkadagi to'lov usuli, zayavkasi yo'q bo'lsa — Realizatsiyadagi oxirgi
+ * qo'lda/Excel qatorining Naqd/Perech. turi (Otabek 2026-11-20: Realizatsiyadan qo'shilgan naqd xaridorlar Perech.ga tushib
+ * qolardi). CASH — naqd, BANK — perechisleniye; hech biri yo'q — perechisleniye.
  */
 export async function customerKinds(ids: string[]): Promise<Map<string, CustomerKind>> {
   if (!ids.length) return new Map();
@@ -101,7 +102,15 @@ export async function customerKinds(ids: string[]): Promise<Map<string, Customer
   ]);
   const manual = new Map(set.map((c) => [c.id, c.payKind as CustomerKind]));
   const m = new Map(last.map((o) => [o.customerId, o.payMethod as CustomerKind]));
-  return new Map(ids.map((id) => [id, manual.get(id) ?? m.get(id) ?? "BANK"]));
+  const rest = ids.filter((id) => !manual.has(id) && !m.has(id));
+  const entries = rest.length
+    ? await db.realizationEntry.findMany({
+      where: { customerId: { in: rest }, cancelledAt: null, payGroup: { in: ["CASH", "BANK"] } },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }], distinct: ["customerId"], select: { customerId: true, payGroup: true },
+    })
+    : [];
+  const real = new Map(entries.map((e) => [e.customerId!, e.payGroup as CustomerKind]));
+  return new Map(ids.map((id) => [id, manual.get(id) ?? m.get(id) ?? real.get(id) ?? "BANK"]));
 }
 
 /** Xaridorlar qarzdorligi: `debt` — mijoz bizga qarz (qarzdorlik), `advance` — mijoz oldindan to'lagan (haqdorlik). `kind` — Mijoz turi filtri. */
