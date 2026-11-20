@@ -112,7 +112,8 @@ check("B19 qarz yana 6 999 999,50", eq2(Number(cr.invoiced) - Number(cr.paid), 6
 page = await buh.get(`/customers/${cB.id}`);
 check("B20 mijoz kartasida qarz 6 999 999,5", page.status === 200 && hasMoney(page.text, 6999999.5), page.status);
 page = await buh.get(`/customers/${cB.id}/akt?from=${today}&to=${today}`);
-check("B21 akt sverka: yakuniy qoldiq 6 999 999,5 (tiyin bilan)", page.status === 200 && hasMoney(page.text, 6999999.5, true), page.status);
+// Akt sverka 2026-11-20 dan kasrsiz (debitorka / kreditorka bilan bir xil, `fmtJami`): 6 999 999,5 → «7 000 000»
+check("B21 akt sverka: yakuniy qoldiq so'mgacha yaxlitlangan — 7 000 000, kasrsiz", page.status === 200 && html(page.text).includes("7 000 000") && !html(page.text).includes("6 999 999,5"), page.status);
 for (const [p, who] of [["/sales", buh], ["/dashboard", dir], ["/bi-tahlil/moliya", dir], ["/bi-tahlil/mijozlar", dir], ["/payments", kassa], ["/invoices", buh], ["/customers", buh], [`/payments/mijoz/${cB.id}`, buh]]) {
   page = await who.get(p);
   check(`B22 ${p} ochiladi (200)`, page.status === 200, `${page.status} ${page.location ?? ""}`);
