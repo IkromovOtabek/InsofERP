@@ -8,7 +8,7 @@ import { Button, Callout, Field, FormError, FormSuccess, InfoButton, Input, Sele
 import { MoneyInput } from "@/components/money-input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { cn } from "@/lib/utils";
-import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, isStaffSettleCategory, type CashMethod } from "@/lib/cash-categories";
+import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, isLentCategory, isStaffSettleCategory, type CashMethod } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
 import { QuickAdd, QuickDelete, QuickEdit, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
@@ -114,7 +114,7 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
   const accLabel = (a: Acc) => `${a.name}${a.type ? ` (${a.type === "CASH" ? "naqd" : "bank"})` : ""}`;
   const shownReceipts = supplierId ? receipts.filter((r) => r.supplierId === supplierId) : receipts;
   // Kredit kategoriyasi: «Qarz berildi / qaytdi» — biz bergan qarzlar, qolganlari — kreditlar va olingan qarzlar
-  const lentCat = /qarz berildi|berilgan qarz/i.test(cat);
+  const lentCat = isLentCategory(cat);
   const shownLoans = merge(loans, added.loans, (l) => l.id).filter((l) => (l.kind === "LENT") === lentCat);
   const loanVal = shownLoans.some((l) => l.id === loanId) ? loanId : "";
   // Yangi qarzning sanasi — shu kirim/chiqim sanasi (qarz qoldig'i shu sanadan oldingi yozuvlarni hisobga olmaydi)

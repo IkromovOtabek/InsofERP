@@ -22,6 +22,11 @@ export const PEREKIT_CATEGORY = "Perekit (o'z hisoblararo)";
  */
 export const isStaffSettleCategory = (name: string | null | undefined) => !!name && /[xh]odim/i.test(name) && /hisob/i.test(name);
 /**
+ * Kredit manbalaridan biz bergan qarzlarniki («Qarz berildi», «Berilgan qarz qaytdi») — tanlovda faqat `Loan.kind = LENT`;
+ * qolgan kredit manbalarida — bank kreditlari va olingan qarzlar. Kirim-Chiqim formasi va Kassa / bank tahriri shundan.
+ */
+export const isLentCategory = (name: string | null | undefined) => !!name && /qarz berildi|berilgan qarz/i.test(name);
+/**
  * To'lov usuli — alohida maydon emas, hisob turidan (`CashAccount.type`): naqd kassa yoki bank hisobi.
  * Kirim-Chiqim formasidagi «Naqd / Bank» tanlovi va jurnal belgisi/filtri shu yorliqlarni oladi.
  */

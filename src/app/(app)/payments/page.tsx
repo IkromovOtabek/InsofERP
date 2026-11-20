@@ -21,6 +21,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const canEdit = !!s && canDo(s, "cashflow", "edit");
   // Tahrirdagi sub manba yonida «+» — Kirim-Chiqim formasidagi qoida (`lib/quick-add-actions.ts` → canCashAdd)
   const canAddSub = !!s && (canDo(s, "cashflow", "create") || canDo(s, "moliya", "categories"));
+  // Tahrirda kredit / qarz tanlovi yonida «+» — `quickAddLoan` qoidasi
+  const canAddLoan = !!s && (canDo(s, "cashflow", "create") || canDo(s, "moliya", "loans"));
 
   const accounts = await db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } });
 
@@ -42,7 +44,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       {/* Hisob ustuni nomi bosilsa — kassa jurnali shu hisob bo'yicha; to'liq hisob ko'chirmasi — Kirim-Chiqimda */}
       <AccountMatrix accounts={accounts} range={kassaRange(sp)} />
 
-      <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} canAddSub={canAddSub} />
+      <KassaJurnalTab accounts={accounts} sp={sp} canEdit={canEdit} canAddSub={canAddSub} canAddLoan={canAddLoan} />
     </div>
   );
 }

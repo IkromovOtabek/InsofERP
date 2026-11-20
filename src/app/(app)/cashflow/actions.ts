@@ -86,6 +86,9 @@ const editSchema = z.object({
   counterparty: zOpt,
   // Maydon yuborilmasa — mijoz bog'lanishi o'zgarmaydi; bo'sh — qarzdan olinadi
   customerId: z.string().trim().optional().transform((v) => (v === undefined ? undefined : v || null)),
+  // Kredit / loyiha manbasida — qaysi qarz / loyiha (boshqa manbadan shunday manbaga o'tilsa shart)
+  loanId: zOpt,
+  projectId: zOpt,
   note: zOpt,
   sig: z.string().max(5000),
 });

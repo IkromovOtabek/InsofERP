@@ -114,7 +114,7 @@ async function txDetail(id: string, s: Session): Promise<CashRowDetail | null> {
     edit: canEdit && manual && !editBlock ? {
       kind: "tx", id: t.id, type: t.type as "INCOME" | "EXPENSE", date: isoDate(t.date), cashAccountId: t.cashAccountId, amount: Number(t.amount),
       category: t.category, subCategory: t.subCategory ?? "", counterparty: who ?? "", note: t.note ?? "", sig: cashEntrySig(t), lock: cashEntryLocks(t),
-      customerId: t.customerId ?? "", customerName: t.customer?.name ?? "",
+      customerId: t.customerId ?? "", customerName: t.customer?.name ?? "", linked: !!(t.loanId || t.projectId),
     } : undefined,
     buttons: {
       edit: btn(canEdit, editBlock),

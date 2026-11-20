@@ -9,7 +9,8 @@ import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { QuickAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
-import { quickAddCashCategory } from "@/lib/quick-add-actions";
+import { quickAddCashCategory, quickAddLoan, quickAddProject } from "@/lib/quick-add-actions";
+import { isLentCategory } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import type { ActionState } from "@/lib/action";
 
@@ -19,8 +20,16 @@ export type CashEditOptions = {
   income: CategoryOption[]; expense: CategoryOption[];
   /** Mijoz to'lovi va realizatsiya qatorida mijozni almashtirish uchun */
   customers?: { id: string; name: string }[];
-  /** Sub manba yonida «+» (Kirim-Chiqim formasidagi kabi): `cashflow.create` yoki `moliya.categories` */
+  /** Sub manba (va loyiha) yonida «+» (Kirim-Chiqim formasidagi kabi): `cashflow.create` yoki `moliya.categories` */
   canAddSub?: boolean;
+  /**
+   * Kredit / loyiha manbasiga o'tkazish uchun ro'yxatlar («Qarz berildi» → kimga berilgan qarz). Berilmasa — bunday
+   * manbalar tahrir tanlovida ko'rinmaydi (faqat yozuvning o'z manbasi).
+   */
+  loans?: { id: string; name: string; kind: "BANK" | "BORROWED" | "LENT" }[];
+  projects?: { id: string; name: string }[];
+  /** Kredit / qarz tanlovi yonida «+» (`quickAddLoan`): `cashflow.create` yoki `moliya.loans` */
+  canAddLoan?: boolean;
 };
 const Options = createContext<CashEditOptions | null>(null);
 export function CashEditProvider({ options, children }: { options: CashEditOptions; children: React.ReactNode }) {
@@ -35,6 +44,8 @@ export type CashEditEntry =
       category: string; subCategory: string; counterparty: string; note: string; sig: string;
       /** Mijoz qarziga (kirim — qarz to'lovi, chiqim — qaytarilgan pul); bo'sh — qarzga tegmaydi */
       customerId: string; customerName: string;
+      /** Kredit yoki loyihaga bog'langan — bog'lanish tahrirda o'zgarmaydi */
+      linked?: boolean;
       /** Hujjatga bog'langan / kredit yozuvida qulf ustunlar (`lib/cash-entry.ts` → `cashEntryLocks`) */
       lock: { type: boolean; amount: boolean; account: boolean; category: boolean; why: string | null };
     }
@@ -129,12 +140,17 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
   const [sub, setSub] = useState(entry.subCategory);
   // «+» bilan qo'shilgan sub manbalar — sahifa yangilanguncha ham ro'yxatda tursin
   const [addedSubs, setAddedSubs] = useState<Record<string, string[]>>({});
+  // Sana boshqariladi: «+» bilan ochilgan yangi qarzning boshlanish sanasi — shu yozuv sanasi (Kirim-Chiqim formasidagi kabi)
+  const [date, setDate] = useState(entry.date);
+  const [loanId, setLoanId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [addedLoans, setAddedLoans] = useState<NonNullable<CashEditOptions["loans"]>>([]);
+  const [addedProjects, setAddedProjects] = useState<{ id: string; name: string }[]>([]);
   const action = useCallback<Act>((p, fd) => updateCashTx(entry.id, p, fd), [entry.id]);
   // Mijoz qarziga bog'lash: ro'yxat berilgan bo'lsa (cashflow.edit) — kirimda (qarz to'lovi) yoki allaqachon bog'langan yozuvda
   const [customer, setCustomer] = useState(entry.customerId);
   const custBase = o.customers ?? [];
   const custList = entry.customerId && !custBase.some((c) => c.id === entry.customerId) ? [{ id: entry.customerId, name: entry.customerName }, ...custBase] : custBase;
-  const showCust = custBase.length > 0 && !entry.lock.type && (type === "INCOME" || !!entry.customerId);
 
   const sameType = type === entry.type;
   const list = type === "INCOME" ? o.income : o.expense;
@@ -147,9 +163,24 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
   // Istisno — daraxtda yo'q eski erkin nom: unga sub manba qo'shib bo'lmaydi
   const legacy = sameType && category === entry.category && !list.some((c) => c.name === entry.category);
   const subNeeded = !!cur && !legacy;
-  // Kredit / loyiha so'raydigan manbaga tahrirda o'tilmaydi (bog'lanish kerak) — yozuvning o'z manbasi qoladi
-  const shown = cats.filter((c) => (sameType && c.name === entry.category) || (c.needs !== "LOAN" && c.needs !== "PROJECT"));
+  // Kredit / loyiha so'raydigan manba — ro'yxatlar berilgan bo'lsa (Kassa / bank, Kirim-Chiqim) tanlovda bor: tanlansa qaysi
+  // qarz / loyiha so'raladi. Ro'yxatsiz joyda (mijoz varag'i va b.) — faqat yozuvning o'z manbasi
+  const linkable = (c: { needs: string | null }) => (c.needs === "LOAN" ? !!o.loans : c.needs === "PROJECT" ? !!o.projects : true);
+  const shown = cats.filter((c) => (sameType && c.name === entry.category) || linkable(c));
   const L = entry.lock;
+  // Bog'lanish tanlovi: yozuv hali kredit / loyihaga bog'lanmagan bo'lsa. Boshqa manbadan o'tilsa — shart; o'z manbasida
+  // (Excel importidan bog'lanmay kelgan) — ixtiyoriy. Qoida serverda ham (`lib/cash-entry.ts` → `updateCashEntry`)
+  const moved = !sameType || category !== entry.category;
+  const needLoan = !L.category && !entry.linked && cur?.needs === "LOAN" && !!o.loans;
+  const needProject = !L.category && !entry.linked && cur?.needs === "PROJECT" && !!o.projects;
+  const lentCat = isLentCategory(category);
+  const loanList = [...(o.loans ?? []), ...addedLoans.filter((x) => !o.loans?.some((l) => l.id === x.id))].filter((l) => (l.kind === "LENT") === lentCat);
+  const loanVal = loanList.some((l) => l.id === loanId) ? loanId : "";
+  const projectList = [...(o.projects ?? []), ...addedProjects.filter((x) => !o.projects?.some((p) => p.id === x.id))];
+  const saveLoan = (fd: FormData) => { fd.set("date", date); return quickAddLoan(fd); };
+  // Kredit / loyiha yozuvi mijoz qarziga bog'lanmaydi: shunday manbaga o'tilsa mijoz bog'lanishi olib tashlanadi
+  const dropCust = (needLoan || needProject) && moved && !!entry.customerId;
+  const showCust = custBase.length > 0 && !entry.lock.type && !dropCust && (type === "INCOME" || !!entry.customerId);
 
   return (
     <EditModal title={`${entry.type === "INCOME" ? "Kirimni" : "Chiqimni"} tahrirlash`} action={action} onClose={onClose}
@@ -164,17 +195,18 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
               setType(t);
               // Manba daraxti turga bog'liq: boshqa turga o'tilsa — manba qaytadan tanlanadi
               setCategory(t === entry.type ? entry.category : ""); setSub(t === entry.type ? entry.subCategory : "");
+              setLoanId(""); setProjectId("");
             }}>
             <option value="INCOME">Kirim</option>
             <option value="EXPENSE">Chiqim</option>
           </Select>
         </Field>
-        <Field label="Sana *"><Input name="date" type="date" defaultValue={entry.date} required /></Field>
+        <Field label="Sana *"><Input name="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
         <AccountSelect name="cashAccountId" value={entry.cashAccountId} locked={L.account} />
         <AmountField value={entry.amount} locked={L.amount} />
         <Field label="Manba *">
           <Select name={L.category ? undefined : "category"} value={category} disabled={L.category} required
-            onChange={(e) => { setCategory(e.target.value); setSub(""); }}>
+            onChange={(e) => { setCategory(e.target.value); setSub(""); setLoanId(""); setProjectId(""); }}>
             {!category && <option value="">— tanlang —</option>}
             {shown.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
           </Select>
@@ -195,6 +227,51 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
             </Select>
           </WithAdd>
         </Field>
+        {needLoan && (
+          <Field label={moved ? "Kredit / qarz *" : "Kredit / qarz"} className="sm:col-span-3"
+            hint={!loanList.length ? (o.canAddLoan ? "ro'yxat bo'sh — «+» bilan qo'shing" : "ro'yxat bo'sh — Moliya → Kreditlar sahifasida qo'shing")
+              : cur?.loanPart === "INTEREST" ? "foiz — PNL xarajati" : "asosiy qarz — qoldiqni o'zgartiradi"}>
+            <WithAdd add={o.canAddLoan && (
+              <QuickAdd label={lentCat ? "Yangi berilgan qarz" : "Yangi kredit / qarz"} title={lentCat ? "Yangi berilgan qarz" : "Yangi kredit yoki olingan qarz"} save={saveLoan}
+                onCreated={(x: QuickAdded) => { setAddedLoans((a) => [...a, { id: x.id, name: x.name, kind: lentCat ? "LENT" : "BANK" }]); setLoanId(x.id); }}>
+                {lentCat ? <input type="hidden" name="kind" value="LENT" /> : (
+                  <Field label="Turi *">
+                    <Select name="kind" defaultValue="BANK" required>
+                      <option value="BANK">Bank krediti</option>
+                      <option value="BORROWED">Olingan qarz (shaxs / firma)</option>
+                    </Select>
+                  </Field>
+                )}
+                <Field label={lentCat ? "Kimga berildi *" : "Bank / kimdan *"}><Input name="counterparty" required maxLength={160} autoFocus autoComplete="off" placeholder={lentCat ? "F.I.O. yoki tashkilot" : "Aloqabank"} /></Field>
+                <Field label="Nomi" hint="bo'sh qolsa — yuqoridagi nom"><Input name="name" maxLength={160} autoComplete="off" placeholder={lentCat ? "Masalan: Aliyev — 2026 qarz" : "Masalan: Aloqabank — 2026 kredit"} /></Field>
+                <Field label="Izoh"><Input name="note" maxLength={300} autoComplete="off" placeholder="ixtiyoriy" /></Field>
+              </QuickAdd>
+            )}>
+              <Select name="loanId" value={loanVal} required={moved} onChange={(e) => setLoanId(e.target.value)}>
+                <option value="" disabled={moved}>{moved ? "— tanlang —" : "— bog'lanmagan —"}</option>
+                {loanList.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </Select>
+            </WithAdd>
+          </Field>
+        )}
+        {needProject && (
+          <Field label={moved ? "Loyiha *" : "Loyiha"} className="sm:col-span-3"
+            hint={projectList.length ? "zavod foydasiga kirmaydi" : o.canAddSub ? "ro'yxat bo'sh — «+» bilan qo'shing" : "ro'yxat bo'sh — Moliya → Kategoriyalar sahifasida qo'shing"}>
+            <WithAdd add={o.canAddSub && (
+              <QuickAdd label="Yangi loyiha qo'shish" title="Yangi loyiha" save={quickAddProject}
+                onCreated={(x: QuickAdded) => { setAddedProjects((a) => [...a, { id: x.id, name: x.name }]); setProjectId(x.id); }}>
+                <Field label="Nomi *"><Input name="name" required maxLength={120} autoFocus autoComplete="off" /></Field>
+                <Field label="Izoh"><Input name="note" maxLength={300} autoComplete="off" placeholder="ixtiyoriy" /></Field>
+              </QuickAdd>
+            )}>
+              <Select name="projectId" value={projectId} required={moved} onChange={(e) => setProjectId(e.target.value)}>
+                <option value="" disabled={moved}>{moved ? "— loyiha —" : "— bog'lanmagan —"}</option>
+                {projectList.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </Select>
+            </WithAdd>
+          </Field>
+        )}
+        {dropCust && <input type="hidden" name="customerId" value="" />}
         <Field label={type === "INCOME" ? "Kimdan" : "Kimga"} className="sm:col-span-1"><Input name="counterparty" defaultValue={entry.counterparty} maxLength={200} autoComplete="off" /></Field>
         {showCust && (
           <Field label={type === "INCOME" ? "Mijoz qarziga (to'lov)" : "Mijozga qaytarilgan pul"} className="sm:col-span-2"
@@ -204,6 +281,7 @@ function TxDialog({ entry, onClose }: { entry: Extract<CashEditEntry, { kind: "t
         )}
         <Field label="Izoh" className={showCust ? "sm:col-span-3" : "sm:col-span-2"}><Input name="note" defaultValue={entry.note} maxLength={500} /></Field>
       </div>
+      {dropCust && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Yozuv «{entry.customerName}» qarziga bog&apos;langan edi — {needLoan ? "kredit / qarz" : "loyiha"} manbasiga o&apos;tganda mijoz qarzidan olinadi.</p>}
       {!sameType && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Yozuv {type === "INCOME" ? "chiqimdan kirimga" : "kirimdan chiqimga"} o&apos;tkaziladi — {type === "INCOME" ? "kirim" : "chiqim"} manbasini tanlang. Hisob qoldig&apos;i shunga qarab o&apos;zgaradi.</p>}
     </EditModal>
   );

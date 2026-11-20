@@ -333,6 +333,12 @@ export type CashEntryEdit = {
   counterparty?: string | null; note?: string | null; sig: string;
   /** Mijoz qarziga (`CashEntryInput.customerId`); berilmasa (undefined) — o'zgarmaydi, null — qarzdan olinadi */
   customerId?: string | null;
+  /**
+   * Kredit / loyiha manbasida — qaysi qarz / loyiha (`categoryLinks`). Boshqa manbadan shunday manbaga o'tilsa shart; o'z
+   * manbasida bog'lanmagan yozuvga ixtiyoriy. Allaqachon bog'langan yozuvda e'tiborsiz — bog'lanish o'zgarmaydi.
+   */
+  loanId?: string | null;
+  projectId?: string | null;
   /** Kassa / bank tahriri: sub manba majburiy (`subCategoryMissing`) */
   requireSub?: boolean;
 };
@@ -342,7 +348,8 @@ const sameDay = (a: Date, b: Date) => isoDate(a) === isoDate(b);
 
 /**
  * Kirim/chiqimni tuzatish: turi (chiqim ⇄ kirim), sana, hisob, summa, manba, sub manba, kontragent, izoh.
- * Kategoriya qoidasi yozishdagi bilan bir xil (manba yangi turga mos bo'lsin); kredit / loyiha manbasiga o'tkazilmaydi.
+ * Kategoriya qoidasi yozishdagi bilan bir xil (manba yangi turga mos bo'lsin); kredit / loyiha manbasiga o'tkazilsa —
+ * qaysi qarz / loyiha ekani shart (masalan, oddiy chiqim → «Qarz berildi»). Bog'langan yozuvning bog'lanishi o'zgarmaydi.
  * Qulflangan ustunlar — `cashEntryLocks`. Hisob bo'yicha navbat ostida: tahrirdan keyin qaysi hisob kamaysa (chiqim
  * ko'paydi, kirim kamaydi, kirim chiqimga aylandi, boshqa hisobga ko'chdi) — minusga tushmasin. AuditLog'ga UPDATE.
  */
@@ -368,10 +375,14 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
     if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
   }
   const top = makeResolver(await loadCategoriesFor([d.category]))(d.category)?.top;
-  // Kredit / loyiha manbasiga boshqa manbadan o'tib bo'lmaydi — bog'lanish (qaysi kredit, loyiha) so'raladi
-  if ((top?.needs === "LOAN" || top?.needs === "PROJECT") && d.category !== t.category) return { error: `«${top.name}» — ${top.needs === "LOAN" ? "kredit" : "loyiha"} tanlanadi: eski yozuvni bekor qilib, Kirim-Chiqim formasida kiriting` };
-  const links = await categoryLinks({ type, category: d.category, subCategory: d.subCategory || null });
+  // Bog'lanmagan yozuvni kredit / loyihaga bog'lash mumkin; bog'langanining bog'lanishi o'zgarmaydi (manbasi ham qulf)
+  const linkable = !t.loanId && !t.projectId;
+  // Kredit / loyiha manbasiga boshqa manbadan o'tilsa — qaysi qarz / loyiha ekani shart (Kirim-Chiqim formasidagi kabi)
+  if (linkable && d.category !== t.category && top?.needs === "LOAN" && !d.loanId) return { error: `«${top.name}» — qaysi kredit / qarz ekanini tanlang` };
+  if (linkable && d.category !== t.category && top?.needs === "PROJECT" && !d.projectId) return { error: `«${top.name}» — loyihani tanlang` };
+  const links = await categoryLinks({ type, category: d.category, subCategory: d.subCategory || null, loanId: linkable ? d.loanId : null, projectId: linkable ? d.projectId : null });
   if ("error" in links) return { error: links.error };
+  const link = linkable ? { loanId: links.data.loanId, projectId: links.data.projectId, loanPart: links.data.loanPart } : {};
   if (d.requireSub && !links.data.subCategory) {
     const miss = await subCategoryMissing(d.category);
     if (miss) return { error: miss };
@@ -379,14 +390,16 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
   const cust = await customerLink(d.customerId === undefined ? t.customerId : d.customerId, t.supplierId, d.counterparty);
   if ("error" in cust) return { error: cust.error };
   if (cust.customerId && t.refType) return { error: "Hujjatga bog'langan yozuv mijoz qarziga yozilmaydi" };
+  // Bir pul ikki qarzda turmasin: kredit / loyiha yozuvi mijoz qarziga bog'lanmaydi
+  if (cust.customerId && (link.loanId || link.projectId)) return { error: "Kredit / loyiha yozuvi mijoz qarziga bog'lanmaydi — «Mijoz qarziga» maydonini tozalang" };
   const data = {
     type, date: d.date, cashAccountId: d.cashAccountId, amount, category: links.data.category ?? d.category, subCategory: links.data.subCategory,
-    counterparty: cust.counterparty, customerId: cust.customerId, note: d.note?.trim() || null,
+    counterparty: cust.counterparty, customerId: cust.customerId, note: d.note?.trim() || null, ...link,
   };
   return db.$transaction(async (tx) => {
     for (const a of [...new Set([t.cashAccountId, d.cashAccountId])].sort()) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + a}))`;
     const cur = await tx.cashTransaction.findUniqueOrThrow({ where: { id } });
-    if (cur.cancelledAt || cashEntrySig(cur) !== d.sig) throw new CashError("Yozuv boshqa joyda o'zgartirildi yoki bekor qilindi — sahifani yangilang");
+    if (cur.cancelledAt || cashEntrySig(cur) !== d.sig || (linkable && (cur.loanId || cur.projectId))) throw new CashError("Yozuv boshqa joyda o'zgartirildi yoki bekor qilindi — sahifani yangilang");
     const err = await balanceDropError(tx, [{ accountId: cur.cashAccountId, delta: -effect(cur.type, Number(cur.amount)) }, { accountId: d.cashAccountId, delta: effect(type, amount) }]);
     if (err) throw new CashError(type !== cur.type && type === "EXPENSE" ? `Kirim chiqimga aylansa hisob minusga tushadi. ${err}` : err);
     // Sana o'zgarmagan bo'lsa — asl vaqt (soat) qoladi: jurnal tartibi tahrirdan keyin buzilmasin
@@ -394,7 +407,7 @@ export async function updateCashEntry(id: string, d: CashEntryEdit, userId: stri
     // Nasiyali chiqim: summa o'zgarsa qarz ham; kirimga aylansa qarz bekor
     if (type !== "EXPENSE") await cancelDebtOf(tx, id, "Kassa yozuvi kirimga aylantirildi", userId);
     else if (Math.abs(amount - Number(cur.amount)) > 0.005) await tx.employeeDebt.updateMany({ where: { cashTxId: id, cancelledAt: null }, data: { amount } });
-    const before = { type: cur.type, date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, customerId: cur.customerId, note: cur.note };
+    const before = { type: cur.type, date: cur.date, cashAccountId: cur.cashAccountId, amount: cur.amount, category: cur.category, subCategory: cur.subCategory, counterparty: cur.counterparty, customerId: cur.customerId, note: cur.note, ...(linkable ? { loanId: cur.loanId, projectId: cur.projectId, loanPart: cur.loanPart } : {}) };
     await audit(tx, userId, "UPDATE", "CashTransaction", id, before, data);
     return {};
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });

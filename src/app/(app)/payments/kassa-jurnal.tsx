@@ -194,7 +194,7 @@ export function KassaDateBar({ sp }: { sp: KassaSp }) {
  * yozuv ko'rinadi, lekin jamiga kirmaydi. Bu yerda — davr qatorlari; hisob / tur / qidiruv va ustun filtrlari,
  * saralash, jami — `kassa-table.tsx` da (brauzerda).
  */
-export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub = false }: { accounts: Account[]; sp: KassaSp; canEdit?: boolean; canAddSub?: boolean }) {
+export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub = false, canAddLoan = false }: { accounts: Account[]; sp: KassaSp; canEdit?: boolean; canAddSub?: boolean; canAddLoan?: boolean }) {
   const { from, to } = kassaRange(sp);
   const range = { gte: from, lte: to };
   const [payments, txs] = await Promise.all([
@@ -210,9 +210,15 @@ export async function KassaJurnalTab({ accounts, sp, canEdit = false, canAddSub 
   // Tahrir oynasining ro'yxatlari (qator tafsilotidagi «Tahrirlash») — jadvalga bir marta
   const [marks, cNames, editCats] = await Promise.all([
     customerMarks(payments.map((p) => p.customerId)), cancellerNames(txs),
-    canEdit ? Promise.all([categoryOptions("INCOME"), categoryOptions("EXPENSE"), db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } })]) : null,
+    canEdit ? Promise.all([
+      categoryOptions("INCOME"), categoryOptions("EXPENSE"),
+      db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      // Kredit / loyiha manbasiga o'tkazishda — qaysi qarz, qaysi loyiha
+      db.loan.findMany({ where: { cancelledAt: null, closedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true, kind: true } }),
+      db.project.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    ]) : null,
   ]);
-  const editOptions = editCats ? { accounts, income: editCats[0], expense: editCats[1], customers: editCats[2], canAddSub } : null;
+  const editOptions = editCats ? { accounts, income: editCats[0], expense: editCats[1], customers: editCats[2], canAddSub, loans: editCats[3], projects: editCats[4], canAddLoan } : null;
 
   const base = (d: Date, c: Date) => ({ day: isoDate(d), at: opAt(d, c), ts: d.getTime(), cts: c.getTime() });
   // Perekitning ikkinchi oyog'i qaysi hisobda — jurnal jamisida tanlangan hisoblar ichidagi perekitni ajratish uchun

@@ -120,7 +120,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     db.team.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]).then(([e, b, t]) => ({ employees: e.map((x) => ({ id: x.id, name: `${x.fullName} · ${x.position}` })), brigades: b, teams: t, month: isoDate(now).slice(0, 7) })) : undefined;
   const editCustomers = canDetail && canDo(s, "cashflow", "edit") ? activeCustomers : [];
-  const editOptions = { accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })), income: incomeCats, expense: expenseCats, customers: editCustomers, canAddSub: canCreate || canDo(s, "moliya", "categories") };
+  const editOptions = { accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })), income: incomeCats, expense: expenseCats, customers: editCustomers, canAddSub: canCreate || canDo(s, "moliya", "categories"), loans, projects, canAddLoan: canCreate || canDo(s, "moliya", "loans") };
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
 
   const rows: Row[] = [
