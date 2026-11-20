@@ -52,6 +52,8 @@ export type LogRow = {
   /** Soat qayerdan (`opAt`): reysdan — yuklangan payt (sana ko'chirilmagan bo'lsa), qo'lda — kiritilgan payt; aks holda null */
   at: Date | null;
   customer: string; product: string; group: string; ttn: string | null; vehicle: string | null;
+  /** Qo'lda/Excel qatorda yozilgan xaridor nomi — bog'langan mijoz kartasi nomidan farq qilsa (`customer` — karta nomi) */
+  typedName?: string | null;
   /** Reysdan qatorda — dispetcher yozgan TTN (`Trip.ttn`, tahrir qiymati); bo'lmasa ko'rinadigani nakladnoy raqami */
   tripTtn: string | null;
   unitKey: string; unit: string; qty: number; price: number; delivery: number; net: number; vat: number; total: number;
@@ -136,6 +138,9 @@ export async function realizationLog(from: Date, to: Date, opts?: { customerIds?
   ]);
   const notes = new Map(noteList.map((n) => [n.key, n]));
   const lines = new Map(lineList.map((l) => [l.key, l]));
+  // Qo'lda/Excel qator — bog'langan mijoz kartasi nomi bilan (debitorka va mijoz kartasidagidek); Excel'da yozilgani `typedName`
+  const cardIds = [...new Set(entries.flatMap((e) => (e.customerId ? [e.customerId] : [])))];
+  const cardName = new Map(cardIds.length ? (await db.customer.findMany({ where: { id: { in: cardIds } }, select: { id: true, name: true } })).map((c) => [c.id, c.name]) : []);
 
   const rows: LogRow[] = [];
   for (const r of auto) {
@@ -158,13 +163,14 @@ export async function realizationLog(from: Date, to: Date, opts?: { customerIds?
     const qty = Number(e.qty), price = Number(e.price), delivery = Number(e.delivery);
     const net = r3(qty * price + delivery);
     const pay = (PAY_KEYS as string[]).includes(e.payGroup) ? (e.payGroup as PayGroupKey) : "CASH";
+    const customer = (e.customerId && cardName.get(e.customerId)) || e.customerName;
     // QQS qoidadan (saqlangan `vat` dan emas): dastavka QQS'i qo'shilishidan oldin yozilgan qatorlar ham bir xil hisoblansin
     const vat = entryNds(pay, qty, price, delivery).total;
     rows.push({
       key: `m-${e.id}`, source: "MANUAL", ref: e.id, orderId: null, tripId: null, customerId: e.customerId,
-      date: e.date, at: e.createdAt, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer: e.customerName, product: e.productName, group: e.groupName,
+      date: e.date, at: e.createdAt, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer, typedName: customer === e.customerName ? null : e.customerName, product: e.productName, group: e.groupName,
       ttn: e.ttn, tripTtn: null, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r3(net + vat),
-      loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? e.customerName,
+      loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? customer,
       filled: null, suggest: null, line: null, orig: {},
     });
   }

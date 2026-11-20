@@ -66,7 +66,7 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
   const places = [...new Set(all.map((r) => r.loadPlace || NO_PLACE))].sort((a, b) => a.localeCompare(b, "uz", { numeric: true }));
   const joy = sp.joy && places.includes(sp.joy) ? sp.joy : null;
   const needle = sp.q?.trim().toLowerCase() ?? "";
-  const match = (r: LogRow) => !needle || [r.customer, r.refName, r.ttn, r.vehicle, r.seller, r.product, r.destination, r.note].some((v) => v?.toLowerCase().includes(needle));
+  const match = (r: LogRow) => !needle || [r.customer, r.typedName, r.refName, r.ttn, r.vehicle, r.seller, r.product, r.destination, r.note].some((v) => v?.toLowerCase().includes(needle));
   // Tab sonlari — boshqa filtrlar qo'llangan holda
   const base = all.filter((r) => (!guruh || r.group === guruh) && (!joy || (r.loadPlace || NO_PLACE) === joy) && match(r));
   const bySource = base.filter((r) => !manba || r.source === manba);
@@ -156,7 +156,8 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
                   const node = clip(r.customer, "max-w-36", orderLink && r.orderId ? <Link href={`/orders/${r.orderId}`} className="hover:underline">{r.customer}</Link> : undefined);
                   return canSource ? <CellEdit target={`a:${r.ref}`} field="customerName" label="Xaridor" value={r.customer} list="customers">{node}</CellEdit> : node;
                 })()
-                : edit("customerName", "Xaridor", r.customer, clip(r.customer, "max-w-36"), { list: "customers" })}</SheetTd>
+                // Qo'lda/Excel qator — mijoz kartasi nomi; Excel'da boshqacha yozilgani sichqoncha ustida
+                : edit("customerName", "Xaridor", r.customer, clip(r.typedName ? `${r.customer} — Excel'da «${r.typedName}»` : r.customer, "max-w-36", r.customer), { list: "customers" })}</SheetTd>
               <SheetTd>{edit("productName", "Mahsulot", r.product, clip(r.product, "max-w-28"), { list: "products" })}</SheetTd>
               <SheetTd className="whitespace-nowrap tabular">
                 {auto && r.tripId
