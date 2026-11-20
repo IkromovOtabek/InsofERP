@@ -9,7 +9,7 @@ import { parseForm, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 import { setTripTtn } from "@/lib/trips";
 import {
-  ENTRY_CELLS, ENTRY_LABELS as LABEL, LINE_CELLS, NOTE_CELLS, SOURCE_LINE_CELLS, SOURCE_NOTE_CELLS, TRIP_CELLS, cancelRealizationEntry, createRealizationEntry, entrySchema, importRealizationEntries, listProblems, noteSchema,
+  ENTRY_CELLS, ENTRY_LABELS as LABEL, LINE_CELLS, NOTE_CELLS, SOURCE_LINE_CELLS, SOURCE_NOTE_CELLS, TRIP_CELLS, createRealizationEntry, deleteRealizationEntry, entrySchema, importRealizationEntries, listProblems, noteSchema,
   saveRealizationLineField, saveRealizationNote, saveRealizationNoteField, saveRealizationTripField, saveSourceLineField, saveSourceNoteField, updateRealizationEntry, updateRealizationEntryField,
   type EntryCell, type FieldResult, type ImportRow, type LineCell, type NoteCell, type SourceLineCell, type SourceNoteCell, type TripCell,
 } from "@/lib/realization-log";
@@ -81,12 +81,14 @@ export async function importRealizationAction(_prev: ActionState, fd: FormData):
   };
 }
 
-export async function cancelRealizationAction(id: string, reason: string): Promise<ActionState> {
+/** Qo'lda / Excel qatorni o'chirish — reestr, debitorka, Tahlil hammasidan; egasiz qolgan avto mijoz/mahsulot ham (`deleteRealizationEntry`). */
+export async function deleteRealizationAction(id: string, reason: string): Promise<ActionState> {
   const s = await requireAction("logistika", "real_manual");
-  const res = await cancelRealizationEntry(id, String(reason ?? ""), s.userId);
+  const res = await deleteRealizationEntry(id, String(reason ?? ""), s.userId);
   if ("error" in res) return { error: res.error };
   refresh();
-  return { ok: true };
+  for (const p of ["/customers", "/bi-tahlil", "/orders/kun", ...(res.dropped.length ? ["/stock", "/settings"] : [])]) revalidatePath(p, "layout");
+  return { ok: true, note: res.dropped.length ? `O'chirildi; ${res.dropped.join(", ")} ham o'chdi (boshqa joyda ishlatilmagan edi)` : "O'chirildi" };
 }
 
 export async function saveRealizationNoteAction(key: string, _prev: ActionState, fd: FormData): Promise<ActionState> {

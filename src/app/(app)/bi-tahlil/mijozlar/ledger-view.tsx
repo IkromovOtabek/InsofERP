@@ -18,7 +18,7 @@ import { AktSverkaDoc } from "@/components/akt-sverka";
 import { CashRow } from "@/app/(app)/payments/cash-detail";
 import { CashEditProvider } from "@/app/(app)/payments/cash-edit";
 import { cancelOpeningAction } from "@/app/(app)/settings/boshlangich-qoldiq/actions";
-import { cancelRealizationAction } from "@/app/(app)/sales/realizatsiya/actions";
+import { deleteRealizationAction } from "@/app/(app)/sales/realizatsiya/actions";
 import { cancelDebtTransferAction } from "./actions";
 import { DebtFixButton, DebtTransferButton, ReasonButton } from "./debt-dialogs";
 import { debtEntryHref } from "./kiritish";
@@ -171,7 +171,7 @@ function SoldTable({ l, lines, canEntry }: { l: Ledger; lines: LedgerLine[]; can
                   {x.ref?.kind === "entry" && (
                     <>
                       <Link href={`/sales/realizatsiya${qs({ from: isoDate(x.date), to: isoDate(x.date), q: l.name })}`} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"><ExternalLink size={13} /> Realizatsiyada tahrirlash</Link>
-                      {canEntry && <ReasonButton run={cancelRealizationAction.bind(null, x.ref.id)} label="O'chirish" confirm="Qo'lda kiritilgan realizatsiya qatori bekor qilinadi (AuditLog'da qoladi)" />}
+                      {canEntry && <ReasonButton run={deleteRealizationAction.bind(null, x.ref.id)} label="O'chirish" confirm="Qo'lda kiritilgan realizatsiya qatori butunlay o'chadi — Realizatsiya, debitorka va Tahlil'dan (nusxasi AuditLog'da qoladi)" />}
                     </>
                   )}
                   {x.ref?.kind === "invoice" && <Link href="/invoices" className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"><ExternalLink size={13} /> Schyotlar</Link>}

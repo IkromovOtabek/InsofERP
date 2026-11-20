@@ -14,6 +14,8 @@ import { defaultCreditLimit } from "@/lib/credit-default";
 import { customerNameKey, lockCustomerName } from "@/lib/customer-name";
 import { ensureSite } from "@/lib/logistics";
 import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
+import { eco, ecoEnabled } from "@/lib/eco/client";
+import { notifyAfter } from "@/lib/notify";
 
 /**
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
@@ -31,7 +33,7 @@ import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
  *  · Qo'lda: tizimga reys bo'lib tushmagan jo'natma (`RealizationEntry`). Kassa va skladga ta'sir qilmaydi; mijoz
  *    debitorkasiga «Sotib olgan» bo'lib tushadi (`lib/debt-sales.ts`). Mijoz (yoki aliasi) nomi ro'yxatdagiga mos kelsa
  *    bog'lanadi, yo'q bo'lsa mijozlarga qo'shiladi (`addMissingCustomers`); mahsulot mos kelsa — birlik va guruh mahsulotdan.
- *    QQS — perechisleniyeda 12%: miqdor × narx dan ham, dastavkadan ham (`entryNds`). O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
+ *    QQS — perechisleniyeda 12%: miqdor × narx dan ham, dastavkadan ham (`entryNds`). O'chirilsa — bazadan, hamma joydan (`deleteRealizationEntry`), AuditLog'da nusxa qoladi.
  *  · Summa (QQSsiz) = miqdor × narx + dastavka; Jami = Summa + QQS (`lib/realization.ts` bilan bitta qoida).
  *  · Excel'dan import: varaqdagi qatorlar qo'lda qator bo'lib tushadi. Reestrda bori (reys yoki avval kiritilgan) o'tkazib
  *    yuboriladi — fayl qayta yuklansa ham ikki marta yozilmaydi (`importRealizationEntries`). Ro'yxatda yo'q xaridor mijozlarga,
@@ -304,6 +306,8 @@ function entryData(d: EntryInput, lk: Lookup) {
 }
 
 const future = (d: Date) => d.getTime() > Date.now() + 86_400_000;
+/** Excel importi katalogga qo'shgan mahsulot izohi — qator o'chirilganda egasiz qolgani shu belgi bilan topiladi (`dropOrphanProduct`). */
+const IMPORTED_PRODUCT_NOTE = "Realizatsiya Excel importidan";
 
 export async function createRealizationEntry(d: EntryInput, userId: string): Promise<Result> {
   if (d.clientToken) {
@@ -381,17 +385,100 @@ async function writeEntry(id: string, before: RealizationEntry | null, d: EntryI
   return ok ? { ok: true, id } : { error: "Qator boshqa joyda o'zgartirildi — sahifani yangilang" };
 }
 
-export async function cancelRealizationEntry(id: string, reason: string, userId: string): Promise<Result> {
+/**
+ * Qo'lda / Excel qatorni o'chirish (Otabek, 2026-11-20 — bekor qilish o'rniga): qator bazadan o'chadi. Reestr, mijoz debitorkasi
+ * («Sotib olgan», akt sverka, mijoz kartasi), kredit limiti, Tahlil (sotuv, marja, kunlik realizatsiya hisoboti) va «bugun kim
+ * kiritmagan» uni jonli o'qiydi — hech qayerda qolmaydi. Kassa va skladga qo'lda qator ta'sir qilmagan, ular o'zgarmaydi.
+ * Shu qator uchun avtomatik qo'shilgan mijoz yoki mahsulot (`addMissingCustomers` / `addMissingProducts`) boshqa hech qayerda
+ * ishlatilmagan va keyin qo'lda tahrirlanmagan bo'lsa — u ham o'chadi. AuditLog'da DELETE + oxirgi holat nusxasi (sabab bilan) qoladi.
+ * O'qilgan holatga shartli: shu payt tahrirlangan yoki boshqa joyda o'chirilgan qator ikkinchi marta yozilmaydi.
+ */
+export async function deleteRealizationEntry(id: string, reason: string, userId: string): Promise<{ ok: true; dropped: string[] } | { error: string }> {
   const why = String(reason ?? "").trim().slice(0, 300);
-  if (why.length < 3) return { error: "Bekor qilish sababini yozing (kamida 3 belgi)" };
-  const now = new Date();
-  const ok = await db.$transaction(async (tx) => {
-    const u = await tx.realizationEntry.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: now, cancelledById: userId, cancelReason: why } });
-    if (u.count !== 1) return false;
-    await audit(tx, userId, "STATUS_CHANGE", "RealizationEntry", id, { cancelledAt: null }, { cancelledAt: now, cancelReason: why });
-    return true;
+  const e = await db.$transaction(async (tx) => {
+    const row = await tx.realizationEntry.findUnique({ where: { id } });
+    if (!row) return null;
+    const r = await tx.realizationEntry.deleteMany({ where: { id, updatedAt: row.updatedAt } });
+    if (r.count !== 1) return null;
+    await audit(tx, userId, "DELETE", "RealizationEntry", id, row, why ? { reason: why } : undefined);
+    return row;
   });
-  return ok ? { ok: true, id } : { error: "Qator topilmadi yoki allaqachon bekor qilingan" };
+  if (!e) return { error: "Qator topilmadi yoki shu payt o'zgardi — sahifani yangilang" };
+  const dropped: string[] = [];
+  if (e.customerId) { const c = await dropOrphanCustomer(e.customerId, userId); if (c) dropped.push(`mijoz «${c}»`); }
+  if (e.productId) { const p = await dropOrphanProduct(e.productId, userId); if (p) dropped.push(`mahsulot «${p}»`); }
+  return { ok: true, dropped };
+}
+
+/** FK bilan bog'liq yozuv chiqib qolsa (sanalmagani) — o'chirilmaydi, hammasi orqaga qaytadi. */
+const isFkBlock = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && (e.code === "P2003" || e.code === "P2025");
+/** Realizatsiya o'zi ochgan va keyin hech kim tahrirlamagan yozuv (AuditLog'da faqat CREATE). */
+async function untouched(entity: "Customer" | "Product", id: string, made: Prisma.AuditLogWhereInput): Promise<boolean> {
+  const [created, edited] = await Promise.all([
+    db.auditLog.count({ where: { entity, entityId: id, action: "CREATE", ...made } }),
+    db.auditLog.count({ where: { entity, entityId: id, action: { not: "CREATE" } } }),
+  ]);
+  return created > 0 && edited === 0;
+}
+
+/**
+ * O'chirilgan qator uchun avtomatik qo'shilgan mijoz (`via: "realization-import"`): boshqa realizatsiya, zayavka, obyekt, schyot,
+ * to'lov, kassa, qarz o'tkazmasi, boshlang'ich qoldiq, ariza, taklif, amoCRM'da uchramasa — o'chadi (mijozlar ro'yxatida ham qolmaydi).
+ * Ixtiyoriy bog'lanishlar (SET NULL) o'chirishda jim uzilmasin — shu qulf ostida qayta sanaladi (`addMissingCustomers` bilan bir navbat).
+ */
+async function dropOrphanCustomer(id: string, userId: string): Promise<string | null> {
+  const c = await db.customer.findUnique({ where: { id } });
+  if (!c || c.isInternal || !(await untouched("Customer", id, { after: { path: ["via"], equals: "realization-import" } }))) return null;
+  const where = { customerId: id };
+  try {
+    const done = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"realization-customers"}))`;
+      const used = await Promise.all([
+        tx.realizationEntry.count({ where }), tx.order.count({ where }), tx.site.count({ where }), tx.invoice.count({ where }), tx.payment.count({ where }),
+        tx.paymentRequest.count({ where }), tx.salesRegister.count({ where }), tx.cashTransaction.count({ where }), tx.openingBalance.count({ where }),
+        tx.lead.count({ where }), tx.commercialOffer.count({ where }), tx.amoDeal.count({ where }),
+        tx.customerDebtTransfer.count({ where: { OR: [{ debtorId: id }, { payerId: id }] } }),
+      ]);
+      if (used.some((n) => n > 0)) return false;
+      await tx.customer.delete({ where: { id } });
+      await audit(tx, userId, "DELETE", "Customer", id, c, { via: "realization-delete" });
+      return true;
+    });
+    if (!done) return null;
+  } catch (e) {
+    if (isFkBlock(e)) return null;
+    throw e;
+  }
+  // ECO'da shu karta (tashkilot) bo'lsa — ilovada egasiz faol qolmasin (mijozni o'chirishdagidek)
+  if (ecoEnabled()) notifyAfter(async () => { await eco.upsertCustomer({ externalRef: id, name: c.name, isActive: false }); });
+  return c.name;
+}
+
+/**
+ * O'chirilgan qator uchun Excel importi katalogga qo'shgan mahsulot (izohi «Realizatsiya Excel importidan»): boshqa realizatsiya,
+ * zayavka, zames, reja, brak, sklad harakati, retsept, ariza, taklif, do'kon yoki boshlang'ich qoldiqda uchramasa — katalogdan o'chadi.
+ */
+async function dropOrphanProduct(id: string, userId: string): Promise<string | null> {
+  const p = await db.product.findUnique({ where: { id } });
+  if (!p || p.note !== IMPORTED_PRODUCT_NOTE || !(await untouched("Product", id, {}))) return null;
+  const where = { productId: id };
+  try {
+    const done = await db.$transaction(async (tx) => {
+      const used = await Promise.all([
+        tx.realizationEntry.count({ where }), tx.orderItem.count({ where }), tx.productionBatch.count({ where }), tx.productionPlan.count({ where }),
+        tx.productDefect.count({ where }), tx.stockMove.count({ where }), tx.recipe.count({ where }), tx.recipeItem.count({ where }), tx.lead.count({ where }),
+        tx.commercialOfferItem.count({ where }), tx.openingBalance.count({ where }), tx.shopItem.count({ where }), tx.shopBanner.count({ where }),
+      ]);
+      if (used.some((n) => n > 0)) return false;
+      await tx.product.delete({ where: { id } });
+      await audit(tx, userId, "DELETE", "Product", id, p, { via: "realization-delete" });
+      return true;
+    });
+    return done ? p.name : null;
+  } catch (e) {
+    if (isFkBlock(e)) return null;
+    throw e;
+  }
 }
 
 // ───────────────────────── Reysdan qatorga to'ldirish ─────────────────────────
@@ -726,7 +813,7 @@ async function addMissingProducts(
   for (const [key, r] of want) {
     if (idOf.has(key)) continue;
     const p = await tx.product.create({
-      data: { code: String(++seq), name: r.productName, unit: r.unit, groupId: groupId(r.groupName), note: "Realizatsiya Excel importidan" },
+      data: { code: String(++seq), name: r.productName, unit: r.unit, groupId: groupId(r.groupName), note: IMPORTED_PRODUCT_NOTE },
     });
     await audit(tx, userId, "CREATE", "Product", p.id, undefined, p);
     idOf.set(key, p.id);

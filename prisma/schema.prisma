@@ -2234,8 +2234,9 @@ model LogisticsTx {
 }
 
 /// Logistika → «Realizatsiya»: tizimga reys bo'lib tushmagan jo'natma — dispetcher qo'lda kiritadi (`lib/realization-log.ts`).
-/// Reysdan tushadigan qatorlar saqlanmaydi (jonli, `lib/realization.ts`). Faqat reestr: mijoz qarzi, kassa va skladga
-/// ta'sir qilmaydi. O'chirilmaydi — bekor qilinadi, hammasi AuditLog'da.
+/// Reysdan tushadigan qatorlar saqlanmaydi (jonli, `lib/realization.ts`). Kassa va skladga ta'sir qilmaydi; mijoz debitorkasiga
+/// «Sotib olgan» bo'lib tushadi. 2026-11-20 dan bekor qilinmaydi — bazadan o'chiriladi (`deleteRealizationEntry`), nusxasi AuditLog'da;
+/// `cancelled*` ustunlari — eski bekor qilingan qatorlar uchun.
 model RealizationEntry {
   id            String    @id @default(cuid())
   date          DateTime

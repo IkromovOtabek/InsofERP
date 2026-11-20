@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { randomUUID } from "crypto";
-import { FileSpreadsheet, PenLine, Receipt, Search, Truck, Undo2, Wallet } from "lucide-react";
+import { FileSpreadsheet, PenLine, Receipt, Search, Trash2, Truck, Wallet } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
@@ -10,7 +10,7 @@ import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { ConfirmButton } from "@/app/(app)/payments/confirm-button";
-import { cancelRealizationAction } from "./actions";
+import { deleteRealizationAction } from "./actions";
 import { CellEdit, EntryButton, NoteButton, OptionsProvider, type CellList } from "./forms";
 import { cn } from "@/lib/utils";
 
@@ -190,8 +190,8 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
                         unit: r.unitKey, ttn: r.ttn ?? "", vehicle: r.vehicle ?? "", qty: r.qty, price: r.price, delivery: r.delivery,
                         loadPlace: r.loadPlace, destination: r.destination, note: r.note, refName: r.refName === r.customer ? "" : r.refName,
                       }} />
-                      <ConfirmButton action={cancelRealizationAction.bind(null, r.ref)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />}
-                        question={`${dateRu(r.date)} · ${r.customer} · ${r.product} qatori bekor qilinsinmi?`} okText="Bekor qilindi" className="h-6 px-1" />
+                      <ConfirmButton action={deleteRealizationAction.bind(null, r.ref)} reason="optional" label="" title="O'chirish" icon={<Trash2 size={14} />}
+                        question={`${dateRu(r.date)} · ${r.customer} · ${r.product} qatori o'chirilsinmi? Debitorka va Tahlil'dan ham chiqadi`} okText="O'chirildi" className="h-6 px-1 text-red-600" />
                     </span>
                   )}
                 </SheetTd>
@@ -230,7 +230,7 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
             <p>Sotuvchi, guruh, o&apos;lchov, ortilgan joy, manzil, izoh va spravka nomi — faqat shu reestrda. Summa, QQS va Jami miqdor, narx va dastavkadan hisoblanadi.</p>
           </> : <p>Reysdan tushgan qatorda xaridordan boshqa ustunlar katakdagi qalamcha bilan tuzatiladi (qalamcha katak ustiga olib borilganda chiqadi) — faqat shu reestrda (zayavka, kassa va sklad o&apos;zgarmaydi).</p>}
           <p>Har qator (reysdan ham, qo&apos;lda/Excel ham; Naqd, Perechisleniye, Qarz) mijoz debitorkasiga «Sotib olgan» bo&apos;lib tushadi — Tahlil → Mijoz debitorka, shu reestrdagi summa bilan. «To&apos;lagan» — kassada shu mijozga bog&apos;langan kirim. Ro&apos;yxatda yo&apos;q xaridor mijozlarga o&apos;zi qo&apos;shiladi.</p>
-          <p>Qo&apos;lda kiritilgan qator — sariq fonda, chap chetida sariq chiziq.</p>
+          <p>Qo&apos;lda kiritilgan qator — sariq fonda, chap chetida sariq chiziq. Uni oxirgi ustundagi savat belgisi bilan o&apos;chirish mumkin: qator debitorka va Tahlil&apos;dan ham chiqadi, shu qator uchun avtomatik qo&apos;shilgan va boshqa joyda ishlatilmagan mijoz yoki mahsulot ham o&apos;chadi. Reysdan tushgan qator reys sahifasida hal qilinadi.</p>
           <p>Tuzatilgan qiymat <span className="underline decoration-amber-500 decoration-dotted decoration-2 underline-offset-2">sariq tagchiziqli</span>, ustiga olib borilsa zayavkadagi qiymat ko&apos;rinadi; katak bo&apos;shatilsa o&apos;shanga qaytadi.</p>
         </> : undefined}
         action={(
