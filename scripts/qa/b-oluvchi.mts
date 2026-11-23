@@ -2,7 +2,8 @@
 // (/oluvchi/b|e|r — sklad, ish boshqaruvchi ko'radi; sotuvchi yo'q; noto'g'ri tur 404), tez tanlash (issueHints — oxirgi
 // oluvchi va tovari formada chiqadi), storno xodim qatorini ham teskari yozadi, mobil: «Kimga» tartibi (brigada → xodim →
 // oluvchi) va brigadirning «Mening skladim» kartochkasi (o'ziniki ochiladi, begona brigada — 404); «Haydovchilar» guruhi
-// (mashina raqami + F.I.O.), haydovchiga chiqim → dispetcherga bildirishnoma va Haydovchilar tabeli → «Ombor».
+// (mashina raqami + F.I.O.), haydovchiga chiqim → dispetcherga bildirishnoma va Haydovchilar tabeli → «Ombor»;
+// bir oynada bir nechta oluvchiga chiqim (`to[]` + `grp[]`): alohida hujjatlar, bitta tranzaksiya, qoldiq yetmasa hech biri yo'q.
 // Ishga tushirish: npx tsx scripts/qa/b-oluvchi.mts (b-all.sh ichida)
 import { as, check, summary, fd, q1, n1, BASE, Client } from "./b-client.mjs";
 
@@ -124,6 +125,61 @@ if (drv) {
   check(!st6.error, "6.7 haydovchiga chiqim storno qilindi", st6.error ?? "");
   const om2 = await disp.get(`/logistika/tabel?bolim=ombor&driver=${drv}`);
   check(om2.status === 200 && om2.text.includes("Bekor qilingan"), "6.8 bekor qilingan chiqim «Ombor» jurnalida belgilangan", String(om2.status));
+}
+
+// ── 7. Bir oynada bir nechta oluvchiga chiqim (`to[]` + `grp[]` → issueStockMany, bitta tranzaksiya) ──
+{
+  const mats = (q1(`select string_agg(m, ',') from (select "materialId" m from "StockMove" where "warehouseId"=${lit(wh)} and "materialId" is not null
+    group by "materialId" having sum(qty) > 5 order by sum(qty) desc limit 3) x`) as string | null)?.split(",") ?? [];
+  const t2 = brig ? `b:${brig}` : drv ? `e:${drv}` : null;
+  if (mats.length >= 2 && t2) {
+    const [m1, m2, m3 = mats[1]] = mats;
+    const balOf = (m: string) => n1(`select coalesce(sum(qty),0) from "StockMove" where "warehouseId"=${lit(wh)} and "materialId"=${lit(m)}`);
+    const b0 = { m1: balOf(m1), m2: balOf(m2), m3: balOf(m3) };
+    const tok7 = `qa-kopchiqim-${Date.now()}`;
+    const multi = (o: Record<string, unknown>) => sklad.action(`${RX}#createRasxod`, [undefined, fd({ warehouseId: wh, date: today, note: "QA ko'p chiqim", ...o })], "/stock/rasxod/new");
+    const body = { "to[]": [`e:${emp}`, t2], "materialId[]": [m1, m2, m3, m1], "qty[]": ["1", "1", "1", "1"], "grp[]": ["0", "0", "0", "1"] };
+    const r7 = await multi({ ...body, clientToken: tok7 });
+    check(!r7.error && /saved=\d+&docs=2/.test(r7.redirect ?? ""), "7.1 bir oynada 2 oluvchiga chiqim yozildi → jurnal «2 ta chiqim»", r7.error ?? r7.redirect ?? String(r7.status));
+    const refs = (q1(`select string_agg(distinct "refId", ',') from "StockMove" where "clientToken" like ${lit(`${tok7}-g%`)}`) as string | null)?.split(",") ?? [];
+    check(refs.length === 2, "7.2 ikkita alohida chiqim hujjati (har oluvchiga bittadan)", String(refs.length));
+    const inRefs = `(${refs.map(lit).join(",") || "''"})`;
+    check(n1(`select count(*) from "StockMove" where "refType"='Issue' and "refId" in ${inRefs} and "employeeId"=${lit(emp)}`) === (m3 === m2 ? 2 : 3),
+      "7.3 1-chiqim qatorlari — 1-oluvchiga (xodim)");
+    // Kutilgan kamayish: har qator 1 dan — m1 ikki chiqimda (2), m2 va m3 bittadan (faqat 2 xomashyo bo'lsa m3 = m2)
+    const exp = (m: string) => [m1, m2, m3, m1].filter((x) => x === m).length;
+    const balOk = () => [m1, m2, m3].every((m) => Math.abs(balOf(m) - ((m === m1 ? b0.m1 : m === m2 ? b0.m2 : b0.m3) - exp(m))) < 0.0005);
+    check(balOk(), "7.4 sklad qoldig'i barcha chiqimlar yig'indisicha kamaydi", `${b0.m1}→${balOf(m1)}, ${b0.m2}→${balOf(m2)}, ${b0.m3}→${balOf(m3)}`);
+    check(n1(`select count(*) from "AuditLog" where entity='StockMove' and "entityId" in ${inRefs} and (after->'batch'->>'of')='2'`) === 2, "7.5 AuditLog: har hujjat yozuvida «batch» (1/2, 2/2)");
+    const movesBefore = n1(`select count(*) from "StockMove" where "refId" in ${inRefs}`);
+    const d7 = await multi({ ...body, clientToken: tok7 });
+    check(!d7.error && /docs=2/.test(d7.redirect ?? "") && n1(`select count(*) from "StockMove" where "createdAt" > now() - interval '5 minutes' and note like ${lit("%QA ko'p chiqim")}`) === movesBefore && balOk(),
+      "7.6 o'sha kalit bilan takror — yangi chiqim yozilmadi, mavjud ikkalasi qaytdi", d7.error ?? d7.redirect ?? "");
+    // Qoldiq yetmasa — hech biri yozilmaydi: 1-chiqimda m1 butun qoldig'i, 2-chiqimda yana 1
+    const tok7b = `qa-kopchiqim-b-${Date.now()}`;
+    const left = balOf(m1);
+    const sh = await multi({ "to[]": [`e:${emp}`, t2], "materialId[]": [m2, m1, m1], "qty[]": ["1", String(left), "1"], "grp[]": ["0", "0", "1"], clientToken: tok7b });
+    check(/yetarli emas/.test(sh.error ?? "") && /1, 2-chiqim/.test(sh.error ?? ""), "7.7 ikki chiqim yig'indisi qoldiqdan ko'p — rad, qaysi chiqimlar aytiladi", sh.error ?? "xato yo'q");
+    check(n1(`select count(*) from "StockMove" where "clientToken" like ${lit(`${tok7b}%`)}`) === 0 && Math.abs(balOf(m1) - left) < 0.0005,
+      "7.8 rad etilganda birorta chiqim ham yozilmadi (1-chiqim ham)");
+    const same = await multi({ "to[]": [`e:${emp}`, `e:${emp}`], "materialId[]": [m1, m2], "qty[]": ["1", "1"], "grp[]": ["0", "1"], clientToken: "" });
+    check(/1- va 2-chiqimda tanlangan/.test(same.error ?? ""), "7.9 bir oluvchi ikki chiqimda — rad", same.error ?? "xato yo'q");
+    const noTo = await multi({ "to[]": [`e:${emp}`, ""], "materialId[]": [m1, m2], "qty[]": ["1", "1"], "grp[]": ["0", "1"], clientToken: "" });
+    check(/^2-chiqim: Kimga/.test(noTo.error ?? ""), "7.10 2-chiqimda «Kimga» yo'q — chiqim raqami bilan xato", noTo.error ?? "xato yo'q");
+    const noLine = await multi({ "to[]": [`e:${emp}`, t2], "materialId[]": [m1], "qty[]": ["1"], "grp[]": ["0"], clientToken: "" });
+    check(/^2-chiqim: kamida bitta qator/.test(noLine.error ?? ""), "7.11 qatorsiz chiqim — rad", noLine.error ?? "xato yo'q");
+    const cp7 = await multi({ ...body, clientToken: "", copyOf: "yoq-hujjat" });
+    check(/Tuzatishda faqat bitta chiqim/.test(cp7.error ?? ""), "7.12 «Tuzatish» da bir nechta chiqim — rad", cp7.error ?? "xato yo'q");
+    const jr = await sklad.get("/stock/rasxod?saved=4&docs=2");
+    check(jr.status === 200 && jr.text.includes("2 ta chiqim yozildi"), "7.13 jurnal: «2 ta chiqim yozildi»", String(jr.status));
+    const nf7 = await sklad.get("/stock/rasxod/new");
+    check(nf7.status === 200 && nf7.text.includes("Yana chiqim — boshqa oluvchiga"), "7.14 formada «Yana chiqim — boshqa oluvchiga» tugmasi");
+    for (const r of refs) {
+      const x = await dir.action(`${RX}#cancelRasxod`, [r, "QA storno ko'p chiqim"], "/stock/rasxod");
+      check(!x.error, "7.15 ko'p chiqim hujjati storno qilindi", x.error ?? "");
+    }
+    check(Math.abs(balOf(m1) - b0.m1) < 0.0005 && Math.abs(balOf(m2) - b0.m2) < 0.0005 && Math.abs(balOf(m3) - b0.m3) < 0.0005, "7.16 storno'dan keyin qoldiqlar asliga qaytdi");
+  } else check(false, "7.0 tayyorgarlik: 2 ta qoldiqli xomashyo va ikkinchi oluvchi (brigada / haydovchi)", `mats=${mats.length} t2=${t2}`);
 }
 
 // Tozalash: hujjatlar storno qilingan (o'chirilmaydi); boshqa narsa yaratilmadi

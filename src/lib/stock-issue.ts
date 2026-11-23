@@ -127,16 +127,17 @@ async function resolveTarget(to: IssueTarget | null | undefined): Promise<{ kind
   throw new IssueError("Kimga berilishini tanlang (Kimga)");
 }
 
-/**
- * Skladdan berish (Расход). Bir xomashyo bir necha qatorda kelsa — bitta qatorga qo'shiladi va yig'indisi tekshiriladi.
- * Skladda yetmasa — hech narsa yozilmaydi, `IssueError`: qaysi xomashyo, skladda qancha bor, qancha so'ralgan.
- */
-export async function issueStock(input: IssueInput, actor: { userId: string; role: Role }): Promise<IssueStockResult> {
-  const token = issueToken(input.clientToken);
-  if (token) {
-    const dup = await byToken(token);
-    if (dup) return dup;
-  }
+/** Tekshirilgan, yozishga tayyor bitta berish hujjati (tranzaksiyadan oldin o'qilgan sklad, xomashyo, «Kimga»). */
+type PreparedIssue = {
+  token: string | null; date: Date; note: string | null; ref: string;
+  rows: { materialId: string; qty: number }[]; ids: string[];
+  wh: { id: string; name: string };
+  meta: Map<string, { id: string; name: string; unit: string }>;
+  target: { kind: IssueTargetKind; id: string; name: string };
+};
+
+/** Kiritilgan berishni tekshiradi (sana, qatorlar, sklad, xomashyo, «Kimga») — qoldiq hali tekshirilmaydi (u qulf ostida). */
+async function prepareIssue(input: IssueInput, token: string | null): Promise<PreparedIssue> {
   const date = issueDate(input.date, new Date(), input.anyPastDate === true);
   const note = input.note?.trim() ? input.note.trim().slice(0, 300) : null;
 
@@ -161,61 +162,106 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
   ]);
   if (!wh) throw new IssueError("Sklad tanlanmagan yoki yopilgan");
   if (mats.length !== ids.length) throw new IssueError("Xomashyo topilmadi — sahifani yangilang");
-  const meta = new Map(mats.map((m) => [m.id, m]));
-  const ref = crypto.randomUUID();
-  let logiDocNo: string | null = null;
+  return { token, date, note, ref: crypto.randomUUID(), rows, ids, wh, meta: new Map(mats.map((m) => [m.id, m])), target };
+}
 
+/**
+ * Qulf ostida (`lockStock` dan keyin): berishlar uchun sklad qoldig'i yetadimi. Bir xomashyo bir nechta hujjatda bo'lsa
+ * (bir oynada bir necha oluvchiga) — yig'indisi tekshiriladi. Yetmasa `IssueError`: qaysi xomashyo, bor / kerak, qaysi chiqimda.
+ */
+async function checkShortage(tx: Prisma.TransactionClient, list: PreparedIssue[]) {
+  const need = new Map<string, { whId: string; materialId: string; qty: number; docs: number[] }>();
+  for (const [n, p] of list.entries()) {
+    for (const r of p.rows) {
+      const k = `${p.wh.id}|${r.materialId}`;
+      const x = need.get(k) ?? { whId: p.wh.id, materialId: r.materialId, qty: 0, docs: [] };
+      x.qty = r3(x.qty + r.qty);
+      x.docs.push(n + 1);
+      need.set(k, x);
+    }
+  }
+  const whs = new Map(list.map((p) => [p.wh.id, p.wh]));
+  const meta = new Map(list.flatMap((p) => [...p.meta.entries()]));
+  const parts: string[] = [];
+  for (const wh of whs.values()) {
+    const mine = [...need.values()].filter((x) => x.whId === wh.id);
+    const sums = await tx.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: wh.id, materialId: { in: mine.map((x) => x.materialId) } }, _sum: { qty: true } });
+    const bal = new Map(sums.map((s) => [s.materialId!, Number(s._sum.qty ?? 0)]));
+    const short = mine
+      .filter((x) => (bal.get(x.materialId) ?? 0) < x.qty - STOCK_EPS)
+      .map((x) => {
+        const m = meta.get(x.materialId)!;
+        const u = unitShort(m.unit);
+        const where = list.length > 1 ? ` (${x.docs.join(", ")}-chiqim)` : "";
+        return `${m.name} — bor ${fmtNum(Math.max(0, bal.get(x.materialId) ?? 0), 3)} ${u}, kerak ${fmtNum(x.qty, 3)} ${u}${where}`;
+      });
+    if (short.length) parts.push(`«${wh.name}» skladida yetarli emas: ${short.join("; ")}`);
+  }
+  if (parts.length) throw new IssueError(parts.join(" · "));
+}
+
+/** Tranzaksiya ichida (qoldiq tekshirilgan): bitta berish hujjatining harakatlari, Logistika moliya yozuvi va AuditLog. */
+async function writeIssue(tx: Prisma.TransactionClient, p: PreparedIssue, actor: { userId: string; role: Role }, batch?: { id: string; part: number; of: number }): Promise<string | null> {
+  const { token, date, note, ref, rows, ids, wh, meta, target } = p;
+  let logiDocNo: string | null = null;
+  let sum = 0;
+  if (target.kind !== "brigade") {
+    const prices = await issuePrices(ids, tx);
+    const lines: string[] = [];
+    for (const [i, r] of rows.entries()) {
+      const cost = prices.get(r.materialId) ?? null;
+      await tx.stockMove.create({
+        data: {
+          type: "ISSUE", date, warehouseId: wh.id, materialId: r.materialId,
+          recipientId: target.kind === "recipient" ? target.id : null, employeeId: target.kind === "employee" ? target.id : null,
+          vehicleId: target.kind === "vehicle" ? target.id : null,
+          qty: -r.qty, unitCost: cost, refType: "Issue", refId: ref, note,
+          clientToken: i === 0 ? token : null, createdById: actor.userId,
+        },
+      });
+      sum += r.qty * (cost ?? 0);
+      const m = meta.get(r.materialId)!;
+      lines.push(`${m.name} ${fmtNum(r.qty, 3)} ${unitShort(m.unit)}`);
+    }
+    // Transportga: zapchast summasi Logistika moliyadan chiqim (narxsiz qatorlar summaga kirmaydi)
+    if (target.kind === "vehicle" && Math.round(sum * 100) >= 1) {
+      logiDocNo = (await chargeLogiStockIssue(tx, {
+        ref, date, amount: sum, vehicleId: target.id, warehouse: wh.name,
+        note: [`Skladdan: ${lines.join(", ")}`, note].filter(Boolean).join(" · "),
+      }, actor.userId)).docNo;
+    }
+  } else {
+    sum = (await writeBrigadeIssue(tx, {
+      brigade: target, warehouseId: wh.id, rows, userId: actor.userId, note, refType: "Issue", refId: ref, date, clientToken: token,
+    })).sum;
+  }
+  await audit(tx, actor.userId, "CREATE", "StockMove", ref, undefined, {
+    via: "rasxod", role: actor.role, date, warehouse: wh.name,
+    to: { kind: target.kind, id: target.id, name: target.name }, rows, sum: Math.round(sum * 100) / 100, note,
+    ...(logiDocNo ? { logisticsTx: logiDocNo } : {}),
+    ...(batch ? { batch } : {}),
+  });
+  return logiDocNo;
+}
+
+/**
+ * Skladdan berish (Расход). Bir xomashyo bir necha qatorda kelsa — bitta qatorga qo'shiladi va yig'indisi tekshiriladi.
+ * Skladda yetmasa — hech narsa yozilmaydi, `IssueError`: qaysi xomashyo, skladda qancha bor, qancha so'ralgan.
+ */
+export async function issueStock(input: IssueInput, actor: { userId: string; role: Role }): Promise<IssueStockResult> {
+  const token = issueToken(input.clientToken);
+  if (token) {
+    const dup = await byToken(token);
+    if (dup) return dup;
+  }
+  const p = await prepareIssue(input, token);
+  let logiDocNo: string | null = null;
   try {
     await db.$transaction(async (tx) => {
       // Qoldiq qulf ostida va AYNAN tanlangan sklad bo'yicha (chiqim ham shu skladdan)
       await lockStock(tx);
-      const sums = await tx.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: wh.id, materialId: { in: ids } }, _sum: { qty: true } });
-      const bal = new Map(sums.map((s) => [s.materialId!, Number(s._sum.qty ?? 0)]));
-      const short = rows
-        .filter((r) => (bal.get(r.materialId) ?? 0) < r.qty - STOCK_EPS)
-        .map((r) => {
-          const m = meta.get(r.materialId)!;
-          const u = unitShort(m.unit);
-          return `${m.name} — bor ${fmtNum(Math.max(0, bal.get(r.materialId) ?? 0), 3)} ${u}, kerak ${fmtNum(r.qty, 3)} ${u}`;
-        });
-      if (short.length) throw new IssueError(`«${wh.name}» skladida yetarli emas: ${short.join("; ")}`);
-
-      let sum = 0;
-      if (target.kind !== "brigade") {
-        const prices = await issuePrices(ids, tx);
-        const lines: string[] = [];
-        for (const [i, r] of rows.entries()) {
-          const cost = prices.get(r.materialId) ?? null;
-          await tx.stockMove.create({
-            data: {
-              type: "ISSUE", date, warehouseId: wh.id, materialId: r.materialId,
-              recipientId: target.kind === "recipient" ? target.id : null, employeeId: target.kind === "employee" ? target.id : null,
-              vehicleId: target.kind === "vehicle" ? target.id : null,
-              qty: -r.qty, unitCost: cost, refType: "Issue", refId: ref, note,
-              clientToken: i === 0 ? token : null, createdById: actor.userId,
-            },
-          });
-          sum += r.qty * (cost ?? 0);
-          const m = meta.get(r.materialId)!;
-          lines.push(`${m.name} ${fmtNum(r.qty, 3)} ${unitShort(m.unit)}`);
-        }
-        // Transportga: zapchast summasi Logistika moliyadan chiqim (narxsiz qatorlar summaga kirmaydi)
-        if (target.kind === "vehicle" && Math.round(sum * 100) >= 1) {
-          logiDocNo = (await chargeLogiStockIssue(tx, {
-            ref, date, amount: sum, vehicleId: target.id, warehouse: wh.name,
-            note: [`Skladdan: ${lines.join(", ")}`, note].filter(Boolean).join(" · "),
-          }, actor.userId)).docNo;
-        }
-      } else {
-        sum = (await writeBrigadeIssue(tx, {
-          brigade: target, warehouseId: wh.id, rows, userId: actor.userId, note, refType: "Issue", refId: ref, date, clientToken: token,
-        })).sum;
-      }
-      await audit(tx, actor.userId, "CREATE", "StockMove", ref, undefined, {
-        via: "rasxod", role: actor.role, date, warehouse: wh.name,
-        to: { kind: target.kind, id: target.id, name: target.name }, rows, sum: Math.round(sum * 100) / 100, note,
-        ...(logiDocNo ? { logisticsTx: logiDocNo } : {}),
-      });
+      await checkShortage(tx, [p]);
+      logiDocNo = await writeIssue(tx, p, actor);
     });
   } catch (e) {
     if (e instanceof LogiError) throw new IssueError(e.message);
@@ -226,7 +272,65 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
     }
     throw e;
   }
-  return { ref, count: rows.length, existed: false, logiDocNo };
+  return { ref: p.ref, count: p.rows.length, existed: false, logiDocNo };
+}
+
+/** Bir oynada ko'pi bilan shuncha chiqim (har biri — alohida oluvchi). */
+export const ISSUE_MAX_DOCS = 20;
+
+/**
+ * Bir oynada bir nechta chiqim (har biri o'z «Kimga»si bilan, masalan 1-brigadaga 3 xomashyo, haydovchiga 2 ta): har biri
+ * alohida berish hujjati (`ref`), lekin hammasi BITTA tranzaksiyada, bitta `lockStock` ostida — qoldiq barcha chiqimlar
+ * yig'indisi bo'yicha tekshiriladi, birortasida yetmasa yoki xato bo'lsa hech biri yozilmaydi. Bir oluvchi ikki marta
+ * tanlanmaydi. Bir martalik kalit: `<clientToken>-g<N>` har hujjatga; takror yuborilsa — mavjud hujjatlar qaytadi.
+ * Bitta chiqim kelsa — oddiy `issueStock` (kaliti o'zgarmaydi).
+ */
+export async function issueStockMany(inputs: Omit<IssueInput, "clientToken">[], clientToken: string | null | undefined, actor: { userId: string; role: Role }): Promise<IssueStockResult[]> {
+  if (!inputs.length) throw new IssueError("Kamida bitta chiqim qo'shing");
+  if (inputs.length === 1) return [await issueStock({ ...inputs[0], clientToken }, actor)];
+  if (inputs.length > ISSUE_MAX_DOCS) throw new IssueError(`Bir oynada ko'pi bilan ${ISSUE_MAX_DOCS} ta chiqim`);
+  const base = issueToken(clientToken);
+  const tokens = inputs.map((_, i) => (base ? `${base.slice(0, 58)}-g${i + 1}` : null));
+  const existing = async () => (await Promise.all(tokens.map((t) => (t ? byToken(t) : null)))).filter((x): x is IssueStockResult => !!x);
+  if (tokens[0] && await byToken(tokens[0])) return existing();
+
+  const list: PreparedIssue[] = [];
+  for (const [i, input] of inputs.entries()) {
+    try {
+      list.push(await prepareIssue(input, tokens[i]));
+    } catch (e) {
+      if (e instanceof IssueError) throw new IssueError(`${i + 1}-chiqim: ${e.message}`);
+      throw e;
+    }
+  }
+  const seen = new Map<string, number>();
+  for (const [i, p] of list.entries()) {
+    const k = targetKey(p.target);
+    const was = seen.get(k);
+    if (was != null) throw new IssueError(`«${p.target.name}» ${was + 1}- va ${i + 1}-chiqimda tanlangan — xomashyolarini bitta chiqimga yozing`);
+    seen.set(k, i);
+  }
+  const rowsTotal = list.reduce((a, p) => a + p.rows.length, 0);
+  if (rowsTotal > MAX_ROWS) throw new IssueError(`Qatorlar juda ko'p (ko'pi bilan ${MAX_ROWS})`);
+
+  const batch = crypto.randomUUID();
+  const logi: (string | null)[] = [];
+  try {
+    await db.$transaction(async (tx) => {
+      logi.length = 0;
+      await lockStock(tx);
+      await checkShortage(tx, list);
+      for (const [i, p] of list.entries()) logi.push(await writeIssue(tx, p, actor, { id: batch, part: i + 1, of: list.length }));
+    });
+  } catch (e) {
+    if (e instanceof LogiError) throw new IssueError(e.message);
+    if (tokens[0] && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const dup = await existing();
+      if (dup.length) return dup;
+    }
+    throw e;
+  }
+  return list.map((p, i) => ({ ref: p.ref, count: p.rows.length, existed: false, logiDocNo: logi[i] ?? null }));
 }
 
 // ───────────────────────── Storno (bekor qilish) ─────────────────────────

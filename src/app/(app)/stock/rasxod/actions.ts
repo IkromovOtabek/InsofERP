@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { cancelIssue, issueStock, IssueError, ISSUE_STORNO, parseIssueTarget } from "@/lib/stock-issue";
+import { cancelIssue, issueStock, issueStockMany, IssueError, ISSUE_STORNO, parseIssueTarget, type IssueStockResult } from "@/lib/stock-issue";
 import { upsertRecipient, setRecipientActive } from "@/lib/stock-recipients";
 import { dateRu, isoDate } from "@/lib/format";
 import { db } from "@/lib/db";
@@ -28,7 +28,8 @@ const refresh = () => {
 
 const schema = z.object({
   warehouseId: zStr("Skladni tanlang"),
-  to: zStr("Kimga berilishini tanlang (Kimga)"),
+  // Bitta chiqim — `to`; bir oynada bir nechta oluvchi — `to[]` (har chiqimga bittadan, tartib bilan)
+  to: z.union([z.string(), z.array(z.string())]).optional(),
   date: zOpt,
   note: zOpt,
   clientToken: zOpt,
@@ -36,25 +37,40 @@ const schema = z.object({
   copyOf: zOpt,
   materialId: z.array(z.string(), { message: "Kamida bitta qator qo'shing" }).min(1, "Kamida bitta qator qo'shing"),
   qty: z.array(z.string(), { message: "Miqdorni kiriting" }),
+  // Qator qaysi chiqimga tegishli (`to[]` indeksi); yo'q bo'lsa — hammasi birinchisiga
+  grp: z.array(z.string()).optional(),
 });
 
-/** Yangi chiqim: qatorlar `materialId[]` + `qty[]`, «Kimga» — "r:<id>" | "b:<id>". Muvaffaqiyatda → /stock/rasxod. */
+/**
+ * Yangi chiqim: qatorlar `materialId[]` + `qty[]`, «Kimga» — "r:<id>" | "b:<id>" | "e:<id>" | "v:<id>".
+ * Bir oynada bir nechta oluvchiga: `to[]` + har qatorda `grp[]` — har oluvchiga alohida hujjat, hammasi bitta
+ * tranzaksiyada (`issueStockMany`): birortasida qoldiq yetmasa, hech biri yozilmaydi. Muvaffaqiyatda → /stock/rasxod.
+ */
 export async function createRasxod(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "issue");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
-  const to = parseIssueTarget(d.to);
-  if (!to) return { error: "Kimga berilishini tanlang (Kimga)" };
-  const items: { materialId: string; qty: number }[] = [];
+  const tos = Array.isArray(d.to) ? d.to : [d.to ?? ""];
+  const multi = tos.length > 1;
+  const groups = tos.map((raw) => ({ to: parseIssueTarget(raw), items: [] as { materialId: string; qty: number }[] }));
   for (const [i, materialId] of d.materialId.entries()) {
     if (!materialId.trim()) continue;
+    const gi = d.grp ? Number(d.grp[i]) : 0;
+    const g = Number.isInteger(gi) ? groups[gi] : undefined;
+    if (!g) return { error: "Forma eskirgan — sahifani yangilab, qaytadan kiriting" };
     const raw = String(d.qty[i] ?? "").replace(/\s+/g, "").replace(",", ".");
     const qty = Number(raw);
-    if (!raw || !Number.isFinite(qty) || qty <= 0) return { error: `${i + 1}-qator: miqdorni 0 dan katta kiriting` };
-    items.push({ materialId, qty });
+    const where = multi ? `${gi + 1}-chiqim, ${g.items.length + 1}-qator` : `${i + 1}-qator`;
+    if (!raw || !Number.isFinite(qty) || qty <= 0) return { error: `${where}: miqdorni 0 dan katta kiriting` };
+    g.items.push({ materialId, qty });
   }
-  if (!items.length) return { error: "Kamida bitta qator qo'shing: nomi va miqdori" };
+  for (const [gi, g] of groups.entries()) {
+    if (!g.to) return { error: multi ? `${gi + 1}-chiqim: Kimga berilishini tanlang` : "Kimga berilishini tanlang (Kimga)" };
+    if (!g.items.length) return { error: multi ? `${gi + 1}-chiqim: kamida bitta qator qo'shing — nomi va miqdori` : "Kamida bitta qator qo'shing: nomi va miqdori" };
+  }
+  // «Tuzatish» orqa sanasi faqat bekor qilingan o'sha bitta hujjat uchun — boshqa oluvchilar alohida yoziladi
+  if (multi && d.copyOf) return { error: "Tuzatishda faqat bitta chiqim yoziladi — boshqa oluvchilarga alohida chiqim qiling" };
 
   // Tuzatishda eski sana saqlanadi: faqat bekor qilingan hujjatning AYNAN o'z sanasi uchun 31 kunlik chegara ochiladi.
   // Faqat stornoni shu xodim o'zi qilgan bo'lsa, 2 soat ichida va bir marta — aks holda istalgan eski bekor qilingan
@@ -70,26 +86,34 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
       && Date.now() - storno.createdAt.getTime() < 2 * 3600_000 && used === 0;
   }
 
-  let res;
+  const actor = { userId: s.userId, role: s.role };
+  let results: IssueStockResult[];
   try {
-    res = await issueStock({ warehouseId: d.warehouseId, date: d.date, to, items, note: d.note, clientToken: d.clientToken, anyPastDate }, { userId: s.userId, role: s.role });
+    results = multi
+      ? await issueStockMany(groups.map((g) => ({ warehouseId: d.warehouseId, date: d.date, to: g.to!, items: g.items, note: d.note })), d.clientToken, actor)
+      : [await issueStock({ warehouseId: d.warehouseId, date: d.date, to: groups[0].to!, items: groups[0].items, note: d.note, clientToken: d.clientToken, anyPastDate }, actor)];
   } catch (e) {
     if (e instanceof IssueError) return { error: e.message };
     throw e;
   }
+  const count = results.reduce((a, x) => a + x.count, 0);
   // Orqa sana ruxsati bir martalik: shu nusxa ishlatildi
-  if (anyPastDate && d.copyOf) await audit(db, s.userId, "CREATE", "IssueCopy", d.copyOf, undefined, { date: d.date, count: res.count });
+  if (anyPastDate && d.copyOf) await audit(db, s.userId, "CREATE", "IssueCopy", d.copyOf, undefined, { date: d.date, count });
   // Haydovchiga / transportga berilsa — dispetcherga xabar (oddiy xodim bo'lsa funksiya o'zi jim qoladi)
-  if (!res.existed && (to.kind === "employee" || to.kind === "vehicle")) notifyDriverIssue(res.ref, s.userId);
+  for (const [gi, res] of results.entries()) {
+    const to = groups[gi]?.to;
+    if (to && !res.existed && (to.kind === "employee" || to.kind === "vehicle")) notifyDriverIssue(res.ref, s.userId);
+  }
   refresh();
-  redirect(savedUrl(res.count, d.date));
+  redirect(savedUrl(count, d.date, results.length));
 }
 
 /** Saqlangandan keyin jurnal. Davr standart — joriy oy: o'tgan oyga yozilgan chiqim ham ro'yxatda ko'rinsin. */
-function savedUrl(count: number, date: string | null | undefined) {
+function savedUrl(count: number, date: string | null | undefined, docs = 1) {
   const now = new Date();
   const monthStart = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
   const q = new URLSearchParams({ saved: String(count) });
+  if (docs > 1) q.set("docs", String(docs));
   if (date && date < monthStart) q.set("from", date);
   return `/stock/rasxod?${q.toString()}`;
 }

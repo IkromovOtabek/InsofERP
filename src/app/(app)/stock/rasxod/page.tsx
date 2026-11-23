@@ -41,7 +41,7 @@ const PAY: Record<"BANK" | "CASH", { label: string; color: "blue" | "amber"; tit
 /** Excel'da «To'lov turi» to'liq yoziladi — naqd yoki o'tkazma ekani qisqartmasiz ham tushunarli bo'lsin. */
 const PAY_EXCEL: Record<"BANK" | "CASH", string> = { BANK: "O'tkazma (bank)", CASH: "Naqd (kassa)" };
 
-export default async function RasxodPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; wh?: string; komu?: string; q?: string; saved?: string }> }) {
+export default async function RasxodPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; wh?: string; komu?: string; q?: string; saved?: string; docs?: string }> }) {
   const s = await requirePage("/stock");
   // Narx va summalar — /stock ni ko'radigan hamma rolga emas (sotuv, logistika, mexanik — Sklad sahifasiga qaytadi)
   if (!canSeeRasxod(s)) redirect("/stock");
@@ -72,6 +72,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   const t = rasxodTotals(rows);
   const targets = rasxodByTarget(rows);
   const saved = Number(sp.saved);
+  const savedDocs = Number(sp.docs) || 1;
   // Storno tugmasi — har chiqim hujjatining (ref) birinchi ko'rinadigan qatorida, bir marta; storno qilinganida yo'q
   const refRows = new Map<string, RasxodRow[]>();
   for (const r of rows) if (r.ref && (r.kind === "issue" || r.kind === "brigade")) refRows.set(r.ref, [...(refRows.get(r.ref) ?? []), r]);
@@ -131,7 +132,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
         }
       />
 
-      {saved > 0 && <div className="mb-4"><Callout tone="success" title="Chiqim yozildi">{`Qatorlar: ${saved}. Sklad qoldig'i kamaydi.`}</Callout></div>}
+      {saved > 0 && <div className="mb-4"><Callout tone="success" title={savedDocs > 1 ? `${savedDocs} ta chiqim yozildi` : "Chiqim yozildi"}>{`Qatorlar: ${saved}. Sklad qoldig'i kamaydi.`}</Callout></div>}
 
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <StockPeriodBar base="/stock/rasxod" period={period} hidden={hidden} />
