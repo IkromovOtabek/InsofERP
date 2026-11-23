@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
 import {
-  cancelAdvanceSheet, closeAdvanceSheet, createAdvanceSheet, giveAdvance, recallAdvanceSheet, refreshAdvanceSheet,
+  cancelAdvanceSheet, closeAdvanceSheet, createAdvanceSheet, deleteAdvanceSheet, giveAdvance, manualAdvance, recallAdvanceSheet, refreshAdvanceSheet,
   saveAdvanceAmounts, sendAdvanceSheet, ungiveAdvance,
 } from "@/lib/hr/advance-sheet";
 
@@ -72,4 +72,26 @@ export async function giveAdvanceAction(id: string, cashAccountId: string, lineI
 export async function ungiveAdvanceAction(sheetId: string, lineId: string, reason: string): Promise<ActionState> {
   const s = await requireSession();
   return done(await ungiveAdvance(s, lineId, String(reason ?? "")), sheetId);
+}
+
+/** Varaqasiz qo'lda avans (Ish haqi → Avans): bitta xodimga — kassadan yoki kassasiz. */
+export async function manualAdvanceAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession();
+  const r = await manualAdvance(s, {
+    employeeId: String(fd.get("employeeId") ?? ""), amount: String(fd.get("amount") ?? ""), date: String(fd.get("date") ?? ""),
+    cashAccountId: String(fd.get("cashAccountId") ?? "") || null, note: String(fd.get("note") ?? "") || null,
+  });
+  if ("error" in r) return { error: r.error };
+  refresh();
+  revalidatePath("/cashflow"); revalidatePath("/payments");
+  return { ok: true, note: r.note };
+}
+
+/** Varaqani butunlay o'chirish — `payroll.advance_delete` (Ruxsatlarda); kassadan pul chiqqan bo'lsa rad etiladi. */
+export async function deleteAdvanceSheetAction(id: string, reason: string): Promise<ActionState> {
+  const s = await requireSession();
+  const r = await deleteAdvanceSheet(s, id, String(reason ?? ""));
+  if ("error" in r) return { error: r.error };
+  refresh();
+  return { ok: true, note: r.note };
 }

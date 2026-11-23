@@ -46,7 +46,7 @@ export const PAYROLL_CATEGORY = "Ish haqi";
 export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
-export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel" | "deductions" | "advance") => canDo(who, "payroll", what);
+export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel" | "deductions" | "advance" | "advance_delete") => canDo(who, "payroll", what);
 /** Ish haqi bo'yicha mas'ul rollar — vedomostlarni har doim ko'radi. */
 const RUN_ROLES = ["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"];
 /**

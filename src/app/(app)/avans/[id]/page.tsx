@@ -6,11 +6,11 @@ import { monthTitle } from "@/lib/davomat";
 import { payAccounts } from "@/lib/mechanic-requests";
 import { ROLE_LABELS } from "@/lib/nav";
 import {
-  ADVANCE_STATUS_BADGE, ADVANCE_STATUS_LABEL, advanceRecipients, advanceSheet, canAdvance, canGiveAdvance, canViewSheet,
+  ADVANCE_STATUS_BADGE, ADVANCE_STATUS_LABEL, advanceRecipients, advanceSheet, canAdvance, canDeleteAdvance, canGiveAdvance, canViewSheet,
 } from "@/lib/hr/advance-sheet";
 import { Badge, Callout, Card, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
 import { ConfirmButton } from "../../payments/confirm-button";
-import { cancelAdvanceSheetAction } from "../actions";
+import { cancelAdvanceSheetAction, deleteAdvanceSheetAction } from "../actions";
 import { AdvanceEditor, AdvanceLines, SheetButtons, type AdvLine } from "../avans-forms";
 
 const STEPS = [{ key: "DRAFT", label: "Saqlangan" }, { key: "SENT", label: "Jo'natilgan" }, { key: "DONE", label: "Berildi" }];
@@ -39,14 +39,19 @@ export default async function AdvanceSheetPage({ params }: { params: Promise<{ i
   }));
   const back = editor ? { href: "/ish-haqi?tab=avans", label: "Ish haqi → Avans" } : { href: "/avans", label: "Avans varaqalari" };
   const anyGiven = sh.givenCount > 0;
+  // Eski varaqalarda «Ishlagan» / «Tavsiya» hisoblangan; yangilari — ro'yxat, avans qo'lda
+  const calc = sh.lines.some((l) => l.earned > 0 || l.suggested > 0);
+  const manual = sh.groupLabel === "Qo'lda avans";
 
   return (
     <div className="space-y-4" data-wide="">
       <PageHeader back={back} title={`${sh.docNo} · Avans`}
-        subtitle={`${monthTitle(sh.month)} · ${sh.groupLabel ?? "Barcha xodimlar"} · ${date(sh.asOf)} holatiga ishlagani`}
+        subtitle={`${monthTitle(sh.month)} · ${sh.groupLabel ?? "Barcha xodimlar"} · ${calc ? `${date(sh.asOf)} holatiga ishlagani` : manual ? date(sh.asOf) : "avans qo'lda yoziladi"}`}
         action={<Badge color={ADVANCE_STATUS_BADGE[sh.status]}>{ADVANCE_STATUS_LABEL[sh.status]}</Badge>}
         info={<>
-          <p><b>Ishlagan</b> — oy boshidan {date(sh.asOf)} gacha: tabel / davomat bo&apos;yicha oklad, kunbay, soatbay va brigada varag&apos;i (sdelka). <b>Tavsiya</b> — xodim kartasida qo&apos;lda belgilangan avans, bo&apos;lmasa Sozlamalardagi avans foizi (ishlaganidan oshmaydi), shu oy berilgan va boshqa varaqada jo&apos;natilgan avans ayirilgan.</p>
+          {calc
+            ? <p><b>Ishlagan</b> — oy boshidan {date(sh.asOf)} gacha: tabel / davomat bo&apos;yicha oklad, kunbay, soatbay va brigada varag&apos;i (sdelka). <b>Tavsiya</b> — xodim kartasida qo&apos;lda belgilangan avans, bo&apos;lmasa Sozlamalardagi avans foizi (ishlaganidan oshmaydi), shu oy berilgan va boshqa varaqada jo&apos;natilgan avans ayirilgan.</p>
+            : <p>Varaqa — shu oy Tabeldagi xodimlar ro&apos;yxati; avans summasi har xodimga qo&apos;lda yoziladi (bo&apos;sh — avans yo&apos;q). «Ro&apos;yxatni yangilash» — guruhga yangi kelganlarni qo&apos;shadi.</p>}
           <p>«Saqlash» — varaqa bizda qoladi. «Jo&apos;natish» — tanlangan xodimga (kassa huquqi bilan) bildirishnoma boradi; u kassani tanlab har xodimga «Berildi» belgilaydi — har biriga kassadan alohida «Ish haqi» chiqimi yoziladi. Berilgan avans oy yakuni vedomostida o&apos;zi ushlanadi.</p>
         </>} />
       {sh.status !== "CANCELLED" && <StatusSteps steps={STEPS} current={sh.status} />}
@@ -73,6 +78,11 @@ export default async function AdvanceSheetPage({ params }: { params: Promise<{ i
             }} />
             {(editor || s.role === "DIRECTOR") && (sh.status === "DRAFT" || sh.status === "SENT") && !anyGiven && (
               <ConfirmButton action={cancelAdvanceSheetAction.bind(null, sh.id)} label="Bekor qilish" reason="required" question="Varaqa bekor qilinadi (o'chirilmaydi, ro'yxatda «bekor» bo'lib qoladi). Sababi?" className="text-xs" />
+            )}
+            {canDeleteAdvance(s) && (
+              <ConfirmButton action={deleteAdvanceSheetAction.bind(null, sh.id)} label="O'chirish" reason="optional" okText="O'chirildi" goTo={editor ? "/ish-haqi?tab=avans" : "/avans"}
+                question={`${sh.docNo} butunlay o'chirilsinmi? Amallar tarixida qoladi. Kassadan avans berilgan bo'lsa — avval «Berildi»ni qaytaring.`}
+                className="text-xs font-medium text-red-600 hover:underline" />
             )}
           </span>
         </div>

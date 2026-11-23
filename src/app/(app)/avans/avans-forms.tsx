@@ -10,7 +10,7 @@ import type { ActionState } from "@/lib/action";
 import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
 import { ConfirmButton } from "../payments/confirm-button";
 import {
-  closeAdvanceSheetAction, createAdvanceSheetAction, giveAdvanceAction, recallAdvanceSheetAction, refreshAdvanceSheetAction,
+  closeAdvanceSheetAction, createAdvanceSheetAction, giveAdvanceAction, manualAdvanceAction, recallAdvanceSheetAction, refreshAdvanceSheetAction,
   saveAdvanceAmountsAction, sendAdvanceSheetAction, ungiveAdvanceAction,
 } from "./actions";
 
@@ -37,8 +37,41 @@ export function NewAdvanceForm({ groups }: { groups: { key: string; label: strin
           {groups.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
         </Select>
       </Field>
-      <Button disabled={pending}><FilePlus2 size={15} /> {pending ? "Hisoblanmoqda…" : "Yangi avans varaqasi"}</Button>
+      <Button disabled={pending}><FilePlus2 size={15} /> {pending ? "Ochilmoqda…" : "Yangi avans varaqasi"}</Button>
       <FormError error={state?.error} />
+    </form>
+  );
+}
+
+// ───────────────────────── Varaqasiz qo'lda avans ─────────────────────────
+
+/** Bitta xodimga avans: kassadan darhol yoki kassasiz (oldin berilgani) — bitta qatorli «Berildi» varaqa bo'lib yoziladi. */
+export function ManualAdvanceForm({ employees, accounts, today }: { employees: { id: string; label: string }[]; accounts: { id: string; name: string }[]; today: string }) {
+  const [state, act, pending] = useActionState(manualAdvanceAction, undefined);
+  const [k, setK] = useState(0);
+  useEffect(() => { if (state?.ok) setK((x) => x + 1); }, [state]);
+  return (
+    <form key={k} action={act} className="flex flex-wrap items-end gap-2">
+      <Field label="Xodim" className="min-w-64">
+        <Select name="employeeId" defaultValue="" required>
+          <option value="" disabled>— xodimni tanlang —</option>
+          {employees.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
+        </Select>
+      </Field>
+      <Field label="Avans summasi" className="w-40"><Input name="amount" inputMode="decimal" autoComplete="off" placeholder="0" required /></Field>
+      <Field label="Sana" className="w-40"><Input name="date" type="date" defaultValue={today} max={today} required /></Field>
+      <Field label="Qayerdan" className="min-w-56">
+        <Select name="cashAccountId" defaultValue="">
+          <option value="">Kassasiz — oldin berilgan</option>
+          {accounts.map((a) => <option key={a.id} value={a.id}>Kassadan: {a.name}</option>)}
+        </Select>
+      </Field>
+      <Field label="Izoh" className="min-w-48 flex-1"><Input name="note" placeholder="ixtiyoriy" /></Field>
+      <Button disabled={pending}><HandCoins size={15} /> {pending ? "Saqlanmoqda…" : "Avansni yozish"}</Button>
+      <div className="basis-full">
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? state.note : undefined} />
+      </div>
     </form>
   );
 }
@@ -63,7 +96,7 @@ export function RunButton({ run, label, icon: Icon, variant = "secondary", confi
 export function SheetButtons({ id, can }: { id: string; can: { refresh?: boolean; recall?: boolean; close?: boolean } }) {
   return (
     <>
-      {can.refresh && <RunButton run={() => refreshAdvanceSheetAction(id)} label="Bugungi holatga yangilash" icon={RefreshCw} />}
+      {can.refresh && <RunButton run={() => refreshAdvanceSheetAction(id)} label="Ro'yxatni yangilash" icon={RefreshCw} />}
       {can.recall && <RunButton run={() => recallAdvanceSheetAction(id)} label="Qaytarib olish (tahrir uchun)" icon={Undo2} confirm="Varaqa qoralamaga qaytadi — qabul qiluvchi uni ko'rmaydi. Davom etilsinmi?" />}
       {can.close && <RunButton run={() => closeAdvanceSheetAction(id)} label="Varaqani yopish" icon={CheckCheck} confirm="Berilmagan xodimlarga avans berilmaydi, varaqa yopiladi. Davom etilsinmi?" />}
     </>
@@ -92,6 +125,9 @@ export function AdvanceEditor({ id, lines, recipients }: { id: string; lines: Ad
   const total = lines.reduce((s, l) => s + toNum(vals[l.id] ?? ""), 0);
   const count = lines.filter((l) => toNum(vals[l.id] ?? "") > 0).length;
   const fillSuggested = () => setVals((p) => { const o = { ...p }; for (const l of rows) if (!(o[l.id] ?? "").trim() && l.suggested > 0) o[l.id] = String(l.suggested); return o; });
+  // Yangi varaqalar hisob-kitobsiz (faqat ro'yxat); «Ishlagan» / «Tavsiya» — eski, hisoblangan varaqalarda
+  const calc = lines.some((l) => l.earned > 0 || l.suggested > 0);
+  const cols = calc ? 5 : 3;
 
   // Qatorlararo: Enter / ↓ — pastga, ↑ — tepaga
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>, i: number) => {
@@ -120,7 +156,7 @@ export function AdvanceEditor({ id, lines, recipients }: { id: string; lines: Ad
           <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-400" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Xodim, guruh yoki lavozim" className="h-9 w-64 pl-8" />
         </label>
-        <Button type="button" variant="ghost" size="sm" onClick={fillSuggested}><CheckCheck size={14} /> Bo&apos;sh kataklarga tavsiyani qo&apos;yish</Button>
+        {calc && <Button type="button" variant="ghost" size="sm" onClick={fillSuggested}><CheckCheck size={14} /> Bo&apos;sh kataklarga tavsiyani qo&apos;yish</Button>}
         <span className="ml-auto flex flex-wrap items-center gap-2">
           <span className="text-sm text-slate-600">{count} xodim · <b className="text-slate-900">{money(total)}</b>{dirty && <span className="ml-2 text-amber-700">· saqlanmagan</span>}</span>
           <Button type="button" variant="secondary" size="sm" disabled={pending || !dirty} onClick={save}><Save size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
@@ -135,42 +171,44 @@ export function AdvanceEditor({ id, lines, recipients }: { id: string; lines: Ad
             <tr>
               <th className="w-10 border-r border-b border-slate-300 bg-slate-100 px-1 py-2 text-center font-semibold">№</th>
               <th className="min-w-60 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-left font-semibold">F.I.O.</th>
-              <th className="min-w-36 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-right font-semibold">Ishlagan (oy boshidan)</th>
-              <th className="min-w-32 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-right font-semibold">Tavsiya</th>
-              <th className="min-w-36 border-b border-slate-300 bg-emerald-50 px-2 py-2 text-right font-semibold">Avans</th>
+              {calc && <th className="min-w-36 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-right font-semibold">Ishlagan (oy boshidan)</th>}
+              {calc && <th className="min-w-32 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-right font-semibold">Tavsiya</th>}
+              <th className="min-w-40 border-b border-slate-300 bg-emerald-50 px-2 py-2 text-right font-semibold">Avans (qo&apos;lda)</th>
             </tr>
           </thead>
           <tbody>
             {withGroups(rows).map(({ r, head }, i) => (
               <Fragment key={r.id}>
-                {head && <tr><td colSpan={5} className="border-b border-slate-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">{r.groupLabel}</td></tr>}
+                {head && <tr><td colSpan={cols} className="border-b border-slate-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">{r.groupLabel}</td></tr>}
                 <tr className="group">
                   <td className="border-r border-b border-slate-200 px-1 text-center text-slate-500">{i + 1}</td>
                   <td className="border-r border-b border-slate-200 px-2 py-0.5"><div className="truncate font-medium text-slate-900">{r.fullName}</div><div className="truncate text-[11px] text-slate-500">{r.position}</div></td>
-                  <td className="border-r border-b border-slate-200 px-2 text-right">{r.earned ? fmtNum(r.earned) : "—"}</td>
-                  <td className="border-r border-b border-slate-200 px-2 text-right">
-                    {r.suggested > 0
-                      ? <button type="button" className="text-sky-700 hover:underline" title="Avans katagiga qo'yish" onClick={() => setVals((p) => ({ ...p, [r.id]: String(r.suggested) }))}>{fmtNum(r.suggested)}</button>
-                      : <span className="text-slate-400">0</span>}
-                  </td>
-                  <td className="border-b border-slate-200 p-0">
+                  {calc && <td className="border-r border-b border-slate-200 px-2 text-right">{r.earned ? fmtNum(r.earned) : "—"}</td>}
+                  {calc && (
+                    <td className="border-r border-b border-slate-200 px-2 text-right">
+                      {r.suggested > 0
+                        ? <button type="button" className="text-sky-700 hover:underline" title="Avans katagiga qo'yish" onClick={() => setVals((p) => ({ ...p, [r.id]: String(r.suggested) }))}>{fmtNum(r.suggested)}</button>
+                        : <span className="text-slate-400">0</span>}
+                    </td>
+                  )}
+                  <td className="border-b border-slate-200 p-1">
                     <input data-i={i} value={vals[r.id] ?? ""} inputMode="decimal" autoComplete="off" aria-label={`${r.fullName} — avans`}
-                      placeholder={r.suggested > 0 ? fmtNum(r.suggested) : ""}
+                      placeholder={r.suggested > 0 ? fmtNum(r.suggested) : "summa"}
                       onChange={(e) => setVals((p) => ({ ...p, [r.id]: e.target.value }))}
                       onFocus={(e) => e.currentTarget.select()} onKeyDown={(e) => onKey(e, i)} onPaste={(e) => onPaste(e, i)}
-                      className="h-9 w-full bg-transparent px-2 text-right font-medium outline-none placeholder:font-normal placeholder:text-slate-300 placeholder:italic focus:bg-brand-50 focus:ring-2 focus:ring-brand-500 focus:ring-inset" />
+                      className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-right font-medium outline-none placeholder:font-normal placeholder:text-slate-300 placeholder:italic focus:border-brand-500 focus:bg-brand-50 focus:ring-2 focus:ring-brand-500/30" />
                   </td>
                 </tr>
               </Fragment>
             ))}
-            {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-8 text-center text-slate-500">Xodim topilmadi</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={cols} className="px-3 py-8 text-center text-slate-500">Xodim topilmadi</td></tr>}
           </tbody>
           <tfoot className="sticky bottom-0 z-20 font-semibold text-slate-900">
             <tr>
               <td className="border-t-2 border-r border-slate-300 bg-slate-100" />
               <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 py-1.5">Jami ({count} xodim)</td>
-              <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 text-right">{fmtNum(lines.reduce((s, l) => s + l.earned, 0))}</td>
-              <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 text-right">{fmtNum(lines.reduce((s, l) => s + l.suggested, 0))}</td>
+              {calc && <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 text-right">{fmtNum(lines.reduce((s, l) => s + l.earned, 0))}</td>}
+              {calc && <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 text-right">{fmtNum(lines.reduce((s, l) => s + l.suggested, 0))}</td>}
               <td className="border-t-2 border-slate-300 bg-emerald-50 px-2 text-right">{fmtNum(total)}</td>
             </tr>
           </tfoot>
@@ -241,6 +279,9 @@ export function AdvanceLines({ id, lines, accounts, canGive }: {
   const router = useRouter();
   const act = lines.filter((l) => l.amount > 0);
   const open = act.filter((l) => !l.given);
+  // «Ishlagan» — faqat eski (hisoblangan) varaqada
+  const calc = lines.some((l) => l.earned > 0);
+  const span = (canGive ? 6 : 5) - (calc ? 0 : 1);
   const [acc, setAcc] = useState(accounts.find((a) => a.type === "CASH")?.id ?? accounts[0]?.id ?? "");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
@@ -295,7 +336,7 @@ export function AdvanceLines({ id, lines, accounts, canGive }: {
               </th>}
               <th className="w-10 border-r border-b border-slate-300 bg-slate-100 px-1 py-2 text-center font-semibold">№</th>
               <th className="min-w-60 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-left font-semibold">F.I.O.</th>
-              <th className="min-w-32 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-right font-semibold">Ishlagan</th>
+              {calc && <th className="min-w-32 border-r border-b border-slate-300 bg-slate-100 px-2 py-2 text-right font-semibold">Ishlagan</th>}
               <th className="min-w-32 border-r border-b border-slate-300 bg-emerald-50 px-2 py-2 text-right font-semibold">Avans</th>
               <th className="min-w-56 border-b border-slate-300 bg-slate-100 px-2 py-2 text-left font-semibold">Holat</th>
             </tr>
@@ -303,7 +344,7 @@ export function AdvanceLines({ id, lines, accounts, canGive }: {
           <tbody>
             {withGroups(rows).map(({ r, head }, i) => (
               <Fragment key={r.id}>
-                {head && <tr><td colSpan={canGive ? 6 : 5} className="border-b border-slate-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">{r.groupLabel}</td></tr>}
+                {head && <tr><td colSpan={span} className="border-b border-slate-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">{r.groupLabel}</td></tr>}
                 <tr className={cn(r.given && "bg-emerald-50/40")}>
                   {canGive && <td className="border-r border-b border-slate-200 px-1 text-center">
                     {!r.given && <input type="checkbox" aria-label={`${r.fullName} — belgilash`} checked={picked.has(r.id)} className="h-4 w-4 rounded border-slate-300"
@@ -311,7 +352,7 @@ export function AdvanceLines({ id, lines, accounts, canGive }: {
                   </td>}
                   <td className="border-r border-b border-slate-200 px-1 text-center text-slate-500">{i + 1}</td>
                   <td className="border-r border-b border-slate-200 px-2 py-1"><div className="truncate font-medium text-slate-900">{r.fullName}</div><div className="truncate text-[11px] text-slate-500">{r.position}</div></td>
-                  <td className="border-r border-b border-slate-200 px-2 text-right">{r.earned ? fmtNum(r.earned) : "—"}</td>
+                  {calc && <td className="border-r border-b border-slate-200 px-2 text-right">{r.earned ? fmtNum(r.earned) : "—"}</td>}
                   <td className="border-r border-b border-slate-200 px-2 text-right font-semibold">{fmtNum(r.amount)}</td>
                   <td className="border-b border-slate-200 px-2 py-1">
                     {r.given
@@ -328,14 +369,14 @@ export function AdvanceLines({ id, lines, accounts, canGive }: {
                 </tr>
               </Fragment>
             ))}
-            {rows.length === 0 && <tr><td colSpan={canGive ? 6 : 5} className="px-3 py-8 text-center text-slate-500">Avans yozilgan xodim yo&apos;q</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={span} className="px-3 py-8 text-center text-slate-500">Avans yozilgan xodim yo&apos;q</td></tr>}
           </tbody>
           <tfoot className="sticky bottom-0 z-20 font-semibold text-slate-900">
             <tr>
               {canGive && <td className="border-t-2 border-r border-slate-300 bg-slate-100" />}
               <td className="border-t-2 border-r border-slate-300 bg-slate-100" />
               <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 py-1.5">Jami ({act.length})</td>
-              <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 text-right">{fmtNum(act.reduce((s, l) => s + l.earned, 0))}</td>
+              {calc && <td className="border-t-2 border-r border-slate-300 bg-slate-100 px-2 text-right">{fmtNum(act.reduce((s, l) => s + l.earned, 0))}</td>}
               <td className="border-t-2 border-r border-slate-300 bg-emerald-50 px-2 text-right">{fmtNum(act.reduce((s, l) => s + l.amount, 0))}</td>
               <td className="border-t-2 border-slate-300 bg-slate-100 px-2 text-emerald-700">berildi {fmtNum(act.filter((l) => l.given).reduce((s, l) => s + l.amount, 0))}</td>
             </tr>

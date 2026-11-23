@@ -9,20 +9,22 @@ import { cashOutflowError } from "@/lib/payments";
 import { cancelCashTxIn } from "@/lib/cash-entry";
 import { notifyAfter, notifyEmployees, notifyUsers } from "@/lib/notify";
 import { PAYROLL_CATEGORY, calculate, canPayroll, payrollSettings, type PayrollWho } from "./payroll";
-import { groupOf, groupOrder, NO_GROUP } from "./tabel";
+import { groupOf, groupOrder, NO_GROUP, tabelMonth } from "./tabel";
 import { tabelLock } from "./tabel-lock";
 
 /**
  * Avans varaqasi (Ish haqi → Avans). Oqim:
- *   1. Sekretar (payroll.advance) varaqa ochadi — hamma xodim yoki bitta guruh (komanda / brigada): har xodimga oy
- *      boshidan bugungacha ishlagani (`calculate` ADVANCE, `upTo` = bugun) va tavsiya: xodim kartasidagi qo'lda avans,
- *      bo'lmasa avans qoidasi (sozlamadagi foiz, bashorat bilan) — ishlaganidan oshmaydi; shu oy berilgan / jo'natilgan
- *      avans ayiriladi. Avans summasi qo'lda yoziladi → «Saqlash» (DRAFT, bizda qoladi).
+ *   1. Sekretar (payroll.advance) varaqa ochadi — hamma xodim yoki bitta guruh (komanda / brigada): shu oy Tabeldagi
+ *      xodimlar ro'yxati, hisob-kitobsiz (2026-11-23 dan; eski varaqalarda «Ishlagan» / «Tavsiya» saqlanib qolgan).
+ *      Avans summasi qo'lda yoziladi → «Saqlash» (DRAFT, bizda qoladi).
+ *   Varaqasiz «Qo'lda avans» (`manualAdvance`): bitta xodimga — kassadan darhol yoki kassasiz (oldin berilgan); bitta
+ *      qatorli, darhol «Berildi» holatidagi varaqa bo'lib yoziladi (oy yakunida xuddi shunday ushlanadi).
  *   2. «Jo'natish» — kassa huquqi bor xodim tanlanadi (SENT), unga bildirishnoma.
  *   3. U `/avans/<id>` da kassani tanlab, har xodimga «Berildi» belgilaydi: har biriga kassadan alohida «Ish haqi» chiqimi
  *      (refType `ADVANCE_REF`). Hammasi berilgach — DONE, jo'natganga xabar. Qolganlarini bermasdan varaqani yopish mumkin.
  * Berilgan avans oy yakuni vedomostida ushlanadi (`calculate` → advances); oy yakuni yopilgan oyda berib / qaytarib
- * bo'lmaydi (ushlanmay qolardi). Hujjat o'chirilmaydi: bekor qilinadi, har amal AuditLog'da.
+ * bo'lmaydi (ushlanmay qolardi). Kassadan pul chiqmagan varaqa o'chiriladi (`payroll.advance_delete`, Ruxsatlarda), qolgani
+ * bekor qilinadi; har amal AuditLog'da.
  */
 
 export const ADVANCE_REF = "AdvanceSheet";
@@ -42,6 +44,8 @@ export const ADVANCE_STATUS_BADGE: Record<AdvanceSheetStatus, "slate" | "amber" 
 
 /** Varaqa tuzish, saqlash, jo'natish (Sekretar). */
 export const canAdvance = (who: Pick<Who, "role" | "perms">) => canPayroll(who, "advance");
+/** Varaqani butunlay o'chirish (kassadan pul chiqmagan bo'lsa) — Ruxsatlar → Ish haqi → «Avans varaqasini o'chirish». */
+export const canDeleteAdvance = (who: Pick<Who, "role" | "perms">) => canPayroll(who, "advance_delete");
 /** Avansni bera oladi (qabul qiluvchi): kassadan ish haqi to'lash yoki Kirim-Chiqim yozish huquqi. */
 export const canGiveAdvance = (who: Pick<Who, "role" | "perms">) => canPayroll(who, "pay") || canDo(who, "cashflow", "create");
 
@@ -170,11 +174,19 @@ export type AdvanceSheetFull = NonNullable<Awaited<ReturnType<typeof advanceShee
 async function nextDocNo(tx: Prisma.TransactionClient, month: string) {
   const head = `AV-${month}`;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"docno:" + head}))`;
-  const n = await tx.advanceSheet.count({ where: { docNo: { startsWith: head } } });
-  return `${head}-${n + 1}`;
+  // Soni emas, eng katta raqam: varaqa o'chirilsa ham raqam takrorlanmaydi (docNo unique)
+  const docs = await tx.advanceSheet.findMany({ where: { docNo: { startsWith: `${head}-` } }, select: { docNo: true } });
+  const max = docs.reduce((m, d) => Math.max(m, Number(d.docNo.slice(head.length + 1)) || 0), 0);
+  return `${head}-${max + 1}`;
 }
 
-/** Joriy oy uchun yangi varaqa (bugungi holat bilan): hamma xodim yoki bitta guruh. */
+/** Varaqa ro'yxati: shu oy Tabeldagi xodimlar (ishga kirgan / bo'shagan kuni bilan), guruh bo'yicha — hisob-kitobsiz. */
+async function advanceRoster(month: string, groupKey: string | null) {
+  const t = await tabelMonth(month, "all");
+  return t.rows.filter((r) => !groupKey || r.group === groupKey).map((r) => ({ employeeId: r.id }));
+}
+
+/** Joriy oy uchun yangi varaqa: hamma xodim yoki bitta guruh — ro'yxat, avans qo'lda yoziladi. */
 export async function createAdvanceSheet(who: Who, input: { groupKey?: string | null }) {
   if (!canAdvance(who)) return { error: "Avans varaqasini sekretar tuzadi — ruxsat yo'q" };
   const asOf = today();
@@ -184,13 +196,13 @@ export async function createAdvanceSheet(who: Who, input: { groupKey?: string | 
   const groupKey = input.groupKey?.trim() || null;
   const group = groupKey ? (await advanceGroups()).find((g) => g.key === groupKey) : null;
   if (groupKey && !group) return { error: "Guruh topilmadi" };
-  const rows = await advanceCalc(month, asOf, { groupKey });
-  if (!rows.length) return { error: group ? `«${group.label}» da shu oy ishlagan xodim yo'q` : "Shu oy ishlagan xodim topilmadi" };
+  const rows = await advanceRoster(month, groupKey);
+  if (!rows.length) return { error: group ? `«${group.label}» da xodim yo'q` : "Xodim topilmadi" };
   const sh = await db.$transaction(async (tx) => {
     const x = await tx.advanceSheet.create({
       data: {
         docNo: await nextDocNo(tx, month), month, asOf: dayUtc(asOf), groupKey, groupLabel: group?.label ?? null, createdById: who.userId,
-        lines: { create: rows.map((r) => ({ employeeId: r.employeeId, earned: r.earned, suggested: r.suggested, amount: 0 })) },
+        lines: { create: rows.map((r) => ({ employeeId: r.employeeId, earned: 0, suggested: 0, amount: 0 })) },
       },
     });
     await audit(tx, who.userId, "CREATE", "AdvanceSheet", x.id, undefined, { docNo: x.docNo, month, guruh: group?.label ?? "hammasi", xodim: rows.length });
@@ -199,7 +211,7 @@ export async function createAdvanceSheet(who: Who, input: { groupKey?: string | 
   return { ok: true as const, id: sh.id, docNo: sh.docNo };
 }
 
-/** Qoralamada: ishlagani va tavsiyani bugungi holatga yangilash, guruhga yangi kelganlarni qo'shish (yozilgan avans saqlanadi). */
+/** Qoralamada: ro'yxatni yangilash — guruhga yangi kelganlar qo'shiladi (yozilgan avans saqlanadi; hisob-kitob yo'q). */
 export async function refreshAdvanceSheet(who: Who, id: string) {
   if (!canAdvance(who)) return { error: "Ruxsat yo'q" };
   const sh = await db.advanceSheet.findUnique({ where: { id }, select: { id: true, month: true, status: true, groupKey: true, lines: { select: { id: true, employeeId: true } } } });
@@ -208,18 +220,15 @@ export async function refreshAdvanceSheet(who: Who, id: string) {
   const now = today();
   // O'tgan oy qoralamasi — oy oxiri holatiga
   const asOf = now.slice(0, 7) === sh.month ? now : monthDays(sh.month).at(-1)!.iso;
-  const rows = await advanceCalc(sh.month, asOf, { groupKey: sh.groupKey, exceptSheetId: sh.id });
+  const rows = await advanceRoster(sh.month, sh.groupKey);
   const have = new Map(sh.lines.map((l) => [l.employeeId, l.id]));
   return wrap(() => db.$transaction(async (tx) => {
     const u = await tx.advanceSheet.updateMany({ where: { id, status: "DRAFT" }, data: { asOf: dayUtc(asOf) } });
     if (!u.count) throw new AdvanceError(STALE);
-    for (const r of rows) {
-      const lid = have.get(r.employeeId);
-      if (lid) await tx.advanceLine.update({ where: { id: lid }, data: { earned: r.earned, suggested: r.suggested } });
-      else await tx.advanceLine.create({ data: { sheetId: id, employeeId: r.employeeId, earned: r.earned, suggested: r.suggested, amount: 0 } });
-    }
-    await audit(tx, who.userId, "UPDATE", "AdvanceSheet", id, undefined, { qaytaHisob: asOf, xodim: rows.length });
-    return { ok: true as const, note: `${rows.length} xodim — ${asOf.split("-").reverse().join(".")} holatiga yangilandi` };
+    const fresh = rows.filter((r) => !have.has(r.employeeId));
+    for (const r of fresh) await tx.advanceLine.create({ data: { sheetId: id, employeeId: r.employeeId, earned: 0, suggested: 0, amount: 0 } });
+    await audit(tx, who.userId, "UPDATE", "AdvanceSheet", id, undefined, { royxat: asOf, qoshildi: fresh.length });
+    return { ok: true as const, note: fresh.length ? `${fresh.length} ta yangi xodim qo'shildi` : "Ro'yxat to'liq — yangi xodim yo'q" };
   }, { timeout: 30_000 }));
 }
 
@@ -414,5 +423,85 @@ export async function ungiveAdvance(who: Who, lineId: string, reason: string) {
     if (line.sheet.status === "DONE") await tx.advanceSheet.update({ where: { id: line.sheetId }, data: { status: "SENT", doneAt: null } });
     await audit(tx, who.userId, "UPDATE", "AdvanceLine", line.id, { givenAt: line.givenAt, cashTxId: line.cashTxId }, { givenAt: null, sabab: why, xodim: line.employee.fullName, summa: num(line.amount) });
     return { ok: true as const, note: `${line.employee.fullName}: avans qaytarildi, kassa chiqimi bekor qilindi` };
+  }));
+}
+
+// ───────────────────────── Varaqasiz qo'lda avans, o'chirish ─────────────────────────
+
+/**
+ * Bitta xodimga qo'lda avans (varaqa ochmasdan). `cashAccountId` — kassadan darhol beriladi («Ish haqi» chiqimi,
+ * kassa qoldig'i tekshiriladi); bo'sh — kassasiz (oldin / tizimdan tashqari berilgani yoziladi). Bitta qatorli, «Berildi»
+ * holatidagi varaqa bo'lib saqlanadi — oy yakuni vedomostida ushlanadi. Oy yakuni yopilgan oyga yozilmaydi.
+ */
+export async function manualAdvance(who: Who, input: { employeeId: string; amount: string; date: string; cashAccountId?: string | null; note?: string | null }) {
+  if (!canAdvance(who)) return { error: "Avansni sekretar yozadi — ruxsat yo'q" };
+  const amount = parseAmount(input.amount);
+  if (!amount) return { error: "Avans summasini kiriting" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || input.date > today()) return { error: "Sana noto'g'ri (kelajak sana bo'lmasin)" };
+  const month = input.date.slice(0, 7);
+  const emp = await db.employee.findUnique({ where: { id: input.employeeId }, select: { id: true, fullName: true } });
+  if (!emp) return { error: "Xodimni tanlang" };
+  const accId = input.cashAccountId?.trim() || null;
+  if (accId && !canGiveAdvance(who)) return { error: "Kassadan berish uchun kassa huquqi kerak — «Kassasiz» ni tanlang" };
+  const acc = accId ? await db.cashAccount.findUnique({ where: { id: accId }, select: { id: true, isActive: true, name: true } }) : null;
+  if (accId && !acc?.isActive) return { error: "Kassa topilmadi" };
+  const note = input.note?.trim().slice(0, 300) || null;
+  const res = await wrap(() => db.$transaction(async (tx) => {
+    const locked = await tabelLock(month, tx);
+    if (locked) throw new AdvanceError(`${monthTitle(month)} oy yakuni yopilgan — avans ushlanmay qoladi`);
+    const now = new Date();
+    const when = input.date === today() ? now : dayUtc(input.date);
+    const docNo = await nextDocNo(tx, month);
+    const sh = await tx.advanceSheet.create({
+      data: {
+        docNo, month, asOf: dayUtc(input.date), groupLabel: "Qo'lda avans", status: "DONE", note: note ?? (acc ? null : "Kassasiz (oldin berilgan)"),
+        createdById: who.userId, sentAt: now, sentById: who.userId, recipientId: who.userId, doneAt: now,
+      },
+    });
+    let cashTxId: string | null = null;
+    if (acc) {
+      const err = await cashOutflowError(tx, acc.id, amount);
+      if (err) throw new AdvanceError(err);
+      const ct = await tx.cashTransaction.create({
+        data: {
+          type: "EXPENSE", date: when, cashAccountId: acc.id, amount, category: PAYROLL_CATEGORY, counterparty: emp.fullName,
+          refType: ADVANCE_REF, refId: sh.id, createdById: who.userId, note: `Avans ${docNo} · ${monthTitle(month)}${note ? ` · ${note}` : ""}`,
+        },
+      });
+      cashTxId = ct.id;
+      await audit(tx, who.userId, "CREATE", "CashTransaction", ct.id, undefined, ct);
+    }
+    await tx.advanceLine.create({ data: { sheetId: sh.id, employeeId: emp.id, earned: 0, suggested: 0, amount, givenAt: when, givenById: who.userId, cashTxId, changedAt: now } });
+    await audit(tx, who.userId, "CREATE", "AdvanceSheet", sh.id, undefined, { docNo, qoldaAvans: emp.fullName, summa: amount, kassa: acc?.name ?? "kassasiz", sana: input.date });
+    return { id: sh.id, docNo };
+  }));
+  if ("error" in res) return res;
+  notifyAfter(() => notifyEmployees([emp.id], { type: "ADVANCE_PAID", title: `Avans berildi — ${monthTitle(month)}`, body: res.docNo, channel: "oddiy" }));
+  return { ok: true as const, id: res.id, note: `${emp.fullName}: ${money(amount)} avans yozildi (${res.docNo}${acc ? ` · ${acc.name}` : " · kassasiz"})` };
+}
+
+/**
+ * Varaqani butunlay o'chirish (Ruxsatlar → «Avans varaqasini o'chirish»): kassadan pul chiqqan qator bo'lsa — yo'q (avval
+ * «Berildi» qaytariladi, kassa chiqimi bekor bo'ladi); kassasiz berilgan qatorli varaqa oy yakuni yopilmagan bo'lsa o'chadi.
+ */
+export async function deleteAdvanceSheet(who: Who, id: string, reason: string) {
+  if (!canDeleteAdvance(who)) return { error: "Avans varaqasini o'chirish huquqi yo'q — direktordan ruxsat so'rang" };
+  return wrap(() => db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "AdvanceSheet" WHERE id = ${id} FOR UPDATE`;
+    const sh = await tx.advanceSheet.findUnique({ where: { id }, include: { lines: { select: { employeeId: true, amount: true, givenAt: true, cashTxId: true, cashTx: { select: { cancelledAt: true } } } } } });
+    if (!sh) throw new AdvanceError("Varaqa topilmadi");
+    if (sh.lines.some((l) => l.cashTxId && l.cashTx && !l.cashTx.cancelledAt)) throw new AdvanceError("Kassadan avans berilgan — avval «Berildi»ni qaytaring (kassa chiqimi bekor bo'ladi), keyin o'chiring");
+    if (sh.lines.some((l) => l.givenAt)) {
+      const locked = await tabelLock(sh.month, tx);
+      if (locked) throw new AdvanceError(`${monthTitle(sh.month)} oy yakuni yopilgan — berilgan avans ushlangan, o'chirib bo'lmaydi`);
+    }
+    // Bekor qilingan kassa chiqimi bog'lanishi uziladi (yozuv kassada «bekor» bo'lib qoladi)
+    await tx.advanceLine.deleteMany({ where: { sheetId: id } });
+    await tx.advanceSheet.delete({ where: { id } });
+    await audit(tx, who.userId, "DELETE", "AdvanceSheet", id, {
+      docNo: sh.docNo, month: sh.month, status: sh.status, guruh: sh.groupLabel ?? "hammasi",
+      qatorlar: sh.lines.filter((l) => num(l.amount) > 0).map((l) => ({ xodim: l.employeeId, summa: num(l.amount), berilgan: !!l.givenAt })),
+    }, { sabab: reason.trim() || null });
+    return { ok: true as const, note: `${sh.docNo} o'chirildi` };
   }));
 }

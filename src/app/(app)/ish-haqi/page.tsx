@@ -30,8 +30,9 @@ import { OpeningDebtForm, WithholdingForm } from "./ushlanma-forms";
 import { cancelWithholdingAction } from "./ushlanma-actions";
 import { TabelImport } from "./tabel-import";
 import { erpWorkbook } from "@/lib/hr/erp-workbook";
-import { advanceGroups, canAdvance, listAdvanceSheets } from "@/lib/hr/advance-sheet";
-import { NewAdvanceForm } from "../avans/avans-forms";
+import { advanceGroups, canAdvance, canDeleteAdvance, canGiveAdvance, listAdvanceSheets } from "@/lib/hr/advance-sheet";
+import { payAccounts } from "@/lib/mechanic-requests";
+import { ManualAdvanceForm, NewAdvanceForm } from "../avans/avans-forms";
 import { AdvanceSheetList } from "../avans/sheet-list";
 
 /**
@@ -74,7 +75,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
         {tabItems.length > 1 && <Tabs current={tab} items={tabItems} />}
         {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} />
           : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} />
-          : tab === "avans" ? <AvansTab canEdit={canAdv} />
+          : tab === "avans" ? <AvansTab canEdit={canAdv} canDelete={canDeleteAdvance(s)} canCash={canGiveAdvance(s)} />
           : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />
           : <><DebtTable debts={debts} canCancel={canDebts} />{canDeduct && <LedgersPanel />}</>}
       </div>
@@ -95,7 +96,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       <div className="space-y-4" data-wide="">
         <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : tab === "avans" ? AVANS_INFO : SHEETS_INFO} />
         <Tabs current={tab} items={tabItems} />
-        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : tab === "avans" ? <AvansTab canEdit={canAdv} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />}
+        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : tab === "avans" ? <AvansTab canEdit={canAdv} canDelete={canDeleteAdvance(s)} canCash={canGiveAdvance(s)} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />}
       </div>
     );
   }
@@ -190,19 +191,31 @@ const DEDUCT_INFO = (
 
 const AVANS_INFO = (
   <>
-    <p><b>Avans varaqasi</b> — hamma xodim yoki bitta komanda / brigada uchun ochiladi: har xodimga oy boshidan bugungacha ishlagani va tavsiya etilgan avans (xodim kartasidagi qo&apos;lda avans, bo&apos;lmasa Sozlamalardagi foiz; shu oy berilgani ayiriladi) ko&apos;rinadi. Avans summasi qo&apos;lda yoziladi.</p>
+    <p><b>Avans varaqasi</b> — hamma xodim yoki bitta komanda / brigada uchun ochiladi: shu oy Tabeldagi xodimlar ro&apos;yxati, avans summasi har xodimga qo&apos;lda yoziladi (hisob-kitobsiz). <b>Qo&apos;lda avans</b> — varaqasiz, bitta xodimga (kassadan yoki kassasiz).</p>
     <p>«Saqlash» — varaqa bizda qoladi (qoralama). «Jo&apos;natish» — kassa huquqi bor xodimni tanlaysiz, unga bildirishnoma boradi; u kassani tanlab har xodimga «Berildi» belgilaydi (kassadan alohida chiqim). Excel&apos;ni jo&apos;natgan ham, qabul qilgan ham yuklab oladi.</p>
     <p>Berilgan avans oy yakuni vedomostida o&apos;zi ushlanadi. Oy yakuni direktorga yuborilgach o&apos;sha oyda avans berilmaydi.</p>
   </>
 );
 
 /** «Avans»: yangi varaqa va varaqalar ro'yxati (varaqaning o'zi — `/avans/<id>`). */
-async function AvansTab({ canEdit }: { canEdit: boolean }) {
-  const [groups, rows] = await Promise.all([canEdit ? advanceGroups() : Promise.resolve([]), listAdvanceSheets({}, 80)]);
+async function AvansTab({ canEdit, canDelete, canCash }: { canEdit: boolean; canDelete: boolean; canCash: boolean }) {
+  const [groups, rows, emps, accounts] = await Promise.all([
+    canEdit ? advanceGroups() : Promise.resolve([]),
+    listAdvanceSheets({}, 80),
+    // «Qo'lda avans»: shu oy Tabeldagi xodimlar (ishga kirgan / bo'shagan kuni bilan)
+    canEdit ? tabelMonth(monthOf(today()), "all").then((t) => t.rows.map((r) => ({ id: r.id, label: `${r.fullName} · ${r.position}` })).sort((a, b) => a.label.localeCompare(b.label))) : Promise.resolve([]),
+    canEdit && canCash ? payAccounts() : Promise.resolve([]),
+  ]);
   return (
     <div className="space-y-3">
       {canEdit && <Card><NewAdvanceForm groups={groups} /></Card>}
-      <AdvanceSheetList rows={rows} empty="Avans varaqasi hali yo'q — yuqorida «Yangi avans varaqasi» ni bosing" />
+      {canEdit && (
+        <Card>
+          <CardHeader title="Qo'lda avans (varaqasiz)" info="Bitta xodimga avans: «Kassadan» — kassadan darhol «Ish haqi» chiqimi bilan beriladi; «Kassasiz» — oldin yoki tizimdan tashqari berilgan avans yoziladi. Ikkalasi ham ro'yxatda «Berildi» holatidagi varaqa bo'lib turadi va oy yakuni vedomostida ushlanadi." />
+          <ManualAdvanceForm employees={emps} accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} today={today()} />
+        </Card>
+      )}
+      <AdvanceSheetList rows={rows} canDelete={canDelete} empty="Avans varaqasi hali yo'q — yuqorida «Yangi avans varaqasi» ni bosing" />
     </div>
   );
 }
