@@ -12,7 +12,8 @@ import { plansInRange } from "./shifts";
 /**
  * Brigada varag'i (Ish haqi → Tabel → brigada): Excel'dagi brigada varag'ining ERP'dagi o'rni.
  *   · a'zolar × kun — shu brigadada ishlagan soat (`BrigadeHours`; bir odam bir kunda bir nechta brigadada bo'lishi mumkin);
- *   · mahsulot qatorlari × kun — soni (`BrigadeOutput`), qator narxi oy bo'yicha (`BrigadeMonth.lines`);
+ *   · mahsulot qatorlari × kun — soni (`BrigadeOutput`), qator narxi oy bo'yicha (`BrigadeMonth.lines`); qo'lda yozilmagan
+ *     katakka ishlab chiqarishda shu brigada topshirig'i bo'yicha «bajarildi» qayd qilingan son o'zi tushadi (`autoBrigadeOutput`);
  *   · brak — qo'lda yozilgan summa (`BrigadeMonth.brak`) yoki brak yozuvlari (`ProductDefect`) yig'indisi.
  * Hisob — `brigade-calc.ts` (Excel formulasi). Vedomost (`lib/hr/payroll.ts`) shu yerdan oladi: varag'i to'ldirilgan
  * brigadada sdelka shu usulda, to'ldirilmaganida avvalgidek (topshiriq bajarilishi × narx, oylik soatga).
@@ -27,6 +28,8 @@ export type BrigadeSheetData = {
   auto: Record<string, Record<number, AutoCell>>;
   lines: SheetLine[];
   qty: Record<string, Record<number, number>>;
+  /** Ishlab chiqarishdan (topshiriq bajarilishi, qo'lda yozilmagan katak) — kul rang, ustiga yozilsa qo'lda; «0» — olinmaydi */
+  autoQty: Record<string, Record<number, number>>;
   brakManual: number | null; brakAuto: number;
   /** Oy narxlari o'tgan oydan olingan (shu oy hali saqlanmagan) */
   inherited: boolean;
@@ -63,7 +66,7 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
   const brigade = await db.brigade.findUnique({ where: { id: brigadeId }, select: { id: true, name: true } });
   if (!brigade) return null;
   const now = today();
-  const [hoursRows, outRows, bm, prevBm, members, locked, brak, autoAll] = await Promise.all([
+  const [hoursRows, outRows, bm, prevBm, members, locked, brak, autoAll, autoOut] = await Promise.all([
     db.brigadeHours.findMany({ where: { brigadeId, date: { gte: from, lte: to } }, select: { employeeId: true, date: true, hours: true } }),
     db.brigadeOutput.findMany({ where: { brigadeId, date: { gte: from, lte: to } }, select: { line: true, date: true, qty: true } }),
     db.brigadeMonth.findUnique({ where: { brigadeId_month: { brigadeId, month } } }),
@@ -72,6 +75,7 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
     tabelLock(month),
     defectSum([brigadeId], month),
     autoBrigadeHours(month, days[days.length - 1]!.iso, [brigadeId]),
+    autoBrigadeOutput(month, days[days.length - 1]!.iso, [brigadeId]),
   ]);
   const auto: BrigadeSheetData["auto"] = {};
   for (const [emp, byDay] of autoAll.get(brigadeId) ?? []) auto[emp] = Object.fromEntries(byDay);
@@ -88,6 +92,8 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
   if (!bm && prevBm) lines = linesOf(prevBm.lines);
   // Soni bor, lekin qatorlar ro'yxatida yo'q qator (masalan, nomi o'zgargan) — yo'qolmasin
   for (const name of Object.keys(qty)) if (!lines.some((l) => l.name === name)) lines.push({ name, rate: 0, productId: null });
+  const merged = mergeAutoOutput(lines, qty, autoOut.get(brigadeId) ?? []);
+  lines = merged.lines;
   const ids = new Set(emps.map((e) => e.id));
   const addable = await db.employee.findMany({ where: { AND: [employeesInWindow(from, to), { id: { notIn: [...ids] } }, { OR: [{ userId: null }, { user: { role: { notIn: ["SUPERADMIN"] } } }] }] }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } });
   return {
@@ -99,7 +105,7 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
         return { id: e.id, fullName: e.fullName, position: e.position, payType: e.payType, guest: !memberSet.has(e.id), from: hi > first ? Number(hi.slice(8, 10)) : 1, to: fi < last ? Number(fi.slice(8, 10)) : days.length };
       })
       .sort((a, b) => Number(a.guest) - Number(b.guest) || a.fullName.localeCompare(b.fullName)),
-    hours, auto, lines, qty,
+    hours, auto, lines, qty, autoQty: merged.autoQty,
     brakManual: bm?.brak != null ? Number(bm.brak) : null, brakAuto: brak.get(brigadeId) ?? 0,
     inherited, locked, addable,
   };
@@ -159,6 +165,73 @@ export async function autoBrigadeHours(month: string, toIso: string, brigadeIds?
   return out;
 }
 
+// ───────────────────────── Ishlab chiqarishdan son ─────────────────────────
+
+/** Avtomatik son shu oydan boshlab (undan oldingi oylar Excel importi bilan yuritilgan — o'zgarmasin). */
+export const AUTO_OUTPUT_FROM = "2026-11";
+export type AutoProduct = { productId: string; name: string; rate: number; byDay: Map<number, number> };
+const localIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/**
+ * Ishlab chiqarishda brigada bajargan son (`TaskProgress` — topshiriq bo'yicha «bajarildi» qaydi, hovliga kirim bilan bir xil;
+ * bekor qilingan topshiriqniki olinmaydi): brigada → mahsulot → kun (mahalliy sana). `toIso` — shu kungacha (avans davri).
+ */
+export async function autoBrigadeOutput(month: string, toIso: string, brigadeIds?: string[]): Promise<Map<string, AutoProduct[]>> {
+  const out = new Map<string, AutoProduct[]>();
+  if (month < AUTO_OUTPUT_FROM || (brigadeIds && !brigadeIds.length)) return out;
+  const { days } = monthRangeUtc(month);
+  const lastIso = [toIso, today(), days[days.length - 1]!.iso].sort()[0]!;
+  if (lastIso < days[0]!.iso) return out;
+  const [y, m] = month.split("-").map(Number);
+  const [ly, lm, ld] = lastIso.split("-").map(Number);
+  const rows = await db.taskProgress.findMany({
+    where: { date: { gte: new Date(y!, m! - 1, 1), lt: new Date(ly!, lm! - 1, ld! + 1) }, task: { status: { not: "CANCELLED" }, ...(brigadeIds ? { brigadeId: { in: brigadeIds } } : {}) } },
+    select: { qty: true, date: true, task: { select: { brigadeId: true, orderItem: { select: { product: { select: { id: true, name: true, pieceRate: true } } } } } } },
+  });
+  for (const r of rows) {
+    const q = Number(r.qty);
+    if (!(q > 0)) continue;
+    const p = r.task.orderItem.product;
+    const list = out.get(r.task.brigadeId) ?? [];
+    let a = list.find((x) => x.productId === p.id);
+    if (!a) { a = { productId: p.id, name: p.name, rate: Number(p.pieceRate ?? 0), byDay: new Map() }; list.push(a); }
+    const day = Number(localIso(r.date).slice(8, 10));
+    a.byDay.set(day, Math.round(((a.byDay.get(day) ?? 0) + q) * 1000) / 1000);
+    out.set(r.task.brigadeId, list);
+  }
+  return out;
+}
+
+const lineKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
+/**
+ * Qo'lda yozilgan son + ishlab chiqarishdan son: mahsulot qatori `productId` bo'yicha, bo'lmasa nomi bo'yicha topiladi;
+ * topilmasa — yangi qator (narxi mahsulotning sdelka narxi). Qo'lda yozilgan katak (shu jumladan «0») — o'sha.
+ * Yangi (bog'lanmagan) qator soni qo'lda son yozilgan kunga tushmaydi — Excel'dan import qilingan kun ikki marta hisoblanmasin.
+ */
+export function mergeAutoOutput(lines: SheetLine[], manual: Record<string, Record<number, number>>, auto: AutoProduct[]): { lines: SheetLine[]; autoQty: Record<string, Record<number, number>> } {
+  const out = [...lines];
+  const autoQty: Record<string, Record<number, number>> = {};
+  const manualDays = new Set(Object.values(manual).flatMap((m) => Object.keys(m).map(Number)));
+  for (const a of auto) {
+    let line = out.find((l) => l.productId === a.productId) ?? out.find((l) => !l.productId && lineKey(l.name) === lineKey(a.name));
+    const mapped = !!line;
+    if (!line) {
+      let name = a.name.trim().slice(0, 80), n = 2;
+      while (out.some((l) => lineKey(l.name) === lineKey(name))) name = `${a.name.trim().slice(0, 74)} (${n++})`;
+      line = { name, rate: a.rate, productId: a.productId };
+      out.push(line);
+    }
+    for (const [day, q] of a.byDay) {
+      if (manual[line.name]?.[day] !== undefined) continue;
+      if (!mapped && manualDays.has(day)) continue;
+      (autoQty[line.name] ??= {})[day] = q;
+    }
+  }
+  // Avtomatik qo'shilgan, lekin hech bir kuni tushmagan qator ko'rsatilmaydi
+  return { lines: out.filter((l) => lines.includes(l) || autoQty[l.name]), autoQty };
+}
+
 // ───────────────────────── Saqlash ─────────────────────────
 
 type Who = { userId: string };
@@ -212,7 +285,10 @@ export async function saveBrigadeHours(who: Who, month: string, brigadeId: strin
   });
 }
 
-/** Kunlik ishlab chiqarish soni (qator nomi bo'yicha). */
+/**
+ * Kunlik ishlab chiqarish soni (qator nomi bo'yicha). «0» — shu kuni bu qator soni yo'q (ishlab chiqarishdan kelgan son
+ * ham olinmaydi), bo'sh — tozalash (ishlab chiqarishdan kelgan son qaytadi).
+ */
 export async function saveBrigadeOutput(who: Who, month: string, brigadeId: string, items: { line: string; day: number; value: string }[]) {
   if (!MONTH_RE.test(month)) return { error: "Oy noto'g'ri" };
   const { days } = monthRangeUtc(month);
@@ -225,7 +301,7 @@ export async function saveBrigadeOutput(who: Who, month: string, brigadeId: stri
     const t = String(it.value ?? "").trim().replace(/\s+/g, "").replace(",", ".");
     const q = t === "" || t === "-" ? null : Number(t);
     if (q != null && (!Number.isFinite(q) || q < 0 || q > 1e7)) return { error: `«${it.value}» — son yozing` };
-    parsed.push({ line, iso: days[it.day - 1]!.iso, qty: q == null || q === 0 ? null : Math.round(q * 1000) / 1000 });
+    parsed.push({ line, iso: days[it.day - 1]!.iso, qty: q == null ? null : Math.round(q * 1000) / 1000 });
   }
   return db.$transaction(async (tx) => {
     const g = await guard(month, brigadeId, tx);
@@ -288,7 +364,9 @@ export async function brigadeSheetPay(month: string, toIso: string, opts: { fina
     db.brigadeOutput.findMany({ where: { date: { gte: from, lte: to } }, select: { brigadeId: true, line: true, date: true, qty: true } }),
     db.brigadeMonth.findMany({ where: { month }, select: { brigadeId: true, lines: true, brak: true } }),
   ]);
-  const brigades = new Set([...hoursRows.map((h) => h.brigadeId), ...outRows.map((o) => o.brigadeId), ...months.map((m) => m.brigadeId)]);
+  // Ishlab chiqarishda bajargani bor brigada ham varaq usulida (kunlik fond shu kungi soatga) — eski usul (oylik soatga) emas
+  const autoOut = await autoBrigadeOutput(month, toIso);
+  const brigades = new Set([...hoursRows.map((h) => h.brigadeId), ...outRows.map((o) => o.brigadeId), ...months.map((m) => m.brigadeId), ...autoOut.keys()]);
   const byEmp = new Map<string, SheetPayItem[]>();
   if (!brigades.size) return { brigades, byEmp };
   const [names, defects] = await Promise.all([
@@ -308,12 +386,14 @@ export async function brigadeSheetPay(month: string, toIso: string, opts: { fina
   const auto = await autoBrigadeHours(month, toIso, [...brigades]);
   for (const bid of brigades) {
     const bm = months.find((m) => m.brigadeId === bid);
-    const lines = bm ? linesOf(bm.lines) : prevLines.get(bid) ?? [];
+    const manual: Record<string, Record<number, number>> = {};
+    for (const o of outRows) if (o.brigadeId === bid) (manual[o.line] ??= {})[dayIdx(o.date) + 1] = Number(o.qty);
+    const { lines, autoQty } = mergeAutoOutput(bm ? linesOf(bm.lines) : prevLines.get(bid) ?? [], manual, autoOut.get(bid) ?? []);
     const qtyByLine = new Map<string, (number | null)[]>();
-    for (const o of outRows) if (o.brigadeId === bid) {
-      const arr = qtyByLine.get(o.line) ?? Array<number | null>(nDays).fill(null);
-      arr[dayIdx(o.date)] = Number(o.qty);
-      qtyByLine.set(o.line, arr);
+    for (const src of [manual, autoQty]) for (const [line, byDay] of Object.entries(src)) {
+      const arr = qtyByLine.get(line) ?? Array<number | null>(nDays).fill(null);
+      for (const [d, q] of Object.entries(byDay)) arr[Number(d) - 1] = q;
+      qtyByLine.set(line, arr);
     }
     const hours: Record<string, (number | null)[]> = {};
     for (const h of hoursRows) if (h.brigadeId === bid) (hours[h.employeeId] ??= Array<number | null>(nDays).fill(null))[dayIdx(h.date)] = Number(h.hours);

@@ -109,6 +109,8 @@ export async function staffCashFor(month: string, employeeIds: string[]): Promis
 
 export type DeductionRow = {
   id: string; fullName: string; position: string; group: string;
+  /** Guruh kaliti — Tabel bilan bir xil (`tabel.ts` → groupOf): «t:…» komanda, «b:…» brigada, «none» — biriktirilmagan */
+  groupKey: string;
   values: Partial<Record<DeductionCat, number>>;
   /** Yozilmasa ham vedomost avtomatik ushlaydigan summa (kassa, nasiya, aliment daftari) */
   auto: Partial<Record<DeductionCat, number>>;
@@ -124,7 +126,7 @@ export async function deductionsMonth(month: string): Promise<DeductionMonth> {
     db.employee.findMany({
       where: { AND: [employeesInWindow(from, to), { OR: [{ userId: null }, { user: { role: { notIn: ["SUPERADMIN"] } } }] }] },
       orderBy: { fullName: "asc" },
-      select: { id: true, fullName: true, position: true, brigade: { select: { name: true } }, team: { select: { name: true } } },
+      select: { id: true, fullName: true, position: true, brigadeId: true, teamId: true, brigade: { select: { name: true } }, team: { select: { name: true } } },
     }),
     db.payAdjustment.findMany({ where: { month, cancelledAt: null, category: { not: null } }, select: { employeeId: true, category: true, amount: true } }),
     db.payrollSettings.findUnique({ where: { id: "main" }, select: { fundAmount: true } }),
@@ -164,7 +166,9 @@ export async function deductionsMonth(month: string): Promise<DeductionMonth> {
     }
     if (fund) suggest.FUND = fund;
     const group = e.brigade?.name ?? e.team?.name ?? "";
-    return { id: e.id, fullName: e.fullName, position: e.position, group, values, auto, suggest, hints };
+    // `tabel.ts` → groupOf bilan bir xil (u modul payroll orqali bu faylni import qiladi — aylana bo'lmasin)
+    const groupKey = e.brigadeId && e.brigade ? `b:${e.brigadeId}` : e.teamId && e.team ? `t:${e.teamId}` : "none";
+    return { id: e.id, fullName: e.fullName, position: e.position, group, groupKey, values, auto, suggest, hints };
   });
   return { month, title: monthTitle(month), rows, locked, fundAmount: fund };
 }

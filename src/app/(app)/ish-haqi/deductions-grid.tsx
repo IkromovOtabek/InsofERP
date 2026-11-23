@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { CalendarRange, Check, CheckCheck, Loader2, Search, X } from "lucide-react";
@@ -22,6 +22,9 @@ import { saveDeductionsAction, saveFundAmountAction, splitLoanAction } from "./u
 const SAVE_DELAY = 700;
 const k = (emp: string, cat: string) => `${emp}|${cat}`;
 const toNum = (v: string) => { const t = numText(v.trim()); const n = t ? Number(t) : 0; return Number.isFinite(n) ? n : 0; };
+/** Guruhlar tartibi — Tabel kabi: komandalar → brigadalar → biriktirilmagan. */
+const groupRank = (k: string) => (k.startsWith("t:") ? 0 : k.startsWith("b:") ? 1 : 2);
+const groupLabel = (r: { groupKey: string; group: string }) => (r.groupKey === "none" ? "Biriktirilmagan" : r.group);
 
 export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdit: boolean }) {
   const editable = canEdit && !data.locked;
@@ -66,8 +69,10 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
 
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
+    // Komanda / brigada bo'yicha (sarlavha qatori bilan), guruh ichida — ism bo'yicha
     return data.rows.filter((r) => (!t || r.fullName.toLowerCase().includes(t) || r.group.toLowerCase().includes(t) || r.position.toLowerCase().includes(t))
-      && (!onlyFilled || DEDUCTION_CATS.some((c) => vals[k(r.id, c.key)] || r.suggest[c.key] || r.auto[c.key])));
+      && (!onlyFilled || DEDUCTION_CATS.some((c) => vals[k(r.id, c.key)] || r.suggest[c.key] || r.auto[c.key])))
+      .sort((a, b) => groupRank(a.groupKey) - groupRank(b.groupKey) || groupLabel(a).localeCompare(groupLabel(b)) || a.fullName.localeCompare(b.fullName));
   }, [data.rows, q, onlyFilled, vals]);
 
   const acceptColumn = (cat: DeductionCat) => {
@@ -150,11 +155,23 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
           </thead>
           <tbody>
             {rows.map((r, ri) => (
-              <tr key={r.id} className="group">
+              <Fragment key={r.id}>
+              {(ri === 0 || rows[ri - 1]!.groupKey !== r.groupKey) && (() => {
+                const g = rows.filter((x) => x.groupKey === r.groupKey);
+                return (
+                  <tr>
+                    <td className="sticky left-0 z-10 border-b border-slate-200 bg-amber-50" />
+                    <td className="sticky left-10 z-10 border-r border-b border-slate-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">{groupLabel(r)} <span className="font-normal text-amber-700">· {g.length} kishi</span></td>
+                    {DEDUCTION_CATS.map((c) => { const t = g.reduce((s, x) => s + eff(x, c.key), 0); return <td key={c.key} className="border-r border-b border-slate-200 bg-amber-50 px-2 text-right text-xs font-semibold text-amber-900">{t ? fmtNum(t) : ""}</td>; })}
+                    <td className="border-b border-slate-200 bg-amber-100/70 px-2 text-right text-xs font-semibold text-amber-900">{fmtNum(g.reduce((s, x) => s + rowTotal(x), 0)) || ""}</td>
+                  </tr>
+                );
+              })()}
+              <tr className="group">
                 <td className="sticky left-0 z-10 border-r border-b border-slate-200 bg-white px-1 text-center text-slate-500 group-hover:bg-slate-50">{ri + 1}</td>
                 <td className="sticky left-10 z-10 border-r border-b border-slate-200 bg-white px-2 py-0.5 group-hover:bg-slate-50">
                   <div className="truncate font-medium text-slate-900">{r.fullName}</div>
-                  <div className="truncate text-[11px] text-slate-500">{r.position}{r.group ? ` · ${r.group}` : ""}</div>
+                  <div className="truncate text-[11px] text-slate-500">{r.position}</div>
                 </td>
                 {DEDUCTION_CATS.map((c, ci) => {
                   const key = k(r.id, c.key);
@@ -183,6 +200,7 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
                 })}
                 <td className="border-b border-slate-200 bg-red-50/40 px-2 text-right font-semibold">{rowTotal(r) ? fmtNum(rowTotal(r)) : ""}</td>
               </tr>
+              </Fragment>
             ))}
             {rows.length === 0 && <tr><td colSpan={DEDUCTION_CATS.length + 3} className="px-3 py-8 text-center text-slate-500">Xodim topilmadi</td></tr>}
           </tbody>

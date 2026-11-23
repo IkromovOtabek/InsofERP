@@ -107,6 +107,22 @@ function groupRows(rows: PayRow[]): PayGroup[] {
   return [...m.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)).map((g) => ({ label: g.label, rows: g.rows.sort((p, q) => p.name.localeCompare(q.name)) }));
 }
 
+/** Qatorlar komanda / brigada bo'limlariga: Tabel tartibi (komandalar → brigadalar → biriktirilmagan), bo'lim ichida ism bo'yicha. */
+function byGroup<T>(rows: T[], groupOfRow: (r: T) => { key: string; label: string }, nameOf: (r: T) => string) {
+  const m = new Map<string, { key: string; label: string; rows: T[] }>();
+  for (const r of rows) { const g = groupOfRow(r); const cur = m.get(g.key) ?? { key: g.key, label: g.label, rows: [] }; cur.rows.push(r); m.set(g.key, cur); }
+  return [...m.values()]
+    .sort((a, b) => groupOrder(a.key) - groupOrder(b.key) || a.label.localeCompare(b.label))
+    .map((g) => ({ ...g, rows: g.rows.sort((p, q) => nameOf(p).localeCompare(nameOf(q))) }));
+}
+
+/** Xodimlarning guruhi (komanda / brigada) — daftar varaqlari (Qarzlar, Ijro) uchun. */
+async function groupsOf(employeeIds: string[]) {
+  const emps = await db.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, brigadeId: true, teamId: true, brigade: { select: { name: true } }, team: { select: { name: true } } } });
+  const m = new Map(emps.map((e) => [e.id, groupOf(e)]));
+  return (id: string) => m.get(id) ?? { key: "none", label: "Biriktirilmagan" };
+}
+
 /**
  * To'lov vedomosti (Excel «Аванс наличка» / «Зарплата 2» kabi): bo'lim sarlavhasi, № · F.I.O. · Lavozim · ikki summa · Imzo,
  * bo'lim jami, umumiy jami (SUM) va imzolar.
@@ -213,7 +229,14 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
     const others = tabel.rows.filter((r) => r.group === g.key && r.payType !== "PIECE");
     if (others.length) push(`${g.label} — tabel`, tabelSheet(`${g.label} (oklad/kunbay)`, others));
     if (!b) continue;
-    const hasAny = b.members.some((m) => b.hours[m.id] || b.auto[m.id]) || Object.keys(b.qty).length > 0;
+    const hasAny = b.members.some((m) => b.hours[m.id] || b.auto[m.id]) || Object.keys(b.qty).length > 0 || Object.keys(b.autoQty).length > 0;
+    // Son: qo'lda yozilgani (0 ham), bo'sh bo'lsa — ishlab chiqarishda brigada bajargani (kul rang)
+    const qtyOf = (line: string, d: number): { q: number; auto: boolean } | null => {
+      const m = b.qty[line]?.[d];
+      if (m !== undefined) return { q: m, auto: false };
+      const a = b.autoQty[line]?.[d];
+      return a !== undefined ? { q: a, auto: true } : null;
+    };
     if (!hasAny && !b.members.length) continue;
     // Qo'lda yozilgan soat (0 — ishlamadi) — o'sha, bo'sh — davomatdan (sahifadagi va vedomostdagi qoida)
     const hourOf = (id: string, d: number): { h: number; kind: "m" | "a" | "l" } | null => {
@@ -226,11 +249,11 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
       days: nDays, brak: b.brakManual ?? b.brakAuto,
       // Bugun hali ishda («davom etmoqda») — vedomost kabi pulga kirmaydi, katakda ko'rinadi
       hours: Object.fromEntries(b.members.map((m) => [m.id, Array.from({ length: nDays }, (_, i) => { const x = hourOf(m.id, i + 1); return x && x.kind !== "l" ? x.h : null; })])),
-      lines: b.lines.map((l) => ({ ...l, qty: Array.from({ length: nDays }, (_, i) => b.qty[l.name]?.[i + 1] ?? null) })),
+      lines: b.lines.map((l) => ({ ...l, qty: Array.from({ length: nDays }, (_, i) => qtyOf(l.name, i + 1)?.q ?? null) })),
     });
     const sh = new Sheet();
     sh.line(0, `${b.brigade.name} — ${title} (brigada varag'i)`, S.title);
-    sh.line(1, "Kunlik fond = Σ soni × narx, shu kungi soatga bo'linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. Kul rang soat — davomatdan. Qo'liga = Summa − Ushlanmalar (Ushlanmalar jadvalidan).", S.note);
+    sh.line(1, "Kunlik fond = Σ soni × narx, shu kungi soatga bo'linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. Kul rang soat — davomatdan. Kul rang son — ishlab chiqarishda brigada «bajarildi» qayd qilgani. Qo'liga = Summa − Ushlanmalar (Ushlanmalar jadvalidan).", S.note);
     const H = 3, c0 = 2, cS = c0 + nDays;
     ["№", "F.I.O."].forEach((t, i) => sh.set(H, i, t, S.head));
     b.days.forEach((d, i) => sh.set(H, c0 + i, d.day, d.weekend ? S.headWe : S.head));
@@ -271,7 +294,7 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
       const rr = P + 1 + i;
       sh.set(rr, 0, l.rate, S.num); sh.set(rr, 1, l.name, S.txt);
       let q = 0;
-      for (let d = 1; d <= nDays; d++) { const v = b.qty[l.name]?.[d] ?? null; q += v ?? 0; sh.set(rr, c0 + d - 1, v, S.hrs); }
+      for (let d = 1; d <= nDays; d++) { const v = qtyOf(l.name, d); q += v?.q ?? 0; sh.set(rr, c0 + d - 1, v?.q || null, v?.auto ? S.auto : S.hrs); }
       sh.set(rr, cS, q, S.totDec, sumF(rr, c0, rr, c0 + nDays - 1));
       sh.set(rr, cS + 1, r0(q * l.rate), S.num, `${addrOf(rr, cS)}*${addrOf(rr, 0)}`);
     });
@@ -290,27 +313,32 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
 
   // ── Ushlanmalar ──
   {
-    const d = ded;
-    const rows = d.rows.filter((r) => DEDUCTION_CATS.some((c) => r.values[c.key] != null || r.auto[c.key]));
+    const rows = ded.rows.filter((r) => DEDUCTION_CATS.some((c) => r.values[c.key] != null || r.auto[c.key]));
+    // Katak qiymati: yozilgani (0 ham), bo'sh bo'lsa — avtomatik
+    const val = (r: (typeof rows)[number], c: (typeof DEDUCTION_CATS)[number]["key"]) => { const v = r.values[c]; return v != null ? v : r.auto[c] ?? 0; };
     const sh = new Sheet();
     sh.line(0, `Ushlanmalar — ${title}`, S.title);
-    sh.line(1, "Ko'k kursiv — avtomatik (Kirim-Chiqimdan berilgan pul, kassadan nasiya ulushi, aliment daftari), qolgani Ushlanmalar jadvalida yozilgan.", S.note);
-    const H = 3;
-    ["№", "F.I.O.", "Lavozim", "Guruh", ...DEDUCTION_CATS.map((c) => c.label), "Jami"].forEach((t, i) => sh.set(H, i, t, S.head));
-    rows.forEach((r, i) => {
-      const rr = H + 1 + i;
-      sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, r.fullName, S.txt); sh.set(rr, 2, r.position, S.txt); sh.set(rr, 3, r.group || null, S.txt);
-      DEDUCTION_CATS.forEach((c, ci) => {
-        const v = r.values[c.key];
-        sh.set(rr, 4 + ci, v != null ? v || 0 : r.auto[c.key] ?? null, v != null ? S.num : S.autoNum);
-      });
-      sh.set(rr, 4 + DEDUCTION_CATS.length, null, S.tot, sumF(rr, 4, rr, 3 + DEDUCTION_CATS.length));
-    });
-    const tr = H + 1 + rows.length;
-    sh.set(tr, 1, `Jami (${rows.length})`, S.tot);
-    for (let c = 4; c <= 4 + DEDUCTION_CATS.length; c++) sh.set(tr, c, null, S.tot, sumF(H + 1, c, Math.max(H + 1, tr - 1), c));
-    sh.width(0, 32); sh.width(1, 220); sh.width(2, 140); sh.width(3, 130);
-    for (let c = 4; c <= 4 + DEDUCTION_CATS.length; c++) sh.width(c, 110);
+    sh.line(1, "Komanda / brigada bo'yicha: sariq qator — guruh va uning jami. Ko'k kursiv — avtomatik (Kirim-Chiqimdan berilgan pul, nasiya va bo'lingan qarz ulushi, aliment daftari), qolgani Ushlanmalar jadvalida yozilgan.", S.note);
+    const H = 3, c0 = 3, cJ = c0 + DEDUCTION_CATS.length;
+    ["№", "F.I.O.", "Lavozim", ...DEDUCTION_CATS.map((c) => c.label), "Jami"].forEach((t, i) => sh.set(H, i, t, S.head));
+    let r = H + 1, n = 0;
+    for (const g of byGroup(rows, (x) => ({ key: x.groupKey, label: x.groupKey === "none" ? "Biriktirilmagan" : x.group }), (x) => x.fullName)) {
+      sh.set(r, 0, null, S.group); sh.set(r, 1, g.label, S.group); sh.set(r, 2, `${g.rows.length} kishi`, S.group);
+      DEDUCTION_CATS.forEach((c, ci) => sh.set(r, c0 + ci, g.rows.reduce((t, x) => t + val(x, c.key), 0) || null, S.groupNum));
+      sh.set(r, cJ, g.rows.reduce((t, x) => t + DEDUCTION_CATS.reduce((u, c) => u + val(x, c.key), 0), 0) || null, S.groupNum);
+      r++;
+      for (const x of g.rows) {
+        sh.set(r, 0, ++n, S.hrs); sh.set(r, 1, x.fullName, S.txt); sh.set(r, 2, x.position, S.txt);
+        DEDUCTION_CATS.forEach((c, ci) => { const v = x.values[c.key]; sh.set(r, c0 + ci, v != null ? v || 0 : x.auto[c.key] ?? null, v != null ? S.num : S.autoNum); });
+        sh.set(r, cJ, null, S.tot, sumF(r, c0, r, cJ - 1));
+        r++;
+      }
+    }
+    sh.set(r, 1, `Jami (${n})`, S.tot);
+    DEDUCTION_CATS.forEach((c, ci) => sh.set(r, c0 + ci, rows.reduce((t, x) => t + val(x, c.key), 0), S.tot));
+    sh.set(r, cJ, rows.reduce((t, x) => t + DEDUCTION_CATS.reduce((u, c) => u + val(x, c.key), 0), 0), S.tot);
+    sh.width(0, 32); sh.width(1, 220); sh.width(2, 140);
+    for (let c = c0; c <= cJ; c++) sh.width(c, 110);
     sh.frz = [H + 1, 2];
     if (!rows.length) sh.set(H + 1, 1, "Shu oy ushlanma yo'q", S.note);
     push("Ushlanmalar", sh);
@@ -396,37 +424,50 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
   // ── Qarzlar (Карз) va Ijro (Миб) ──
   {
     const debts = (await listDebts()).filter((d) => !d.cancelledAt);
+    const grp = await groupsOf([...new Set(debts.map((d) => d.employee.id))]);
     const sh = new Sheet();
-    sh.line(0, "Xodim qarzlari (nasiya va boshlang'ich qoldiq)", S.title);
+    sh.line(0, "Xodim qarzlari (nasiya va boshlang'ich qoldiq) — komanda / brigada bo'yicha", S.title);
     const H = 2;
     ["№", "F.I.O.", "Sana", "Summa", "Oyiga", "Muddat", "Ushlangan", "Qolgan", "Izoh"].forEach((t, i) => sh.set(H, i, t, S.head));
-    debts.forEach((d, i) => {
-      const rr = H + 1 + i;
-      sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, d.employee.fullName, S.txt);
-      sh.set(rr, 2, date(d.date), S.txt);
-      sh.set(rr, 3, d.amount, S.num); sh.set(rr, 4, d.monthly, S.num); sh.set(rr, 5, `${monthTitle(d.startMonth)} — ${monthTitle(d.endMonth)}`, S.txt);
-      sh.set(rr, 6, d.held, S.num); sh.set(rr, 7, d.left, S.numB); sh.set(rr, 8, d.note ?? null, S.txt);
-    });
-    const tr = H + 1 + debts.length;
-    sh.set(tr, 1, `Jami (${debts.length})`, S.tot);
-    for (const c of [3, 6, 7]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, Math.max(H + 1, tr - 1), c));
+    let r = H + 1, n = 0;
+    for (const g of byGroup(debts, (d) => grp(d.employee.id), (d) => d.employee.fullName)) {
+      sh.set(r, 0, null, S.group); sh.set(r, 1, g.label, S.group); sh.set(r, 2, `${new Set(g.rows.map((d) => d.employee.id)).size} kishi`, S.group);
+      sh.set(r, 3, g.rows.reduce((t, d) => t + d.amount, 0), S.groupNum); sh.set(r, 6, g.rows.reduce((t, d) => t + d.held, 0), S.groupNum); sh.set(r, 7, g.rows.reduce((t, d) => t + d.left, 0), S.groupNum);
+      r++;
+      for (const d of g.rows) {
+        sh.set(r, 0, ++n, S.hrs); sh.set(r, 1, d.employee.fullName, S.txt);
+        sh.set(r, 2, date(d.date), S.txt);
+        sh.set(r, 3, d.amount, S.num); sh.set(r, 4, d.monthly, S.num); sh.set(r, 5, `${monthTitle(d.startMonth)} — ${monthTitle(d.endMonth)}`, S.txt);
+        sh.set(r, 6, d.held, S.num); sh.set(r, 7, d.left, S.numB); sh.set(r, 8, d.note ?? null, S.txt);
+        r++;
+      }
+    }
+    sh.set(r, 1, `Jami (${n})`, S.tot);
+    sh.set(r, 3, debts.reduce((t, d) => t + d.amount, 0), S.tot); sh.set(r, 6, debts.reduce((t, d) => t + d.held, 0), S.tot); sh.set(r, 7, debts.reduce((t, d) => t + d.left, 0), S.tot);
     sh.width(0, 32); sh.width(1, 220); sh.width(2, 80); sh.width(5, 170); sh.width(8, 200);
     for (const c of [3, 4, 6, 7]) sh.width(c, 100);
     push("Qarzlar", sh);
   }
   {
     const ws = (await listWithholdings()).filter((w) => !w.cancelledAt);
+    const grp = await groupsOf([...new Set(ws.map((w) => w.employee.id))]);
     const sh = new Sheet();
-    sh.line(0, "Ijro varaqalari va aliment", S.title);
+    sh.line(0, "Ijro varaqalari va aliment — komanda / brigada bo'yicha", S.title);
     const H = 2;
     ["№", "F.I.O.", "Turi", "Raqami", "Kreditor", "Umumiy qarz", "Oyiga", "Boshlanish", "Ushlangan", "Qolgan"].forEach((t, i) => sh.set(H, i, t, S.head));
-    ws.forEach((w, i) => {
-      const rr = H + 1 + i;
-      sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, w.employee.fullName, S.txt); sh.set(rr, 2, w.kind === "MIB" ? "Ijro (MIB)" : "Aliment", S.txt);
-      sh.set(rr, 3, w.caseNo ?? null, S.txt); sh.set(rr, 4, w.creditor ?? null, S.txt);
-      sh.set(rr, 5, w.amount ?? "muddatsiz", S.num); sh.set(rr, 6, w.monthly ?? (w.percent != null ? `${w.percent}%` : null), S.num);
-      sh.set(rr, 7, monthTitle(w.startMonth), S.txt); sh.set(rr, 8, w.held, S.num); sh.set(rr, 9, w.left ?? null, S.numB);
-    });
+    let r = H + 1, n = 0;
+    for (const g of byGroup(ws, (w) => grp(w.employee.id), (w) => w.employee.fullName)) {
+      sh.set(r, 0, null, S.group); sh.set(r, 1, g.label, S.group); sh.set(r, 2, `${new Set(g.rows.map((w) => w.employee.id)).size} kishi`, S.group);
+      sh.set(r, 8, g.rows.reduce((t, w) => t + w.held, 0), S.groupNum); sh.set(r, 9, g.rows.reduce((t, w) => t + (w.left ?? 0), 0), S.groupNum);
+      r++;
+      for (const w of g.rows) {
+        sh.set(r, 0, ++n, S.hrs); sh.set(r, 1, w.employee.fullName, S.txt); sh.set(r, 2, w.kind === "MIB" ? "Ijro (MIB)" : "Aliment", S.txt);
+        sh.set(r, 3, w.caseNo ?? null, S.txt); sh.set(r, 4, w.creditor ?? null, S.txt);
+        sh.set(r, 5, w.amount ?? "muddatsiz", S.num); sh.set(r, 6, w.monthly ?? (w.percent != null ? `${w.percent}%` : null), S.num);
+        sh.set(r, 7, monthTitle(w.startMonth), S.txt); sh.set(r, 8, w.held, S.num); sh.set(r, 9, w.left ?? null, S.numB);
+        r++;
+      }
+    }
     sh.width(0, 32); sh.width(1, 220); sh.width(2, 90); sh.width(4, 140); sh.width(7, 110);
     for (const c of [3, 5, 6, 8, 9]) sh.width(c, 100);
     push("Ijro", sh);

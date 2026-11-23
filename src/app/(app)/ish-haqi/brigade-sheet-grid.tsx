@@ -101,6 +101,9 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
 
   // Qo'lda soat yozilmagan (bo'sh) katak — sdelkachi a'zoning davomatdagi soati (kul rang) hisobga olinadi; «0» — ishlamadi
   const autoOf = (id: string, d: number) => (!(hv[`${id}:${d}`] ?? "").trim() ? data.auto[id]?.[d] : undefined);
+  // Qo'lda son yozilmagan katak — ishlab chiqarishda shu brigada bajargani (kul rang); «0» — olinmaydi
+  const autoQ = (line: string, d: number) => (!(qv[`${line}${SEP}${d}`] ?? "").trim() ? data.autoQty[line]?.[d] : undefined);
+  const qtyOf = (line: string, d: number) => { const v = (qv[`${line}${SEP}${d}`] ?? "").trim(); return v ? toNum(v) : data.autoQty[line]?.[d] ?? null; };
 
   const calc = useMemo(() => {
     const hours: Record<string, (number | null)[]> = {};
@@ -114,9 +117,10 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
     const brak = brakTxt.trim() ? Number(numText(brakTxt)) || 0 : data.brakAuto;
     return calcBrigadeSheet({
       days: nDays, hours, brak,
-      lines: lines.map((l) => ({ ...l, qty: Array.from({ length: nDays }, (_, i) => toNum(qv[`${l.name}${SEP}${i + 1}`] ?? "")) })),
+      lines: lines.map((l) => ({ ...l, qty: Array.from({ length: nDays }, (_, i) => qtyOf(l.name, i + 1)) })),
     });
-  }, [members, hv, qv, lines, brakTxt, data.brakAuto, data.auto, nDays]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- qtyOf: qv va data.autoQty dan
+  }, [members, hv, qv, lines, brakTxt, data.brakAuto, data.auto, data.autoQty, nDays]);
 
   const dayOk = (d: number, from = 1, to = nDays) => editable && !data.days[d - 1]?.future && d >= from && d <= to;
 
@@ -158,7 +162,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
   return (
     <div ref={rootRef} className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
-        <span>Kunlik fond = Σ soni × narx → shu kungi soatga bo&apos;linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. <i className="text-slate-400">Kul rang soat</i> — davomatdan (qo&apos;lda yozilmagan katak), <i className="font-medium text-emerald-600">yashil</i> — bugun ishda; <b>0</b> — shu kuni brigadada ishlamadi.</span>
+        <span>Kunlik fond = Σ soni × narx → shu kungi soatga bo&apos;linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. <i className="text-slate-400">Kul rang soat</i> — davomatdan (qo&apos;lda yozilmagan katak), <i className="font-medium text-emerald-600">yashil</i> — bugun ishda; <b>0</b> — shu kuni brigadada ishlamadi. <i className="text-slate-400">Kul rang son</i> — ishlab chiqarishda brigada «bajarildi» qayd qilgani; ustiga yozilsa — qo&apos;lda, <b>0</b> — olinmaydi.</span>
         {data.inherited && <span className="text-amber-700">Qatorlar va narxlar o&apos;tgan oydan — o&apos;zgartirsangiz shu oy uchun saqlanadi.</span>}
         <span className="ml-auto flex items-center gap-1">{busy > 0 ? <><Loader2 size={13} className="animate-spin" /> Saqlanmoqda…</> : editable ? <><Check size={13} className="text-emerald-600" /> Saqlangan</> : "Faqat ko'rish"}</span>
       </div>
@@ -267,7 +271,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
           </thead>
           <tbody>
             {lines.map((l, li) => {
-              const total = Array.from({ length: nDays }, (_, i) => toNum(qv[`${l.name}${SEP}${i + 1}`] ?? "") ?? 0).reduce((s, x) => s + x, 0);
+              const total = Array.from({ length: nDays }, (_, i) => qtyOf(l.name, i + 1) ?? 0).reduce((s, x) => s + x, 0);
               return (
                 <tr key={l.name}>
                   <td className="sticky left-0 z-10 border-r border-b border-slate-200 bg-white px-1">
@@ -280,14 +284,17 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
                   </td>
                   {data.days.map((d) => {
                     const k = `${l.name}${SEP}${d.day}`;
+                    const aq = autoQ(l.name, d.day);
                     return (
                       <td key={d.day} className={cn("border-r border-b border-slate-200 p-0", d.weekend && "bg-sky-50/70", !dayOk(d.day) && "bg-slate-50")}>
                         <input data-g="q" data-r={li} data-d={d.day} value={qv[k] ?? ""} disabled={!dayOk(d.day)} inputMode="decimal" autoComplete="off" aria-label={`${l.name}, ${d.day}-kun soni`}
+                          placeholder={aq != null ? fmtNum(aq, 3) : undefined}
+                          title={aq != null ? "Ishlab chiqarishdan: brigada topshirig'i bo'yicha «bajarildi» qayd qilingan son. Ustiga yozilsa — qo'lda, 0 — olinmaydi" : undefined}
                           onChange={(e) => { setQv((p) => ({ ...p, [k]: e.target.value })); dirtyQ.current.add(k); schedule(); }}
                           onFocus={(e) => e.currentTarget.select()} onBlur={() => void flush()}
                           onKeyDown={(e) => onKey(e, "q", li, d.day, lines.length)}
                           onPaste={(e) => paste(e, (r, dd) => (lines[r] && dd <= nDays && dayOk(dd) ? `${lines[r]!.name}${SEP}${dd}` : null), li, d.day, applyQ)}
-                          className={cellCls} />
+                          className={cn(cellCls, aq != null && "placeholder:text-slate-400 placeholder:italic")} />
                       </td>
                     );
                   })}

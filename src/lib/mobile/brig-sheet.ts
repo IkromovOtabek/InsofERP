@@ -65,7 +65,8 @@ export async function brigSheetList(user: MobileUser, title: string): Promise<Mo
       if (d.iso < from || d.iso > now) continue;
       const people = activeOn(s, d.day).map((x) => hoursOf(s, x.id, d.day).value).filter((h) => h > 0);
       const hours = people.reduce((a, h) => a + h, 0);
-      const out = s.lines.map((l) => ({ name: l.name, qty: s.qty[l.name]?.[d.day] ?? 0 })).filter((x) => x.qty > 0);
+      // Qo'lda yozilmagan — ishlab chiqarishda «bajarildi» qayd qilingan son
+      const out = s.lines.map((l) => ({ name: l.name, qty: s.qty[l.name]?.[d.day] ?? s.autoQty[l.name]?.[d.day] ?? 0 })).filter((x) => x.qty > 0);
       rows.push({ iso: d.iso, row: {
         id: `${b.id}.${d.iso}`,
         title: `${dayTitle(d.iso)}${d.iso === now ? " · bugun" : ""}${many ? ` · ${b.name}` : ""}`,
@@ -92,11 +93,12 @@ export async function brigSheetDetail(user: MobileUser, id: string, can: (action
   const members = activeOn(s, day);
   const hrs = members.map((m) => ({ m, ...hoursOf(s, m.id, day) }));
   const total = hrs.reduce((a, x) => a + x.value, 0);
-  const out = s.lines.map((l) => ({ name: l.name, qty: s.qty[l.name]?.[day] ?? null }));
+  const out = s.lines.map((l) => ({ name: l.name, qty: s.qty[l.name]?.[day] ?? null, auto: s.autoQty[l.name]?.[day] ?? null }));
+  const shown = out.map((x) => ({ ...x, v: x.qty ?? x.auto }));
   const fields: DetailField[] = [
     { label: "Brigada", value: s.brigade.name },
     { label: "Jami soat", value: `${num(total)} soat · ${hrs.filter((x) => x.value > 0).length} kishi`, tone: total ? "success" : "warning" },
-    { label: "Mahsulot", value: out.some((x) => x.qty) ? out.filter((x) => x.qty).map((x) => `${x.name} ${num(x.qty!)}`).join(", ") : "yozilmagan", tone: out.some((x) => x.qty) ? "success" : "warning" },
+    { label: "Mahsulot", value: shown.some((x) => x.v) ? shown.filter((x) => x.v).map((x) => `${x.name} ${num(x.v!)}`).join(", ") : "yozilmagan", tone: shown.some((x) => x.v) ? "success" : "warning" },
     ...(s.locked ? [{ label: "Holat", value: s.locked, tone: "info" as Tone }] : []),
   ];
   const actions: DetailAction[] = [];
@@ -113,7 +115,10 @@ export async function brigSheetDetail(user: MobileUser, id: string, can: (action
   if (!s.locked && s.lines.length && can("bsheet.output")) {
     actions.push({
       id: "bsheet.output", label: "Mahsulot sonini yozish", tone: "success",
-      form: out.map((l): FormField => ({ name: lineKey(l.name), label: l.name, type: "number", value: l.qty != null ? String(l.qty) : "", hint: "Shu kuni chiqarilgan soni; bo'sh yoki 0 — o'chiriladi" })),
+      form: out.map((l): FormField => ({
+        name: lineKey(l.name), label: l.name, type: "number", value: l.qty != null ? String(l.qty) : "", ...(l.auto != null ? { placeholder: String(l.auto) } : {}),
+        hint: l.auto != null ? `Ishlab chiqarishdan ${num(l.auto)} — bo'sh qolsa shu olinadi; 0 — olinmaydi` : "Shu kuni chiqarilgan soni; bo'sh — yozilmagan",
+      })),
     });
   }
   return {
@@ -130,7 +135,7 @@ export async function brigSheetDetail(user: MobileUser, id: string, can: (action
       },
       {
         title: "Mahsulot soni", empty: "Oy qatorlari belgilanmagan — Ish haqi → Tabel → brigada varag'ida qo'shiladi",
-        rows: out.map((l) => ({ id: lineKey(l.name), title: l.name, right: l.qty != null ? num(l.qty) : "—", tone: (l.qty ? "success" : "warning") as Tone })),
+        rows: out.map((l) => ({ id: lineKey(l.name), title: l.name, right: l.qty != null ? num(l.qty) : l.auto != null ? `${num(l.auto)} · ishlab chiqarishdan` : "—", tone: (l.qty ? "success" : l.auto ? "info" : "warning") as Tone })),
       },
     ],
     actions,
@@ -178,7 +183,8 @@ export async function runBrigSheetAction(user: MobileUser, action: string, id: s
     if (!Object.hasOwn(payload, k)) continue;
     const v = text(payload[k]);
     const cur = s.qty[line]?.[day];
-    if (v === "" || Number(v) === 0 ? cur == null : cur != null && Number(v) === cur) continue;
+    // «0» ham yoziladi — ishlab chiqarishdan kelgan son shu kuni olinmaydi
+    if (v === "" ? cur == null : cur != null && Number(v) === cur) continue;
     items.push({ line, day, value: v });
   }
   if (!items.length) return "O'zgarish yo'q";
