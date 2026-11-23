@@ -46,16 +46,16 @@ export const PAYROLL_CATEGORY = "Ish haqi";
 export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
-export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel" | "deductions") => canDo(who, "payroll", what);
+export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel" | "deductions" | "advance") => canDo(who, "payroll", what);
 /** Ish haqi bo'yicha mas'ul rollar — vedomostlarni har doim ko'radi. */
 const RUN_ROLES = ["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"];
 /**
  * Vedomostlarni (ro'yxat, `/ish-haqi/<id>`, Excel, chop) ko'rish: mas'ul rol, hisoblash yoki sozlama huquqi bor —
- * ko'radi; faqat tabel / ushlanma / varaq / qarzlar bilan ishlaydigan (Sekretar) — ko'rmaydi.
+ * ko'radi; faqat tabel / ushlanma / varaq / qarzlar / avans varaqasi bilan ishlaydigan (Sekretar) — ko'rmaydi.
  */
 export function canSeeRuns(who: Pick<PayrollWho, "role" | "perms">) {
   if (RUN_ROLES.includes(who.role) || canPayroll(who, "calc") || canPayroll(who, "settings")) return true;
-  return !(["debts", "sheets", "tabel", "deductions"] as const).some((w) => canPayroll(who, w));
+  return !(["debts", "sheets", "tabel", "deductions", "advance"] as const).some((w) => canPayroll(who, w));
 }
 
 export class PayrollError extends Error {}
@@ -100,6 +100,8 @@ type CalcLine = {
   incomeTax: number; inps: number; advanceDeducted: number; net: number; employerTax: number;
   /** Qo'lga tegadiganning plastik kartaga qismi (xodim kartasidagi summa, qo'lgadan oshmaydi) */
   cardAmount: number;
+  /** Avans: davr boshidan `to` gacha ishlagani (avans qoidasi qo'llanmagan) — Ish haqi → Avans varaqasi uchun */
+  earned?: number;
   breakdown: LineBreakdown;
 };
 
@@ -109,15 +111,17 @@ const ruleFits = (r: PayRule, position: string) => !r.position || r.position.tri
 
 /**
  * Oy (yoki avans davri) bo'yicha hisob. Bazaga yozmaydi — vedomost yaratish/qayta hisoblash shu natijani saqlaydi,
- * xodim kartasidagi "Bu oy" ko'rinishi ham shundan.
+ * xodim kartasidagi "Bu oy" ko'rinishi ham shundan. `upTo` (faqat avans) — davr oxiri sozlamadagi kun o'rniga shu sana
+ * (Avans varaqasi: oy boshidan bugungacha).
  */
-export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA">, opts: { employeeIds?: string[] } = {}): Promise<CalcLine[]> {
+export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA">, opts: { employeeIds?: string[]; upTo?: string } = {}): Promise<CalcLine[]> {
   const st = await payrollSettings();
   const days = monthDays(month);
   const from = days[0]!.iso;
   const monthEnd = days[days.length - 1]!.iso;
   const advDay = Math.min(Math.max(st.advanceDay, 1), days.length);
-  const to = kind === "ADVANCE" ? days[advDay - 1]!.iso : monthEnd;
+  const upTo = kind === "ADVANCE" && opts.upTo ? (opts.upTo < from ? from : opts.upTo > monthEnd ? monthEnd : opts.upTo) : null;
+  const to = upTo ?? (kind === "ADVANCE" ? days[advDay - 1]!.iso : monthEnd);
   const fromD = dayUtc(from), toD = dayUtc(to);
 
   const emps: Emp[] = await db.employee.findMany({
@@ -131,7 +135,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   // Brigada varag'i to'ldirilgan brigadalar — sdelka va brak shu varaqdan (`lib/hr/brigade-sheet.ts`), qolganlari avvalgidek
   const sheet = await brigadeSheetPay(month, to, { final: kind === "FINAL" });
   const legacyPiece = pieceBrigades(emps).filter((b) => !sheet.brigades.has(b));
-  const [att, plans, excused, rules, manual, advances, piece, kpi, tripPay] = await Promise.all([
+  const [att, plans, excused, rules, manual, advances, piece, kpi, tripPay, sheetAdv] = await Promise.all([
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: { gte: fromD, lte: toD } }, select: { employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true, hours: true } }),
     plansInRange(emps, from, monthEnd),
     excusedDays(ids, from, to),
@@ -148,6 +152,11 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     kind === "FINAL" ? kpiMonth(month, { employeeIds: ids }) : Promise.resolve([]),
     // Haydovchi reys haqi — oy yakunida asosiyga qo'shiladi (avansda emas)
     kind === "FINAL" ? tripPayByDriver(new Date(y!, m! - 1, 1), new Date(y!, m!, 1), ids) : Promise.resolve(new Map<string, { trips: number; km: number; sum: number; unpriced: number }>()),
+    // Ish haqi → Avans varaqasida berilgan avans (kassadan) — yakunda ushlanadi, avans vedomostida takror berilmaydi
+    db.advanceLine.findMany({
+      where: { employeeId: { in: ids }, givenAt: { not: null }, amount: { gt: 0 }, sheet: { month, status: { not: "CANCELLED" } } },
+      select: { employeeId: true, amount: true, sheet: { select: { docNo: true } } },
+    }),
   ]);
   const brak = kind === "FINAL" ? await brigadeDefectSums(dayStart(from), dayEnd(to), legacyPiece) : new Map<string, { qty: number; sum: number; count: number }>();
   // O'tgan oylardan ushlanmay qolgan qarz — har xodimning eng so'nggi tasdiqlangan oy yakuni qatori (qoralama / bekor qilingan hisobga olinmaydi)
@@ -268,6 +277,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     const withholdsAlloc: { id: string; amount: number }[] = [];
     const manualList: LineBreakdown["manual"] = [];
     let advanceFormula: string | undefined;
+    let earned: number | undefined;
 
     if (kind === "FINAL") {
       leavePay = st.vacationPaid ? paidLeave * dailyAvg : 0;
@@ -342,6 +352,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     } else {
       // Avans: xodimga qo'lda belgilangan summa bo'lsa — o'sha (Excel «Аванс наличка» kabi, davrda ishda bo'lsa);
       // aks holda shu kungacha hisoblangan summadan oylik bashorat × foiz (oklad, to'liq kelgan — oylikning foizi)
+      earned = r0(base);
       const fixedAdv = num(e.advanceAmount);
       if (fixedAdv > 0) {
         base = lo <= hi ? r0(fixedAdv) : 0;
@@ -353,7 +364,10 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       }
     }
 
-    const adv = advances.filter((a) => a.employeeId === e.id).map((a) => ({ docNo: a.run.docNo, amount: num(a.paid) }));
+    const adv = [
+      ...advances.filter((a) => a.employeeId === e.id).map((a) => ({ docNo: a.run.docNo, amount: num(a.paid) })),
+      ...sheetAdv.filter((a) => a.employeeId === e.id).map((a) => ({ docNo: a.sheet.docNo, amount: num(a.amount) })),
+    ];
     const advanceSum = adv.reduce((s, a) => s + a.amount, 0);
     const gross = r0(base) + r0(leavePay) + r0(sickPay) + r0(bonus);
     const incomeTax = kind === "FINAL" ? r0((gross * Number(st.incomeTaxPct)) / 100) : 0;
@@ -380,7 +394,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     // Plastik qismi — faqat oy yakunida (avans naqd, Excel'dagidek), qo'lga tegadigandan oshmaydi
     const cardAmount = kind === "FINAL" ? Math.max(0, Math.min(net, r0(num(e.cardAmount)))) : 0;
     out.push({
-      employeeId: e.id, fullName: e.fullName, position: e.position, payType: e.payType, rate, cardAmount,
+      employeeId: e.id, fullName: e.fullName, position: e.position, payType: e.payType, rate, cardAmount, ...(earned != null ? { earned } : {}),
       normDays: normMonth, workedDays: present, workedMinutes: minutes, units: Math.round(units * 1000) / 1000,
       base: r0(base), leavePay: r0(leavePay), sickPay: r0(sickPay), bonus: r0(bonus), penalty: r0(penalty), gross,
       incomeTax, inps, advanceDeducted: r0(advanceSum), net, employerTax,
@@ -524,6 +538,12 @@ export async function submitRun(id: string, user: PayrollWho) {
     if (pending) return { error: `${pending.run.docNo} (avans / alohida to'lov) hali to'lanmagan — avval to'lang yoki bekor qiling, keyin yakuniy vedomostni qayta hisoblang` };
     const late = cur.calculatedAt ? await db.payrollLine.findFirst({ where: { paidAt: { gt: cur.calculatedAt }, run: other }, select: { run: { select: { docNo: true } } } }) : null;
     if (late) return { error: `${late.run.docNo} shu vedomost hisoblangandan keyin to'langan — avval «Qayta hisoblash» ni bosing (avans ushlansin)` };
+    // Avans varaqasi (Ish haqi → Avans): jo'natilgan, hali berilmagan qator — yakun yopilgach berilsa ushlanmay qoladi;
+    // hisobdan keyin berilgan / bekor qilingan — vedomostdagi avans eskirgan
+    const avPending = await db.advanceLine.findFirst({ where: { givenAt: null, amount: { gt: 0 }, sheet: { month: cur.month, status: "SENT" } }, select: { sheet: { select: { docNo: true } } } });
+    if (avPending) return { error: `${avPending.sheet.docNo} (avans varaqasi) hali to'liq berilmagan — avval bering yoki varaqani yoping, keyin yakuniy vedomostni qayta hisoblang` };
+    const avLate = cur.calculatedAt ? await db.advanceLine.findFirst({ where: { changedAt: { gt: cur.calculatedAt }, sheet: { month: cur.month } }, select: { sheet: { select: { docNo: true } } } }) : null;
+    if (avLate) return { error: `${avLate.sheet.docNo} avansi shu vedomost hisoblangandan keyin o'zgargan — avval «Qayta hisoblash» ni bosing (avans ushlansin)` };
   }
   return wrap(async () => {
     const r = await transition(id, ["DRAFT"], { status: "SUBMITTED", submittedAt: new Date(), rejectNote: null }, user.userId, "submit");

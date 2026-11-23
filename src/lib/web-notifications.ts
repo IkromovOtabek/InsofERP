@@ -19,6 +19,7 @@ const WEB_PATH: Record<string, (id: string) => string> = {
   employees: (id) => `/employees/${id}`,
   vazifalarim: (id) => `/vazifalar/${id}`,
   "ish-haqi": (id) => `/ish-haqi/${id}`,
+  avans: (id) => `/avans/${id}`, // avans varaqasi: berish kerak / hammasi berildi
   tasks: () => "/tasks",
   jonatma: (id) => `/jonatma/${id}`,
   "brig-issue": () => "/brigades",

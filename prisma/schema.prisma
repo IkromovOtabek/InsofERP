@@ -723,6 +723,8 @@ model Employee {
   cashTxs          CashTransaction[]        @relation("CashTxEmployee")
   /// Oylikdan nasiya bilan ushlanadigan qarzlar (`lib/hr/employee-debt.ts`)
   debts            EmployeeDebt[]
+  /// Avans varaqalaridagi qatorlari (Ish haqi → Avans, `lib/hr/advance-sheet.ts`)
+  advanceLines     AdvanceLine[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -2507,6 +2509,7 @@ model CashTransaction {
   brigade     Brigade?        @relation("CashTxBrigade", fields: [brigadeId], references: [id], onDelete: Restrict)
   team        Team?           @relation(fields: [teamId], references: [id], onDelete: Restrict)
   debt        EmployeeDebt?
+  advanceLine AdvanceLine?
   supplier    Supplier?       @relation(fields: [supplierId], references: [id])
   customer    Customer?       @relation(fields: [customerId], references: [id], onDelete: Restrict)
   createdBy   User            @relation("CashTxCreatedBy", fields: [createdById], references: [id])
@@ -2540,6 +2543,9 @@ model EmployeeDebt {
   startMonth    String // "2026-12"
   note          String?
   cashTxId      String?   @unique
+  /// Ushlanmalar jadvalida «Qarz to'lovi» summasi oylarga bo'lingan (`splitLoan`): kassadan berilgan nasiya kabi
+  /// jadval bo'yicha har oy avtomatik ushlanadi (kassasiz boshlang'ich qoldiq esa faqat taklif bo'lib turadi).
+  scheduled     Boolean   @default(false)
   createdById   String
   createdAt     DateTime  @default(now())
   cancelledAt   DateTime?
@@ -2550,6 +2556,67 @@ model EmployeeDebt {
   cashTx   CashTransaction? @relation(fields: [cashTxId], references: [id], onDelete: SetNull)
 
   @@index([employeeId, cancelledAt])
+}
+
+/// Avans varaqasi (Ish haqi → Avans, `lib/hr/advance-sheet.ts`): oy boshidan `asOf` gacha ishlagan puli ko'rinadi, avans
+/// qo'lda yoziladi va saqlanadi (DRAFT) → tanlangan xodimga (kassa huquqi bor) jo'natiladi (SENT, bildirishnoma) → u har
+/// xodimga «Berildi» belgilaydi: kassadan alohida «Ish haqi» chiqimi (refType "AdvanceSheet") → hammasi berilgach DONE.
+/// Berilgan avans oy yakuni vedomostida ushlanadi (`lib/hr/payroll.ts` → advances). O'chirilmaydi — bekor qilinadi.
+model AdvanceSheet {
+  id            String             @id @default(cuid())
+  docNo         String             @unique
+  month         String // "2026-11"
+  asOf          DateTime           @db.Date
+  /// Guruh kaliti (Tabel guruhi: "t:<komanda>", "b:<brigada>", "none") — bo'sh: hamma xodim
+  groupKey      String?
+  groupLabel    String?
+  status        AdvanceSheetStatus @default(DRAFT)
+  note          String?
+  createdById   String
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  sentAt        DateTime?
+  sentById      String?
+  /// Avansni beradigan xodim (User) — bildirishnoma unga, «Berildi» ni u belgilaydi
+  recipientId   String?
+  doneAt        DateTime?
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  lines AdvanceLine[]
+
+  @@index([month, status])
+  @@index([recipientId, status])
+}
+
+enum AdvanceSheetStatus {
+  DRAFT
+  SENT
+  DONE
+  CANCELLED
+}
+
+/// Avans varaqasi qatori: ishlagani va tavsiya (`asOf` holatida), qo'lda yozilgan avans, berilgani (kassa chiqimi bilan).
+model AdvanceLine {
+  id         String    @id @default(cuid())
+  sheetId    String
+  employeeId String
+  earned     Decimal   @default(0) @db.Decimal(18, 2)
+  suggested  Decimal   @default(0) @db.Decimal(18, 2)
+  amount     Decimal   @default(0) @db.Decimal(18, 2)
+  givenAt    DateTime?
+  givenById  String?
+  cashTxId   String?   @unique
+  /// «Berildi» / bekor qilingan payt — oy yakuni vedomosti shundan keyin qayta hisoblanishi shart (`submitRun`)
+  changedAt  DateTime?
+
+  sheet    AdvanceSheet     @relation(fields: [sheetId], references: [id], onDelete: Restrict)
+  employee Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  cashTx   CashTransaction? @relation(fields: [cashTxId], references: [id], onDelete: SetNull)
+
+  @@unique([sheetId, employeeId])
+  @@index([employeeId])
 }
 
 /// Qarzni boshqa mijoz to'ladi: `debtor` qarzidan ayiriladi, `payer` ga yoziladi (uning puli yoki avansi bilan).

@@ -89,6 +89,7 @@ async function txDetail(id: string, s: Session): Promise<CashRowDetail | null> {
   const href = t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
     : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
     : t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}`
+    : t.refType === "AdvanceSheet" && t.refId ? `/avans/${t.refId}`
     : undefined;
   const who = t.counterparty ?? t.supplier?.name ?? null;
   const manual = t.type === "INCOME" || t.type === "EXPENSE";

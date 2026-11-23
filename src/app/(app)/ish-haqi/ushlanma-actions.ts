@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
 import { numText } from "@/lib/format";
-import { cancelWithholding, createOpeningDebt, createWithholding, saveDeductions, saveFundAmount, savePayoutAmounts } from "@/lib/hr/deductions";
+import { cancelWithholding, createOpeningDebt, createWithholding, saveDeductions, saveFundAmount, savePayoutAmounts, splitLoan } from "@/lib/hr/deductions";
 import { applyDeductImport, previewDeductImport, type DeductImportPreview } from "@/lib/hr/deduction-import";
 import { DEDUCTION_CATS, type DeductionCat } from "@/lib/hr/deduction-cats";
 import { SHEETS_MAX_BYTES, SheetImportError } from "@/lib/payroll-sheets";
@@ -22,6 +22,17 @@ export async function saveDeductionsAction(month: string, items: { employeeId: s
   if (r.error) return { error: r.error };
   refresh();
   return { saved: r.saved };
+}
+
+/** «Qarz to'lovi» katagidagi summani oylarga bo'lish (qarz jadvali — har oy avtomatik ushlanadi). */
+export async function splitLoanAction(x: { month: string; employeeId: string; amount: string; months: number; startMonth: string }): Promise<{ error?: string; ok?: boolean; monthly?: number }> {
+  const s = await requireAction("payroll", "deductions");
+  if (!x || typeof x.employeeId !== "string" || typeof x.month !== "string" || typeof x.startMonth !== "string") return { error: "So'rov noto'g'ri" };
+  const t = numText(String(x.amount ?? "").trim());
+  const r = await splitLoan(s, { month: x.month, employeeId: x.employeeId, amount: t ? Number(t) : 0, months: Number(x.months), startMonth: x.startMonth });
+  if ("error" in r) return { error: r.error };
+  refresh();
+  return { ok: true, monthly: r.monthly };
 }
 
 export async function saveFundAmountAction(value: string): Promise<{ error?: string; ok?: boolean }> {

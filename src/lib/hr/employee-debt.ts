@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
+import { installment } from "./deduction-cats";
 
 /**
  * Xodim qarzi (nasiya) — Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimi «Oylikdan nasiya» bilan yozilganda ochiladi
@@ -11,11 +12,7 @@ import { db } from "@/lib/db";
 const monthIndex = (ym: string) => { const [y, m] = ym.split("-").map(Number); return y! * 12 + (m! - 1); };
 export const addMonths = (ym: string, n: number) => { const i = monthIndex(ym) + n; return `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`; };
 
-/** Oylik ulush: minglikka yaxlitlangan teng bo'lak, oxirgisi — qolgan summa. */
-export function installment(amount: number, months: number, n: number): number {
-  const part = Math.round(amount / months / 1000) * 1000 || Math.round(amount / months);
-  return n < months ? part : Math.round(amount - part * (months - 1));
-}
+export { installment };
 
 /** Shu oyda ushlanadigan ulush (1-asosli tartib raqami bilan) yoki null — oy jadvaldan tashqarida. */
 export function dueIn(d: { amount: unknown; months: number; startMonth: string }, month: string): { n: number; amount: number } | null {
@@ -27,14 +24,15 @@ export function dueIn(d: { amount: unknown; months: number; startMonth: string }
 export type DebtDue = { id: string; employeeId: string; n: number; of: number; amount: number; total: number; note: string | null };
 
 /**
- * Oy yakuni vedomosti uchun: shu oyda AVTOMATIK ushlanadigan nasiya ulushlari — faqat kassadan berilgan nasiya
- * (`cashTxId`). Qo'lda / Excel'dan kiritilgan qoldiq (kassasiz) faqat Ushlanmalar jadvalidagi «Qarz to'lovi» bilan
- * ushlanadi (u yerda jadval ulushi taklif bo'lib turadi) — Excel'dagidek har oy summasi yoziladi.
+ * Oy yakuni vedomosti uchun: shu oyda AVTOMATIK ushlanadigan nasiya ulushlari — kassadan berilgan nasiya (`cashTxId`)
+ * va Ushlanmalar jadvalida oylarga bo'lingan qarz (`scheduled`). Qo'lda / Excel'dan kiritilgan qoldiq (kassasiz) faqat
+ * Ushlanmalar jadvalidagi «Qarz to'lovi» bilan ushlanadi (u yerda jadval ulushi taklif bo'lib turadi) — Excel'dagidek
+ * har oy summasi yoziladi.
  */
 export async function debtsDue(month: string, employeeIds: string[]): Promise<DebtDue[]> {
   if (!employeeIds.length) return [];
   const list = await db.employeeDebt.findMany({
-    where: { employeeId: { in: employeeIds }, cancelledAt: null, startMonth: { lte: month }, cashTxId: { not: null } },
+    where: { employeeId: { in: employeeIds }, cancelledAt: null, startMonth: { lte: month }, OR: [{ cashTxId: { not: null } }, { scheduled: true }] },
     select: { id: true, employeeId: true, amount: true, months: true, startMonth: true, note: true },
   });
   return list.flatMap((d) => {

@@ -140,7 +140,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "taqvim", label: "Ish tartibi va bayramlar", paths: ["/settings/ish-tartibi"], actions: ["calendar"] },
   ],
   payroll: [
-    { key: "ishhaqi", label: "Ish haqi", paths: ["/ish-haqi"], actions: ["calc", "settings", "pay", "approve", "debts", "sheets", "tabel", "deductions"] },
+    { key: "ishhaqi", label: "Ish haqi", paths: ["/ish-haqi"], actions: ["calc", "settings", "pay", "approve", "debts", "sheets", "tabel", "deductions", "advance"] },
   ],
   vazifalar: [
     { key: "vazifalar", label: "Vazifalar", paths: ["/vazifalar"], actions: ["assign", "view_all"] },

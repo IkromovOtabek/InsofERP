@@ -7,7 +7,7 @@ import { employeesInWindow } from "@/lib/attendance-report";
 import { isStaffSettleCategory } from "@/lib/cash-categories";
 import { tabelLock } from "./tabel-lock";
 import { allocOf, closedLines, debtHeld, debtsDue, dueIn, listDebts, type Alloc, type HeldLine } from "./employee-debt";
-import { deductionLabel, isDeductionCat, type DeductionCat } from "./deduction-cats";
+import { deductionLabel, installment, isDeductionCat, type DeductionCat } from "./deduction-cats";
 
 /**
  * Ushlanmalar (Ish haqi → Ushlanmalar) — Excel C2026'ning G–K ustunlari: aliment/ijro, qarz to'lovi, oylikdan qarz,
@@ -154,7 +154,7 @@ export async function deductionsMonth(month: string): Promise<DeductionMonth> {
     const ds = led.debts.filter((d) => d.employeeId === e.id && d.left > 0);
     const opening = ds.filter((d) => !nsIds.has(d.id)).reduce((s, d) => s + Math.min(d.due, d.left), 0);
     if (opening > 0) suggest.LOAN = r0(nsSum + opening);
-    if (ds.length || ns.length) hints.LOAN = [`qarz qoldig'i ${fmtNum(r0(ds.reduce((s, d) => s + d.left, 0)))}`, ...(nsSum > 0 ? [`kassadan nasiya ulushi ${fmtNum(r0(nsSum))} — avtomatik`] : [])].join("; ");
+    if (ds.length || ns.length) hints.LOAN = [`qarz qoldig'i ${fmtNum(r0(ds.reduce((s, d) => s + d.left, 0)))}`, ...ns.map((d) => `${d.n}/${d.of}-oy ulushi ${fmtNum(d.amount)} (jami ${fmtNum(r0(d.total))}) — avtomatik`)].join("; ");
     // Oylikdan qarz: Kirim-Chiqimda xodimga berilgan pul — avtomatik
     const given = cash.get(e.id) ?? [];
     const givenSum = given.reduce((s, c) => s + c.amount, 0);
@@ -210,6 +210,35 @@ export async function saveDeductions(who: Who, month: string, items: { employeeI
       saved++;
     }
     return { saved };
+  });
+}
+
+/**
+ * «Qarz to'lovi» katagidagi summani oylarga bo'lish: summa xodim qarziga aylanadi (`EmployeeDebt`, `scheduled`) —
+ * `startMonth` oyligidan boshlab `months` oy, har oy teng ulush (minglikka yaxlitlangan, oxirgisi qoldiq) avtomatik
+ * ushlanadi. Katakdagi shu oy yozuvi bekor qilinadi (u summa endi jadval bo'yicha ushlanadi). Yopiq oydan boshlanmaydi.
+ */
+export async function splitLoan(who: Who, x: { month: string; employeeId: string; amount: number; months: number; startMonth: string; note?: string | null }) {
+  if (!MONTH_RE.test(x.month) || !MONTH_RE.test(x.startMonth)) return { error: "Oy noto'g'ri" };
+  const amount = r0(x.amount);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1e11) return { error: "Summa noto'g'ri" };
+  if (!Number.isInteger(x.months) || x.months < 1 || x.months > 60) return { error: "Oylar soni 1 dan 60 gacha" };
+  if (x.startMonth < x.month || x.startMonth > shiftMonth(x.month, 12)) return { error: "Boshlanish oyi — shu oydan keyingi 12 oy ichida" };
+  const emp = await db.employee.findUnique({ where: { id: x.employeeId }, select: { id: true, fullName: true } });
+  if (!emp) return { error: "Xodim topilmadi — sahifani yangilang" };
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"ushlanma:" + x.month}))`;
+    for (const m of new Set([x.month, x.startMonth])) {
+      const locked = await tabelLock(m, tx);
+      if (locked) return { error: `${monthTitle(m)}: ${locked.replace("tabel yopiq", "ushlanmalar yopiq")}` };
+    }
+    const note = x.note?.trim() || `Ushlanmalar jadvalidan: ${x.months} oyga bo'lindi`;
+    const d = await tx.employeeDebt.create({ data: { employeeId: emp.id, amount, months: x.months, startMonth: x.startMonth, scheduled: true, note: note.slice(0, 300), createdById: who.userId } });
+    // Katakdagi summa — endi qarz jadvali: shu oy «Qarz to'lovi» yozuvi bekor qilinadi
+    const cur = await tx.payAdjustment.findMany({ where: { month: x.month, employeeId: emp.id, category: "LOAN", cancelledAt: null }, select: { id: true, amount: true } });
+    if (cur.length) await tx.payAdjustment.updateMany({ where: { id: { in: cur.map((c) => c.id) } }, data: { cancelledAt: new Date(), cancelledById: who.userId, cancelReason: "Oylarga bo'lindi — qarz jadvali" } });
+    await audit(tx, who.userId, "CREATE", "EmployeeDebt", d.id, cur.length ? { katak: cur.reduce((s, c) => s + num(c.amount), 0) } : undefined, { xodim: emp.fullName, summa: amount, oylar: x.months, boshlanish: x.startMonth, manba: "Ushlanmalar → oylarga bo'lish" });
+    return { ok: true as const, id: d.id, monthly: installment(amount, x.months, 1) };
   });
 }
 

@@ -43,6 +43,9 @@ export const NAV: NavItem[] = [
   // Umumiy vazifalar — har bir xodim (o'ziga / rahbar beradi), `lib/hr/tasks.ts`
   // Menyuda ko'rinmaydi — sahifa ruxsati qoladi, havola orqali ochiladi
   { href: "/vazifalar",   label: "Vazifalar",          roles: "all", group: "Asosiy", hidden: true },
+  // Avans varaqasi (Ish haqi → Avans): jo'natilgan xodim (kassir) ochib «Berildi» belgilaydi — kim ko'rishi sahifaning o'zida
+  // (`lib/hr/advance-sheet.ts` → canViewSheet); menyuda yo'q, bildirishnoma / Ish haqi → Avans orqali ochiladi
+  { href: "/avans",       label: "Avans varaqalari",   roles: "all", group: "Asosiy", hidden: true },
   // Bo'lim yig'ma sahifalari — bo'limning hamma muhim ko'rsatkichi bitta joyda (`lib/overview/*`)
   { href: "/sales/umumiy", label: "Umumiy ko'rinish",  roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
@@ -246,7 +249,7 @@ export const OWN_PAGE_ONLY: Partial<Record<Role, string>> = {
 
 /** «Faqat o'z sahifasi» rollariga qo'shimcha ochiq yo'llar (Sekretar — «Ish haqi» → Xodim qarzlari) */
 export const OWN_PAGE_EXTRA: Partial<Record<Role, string[]>> = {
-  SECRETARY: ["/ish-haqi"],
+  SECRETARY: ["/ish-haqi", "/avans"],
 };
 export const ownPageAllows = (role: Role, pathname: string) => {
   const own = OWN_PAGE_ONLY[role];

@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, Loader2, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
+import { CalendarRange, Check, CheckCheck, Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtNum, numText } from "@/lib/format";
-import { DEDUCTION_CATS, type DeductionCat } from "@/lib/hr/deduction-cats";
+import { monthTitle, shiftMonth } from "@/lib/davomat";
+import { DEDUCTION_CATS, installment, type DeductionCat } from "@/lib/hr/deduction-cats";
 import type { DeductionMonth } from "@/lib/hr/deductions";
-import { Input } from "@/components/ui";
-import { saveDeductionsAction, saveFundAmountAction } from "./ushlanma-actions";
+import { Button, Field, FormError, Input, Select } from "@/components/ui";
+import { saveDeductionsAction, saveFundAmountAction, splitLoanAction } from "./ushlanma-actions";
 
 /**
  * Ushlanmalar jadvali — Excel C2026'ning G–K ustunlari: har xodimga oy bo'yicha aliment/ijro, qarz to'lovi, oylikdan qarz,
@@ -37,6 +40,9 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
   const valsRef = useRef(vals); valsRef.current = vals;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
+  const router = useRouter();
+  // «Qarz to'lovi» katagidagi summani oylarga bo'lish oynasi
+  const [split, setSplit] = useState<{ employeeId: string; fullName: string; amount: number } | null>(null);
 
   useEffect(() => {
     const fresh = init();
@@ -121,7 +127,7 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
         )}
         <span className="flex items-center gap-1 text-xs text-slate-500">{busy > 0 ? <><Loader2 size={13} className="animate-spin" /> Saqlanmoqda…</> : editable ? <><Check size={13} className="text-emerald-600" /> Saqlangan</> : "Faqat ko'rish"}</span>
       </div>
-      <p className="text-xs text-slate-500"><span className="font-medium text-sky-700">Ko&apos;k</span> — avtomatik, yozilmasa ham oy yakunida ushlanadi: Kirim-Chiqimda xodimga «Hodimlar bilan hisob-kitob» bilan berilgan pul (Oylikdan qarz), kassadan nasiya ulushi (Qarz to&apos;lovi), aliment daftari. Ustiga yozilsa — yozilgani; «Oylikdan qarz» ga 0 — ushlanmaydi. <i className="text-slate-400">Kul rang</i> — taklif, ✓ bilan qo&apos;yiladi.</p>
+      <p className="text-xs text-slate-500"><span className="font-medium text-sky-700">Ko&apos;k</span> — avtomatik, yozilmasa ham oy yakunida ushlanadi: Kirim-Chiqimda xodimga «Hodimlar bilan hisob-kitob» bilan berilgan pul (Oylikdan qarz), kassadan nasiya va oylarga bo&apos;lingan qarz ulushi (Qarz to&apos;lovi — katakdagi taqvim tugmasi bilan bo&apos;linadi), aliment daftari. Ustiga yozilsa — yozilgani; «Oylikdan qarz» ga 0 — ushlanmaydi. <i className="text-slate-400">Kul rang</i> — taklif, ✓ bilan qo&apos;yiladi.</p>
       {msg && <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700"><span>{msg}</span><button type="button" className="opacity-70 hover:underline" onClick={() => setMsg(null)}>Yopish</button></div>}
       <div className="relative max-w-full overflow-auto overscroll-contain rounded-(--radius-card) border border-slate-300/80 bg-white shadow-(--shadow-card)" style={{ maxHeight: "calc(100dvh - 320px)", minHeight: 300 }}>
         <table ref={tableRef} className="w-full border-separate border-spacing-0 font-(family-name:--font-inter) text-[13px] tabular text-slate-800">
@@ -154,14 +160,23 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
                   const key = k(r.id, c.key);
                   const sug = r.suggest[c.key], au = r.auto[c.key];
                   const tip = [r.hints[c.key], au ? `Avtomatik ushlanadi: ${fmtNum(au)}${c.key === "SALARY_DEBT" ? " (0 yozilsa — ushlanmaydi)" : ""}` : null, sug ? `Taklif: ${fmtNum(sug)}` : null].filter(Boolean).join("\n");
+                  const canSplit = editable && c.key === "LOAN" && toNum(vals[key] ?? "") > 0;
                   return (
-                    <td key={c.key} className="border-r border-b border-slate-200 p-0" title={tip || undefined}>
+                    <td key={c.key} className="relative border-r border-b border-slate-200 p-0" title={tip || undefined}>
+                      {canSplit && (
+                        <button type="button" tabIndex={-1} onClick={() => setSplit({ employeeId: r.id, fullName: r.fullName, amount: toNum(vals[key] ?? "") })}
+                          title="Oylarga bo'lish — necha oyda va qaysi oydan ushlanadi" aria-label={`${r.fullName} — qarzni oylarga bo'lish`}
+                          className="absolute top-1/2 left-1 z-[1] -translate-y-1/2 rounded p-1 text-brand-700 hover:bg-brand-100">
+                          <CalendarRange size={14} />
+                        </button>
+                      )}
                       <input data-r={ri} data-c={ci} value={vals[key] ?? ""} disabled={!editable} inputMode="decimal" autoComplete="off"
                         placeholder={au ? fmtNum(au) : sug ? fmtNum(sug) : ""} aria-label={`${r.fullName} — ${c.label}`}
                         onChange={(e) => { setVals((p) => ({ ...p, [key]: e.target.value })); dirty.current.add(key); schedule(); }}
                         onFocus={(e) => e.currentTarget.select()} onBlur={() => void flush()}
                         onKeyDown={(e) => onKey(e, ri, ci)} onPaste={(e) => onPaste(e, ri, ci)}
                         className={cn("h-9 w-full bg-transparent px-2 text-right outline-none placeholder:text-slate-400 placeholder:italic focus:bg-brand-50 focus:ring-2 focus:ring-brand-500 focus:ring-inset disabled:cursor-not-allowed",
+                          canSplit && "pl-8",
                           !vals[key] && (au ? "bg-sky-50/60 placeholder:font-medium placeholder:text-sky-700 placeholder:not-italic" : r.hints[c.key] && "bg-amber-50/40"))} />
                     </td>
                   );
@@ -181,6 +196,88 @@ export function DeductionsGrid({ data, canEdit }: { data: DeductionMonth; canEdi
           </tfoot>
         </table>
       </div>
+      {split && (
+        <SplitDialog month={data.month} target={split} onClose={() => setSplit(null)}
+          onSplit={async (months, startMonth) => {
+            await flush(); // katakdagi summa avval saqlansin — bo'lish uni bekor qiladi
+            const r = await splitLoanAction({ month: data.month, employeeId: split.employeeId, amount: String(split.amount), months, startMonth });
+            if (r.error) return r.error;
+            const key = k(split.employeeId, "LOAN");
+            dirty.current.delete(key);
+            setVals((p) => { const o = { ...p }; delete o[key]; return o; });
+            setSplit(null);
+            router.refresh();
+            return null;
+          }} />
+      )}
     </div>
   );
+}
+
+/**
+ * «Qarz to'lovi» summasini oylarga bo'lish: necha oy va qaysi oy oyligidan boshlab — jadval oldindan ko'rinadi
+ * (minglikka yaxlitlangan teng ulush, oxirgisi qoldiq). Tasdiqlansa summa xodim qarziga aylanadi, har oy avtomatik ushlanadi.
+ */
+function SplitDialog({ month, target, onClose, onSplit }: {
+  month: string; target: { fullName: string; amount: number }; onClose: () => void;
+  onSplit: (months: number, startMonth: string) => Promise<string | null>;
+}) {
+  const [months, setMonths] = useState("3");
+  const [start, setStart] = useState(month);
+  const [err, setErr] = useState("");
+  const [pending, run] = useTransition();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const n = Math.trunc(Number(months));
+  const valid = Number.isFinite(n) && n >= 1 && n <= 60;
+  const plan = valid ? Array.from({ length: n }, (_, i) => ({ m: shiftMonth(start, i), sum: installment(target.amount, n, i + 1) })) : [];
+  const starts = Array.from({ length: 13 }, (_, i) => shiftMonth(month, i));
+  return createPortal((
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onMouseDown={onClose}>
+      <form role="dialog" aria-label="Qarzni oylarga bo'lish" onMouseDown={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!valid) { setErr("Oylar soni 1 dan 60 gacha"); return; }
+          run(async () => { const r = await onSplit(n, start); if (r) setErr(r); });
+        }}
+        className="w-full max-w-md space-y-4 rounded-(--radius-card) border border-slate-200 bg-white p-5 shadow-(--shadow-pop)">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">Qarzni oylarga bo&apos;lish</h2>
+            <p className="text-sm text-slate-600">{target.fullName} · <span className="font-semibold text-slate-900">{fmtNum(target.amount)}</span></p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Necha oyga bo'linadi">
+            <Input type="number" min={1} max={60} value={months} onChange={(e) => setMonths(e.target.value)} autoFocus required />
+          </Field>
+          <Field label="Qaysi oy oyligidan">
+            <Select value={start} onChange={(e) => setStart(e.target.value)}>
+              {starts.map((m) => <option key={m} value={m}>{monthTitle(m)}</option>)}
+            </Select>
+          </Field>
+        </div>
+        {plan.length > 0 && (
+          <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm tabular">
+              <thead className="sticky top-0 bg-slate-50 text-xs text-slate-500"><tr><th className="px-3 py-1.5 text-left font-medium">Oylik</th><th className="px-3 py-1.5 text-right font-medium">Ushlanadi</th></tr></thead>
+              <tbody>
+                {plan.map((p, i) => <tr key={p.m} className="border-t border-slate-100"><td className="px-3 py-1">{i + 1}. {monthTitle(p.m)}</td><td className="px-3 py-1 text-right font-medium">{fmtNum(p.sum)}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-xs text-slate-500">Summa xodim qarziga yoziladi («Xodim qarzlari»da ko&apos;rinadi), har oy ulushi oy yakuni vedomostida avtomatik ushlanadi (jadvalda ko&apos;k). Katakdagi shu oy yozuvi o&apos;rniga jadval ishlaydi.</p>
+        <FormError error={err} />
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Bekor qilish</Button>
+          <Button disabled={pending || !valid}><CalendarRange size={16} /> {pending ? "Saqlanmoqda…" : `${valid ? n : ""} oyga bo'lish`}</Button>
+        </div>
+      </form>
+    </div>
+  ), document.body);
 }

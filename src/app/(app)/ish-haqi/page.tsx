@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, MinusCircle, Settings2, Sheet as SheetIcon, Wallet } from "lucide-react";
+import { Banknote, CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, MinusCircle, Settings2, Sheet as SheetIcon, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { date, dateTime, money } from "@/lib/format";
@@ -30,6 +30,9 @@ import { OpeningDebtForm, WithholdingForm } from "./ushlanma-forms";
 import { cancelWithholdingAction } from "./ushlanma-actions";
 import { TabelImport } from "./tabel-import";
 import { erpWorkbook } from "@/lib/hr/erp-workbook";
+import { advanceGroups, canAdvance, listAdvanceSheets } from "@/lib/hr/advance-sheet";
+import { NewAdvanceForm } from "../avans/avans-forms";
+import { AdvanceSheetList } from "../avans/sheet-list";
 
 /**
  * Ish haqi: otdel kadr / buxgalteriya hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`).
@@ -45,17 +48,19 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const canSheets = canPayroll(s, "sheets");
   const canTabel = canPayroll(s, "tabel");
   const canDeduct = canPayroll(s, "deductions");
-  // Sekretar: vedomost va sozlamalar ko'rinmaydi — faqat Tabel, «Oylik varaqlari» (Excel kitobi) va «Xodim qarzlari»
+  const canAdv = canAdvance(s);
+  // Sekretar: vedomost va sozlamalar ko'rinmaydi — faqat Tabel, Ushlanmalar, Avans, «Oylik varaqlari» (Excel kitobi) va «Xodim qarzlari»
   const limited = !canSeeRuns(s);
   const keys = limited
-    ? [...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : [])]
-    : ["vedomostlar", ...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : []), "sozlamalar"];
+    ? [...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canAdv ? ["avans"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : [])]
+    : ["vedomostlar", ...(canTabel ? ["tabel"] : []), ...(canDeduct ? ["ushlanmalar"] : []), ...(canAdv || canCalc ? ["avans"] : []), ...(canSheets ? ["varaqlar"] : []), ...(canDebts || canDeduct ? ["qarzlar"] : []), "sozlamalar"];
   const tab = keys.includes(sp.tab ?? "") ? sp.tab! : keys[0];
   const debts = tab === "qarzlar" ? await listDebts() : [];
   const tabItems = [
     { key: "vedomostlar", label: "Vedomostlar", href: "/ish-haqi", icon: Wallet },
     { key: "tabel", label: "Tabel", href: "/ish-haqi?tab=tabel", icon: CalendarDays },
     { key: "ushlanmalar", label: "Ushlanmalar", href: "/ish-haqi?tab=ushlanmalar", icon: MinusCircle },
+    { key: "avans", label: "Avans", href: "/ish-haqi?tab=avans", icon: Banknote },
     { key: "varaqlar", label: "Oylik varaqlari", href: "/ish-haqi?tab=varaqlar", icon: SheetIcon },
     { key: "qarzlar", label: "Xodim qarzlari", href: "/ish-haqi?tab=qarzlar", icon: HandCoins },
     { key: "sozlamalar", label: "Sozlamalar", href: "/ish-haqi?tab=sozlamalar", icon: Settings2 },
@@ -65,10 +70,11 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       <div className="space-y-4" {...(tab === "varaqlar" || tab === "tabel" || tab === "ushlanmalar" ? { "data-wide": "" } : {})}>
         {tab === "qarzlar"
           ? <PageHeader title="Xodim qarzlari" info="Kirim-Chiqimda «Hodimlar bilan hisob-kitob» chiqimi «Oylikdan nasiya» bilan yozilsa — qarz shu yerda; har oy yakuni vedomostida ulushi ushlanadi" />
-          : <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : SHEETS_INFO} />}
+          : <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : tab === "avans" ? AVANS_INFO : SHEETS_INFO} />}
         {tabItems.length > 1 && <Tabs current={tab} items={tabItems} />}
         {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} />
           : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} />
+          : tab === "avans" ? <AvansTab canEdit={canAdv} />
           : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />
           : <><DebtTable debts={debts} canCancel={canDebts} />{canDeduct && <LedgersPanel />}</>}
       </div>
@@ -84,12 +90,12 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
   const toPay = runs.filter((r) => r.status === "APPROVED");
   const thisMonth = runs.filter((r) => r.month === month && r.status !== "CANCELLED");
 
-  if (tab === "varaqlar" || tab === "tabel" || tab === "ushlanmalar") {
+  if (tab === "varaqlar" || tab === "tabel" || tab === "ushlanmalar" || tab === "avans") {
     return (
       <div className="space-y-4" data-wide="">
-        <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : SHEETS_INFO} />
+        <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : tab === "avans" ? AVANS_INFO : SHEETS_INFO} />
         <Tabs current={tab} items={tabItems} />
-        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />}
+        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : tab === "avans" ? <AvansTab canEdit={canAdv} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />}
       </div>
     );
   }
@@ -178,8 +184,28 @@ const DEDUCT_INFO = (
     <p><b>Ushlanmalar</b> — Excel C2026&apos;ning G–K ustunlari: har xodimga oy bo&apos;yicha aliment/ijro, qarz to&apos;lovi, oylikdan qarz, to&apos;y puli, jarima. Oy yakuni vedomosti shularni ushlaydi.</p>
     <p>Kul rang raqam — taklif: aliment — ijro/aliment daftaridan, qarz — nasiya jadvalidan, oylikdan qarz — shu oy kassadan xodimga berilgan (nasiyasiz) pul, to&apos;y puli — sozlamadan. Ustun sarlavhasidagi ✓ bo&apos;sh kataklarga takliflarni qo&apos;yadi.</p>
     <p>Qarz to&apos;lovi va aliment yozilsa — jadval ulushi / avtomatik summa o&apos;rniga shu ushlanadi va «Xodim qarzlari» dagi qoldiqdan kamayadi. Oy yakuni vedomosti direktorga yuborilgach jadval yopiladi.</p>
+    <p><b>Qarzni oylarga bo&apos;lish.</b> «Qarz to&apos;lovi» katagiga summa yozilsa, katakda taqvim tugmasi chiqadi: bosib, summani necha oyga bo&apos;lish va qaysi oy oyligidan boshlab ushlashni tanlang. Summa xodim qarziga aylanadi, har oy ulushi avtomatik (ko&apos;k) ushlanadi.</p>
   </>
 );
+
+const AVANS_INFO = (
+  <>
+    <p><b>Avans varaqasi</b> — hamma xodim yoki bitta komanda / brigada uchun ochiladi: har xodimga oy boshidan bugungacha ishlagani va tavsiya etilgan avans (xodim kartasidagi qo&apos;lda avans, bo&apos;lmasa Sozlamalardagi foiz; shu oy berilgani ayiriladi) ko&apos;rinadi. Avans summasi qo&apos;lda yoziladi.</p>
+    <p>«Saqlash» — varaqa bizda qoladi (qoralama). «Jo&apos;natish» — kassa huquqi bor xodimni tanlaysiz, unga bildirishnoma boradi; u kassani tanlab har xodimga «Berildi» belgilaydi (kassadan alohida chiqim). Excel&apos;ni jo&apos;natgan ham, qabul qilgan ham yuklab oladi.</p>
+    <p>Berilgan avans oy yakuni vedomostida o&apos;zi ushlanadi. Oy yakuni direktorga yuborilgach o&apos;sha oyda avans berilmaydi.</p>
+  </>
+);
+
+/** «Avans»: yangi varaqa va varaqalar ro'yxati (varaqaning o'zi — `/avans/<id>`). */
+async function AvansTab({ canEdit }: { canEdit: boolean }) {
+  const [groups, rows] = await Promise.all([canEdit ? advanceGroups() : Promise.resolve([]), listAdvanceSheets({}, 80)]);
+  return (
+    <div className="space-y-3">
+      {canEdit && <Card><NewAdvanceForm groups={groups} /></Card>}
+      <AdvanceSheetList rows={rows} empty="Avans varaqasi hali yo'q — yuqorida «Yangi avans varaqasi» ni bosing" />
+    </div>
+  );
+}
 
 /** «Ushlanmalar»: oy tanlash va C2026 G–K kabi jadval. */
 async function DeductionsTab({ oy, canEdit }: { oy?: string; canEdit: boolean }) {
