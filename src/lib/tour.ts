@@ -245,12 +245,6 @@ const DRIVER_STEPS: TourStep[] = [
     "Har bir reysda bosqichni ketma-ket belgilab borasiz: yuklandi → yo'lda → yetkazildi. Asosiy ish esa mobil ilovada — u joylashuvingizni ham yuboradi.",
     '[data-tour="page-title"]',
   ),
-  {
-    id: "driver-apk",
-    title: "Mobil ilova",
-    text: "Android ilovasini shu havoladan yuklab oling. Reyslar, bosqichlar va navigatsiya ilovada ancha qulay.",
-    target: '[data-tour="apk"]',
-  },
 ];
 
 const BRIGADIER_STEPS: TourStep[] = [
@@ -263,12 +257,6 @@ const BRIGADIER_STEPS: TourStep[] = [
     "Ishlab chiqarish zayavka qatoriga brigadangizni tayinlagach, topshiriq shu ro'yxatda va Insof ECO ilovasida paydo bo'ladi. Bajarilgan miqdorni ilovada qayd qilasiz — qoldiq shu yerda o'zgaradi.",
     '[data-tour="page-title"]',
   ),
-  {
-    id: "brigadier-apk",
-    title: "Mobil ilova",
-    text: "Android ilovasini shu havoladan yuklab oling. Topshiriqlar va bajarilganlik qaydlari ilovada ancha qulay.",
-    target: '[data-tour="apk"]',
-  },
 ];
 
 /* Sotuv agenti — vebda faqat bitta sahifa (`/agent`): o'z mijozlari, ularning qarzi va zayavka ochish.

@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
-import { apkInfo, apkSize, iosAppUrl } from "@/lib/apk";
 import { navFor, ROLE_LABELS } from "@/lib/nav";
 import { applyMenuPrefs, menuBase, menuPrefs } from "@/lib/menu-prefs";
 import { AppShell } from "@/components/app-shell";
@@ -32,7 +31,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const s = await getSession();
   if (!s) redirect("/api/logout");
   const company = await getCompany();
-  const apk = await apkInfo();
   // Instruksiyaning joriy bosqichi (yoki "done") — cookie sessiya bilan birga o'chadi
   // «Qayta ko'rsatilmasin» bosgan foydalanuvchiga avtomatik chiqmaydi (tepadagi tugmadan ko'rsa bo'ladi)
   const tourRaw = (await cookies()).get(TOUR_COOKIE)?.value;
@@ -62,7 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const bill = s.role === "DIRECTOR" ? await billingNotice().catch(() => null) : null;
   const dmy = (iso: string) => date(new Date(`${iso}T00:00:00`));
   return (
-    <AppShell items={items} flat={flat} product={arenda ? "Insof Arenda" : undefined} user={{ fullName: s.fullName, roleLabel: s.superadmin ? ROLE_LABELS.SUPERADMIN : ROLE_LABELS[s.role] }} brand={company.name} ai={!arenda && ["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)} apk={apk.exists ? apkSize(apk.size) : null} ios={iosAppUrl()} tour={{ steps: tourSteps, start: tourStart }}>
+    <AppShell items={items} flat={flat} product={arenda ? "Insof Arenda" : undefined} user={{ fullName: s.fullName, roleLabel: s.superadmin ? ROLE_LABELS.SUPERADMIN : ROLE_LABELS[s.role] }} brand={company.name} ai={!arenda && ["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)} tour={{ steps: tourSteps, start: tourStart }}>
       {/* Ma'lumot o'zi yangilanib turadi — sahifani qo'lda yangilash shart emas */}
       <LiveRefresh />
       {/* Qo'lda yozilgan qiymatlar eslab qolinadi va keyingi safar taklif qilinadi */}

@@ -76,11 +76,10 @@ export default async function LandingPage() {
     apkInfo(),
   ]);
 
-  // Insof ECO mobil ilovasi: Android — serverdagi APK, iPhone — TestFlight / App Store havolasi.
-  // APK bo'lmasa Android tugmasi ko'rinmaydi. iPhone tugmasi doim bor: `IOS_APP_URL` bo'lmasa — «Tez orada» (bosilmaydi).
+  // Insof ECO mobil ilovasi: Android — serverdagi APK, iPhone — App Store sahifasi (`lib/apk.ts`).
+  // APK bo'lmasa Android tugmasi ko'rinmaydi.
   const androidSize = apk.exists ? apkSize(apk.size) : null;
   const iosUrl = iosAppUrl();
-  const iosTestFlight = iosUrl?.includes("testflight.apple.com") ?? false;
 
   const phone = company.phone?.trim() || null;
   const email = company.email?.trim() || null;
@@ -380,42 +379,26 @@ export default async function LandingPage() {
                 </span>
               </a>
             )}
-            {iosUrl !== null ? (
-              <a
-                href={iosUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-16 items-center gap-4 rounded-2xl glass-dark pr-6 pl-5 text-white transition-colors duration-200 hover:bg-white/15"
-              >
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15"><Smartphone size={20} /></span>
-                <span className="min-w-0 text-left">
-                  <span className="block text-base font-semibold">iPhone (iOS) uchun yuklab olish</span>
-                  <span className="block text-[13px] text-white/65">{iosTestFlight ? "TestFlight orqali" : "App Store"}</span>
-                </span>
-              </a>
-            ) : (
-              <span
-                aria-disabled="true"
-                className="inline-flex h-16 cursor-default items-center gap-4 rounded-2xl glass-dark pr-6 pl-5 text-white/70"
-              >
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10"><Smartphone size={20} /></span>
-                <span className="min-w-0 text-left">
-                  <span className="block text-base font-semibold">iPhone (iOS) uchun yuklab olish</span>
-                  <span className="block text-[13px] text-white/55">Tez orada</span>
-                </span>
+            <a
+              href={iosUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-16 items-center gap-4 rounded-2xl glass-dark pr-6 pl-5 text-white transition-colors duration-200 hover:bg-white/15"
+            >
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15"><Smartphone size={20} /></span>
+              <span className="min-w-0 text-left">
+                <span className="block text-base font-semibold">iPhone (iOS) uchun yuklab olish</span>
+                <span className="block text-[13px] text-white/65">App Store</span>
               </span>
-            )}
+            </a>
           </Reveal>
-          <Reveal delay={0.15}>
-            <ul className="mt-6 max-w-3xl space-y-1.5 text-[14px] leading-relaxed text-white/55">
-              {androidSize !== null && (
+          {androidSize !== null && (
+            <Reveal delay={0.15}>
+              <ul className="mt-6 max-w-3xl space-y-1.5 text-[14px] leading-relaxed text-white/55">
                 <li>Android: faylni ochganda telefon «noma&apos;lum manbadan o&apos;rnatish»ga ruxsat so&apos;raydi — ruxsat bering.</li>
-              )}
-              {iosTestFlight && (
-                <li>iPhone: havola avval Apple&apos;ning bepul TestFlight ilovasini o&apos;rnatishni taklif qiladi, so&apos;ng Insof ECO o&apos;rnatiladi.</li>
-              )}
-            </ul>
-          </Reveal>
+              </ul>
+            </Reveal>
+          )}
         </div>
       </section>
 

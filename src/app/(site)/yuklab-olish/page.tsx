@@ -76,7 +76,6 @@ function Bolim({ id, icon, sarlavha, izoh, children }: { id: string; icon: React
 export default async function YuklabOlishPage() {
   const [c, apk, h] = await Promise.all([getCompany(), apkInfo(), headers()]);
   const iosUrl = iosAppUrl();
-  const testFlight = iosUrl?.includes("testflight.apple.com") ?? false;
   const ua = h.get("user-agent") ?? "";
   const iphone = /iPhone|iPad|iPod/i.test(ua);
   const phone = c.phone?.trim() || null;
@@ -148,63 +147,31 @@ export default async function YuklabOlishPage() {
   );
 
   const ios = (
-    <Bolim key="iphone" id="iphone" icon={<Smartphone size={22} />} sarlavha="iPhone" izoh="Apple'ning bepul TestFlight ilovasi orqali o'rnatiladi">
-      {iosUrl ? (
-        <a
-          href={iosUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex h-16 w-full items-center justify-center gap-3 rounded-2xl bg-beton-900 text-lg font-semibold text-white active:scale-[0.98]"
-        >
-          <Download size={22} /> iPhone uchun yuklab olish
-        </a>
-      ) : (
-        <Eslatma>iPhone ilovasi tez orada chiqadi. Hozircha rahbaringizdan so&apos;rang.</Eslatma>
-      )}
-      {iosUrl && testFlight ? (
-        <Qadamlar
-          items={[
-            {
-              sarlavha: <>Yuqoridagi qora <T>iPhone uchun yuklab olish</T> tugmasini bosing</>,
-              matn: <>«TestFlight» sahifasi ochiladi. Unda ikki qadam yozilgan — biz ularni quyida tushuntiramiz.</>,
-            },
-            {
-              sarlavha: <>Avval <b>TestFlight</b> ilovasini o&apos;rnating</>,
-              matn: (
-                <>
-                  Sahifadagi 1-qadam ostidagi <T>View in App Store</T> ni bosing → App Store ochiladi → <T>Yuklash</T> (yoki bulut
-                  belgisi) ni bosing. Face ID yoki Apple ID paroli so&apos;ralishi mumkin — bu sizning telefoningiz paroli.
-                  TestFlight — Apple&apos;ning o&apos;z bepul ilovasi.
-                </>
-              ),
-            },
-            {
-              sarlavha: <>TestFlight o&apos;rnatilgach, <b>shu sahifaga qayting</b> va qora tugmani yana bosing</>,
-              matn: (
-                <>
-                  Endi 2-qadam ostidagi <T>Start Testing</T> (Testni boshlash) ni bosing. TestFlight ochiladi — unda <T>Accept</T>
-                  (Qabul qilish), so&apos;ng <T>Install</T> (O&apos;rnatish) ni bosing.
-                </>
-              ),
-            },
-            {
-              sarlavha: <>O&apos;rnatilgach <T>Open</T> (Ochish) ni bosing</>,
-              matn: (
-                <>
-                  Birinchi ochilishda kichik tushuntirish oynasi chiqadi — <T>Next</T> va <T>Start Testing</T> ni bosing.
-                  Ekranda <b>Insof ECO</b> belgisi paydo bo&apos;ladi. Endi pastdagi «Ilovaga kirish» bo&apos;limiga o&apos;ting.
-                </>
-              ),
-            },
-          ]}
-        />
-      ) : null}
-      {iosUrl && testFlight ? (
-        <Eslatma>
-          Yangi versiya chiqqanda TestFlight&apos;dan xabar keladi — <b>TestFlight</b> ilovasini ochib, Insof ECO yonidagi <T>Update</T> ni bosing.
-          TestFlight&apos;ni o&apos;chirib yubormang.
-        </Eslatma>
-      ) : null}
+    <Bolim key="iphone" id="iphone" icon={<Smartphone size={22} />} sarlavha="iPhone" izoh="App Store orqali o'rnatiladi">
+      <a
+        href={iosUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex h-16 w-full items-center justify-center gap-3 rounded-2xl bg-beton-900 text-lg font-semibold text-white active:scale-[0.98]"
+      >
+        <Download size={22} /> iPhone uchun yuklab olish
+      </a>
+      <Qadamlar
+        items={[
+          {
+            sarlavha: <>Yuqoridagi qora <T>iPhone uchun yuklab olish</T> tugmasini bosing</>,
+            matn: <>App Store&apos;da <b>Insof ECO</b> sahifasi ochiladi.</>,
+          },
+          {
+            sarlavha: <><T>Yuklash</T> (yoki bulut belgisi) ni bosing</>,
+            matn: <>Face ID yoki Apple ID paroli so&apos;ralishi mumkin — bu sizning telefoningiz paroli. Ilova bepul.</>,
+          },
+          {
+            sarlavha: <>O&apos;rnatilgach <T>Ochish</T> ni bosing</>,
+            matn: <>Ekranda <b>Insof ECO</b> belgisi paydo bo&apos;ladi. Endi pastdagi «Ilovaga kirish» bo&apos;limiga o&apos;ting.</>,
+          },
+        ]}
+      />
     </Bolim>
   );
 

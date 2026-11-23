@@ -27,25 +27,24 @@ export async function apkInfo(): Promise<ApkInfo> {
   }
 }
 
-/** iPhone ilovasi faqat shu manzillardan o'rnatiladi. */
-const IOS_HOSTS = ["testflight.apple.com", "apps.apple.com"];
+/** Insof ECO'ning App Store sahifasi (ASC app id 6819408076, O'zbekiston do'koni). */
+export const IOS_APP_STORE_URL = "https://apps.apple.com/uz/app/insof-eco/id6819408076";
 
 /**
- * iPhone ilovasi havolasi — `IOS_APP_URL`.
+ * iPhone ilovasi havolasi — doim App Store sahifasi.
  *
- * iOS ilovani fayldan o'rnatmaydi (APK kabi serverga qo'yib bo'lmaydi): faqat TestFlight yoki App Store.
- * Hozir — TestFlight ochiq havolasi (`https://testflight.apple.com/join/…`), App Store'ga chiqqach —
- * ilova sahifasi (`https://apps.apple.com/app/id…`). Havola almashsa deploy shart emas, `.env` va qayta ishga
- * tushirish kifoya. Bo'sh yoki Apple'ning boshqa manzili bo'lsa tugma ko'rinmaydi.
+ * iOS ilovani fayldan o'rnatmaydi (APK kabi serverga qo'yib bo'lmaydi). Ilova App Store'ga chiqqan, shuning uchun
+ * TestFlight havolasi endi ishlatilmaydi: serverda eski `IOS_APP_URL` (testflight…) qolgan bo'lsa ham e'tiborsiz qoladi.
+ * `IOS_APP_URL` faqat boshqa App Store manzili (`https://apps.apple.com/…`) bilan almashtirish uchun.
  */
-export function iosAppUrl(): string | null {
+export function iosAppUrl(): string {
   const raw = process.env.IOS_APP_URL?.trim();
-  if (!raw) return null;
+  if (!raw) return IOS_APP_STORE_URL;
   try {
     const u = new URL(raw);
-    return u.protocol === "https:" && IOS_HOSTS.includes(u.hostname) ? u.toString() : null;
+    return u.protocol === "https:" && u.hostname === "apps.apple.com" ? u.toString() : IOS_APP_STORE_URL;
   } catch {
-    return null;
+    return IOS_APP_STORE_URL;
   }
 }
 

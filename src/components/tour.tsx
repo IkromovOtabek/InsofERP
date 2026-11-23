@@ -26,7 +26,7 @@ const PAD = 6;      // nishon atrofidagi bo'shliq
 const GAP = 20;     // kartochka bilan nishon orasi — strelka shu oraliqda turadi
 const CARD_W = 330;
 /** Menyu ichidagi nishonlar: telefonda menyu yopiq bo'lsa, uni o'zimiz ochamiz. */
-const IN_MENU = ['[data-tour="nav:', '[data-tour="group:', '[data-tour="logout"]', '[data-tour="apk"]'];
+const IN_MENU = ['[data-tour="nav:', '[data-tour="group:', '[data-tour="logout"]'];
 
 function save(value: string) {
   // Bosqich nomida `?` va `=` bo'lishi mumkin (masalan `nav:/otdel-kadr?tab=lavozimlar`) — kodlaymiz

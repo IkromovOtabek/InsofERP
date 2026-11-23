@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, UsersRound, CalendarDays, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, LayoutGrid, Forklift, Sheet, Layers, Car, Cog, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, UsersRound, CalendarDays, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, LayoutGrid, Forklift, Sheet, Layers, Car, Cog, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { NAV_GROUPS } from "@/lib/nav-groups";
@@ -207,8 +207,8 @@ function NavList({ items, onNavigate, collapsed, flat }: { items: NavItem[]; onN
   );
 }
 
-function SidebarInner({ items, flat, user, brand, product, apk, ios, onNavigate, collapsed, onToggle }:
-  { items: NavItem[]; flat?: boolean; user: User; brand: string; product: string; apk?: string | null; ios?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
+function SidebarInner({ items, flat, user, brand, product, onNavigate, collapsed, onToggle }:
+  { items: NavItem[]; flat?: boolean; user: User; brand: string; product: string; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
     <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-(--sidebar) text-slate-700">
       {/* Yig'ish/yoyish strelkasi — chekkaga osilgan dumaloq tugma. Strelka yo'nalishini CSS buradi. */}
@@ -229,41 +229,6 @@ function SidebarInner({ items, flat, user, brand, product, apk, ios, onNavigate,
       </div>
       <NavList items={items} onNavigate={onNavigate} collapsed={collapsed} flat={flat} />
       <div className="border-t border-slate-200/80 p-3">
-        {/* Mobil ilova — hamma rol uchun, haydovchi ham shu yerdan yuklab oladi.
-            Android — serverdagi APK, iPhone — TestFlight / App Store havolasi. Fayl yoki havola
-            bo'lmasa tugmasi umuman ko'rinmaydi (`lib/apk.ts`). */}
-        {apk != null && (
-          <a
-            href="/api/app/android"
-            download
-            data-tour="apk"
-            onClick={onNavigate}
-            title={`Mobil ilova (Android, ${apk})`}
-            className="mb-1 flex items-center gap-3 rounded-lg px-2 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Download size={15} /></span>
-            <span className="sb-fade min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium">Mobil ilova</span>
-              <span className="block truncate text-[11px] text-slate-500">Android · {apk}</span>
-            </span>
-          </a>
-        )}
-        {ios != null && (
-          <a
-            href={ios}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onNavigate}
-            title="Mobil ilova (iPhone)"
-            className="mb-1 flex items-center gap-3 rounded-lg px-2 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Smartphone size={15} /></span>
-            <span className="sb-fade min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium">Mobil ilova</span>
-              <span className="block truncate text-[11px] text-slate-500">iPhone · {ios.includes("testflight.apple.com") ? "TestFlight" : "App Store"}</span>
-            </span>
-          </a>
-        )}
         <div className="sb-user flex items-center gap-3 rounded-lg px-2 py-2">
           {/* Ism — "Mening hisobim" (login/parolni o'zi o'zgartirish), har qanday rolga ochiq */}
           <Link href="/hisobim" onClick={onNavigate} title="Mening hisobim — login va parol" className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 transition hover:bg-slate-100">
@@ -325,8 +290,8 @@ function currentLabel(path: string, items: NavItem[]) {
 /** Ochilganda chap menyu yig'iladigan sahifalar — jadval ekranning butun eniga yoyilsin (saqlangan tanlov o'zgarmaydi). */
 const WIDE_PAGES = [/^\/orders\/kun\//];
 
-export function AppShell({ items, flat = false, user, brand, product = "Insof ERP", ai = false, apk = null, ios = null, tour, children }:
-  { items: NavItem[]; flat?: boolean; user: User; brand: string; product?: string; ai?: boolean; apk?: string | null; ios?: string | null; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
+export function AppShell({ items, flat = false, user, brand, product = "Insof ERP", ai = false, tour, children }:
+  { items: NavItem[]; flat?: boolean; user: User; brand: string; product?: string; ai?: boolean; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
@@ -369,7 +334,7 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
       <NavHistoryTracker />
       {/* Desktop sidebar */}
       <aside data-tour="sidebar" className="fixed inset-y-0 left-0 z-30 hidden w-[var(--sb-w)] transition-[width] duration-200 lg:block">
-        <SidebarInner items={items} flat={flat} user={user} brand={brand} product={product} apk={apk} ios={ios} collapsed={collapsed} onToggle={toggleSidebar} />
+        <SidebarInner items={items} flat={flat} user={user} brand={brand} product={product} collapsed={collapsed} onToggle={toggleSidebar} />
       </aside>
 
       {/* Mobile drawer */}
@@ -377,7 +342,7 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menyu">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
           <aside className="absolute inset-y-0 left-0 w-[min(20rem,86vw)] shadow-(--shadow-pop) animate-fade-up">
-            <SidebarInner items={items} flat={flat} user={user} brand={brand} product={product} apk={apk} ios={ios} onNavigate={() => setOpen(false)} />
+            <SidebarInner items={items} flat={flat} user={user} brand={brand} product={product} onNavigate={() => setOpen(false)} />
             <button onClick={() => setOpen(false)} aria-label="Menyuni yopish" className="absolute right-2 top-3 flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={20} /></button>
           </aside>
         </div>
