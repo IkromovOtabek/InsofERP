@@ -169,17 +169,20 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
   const held = new Map(ded.rows.map((r) => [r.id, DEDUCTION_CATS.reduce((sm, c) => sm + (r.values[c.key] ?? r.auto[c.key] ?? 0), 0)]));
 
   // ── Tabel: komandalar va biriktirilmaganlar; brigadadagi oklad/kunbay/soatbay xodimlar — «<brigada> — tabel» ──
-  const tabelSheet = (label: string, rows: typeof tabel.rows) => {
+  // `groupCol` — «Barcha xodimlar» varag'ida Lavozimdan keyin «Guruh» (komanda / brigada) ustuni
+  const groupLabel = new Map(tabel.groups.map((g) => [g.key, g.label]));
+  const tabelSheet = (label: string, rows: typeof tabel.rows, groupCol = false) => {
     const sh = new Sheet();
     sh.line(0, `${label} — ${title} tabeli`, S.title);
     sh.line(1, "Soat yoki H — kelmadi, K — kasal, T — ta'til, D — dam olish. Kul rang — davomatdan, yashil — bugun ishda (davom etmoqda). Ushlanmalar — Ish haqi → Ushlanmalar jadvalidan; Qo'liga = Hisob − Ushlanmalar (soliq va avans — C2026 varag'ida).", S.note);
-    const H = 3, c0 = 3, cS = c0 + nDays;
-    ["№", "F.I.O.", "Lavozim"].forEach((t, i) => sh.set(H, i, t, S.head));
+    const H = 3, c0 = groupCol ? 4 : 3, cS = c0 + nDays;
+    ["№", "F.I.O.", "Lavozim", ...(groupCol ? ["Guruh"] : [])].forEach((t, i) => sh.set(H, i, t, S.head));
     tabel.days.forEach((d, i) => sh.set(H, c0 + i, d.day, d.weekend ? S.headWe : S.head));
     ["Soat", "Kun", "Norma", "Stavka", "Hisob", "Ushlanmalar", "Qo'liga"].forEach((t, i) => sh.set(H, cS + i, t, S.head));
     rows.forEach((r, i) => {
       const rr = H + 1 + i;
       sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, r.fullName, S.txt); sh.set(rr, 2, r.position, S.txt);
+      if (groupCol) sh.set(rr, 3, groupLabel.get(r.group) ?? "Biriktirilmagan", S.txt);
       let days = 0, hours = 0;
       for (let d = 1; d <= nDays; d++) {
         const c = r.cells[d];
@@ -210,11 +213,17 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
     sh.set(tr, cS + 1, null, S.totDec, sumF(H + 1, cS + 1, tr - 1, cS + 1));
     for (const c of [cS + 4, cS + 5, cS + 6]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, tr - 1, c));
     sh.width(0, 32); sh.width(1, 220); sh.width(2, 140);
+    if (groupCol) sh.width(3, 150);
     for (let d = 0; d < nDays; d++) sh.width(c0 + d, 34);
     sh.width(cS + 3, 90); sh.width(cS + 4, 100); sh.width(cS + 5, 100); sh.width(cS + 6, 100);
-    sh.frz = [H + 1, 3];
+    sh.frz = [H + 1, c0];
     return sh;
   };
+  // Birinchi varaq — hamma xodim bitta jadvalda (Tabel → «Barchasi» kabi): komandalar → brigadalar → biriktirilmagan, ichida ism bo'yicha.
+  // Sdelkachining puli brigada varag'ida — bu yerda «Hisob» ustunida «sdelka»
+  const order = new Map(tabel.groups.map((g, i) => [g.key, i]));
+  const allRows = [...tabel.rows].sort((a, b) => (order.get(a.group) ?? 999) - (order.get(b.group) ?? 999) || a.fullName.localeCompare(b.fullName));
+  if (allRows.length) push("Barcha xodimlar", tabelSheet("Barcha xodimlar", allRows, true));
   for (const g of tabel.groups) {
     if (g.key === "all" || g.key.startsWith("b:")) continue;
     const rows = tabel.rows.filter((r) => r.group === g.key);
