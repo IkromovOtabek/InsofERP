@@ -3,7 +3,8 @@ import { CalendarDays, Landmark, Receipt, Store } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { companyVatPayer, inputVatReport } from "@/lib/receipt-vat";
 import { date, money } from "@/lib/format";
-import { Badge, Empty, Input, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { DateRangeBar } from "@/components/date-range-bar";
 import { PrintButton } from "@/components/print-button";
 
 const DAY = 86_400_000;
@@ -34,11 +35,7 @@ export default async function InputVatPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader title="Kirim QQS" subtitle="Yetkazuvchilardan olingan mol bo'yicha QQS (NDS 12%) reyestri — oy va yetkazuvchi kesimida" action={<PrintButton />} />
 
-      <form method="get" className="mb-5 flex flex-wrap items-end gap-2 print:hidden">
-        <label className="text-xs text-slate-500">Sanadan<Input type="date" name="from" defaultValue={fromS} className="mt-1 w-44" /></label>
-        <label className="text-xs text-slate-500">Sanagacha<Input type="date" name="to" defaultValue={toS} className="mt-1 w-44" /></label>
-        <button className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
-      </form>
+      <DateRangeBar base="/kirim-qqs" from={from} to={new Date(to.getTime() - DAY)} names={{ from: "from", to: "to" }} yearStart className="mb-5 print:hidden" />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard label="QQS'siz summa" value={money(t.base)} hint={`${t.docs} ta kirim hujjati`} icon={Receipt} tone="info" href="#hujjatlar" />

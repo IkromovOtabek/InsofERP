@@ -5,7 +5,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { tripPhase } from "@/lib/logistics";
 import { dateTime, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
-import { PeriodTabs, PhaseBadge, RangeForm, periodRange, unitShort } from "../ui";
+import { PhaseBadge, RangeForm, periodRange, unitShort } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +37,6 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
     <div>
       <SectionTabs section="reyslar" current="/logistika/nakladnoylar" />
       <PageHeader title="Nakladnoylar" subtitle={`${r.label}: ${trips.length} ta`} info="Har biri QR bilan tekshiriladi (mijoz telefonidan ham)" />
-      <PeriodTabs base="/logistika/nakladnoylar" current={r.period} />
       <RangeForm base="/logistika/nakladnoylar" from={r.from} to={r.to} />
       <form className="mb-3"><input type="hidden" name="period" value={r.period} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Nakladnoy, TTN, mijoz yoki davlat raqami…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Card padded={false}>

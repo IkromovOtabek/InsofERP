@@ -11,7 +11,7 @@ import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { FuelForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
 import { cancelFuel } from "../actions";
-import { PeriodTabs, periodRange, RangeForm } from "../ui";
+import { periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
 import { canDo } from "@/lib/permissions";
@@ -58,7 +58,6 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
     <div>
       <SectionTabs section="transport" current="/logistika/yoqilgi" />
       <PageHeader title="Yoqilg'i" subtitle={r.label} info={`Haydovchi ilovadan ham kiritadi (reys kartasi → "Yoqilg'i")`} />
-      <PeriodTabs base="/logistika/yoqilgi" current={r.period} />
       <RangeForm base="/logistika/yoqilgi" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Quyildi" value={`${fmtNum(liters, 0)} l`} hint={`${active.length} zapravka`} icon={Droplets} tone="brand" href="#zapravkalar" />

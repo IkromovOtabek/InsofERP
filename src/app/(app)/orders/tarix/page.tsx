@@ -3,7 +3,8 @@ import { CalendarDays, ClipboardList, Layers, Percent, TrendingUp } from "lucide
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { money, moneyShort, date, isoDate, qty as q, fmtNum, pct } from "@/lib/format";
-import { Badge, Button, Card, CardHeader, Empty, InfoButton, Input, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Empty, InfoButton, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { DateRangeBar } from "@/components/date-range-bar";
 import { BarChart, DonutChart, HBarList } from "@/components/ui/charts";
 import { ORDER_STATUS } from "../status";
 import type { OrderStatus } from "@/generated/prisma";
@@ -72,10 +73,10 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
       <PageHeader back={{ href: "/orders", label: "Zayavkalar" }} title="Zayavkalar tarixi"
         subtitle={`${date(from)} — ${date(to)} · ${by === "delivery" ? "yetkazish sanasi bo'yicha" : "kiritilgan sana bo'yicha"}`} />
 
+      <DateRangeBar base="/orders/tarix" from={from} to={to} names={{ from: "from", to: "to" }} keep={{ by }} yearStart />
       <form className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        <Input name="from" type="date" defaultValue={isoDate(from)} className="h-9 w-40" />
-        <span className="text-slate-400">—</span>
-        <Input name="to" type="date" defaultValue={isoDate(to)} className="h-9 w-40" />
+        <input type="hidden" name="from" value={isoDate(from)} />
+        <input type="hidden" name="to" value={isoDate(to)} />
         <select name="by" defaultValue={by} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm">
           <option value="created">Kiritilgan sana bo&apos;yicha</option>
           <option value="delivery">Yetkazish sanasi bo&apos;yicha</option>

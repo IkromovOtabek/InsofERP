@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { MONTHS_UZ } from "@/lib/bi/plans";
 import { type MonthKey, addMonths, isMonthKey, monthKeyOf } from "@/lib/fin-report/period";
 import { Button, Input } from "@/components/ui";
+import { DateRangeBar } from "@/components/date-range-bar";
 
 /**
  * Oy tanlash paneli — «Insof 2026» oylik varaqlari (Avtotransport, Xom-ashyo balansi, Tayyor mahsulot, Ish haqi vedomosti).
@@ -18,7 +19,7 @@ export function MonthBar({ base, month, keep = {}, children }: { base: string; m
   const now = monthKeyOf(new Date());
   const q = (m: MonthKey) => `${base}?${new URLSearchParams(Object.entries({ ...keep, oy: m }).filter((kv): kv is [string, string] => !!kv[1]))}`;
   return (
-    <form method="get" action={base} className="mb-4 flex flex-wrap items-center gap-2">
+    <form method="get" action={base} data-excel-period={monthTitle(month)} className="mb-4 flex flex-wrap items-center gap-2">
       {Object.entries(keep).map(([k, v]) => v && <input key={k} type="hidden" name={k} value={v} />)}
       <div className="flex items-center gap-1">
         <Link href={q(addMonths(month, -1))} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Oldingi oy"><ChevronLeft size={16} /></Link>
@@ -78,31 +79,7 @@ export function parseDayRange(sp: { davr?: string; dan?: string; gacha?: string;
 }
 const isoKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+/** «Sanadan — Sanagacha» + tezkor tugmalar — umumiy `DateRangeBar` (`dan`/`gacha`; eski `davr`/`oy` havolalari `parseDayRange` da ishlaydi). */
 export function DayRangeBar({ base, range, keep = {}, children }: { base: string; range: DayRange; keep?: Record<string, string | undefined>; children?: React.ReactNode }) {
-  const today = isoKey(new Date());
-  const q = (o: Record<string, string>) => `${base}?${new URLSearchParams(Object.entries({ ...keep, ...o }).filter((kv): kv is [string, string] => !!kv[1]))}`;
-  return (
-    <div className="mb-4 space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {DAY_PRESETS.map((p) => (
-          <Link key={p.key} href={q({ davr: p.key })}
-            className={`rounded-full border px-3 py-1 text-[13px] font-medium transition ${range.preset === p.key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}>
-            {p.label}
-          </Link>
-        ))}
-      </div>
-      <form method="get" action={base} className="flex flex-wrap items-center gap-2">
-        {Object.entries(keep).map(([k, v]) => v && <input key={k} type="hidden" name={k} value={v} />)}
-        <label className="flex items-center gap-1.5 text-xs text-slate-500">Dan
-          <Input type="date" name="dan" defaultValue={isoKey(range.from)} max={today} className="h-9 w-40" />
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-slate-500">Gacha
-          <Input type="date" name="gacha" defaultValue={isoKey(shift(range.to, -1))} max={today} className="h-9 w-40" />
-        </label>
-        <Button size="sm">Ko&apos;rsatish</Button>
-        <span className="text-[13px] font-medium text-slate-700">{range.label}</span>
-        <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>
-      </form>
-    </div>
-  );
+  return <DateRangeBar base={base} from={range.from} to={shift(range.to, -1)} keep={keep} label={range.label}>{children}</DateRangeBar>;
 }

@@ -13,6 +13,7 @@ export { Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot, type SheetTone 
 export { ColumnFilter, type FilterOption, type SortDir } from "./column-filter";
 export { InfoButton } from "./info-button";
 import { InfoButton } from "./info-button";
+import { PageExcelButton } from "@/components/excel-export";
 
 /* ═══════════════════════ Layout ═══════════════════════ */
 
@@ -34,8 +35,8 @@ export function PageHeader({ title, subtitle, eyebrow, action, back = HOME_BACK,
         <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-[32px]">{title}{info && <InfoButton title={typeof title === "string" ? title : "Sahifa haqida"} size="md">{info}</InfoButton>}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
-      {/* `data-tour` — instruksiya (onboarding) shu belgilarga strelka qo'yadi */}
-      {action && <div data-tour="page-action" className="flex flex-wrap items-center gap-2">{action}</div>}
+      {/* `data-tour` — instruksiya (onboarding) shu belgilarga strelka qo'yadi. «Excel» — sahifada jadval bo'lsa o'zi chiqadi */}
+      <div data-tour={action ? "page-action" : undefined} className="flex flex-wrap items-center gap-2 empty:hidden">{action}<PageExcelButton /></div>
     </div>
   );
 }

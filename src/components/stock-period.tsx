@@ -1,7 +1,5 @@
-import Link from "next/link";
-import { CalendarDays } from "lucide-react";
 import { dateRu, isoDate } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { DateRangeBar } from "./date-range-bar";
 
 /**
  * Sklad jadvallari (Kirim / Chiqim / Qoldiqlar) uchun davr: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (ikkalasi ham kun ichida).
@@ -28,45 +26,8 @@ export function stockPeriod(sp: { from?: string; to?: string }): StockPeriod {
   return { from, to, fromStr: isoDate(from), toStr: isoDate(toIncl), label: all ? `Butun davr — ${dateRu(toIncl)} gacha` : `${dateRu(from)} — ${dateRu(toIncl)}`, all };
 }
 
-/** Tayyor davrlar + ixtiyoriy oraliq (GET forma). `hidden` — sahifaning boshqa parametrlari (tab, sklad…). */
+/** Tayyor davrlar + ixtiyoriy oraliq (GET forma). `hidden` — sahifaning boshqa parametrlari (tab, sklad…). Umumiy ko'rinish — `DateRangeBar`. */
 export function StockPeriodBar({ base, period, hidden = {} }: { base: string; period: StockPeriod; hidden?: Record<string, string> }) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const qs = (from: Date, to: Date) => {
-    const p = new URLSearchParams({ ...hidden, from: isoDate(from), to: isoDate(to) });
-    return `${base}?${p.toString()}`;
-  };
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const prevStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const prevEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-  const weekStart = new Date(today); weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-  const yearStart = new Date(today.getFullYear(), 0, 1);
-  const presets: [string, Date, Date][] = [
-    ["Bugun", today, today],
-    ["Hafta", weekStart, today],
-    ["Joriy oy", monthStart, today],
-    ["O'tgan oy", prevStart, prevEnd],
-    ["Yil boshidan", yearStart, today],
-    ["Hammasi", new Date(`${ALL_FROM}T00:00:00`), today],
-  ];
-  return (
-    <div className="flex flex-wrap items-end gap-2">
-      <div className="flex flex-wrap gap-1">
-        {presets.map(([label, f, t]) => {
-          const active = isoDate(f) === period.fromStr && isoDate(t) === period.toStr;
-          return (
-            <Link key={label} href={qs(f, t)} prefetch={false}
-              className={cn("inline-flex h-9 items-center rounded-lg border px-3 text-sm transition", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
-              {label}
-            </Link>
-          );
-        })}
-      </div>
-      <form action={base} className="flex flex-wrap items-end gap-2">
-        {Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-        <label className="text-xs text-slate-500">Dan<input type="date" name="from" defaultValue={period.fromStr} className="mt-0.5 block h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900" /></label>
-        <label className="text-xs text-slate-500">Gacha<input type="date" name="to" defaultValue={period.toStr} className="mt-0.5 block h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900" /></label>
-        <button className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"><CalendarDays size={15} /> Ko&apos;rsatish</button>
-      </form>
-    </div>
-  );
+  const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
+  return <DateRangeBar base={base} from={period.from} to={toIncl} names={{ from: "from", to: "to" }} keep={hidden} allFrom={ALL_FROM} yearStart label={period.label} className="mb-0" />;
 }

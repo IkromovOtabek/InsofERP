@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Badge, Tabs } from "@/components/ui";
+import { DateRangeBar } from "@/components/date-range-bar";
+import { Badge } from "@/components/ui";
 import { isoDate } from "@/lib/format";
 import { minutesLabel, ORDER_LOGI, TRIP_PHASE, VEHICLE_LIVE, type Level, type OrderLogiStatus, type TripPhase, type VehicleLive } from "@/lib/logistics";
 
@@ -66,29 +67,10 @@ export function periodRange(sp: { period?: string; from?: string; to?: string },
   return { period: p, from, to, label: "Shu oy" };
 }
 
-export function PeriodTabs({ base, current, extra = "" }: { base: string; current: Period; extra?: string }) {
-  const q = (p: string) => `${base}?period=${p}${extra ? `&${extra}` : ""}`;
-  return (
-    <Tabs current={current} items={[
-      { key: "day", label: "Kunlik", href: q("day") },
-      { key: "week", label: "Haftalik", href: q("week") },
-      { key: "month", label: "Oylik", href: q("month") },
-    ]} />
-  );
-}
-
-/** Sana oralig'i formasi (GET) — "Kunlik/Haftalik/Oylik" dan tashqari ixtiyoriy davr. */
+/** Davr: «Sanadan — Sanagacha» + tezkor tugmalar (umumiy `DateRangeBar`, `period=custom&from&to`). */
 export function RangeForm({ base, from, to, hidden = {} }: { base: string; from: Date; to: Date; hidden?: Record<string, string> }) {
   const toIncl = new Date(to); toIncl.setDate(toIncl.getDate() - 1);
-  return (
-    <form action={base} className="mb-4 flex flex-wrap items-end gap-2 text-sm">
-      <input type="hidden" name="period" value="custom" />
-      {Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-      <label className="text-xs text-slate-500">Dan<input type="date" name="from" defaultValue={isoDate(from)} className="mt-1 block h-9 rounded-lg border border-slate-200 px-2 text-sm" /></label>
-      <label className="text-xs text-slate-500">Gacha<input type="date" name="to" defaultValue={isoDate(toIncl)} className="mt-1 block h-9 rounded-lg border border-slate-200 px-2 text-sm" /></label>
-      <button className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium hover:bg-slate-50">Ko'rsatish</button>
-    </form>
-  );
+  return <DateRangeBar base={base} from={from} to={toIncl} names={{ from: "from", to: "to" }} keep={hidden} extra={{ period: "custom" }} yearStart />;
 }
 
 /** `plain` — reys sahifasi foydalanuvchiga yopiq (dispetcher): raqam havolasiz chiqadi. */

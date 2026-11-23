@@ -5,7 +5,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { ISSUE_KIND, tripPhase } from "@/lib/logistics";
 import { dateTime, qty } from "@/lib/format";
 import { Badge, Card, Empty, InfoButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { PeriodTabs, PhaseBadge, periodRange, RangeForm } from "../ui";
+import { PhaseBadge, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,6 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
     <div>
       <SectionTabs section="reyslar" current="/logistika/yetkazish" />
       <PageHeader title="Yetkazib berish" subtitle={r.label} info="Yuklangan va qabul qilingan miqdor, qaytgan beton, muammolar" />
-      <PeriodTabs base="/logistika/yetkazish" current={r.period} />
       <RangeForm base="/logistika/yetkazish" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Yuklangan" value={qty(loaded)} hint={`${trips.length} reys`} icon={PackageCheck} tone="brand" href={`/logistika/yetkazish?${extra}`} />

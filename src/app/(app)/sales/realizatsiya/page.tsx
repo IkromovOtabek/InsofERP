@@ -9,6 +9,7 @@ import { LINE_CELLS, SOURCE_LINE_CELLS, SOURCE_NOTE_CELLS, realizationLog, reali
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { Button, Callout, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, Tabs } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
+import { DateRangeBar } from "@/components/date-range-bar";
 import { ConfirmButton } from "@/app/(app)/payments/confirm-button";
 import { deleteRealizationAction } from "./actions";
 import { CellEdit, EntryButton, NoteButton, OptionsProvider, type CellList } from "./forms";
@@ -259,13 +260,13 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
         <StatCard label="Qo'lda qatorlar" value={`${manual} ta`} hint="tizimga reys bo'lib tushmagan" icon={PenLine} href={manual ? qs({ manba: "MANUAL" }) : undefined} />
       </div>
 
+      <DateRangeBar base="/sales/realizatsiya" from={from} to={to} names={{ from: "from", to: "to" }} keep={{ tur, guruh, manba, joy, q: sp.q }} yearStart />
       <form className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         {tur && <input type="hidden" name="tur" value={tur} />}
         {guruh && <input type="hidden" name="guruh" value={guruh} />}
         {manba && <input type="hidden" name="manba" value={manba} />}
-        <Input name="from" type="date" defaultValue={isoDate(from)} className="h-9 w-40" aria-label="Davr boshi" />
-        <span className="text-slate-400">—</span>
-        <Input name="to" type="date" defaultValue={isoDate(to)} className="h-9 w-40" aria-label="Davr oxiri" />
+        <input type="hidden" name="from" value={isoDate(from)} />
+        <input type="hidden" name="to" value={isoDate(to)} />
         <Select name="joy" defaultValue={joy ?? ""} className="h-9 w-44" aria-label="Ortilgan joy">
           <option value="">Barcha ortilgan joy</option>
           {places.map((p) => <option key={p} value={p}>{p === NO_PLACE ? "Ortilgan joy yo'q" : p}</option>)}

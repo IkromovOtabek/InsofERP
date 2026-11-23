@@ -9,7 +9,8 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requireRoles } from "@/lib/page-guard";
 import { money, date, isoDate, opAt } from "@/lib/format";
-import { Badge, Button, Card, Empty, InfoButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
+import { Badge, Button, Card, Empty, InfoButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { DateRangeBar } from "@/components/date-range-bar";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { TxForm } from "./tx-form";
 import { CashCloseRow, type CloseRow } from "./cash-close";
@@ -154,6 +155,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader title="Kirim-Chiqim" subtitle={cat ? `Detalizatsiya: «${cat}» — sana, summa, kontragent, hisob, kim kiritgan. ` : undefined}
         info="Pul oqimi jurnali: mijoz to'lovlari (Kassa/bank'dan avtomatik), boshqa kirimlar va barcha chiqimlar." action={cat ? <Link href={`/cashflow?tab=${tab}&from=${isoDate(from)}&to=${isoDate(to)}`} className="text-sm text-slate-500 hover:text-slate-900">✕ Filtrni olib tashlash</Link> : undefined} />
+      <DateRangeBar base="/cashflow" from={from} to={to} names={{ from: "from", to: "to" }} keep={{ tab, category: cat, account: acc, method }} />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Kirim (davr)" value={money(inc)} icon={ArrowDownLeft} tone="success" href={`${qs("INCOME")}#jurnal`} />
         <StatCard label="Chiqim (davr)" value={money(exp)} icon={ArrowUpRight} tone={exp > 0 ? "danger" : "default"} href={`${qs("EXPENSE")}#jurnal`} />
@@ -261,9 +263,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         <form className="flex flex-wrap items-center gap-2 text-sm">
           <input type="hidden" name="tab" value={tab} />
           {cat && <input type="hidden" name="category" value={cat} />}
-          <Input name="from" type="date" aria-label="Boshlanish sanasi" defaultValue={isoDate(from)} className="h-9 w-40" />
-          <span className="text-slate-400">—</span>
-          <Input name="to" type="date" aria-label="Tugash sanasi" defaultValue={isoDate(to)} className="h-9 w-40" />
+          <input type="hidden" name="from" value={isoDate(from)} />
+          <input type="hidden" name="to" value={isoDate(to)} />
           <select name="account" aria-label="Kassa / hisob" defaultValue={acc ?? ""} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="">Barcha hisoblar</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           <select name="method" aria-label="To'lov usuli" defaultValue={method ?? ""} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="">Naqd va bank</option>{(["CASH", "BANK"] as const).map((m) => <option key={m} value={m}>{CASH_METHOD_LABEL[m]}</option>)}</select>
           <Button variant="secondary" className="h-9 text-sm">Ko&apos;rsatish</Button>

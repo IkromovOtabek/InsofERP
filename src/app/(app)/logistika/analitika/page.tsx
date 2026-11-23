@@ -6,7 +6,7 @@ import { avgMin, cost, logisticsReport, onTimePct } from "@/lib/logistics-report
 import { delayLevel, ISSUE_KIND, minutesLabel, tripDelayMin, VEHICLE_TYPE } from "@/lib/logistics";
 import { money, moneyShort, qty } from "@/lib/format";
 import { Card, CardHeader, PageHeader, StatCard } from "@/components/ui";
-import { PeriodTabs, periodRange, RangeForm } from "../ui";
+import { periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
 
@@ -70,7 +70,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     <div>
       <SectionTabs section="hisobot" current="/logistika/analitika" />
       <PageHeader title="Logistika analitikasi" subtitle={r.label} />
-      <PeriodTabs base="/logistika/analitika" current={r.period} />
       <RangeForm base="/logistika/analitika" from={r.from} to={r.to} />
       {/* Bekor qilingan reys bazadan o'chiriladi — uning kartasi yo'q */}
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">

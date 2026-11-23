@@ -2,10 +2,11 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { Sparkles, Zap, Download, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fmtNum, isoDate } from "@/lib/format";
+import { fmtNum } from "@/lib/format";
 import { Badge, type BadgeColor, InfoButton, valueLength } from "@/components/ui";
 import { Sparkline } from "@/components/ui/charts";
 import { type Range, rangeQuery, addDays } from "@/lib/bi/core";
+import { DateRangeBar } from "@/components/date-range-bar";
 
 /* ───────────── Marshrutlar (Team24 sidebar tuzilmasi) ───────────── */
 
@@ -22,25 +23,9 @@ export const routeOf = (tab: string) => (ROUTES as Record<string, string>)[tab] 
 /* ───────────── Davr paneli ───────────── */
 
 export function PeriodBar({ range, tab, keep, className }: { range: Range; tab: string; keep?: Record<string, string | undefined>; className?: string }) {
-  const path = routeOf(tab);
-  const extra = Object.entries(keep ?? {}).filter((kv): kv is [string, string] => !!kv[1]);
-  const q = (p: Record<string, string>) => { const u = new URLSearchParams([...extra, ...Object.entries(p)]); return `${path}?${u}`; };
-  const btn = (p: "day" | "month" | "year", label: string) => (
-    <Link href={q({ period: p })} className={cn("rounded-lg px-3 py-1.5 text-[13px] font-medium transition", range.period === p ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100")}>{label}</Link>
-  );
-  return (
-    <div className={cn("mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-2 shadow-(--shadow-card)", className)}>
-      <div className="flex gap-1">{btn("day", "Kunlik")}{btn("month", "Oylik")}{btn("year", "Yillik")}</div>
-      <form method="get" action={path} className="flex flex-wrap items-center gap-1.5 text-[13px]">
-        {extra.map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-        <input type="date" name="from" aria-label="Boshlanish sanasi" defaultValue={isoDate(range.from)} className="h-8 rounded-lg border border-slate-200 px-2 text-[13px]" />
-        <span className="text-slate-400">—</span>
-        <input type="date" name="to" aria-label="Tugash sanasi" defaultValue={isoDate(addDays(range.to, -1))} className="h-8 rounded-lg border border-slate-200 px-2 text-[13px]" />
-        <button className="h-8 rounded-lg border border-slate-200 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50">Qo'llash</button>
-      </form>
-      <div className="ml-auto text-[13px] text-slate-500"><span className="font-medium text-slate-800">{range.label}</span> <span className="text-slate-400">· taqqoslash: {range.prevLabel}</span></div>
-    </div>
-  );
+  // Umumiy «Sanadan — Sanagacha» + tezkor tugmalar; `from`/`to` → `parseRange` da custom davr (taqqoslash — teng oldingi davr)
+  return <DateRangeBar base={routeOf(tab)} from={range.from} to={addDays(range.to, -1)} names={{ from: "from", to: "to" }} keep={keep} yearStart
+    label={`${range.label} · taqqoslash: ${range.prevLabel}`} className={cn("mb-5", className)} />;
 }
 
 export const tabHref = (range: Range, tab: string, extra?: Record<string, string>) => `${routeOf(tab)}?${rangeQuery(range, extra)}`;

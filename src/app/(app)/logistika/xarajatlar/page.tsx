@@ -11,7 +11,7 @@ import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { ExpenseForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
 import { cancelExpense } from "../actions";
-import { PeriodTabs, periodRange, RangeForm } from "../ui";
+import { periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
 import { canDo } from "@/lib/permissions";
@@ -56,7 +56,6 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
         <p>Yoqilg&apos;i + boshqa xarajatlar = logistika tannarxi.</p>
         <p>Bu logistika tannarxi hisobi. Kassadan to&apos;lov (naqd/bank) Kirim-Chiqimda alohida yoziladi.</p>
       </>} />
-      <PeriodTabs base="/logistika/xarajatlar" current={r.period} />
       <RangeForm base="/logistika/xarajatlar" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         {m ? <>

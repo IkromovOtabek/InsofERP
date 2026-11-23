@@ -5,7 +5,7 @@ import { avgMin, cost, logisticsReport, onTimePct } from "@/lib/logistics-report
 import { isoDate, money, moneyShort, qty } from "@/lib/format";
 import { minutesLabel, VEHICLE_TYPE } from "@/lib/logistics";
 import { Card, CardHeader, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
-import { PeriodTabs, periodRange, RangeForm } from "../ui";
+import { periodRange, RangeForm } from "../ui";
 import { ExcelButton } from "../excel-button";
 import { SectionTabs } from "@/components/section-tabs";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
@@ -33,7 +33,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       <SectionTabs section="hisobot" current="/logistika/hisobotlar" />
       <PageHeader title="Logistika hisobotlari" subtitle={`${r.label} · ${isoDate(r.from)} — ${isoDate(new Date(r.to.getTime() - 86_400_000))}`}
         action={<ExcelButton file={`logistika-${isoDate(r.from)}`} sheets={sheets} />} />
-      <PeriodTabs base="/logistika/hisobotlar" current={r.period} />
       <RangeForm base="/logistika/hisobotlar" from={r.from} to={r.to} />
 
       <Card className="mb-5">
