@@ -1,3 +1,4 @@
+import type { PayType } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { monthTitle } from "@/lib/davomat";
 import { date, fmtNum, money } from "@/lib/format";
@@ -7,7 +8,7 @@ import { brigadeSheet } from "./brigade-sheet";
 import { DEDUCTION_CATS } from "./deduction-cats";
 import { deductionsMonth, listWithholdings } from "./deductions";
 import { listDebts } from "./employee-debt";
-import { calculate } from "./payroll";
+import { calculate, payrollSettings } from "./payroll";
 import { groupOf, groupOrder, tabelMonth, type TabelEmp } from "./tabel";
 import { parseTabelValue } from "./tabel-value";
 import { SHEET_COLS, sheetGroups, type SheetSrcLine } from "./vedomost-sheet";
@@ -24,7 +25,9 @@ import { SHEET_COLS, sheetGroups, type SheetSrcLine } from "./vedomost-sheet";
  * soat jamilari — Excel formulasi (SUM), pul — ERP hisobi.
  */
 
-export type ErpSheet = { id: string; name: string; hidden: boolean; data: SheetData };
+/** «Stavka» katagidagi qalam (tahrir oynasi) — manzil (A1) → xodim. Ko'rsatish ruxsatini sahifa hal qiladi (payroll.rate). */
+export type RateCell = { employeeId: string; fullName: string; payType: PayType; rate: number };
+export type ErpSheet = { id: string; name: string; hidden: boolean; data: SheetData; rates?: Record<string, RateCell> };
 
 const S = {
   title: { b: 1, fs: 1.25 } as SheetStyle,
@@ -40,6 +43,9 @@ const S = {
   auto: { bd: 15, ha: "center", i: 1, fc: "94A3B8" } as SheetStyle,
   live: { bd: 15, ha: "center", i: 1, fc: "059669", b: 1 } as SheetStyle,
   autoNum: { bd: 15, z: "#,##0;-#,##0;", i: 1, fc: "0369A1" } as SheetStyle,
+  autoNumB: { bd: 15, z: "#,##0;-#,##0;", i: 1, b: 1, fc: "0369A1" } as SheetStyle,
+  /** 0 ham ko'rinadi (Avans: berilmagan — 0) */
+  num0: { bd: 15, z: "#,##0;-#,##0" } as SheetStyle,
   code: { bd: 15, ha: "center", b: 1, fc: "DC2626" } as SheetStyle,
   tot: { bd: 15, b: 1, bg: "F1F5F9", z: "#,##0;-#,##0;" } as SheetStyle,
   totDec: { bd: 15, b: 1, bg: "F1F5F9", z: "0.##;-0.##;", ha: "center" } as SheetStyle,
@@ -54,6 +60,7 @@ class Sheet {
   cells: Record<string, Cell> = {};
   cw: Record<number, number> = {};
   mg: [number, number, number, number][] = [];
+  rates: Record<string, RateCell> = {};
   nr = 0; nc = 0;
   frz?: [number, number];
   /** Sarlavha / izoh qatorlari — butun eniga birlashtiriladi (matn qisqa ustunda kesilmasin) */
@@ -156,17 +163,81 @@ function payList(caption: string, cols: [string, string], groups: PayGroup[]): S
   return sh;
 }
 
+/**
+ * Shu oy xodimga berilgan avans — oy yakuni hisobidagi (`calculate` FINAL) manbalar bilan bir xil: avans / alohida to'lov
+ * vedomostlarida to'langani (tasdiqlangan, to'langan) va Avans varaqasida «Berildi» belgilangani.
+ */
+async function givenAdvances(month: string): Promise<Map<string, number>> {
+  const [runs, sheets] = await Promise.all([
+    db.payrollLine.findMany({ where: { paid: { gt: 0 }, run: { month, kind: { in: ["ADVANCE", "EXTRA"] }, status: { in: ["APPROVED", "PAID"] } } }, select: { employeeId: true, paid: true } }),
+    db.advanceLine.findMany({ where: { givenAt: { not: null }, amount: { gt: 0 }, sheet: { month, status: { not: "CANCELLED" } } }, select: { employeeId: true, amount: true } }),
+  ]);
+  const m = new Map<string, number>();
+  for (const l of runs) m.set(l.employeeId, (m.get(l.employeeId) ?? 0) + Number(l.paid));
+  for (const l of sheets) m.set(l.employeeId, (m.get(l.employeeId) ?? 0) + Number(l.amount));
+  return m;
+}
+
 export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
   const title = monthTitle(month);
   const out: ErpSheet[] = [];
   const used = new Set<string>();
-  const push = (name: string, sh: Sheet) => { const n = sheetName(name, used); out.push({ id: `erp:${month}:${out.length}`, name: n, hidden: false, data: sh.data() }); };
+  const push = (name: string, sh: Sheet) => {
+    const n = sheetName(name, used);
+    out.push({ id: `erp:${month}:${out.length}`, name: n, hidden: false, data: sh.data(), ...(Object.keys(sh.rates).length ? { rates: sh.rates } : {}) });
+  };
 
-  const [tabel, ded] = await Promise.all([tabelMonth(month, "all"), deductionsMonth(month)]);
+  const [tabel, ded, st, given] = await Promise.all([tabelMonth(month, "all"), deductionsMonth(month), payrollSettings(), givenAdvances(month)]);
   const nDays = tabel.days.length;
   // Har xodimning shu oy ushlanmasi (Ushlanmalar jadvali: yozilgani, bo'sh bo'lsa — avtomatik) — tabel va brigada
-  // varaqlarida «Ushlanmalar» va «Qo'liga» (hisob − ushlanma) ustunlari shundan
+  // varaqlarida «Ushlanmalar» ustuni shundan
   const held = new Map(ded.rows.map((r) => [r.id, DEDUCTION_CATS.reduce((sm, c) => sm + (r.values[c.key] ?? r.auto[c.key] ?? 0), 0)]));
+  // Soliq (JShDS) — Ish haqi sozlamalaridagi foiz (odatda 12%), oy yakuni vedomostidagi kabi hisoblangan summadan
+  const pct = Number(st.incomeTaxPct);
+  const taxCol = `Soliq ${String(pct).replace(".", ",")}%`;
+  const taxOf = (x: number) => r0((x * pct) / 100);
+  const taxF = (r: number, c: number) => `ROUND(${addrOf(r, c)}*${pct}/100,0)`;
+  // Jami — xodim qo'liga tegadigan: hisob − soliq − ushlanmalar − berilgan avans
+  const jamiF = (r: number, cHisob: number, cTax: number, cUsh: number, cAdv: number) => `${addrOf(r, cHisob)}-${addrOf(r, cTax)}-${addrOf(r, cUsh)}-${addrOf(r, cAdv)}`;
+  const advOf = (id: string) => r0(given.get(id) ?? 0);
+
+  // ── Brigada varaqlari ma'lumoti (parallel yuklanadi) — avval: sdelkachining soliq va jamisi «Barcha xodimlar» da ham ──
+  const bGroups = tabel.groups.filter((x) => x.key.startsWith("b:"));
+  const bPrep = (await Promise.all(bGroups.map((g) => brigadeSheet(month, g.key.slice(2))))).map((b) => {
+    if (!b) return null;
+    // Son: qo'lda yozilgani (0 ham), bo'sh bo'lsa — ishlab chiqarishda brigada bajargani (kul rang)
+    const qtyOf = (line: string, d: number): { q: number; auto: boolean } | null => {
+      const m = b.qty[line]?.[d];
+      if (m !== undefined) return { q: m, auto: false };
+      const a = b.autoQty[line]?.[d];
+      return a !== undefined ? { q: a, auto: true } : null;
+    };
+    // Qo'lda yozilgan soat (0 — ishlamadi) — o'sha, bo'sh — davomatdan (sahifadagi va vedomostdagi qoida)
+    const hourOf = (id: string, d: number): { h: number; kind: "m" | "a" | "l" } | null => {
+      const m = b.hours[id]?.[d];
+      if (m !== undefined) return m > 0 ? { h: m, kind: "m" } : null;
+      const a = b.auto[id]?.[d];
+      return a ? { h: a.h, kind: a.live ? "l" : "a" } : null;
+    };
+    const calc = calcBrigadeSheet({
+      days: nDays, brak: b.brakManual ?? b.brakAuto,
+      // Bugun hali ishda («davom etmoqda») — vedomost kabi pulga kirmaydi, katakda ko'rinadi
+      hours: Object.fromEntries(b.members.map((m) => [m.id, Array.from({ length: nDays }, (_, i) => { const x = hourOf(m.id, i + 1); return x && x.kind !== "l" ? x.h : null; })])),
+      lines: b.lines.map((l) => ({ ...l, qty: Array.from({ length: nDays }, (_, i) => qtyOf(l.name, i + 1)?.q ?? null) })),
+    });
+    return { b, qtyOf, hourOf, calc };
+  });
+  // Sdelkachi (o'z brigadasi varag'ida): soliq — «Hisoblandi» dan, jami — Summa (brak ayirilgan) − soliq − ushlanma − avans
+  const pieceOut = new Map<string, { tax: number; jami: number }>();
+  for (const p of bPrep) {
+    if (!p) continue;
+    for (const m of p.b.members) {
+      if (m.guest || m.payType !== "PIECE") continue;
+      const c = p.calc.emp[m.id];
+      const tax = taxOf(c?.amount ?? 0);
+      pieceOut.set(m.id, { tax, jami: (c?.net ?? 0) - tax - r0(held.get(m.id) ?? 0) - advOf(m.id) });
+    }
+  }
 
   // ── Tabel: komandalar va biriktirilmaganlar; brigadadagi oklad/kunbay/soatbay xodimlar — «<brigada> — tabel» ──
   // `groupCol` — «Barcha xodimlar» varag'ida Lavozimdan keyin «Guruh» (komanda / brigada) ustuni
@@ -174,11 +245,13 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
   const tabelSheet = (label: string, rows: typeof tabel.rows, groupCol = false) => {
     const sh = new Sheet();
     sh.line(0, `${label} — ${title} tabeli`, S.title);
-    sh.line(1, "Soat yoki H — kelmadi, K — kasal, T — ta'til, D — dam olish. Kul rang — davomatdan, yashil — bugun ishda (davom etmoqda). Ushlanmalar — Ish haqi → Ushlanmalar jadvalidan; Qo'liga = Hisob − Ushlanmalar (soliq va avans — C2026 varag'ida).", S.note);
+    sh.line(1, `Soat yoki H — kelmadi, K — kasal, T — ta'til, D — dam olish. Kul rang — davomatdan, yashil — bugun ishda (davom etmoqda). ${taxCol} — Hisobdan; Ushlanmalar — Ish haqi → Ushlanmalar jadvalidan; Avans — shu oy berilgan avans; Jami = Hisob − Soliq − Ushlanmalar − Avans (qo'lga tegadi). Sdelkachining soliq va jamisi (ko'k) — brigada varag'idan.`, S.note);
     const H = 3, c0 = groupCol ? 4 : 3, cS = c0 + nDays;
+    // Ustunlar: cS Soat · +1 Kun · +2 Norma · +3 Stavka · +4 Hisob · +5 Soliq · +6 Ushlanmalar · +7 Avans · +8 Jami
+    const cH = cS + 4, cT = cS + 5, cU = cS + 6, cA = cS + 7, cJ = cS + 8;
     ["№", "F.I.O.", "Lavozim", ...(groupCol ? ["Guruh"] : [])].forEach((t, i) => sh.set(H, i, t, S.head));
     tabel.days.forEach((d, i) => sh.set(H, c0 + i, d.day, d.weekend ? S.headWe : S.head));
-    ["Soat", "Kun", "Norma", "Stavka", "Hisob", "Ushlanmalar", "Qo'liga"].forEach((t, i) => sh.set(H, cS + i, t, S.head));
+    ["Soat", "Kun", "Norma", "Stavka", "Hisob", taxCol, "Ushlanmalar", "Avans", "Jami"].forEach((t, i) => sh.set(H, cS + i, t, S.head));
     rows.forEach((r, i) => {
       const rr = H + 1 + i;
       sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, r.fullName, S.txt); sh.set(rr, 2, r.position, S.txt);
@@ -200,22 +273,34 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
       sh.set(rr, cS + 1, Math.round(days * 100) / 100, S.dec);
       sh.set(rr, cS + 2, r.payType === "SALARY" ? r.normDays : null, S.hrs);
       sh.set(rr, cS + 3, r.rate || null, S.num);
-      sh.set(rr, cS + 4, sum == null ? "sdelka" : r0(sum), S.num);
-      const ush = r0(held.get(r.id) ?? 0);
-      sh.set(rr, cS + 5, ush || null, S.num);
-      // Sdelkachining puli brigada varag'ida — bu yerda qo'liga hisoblanmaydi
-      if (sum != null) sh.set(rr, cS + 6, r0(sum) - ush, S.numB, `${addrOf(rr, cS + 4)}-${addrOf(rr, cS + 5)}`);
+      // Stavka qalami (oklad / kunbay / soatbay); sdelkachining puli brigada varag'idan — stavka ishlatilmaydi
+      if (r.payType !== "PIECE") sh.rates[addrOf(rr, cS + 3)] = { employeeId: r.id, fullName: r.fullName, payType: r.payType, rate: r.rate };
+      sh.set(rr, cH, sum == null ? "sdelka" : r0(sum), S.num);
+      const ush = r0(held.get(r.id) ?? 0), adv = advOf(r.id);
+      sh.set(rr, cU, ush || null, S.num);
+      sh.set(rr, cA, adv, S.num0);
+      if (sum != null) {
+        const tax = taxOf(r0(sum));
+        sh.set(rr, cT, tax, S.num, taxF(rr, cH));
+        sh.set(rr, cJ, r0(sum) - tax - ush - adv, S.numB, jamiF(rr, cH, cT, cU, cA));
+      } else {
+        // Sdelka: soliq va jami o'z brigadasi varag'idan (Hisoblandi → soliq, Summa − soliq − ushlanma − avans)
+        const p = pieceOut.get(r.id);
+        sh.set(rr, cT, p?.tax || null, S.autoNum);
+        if (p) sh.set(rr, cJ, p.jami, S.autoNumB);
+      }
     });
     const tr = H + 1 + rows.length;
     sh.set(tr, 1, `Jami (${rows.length})`, S.tot);
     for (let d = 0; d < nDays; d++) sh.set(tr, c0 + d, null, S.totDec, sumF(H + 1, c0 + d, tr - 1, c0 + d));
     sh.set(tr, cS, null, S.totDec, sumF(H + 1, cS, tr - 1, cS));
     sh.set(tr, cS + 1, null, S.totDec, sumF(H + 1, cS + 1, tr - 1, cS + 1));
-    for (const c of [cS + 4, cS + 5, cS + 6]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, tr - 1, c));
+    for (const c of [cH, cT, cU, cA, cJ]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, tr - 1, c));
     sh.width(0, 32); sh.width(1, 220); sh.width(2, 140);
     if (groupCol) sh.width(3, 150);
     for (let d = 0; d < nDays; d++) sh.width(c0 + d, 34);
-    sh.width(cS + 3, 90); sh.width(cS + 4, 100); sh.width(cS + 5, 100); sh.width(cS + 6, 100);
+    sh.width(cS + 3, 100);
+    for (const c of [cH, cT, cU, cA, cJ]) sh.width(c, 100);
     sh.frz = [H + 1, c0];
     return sh;
   };
@@ -230,43 +315,24 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
     if (rows.length) push(g.label, tabelSheet(g.label, rows));
   }
 
-  // ── Brigada varaqlari (parallel yuklanadi) ──
-  const bGroups = tabel.groups.filter((x) => x.key.startsWith("b:"));
-  const bSheets = await Promise.all(bGroups.map((g) => brigadeSheet(month, g.key.slice(2))));
+  // ── Brigada varaqlari ──
   for (const [gi, g] of bGroups.entries()) {
-    const b = bSheets[gi];
+    const p = bPrep[gi];
     const others = tabel.rows.filter((r) => r.group === g.key && r.payType !== "PIECE");
     if (others.length) push(`${g.label} — tabel`, tabelSheet(`${g.label} (oklad/kunbay)`, others));
-    if (!b) continue;
+    if (!p) continue;
+    const { b, qtyOf, hourOf, calc } = p;
     const hasAny = b.members.some((m) => b.hours[m.id] || b.auto[m.id]) || Object.keys(b.qty).length > 0 || Object.keys(b.autoQty).length > 0;
-    // Son: qo'lda yozilgani (0 ham), bo'sh bo'lsa — ishlab chiqarishda brigada bajargani (kul rang)
-    const qtyOf = (line: string, d: number): { q: number; auto: boolean } | null => {
-      const m = b.qty[line]?.[d];
-      if (m !== undefined) return { q: m, auto: false };
-      const a = b.autoQty[line]?.[d];
-      return a !== undefined ? { q: a, auto: true } : null;
-    };
     if (!hasAny && !b.members.length) continue;
-    // Qo'lda yozilgan soat (0 — ishlamadi) — o'sha, bo'sh — davomatdan (sahifadagi va vedomostdagi qoida)
-    const hourOf = (id: string, d: number): { h: number; kind: "m" | "a" | "l" } | null => {
-      const m = b.hours[id]?.[d];
-      if (m !== undefined) return m > 0 ? { h: m, kind: "m" } : null;
-      const a = b.auto[id]?.[d];
-      return a ? { h: a.h, kind: a.live ? "l" : "a" } : null;
-    };
-    const calc = calcBrigadeSheet({
-      days: nDays, brak: b.brakManual ?? b.brakAuto,
-      // Bugun hali ishda («davom etmoqda») — vedomost kabi pulga kirmaydi, katakda ko'rinadi
-      hours: Object.fromEntries(b.members.map((m) => [m.id, Array.from({ length: nDays }, (_, i) => { const x = hourOf(m.id, i + 1); return x && x.kind !== "l" ? x.h : null; })])),
-      lines: b.lines.map((l) => ({ ...l, qty: Array.from({ length: nDays }, (_, i) => qtyOf(l.name, i + 1)?.q ?? null) })),
-    });
     const sh = new Sheet();
     sh.line(0, `${b.brigade.name} — ${title} (brigada varag'i)`, S.title);
-    sh.line(1, "Kunlik fond = Σ soni × narx, shu kungi soatga bo'linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. Kul rang soat — davomatdan. Kul rang son — ishlab chiqarishda brigada «bajarildi» qayd qilgani. Qo'liga = Summa − Ushlanmalar (Ushlanmalar jadvalidan).", S.note);
+    sh.line(1, `Kunlik fond = Σ soni × narx, shu kungi soatga bo'linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. Kul rang soat — davomatdan. Kul rang son — ishlab chiqarishda brigada «bajarildi» qayd qilgani. ${taxCol} — Hisoblandidan; Ushlanmalar — Ushlanmalar jadvalidan; Avans — shu oy berilgan; Jami = Summa − Soliq − Ushlanmalar − Avans (qo'lga tegadi).`, S.note);
     const H = 3, c0 = 2, cS = c0 + nDays;
+    // Ustunlar: cS Soat · +1 Kun · +2 Ulush · +3 Hisoblandi · +4 Brak · +5 Summa · +6 Soliq · +7 Ushlanmalar · +8 Avans · +9 Jami
+    const cAm = cS + 3, cSum = cS + 5, cT = cS + 6, cU = cS + 7, cA = cS + 8, cJ = cS + 9;
     ["№", "F.I.O."].forEach((t, i) => sh.set(H, i, t, S.head));
     b.days.forEach((d, i) => sh.set(H, c0 + i, d.day, d.weekend ? S.headWe : S.head));
-    ["Soat", "Kun", "Ulush", "Hisoblandi", "Brak", "Summa", "Ushlanmalar", "Qo'liga"].forEach((t, i) => sh.set(H, cS + i, t, S.head));
+    ["Soat", "Kun", "Ulush", "Hisoblandi", "Brak", "Summa", taxCol, "Ushlanmalar", "Avans", "Jami"].forEach((t, i) => sh.set(H, cS + i, t, S.head));
     b.members.forEach((m, i) => {
       const rr = H + 1 + i;
       sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, m.fullName + (m.guest ? " (boshqa brigadadan)" : ""), S.txt);
@@ -281,11 +347,17 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
       sh.set(rr, cS + 3, c?.amount ?? null, S.num);
       sh.set(rr, cS + 4, c?.brak || null, S.num);
       sh.set(rr, cS + 5, c ? c.net : null, S.tot);
-      // Ushlanma xodimning o'z brigadasi varag'ida (boshqa brigadadan kelgani — o'z varag'ida; oklad/kunbay a'zo — tabelida)
+      // Soliq, ushlanma, avans va jami — xodimning o'z brigadasi varag'ida (boshqa brigadadan kelgani — o'z varag'ida;
+      // oklad/kunbay a'zo — tabelida)
       const own = !m.guest && m.payType === "PIECE";
-      const ush = own ? r0(held.get(m.id) ?? 0) : 0;
-      sh.set(rr, cS + 6, ush || null, S.num);
-      if (own) sh.set(rr, cS + 7, (c?.net ?? 0) - ush, S.numB, `${addrOf(rr, cS + 5)}-${addrOf(rr, cS + 6)}`);
+      if (own) {
+        const po = pieceOut.get(m.id);
+        const ush = r0(held.get(m.id) ?? 0);
+        sh.set(rr, cT, po?.tax || null, S.num, taxF(rr, cAm));
+        sh.set(rr, cU, ush || null, S.num);
+        sh.set(rr, cA, advOf(m.id), S.num0);
+        sh.set(rr, cJ, po?.jami ?? 0, S.numB, jamiF(rr, cSum, cT, cU, cA));
+      }
     });
     const tr = H + 1 + b.members.length;
     sh.set(tr, 1, "Jami soat", S.tot);
@@ -293,7 +365,7 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
     sh.set(tr, cS, calc.total.hours, S.totDec, sumF(H + 1, cS, tr - 1, cS));
     sh.set(tr, cS + 2, r0(calc.total.raw), S.tot); sh.set(tr, cS + 3, calc.total.amount, S.tot);
     sh.set(tr, cS + 4, calc.total.brak, S.tot); sh.set(tr, cS + 5, calc.total.net, S.tot);
-    for (const c of [cS + 6, cS + 7]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, tr - 1, c));
+    for (const c of [cT, cU, cA, cJ]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, tr - 1, c));
     // Mahsulot qatorlari
     const P = tr + 2;
     sh.set(P, 0, "Narx", S.head); sh.set(P, 1, "Mahsulot — soni", S.head);
@@ -315,7 +387,7 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
     sh.set(fr + 2, 1, `Brak (oy): ${fmtNum(b.brakManual ?? b.brakAuto)}${b.brakManual == null ? " — brak yozuvlaridan" : ""}`, S.note);
     sh.width(0, 70); sh.width(1, 220);
     for (let d = 0; d < nDays; d++) sh.width(c0 + d, 40);
-    for (let i = 0; i < 8; i++) sh.width(cS + i, 90);
+    for (let i = 0; i < 10; i++) sh.width(cS + i, 90);
     sh.frz = [H + 1, 2];
     push(b.brigade.name, sh);
   }

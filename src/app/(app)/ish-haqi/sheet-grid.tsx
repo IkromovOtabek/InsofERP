@@ -1,11 +1,17 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Eye, EyeOff, Loader2, Minus, Plus, Undo2 } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
+import { Check, Eye, EyeOff, Loader2, Minus, Pencil, Plus, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtNum, numText } from "@/lib/format";
 import { Book, addrOf, colName, displayVal, isErr, parseInput, rawText, type Cell, type SheetData, type SheetStyle, type Val } from "@/lib/sheet-calc";
-import { saveCellsAction } from "./varaq-actions";
+import { Button, Field, FormError } from "@/components/ui";
+import { MoneyInput } from "@/components/money-input";
+import { PAY_RATE_HINT, PAY_TYPE_LABEL } from "@/lib/hr/labels";
+import type { RateCell } from "@/lib/hr/erp-workbook";
+import { saveCellsAction, saveRateAction } from "./varaq-actions";
 
 /**
  * Oylik varaqlari — Excel kabi jadval: varaq tablari (pastda), formula satri, katak/blok tanlash, tahrir.
@@ -15,7 +21,8 @@ import { saveCellsAction } from "./varaq-actions";
  * Saqlash darhol (`saveCellsAction`), formulalar shu zahoti brauzerda qayta hisoblanadi (`lib/sheet-calc.ts`).
  */
 
-export type GridSheet = { id: string; name: string; hidden: boolean; data: SheetData };
+/** `rates` — ERP kitobida «Stavka» katagidagi qalam (manzil → xodim), `canRate` bo'lsa ko'rinadi. */
+export type GridSheet = { id: string; name: string; hidden: boolean; data: SheetData; rates?: Record<string, RateCell> };
 
 const HEAD_H = 22, NUM_W = 44, DEF_W = 64, DEF_H = 20, PAD = 3;
 const EXTRA_R = 15, EXTRA_C = 3; // tahrirda varaq oxiridan keyin bo'sh qator/ustunlar
@@ -84,6 +91,8 @@ const BASE_CSS = `.xg td.xl-in{background-image:linear-gradient(var(--xl-sel),va
 type Ctx = {
   m: Model; d: SheetData; cells: Record<string, Cell>; book: Book; si: number;
   val: (r: number, c: number) => Val;
+  /** Stavka qalami: shu varaqdagi manzillar va bosilganda oyna */
+  rates?: Record<string, RateCell>; onRate?: (x: RateCell) => void;
 };
 
 /** Katak ko'rinadigan matni va tekislashi. */
@@ -121,10 +130,12 @@ const GridRow = memo(function GridRow({ ctx, vi, selC1, selC2, actC, edit, setEd
     let height = 0;
     for (let i = vi; i < vi + rs && i < m.h.length; i++) height += m.h[i];
     const { text, align, cell, st } = shown(ctx, r, c);
-    // matn bo'sh qo'shni kataklarga chiqadi (Excel'dagidek), faqat chapga tekislangan, ko'chirilmaydigan matn
+    // matn bo'sh qo'shni kataklarga chiqadi (Excel'dagidek), faqat chapga tekislangan, ko'chirilmaydigan matn;
+    // muzlatilgan ustun matni muzlatilgan qismdan chiqmaydi (yopishqoq katak o'ngdagi kataklar ustini yopib, bosishni to'sardi)
     let ow = width;
     if (text && !sp && align === "left" && !st?.w && typeof ctx.val(r, c) === "string") {
-      for (let j = ci + 1; j < m.cols.length && ow < 1600; j++) {
+      const lim = ci < m.frC && vi >= m.frR ? m.frC : m.cols.length;
+      for (let j = ci + 1; j < lim && ow < 1600; j++) {
         const cc = m.cols[j];
         if (m.span.has(key(r, cc)) || m.covered.has(key(r, cc))) break;
         const nc = cells[addrOf(r, cc)];
@@ -145,6 +156,8 @@ const GridRow = memo(function GridRow({ ctx, vi, selC1, selC2, actC, edit, setEd
     if (vi === 0 && bd & 1) style.borderTop = "1px solid var(--xl-bd)";
     if (ci === 0 && bd & 8) style.borderLeft = "1px solid var(--xl-bd)";
     if (!st?.ha) style.textAlign = align;
+    const rate = ctx.onRate ? ctx.rates?.[addrOf(r, c)] : undefined;
+    if (rate) style.position = "relative";
     if (frozenRow || frozenCol || editing) {
       style.position = "sticky";
       if (frozenRow) style.top = m.top[vi];
@@ -163,6 +176,12 @@ const GridRow = memo(function GridRow({ ctx, vi, selC1, selC2, actC, edit, setEd
         ) : (
           <div className={cn("xl-c", st?.w && "xl-w")} style={{ width: ow - PAD * 2 - 1, maxHeight: height - 1, paddingInline: PAD, boxSizing: "content-box" }}>{text}</div>
         )}
+        {rate && !editing && (
+          <button type="button" onClick={() => ctx.onRate!(rate)} title={`${rate.fullName} — stavkani o'zgartirish`} aria-label={`${rate.fullName} — stavkani o'zgartirish`}
+            className="absolute top-1/2 left-0.5 inline-flex h-[18px] w-[18px] -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-brand-50 hover:text-brand-700">
+            <Pencil size={11} />
+          </button>
+        )}
       </td>,
     );
   }
@@ -178,7 +197,8 @@ const GridRow = memo(function GridRow({ ctx, vi, selC1, selC2, actC, edit, setEd
   );
 });
 
-export function SheetGrid({ sheets, canEdit, initial }: { sheets: GridSheet[]; canEdit: boolean; initial?: string }) {
+export function SheetGrid({ sheets, canEdit, initial, canRate = false }: { sheets: GridSheet[]; canEdit: boolean; initial?: string; canRate?: boolean }) {
+  const [rateFor, setRateFor] = useState<RateCell | null>(null);
   const firstVisible = Math.max(0, sheets.findIndex((s) => !s.hidden));
   const [si, setSi] = useState(() => {
     const i = initial ? sheets.findIndex((s) => s.name === initial) : -1;
@@ -241,7 +261,11 @@ export function SheetGrid({ sheets, canEdit, initial }: { sheets: GridSheet[]; c
   const [showHidden, setShowHidden] = useState(false);
   const hasHidden = !!(data.hc?.length || data.hr?.length);
   const m = useMemo(() => buildModel(data, canEdit, zoom / 100, showHidden), [data, canEdit, zoom, showHidden]);
-  const ctx = useMemo<Ctx>(() => ({ m, d: data, cells: effCells[si], book, si, val: (r, c) => book.value(si, r, c) }), [m, data, effCells, si, book]);
+  const rates = sheet.rates;
+  const ctx = useMemo<Ctx>(() => ({
+    m, d: data, cells: effCells[si], book, si, val: (r, c) => book.value(si, r, c),
+    ...(canRate && rates ? { rates, onRate: setRateFor } : {}),
+  }), [m, data, effCells, si, book, canRate, rates]);
   const css = useMemo(() => BASE_CSS + styleCss(data.st), [data.st]);
 
   // Varaq almashsa — tanlov boshiga, URL'da varaq nomi (yangilanganda shu varaq ochilsin)
@@ -606,6 +630,52 @@ export function SheetGrid({ sheets, canEdit, initial }: { sheets: GridSheet[]; c
           </span>
         )}
       </div>
+      {rateFor && <RateDialog target={rateFor} onClose={() => setRateFor(null)} />}
     </div>
   );
+}
+
+/** «Stavka» qalami: xodim kartasidagi tarif stavka (oklad oyiga / kunbay kuniga / soatbay soatiga) — saqlansa kitob qayta tuziladi. */
+function RateDialog({ target, onClose }: { target: RateCell; onClose: () => void }) {
+  const router = useRouter();
+  const [value, setValue] = useState(target.rate ? String(target.rate) : "");
+  const [err, setErr] = useState("");
+  const [pending, run] = useTransition();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal((
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onMouseDown={onClose}>
+      <form role="dialog" aria-label="Stavkani o'zgartirish" onMouseDown={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            const r = await saveRateAction(target.employeeId, value);
+            if (r.error) { setErr(r.error); return; }
+            router.refresh();
+            onClose();
+          });
+        }}
+        className="w-full max-w-sm space-y-4 rounded-(--radius-card) border border-slate-200 bg-white p-5 shadow-(--shadow-pop)">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">Stavkani o&apos;zgartirish</h2>
+            <p className="text-sm text-slate-600">{target.fullName} · {PAY_TYPE_LABEL[target.payType]}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
+        </div>
+        <Field label="Stavka" hint={PAY_RATE_HINT[target.payType]}>
+          <MoneyInput value={value} onChange={setValue} decimals={0} ariaLabel="Stavka" placeholder="0" />
+        </Field>
+        <p className="text-xs text-slate-500">Xodim kartasidagi tarif stavka o&apos;zgaradi: tabel varaqlaridagi Hisob, Soliq va Jami shu zahoti qayta hisoblanadi, keyingi vedomostlar ham yangi stavka bilan. Tasdiqlangan vedomostlar o&apos;zgarmaydi. Amallar tarixiga yoziladi.</p>
+        <FormError error={err} />
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Bekor qilish</Button>
+          <Button disabled={pending}><Check size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+        </div>
+      </form>
+    </div>
+  ), document.body);
 }

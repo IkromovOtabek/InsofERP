@@ -6,6 +6,7 @@ import { requireAction } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
 import { SHEETS_MAX_BYTES, SheetImportError, cancelWorkbook, createWorkbook, parseWorkbook, saveCells } from "@/lib/payroll-sheets";
 import type { Cell } from "@/lib/sheet-calc";
+import { saveEmployeeRate } from "@/lib/hr/deductions";
 
 /* Oylik varaqlari (Excel kitobi) — qoidalar `lib/payroll-sheets.ts` da. Ruxsat: payroll.sheets (Sekretar). */
 
@@ -36,6 +37,16 @@ export async function saveCellsAction(sheetId: string, items: { addr: string; in
   if (typeof sheetId !== "string" || !Array.isArray(items)) return { error: "So'rov noto'g'ri" };
   const clean = items.filter((x) => x && typeof x.addr === "string" && typeof x.input === "string");
   return saveCells(s, sheetId, clean);
+}
+
+/** ERP kitobidagi «Stavka» qalami — xodim tarif stavkasi. Ruxsat: payroll.rate (Sekretar, direktor). */
+export async function saveRateAction(employeeId: string, value: string): Promise<{ error?: string; ok?: boolean }> {
+  const s = await requireAction("payroll", "rate");
+  if (typeof employeeId !== "string" || typeof value !== "string") return { error: "So'rov noto'g'ri" };
+  const r = await saveEmployeeRate(s, employeeId, value);
+  if ("error" in r) return { error: r.error };
+  revalidatePath("/ish-haqi");
+  return { ok: true };
 }
 
 export async function cancelWorkbookAction(id: string, reason: string): Promise<ActionState> {

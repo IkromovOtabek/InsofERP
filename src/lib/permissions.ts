@@ -218,6 +218,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "sheets",   label: "Oylik varaqlari (Excel) — yuklash, ko'rish va tahrirlash", roles: ["SECRETARY"], hint: "Korxonaning oylik Excel kitobi barcha varaqlari bilan; formulalar ERP ichida qayta hisoblanadi" },
     { key: "tabel",    label: "Tabel — soatlarni kiritish va Excel'dan import", roles: ["SECRETARY"], hint: "Ish haqi → Tabel: kunlik soat (8, 4…) yoki H/K/T/D; oklad va kunbay shu soat ÷ 8 bo'yicha hisoblanadi" },
     { key: "deductions", label: "Ushlanmalar — aliment/ijro, qarz to'lovi, oylikdan qarz, to'y puli, jarima", roles: ["SECRETARY"], hint: "Ish haqi → Ushlanmalar (Excel C2026 G–K ustunlari) va ijro/aliment daftari; oy yakuni vedomostida ushlanadi" },
+    { key: "rate",     label: "Oylik varaqlarida xodim stavkasini o'zgartirish", roles: ["SECRETARY"], hint: "Ish haqi → Oylik varaqlari: «Stavka» katagidagi qalam — xodim kartasidagi tarif stavka (oklad / kunlik / soatlik); tasdiqlangan vedomostlar o'zgarmaydi" },
     { key: "advance_delete", label: "Avans varaqasini o'chirish", roles: [], hint: "Kassadan pul chiqmagan varaqa (qoralama, jo'natilgan, bekor qilingan, kassasiz qo'lda avans) butunlay o'chadi — Amallar tarixida qoladi. Odatda direktor" },
     { key: "advance", label: "Avans varaqasi — tuzish, saqlash va jo'natish", roles: ["SECRETARY", "HR", "ACCOUNTING"], hint: "Ish haqi → Avans: oy boshidan bugungacha ishlagani, avansni qo'lda yozish; jo'natilgan xodim (kassa huquqi bilan) «Berildi» belgilaydi — kassadan chiqim" },
   ],

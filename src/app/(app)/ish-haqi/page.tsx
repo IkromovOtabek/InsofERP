@@ -76,7 +76,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
         {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} />
           : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} />
           : tab === "avans" ? <AvansTab canEdit={canAdv} canDelete={canDeleteAdvance(s)} canCash={canGiveAdvance(s)} />
-          : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />
+          : tab === "varaqlar" ? <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} canRate={canPayroll(s, "rate")} />
           : <><DebtTable debts={debts} canCancel={canDebts} />{canDeduct && <LedgersPanel />}</>}
       </div>
     );
@@ -96,7 +96,7 @@ export default async function PayrollPage({ searchParams }: { searchParams: Prom
       <div className="space-y-4" data-wide="">
         <PageHeader title="Ish haqi" info={tab === "tabel" ? TABEL_INFO : tab === "ushlanmalar" ? DEDUCT_INFO : tab === "avans" ? AVANS_INFO : SHEETS_INFO} />
         <Tabs current={tab} items={tabItems} />
-        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : tab === "avans" ? <AvansTab canEdit={canAdv} canDelete={canDeleteAdvance(s)} canCash={canGiveAdvance(s)} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} />}
+        {tab === "tabel" ? <TabelTab oy={sp.oy} guruh={sp.guruh} canEdit={canTabel} /> : tab === "ushlanmalar" ? <DeductionsTab oy={sp.oy} canEdit={canDeduct} /> : tab === "avans" ? <AvansTab canEdit={canAdv} canDelete={canDeleteAdvance(s)} canCash={canGiveAdvance(s)} /> : <SheetsTab kitob={sp.kitob} varaq={sp.varaq} oy={sp.oy} canEdit={canSheets} canRate={canPayroll(s, "rate")} />}
       </div>
     );
   }
@@ -341,7 +341,7 @@ async function TabelTab({ oy, guruh, canEdit }: { oy?: string; guruh?: string; c
  * «Oylik varaqlari»: kitob tanlash — «ERP ma'lumotidan» (Excel yuklanmasa ham, oy bo'yicha avtomatik: tabel, brigada
  * varaqlari, ushlanmalar, C2026, avans, qarzlar — faqat ko'rish) yoki yuklangan Excel kitobi (tahrirlanadi).
  */
-async function SheetsTab({ kitob, varaq, oy, canEdit }: { kitob?: string; varaq?: string; oy?: string; canEdit: boolean }) {
+async function SheetsTab({ kitob, varaq, oy, canEdit, canRate }: { kitob?: string; varaq?: string; oy?: string; canEdit: boolean; canRate: boolean }) {
   const list = await listWorkbooks();
   const thisMonth = monthOf(today());
   const months = Array.from({ length: 15 }, (_, i) => shiftMonth(thisMonth, 1 - i)).map((m) => ({ key: m, label: monthTitle(m) }));
@@ -366,9 +366,10 @@ async function SheetsTab({ kitob, varaq, oy, canEdit }: { kitob?: string; varaq?
           <span className="ml-auto"><LinkButton href={`/ish-haqi/varaq-excel?erp=${erpMonth}`} variant="secondary" size="sm"><FileSpreadsheet size={14} /> Excel yuklab olish</LinkButton></span>
         </div>
         <Callout tone="info" title="Excel yuklanmagan — kitob ERP ma'lumotidan">
-          Varaqlar Tabel, brigada varaqlari, Ushlanmalar, Vedomostlar va qarzlar daftaridan o&apos;zi tuziladi (faqat ko&apos;rish). O&apos;zgartirish — shu bo&apos;limlarning o&apos;zida; bu yerda darhol ko&apos;rinadi.
+          Varaqlar Tabel, brigada varaqlari, Ushlanmalar, Avans, Vedomostlar va qarzlar daftaridan o&apos;zi tuziladi (faqat ko&apos;rish). O&apos;zgartirish — shu bo&apos;limlarning o&apos;zida; bu yerda darhol ko&apos;rinadi.
+          {canRate && <> Xodim stavkasi — «Stavka» katagidagi qalam bilan shu yerda.</>}
         </Callout>
-        <SheetGrid key={`erp:${erpMonth}`} canEdit={false} initial={varaq} sheets={sheets} />
+        <SheetGrid key={`erp:${erpMonth}`} canEdit={false} canRate={canRate} initial={varaq} sheets={sheets} />
         {upload && <Fold title="Oylik Excel faylini yuklash (o'tish davrida solishtirish uchun)">{upload}</Fold>}
       </div>
     );

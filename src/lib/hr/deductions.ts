@@ -371,3 +371,25 @@ export async function savePayoutAmounts(who: Who, items: { employeeId: string; f
   });
   return { saved };
 }
+
+/**
+ * Xodim stavkasi (`Employee.tariffRate` — oklad oyiga / kunbay kuniga / soatbay soatiga), «Oylik varaqlari» dagi qalamdan.
+ * Bo'sh yoki 0 — stavka olib tashlanadi. Tasdiqlangan vedomost qatorlari o'zgarmaydi — keyingi hisobda yangi stavka.
+ */
+export async function saveEmployeeRate(who: Who, employeeId: string, value: string): Promise<{ error: string } | { ok: true; rate: number | null }> {
+  const t = String(value ?? "").replace(/[\s'’]/g, "").replace(",", ".");
+  const n = t === "" ? 0 : Number(t);
+  if (!Number.isFinite(n) || n < 0 || n > 1e11) return { error: `«${value}» — stavka noto'g'ri` };
+  const rate = n === 0 ? null : r0(n);
+  return db.$transaction(async (tx) => {
+    const cur = await tx.employee.findUnique({ where: { id: employeeId }, select: { fullName: true, tariffRate: true, payType: true } });
+    if (!cur) return { error: "Xodim topilmadi" };
+    if (cur.payType === "PIECE") return { error: `${cur.fullName} — sdelka: puli brigada varag'idan (mahsulot × narx), stavka ishlatilmaydi` };
+    const before = cur.tariffRate != null ? num(cur.tariffRate) : null;
+    if (before !== rate) {
+      await tx.employee.update({ where: { id: employeeId }, data: { tariffRate: rate } });
+      await audit(tx, who.userId, "UPDATE", "Employee", employeeId, { tariffRate: before }, { tariffRate: rate, xodim: cur.fullName, manba: "Ish haqi → Oylik varaqlari" });
+    }
+    return { ok: true as const, rate };
+  });
+}

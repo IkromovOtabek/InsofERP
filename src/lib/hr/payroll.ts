@@ -46,7 +46,7 @@ export const PAYROLL_CATEGORY = "Ish haqi";
 export const PAYROLL_VIEW_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 /** Kim nima qiladi — `lib/permissions.ts` → "payroll" (direktor ruxsati bilan); veb va mobil bir xil. */
 export type PayrollWho = { userId: string; role: Role; perms?: Perms };
-export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "tabel" | "deductions" | "advance" | "advance_delete") => canDo(who, "payroll", what);
+export const canPayroll = (who: Pick<PayrollWho, "role" | "perms">, what: "calc" | "approve" | "pay" | "settings" | "debts" | "sheets" | "rate" | "tabel" | "deductions" | "advance" | "advance_delete") => canDo(who, "payroll", what);
 /** Ish haqi bo'yicha mas'ul rollar — vedomostlarni har doim ko'radi. */
 const RUN_ROLES = ["HR", "ACCOUNTING", "FINANCE", "CASHIER", "DIRECTOR", "SUPERADMIN"];
 /**
@@ -65,7 +65,12 @@ const thousand = (n: number) => Math.round(n / 1000) * 1000;
 const num = (v: unknown) => Number(v ?? 0);
 
 export async function payrollSettings(tx: Prisma.TransactionClient = db): Promise<PayrollSettings> {
-  return (await tx.payrollSettings.findUnique({ where: { id: "main" } })) ?? (await tx.payrollSettings.create({ data: { id: "main" } }));
+  const s = await tx.payrollSettings.findUnique({ where: { id: "main" } });
+  if (s) return s;
+  // Yangi bazada bir sahifa bir vaqtda bir necha joydan so'raydi (`erpWorkbook` + `tabelMonth`…) — ikkinchi yaratish
+  // P2002 bilan yiqilmasin (ON CONFLICT DO NOTHING; tranzaksiya ichida ham buzilmaydi)
+  await tx.payrollSettings.createMany({ data: [{ id: "main" }], skipDuplicates: true });
+  return tx.payrollSettings.findUniqueOrThrow({ where: { id: "main" } });
 }
 
 // ───────────────────────── Hisob ─────────────────────────
