@@ -20,6 +20,10 @@ import { dayUtc, validDay } from "@/lib/davomat";
 import { normalizePhone } from "@/lib/phone";
 import { audit } from "@/lib/audit";
 import { accountBalance, tashkentDay } from "@/lib/nazorat/checks";
+import { isEditable, orderEdit, type EditOrderItem } from "@/lib/orders";
+import { productCatalog, groupPath } from "@/lib/product-catalog";
+import { withNds, withoutNds } from "@/lib/nds";
+import { createOpening, monthEndDate, setCashBalanceAt } from "@/lib/opening-balances";
 import type { MobileUser } from "./auth";
 import type { CreateForm, CreateResult } from "./create";
 import type { DetailAction, DetailField, FormField, FormOption, MobileDetail } from "./detail";
@@ -557,10 +561,116 @@ async function teamDetail(id: string): Promise<MobileDetail> {
   };
 }
 
+/* ══════════════════════ Zayavkani tahrirlash ══════════════════════ */
+
+const isTrue = (v: unknown) => v === true || v === "true" || v === "1";
+const numOf = (v: unknown) => Number(str(v).replace(/\s+/g, "").replace(",", "."));
+
+/**
+ * Zayavka kartochkasiga «Tahrirlash» (veb `/orders/[id]/edit` bilan bitta qoida — `orderEdit`): mijoz zayavkasi, ishlab
+ * chiqarish boshlanguncha (zames ham, reys ham yo'q). Forma hozirgi qiymatlar bilan to'ldiriladi; narx NDS'siz ko'rsatiladi.
+ */
+export async function withOrderEdit(user: MobileUser, d: MobileDetail): Promise<MobileDetail> {
+  if (!canDo(who(user), "orders", "edit")) return d;
+  const o = await db.order.findUnique({
+    where: { id: d.id },
+    include: {
+      items: { orderBy: { id: "asc" }, include: { block: { select: { name: true } } } },
+      batches: { where: { cancelledAt: null }, select: { id: true } }, trips: { select: { id: true } },
+    },
+  });
+  if (!o || o.kind !== "SALE" || !isEditable(o)) return d;
+  const catalog = await productCatalog();
+  // Katalogda faqat faol mahsulot — zayavkadagi nofaol mahsulot ham tanlovda tursin (aks holda qator bo'sh ko'rinardi)
+  const missing = [...new Set(o.items.map((i) => i.productId))].filter((pid) => !catalog.products.some((p) => p.id === pid));
+  const extra = missing.length ? await db.product.findMany({ where: { id: { in: missing } }, select: { id: true, name: true, unit: true } }) : [];
+  const form: FormField[] = [
+    ...(o.status === "DRAFT" ? [{ name: "dateUnknown", label: "Sana hali aniq emas", type: "switch" as const, value: String(o.dateUnknown) }] : []),
+    { name: "deliveryDate", label: "Yetkazish sanasi", type: "date", required: true, value: isoDate(o.deliveryDate) },
+    { name: "deliveryAddress", label: "Obyekt manzili", type: "text", required: true, value: o.deliveryAddress },
+    {
+      name: "items", label: "Mahsulot", type: "items", required: true, hint: "Narx NDS'siz; «NDS 12%» tanlangan qatorda soliq qo'shib saqlanadi. Brigadaga berilgan qator o'chmaydi",
+      columns: [
+        { name: "productId", label: "Mahsulot", type: "select", required: true, options: [
+          ...catalog.products.map((p) => { const path = groupPath(catalog.groups, p.groupId); return { value: p.id, label: `${path ? `${path} › ` : ""}${p.name} · ${p.unit}`, extra: { price: String(Math.round(Number(p.price))) } }; }),
+          ...extra.map((p) => ({ value: p.id, label: `${p.name} · ${p.unit} (nofaol)` })),
+        ] },
+        { name: "qtyM3", label: "Hajmi (mahsulot birligida)", type: "number", required: true },
+        { name: "price", label: "Narx (1 birlik, NDS'siz)", type: "number", required: true },
+        { name: "nds", label: "NDS 12%", type: "select", value: "0", options: [{ value: "0", label: "NDS'siz" }, { value: "1", label: "NDS 12% qo'shilsin" }] },
+        { name: "block", label: "Obyekt bloki", type: "text", placeholder: "masalan «A blok» — ixtiyoriy" },
+      ],
+      rows: o.items.map((i) => ({
+        productId: i.productId, qtyM3: String(Number(i.qtyM3)),
+        price: String(i.nds ? withoutNds(Number(i.price)) : Number(i.price)), nds: i.nds ? "1" : "0", block: i.block?.name ?? "",
+      })),
+    },
+    { name: "needsPump", label: "Nasos kerak", type: "switch", value: String(o.needsPump) },
+    { name: "needsDelivery", label: "Dastavka kerak", type: "switch", value: String(o.needsDelivery) },
+    { name: "deliveryFee", label: "Dastavka summasi (so'm)", type: "number", value: String(Number(o.deliveryFee ?? 0)), showIf: { field: "needsDelivery", equals: "true" } },
+    { name: "isUrgent", label: "Shoshilinch", type: "switch", value: String(o.isUrgent) },
+    { name: "onCredit", label: "Qarzga", type: "switch", value: String(o.onCredit) },
+    { name: "payMethod", label: "To'lov usuli", type: "select", value: o.payMethod ?? "CASH", options: [{ value: "CASH", label: "Naqd (kassa)" }, { value: "BANK", label: "Perechisleniye (bank)" }] },
+    { name: "prepayAmount", label: "Kutilayotgan avans (so'm)", type: "number", value: o.prepayAmount ? String(Number(o.prepayAmount)) : "" },
+    { name: "note", label: "Izoh", type: "text", value: o.note ?? "" },
+  ];
+  return { ...d, actions: [...d.actions, { id: "order.edit", label: "Tahrirlash", tone: "brand", form }] };
+}
+
+/**
+ * Formadagi qatorlar → `orderEdit` qatorlari. Ilova qator id'sini yubormaydi — mavjud qatorga mahsuloti bo'yicha
+ * bog'lanadi (avval o'sha o'rindagi, keyin birinchi bo'sh qator): brigadaga berilgan qator yangi qator bo'lib qolmasin.
+ */
+async function runOrderEdit(user: MobileUser, id: string, p: Record<string, unknown>): Promise<string> {
+  const o = await db.order.findUnique({ where: { id }, select: { kind: true, lat: true, lng: true, deliveryDate: true, items: { orderBy: { id: "asc" }, select: { id: true, productId: true } } } });
+  if (!o) return fail("Zayavka topilmadi", 404);
+  if (o.kind !== "SALE") return fail("Sklad zayavkasi bu yerda tahrirlanmaydi");
+  const raw = Array.isArray(p.items) ? (p.items as Record<string, unknown>[]) : [];
+  const free = new Set(o.items.map((i) => i.id));
+  const items: EditOrderItem[] = raw.map((r, idx) => {
+    const productId = str(r.productId);
+    const same = o.items[idx];
+    const match = same && free.has(same.id) && same.productId === productId ? same : o.items.find((i) => free.has(i.id) && i.productId === productId);
+    if (match) free.delete(match.id);
+    const nds = str(r.nds) === "1";
+    const price = numOf(r.price);
+    return { id: match?.id ?? null, productId, qtyM3: numOf(r.qtyM3), price: nds ? withNds(price) : price, nds, block: str(r.block) || null };
+  });
+  if (items.some((i) => !i.productId || !Number.isFinite(i.qtyM3) || !Number.isFinite(i.price))) return fail("Mahsulot, hajm va narxni to'ldiring");
+  const dateUnknown = isTrue(p.dateUnknown);
+  const day = validDay(str(p.deliveryDate));
+  if (!dateUnknown && !day) return fail("Yetkazish sanasini kiriting");
+  const needsDelivery = isTrue(p.needsDelivery);
+  const prepay = str(p.prepayAmount) ? numOf(p.prepayAmount) : 0;
+  if (!Number.isFinite(prepay) || prepay < 0) return fail("Bosh to'lov raqam bo'lsin");
+  const r = await orderEdit(id, {
+    items,
+    // Kun o'zgarmagan bo'lsa — asl qiymat (vaqt qismi farqi «sana o'zgardi / o'tib ketgan» bo'lib chiqmasin); yangi kun — vebdagidek
+    deliveryDate: day ? (day === isoDate(o.deliveryDate) ? o.deliveryDate : new Date(day)) : new Date(),
+    dateUnknown,
+    isUrgent: isTrue(p.isUrgent),
+    note: str(p.note) || null,
+    deliveryAddress: str(p.deliveryAddress),
+    // Xarita nuqtasi ilovada tahrirlanmaydi — o'zgarmasin (aks holda obyekt nuqtasi o'chib ketardi)
+    lat: o.lat, lng: o.lng,
+    needsPump: isTrue(p.needsPump),
+    needsDelivery,
+    deliveryFee: needsDelivery ? numOf(p.deliveryFee) || 0 : 0,
+    onCredit: isTrue(p.onCredit),
+    prepayAmount: prepay,
+    payMethod: str(p.payMethod) === "BANK" ? "BANK" : str(p.payMethod) === "CASH" ? "CASH" : null,
+    via: "mobile-edit",
+  }, user.id);
+  if (r.error) return fail(r.error);
+  if (!r.changed) return "O'zgarish yo'q";
+  return r.status === "BLOCKED" ? "Saqlandi — summa limitdan oshdi, zayavka bloklandi (direktor ochadi)" : "Zayavka saqlandi";
+}
+
 /* ══════════════════════ Amallar ══════════════════════ */
 
 export async function runPortAction(user: MobileUser, action: string, id: string, payload: Record<string, unknown>): Promise<string> {
   switch (action) {
+    case "order.edit": return runOrderEdit(user, id, payload);
     case "ledger.edit": {
       const { kind, id: rowId } = parseLedgerId(id);
       const d = await ledgerEditData(kind, rowId);
@@ -639,6 +749,36 @@ export async function portForm(user: MobileUser, key: string): Promise<CreateFor
       ],
     };
   }
+  if (key === "oy-qoldiq") {
+    const accs = await db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } });
+    const cur = monthKeyOf(new Date());
+    const months = [1, 2, 3].map((i) => addMonths(cur, -i));
+    return {
+      key, title: "Oy oxiri qoldiqlari", submitLabel: "Saqlash",
+      fields: [
+        { name: "oy", label: "Qaysi oy oxiriga", type: "select", required: true, value: months[0], options: months.map((m) => ({ value: m, label: periodMonthLabel(m) })) },
+        ...accs.map((a): FormField => ({ name: `bal_${a.id}`, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"})`, type: "number", placeholder: "bo'sh — o'zgarmaydi" })),
+      ],
+    };
+  }
+  if (key === "debt-customer" || key === "debt-supplier") {
+    const cust = key === "debt-customer";
+    const parties = cust
+      ? await db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } })
+      : await db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+    return {
+      key, title: cust ? "Mijoz qarzini kiritish" : "Ta'minotchi qarzini kiritish", submitLabel: "Saqlash",
+      fields: [
+        { name: "entityId", label: cust ? "Mijoz" : "Ta'minotchi", type: "select", required: true, options: parties.map((x) => ({ value: x.id, label: x.name })) },
+        { name: "date", label: "Qaysi sana holatiga", type: "date", required: true, value: today },
+        { name: "sign", label: "Yo'nalish", type: "select", required: true, value: "1", options: cust
+          ? [{ value: "1", label: "Mijoz bizga qarzdor" }, { value: "-1", label: "Mijozdan avans (biz qarzdormiz)" }]
+          : [{ value: "1", label: "Biz ta'minotchiga qarzdormiz" }, { value: "-1", label: "Ta'minotchiga avans berilgan" }] },
+        { name: "amount", label: "Summa (so'm)", type: "number", required: true },
+        { name: "note", label: "Izoh", type: "text" },
+      ],
+    };
+  }
   if (key === "hr-call") {
     return {
       key, title: "Qo'ng'iroq yozish", submitLabel: "Jurnalga yozish",
@@ -696,6 +836,39 @@ export async function portCreate(user: MobileUser, key: string, payload: unknown
       return after;
     });
     return { key: "cashflow", id: row.id, message: Math.abs(diff) < 1 ? "Kassa yopildi — farq yo'q" : `Kassa yopildi — farq ${money(diff)}` };
+  }
+  if (key === "oy-qoldiq") {
+    const day = monthEndDate(str(p.oy));
+    if (!day) return fail("Oy tanlanmagan yoki hali tugamagan — faqat o'tgan oy oxiriga qoldiq kiritiladi");
+    const accs = await db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true } });
+    const saved: string[] = [], failed: string[] = [];
+    for (const a of accs) {
+      const v = str(p[`bal_${a.id}`]);
+      if (!v) continue;
+      const value = numOf(v);
+      if (!Number.isFinite(value) || value < 0) return fail(`${a.name}: qoldiq raqam bo'lsin (0 yoki musbat)`);
+      const r = await setCashBalanceAt(a.id, day, value, user.id);
+      if (r.error) failed.push(`${a.name}: ${r.error}`); else saved.push(a.name);
+    }
+    if (!saved.length && !failed.length) return fail("Hech bir hisobga qoldiq yozilmadi");
+    if (failed.length) return fail(`${failed.join(". ")}${saved.length ? `. Saqlandi: ${saved.join(", ")}` : ""}`);
+    return { key: "payments", id: str(p.oy), message: `${periodMonthLabel(str(p.oy))} oxiriga qoldiq saqlandi: ${saved.join(", ")}` };
+  }
+  if (key === "debt-customer" || key === "debt-supplier") {
+    const cust = key === "debt-customer";
+    const day = validDay(str(p.date));
+    if (!day) return fail("Sanani kiriting");
+    const amount = numOf(p.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return fail("Summani kiriting");
+    const sign = str(p.sign) === "-1" ? -1 : 1;
+    const entityId = str(p.entityId);
+    if (!entityId) return fail(cust ? "Mijoz tanlanmagan" : "Ta'minotchi tanlanmagan");
+    const r = await createOpening({
+      kind: cust ? "CUSTOMER" : "SUPPLIER", date: new Date(`${day}T00:00:00`), note: str(p.note) || null, amount: amount * sign,
+      customerId: cust ? entityId : null, supplierId: cust ? null : entityId,
+    }, user.id);
+    if (r.error || !r.id) return fail(r.error ?? "Saqlanmadi");
+    return { key: "openings", id: r.id, message: `Qarz kiritildi: ${money(amount)}` };
   }
   if (key === "hr-call") {
     const day = validDay(str(p.date));

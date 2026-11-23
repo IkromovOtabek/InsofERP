@@ -8,7 +8,7 @@ import { DIREKTOR_ACTION_ROLES, DIREKTOR_CARDS, DIREKTOR_DETAIL_ROLES, DIREKTOR_
 import { direktorDetail } from "./direktor-extra";
 import { LOGI_ACTION_ROLES, LOGI_DETAIL_ROLES, LOGI_PERM } from "./logistika-access";
 import { PORT_ACCESS, PORT_ACTION_ROLES, PORT_DETAIL_ROLES, PORT_PERM } from "./port-access";
-import { portDetail } from "./port";
+import { portDetail, withOrderEdit } from "./port";
 import { logiDetail, resolveIssueForm, withDriverExtras, withOrderTrip, withTripExtras } from "./logistika-extra";
 import { TX_TYPE_LABEL, isTransfer, txSign } from "@/lib/cash-tx";
 import { CANCELLED_LABEL, cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -666,7 +666,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   // Vebdan ko'chirilgan bo'limlar: Hisob varag'i, Logistika moliya, Oy yopish, Kreditlar… (`./port.ts`)
   if (Object.hasOwn(PORT_ACCESS, card)) return portDetail(user, card, id);
   switch (DETAIL_KEY[key] ?? key) {
-    case "orders": return withOrderTrip(user, await withOrderActions(user, await orderDetail(user, id)));
+    case "orders": return withOrderTrip(user, await withOrderEdit(user, await withOrderActions(user, await orderDetail(user, id))));
     case "trips": return withTripExtras(user, await tripDetail(user, id));
     case "invoices": return invoiceDetail(user, id);
     case "payments": return paymentDetail(user, id);

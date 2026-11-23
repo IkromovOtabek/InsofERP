@@ -48,6 +48,8 @@ export const PORT_PERM: Record<string, { module: string; action: string }> = {
   "period.closeall": { module: "moliya", action: "period_close" },
   "period.reopen": { module: "moliya", action: "period_reopen" },
   "hrcall.status": { module: "employees", action: "calls" },
+  // Zayavka kartochkasidagi «Tahrirlash» — veb `/orders/[id]/edit` (`lib/orders.ts` → `orderEdit`)
+  "order.edit": { module: "orders", action: "edit" },
 };
 export const PORT_ACTION_ROLES: Record<string, Role[]> = {
   "ledger.edit": ["LOGISTICS", "DISPATCHER", "DIRECTOR"],
@@ -56,6 +58,7 @@ export const PORT_ACTION_ROLES: Record<string, Role[]> = {
   "period.closeall": ["ACCOUNTING", "DIRECTOR"],
   "period.reopen": ["DIRECTOR"],
   "hrcall.status": ["HR", "DIRECTOR"],
+  "order.edit": ["SALES", "SUPERVISOR", "DIRECTOR"],
 };
 export const PORT_ACTIONS = new Set(Object.keys(PORT_ACTION_ROLES));
 
@@ -65,11 +68,19 @@ export const PORT_CREATE_ROLES: Record<string, { roles: Role[]; title: string; l
   "hr-call": { roles: ["HR"], title: "Qo'ng'iroq yozish", label: "Qo'ng'iroq" },
   // Veb «Kirim-Chiqim → Kassani yopish»: kun oxirida naqdni sanash, tizim qoldig'i bilan farq
   "kassa-yopish": { roles: ["CASHIER"], title: "Kassani yopish (sanash)", label: "Kassani yopish" },
+  // Veb «Kassa / bank → Oy oxiri qoldiqlari» (Exceldan o'tish): hisoblarning o'tgan oy oxiridagi qoldig'i
+  "oy-qoldiq": { roles: ["ACCOUNTING"], title: "Oy oxiri qoldiqlari", label: "Oy oxiri qoldig'i" },
+  // Veb debitorka / kreditorka varag'idagi «Qarzlarni kiritish» (qo'lda) — boshlang'ich qoldiq yozuvi
+  "debt-customer": { roles: ["ACCOUNTING"], title: "Mijoz qarzini kiritish", label: "Mijoz qarzi" },
+  "debt-supplier": { roles: ["ACCOUNTING"], title: "Ta'minotchi qarzini kiritish", label: "Ta'minotchi qarzi" },
 };
 export const PORT_CREATE_PERM: Record<string, { module: string; action?: string; strict?: boolean }> = {
   "logi-tx": { module: "logistika", action: "fin_write", strict: true },
   "hr-call": { module: "employees", action: "calls", strict: true },
   "kassa-yopish": { module: "cashflow", action: "close", strict: true },
+  "oy-qoldiq": { module: "payments", action: "balance", strict: true },
+  "debt-customer": { module: "bi-tahlil", action: "debts", strict: true },
+  "debt-supplier": { module: "bi-tahlil", action: "supplier_debts", strict: true },
 };
 export const PORT_FORMS = new Set(Object.keys(PORT_CREATE_ROLES));
 

@@ -266,7 +266,7 @@ async function formOf(user: MobileUser, key: string, defaults: Record<string, st
     case "arenda-chiqim": return arendaChiqimForm();
     case "arenda-shop": return arendaShopForm();
     case "vehicles": case "fuel": case "expenses": case "sites": return logiForm(user, key);
-    case "logi-tx": case "hr-call": case "kassa-yopish": return portForm(user, key);
+    case "logi-tx": case "hr-call": case "kassa-yopish": case "oy-qoldiq": case "debt-customer": case "debt-supplier": return portForm(user, key);
     case "ish-haqi": return payrollForm();
     case "products": case "inventory": case "writeoff": case "recipient": return skladForm(user, key);
     case "employees": case "jarima-bonus": case "davomat-sozlama": return kadrForm(user, key);
@@ -719,6 +719,8 @@ async function orderForm(user: MobileUser, defaults: Record<string, string> = {}
           { name: "price", label: "Narx (1 birlik)", type: "number", required: true, value: lead?.productId ? lead.price : undefined, placeholder: "0" },
           // Veb formadagi qator «NDS 12%» tugmasi (agent formasida yo'q)
           ...(isAgent ? [] : [{ name: "nds", label: "NDS 12%", type: "select" as const, value: "0", options: [{ value: "0", label: "NDS'siz" }, { value: "1", label: "NDS 12% qo'shilsin" }] }]),
+          // Veb formadagi «Blok» (`lib/site-blocks.ts`): obyektda yo'q bo'lsa qo'shiladi; matritsada blok = ustun
+          { name: "block", label: "Obyekt bloki", type: "text" as const, placeholder: "masalan «A blok» — ixtiyoriy" },
         ],
       },
       { name: "needsPump", label: "Nasos kerak", type: "switch", value: "false" },
@@ -804,6 +806,8 @@ const OrderBody = z.object({
     price: z.coerce.number().min(0, "Narx manfiy bo'lmasin"),
     // Eski ilova yubormaydi — NDS'siz
     nds: z.string().trim().optional(),
+    // Obyekt bloki nomi — eski ilova yubormaydi (blokisiz)
+    block: z.string().trim().max(60, "Blok nomi 60 belgidan oshmasin").optional(),
   })).min(1, "Kamida bitta mahsulot qatori kerak"),
   needsPump: z.coerce.boolean().optional(),
   needsDelivery: z.boolean().optional(),
@@ -1168,7 +1172,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         // Narx NDS'siz kiritiladi; «NDS 12%» tanlangan qatorda soliq qo'shib saqlanadi (veb `createOrder` bilan bir xil)
         items: d.items.map((i) => {
           const nds = !isAgent && i.nds === "1";
-          return { productId: i.productId, qtyM3: i.qtyM3, price: nds ? withNds(i.price) : i.price, nds };
+          return { productId: i.productId, qtyM3: i.qtyM3, price: nds ? withNds(i.price) : i.price, nds, block: i.block || null };
         }),
         needsPump: d.needsPump,
         needsDelivery: isAgent ? undefined : d.needsDelivery,
