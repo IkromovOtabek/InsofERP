@@ -61,6 +61,8 @@ import { runSkladAction } from "./sklad-extra";
 import { moliyaAction } from "./moliya-extra";
 import { SEX_EXTRA_ACTIONS, sexExtraAction } from "./sex-extra";
 import { LOGI_ACTIONS, runLogiAction } from "./logistika-extra";
+import { PORT_ACTIONS } from "./port-access";
+import { runPortAction } from "./port";
 import { orderTotal } from "@/lib/order-total";
 
 /**
@@ -210,6 +212,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (SEX_EXTRA_ACTIONS.has(action)) return { ok: true, message: await sexExtraAction(user, action, id, payload) };
   // ── Logistika kabineti: dispetcher bosqichlari, xarajat, transport, obyekt, haydovchi kartasi (`./logistika-extra.ts`) ──
   if (LOGI_ACTIONS.has(action)) return { ok: true, message: await runLogiAction(user, action, id, payload) };
+  // ── Vebdan ko'chirilgan bo'limlar: hisob varag'i, logistika moliya, oy yopish, qo'ng'iroqlar (`./port.ts`) ──
+  if (PORT_ACTIONS.has(action)) return { ok: true, message: await runPortAction(user, action, id, payload) };
   // ── Sklad / snabjeniye: storno, brigada skladi, «Kimga», narx, xomashyo o'chirish, rekvizitlar, ta'minot hujjati (`./sklad-extra.ts`) ──
   if (SKLAD_ACTIONS.has(action)) return runSkladAction(user, action, id, payload);
   // ── Sotuv kabineti: sabab bilan bekor qilish, sklad zayavkasi, kafolat, shartnoma, mijoz, taklif, e-commerce, marketing (`./sotuv-extra.ts`).

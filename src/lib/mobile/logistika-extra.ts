@@ -32,6 +32,8 @@ import type { MobileUser } from "./auth";
 import type { DetailAction, DetailField, FormField, FormOption, MobileDetail } from "./detail";
 import { can } from "./detail";
 import type { HomeRow, HomeSection, SectionChart, Tone } from "./home";
+import { fmtLoad, vehicleReport } from "@/lib/vehicle-report";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 import { ListError, type ListFilter, type MobileList } from "./list";
 import type { CreateForm, CreateResult } from "./create";
 import { LOGI_ACTION_ROLES, LOGI_CREATE, LOGI_DETAIL_ROLES } from "./logistika-access";
@@ -980,6 +982,8 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
       ...(v.note ? [{ label: "Izoh", value: v.note }] : []),
     ],
     sections: [
+      // Veb transport kartasi «Faoliyat» tabi (mexanik): shu oy yuk, reys, xarajat va foyda (`lib/vehicle-report.ts`)
+      ...(await vehicleActivity(user, v.id)),
       ...(due.length ? [{ title: "Texnik xizmat muddati", empty: "", icon: "wrench", rows: due.map((d) => ({ id: d.serviceId, title: d.kind, subtitle: d.text, tone: (d.level === "crit" ? "danger" : "warning") as Tone })) }] : []),
       { title: "Oxirgi reyslar", empty: "Reys yo'q", target: "trips", rows: v.trips.slice(0, 10).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.loadedAt ? dtRu(t.loadedAt) : dtRu(t.createdAt)}`, right: fmtNum(n(t.qtyM3), 1), status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
       {
@@ -1456,4 +1460,23 @@ export async function withDriverExtras(user: MobileUser, d: MobileDetail): Promi
   const x = await driverExtras(user, d.id);
   if (!x.fields.length && !x.actions.length) return d;
   return { ...d, fields: [...d.fields, ...x.fields], actions: [...d.actions, ...x.actions] };
+}
+
+/** Transport faoliyati (shu oy): veb «Faoliyat» tabi bilan bir hisob. Summalar — faqat `logistika.money` ko'radiganlarga. */
+async function vehicleActivity(user: MobileUser, vehicleId: string): Promise<HomeSection[]> {
+  const from = new Date(); from.setDate(1); from.setHours(0, 0, 0, 0);
+  const to = new Date(from); to.setMonth(to.getMonth() + 1);
+  const r = await vehicleReport(vehicleId, from, to);
+  const money_ = canSeeLogiMoney({ role: user.role, perms: user.perms });
+  const rows: HomeRow[] = [
+    { id: "a-load", title: "Yuk", right: fmtLoad(r.load) },
+    { id: "a-trips", title: "Reys / zayavka / kun", right: `${r.row.trips} / ${r.orders} / ${r.days}` },
+    { id: "a-km", title: "Yurgan", right: `${fmtNum(r.row.km, 0)} km` },
+    ...(money_ ? [
+      { id: "a-rev", title: "Daromad (dastavka)", right: money(r.row.revenue), tone: "success" as Tone },
+      ...r.costs.filter((c) => c.sum).map((c, i) => ({ id: `a-c${i}`, title: c.label, subtitle: `${c.count} ta`, right: money(c.sum) })),
+      { id: "a-profit", title: "Foyda", right: money(r.row.profit), tone: (r.row.profit >= 0 ? "success" : "danger") as Tone },
+    ] : []),
+  ];
+  return [{ title: "Faoliyat — shu oy", empty: "Shu oy faoliyat yo'q", icon: "activity", rows }];
 }

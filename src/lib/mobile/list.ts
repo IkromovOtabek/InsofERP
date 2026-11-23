@@ -40,6 +40,8 @@ import { SOTUV_ACCESS, SOTUV_DETAIL_KEY, SOTUV_KEY_MODULE } from "./sotuv-access
 import { isModuleOff } from "@/lib/platform-modules";
 import { sotuvList } from "./sotuv-extra";
 import { avtoList } from "./avto-zapchast";
+import { PORT_ACCESS, PORT_KEY_MODULE } from "./port-access";
+import { portList } from "./port";
 
 /**
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
@@ -145,6 +147,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   ...SKLAD_ACCESS,
   // ── Logistika kabineti: buyurtmalar, kalendar, transport, yoqilg'i, xarajat, nakladnoy, yetkazish, hisobot, obyektlar (`./logistika-extra.ts`) ──
   ...LOGI_ACCESS,
+  // Vebdan ko'chirilgan bo'limlar: Hisob varag'i, Logistika moliya, Oy yopish, Kreditlar… (`./port.ts`)
+  ...PORT_ACCESS,
 };
 
 /** Ro'yxat kaliti → kartochka kaliti (bir xil hujjat bir nechta ro'yxatda chiqadi). */
@@ -185,6 +189,7 @@ const KEY_MODULE: Record<string, string> = {
   ...DIREKTOR_KEY_MODULE,
   ...SKLAD_KEY_MODULE,
   ...LOGI_KEY_MODULE,
+  ...PORT_KEY_MODULE,
   ...SOTUV_KEY_MODULE,
 };
 
@@ -264,6 +269,7 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (Object.hasOwn(KADR_ACCESS, key)) return kadrList(user, key, s, filter);
   if (Object.hasOwn(DIREKTOR_ACCESS, key)) return direktorList(user, key, meta.title, s, filter);
   if (Object.hasOwn(LOGI_ACCESS, key)) return logiList(user, key, meta.title, s, filter);
+  if (Object.hasOwn(PORT_ACCESS, key)) return portList(user, key, meta.title, s, filter);
   // Reyslar — veb `/trips` dagi holat tablari va «Tarix» (haydovchidan boshqa rollar; haydovchiga — o'z reyslari)
   if (key === "trips" && user.role !== "DRIVER") return tripsList(user, meta.title, s, filter);
   // Filtr chipli ro'yxatlar — bosqich bo'yicha

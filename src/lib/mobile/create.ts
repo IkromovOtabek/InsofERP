@@ -49,6 +49,8 @@ import { payrollCreate, payrollForm } from "./moliya-extra";
 import { batchForm, createBatchMobile } from "./sex-extra";
 import { LOGI_CREATE } from "./logistika-access";
 import { LOGI_FORMS, logiCreate, logiForm, plannedAtOf, plannedExtra, plannedFields } from "./logistika-extra";
+import { PORT_CREATE_PERM, PORT_CREATE_ROLES, PORT_FORMS } from "./port-access";
+import { portCreate, portForm } from "./port";
 import { saveBrigade } from "@/lib/brigades";
 import { SOTUV_CREATE_PERM, SOTUV_CREATE_ROLES } from "./sotuv-access";
 import { applyFormDefaults, leadOrderPrefill, offerForm, sotuvCreate, splitFormKey, stockOrderForm } from "./sotuv-extra";
@@ -161,6 +163,8 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   ...KADR_CREATE,
   // Sklad: tayyor mahsulot qo'shish, inventarizatsiya, hisobdan chiqarish, «Kimga» oluvchisi (`./sklad-extra.ts`)
   ...SKLAD_CREATE_ROLES,
+  // Vebdan ko'chirilgan: logistika kirim/chiqim, HR qo'ng'irog'i (`./port.ts`)
+  ...PORT_CREATE_ROLES,
 };
 
 /** Mexanik so'rovi formalari — bosh sahifadagi "+" va tezkor amallar to'rida ko'rsatilmaydi (ilova o'z ekranidan ochadi). */
@@ -173,6 +177,7 @@ export const KIRIM_FORMS: ReadonlySet<string> = new Set(["kirim-transport", "kir
 // Masalan Moliya (FINANCE) vebda to'lov qabul qilmaydi — ilovada ham, direktor `payments: create` bermaguncha.
 const CREATE_PERM: Record<string, { module: string; action?: string; strict?: boolean }> = {
   ...KADR_CREATE_PERM,
+  ...PORT_CREATE_PERM,
   orders: { module: "orders", action: "create" },
   trips: { module: "trips", action: "create" },
   supply: { module: "taminot" },
@@ -261,6 +266,7 @@ async function formOf(user: MobileUser, key: string, defaults: Record<string, st
     case "arenda-chiqim": return arendaChiqimForm();
     case "arenda-shop": return arendaShopForm();
     case "vehicles": case "fuel": case "expenses": case "sites": return logiForm(user, key);
+    case "logi-tx": case "hr-call": case "kassa-yopish": return portForm(user, key);
     case "ish-haqi": return payrollForm();
     case "products": case "inventory": case "writeoff": case "recipient": return skladForm(user, key);
     case "employees": case "jarima-bonus": case "davomat-sozlama": return kadrForm(user, key);
@@ -1059,6 +1065,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
     if (key === "stock-order" || key === "offers") return await sotuvCreate(user, key, payload);
     // ── Logistika: transport, zapravka, xarajat, obyekt (`./logistika-extra.ts`) ──
     if (LOGI_FORMS.has(key)) return await logiCreate(user, key, payload);
+    if (PORT_FORMS.has(key)) return await portCreate(user, key, payload);
     // ── Zames — `createProductionBatch` (veb «Yangi zames» bilan bitta qoida) ──
     if (key === "production") return await createBatchMobile(user, payload);
     // ── Sklad → «Kirim»: kirim — `createGoodsReceipt` (veb Kirim formasi bilan bitta qoida) ──

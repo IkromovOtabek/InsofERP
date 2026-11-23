@@ -7,6 +7,8 @@ import { kadrDetail, kadrEmployeeExtras } from "./kadr-extra";
 import { DIREKTOR_ACTION_ROLES, DIREKTOR_CARDS, DIREKTOR_DETAIL_ROLES, DIREKTOR_PERM } from "./direktor-extra-access";
 import { direktorDetail } from "./direktor-extra";
 import { LOGI_ACTION_ROLES, LOGI_DETAIL_ROLES, LOGI_PERM } from "./logistika-access";
+import { PORT_ACCESS, PORT_ACTION_ROLES, PORT_DETAIL_ROLES, PORT_PERM } from "./port-access";
+import { portDetail } from "./port";
 import { logiDetail, resolveIssueForm, withDriverExtras, withOrderTrip, withTripExtras } from "./logistika-extra";
 import { TX_TYPE_LABEL, isTransfer, txSign } from "@/lib/cash-tx";
 import { CANCELLED_LABEL, cancelNote, cancellerNames } from "@/lib/cancelled";
@@ -289,6 +291,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   ...DIREKTOR_ACTION_ROLES,
   // Logistika kabineti: dispetcher bosqichlari, xarajat, transport, obyekt, haydovchi kartasi (`./logistika-extra.ts`)
   ...LOGI_ACTION_ROLES,
+  // Vebdan ko'chirilgan bo'limlar (`./port.ts`)
+  ...PORT_ACTION_ROLES,
   // Sotuv kabineti (kafolat, shartnoma, sklad zayavkasi, mijoz, taklif, e-commerce, marketing) — `./sotuv-access.ts`
   ...SOTUV_ACTION_ROLES,
   "order.confirm": ["SALES"],
@@ -535,6 +539,7 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   ...DIREKTOR_PERM,
   ...SKLAD_PERM_EXACT,
   ...LOGI_PERM,
+  ...PORT_PERM,
   ...SOTUV_PERM_EXACT,
   "kirim.logipay": { module: "logistika", action: "fin_pay" },
 };
@@ -620,6 +625,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Tayyor mahsulot, imkoniyat, oluvchi kartasi, ta'minot hujjati (`./sklad-extra-access.ts`)
   ...SKLAD_DETAIL_ROLES,
   ...LOGI_DETAIL_ROLES,
+  ...PORT_DETAIL_ROLES,
   ...SOTUV_DETAIL_ROLES,
 };
 
@@ -657,6 +663,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   if (SKLAD_CARDS.has(card)) return skladDetail(user, card, id);
   // Logistika kartochkalari: transport, zapravka, xarajat, obyekt, davr hisoboti (`./logistika-extra.ts`)
   if (["vehicles", "fuel", "expenses", "sites", "logi-report", "trip-pay"].includes(card)) return logiDetail(user, card, id);
+  // Vebdan ko'chirilgan bo'limlar: Hisob varag'i, Logistika moliya, Oy yopish, Kreditlar… (`./port.ts`)
+  if (Object.hasOwn(PORT_ACCESS, card)) return portDetail(user, card, id);
   switch (DETAIL_KEY[key] ?? key) {
     case "orders": return withOrderTrip(user, await withOrderActions(user, await orderDetail(user, id)));
     case "trips": return withTripExtras(user, await tripDetail(user, id));

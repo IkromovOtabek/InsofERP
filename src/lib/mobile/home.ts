@@ -43,6 +43,7 @@ import type { Role } from "@/generated/prisma";
 import { todayLoadSections } from "./sex-extra";
 import { DIREKTOR_LIST_ICON, direktorHomeSections } from "./direktor-extra";
 import { KADR_ICON } from "./kadr-access";
+import { PORT_ICON } from "./port-access";
 import { kadrHome } from "./kadr-extra";
 import { logisticsHomeSections, mechanicServiceSection } from "./logistika-extra";
 import { tripPayApproveSection, tripPaySection } from "./trip-pay";
@@ -268,6 +269,7 @@ const LIST_ICON: Record<string, string> = {
   products: "package", capacity: "factory", "brig-stock": "hard-hat", recipients: "users",
   ...DIREKTOR_LIST_ICON,
   ...KADR_ICON,
+  ...PORT_ICON,
   // Logistika kabineti (`./logistika-extra.ts`)
   "logi-orders": "clipboard-list", "logi-day": "calendar-days", vehicles: "truck", fuel: "droplets", expenses: "wallet",
   waybills: "file-text", deliveries: "package-check", "logi-report": "chart-column", sites: "map-pin",
