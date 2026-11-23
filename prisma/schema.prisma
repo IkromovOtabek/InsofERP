@@ -2972,6 +2972,19 @@ model AuditLog {
   @@index([entity, entityId])
 }
 
+/// Oy yopish (Moliya → Oy yopish, `lib/period-sections.ts`): yozuv bor — shu bo'limning shu oyi yopiq.
+/// Baza trigger'i `insof_period_guard` (migratsiya `*_oy_yopish`) yopiq oyga sanalangan hujjatni qo'shish, tahrirlash va
+/// o'chirishni rad etadi. Oy ochilganda yozuv o'chadi — kim, qachon va qaysi sabab bilan ochgani AuditLog'da.
+model PeriodClose {
+  id         String   @id @default(cuid())
+  section    String // kassa | sotuv | sklad | ishlab | logistika | ishhaqi | arenda
+  month      String // "2026-10" (Asia/Tashkent bo'yicha oy)
+  closedById String
+  closedAt   DateTime @default(now())
+
+  @@unique([section, month])
+}
+
 // ───────────────────────── Maydon xotirasi ─────────────────────────
 
 /// Formalarda qo'lda yozilgan qiymatlar — keyingi safar shu maydonda taklif qilinadi

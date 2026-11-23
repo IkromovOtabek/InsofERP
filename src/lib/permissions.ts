@@ -167,6 +167,8 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "categories", label: "Kassa kategoriyalari va loyihalar", roles: ["ACCOUNTING"], hint: "Manba / Sub manba, PNL qatori va pul oqimi turi" },
     { key: "plan",       label: "To'lov rejasi (doimiy va bir martalik to'lovlar, muddatlar)", roles: ["FINANCE"], hint: "To'lov kalendari shundan hisoblanadi" },
     { key: "cost",       label: "Tannarx sozlamalari (koeffitsiyent, ishlab chiqarish xarajatlari, brigada ish haqi)", roles: ["ACCOUNTING"], hint: "Tahlil → Moliya → Tannarx hisobi va Mahsulot foydasi" },
+    { key: "period_close",  label: "Oyni yopish (bo'limlar bo'yicha)", roles: ["ACCOUNTING"], hint: "Yopilgan oyga sanalangan kassa, sklad, realizatsiya, logistika, ish haqi, arenda yozuvini hech kim qo'sha, tahrirlay yoki bekor qila olmaydi" },
+    { key: "period_reopen", label: "Yopilgan oyni ochish (sabab bilan)", roles: [], explicit: true, hint: "Sabab yozish majburiy, Amallar tarixiga tushadi. Odatda faqat direktor" },
   ],
   arenda: [
     { key: "create", label: "Arenda kirim-chiqimini yozish",       roles: ["SECRETARY"] },

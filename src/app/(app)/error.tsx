@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Check, Copy, Home, Lock, RotateCcw } from "lucide-react";
 import { Button, LinkButton } from "@/components/ui";
+import { periodClosedMessage } from "@/lib/period-sections";
 
 /**
  * Ilova ichidagi xato sahifasi.
@@ -21,7 +22,9 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const code = Object.keys(KNOWN).find((k) => error.message === k || error.message?.includes(k));
-  const known = code ? KNOWN[code] : null;
+  // Yopilgan oyga yozish — `digest` production'da ham yetadi (`lib/period-sections.ts`)
+  const period = periodClosedMessage(error);
+  const known = period ? { title: "Oy yopilgan", text: period, lock: true } : code ? KNOWN[code] : null;
   // Dev rejimida asl matn foydali — productionda u baribir yashirin
   const devMessage = process.env.NODE_ENV !== "production" && !known ? error.message : null;
 

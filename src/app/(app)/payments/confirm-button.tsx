@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionState } from "@/lib/action";
 import { isAccessDenied } from "@/lib/access-denied";
+import { periodClosedMessage } from "@/lib/period-sections";
 import { cn } from "@/lib/utils";
 
 /**
@@ -45,6 +46,8 @@ export function ConfirmButton({ action, label, question, reason, okText = "Bajar
     } catch (e) {
       // Ruxsat yo'q (403) — aniq gap; boshqa `throw` (prod'da matn yashiriladi) — umumiy gap
       if (isAccessDenied(e)) { setState({ error: "Bu amal uchun ruxsatingiz yo'q — direktordan ruxsat so'rang" }); return; }
+      const closed = periodClosedMessage(e);
+      if (closed) { setState({ error: closed }); return; }
       setState({ error: (e as Error)?.message && !/server components render/i.test((e as Error).message) ? (e as Error).message : "Amal bajarilmadi — sahifani yangilab qayta urining" });
     }
   });

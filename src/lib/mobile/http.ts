@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { MobileAuthError } from "./auth";
 import { ListError } from "./list";
+import { periodErrorFromDb } from "../period-sections";
 
 /**
  * Mobil API uchun umumiy javob qobig'i.
@@ -33,6 +34,9 @@ export async function handle<T>(fn: () => Promise<T>) {
     // Prisma "yozuv topilmadi" (findUniqueOrThrow / update mavjud bo'lmagan id bilan) — mijoz yuborgan
     // noto'g'ri id, server xatosi emas: 404. Aks holda har bir begona/eskirgan id 500 bo'lib jurnalni to'ldirardi.
     if ((e as { code?: unknown })?.code === "P2025") return jsonErr("NOT_FOUND", "Hujjat topilmadi", 404);
+    // Yopilgan oyga yozish (baza trigger'i) — foydalanuvchi xatosi: aniq matn bilan 400
+    const closed = periodErrorFromDb(e);
+    if (closed) return jsonErr("PERIOD_CLOSED", closed.message, 400);
     console.error("[mobile-api]", e);
     return jsonErr("INTERNAL", "Server xatosi", 500);
   }

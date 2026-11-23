@@ -130,6 +130,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "vositalar", label: "Asosiy vositalar", paths: ["/moliya/asosiy-vositalar"], actions: ["assets"] },
     { key: "kategoriyalar", label: "Kassa kategoriyalari", paths: ["/moliya/kategoriyalar"], actions: ["categories"] },
     { key: "reja", label: "To'lov rejasi va kalendar", paths: ["/moliya/tolov-rejasi", "/moliya/kalendar"], actions: ["plan"] },
+    { key: "oyyopish", label: "Oy yopish", paths: ["/moliya/oy-yopish"], actions: ["period_close", "period_reopen"] },
     { key: "tannarx", label: "Tannarx sozlamalari (Tahlil oynasida)", actions: ["cost"] },
   ],
   employees: [

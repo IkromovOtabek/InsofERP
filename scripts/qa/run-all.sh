@@ -13,7 +13,7 @@
 #   2. prisma generate + next build (bir marta).
 #   3. Har to'plam uchun: insof_test_r_<nom> = insof_test_golden nusxasi → migrate deploy → db:test-users →
 #      next start (QA_PORT) → testlar → server to'xtatiladi.
-#        a     — sotuv/moliya: sales-lifecycle, openings-cash, excel-imports, login-templates, driver-login, visits, limits, prepay-gate, transfers, pul-qabul, receivables, debitorka-ulash
+#        a     — sotuv/moliya: sales-lifecycle, openings-cash, excel-imports, login-templates, driver-login, visits, limits, prepay-gate, transfers, pul-qabul, receivables, debitorka-ulash, period-close (oy yopish)
 #        b     — sklad/ishlab chiqarish/logistika/ta'minot/kadr, kirim QQS (b-vat): b-all.sh (+ b-pages)
 #        pages — src/app/(app) dagi barcha sahifalar × 14 rol (pages-all.mjs), server log xatolari
 #        c     — mobil API va integratsiyalar: c-run-all.sh
@@ -143,6 +143,7 @@ if want a; then
   suite "a/pul-qabul" env DATABASE_URL="$DBURL" npx tsx scripts/qa/pul-qabul.mts
   suite "a/receivables" env DATABASE_URL="$DBURL" npx tsx scripts/qa/receivables.mts
   suite "a/debitorka-ulash" env DATABASE_URL="$DBURL" npx tsx scripts/qa/debitorka-ulash.mts
+  suite "a/period-close" env DATABASE_URL="$DBURL" npx tsx scripts/qa/period-close.mts
   stop_server
 fi
 if want b; then

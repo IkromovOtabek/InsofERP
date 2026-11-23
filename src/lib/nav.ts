@@ -159,6 +159,9 @@ export const NAV: NavItem[] = [
   // kategoriyalar) menyuda yo'q — bosh sahifa va Nazorat havolalaridan ochiladi; ruxsat shu `/moliya` prefiksidan.
   // Ko'rish — direktor, moliya, buxgalteriya; kiritish — buxgalteriya (FIN_REPORT_WRITERS)
   { href: "/moliya",      label: "Kreditlar va qarzlar", roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
+  // Oy yopish: bo'lim × oy jadvali. Yopish — `moliya.period_close` (buxgalteriya), ochish — `moliya.period_reopen` (direktor beradi).
+  // Ruxsat berilgan boshqa xodimga ham ochiladi (perms tugma rejimi `@oyyopish`)
+  { href: "/moliya/oy-yopish", label: "Oy yopish",     roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — kiritish direktor va buxgalteriya;
   // Finance ko'radi va yetkazuvchining boshlang'ich qarzini to'laydi ("Yetkazuvchiga to'lash" huquqi — shu sahifada).
   // /settings ostida bo'lsa ham alohida band: eng uzun prefiks qoidasi bo'yicha shu rollarga ochiq, qolgan sozlamalar yopiq.
