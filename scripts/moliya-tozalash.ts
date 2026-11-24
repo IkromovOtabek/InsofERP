@@ -40,13 +40,19 @@ async function main() {
       // ── A. Import ochgan manbalar ──
       say("A. Import ochgan manbalar (PNL qatori taxmin bo'yicha qolgan)");
       const auto = await tx.cashCategory.findMany({ where: { isSystem: false, sort: 500, parentId: null } });
-      const edited = new Set((await tx.auditLog.findMany({ where: { entity: "CashCategory", action: "UPDATE", entityId: { in: auto.map((c) => c.id) } }, select: { entityId: true } })).map((a) => a.entityId));
+      // Faqat PNL qatori o'zgartirilgan tahrirlar hisobga olinadi (nomni lotinga o'girish / birlashtirish — emas)
+      const edited = new Set((await tx.auditLog.findMany({ where: { entity: "CashCategory", action: "UPDATE", entityId: { in: auto.map((c) => c.id) } }, select: { entityId: true, before: true, after: true } }))
+        .filter((a) => JSON.stringify(a.before ?? {}).includes("pnlLine") || JSON.stringify(a.after ?? {}).includes("pnlLine")).map((a) => a.entityId));
       for (const c of auto) {
         const guessed = c.type === "INCOME" ? c.pnlLine === "OTHER_INCOME" : c.pnlLine === "PRODUCTION";
         if (!guessed) { say(`  tegilmadi «${c.name}» — PNL qatori qo'lda tanlangan (${c.pnlLine})`); continue; }
-        if (edited.has(c.id)) { say(`  tegilmadi «${c.name}» — kimdir tahrirlagan (AuditLog)`); continue; }
-        const refund = c.type === "EXPENSE" && /qaytar/i.test(c.name) && /(sotib oluvchi|mijoz|xaridor|klient)/i.test(c.name);
-        const pnlLine = refund ? "CUSTOMER_REFUND" : "UNSORTED";
+        if (edited.has(c.id)) { say(`  tegilmadi «${c.name}» — PNL qatorini kimdir o'zgartirgan (AuditLog)`); continue; }
+        // Ma'nosi nomidan aniq bo'lganlari — to'g'ri qatorga; qolgani (o'tkazma, qarz, hisob-kitob…) — «Aniqlanmagan»
+        const refund = c.type === "EXPENSE" && /qaytar/i.test(c.name) && /(sotib\s*oluvchi|mijoz|xaridor|klient)/i.test(c.name);
+        const commercial = c.type === "EXPENSE" && /(sotuv\s*xarajat|ortakash|urtakash|o'rtakash|vositachi)/i.test(c.name);
+        const production = c.type === "EXPENSE" && /^(zavod|pb\s*sex|sex\b|ishlab\s*chiqarish)/i.test(c.name);
+        if (production) { say(`  tegilmadi «${c.name}» — nomidan ishlab chiqarish xarajati (PRODUCTION qoladi)`); continue; }
+        const pnlLine = refund ? "CUSTOMER_REFUND" : commercial ? "COMMERCIAL" : "UNSORTED";
         const sum = await tx.cashTransaction.aggregate({ where: { category: c.name, cancelledAt: null, date: { gte: since } }, _sum: { amount: true }, _count: { _all: true } });
         await tx.cashCategory.update({ where: { id: c.id }, data: { pnlLine } });
         await audit(tx, userId, "UPDATE", "CashCategory", c.id, { pnlLine: c.pnlLine }, { pnlLine, via });
