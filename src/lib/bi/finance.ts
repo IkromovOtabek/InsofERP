@@ -37,6 +37,28 @@ async function operatingOnly<T extends { category: string; subCategory: string |
   return rows.filter((t) => { const r = resolve(t.category, t.subCategory); return !r || r.top.flow === "OPERATING"; });
 }
 
+/**
+ * 1 m³ ga me'yorning birlik bo'yicha aql bovar qiladigan chegarasi: t va m³ — 3 dan ko'p bo'lmaydi (sement ~0,3–0,5 t,
+ * shag'al ~0,8 m³), kg va l — 3000 gacha. Undan katta bo'lsa — me'yor boshqa birlikda yozilgan (masalan kg, xomashyo t da).
+ */
+const NORM_MAX: Record<string, number> = { t: 3, m3: 3, kg: 3000, l: 3000 };
+export const normPlausible = (unit: string, qtyPerM3: number) => qtyPerM3 >= 0 && qtyPerM3 <= (NORM_MAX[unit] ?? Infinity);
+
+/** Stockout signali beriladigan xomashyolar: faol retseptda bor, kategoriyasi XOMASHYO, hamma me'yori birligiga mos. */
+export async function stockoutMaterialIds(): Promise<Set<string>> {
+  const items = await db.recipeItem.findMany({
+    where: { materialId: { not: null }, recipe: { isActive: true } },
+    select: { qtyPerM3: true, material: { select: { id: true, unit: true, category: true } } },
+  });
+  const bad = new Set<string>(), all = new Set<string>();
+  for (const i of items) {
+    if (!i.material || i.material.category !== "XOMASHYO") continue;
+    all.add(i.material.id);
+    if (!normPlausible(i.material.unit, Number(i.qtyPerM3))) bad.add(i.material.id);
+  }
+  return new Set([...all].filter((id) => !bad.has(id)));
+}
+
 /** Yo'qotish kanallari — kuniga qancha pul ketyapti (Team24 "Moliya" mantiqi, beton zavodiga moslangan). */
 export async function lossChannels(r: Range) {
   const today = startOfDay(new Date());
@@ -50,8 +72,11 @@ export async function lossChannels(r: Range) {
   const costedRevenue = sum(costedRows(cur).map((x) => x.net));
   const marginRate = costedRevenue > 0 ? Math.min(1, Math.max(0, marginOf(cur) / 100)) : 0.15;
 
-  // 1. Stockout: xomashyo yetmasligi sabab ishlab chiqarilmaydigan zayavkalar (rejadagi ehtiyoj > qoldiq)
-  const shortMats = materials.filter((m) => m.short);
+  // 1. Stockout: xomashyo yetmasligi sabab ishlab chiqarilmaydigan zayavkalar (rejadagi ehtiyoj > qoldiq).
+  // Faqat retseptdagi XOMASHYO va me'yori birligiga mos keladigani: prodda retsept kg da, xomashyo t da bo'lsa ehtiyoj
+  // 1000 barobar shishib, soxta «yetmaydi» chiqardi (Sarvar rejasi 3-bosqich) — birligi mos kelmasa signal berilmaydi
+  const okIds = await stockoutMaterialIds();
+  const shortMats = materials.filter((m) => m.short && okIds.has(m.id));
   const shortValue = sum(shortMats.map((m) => (m.planned - m.balance) * m.avgCost));
   const stockoutPerDay = shortMats.length ? Math.max(0, shortValue) * marginRate / 7 : 0;
   // 2. Debitorka: xarid to'xtatgan mijozlardagi qarz (At Risk / Lost)

@@ -2819,6 +2819,24 @@ model ControlReport {
   manual     Boolean  @default(false)
 }
 
+/// «Ma'lumot sog'ligi» tekshiruvi natijasi (Tahlil → Ma'lumot sog'ligi, `lib/data-health.ts`): har kecha ~02:00 (Toshkent)
+/// avtomatik bitta (`day` unique, `manual = false`), «Hozir tekshirish» — `manual = true` (cheksiz). Sahifa oxirgisini ko'rsatadi.
+model DataHealthRun {
+  id        String   @id @default(cuid())
+  /// Toshkent kuni boshi — avtomatik yugurish shu kun bilan bir marta (qo'lda yugurishda — null)
+  day       DateTime? @unique
+  ranAt     DateTime @default(now())
+  manual    Boolean  @default(false)
+  /// Muammoli tekshiruvlar soni (warn + crit)
+  problems  Int      @default(0)
+  /// Tekshiruvlar: [{ key, title, status, value, count, rows: [{ label, detail, href }] }]
+  result    Json
+  /// Direktorga Telegram yuborilgan chatlar soni
+  notified  Int      @default(0)
+
+  @@index([ranAt])
+}
+
 /// Doimiy oylik to'lov (oylik, avans, kredit, soliqlar, svet) — to'lov kalendari har oy shu kunda chiqim kutadi.
 /// Kun oyning oxiridan katta bo'lsa (31 → fevral) — oyning oxirgi kuniga tushadi. O'chirilmaydi: nofaol yoki bekor.
 /// Tannarx hisobi — oyning qo'lda o'zgartirilgan sozlamalari (bo'sh — avtomatik, `lib/fin-report/cost.ts`):

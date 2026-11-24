@@ -17,6 +17,7 @@ export async function register() {
   startReminderWatch(isTestMode());
   startAmoWatch(isTestMode());
   startNazoratWatch(isTestMode());
+  startDataHealthWatch(isTestMode());
   if (!isTestMode()) return;
   try {
     assertSafeTestEnv();
@@ -85,5 +86,18 @@ function startNazoratWatch(test: boolean) {
   if (flag === "off" || ((test || process.env.NODE_ENV !== "production") && flag !== "on")) return;
   if (process.env.NEXT_RUNTIME === "nodejs") {
     void import("./lib/nazorat/watch").then((m) => m.startNazoratWatch()).catch((e) => console.error("[nazorat] ishga tushmadi", e));
+  }
+}
+
+/**
+ * «Ma'lumot sog'ligi» tungi tekshiruvi (`lib/data-health-watch.ts`): ~02:00 (Toshkent), muammo bo'lsa direktorga Telegram.
+ * `DATA_HEALTH_WATCH=off` — o'chirish. Test rejimida va lokal dev'da sukut bo'yicha o'chiq (`DATA_HEALTH_WATCH=on` — yoqish).
+ */
+function startDataHealthWatch(test: boolean) {
+  if (process.env.INSOF_MODE === "control" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const flag = (process.env.DATA_HEALTH_WATCH ?? "").trim().toLowerCase();
+  if (flag === "off" || ((test || process.env.NODE_ENV !== "production") && flag !== "on")) return;
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    void import("./lib/data-health-watch").then((m) => m.startDataHealthWatch()).catch((e) => console.error("[data-health] ishga tushmadi", e));
   }
 }

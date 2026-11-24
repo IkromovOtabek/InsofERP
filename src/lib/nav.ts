@@ -213,6 +213,8 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },
   { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil" },
+  // Ma'lumot sog'ligi — tungi avto-tekshiruv natijasi (Sarvar rejasi, 2026-11-24): faqat direktor
+  { href: "/bi-tahlil/sogliq",           label: "Ma'lumot sog'ligi", roles: ["DIRECTOR"], group: "Tahlil" },
   { href: "/bi-tahlil/ml",               label: "ML tahlil",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ml/anomaliyalar", label: "Anomaliyalar" }, { href: "/bi-tahlil/ml/churn", label: "Churn tahlili" }, { href: "/bi-tahlil/ml/klasterlar", label: "Klasterlar" }] },
   // Direktor menyusida yo'q (tepadagi «Insof AI» tugmasi va havolalar qoladi); moliya va buxgalteriyada — menyuda
   { href: "/bi-tahlil/ai",               label: "Insof AI",         roles: BI_ROLES, group: "Tahlil", menuHide: ["DIRECTOR"], children: [{ href: "/bi-tahlil/ai/chat", label: "AI Chat" }, { href: "/bi-tahlil/ai/telegram", label: "Telegram bot" }] },

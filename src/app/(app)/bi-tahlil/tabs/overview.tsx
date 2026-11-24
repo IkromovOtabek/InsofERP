@@ -46,7 +46,8 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* Biznes salomatligi */}
-        <Panel title="Biznes salomatligi" eyebrow={range.label} info="5 ta ko'rsatkich × 20 ball: debitorka nazorati, xomashyo zaxirasi, marja, sotuv o'sishi, zayavka oqimi. Ma'lumoti yo'q ko'rsatkich ballanmaydi — ball qolganlari bo'yicha 100 ballik shkalaga keltiriladi.">
+        <Panel title="Biznes salomatligi" eyebrow={range.label} info="8 ta ko'rsatkich × 20 ball: debitorka nazorati (muddati o'tgan qarzning jami debitorkadagi ulushi), xomashyo zaxirasi, marja, sotuv o'sishi, zayavka oqimi, pul oqimi (30 kunlik kassa prognozida uzilish), sof foyda (oyning hisoblangan PNL'i) va qarz yuki (kredit + ta'minotchi qarzi / oylik sotuv). Ma'lumoti yo'q ko'rsatkich ballanmaydi — ball qolganlari bo'yicha 100 ballik shkalaga keltiriladi. Pul uzilishi kutilsa yoki oy zarar bilan yopilayotgan bo'lsa, holat «Sog'lom» bo'lmaydi (ball 74 dan oshmaydi).">
+          {d.healthCapped && <div className="mb-3 w-full rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">«Sog'lom» bo'lmaydi: {d.healthCapped}.</div>}
           <div className="flex flex-col items-center">
             <ScoreRing score={d.health} label={d.healthLabel} />
             <div className="mt-3 w-full space-y-2">
@@ -121,12 +122,21 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
             </ul>
           )}
           <div className="mt-4 border-t border-slate-100 pt-3">
-            <Insight title="QISQACHA">Oy boshidan {moneyShort(d.month.revenue)} so'm sotildi — o'tgan oyning shu kunlaridagining {d.month.prev > 0 ? fmtNum((d.month.revenue / d.month.prev) * 100, 0) : "—"}%i (o'tgan oy jami {moneyShort(d.month.prevFull)}). Hozirgi temp bilan oy oxirida {moneyShort(d.month.forecast)} so'm bo'ladi. {d.kpis.lost} ta mijoz xaridni to'xtatgan ({fmtNum(100 - d.kpis.activeRate, 0)}% baza). {d.materialsAtRisk} ta xomashyo xavf zonasida.</Insight>
+            {/* Har jumla o'z to'plamidan: son va foiz bir xil guruhdan; ma'lumoti yo'q jumla chiqmaydi («0 ta … (86%)» bo'lmasin) */}
+            <Insight title="QISQACHA">
+              Oy boshidan {moneyShort(d.month.revenue)} so'm sotildi
+              {d.month.prevHasData && d.month.prev > 0
+                ? <> — o&apos;tgan oyning shu kunlaridagining {fmtNum((d.month.revenue / d.month.prev) * 100, 0)}%i (o&apos;tgan oy jami {moneyShort(d.month.prevFull)}).</>
+                : <> (o&apos;tgan oy bilan taqqoslash uchun ma&apos;lumot yo&apos;q).</>}
+              {d.month.forecast > 0 && <> Hozirgi temp bilan oy oxirida {moneyShort(d.month.forecast)} so&apos;m bo&apos;ladi.</>}
+              {d.kpis.lost > 0 && <> {d.kpis.lost} ta mijoz 90 kundan beri xarid qilmadi (bazaning {fmtNum(d.kpis.lostRate, 0)}%i).</>}
+              {d.materialsAtRisk > 0 && <> {d.materialsAtRisk} ta xomashyo xavf zonasida.</>}
+            </Insight>
           </div>
           <div className="mt-3"><Action href={tabHref(range, "forecast")}>Bashorat va anomaliyalarni ko'rish</Action></div>
         </Panel>
       </div>
-      <div className="flex items-center gap-2 text-xs text-slate-400"><Truck size={13} /> Taqqoslash davri: {range.prevLabel}. Bugungi va oylik kartalar davr filtridan mustaqil.</div>
+      <div className="flex items-center gap-2 text-xs text-slate-400"><Truck size={13} /> Taqqoslash davri: {d.hasPrev ? range.prevLabel : `${range.prevLabel} (ma'lumot yo'q — tizim keyin ishga tushgan)`}. Bugungi va oylik kartalar davr filtridan mustaqil.</div>
     </div>
   );
 }
