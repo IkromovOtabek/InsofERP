@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, monthForecast, goLiveDate, hasPrevData, grossOf, marginOf, uncostedRevenue, CAPITAL_RATE_DAY, type Range } from "./core";
+import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, monthForecast, goLiveDate, hasPrevData, grossOf, uncostedRevenue, CAPITAL_RATE_DAY, type Range } from "./core";
+import { refundsIn } from "@/lib/fin-report/refunds";
 import { healthScore } from "./health";
 import { financeHealthInputs } from "@/lib/fin-report/health-inputs";
 import { lossChannels } from "./finance";
@@ -49,9 +50,11 @@ export async function overviewTab(r: Range) {
   const k = (c: number, p: number) => (hasPrev ? kpi(c, p) : { cur: c, prev: 0, delta: null });
 
   const revenue = rev(cur), prevRevenue = rev(prev);
-  // Yalpi foyda/marja — faqat tannarxi ma'lum mahsulotlar bo'yicha (retseptsizlari 100% foyda bo'lib ko'rinmasin)
-  const gross = grossOf(cur), prevGross = grossOf(prev);
-  const margin = marginOf(cur), prevMargin = marginOf(prev);
+  // Yalpi foyda/marja — PNL bilan bitta qoida: QQS'siz tushum − tannarx (retseptsizga taxminiy) − mijozga qaytarilgan pul
+  const [refund, prevRefund] = await Promise.all([refundsIn(r.from, r.to), refundsIn(r.prevFrom, r.prevTo)]);
+  const gross = grossOf(cur) - refund, prevGross = grossOf(prev) - prevRefund;
+  const netOf = (rows: typeof cur) => sum(rows.map((x) => x.net));
+  const margin = safeDiv(gross, netOf(cur) - refund) * 100, prevMargin = safeDiv(prevGross, netOf(prev) - prevRefund) * 100;
   const uncosted = uncostedRevenue(cur);
   const cashIn = Number(cashAgg._sum.amount ?? 0) + Number(saleTxAgg._sum.amount ?? 0);
   const prevCashIn = Number(prevCashAgg._sum.amount ?? 0) + Number(prevSaleTxAgg._sum.amount ?? 0);

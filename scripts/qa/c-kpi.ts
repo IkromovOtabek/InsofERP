@@ -16,7 +16,11 @@ import { db } from "@/lib/db";
 import { resetCategoryCache } from "@/lib/fin-report/categories";
 import { pnlReport } from "@/lib/fin-report/pnl";
 import { type MonthKey, addMonths, monthStart, monthEnd } from "@/lib/fin-report/period";
-import { loadRevenue, grossOf, marginOf } from "@/lib/bi/core";
+import { loadRevenue, grossOf, marginOf, parseRange } from "@/lib/bi/core";
+import { refundsIn } from "@/lib/fin-report/refunds";
+import { overviewTab } from "@/lib/bi/overview";
+import { financeTab } from "@/lib/bi/finance";
+import { salesTab } from "@/lib/bi/sales";
 import { companyVatPayer } from "@/lib/receipt-vat";
 import { materialUsage, stockRisk } from "@/lib/material-usage";
 import { stockStatus } from "@/lib/production-report";
@@ -79,6 +83,18 @@ async function main() {
   check("Marja: yalpi foyda ÷ QQS'siz tushum", near(marginOf(rows), (v("gross") / v("sales")) * 100, 0.01), marginOf(rows));
   check("«Aniqlanmagan» chiqim — «Manbasi aniqlanmagan» qatorida, ishlab chiqarishda emas", !acc || (near(v("unknown"), 700_000) && near(v("prod"), 0)), { unknown: v("unknown"), prod: v("prod") });
   check("Operatsion foyda = yalpi + boshqa tushum − aniqlanmagan", !acc || near(v("operating"), v("gross") + 500_000 - 700_000, 1), v("operating"));
+
+  // Mijozga qaytarilgan pul 300 000: PNL Daromadidan ayiriladi — Tahlil tablari yalpi foydasi ham (`refundsIn`)
+  if (acc) {
+    const refCat = await db.cashCategory.create({ data: { name: `QA mijozga qaytarish ${tag}`, type: "EXPENSE", pnlLine: "CUSTOMER_REFUND" } });
+    resetCategoryCache();
+    await db.cashTransaction.create({ data: { cashAccountId: acc.id, type: "EXPENSE", amount: 300_000, date: at(7), category: refCat.name, createdById: U } });
+    const p2 = (await pnlReport([month], "accrual")).parts;
+    const r = parseRange({ from: `${month}-01`, to: `${month}-28` });
+    const [ref, ov, fin, sal] = await Promise.all([refundsIn(monthStart(month), new Date(monthEnd(month).getTime() + 1)), overviewTab(r), financeTab(r, "day", 1, 10), salesTab(r, "day", 1, 10, {})]);
+    check("Qaytarilgan pul 300 000 Daromaddan ayirildi", near(ref, 300_000) && near(p2.income[0] ?? 0, v("sales") - 300_000), { ref, income: p2.income[0] });
+    check("Tahlil Umumiy / Moliya / Sotuv yalpi foydasi = PNL yalpi foydasi", [ov.kpis.gross.cur, fin.kpis.gross.cur, sal.kpis.gross.cur].every((g) => near(g, p2.gross[0] ?? 0, 1)), { pnl: p2.gross[0], ov: ov.kpis.gross.cur, fin: fin.kpis.gross.cur, sal: sal.kpis.gross.cur });
+  }
 
   section("2. Xomashyo kunlik sarfi va xavf darajasi");
   const today = new Date(); today.setHours(12, 0, 0, 0);

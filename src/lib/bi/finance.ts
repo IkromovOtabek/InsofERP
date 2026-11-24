@@ -6,6 +6,7 @@ import { materialOverview } from "./stock";
 import { customerBase } from "./customers";
 import { txSign, FLOW_ONLY } from "@/lib/cash-tx";
 import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
+import { refundsIn } from "@/lib/fin-report/refunds";
 
 /** Bazaviy narxdan (QQS'siz) past sotilgan qatorlar — NDS li qator narxi ham QQS'siz bilan solishtiriladi */
 const netPrice = (x: SaleRow) => safeDiv(x.net, x.qty);
@@ -137,13 +138,16 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     goLiveDate(),
   ]);
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
-  // Yalpi foyda = QQS'siz tushum − tannarx (retsept bo'yicha, retseptsizga taxminiy) — PNL bilan bitta qoida (`cogsOf`).
-  // Sharshara: Sof tushum − QQS − tannarx = Yalpi foyda (qadamlar yig'indisi mos keladi)
+  // Yalpi foyda = QQS'siz tushum − mijozga qaytarilgan pul − tannarx (retsept bo'yicha, retseptsizga taxminiy) — PNL bilan
+  // bitta qoida (`cogsOf`, `refundsIn`). Sharshara: Sof tushum − QQS − qaytarilgan pul − tannarx = Yalpi foyda
   const cogs = sum(cur.map(cogsOf));
   const vat = sum(cur.map((x) => x.revenue - x.net));
   const discount = discountOf(cur).value;
   const grossAtBase = revenue + discount;
-  const gross = grossOf(cur), prevGross = grossOf(prev);
+  const [refund, prevRefund] = await Promise.all([refundsIn(r.from, r.to), refundsIn(r.prevFrom, r.prevTo)]);
+  const gross = grossOf(cur) - refund, prevGross = grossOf(prev) - prevRefund;
+  const netSum = (rows: SaleRow[], ref: number) => sum(rows.map((x) => x.net)) - ref;
+  const refMargin = safeDiv(gross, netSum(cur, refund)) * 100, prevRefMargin = safeDiv(prevGross, netSum(prev, prevRefund)) * 100;
   // Xarid xarajati: QQS to'lovchisi korxonada QQS'siz (kirim QQS'i qaytariladi), aks holda QQS bilan
   const vatPayer = await companyVatPayer();
   const writeOff = wo.value;
@@ -203,7 +207,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const indicators = [
     { label: "Sotuv tushumi", unit: "so'm", ...kpi(revenue, prevRevenue) },
     { label: "Yalpi foyda", unit: "so'm", ...kpi(gross, prevGross) },
-    { label: "Marja", unit: "%", ...kpi(marginOf(cur), marginOf(prev)) },
+    { label: "Marja", unit: "%", ...kpi(refMargin, prevRefMargin) },
     { label: "Kassa tushumi", unit: "so'm", ...kpi(cashIn, prevCashIn) },
     { label: "Xomashyo xaridi", unit: "so'm", ...kpi(purchases, prevPurchases) },
     { label: "Yetkazilgan zayavkalar", unit: "ta", ...kpi(orders, prevOrders) },
@@ -218,8 +222,8 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const total = list.length, rows = list.slice((page - 1) * size, page * size);
 
   return {
-    loss, kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: marginOf(cur), uncosted: uncostedRevenue(cur), otherIn, profit, cashIn: kpi(cashIn, prevCashIn), receivable, debtors, purchases: kpi(purchases, prevPurchases), cashTotal, activeCustomers: new Set(cur.map((x) => x.customerId)).size, totalCustomers: cust.length, discount, writeOff },
-    waterfall: [{ label: "Bazaviy tushum", value: grossAtBase, total: true }, { label: "Chegirma", value: -discount }, { label: "Sof tushum", value: revenue, total: true }, ...(vat > 0 ? [{ label: "QQS", value: -vat }] : []), { label: "Xomashyo tannarxi", value: -cogs }, { label: "Yalpi foyda", value: gross, total: true }, { label: "Brak", value: -writeOff }, { label: "Foyda*", value: profit, total: true }],
+    loss, kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: refMargin, uncosted: uncostedRevenue(cur), otherIn, profit, cashIn: kpi(cashIn, prevCashIn), receivable, debtors, purchases: kpi(purchases, prevPurchases), cashTotal, activeCustomers: new Set(cur.map((x) => x.customerId)).size, totalCustomers: cust.length, discount, writeOff },
+    waterfall: [{ label: "Bazaviy tushum", value: grossAtBase, total: true }, { label: "Chegirma", value: -discount }, { label: "Sof tushum", value: revenue, total: true }, ...(vat > 0 ? [{ label: "QQS", value: -vat }] : []), ...(refund > 0 ? [{ label: "Mijozga qaytarilgan", value: -refund }] : []), { label: "Xomashyo tannarxi", value: -cogs }, { label: "Yalpi foyda", value: gross, total: true }, { label: "Brak", value: -writeOff }, { label: "Foyda*", value: profit, total: true }],
     accountRows, cashForecast, flow, cumulative, months: { labels: rev6.map((x) => x.label), revenue: rev6.map((x) => x.value), purchases: cost6.map((x) => x.value), cash: pay6s.map((x) => x.value), active: active6.map((x) => x.value) },
     expenses, expenseTotal, aging, topPayments, indicators, list: { rows, total, page, size }, accounts,
     activeRate: safeDiv(cust.filter((c) => c.recency !== null && c.recency < 30).length, cust.length) * 100,

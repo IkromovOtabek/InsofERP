@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { workCalendar } from "@/lib/work-calendar";
 import { type Range, type Gran, loadSales, series, kpi, sum, abc, safeDiv, addDays, startOfDay, WEEKDAYS, grossOf, marginOf, uncostedRevenue, monthForecast, goLiveDate, type SaleRow } from "./core";
+import { refundsIn } from "@/lib/fin-report/refunds";
 
 function groupBy<T, K>(rows: T[], key: (r: T) => K) {
   const m = new Map<K, T[]>();
@@ -20,8 +21,10 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
   const orders = new Set(cur.map((x) => x.orderId)).size, prevOrders = new Set(prev.map((x) => x.orderId)).size;
   const customers = new Set(cur.map((x) => x.customerId)).size, prevCustomers = new Set(prev.map((x) => x.customerId)).size;
-  // Yalpi foyda — faqat tannarxi ma'lum qatorlar (QQS'siz tushum − tannarx)
-  const gross = grossOf(cur), prevGross = grossOf(prev), uncosted = uncostedRevenue(cur);
+  // Yalpi foyda — PNL bilan bitta qoida: QQS'siz tushum − tannarx (retseptsizga taxminiy) − mijozga qaytarilgan pul
+  const [refund, prevRefund] = await Promise.all([refundsIn(r.from, r.to), refundsIn(r.prevFrom, r.prevTo)]);
+  const gross = grossOf(cur) - refund, prevGross = grossOf(prev) - prevRefund, uncosted = uncostedRevenue(cur);
+  const marginCur = safeDiv(gross, sum(cur.map((x) => x.net)) - refund) * 100, marginPrev = safeDiv(prevGross, sum(prev.map((x) => x.net)) - prevRefund) * 100;
   const volume = sum(cur.filter((x) => x.unit === "m3").map((x) => x.qty)), prevVolume = sum(prev.filter((x) => x.unit === "m3").map((x) => x.qty));
 
   // Temp / prognoz: joriy oy. Prognoz — Bosh sahifa va Egasi paneli bilan bitta formula (`monthForecast`: ish kunlari
@@ -94,7 +97,7 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   const productOptions = byProduct.map((p) => ({ id: p.id, name: p.name }));
 
   return {
-    kpis: { revenue: kpi(revenue, prevRevenue), avgCheck: kpi(safeDiv(revenue, orders), safeDiv(prevRevenue, prevOrders)), orders: kpi(orders, prevOrders), customers: kpi(customers, prevCustomers), gross: kpi(gross, prevGross), margin: kpi(marginOf(cur), marginOf(prev)), volume: kpi(volume, prevVolume), uncosted },
+    kpis: { revenue: kpi(revenue, prevRevenue), avgCheck: kpi(safeDiv(revenue, orders), safeDiv(prevRevenue, prevOrders)), orders: kpi(orders, prevOrders), customers: kpi(customers, prevCustomers), gross: kpi(gross, prevGross), margin: kpi(marginCur, marginPrev), volume: kpi(volume, prevVolume), uncosted },
     pulse, dyn, dynPrev, dynVol, productRows, pareto, paretoCount, byCustomer, prodMovers, custMovers, lost, opportunity, weekday, discount, discountCount: discountRows.length,
     detail: { rows: pageRows, total, page, size }, customerOptions, productOptions,
   };
