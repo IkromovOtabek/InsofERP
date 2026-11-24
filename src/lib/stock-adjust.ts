@@ -7,6 +7,8 @@ import { issuePrices } from "./stock-price";
 import { notifyAfter, notifyRoles } from "./notify";
 import { money } from "./format";
 import { DIRECTOR_NOTIFY_SUM, WRITE_OFF_REASONS } from "./stock-adjust-const";
+import { takeFromOwners } from "./brigade-products";
+import { finishedUnitCosts } from "./bi/core";
 
 /**
  * Sklad qoldig'ini HUJJAT bilan o'zgartirish (yangi model yo'q — StockMove turlari yetarli). Veb (`stock/adjust-actions.ts`)
@@ -109,6 +111,92 @@ export async function saveInventoryCount(
   return {
     ok: true,
     note: `Farq yozildi: ${res.count} qator (ortiqcha ${money(res.plus)}, kam ${money(res.minus)})${res.sum >= DIRECTOR_NOTIFY_SUM ? " — summa katta, direktorga xabar ketdi" : ""}`,
+  };
+}
+
+// ───────────────────────── Tayyor mahsulot sanog'i ─────────────────────────
+
+/** `book` — sanoq boshlangandagi hisobdagi qoldiq (shu skladda, barcha omborlar yig'indisi). */
+export type ProductCountRow = { productId: string; book: number; actual: number };
+/** Tayyor mahsulot sanog'i yozuvlari — xomashyo sanog'idan («Inventory») ajratiladi. */
+export const PRODUCT_INVENTORY_REF = "ProductInventory";
+
+/**
+ * Tayyor DONA mahsulot sanog'i (Sarvar rejasi 2-bosqich: «plita qoldig'i tizimda 770, hisob bo'yicha 72» — oy oxiri sanog'i
+ * farqni tuzatish akti bilan kiritadi). Xomashyo sanog'idagi qoida: hisobdagi va haqiqiy qoldiq solishtiriladi, farq ADJUSTMENT (±),
+ * bitta sanoq — bitta akt (`refType = "ProductInventory"`, `refId`), sabab majburiy, auditda; sanoq paytida qoldiq o'zgargan
+ * bo'lsa yozilmaydi. Ortiqcha (+) — umumiy hovliga; kamomad (−) — omborlardan (`takeFromOwners`: umumiy hovli → brigadalar).
+ * Beton (m³) sanalmaydi. Farq summasi (tannarx bo'yicha) katta bo'lsa — direktorga xabar.
+ */
+export async function saveProductCount(
+  input: { warehouseId: string; reason: string; rows: unknown[] },
+  userId: string,
+): Promise<AdjustResult> {
+  const warehouseId = String(input.warehouseId ?? "").trim();
+  const reason = String(input.reason ?? "").trim();
+  if (!reason) return { error: "Farq sababini yozing (masalan: oy oxiri sanog'i, hisobga olinmagan sotuv)" };
+  if (!Array.isArray(input.rows)) return { error: "Jadval o'qilmadi" };
+  const rows: ProductCountRow[] = (input.rows as ({ productId?: unknown; book?: unknown; actual?: unknown } | null)[])
+    .map((x) => ({ productId: String(x?.productId ?? ""), book: Number(x?.book), actual: Number(x?.actual) }))
+    .filter((x) => x.productId);
+  if (!rows.length) return { error: "Kamida bitta mahsulotning haqiqiy qoldig'ini kiriting" };
+  if (rows.some((x) => !Number.isFinite(x.actual) || x.actual < 0 || x.actual > MAX_AMOUNT || !Number.isFinite(x.book))) return { error: "Haqiqiy qoldiq manfiy bo'lmagan raqam bo'lsin" };
+  if (new Set(rows.map((x) => x.productId)).size !== rows.length) return { error: "Bir mahsulot ikki marta sanalgan" };
+
+  const wh = await db.warehouse.findFirst({ where: { id: warehouseId, isActive: true }, select: { id: true, name: true } });
+  if (!wh) return { error: "Sklad tanlanmagan" };
+  const ids = rows.map((x) => x.productId);
+  const prods = await db.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } });
+  if (prods.length !== ids.length) return { error: "Ro'yxatdagi mahsulot topilmadi — sahifani yangilang" };
+  if (prods.some((p) => p.unit === "m3")) return { error: "Beton (m³) sanalmaydi — u hovlida turmaydi" };
+  const meta = new Map(prods.map((p) => [p.id, p]));
+  const costs = await finishedUnitCosts();
+  const actNo = `SA-${Date.now().toString(36).toUpperCase()}`;
+  const batchId = crypto.randomUUID();
+
+  const res = await db.$transaction(async (tx) => {
+    await lockStock(tx);
+    const sums = await tx.stockMove.groupBy({ by: ["productId"], where: { warehouseId: wh.id, productId: { in: ids } }, _sum: { qty: true } });
+    const bal = new Map(sums.map((x) => [x.productId!, Number(x._sum.qty ?? 0)]));
+    const moved = rows.filter((x) => Math.abs((bal.get(x.productId) ?? 0) - x.book) > STOCK_EPS);
+    if (moved.length) {
+      return { error: `Sanoq paytida qoldiq o'zgardi: ${moved.slice(0, 5).map((x) => meta.get(x.productId)?.name).join(", ")} — sahifani yangilab, shu qatorlarni qayta kiriting` };
+    }
+    const diffs = rows.map((x) => ({ ...x, diff: r3(x.actual - (bal.get(x.productId) ?? 0)) })).filter((x) => Math.abs(x.diff) > STOCK_EPS);
+    if (!diffs.length) return { ok: true as const, count: 0, plus: 0, minus: 0, lines: [] as string[], first: "" };
+    let plus = 0, minus = 0;
+    const lines: string[] = [];
+    for (const x of diffs) {
+      const p = meta.get(x.productId)!;
+      const note = `Sanoq akti ${actNo}: hisobda ${r3(x.book)}, haqiqiy ${r3(x.actual)} ${p.unit} · ${reason}`;
+      const base = { type: "ADJUSTMENT" as const, warehouseId: wh.id, productId: x.productId, refType: PRODUCT_INVENTORY_REF, refId: batchId, createdById: userId, note };
+      if (x.diff > 0) await tx.stockMove.create({ data: { ...base, qty: x.diff } });
+      else for (const part of await takeFromOwners(tx, { warehouseId: wh.id, productId: x.productId, qty: -x.diff })) {
+        await tx.stockMove.create({ data: { ...base, ownerBrigadeId: part.owner, qty: -part.qty } });
+      }
+      const v = Math.abs(x.diff) * (costs.get(x.productId) ?? 0);
+      if (x.diff > 0) plus += v; else minus += v;
+      lines.push(`${p.name}: ${x.diff > 0 ? "+" : ""}${x.diff} ${p.unit}`);
+    }
+    await audit(tx, userId, "CREATE", "StockMove", batchId, undefined, {
+      via: "product-inventory", act: actNo, warehouse: wh.name, reason, counted: rows.length,
+      diffs: diffs.map((x) => ({ productId: x.productId, book: x.book, actual: x.actual, diff: x.diff })), plus, minus,
+    });
+    return { ok: true as const, count: diffs.length, plus, minus, lines, first: diffs[0]!.productId };
+  });
+  if ("error" in res) return { error: res.error ?? "Saqlanmadi" };
+  if (!res.count) return { ok: true, note: `${rows.length} ta mahsulot sanaldi — farq yo'q` };
+  if (res.plus + res.minus >= DIRECTOR_NOTIFY_SUM) {
+    notifyAfter(() => notifyRoles(["DIRECTOR"], {
+      type: "STOCK_INVENTORY",
+      title: `Tayyor mahsulot sanog'i farqi katta — ${wh.name}`,
+      body: `Akt ${actNo} · ${res.count} qator · ortiqcha ${money(res.plus)}, kam ${money(res.minus)} · ${reason} · ${res.lines.slice(0, 3).join("; ")}`,
+      link: { key: "stock", id: res.first },
+    }, { except: userId }));
+  }
+  return {
+    ok: true,
+    note: `Sanoq akti ${actNo}: ${res.count} qator farq yozildi (ortiqcha ${money(res.plus)}, kam ${money(res.minus)} — tannarx bo'yicha)`,
   };
 }
 

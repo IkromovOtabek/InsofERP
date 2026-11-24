@@ -85,6 +85,21 @@ const imp = q1(`select id from "RealizationEntry" where "customerName"='${cust4}
 check(!!imp && out(imp) === -2 && bal() === 3, "Excel importidagi qator ham skladdan chiqdi", r.error ?? { imp, bal: bal() });
 if (imp) await logist.action(`${RA}#deleteRealizationAction`, [imp, "QA"]);
 
+// ── Tayyor mahsulot sanog'i (sanoq akti): hisobda 5, sanaldi 2 → −3 ──
+const sklad = await as("sklad");
+const SA = "(app)/stock/adjust-actions";
+const book = bal();
+let page = await sklad.get("/stock/inventarizatsiya/tayyor");
+check(page.status === 200 && page.text.includes(pname), "«Tayyor mahsulot sanog'i» sahifasi ochildi, mahsulot ro'yxatda", page.status);
+r = await sklad.action(`${SA}#saveProductInventory`, [undefined, fd({ warehouseId: wh, reason: "", rows: JSON.stringify([{ productId: pid, book, actual: 2 }]) })], "/stock/inventarizatsiya/tayyor");
+check(!r.ok && /sabab/i.test(r.error ?? ""), "sanoq sababsiz rad etildi", r.error);
+r = await sklad.action(`${SA}#saveProductInventory`, [undefined, fd({ warehouseId: wh, reason: "QA oy oxiri sanog'i", rows: JSON.stringify([{ productId: pid, book: book + 1, actual: 2 }]) })], "/stock/inventarizatsiya/tayyor");
+check(!r.ok && /o'zgardi/.test(r.error ?? ""), "eskirgan hisob qoldig'i bilan sanoq rad etildi", r.error);
+r = await sklad.action(`${SA}#saveProductInventory`, [undefined, fd({ warehouseId: wh, reason: "QA oy oxiri sanog'i", rows: JSON.stringify([{ productId: pid, book, actual: 2 }]) })], "/stock/inventarizatsiya/tayyor");
+check(r.ok && bal() === 2 && n1(`select count(*) from "StockMove" where "refType"='ProductInventory' and "productId"='${pid}'`) >= 1, `sanoq akti: hisobda ${book}, sanaldi 2 — qoldiq 2`, r.error ?? bal());
+page = await logist.get("/stock/inventarizatsiya/tayyor");
+check(page.status !== 200 || !page.text.includes(pname), "logistika sanoq sahifasini ocha olmaydi", page.status);
+
 // Keyingi testlarga ta'sir qilmasin — sozlama o'chiriladi
 r = await dir.action("(app)/settings/actions#saveSaleStockSettings", [undefined, fd({ realizationStockFrom: "" })], "/settings");
 check(r.ok && !q1(`select "realizationStockFrom" from "CompanySettings" where id='main'`), "sozlama bo'shatildi — o'chiq");

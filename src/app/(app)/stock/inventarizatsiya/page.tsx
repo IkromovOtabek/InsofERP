@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { avgUnitCosts } from "@/lib/stock";
 import { money, qty, dateTime } from "@/lib/format";
-import { Callout, Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { Callout, Card, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { Boxes } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { InventoryForm } from "./inventory-form";
 import { DIRECTOR_NOTIFY_SUM } from "../adjust-const";
@@ -32,6 +33,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   return (
     <div>
       <PageHeader back={{ href: "/stock", label: "Sklad" }} title="Inventarizatsiya"
+        action={<LinkButton href="/stock/inventarizatsiya/tayyor" variant="secondary"><Boxes size={16} /> Tayyor mahsulot sanog&apos;i</LinkButton>}
         info={<>
           <p>Skladni sanab chiqing: hisobdagi va haqiqiy qoldiq solishtiriladi, farq sabab bilan qoldiqqa tuzatish bo&apos;lib yoziladi.</p>
           <p>Faqat sanagan qatorlaringizni to&apos;ldiring — bo&apos;sh qator o&apos;zgarmaydi. Farq summasi {money(DIRECTOR_NOTIFY_SUM)} dan oshsa,
