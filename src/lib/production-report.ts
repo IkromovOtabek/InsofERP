@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { materialOutlook } from "@/lib/dashboard";
 import { getCompany } from "@/lib/company";
+import { stockRisk } from "@/lib/material-usage";
 import { productionDay } from "@/lib/production-day";
 import { applyDailyInput, dailyMatrix, type DailyMatrix } from "@/lib/production-daily";
 import { dayUtc, isoDay, markOf, today } from "@/lib/davomat";
@@ -52,15 +53,16 @@ const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
 /**
  * Xomashyo holati: kam qolgani va qancha kerakligi.
  * `need` — zayavkalarga yetishi va minimal qoldiqqa chiqishi uchun yetishmayotgan miqdor.
- * `short` — tasdiqlangan zayavkalarga yetmaydi yoki `stockCritDays` (standart 3) kunga yetmaydi;
- * `low` — minimaldan kam yoki `stockWarnDays` (standart 7) kundan kam. Chegaralar — Sozlamalar → Limitlar.
+ * Daraja — `stockRisk` (`lib/material-usage.ts`, Tahlil bilan bitta chegara): `short` — tasdiqlangan zayavkalarga yetmaydi yoki
+ * `stockCritDays` (standart 3) kunga yetmaydi; `low` — minimaldan kam yoki `stockWarnDays` (standart 7) kundan kam.
+ * Faqat xomashyo toifasi baholanadi (zapchast doim «Yetarli»). Chegaralar — Sozlamalar → Limitlar.
  */
 export async function stockStatus(opts: { until?: Date } = {}) {
   const [rows, company] = await Promise.all([materialOutlook(opts), getCompany()]);
   return rows
     .map((m) => {
       const need = Math.max(0, m.planned - m.balance, m.minStock - m.balance);
-      const level: StockLevel = m.short || (m.days !== null && m.days < company.stockCritDays) ? "short" : m.balance < m.minStock || (m.days !== null && m.days < company.stockWarnDays) ? "low" : "ok";
+      const level: StockLevel = stockRisk(m, { critDays: company.stockCritDays, warnDays: company.stockWarnDays });
       return { name: m.name, unit: m.unit, balance: m.balance, perDay: m.perDay, days: m.days, planned: m.planned, minStock: m.minStock, need, level, id: m.id, orderGap: m.orderGap, orders: m.orders };
     })
     .sort((a, b) => ({ short: 0, low: 1, ok: 2 })[a.level] - ({ short: 0, low: 1, ok: 2 })[b.level] || (a.days ?? 1e9) - (b.days ?? 1e9) || a.name.localeCompare(b.name));

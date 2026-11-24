@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { receivablesReport } from "@/lib/receivables";
 import { fmtNum } from "@/lib/format";
-import { type Range, type Gran, type SaleRow, loadSales, loadRevenue, materialCosts, productCosts, sum, safeDiv, kpi, series, addDays, startOfDay, std, mean, goLiveDate, costedRows, grossOf, marginOf, CAPITAL_RATE_DAY } from "./core";
+import { type Range, type Gran, type SaleRow, loadSales, loadRevenue, materialCosts, productCosts, sum, safeDiv, kpi, series, addDays, startOfDay, std, mean, goLiveDate, costedRows, cogsOf, grossOf, marginOf, uncostedRevenue, CAPITAL_RATE_DAY } from "./core";
 import { materialOverview } from "./stock";
 import { customerBase } from "./customers";
 import { txSign, FLOW_ONLY } from "@/lib/cash-tx";
@@ -112,10 +112,10 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     goLiveDate(),
   ]);
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
-  // Yalpi foyda = QQS'siz tushum − tannarx, faqat tannarxi ma'lum qatorlar bo'yicha.
-  // Sharshara: Sof tushum − QQS − tannarxi noma'lum tushum − tannarx = Yalpi foyda (qadamlar yig'indisi mos keladi)
-  const cogs = sum(costedRows(cur).map((x) => x.cost));
-  const vat = sum(cur.map((x) => x.revenue - x.net)), uncostedNet = sum(cur.filter((x) => !x.costKnown).map((x) => x.net));
+  // Yalpi foyda = QQS'siz tushum − tannarx (retsept bo'yicha, retseptsizga taxminiy) — PNL bilan bitta qoida (`cogsOf`).
+  // Sharshara: Sof tushum − QQS − tannarx = Yalpi foyda (qadamlar yig'indisi mos keladi)
+  const cogs = sum(cur.map(cogsOf));
+  const vat = sum(cur.map((x) => x.revenue - x.net));
   const discount = discountOf(cur).value;
   const grossAtBase = revenue + discount;
   const gross = grossOf(cur), prevGross = grossOf(prev);
@@ -193,8 +193,8 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const total = list.length, rows = list.slice((page - 1) * size, page * size);
 
   return {
-    loss, kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: marginOf(cur), uncosted: sum(cur.filter((x) => !x.costKnown).map((x) => x.revenue)), otherIn, profit, cashIn: kpi(cashIn, prevCashIn), receivable, debtors, purchases: kpi(purchases, prevPurchases), cashTotal, activeCustomers: new Set(cur.map((x) => x.customerId)).size, totalCustomers: cust.length, discount, writeOff },
-    waterfall: [{ label: "Bazaviy tushum", value: grossAtBase, total: true }, { label: "Chegirma", value: -discount }, { label: "Sof tushum", value: revenue, total: true }, ...(vat > 0 ? [{ label: "QQS", value: -vat }] : []), ...(uncostedNet > 0 ? [{ label: "Tannarxi noma'lum", value: -uncostedNet }] : []), { label: "Xomashyo tannarxi", value: -cogs }, { label: "Yalpi foyda", value: gross, total: true }, { label: "Brak", value: -writeOff }, { label: "Foyda*", value: profit, total: true }],
+    loss, kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: marginOf(cur), uncosted: uncostedRevenue(cur), otherIn, profit, cashIn: kpi(cashIn, prevCashIn), receivable, debtors, purchases: kpi(purchases, prevPurchases), cashTotal, activeCustomers: new Set(cur.map((x) => x.customerId)).size, totalCustomers: cust.length, discount, writeOff },
+    waterfall: [{ label: "Bazaviy tushum", value: grossAtBase, total: true }, { label: "Chegirma", value: -discount }, { label: "Sof tushum", value: revenue, total: true }, ...(vat > 0 ? [{ label: "QQS", value: -vat }] : []), { label: "Xomashyo tannarxi", value: -cogs }, { label: "Yalpi foyda", value: gross, total: true }, { label: "Brak", value: -writeOff }, { label: "Foyda*", value: profit, total: true }],
     accountRows, cashForecast, flow, cumulative, months: { labels: rev6.map((x) => x.label), revenue: rev6.map((x) => x.value), purchases: cost6.map((x) => x.value), cash: pay6s.map((x) => x.value), active: active6.map((x) => x.value) },
     expenses, expenseTotal, aging, topPayments, indicators, list: { rows, total, page, size }, accounts,
     activeRate: safeDiv(cust.filter((c) => c.recency !== null && c.recency < 30).length, cust.length) * 100,

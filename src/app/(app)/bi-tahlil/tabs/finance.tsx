@@ -23,7 +23,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
       {/* Asosiy ko'rsatkichlar — sahifa tepasida */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8 [&>*]:min-w-0">
         <Kpi label="Jami sotuv tushumi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={TrendingUp} tone="brand" href={tabHref(range, "sales")} />
-        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(k.margin, 1)}%${k.uncosted > 0 ? ` · tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : ""}`} href="#pnl" />
+        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(k.margin, 1)}%${k.uncosted > 0 ? ` · tannarxi noma'lum ${moneyShort(k.uncosted)} — foyda oshib ko'rinadi` : ""}`} href="#pnl" />
         <Kpi label="Foyda*" value={moneyShort(k.profit)} icon={PiggyBank} tone={k.profit >= 0 ? "success" : "danger"} hint="brakdan keyin" href="#pnl" />
         <Kpi label="Kassa tushumi" value={moneyShort(k.cashIn.cur)} delta={k.cashIn.delta} icon={Landmark} tone="success" hint={k.otherIn > 0 ? `shundan boshqa kirimlar ${moneyShort(k.otherIn)}` : "mijoz to'lovlari + boshqa kirimlar"} href="#tranzaksiyalar" />
         <Kpi label="Xomashyo xaridi" value={moneyShort(k.purchases.cur)} delta={k.purchases.delta} invert icon={ShoppingCart} tone="info" href="#xarajatlar" />

@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "PnlLine" ADD VALUE 'UNSORTED';
+

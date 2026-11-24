@@ -19,6 +19,7 @@ import { moneyShort, qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { txSign, FLOW_ONLY, SALES_INCOME } from "@/lib/cash-tx";
 import { orderTotal } from "@/lib/order-total";
+import { stockRisk } from "@/lib/material-usage";
 
 /**
  * Egasi dashbordi (TZ "Owner Dashboard v2.0") — bitta chaqiruvda hamma blok.
@@ -351,7 +352,8 @@ export async function ownerDashboard() {
   /* ───────────────────────── Sklad ───────────────────────── */
   const stockRows = materials.map((mt) => ({
     id: mt.id, name: mt.name, unit: mt.unit, balance: mt.balance, value: mt.value, perDay: mt.perDay, days: mt.days, minStock: mt.minStock, short: mt.short,
-    level: (mt.short || (mt.days !== null && mt.days < T.stockCrit) ? "crit" : mt.balance < mt.minStock || (mt.days !== null && mt.days < T.stockWarn) ? "warn" : "ok") as Level,
+    // Sklad holati va Tahlil bilan bitta qoida (`stockRisk`) — faqat xomashyo toifasi baholanadi
+    level: ({ short: "crit", low: "warn", ok: "ok" } as const)[mt.tracked ? stockRisk(mt, { critDays: T.stockCrit, warnDays: T.stockWarn }) : "ok"] as Level,
     normDev: normRows.find((n) => n.id === mt.id)?.devPct ?? null,
   })).sort((a, b) => (a.days ?? 9999) - (b.days ?? 9999));
   const stockValue = sum(stockRows.map((r) => r.value));

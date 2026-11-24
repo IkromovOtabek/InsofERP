@@ -19,9 +19,14 @@ import { r2 } from "./rows";
  */
 const DAY = 86_400_000;
 
-export type PanelAccount = { id: string; name: string; open: number; inToday: number; outToday: number; inMonth: number; outMonth: number; balance: number };
+/**
+ * Hisob qatori o'zi tekshiriladi (Sarvar rejasi 3-bosqich): oy boshi + oy kirim − oy chiqim + o'tkazma kirdi − o'tkazma chiqdi =
+ * hozirgi qoldiq. Oy ichidagi boshlang'ich qoldiq yozuvi (OPENING) «Oy boshi»ga qo'shiladi.
+ */
+export type PanelAccount = { id: string; name: string; open: number; inToday: number; outToday: number; inMonth: number; outMonth: number; trInMonth: number; trOutMonth: number; balance: number };
 export type PanelSalesRow = { group: string; qtyToday: number; sumToday: number; qtyMonth: number; sumMonth: number; share: number; avgPrice: number | null };
-export type PanelProdRow = { group: string; producedToday: number; producedMonth: number; openQty: number; shippedMonth: number; qty: number; valueCost: number; valuePrice: number };
+/** `noCostQty` / `priceFromSales` — qoldiqning tannarxi noma'lum qismi (dona) va sotuv narxi katalogda yo'q bo'lib, oy sotuvidan olingan qismi */
+export type PanelProdRow = { group: string; producedToday: number; producedMonth: number; openQty: number; shippedMonth: number; qty: number; valueCost: number; valuePrice: number; noCostQty: number; noPriceQty: number; priceFromSales: number };
 export type PanelMaterial = { id: string; name: string; unit: string; open: number; received: number; consumed: number; balance: number; price: number | null; value: number; normDevPct: number | null };
 
 export type Panel = {
@@ -81,17 +86,19 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
   const openBal = new Map<string, number>();
   for (const g of txGroups) openBal.set(g.cashAccountId, (openBal.get(g.cashAccountId) ?? 0) + txSign(g.type) * Number(g._sum.amount ?? 0));
   for (const g of payGroups) openBal.set(g.cashAccountId, (openBal.get(g.cashAccountId) ?? 0) + Number(g._sum.amount ?? 0));
-  const accMap = new Map(accounts.map((a) => [a.id, { id: a.id, name: a.name, open: openBal.get(a.id) ?? 0, inToday: 0, outToday: 0, inMonth: 0, outMonth: 0, balance: 0, isActive: a.isActive }]));
+  const accMap = new Map(accounts.map((a) => [a.id, { id: a.id, name: a.name, open: openBal.get(a.id) ?? 0, inToday: 0, outToday: 0, inMonth: 0, outMonth: 0, trInMonth: 0, trOutMonth: 0, balance: 0, isActive: a.isActive }]));
   const transfers = { inToday: 0, outToday: 0, inMonth: 0, outMonth: 0 };
   const moveMonth = new Map<string, number>();
   for (const t of txMonth) {
     const a = accMap.get(t.cashAccountId); if (!a) continue;
     const v = Number(t.amount);
     moveMonth.set(a.id, (moveMonth.get(a.id) ?? 0) + txSign(t.type) * v);
-    if (t.type === "OPENING") continue;
+    // Oy ichida kiritilgan boshlang'ich qoldiq — «Oy boshi»ga (qator tenglamasi buzilmasin)
+    if (t.type === "OPENING") { a.open += txSign(t.type) * v; continue; }
     if (t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT") {
       const k = t.type === "TRANSFER_IN" ? "in" : "out";
       transfers[`${k}Month`] += v; if (isDay(t.date)) transfers[`${k}Today`] += v;
+      if (k === "in") a.trInMonth += v; else a.trOutMonth += v;
       continue;
     }
     if (t.type === "INCOME") { a.inMonth += v; if (isDay(t.date)) a.inToday += v; } else { a.outMonth += v; if (isDay(t.date)) a.outToday += v; }
@@ -102,7 +109,8 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
     moveMonth.set(a.id, (moveMonth.get(a.id) ?? 0) + v);
     a.inMonth += v; if (isDay(p.date)) a.inToday += v;
   }
-  for (const a of accMap.values()) a.balance = r2(a.open + (moveMonth.get(a.id) ?? 0));
+  // Qoldiq — oy boshigacha yig'indi + oy ichidagi barcha harakat (OPENING ham). Qatorda: oy boshi + kirim − chiqim ± o'tkazma = qoldiq
+  for (const a of accMap.values()) a.balance = r2((openBal.get(a.id) ?? 0) + (moveMonth.get(a.id) ?? 0));
   const accRows = [...accMap.values()].filter((a) => a.isActive || Math.abs(a.balance) >= 1 || Math.abs(a.open) >= 1);
   const cash = r2(accRows.reduce((s, a) => s + a.balance, 0));
   const inToday = r2(accRows.reduce((s, a) => s + a.inToday, 0)), outToday = r2(accRows.reduce((s, a) => s + a.outToday, 0));
@@ -121,19 +129,28 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
   const salesTotal = { qtyToday: r2(sales.reduce((s, x) => s + x.qtyToday, 0)), sumToday: r2(sales.reduce((s, x) => s + x.sumToday, 0)), qtyMonth: r2(sales.reduce((s, x) => s + x.qtyMonth, 0)), sumMonth: salesMonth, share: salesMonth ? 100 : 0 };
   const cashOrders = new Set((await db.order.findMany({ where: { id: { in: [...new Set(revenueMonth.map((r) => r.orderId))] }, payMethod: "CASH" }, select: { id: true } })).map((o) => o.id));
   const cashSalesSum = r2(revenueMonth.filter((r) => cashOrders.has(r.orderId) || r.rz?.payGroup === "CASH").reduce((s, r) => s + r.revenue, 0));
-  // Kassaga savdo tushumi: naqd hisobga mijoz to'lovlari + «Savdo» kirimi (to'lov bo'lib yozilmagan sotuv puli)
+  // Kassaga savdo tushumi — bitta ta'rif (Sarvar rejasi 1.2): mijoz to'lovlari + kassa/bank «Savdo» kirimi. Kunlik jadval —
+  // barcha hisoblar; bu qator — faqat naqd kassa (naqd sotuv bilan solishtirish uchun), UI'da «naqd» deb aniq yoziladi
   const saleTxMonth = txMonth.filter(isSalesIncome);
   const cashIn = r2([...payMonth, ...saleTxMonth].filter((p) => p.cashAccount.type === "CASH").reduce((s, p) => s + Number(p.amount), 0));
 
   // ── Ishlab chiqarish va tayyor mahsulot ombori (dona; beton — alohida qator) ──
+  // Sotuv narxi: katalog narxi; u 0 bo'lsa — shu oy sotuvidagi o'rtacha narx (QQS bilan), ikkalasi ham yo'q bo'lsa — «narxsiz».
+  // Tannarx: kirim/retsept (`finishedUnitCosts`); yo'q bo'lsa — «tannarxsiz» soni ko'rsatiladi (jimgina 0 emas)
+  const soldPrice = new Map<string, { q: number; s: number }>();
+  for (const r of revenueMonth) { const x = soldPrice.get(r.productId) ?? { q: 0, s: 0 }; x.q += r.qty; x.s += r.revenue; soldPrice.set(r.productId, x); }
   const pg = new Map<string, PanelProdRow>();
   for (const m of stockMoves) {
     const p = prods.get(m.productId!); if (!p || p.unit === "m3") continue;
-    const x = pg.get(p.group) ?? { group: p.group, producedToday: 0, producedMonth: 0, openQty: 0, shippedMonth: 0, qty: 0, valueCost: 0, valuePrice: 0 };
+    const x = pg.get(p.group) ?? { group: p.group, producedToday: 0, producedMonth: 0, openQty: 0, shippedMonth: 0, qty: 0, valueCost: 0, valuePrice: 0, noCostQty: 0, noPriceQty: 0, priceFromSales: 0 };
     const q = Number(m.qty);
     x.qty += q;
-    x.valueCost += q * (costs.get(m.productId!) ?? 0);
-    x.valuePrice += q * p.price;
+    const unitCost = costs.get(m.productId!) ?? null;
+    if (unitCost === null) x.noCostQty += q; else x.valueCost += q * unitCost;
+    const sp = soldPrice.get(m.productId!);
+    const unitPrice = p.price > 0 ? p.price : sp && sp.q > 0 ? sp.s / sp.q : null;
+    if (unitPrice === null) x.noPriceQty += q;
+    else { x.valuePrice += q * unitPrice; if (!(p.price > 0)) x.priceFromSales += q; }
     if (m.date < monthStart) x.openQty += q;
     else {
       if (m.type === "PRODUCTION_OUTPUT") { x.producedMonth += q; if (isDay(m.date)) x.producedToday += q; }
@@ -141,10 +158,11 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
     }
     pg.set(p.group, x);
   }
-  const production = [...pg.values()].map((x) => ({ ...x, qty: r2(x.qty), valueCost: r2(x.valueCost), valuePrice: r2(x.valuePrice), openQty: r2(x.openQty), producedMonth: r2(x.producedMonth), producedToday: r2(x.producedToday), shippedMonth: r2(x.shippedMonth) })).filter((x) => x.qty || x.producedMonth || x.shippedMonth || x.openQty).sort((a, b) => b.valuePrice - a.valuePrice);
+  // Manfiy qoldiq (sotuv ishlab chiqarishdan ko'p) «narxsiz/tannarxsiz» sonini kamaytirmasin — faqat musbat qism
+  const production = [...pg.values()].map((x) => ({ ...x, qty: r2(x.qty), valueCost: r2(x.valueCost), valuePrice: r2(x.valuePrice), openQty: r2(x.openQty), producedMonth: r2(x.producedMonth), producedToday: r2(x.producedToday), shippedMonth: r2(x.shippedMonth), noCostQty: r2(Math.max(0, x.noCostQty)), noPriceQty: r2(Math.max(0, x.noPriceQty)), priceFromSales: r2(Math.max(0, x.priceFromSales)) })).filter((x) => x.qty || x.producedMonth || x.shippedMonth || x.openQty).sort((a, b) => b.valuePrice - a.valuePrice);
   const concrete = { today: r2(batches.filter((b) => b.product.unit === "m3" && isDay(b.date)).reduce((s, b) => s + Number(b.qtyM3), 0)), month: r2(batches.filter((b) => b.product.unit === "m3").reduce((s, b) => s + Number(b.qtyM3), 0)) };
   const sumP = (k: keyof Omit<PanelProdRow, "group">) => r2(production.reduce((s, x) => s + x[k], 0));
-  const productionTotal = { producedToday: sumP("producedToday"), producedMonth: sumP("producedMonth"), openQty: sumP("openQty"), shippedMonth: sumP("shippedMonth"), qty: sumP("qty"), valueCost: sumP("valueCost"), valuePrice: sumP("valuePrice") };
+  const productionTotal = { producedToday: sumP("producedToday"), producedMonth: sumP("producedMonth"), openQty: sumP("openQty"), shippedMonth: sumP("shippedMonth"), qty: sumP("qty"), valueCost: sumP("valueCost"), valuePrice: sumP("valuePrice"), noCostQty: sumP("noCostQty"), noPriceQty: sumP("noPriceQty"), priceFromSales: sumP("priceFromSales") };
 
   // ── Xom-ashyo skladi: qoldiq, kirim, sarf, normadan farq (retsept × zames) ──
   const normNeed = new Map<string, number>();
@@ -195,7 +213,7 @@ export async function boshqaruvPaneli(dayIn?: Date): Promise<Panel> {
       cash, inToday, outToday, salesToday: salesTotal.sumToday, salesMonth, netMonth: r2(pv("net")),
       receivable: r2(cashCustomers[0] + bankCustomers[0]), payable: r2(cashCustomers[1] + bankCustomers[1] + supDebt + bankLoans + borrowed),
     },
-    accounts: accRows.map((a) => ({ id: a.id, name: a.name, balance: a.balance, open: r2(a.open), inToday: r2(a.inToday), outToday: r2(a.outToday), inMonth: r2(a.inMonth), outMonth: r2(a.outMonth) })),
+    accounts: accRows.map((a) => ({ id: a.id, name: a.name, balance: a.balance, open: r2(a.open), inToday: r2(a.inToday), outToday: r2(a.outToday), inMonth: r2(a.inMonth), outMonth: r2(a.outMonth), trInMonth: r2(a.trInMonth), trOutMonth: r2(a.trOutMonth) })),
     transfers: { inToday: r2(transfers.inToday), outToday: r2(transfers.outToday), inMonth: r2(transfers.inMonth), outMonth: r2(transfers.outMonth) },
     sales, salesTotal, cashSales: { sales: cashSalesSum, cashIn, diff: r2(cashSalesSum - cashIn) },
     production, concrete, productionTotal,

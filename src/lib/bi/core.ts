@@ -105,22 +105,33 @@ export type SaleRow = {
   /** Tannarx ma'lummi (faol retsept bor va har xomashyoning narxi bor). Bilinmasa marjaga kirmaydi — 100% foyda bo'lib ko'rinmasin */
   costKnown: boolean;
   /**
-   * Taxminiy tannarx — faqat `costKnown` yo'q qatorda (`estimateCosts`). Foyda-zarar (PNL) uchun: retseptsiz mahsulot tushumi
-   * foydadan tushib qolmasin va 100% foyda bo'lib ham ko'rinmasin. Marja jadvallari (`grossOf`, `marginOf`) buni olmaydi.
+   * Taxminiy tannarx — faqat `costKnown` yo'q qatorda (`estimateCosts`): retseptsiz mahsulot tushumi foydadan tushib qolmasin
+   * va 100% foyda bo'lib ham ko'rinmasin. Yalpi foyda/marja (`grossOf`, `marginOf`) va PNL — ikkalasi shuni oladi.
    */
   estCost?: number;
   /** Faqat Realizatsiya reestri qatorida: zayavka yo'q — to'lov turi, dastavka (QQS'siz) va uning QQS'i, guruh va manzil qatorning o'zidan */
   rz?: { payGroup: "BANK" | "CASH" | "DEBT"; delivery: number; deliveryVat: number; group: string; address: string };
 };
 
-/* ───────────── Yalpi foyda: faqat tannarxi ma'lum qatorlar bo'yicha ───────────── */
+/*
+ * ───────────── Yalpi foyda: bitta qoida (Sarvar rejasi 1.2) ─────────────
+ * Yalpi foyda = QQS'siz tushum − sotilgan mahsulot tannarxi. Tannarx retsept bo'yicha; retsepti yo'q mahsulotda — taxminiy
+ * (`estCost`, shu birlikdagi retseptli sotuv ulushi). PNL (`lib/fin-report/pnl.ts`) ham aynan shu `cogsOf` bilan hisoblaydi —
+ * Bugun (PNL) va Tahlil bir xil raqam ko'rsatadi. Ilgari Tahlil faqat retseptli qatorlarni olardi: 329 mln ↔ PNL 2,24 mlrd.
+ * Hech qanday tannarxi yo'q (taxmin ham) tushum `uncostedRevenue` — ogohlantirish uchun.
+ */
+/** Qatorning sotilgan mahsulot tannarxi: retsept bo'yicha, bo'lmasa taxminiy, u ham bo'lmasa 0 */
+export const cogsOf = (r: SaleRow) => (r.costKnown ? r.cost : r.estCost ?? 0);
+/** Tannarxi retsept bo'yicha ma'lum qatorlar (mahsulot kesimidagi aniq marja jadvallari uchun) */
 export const costedRows = (rows: SaleRow[]) => rows.filter((r) => r.costKnown);
-/** Yalpi foyda (QQS'siz tushum − tannarx), tannarxi ma'lum qatorlar bo'yicha */
-export const grossOf = (rows: SaleRow[]) => sum(costedRows(rows).map((r) => r.net - r.cost));
-/** Marja %: yalpi foyda / shu qatorlarning QQS'siz tushumi */
-export const marginOf = (rows: SaleRow[]) => safeDiv(grossOf(rows), sum(costedRows(rows).map((r) => r.net))) * 100;
-/** Tannarxi noma'lum (retsepti yo'q yoki xomashyo narxi kiritilmagan) mahsulotlar tushumi */
-export const uncostedRevenue = (rows: SaleRow[]) => sum(rows.filter((r) => !r.costKnown).map((r) => r.revenue));
+/** Yalpi foyda (QQS'siz tushum − tannarx) — PNL «YALPI FOYDA» bilan bir qoida */
+export const grossOf = (rows: SaleRow[]) => sum(rows.map((r) => r.net - cogsOf(r)));
+/** Marja %: yalpi foyda / QQS'siz tushum */
+export const marginOf = (rows: SaleRow[]) => safeDiv(grossOf(rows), sum(rows.map((r) => r.net))) * 100;
+/** Tannarxi umuman noma'lum (retsept ham, taxmin uchun asos ham yo'q) tushum, QQS bilan — foyda oshib ko'rinadi, ogohlantirish */
+export const uncostedRevenue = (rows: SaleRow[]) => sum(rows.filter((r) => !r.costKnown && r.estCost === undefined).map((r) => r.revenue));
+/** Tannarxi taxminiy (retseptsiz) tushum, QQS bilan — «taxminiy» izohi uchun */
+export const estimatedRevenue = (rows: SaleRow[]) => sum(rows.filter((r) => !r.costKnown && r.estCost !== undefined).map((r) => r.revenue));
 
 /**
  * Tizimga o'tish sanasi — eng erta faol boshlang'ich qoldiq sanasi (yo'q bo'lsa `null`).
@@ -217,7 +228,7 @@ export async function loadOrders(from: Date, to: Date, statuses: string[] = ACTI
     productCosts(),
     companyVatPayer(),
   ]);
-  return items.map((i) => {
+  const out: SaleRow[] = items.map((i) => {
     const qty = Number(i.qtyM3), price = Number(i.price), c = costs.get(i.productId)?.cost ?? null;
     const netPrice = vatPayer && i.nds ? withoutNds(price) : price;
     return {
@@ -226,6 +237,9 @@ export async function loadOrders(from: Date, to: Date, statuses: string[] = ACTI
       net: qty * netPrice, costKnown: c !== null,
     };
   });
+  // Yalpi foyda/marja bitta qoida bilan (`grossOf`) — retseptsiz pozitsiyaga ham taxminiy tannarx
+  estimateCosts(out, costs);
+  return out;
 }
 
 /**

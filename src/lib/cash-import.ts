@@ -102,7 +102,9 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
     newSubs.set(k, { parentId: top.id, name });
     return name;
   };
-  // Daraxtda yo'q manba — birinchi qatorining turi bilan yangi manba (id vaqtincha, yozishda haqiqiysi bilan almashadi)
+  // Daraxtda yo'q manba — birinchi qatorining turi bilan yangi manba (id vaqtincha, yozishda haqiqiysi bilan almashadi).
+  // PNL qatori «Aniqlanmagan» (UNSORTED): buxgalter tanlaguncha daromadga ham, ishlab chiqarish xarajatiga ham qo'shilmaydi —
+  // ilgari «Boshqa tushum»/«Ishlab chiqarish» bo'lib ochilardi («Pul yechib berish» 546 mln daromadga tushgan, 2026-11).
   const newTops = new Map<string, CatNode>();
   const topFor = (raw: string, type: "INCOME" | "EXPENSE"): CatNode => {
     const name = raw.replace(/\s+/g, " ").trim().slice(0, 80);
@@ -110,7 +112,7 @@ export async function importCashEntries(rows: CashImportRow[], opts: { defaultAc
     let t = newTops.get(k);
     if (!t) {
       t = {
-        id: `new:${k}`, name, type, parentId: null, flow: "OPERATING", pnlLine: type === "INCOME" ? "OTHER_INCOME" : "PRODUCTION",
+        id: `new:${k}`, name, type, parentId: null, flow: "OPERATING", pnlLine: "UNSORTED",
         needs: null, loanPart: null, aliases: [], isSystem: false, isActive: true, sort: 500, inCost: false,
       };
       newTops.set(k, t);

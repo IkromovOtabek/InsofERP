@@ -41,7 +41,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
         <Kpi label="O'rtacha chek" value={moneyShort(k.avgCheck.cur)} delta={k.avgCheck.delta} icon={Receipt} href="#tranzaksiyalar" />
         <Kpi label="Zayavkalar" value={String(k.orders.cur)} delta={k.orders.delta} icon={ClipboardList} tone="info" href="#tranzaksiyalar" />
         <Kpi label="Faol mijozlar" value={String(k.customers.cur)} delta={k.customers.delta} icon={Users} tone="violet" href="#top-mijozlar" />
-        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={k.uncosted > 0 ? `tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : undefined} href="#imkoniyat" />
+        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={k.uncosted > 0 ? `tannarxi noma'lum ${moneyShort(k.uncosted)} — foyda oshib ko'rinadi` : undefined} href="#imkoniyat" />
         <Kpi label="Marja" value={`${fmtNum(k.margin.cur, 1)}%`} delta={k.gross.prev ? k.margin.cur - k.margin.prev : null} deltaLabel="p.p." icon={Percent} tone={k.margin.cur >= 20 ? "success" : k.margin.cur >= 10 ? "warning" : "danger"} href="#imkoniyat" />
       </div>
 

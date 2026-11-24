@@ -23,21 +23,24 @@ function Block({ title, children, className }: { title: string; children: React.
 
 const TotalTr = ({ children }: { children: React.ReactNode }) => <tr className="bg-slate-50 font-bold text-slate-900 [&>td]:border-t [&>td]:border-slate-200 [&>td]:px-4 [&>td]:py-2.5 [&>td:not(:first-child)]:whitespace-nowrap">{children}</tr>;
 
+/**
+ * Har hisob qatori o'zi tekshiriladi (Sarvar rejasi 3-bosqich): oy boshi + oy kirim − oy chiqim + o'tkazma kirdi − o'tkazma chiqdi
+ * = hozirgi qoldiq. Ichki o'tkazmalar (hisobdan hisobga, naqd yechish, inkassa) kirim/chiqimga — oborotga — kirmaydi.
+ */
 export function PulQoldiqlari({ p }: { p: Panel }) {
-  const t = p.accounts.reduce((s, a) => ({ open: s.open + a.open, inToday: s.inToday + a.inToday, outToday: s.outToday + a.outToday, inMonth: s.inMonth + a.inMonth, outMonth: s.outMonth + a.outMonth, balance: s.balance + a.balance }), { open: 0, inToday: 0, outToday: 0, inMonth: 0, outMonth: 0, balance: 0 });
+  const t = p.accounts.reduce((s, a) => ({ open: s.open + a.open, inToday: s.inToday + a.inToday, outToday: s.outToday + a.outToday, inMonth: s.inMonth + a.inMonth, outMonth: s.outMonth + a.outMonth, trInMonth: s.trInMonth + a.trInMonth, trOutMonth: s.trOutMonth + a.trOutMonth, balance: s.balance + a.balance }), { open: 0, inToday: 0, outToday: 0, inMonth: 0, outMonth: 0, trInMonth: 0, trOutMonth: 0, balance: 0 });
   return (
     <Block title="Pul qoldiqlari (kassa va bank hisoblari)">
       <Table>
-        <thead><tr><Th>Hisob</Th><Th right>Oy boshi</Th><Th right>Bugun kirim</Th><Th right>Bugun chiqim</Th><Th right>Oy kirim</Th><Th right>Oy chiqim</Th><Th right>Hozirgi qoldiq</Th></tr></thead>
+        <thead><tr><Th>Hisob</Th><Th right>Oy boshi</Th><Th right>Bugun kirim</Th><Th right>Bugun chiqim</Th><Th right>Oy kirim</Th><Th right>Oy chiqim</Th><Th right>O&apos;tkazma kirdi (oy)</Th><Th right>O&apos;tkazma chiqdi (oy)</Th><Th right>Hozirgi qoldiq</Th></tr></thead>
         <tbody>
           {p.accounts.map((a) => (
-            <Tr key={a.id}><Td>{a.name}</Td><Td right>{n0(a.open)}</Td><Td right>{n0(a.inToday)}</Td><Td right>{n0(a.outToday)}</Td><Td right>{n0(a.inMonth)}</Td><Td right>{n0(a.outMonth)}</Td><Td right className={cn("font-semibold", neg(a.balance))}>{n0(a.balance)}</Td></Tr>
+            <Tr key={a.id}><Td>{a.name}</Td><Td right>{n0(a.open)}</Td><Td right>{n0(a.inToday)}</Td><Td right>{n0(a.outToday)}</Td><Td right>{n0(a.inMonth)}</Td><Td right>{n0(a.outMonth)}</Td><Td right className="text-slate-500">{n0(a.trInMonth)}</Td><Td right className="text-slate-500">{n0(a.trOutMonth)}</Td><Td right className={cn("font-semibold", neg(a.balance))}>{n0(a.balance)}</Td></Tr>
           ))}
+          <TotalTr><td>JAMI</td><td className="text-right">{n0(t.open)}</td><td className="text-right">{n0(t.inToday)}</td><td className="text-right">{n0(t.outToday)}</td><td className="text-right">{n0(t.inMonth)}</td><td className="text-right">{n0(t.outMonth)}</td><td className="text-right">{n0(t.trInMonth)}</td><td className="text-right">{n0(t.trOutMonth)}</td><td className="text-right">{n0(t.balance)}</td></TotalTr>
           <tr className="text-[13px] italic text-slate-500 [&>td]:border-t [&>td]:border-slate-100 [&>td]:px-4 [&>td]:py-2">
-            <td>Ichki o&apos;tkazmalar (hisobdan hisobga, naqd yechish, inkassa, pul aylantirish) — oborotga kirmaydi</td>
-            <td /><td className="text-right">{n0(p.transfers.inToday)}</td><td className="text-right">{n0(p.transfers.outToday)}</td><td className="text-right">{n0(p.transfers.inMonth)}</td><td className="text-right">{n0(p.transfers.outMonth)}</td><td />
+            <td colSpan={9}>Har qator: oy boshi + oy kirim − oy chiqim + o&apos;tkazma kirdi − o&apos;tkazma chiqdi = hozirgi qoldiq. Ichki o&apos;tkazmalar (hisobdan hisobga, naqd yechish, inkassa) oborotga kirmaydi; bugun: kirdi {n0(p.transfers.inToday)}, chiqdi {n0(p.transfers.outToday)}.</td>
           </tr>
-          <TotalTr><td>JAMI</td><td className="text-right">{n0(t.open)}</td><td className="text-right">{n0(t.inToday)}</td><td className="text-right">{n0(t.outToday)}</td><td className="text-right">{n0(t.inMonth)}</td><td className="text-right">{n0(t.outMonth)}</td><td className="text-right">{n0(t.balance)}</td></TotalTr>
         </tbody>
       </Table>
     </Block>
@@ -57,7 +60,7 @@ export function SotuvBlock({ p }: { p: Panel }) {
           ))}
           <TotalTr><td>JAMI</td><td className="text-right">{n1(t.qtyToday)}</td><td className="text-right">{n0(t.sumToday)}</td><td className="text-right">{n1(t.qtyMonth)}</td><td className="text-right">{n0(t.sumMonth)}</td><td className="text-right">{t.sumMonth ? pct(100) : "–"}</td><td /></TotalTr>
           <tr className="text-[13px] italic text-slate-500 [&>td]:border-t [&>td]:border-slate-100 [&>td]:px-4 [&>td]:py-2">
-            <td colSpan={2}>Naqd sotuv / kassaga «Savdo tushumi» (oy)</td>
+            <td colSpan={2}>Naqd sotuv / «Naqd» kassaga tushum (oy, faqat naqd hisob)</td>
             <td className="text-right">{n0(p.cashSales.sales)}</td><td /><td className="text-right">{n0(p.cashSales.cashIn)}</td><td className="text-right">Farq:</td>
             <td className={cn("text-right font-semibold not-italic", p.cashSales.diff > 0 ? "text-red-600" : "text-slate-700")}>{n0(p.cashSales.diff)}</td>
           </tr>
@@ -75,7 +78,11 @@ export function IshlabChiqarishBlock({ p }: { p: Panel }) {
         <thead><tr><Th>Guruh</Th><Th right>Bugun ishlab chiq.</Th><Th right>Oy ishlab chiq.</Th><Th right>Oy boshi qoldiq</Th><Th right>Oy jo&apos;natildi</Th><Th right>Qoldiq soni</Th><Th right>Qoldiq (tannarxda)</Th><Th right>Qoldiq (sotuv narxida)</Th></tr></thead>
         <tbody>
           {p.production.map((r) => (
-            <Tr key={r.group}><Td>{r.group}</Td><Td right>{n1(r.producedToday)}</Td><Td right>{n1(r.producedMonth)}</Td><Td right>{n1(r.openQty)}</Td><Td right>{n1(r.shippedMonth)}</Td><Td right className="font-semibold">{n1(r.qty)}</Td><Td right>{n0(r.valueCost)}</Td><Td right>{n0(r.valuePrice)}</Td></Tr>
+            <Tr key={r.group}>
+              <Td>{r.group}</Td><Td right>{n1(r.producedToday)}</Td><Td right>{n1(r.producedMonth)}</Td><Td right>{n1(r.openQty)}</Td><Td right>{n1(r.shippedMonth)}</Td><Td right className="font-semibold">{n1(r.qty)}</Td>
+              <Td right>{n0(r.valueCost)}{r.noCostQty > 0 && <div className="text-[11px] font-normal text-amber-700">{n1(r.noCostQty)} dona tannarxsiz</div>}</Td>
+              <Td right>{n0(r.valuePrice)}{r.noPriceQty > 0 && <div className="text-[11px] font-normal text-amber-700">{n1(r.noPriceQty)} dona narxsiz</div>}{r.priceFromSales > 0 && <div className="text-[11px] font-normal text-slate-500">{n1(r.priceFromSales)} dona — oy sotuv narxida</div>}</Td>
+            </Tr>
           ))}
           <Tr><Td>Beton, m3 (sotilgani = ishlab chiqarilgani)</Td><Td right>{n1(p.concrete.today)}</Td><Td right>{n1(p.concrete.month)}</Td><Td right>–</Td><Td right>{n1(p.concrete.month)}</Td><Td right>–</Td><Td right>–</Td><Td right>–</Td></Tr>
           <TotalTr><td>JAMI buyumlar (dona, betonsiz)</td><td className="text-right">{n1(t.producedToday)}</td><td className="text-right">{n1(t.producedMonth)}</td><td className="text-right">{n1(t.openQty)}</td><td className="text-right">{n1(t.shippedMonth)}</td><td className="text-right">{n1(t.qty)}</td><td className="text-right">{n0(t.valueCost)}</td><td className="text-right">{n0(t.valuePrice)}</td></TotalTr>

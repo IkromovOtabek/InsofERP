@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 export async function ForecastTab({ sp }: { sp: SP }) {
   const days = [7, 14, 30, 90].includes(Number(sp.days)) ? Number(sp.days) : 30;
   const [f, a] = await Promise.all([forecastTab(), anomaliesTab({ level: sp.level, source: sp.source, pattern: sp.pattern, days })]);
-  const critical = f.matForecast.filter((m) => m.daysLeft !== null && m.daysLeft < 7);
+  const critical = f.matForecast.filter((m) => m.daysLeft !== null && m.daysLeft < f.warnDays);
   const w = f.wape, accuracy = w === null ? "" : w < 30 ? "Yaxshi" : w < 60 ? "O'rtacha" : "Past";
   // Tizimga yangi o'tilganda (tarix < 28 kun) bashorat/trend/zonalar o'rniga ochiq "yetarli emas" holati
   const short = `Ma'lumot yetarli emas (${f.histDays} kun tarix, kamida ${f.minDays} kun kerak)`;
@@ -19,7 +19,7 @@ export async function ForecastTab({ sp }: { sp: SP }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {f.enough ? <Kpi label="Stockout xavfi" value={String(f.zones.critical)} icon={PackageSearch} tone={f.zones.critical ? "danger" : "success"} badge={<Badge color={f.zones.critical ? "red" : "green"} dot={false}>{f.zones.critical ? "KRITIK" : "OK"}</Badge>} hint={`${f.matForecast.length} xomashyodan ${f.zones.critical} tasi 7 kun ichida tugaydi`} href="#stockout" /> : <Kpi label="Stockout xavfi" value="—" icon={PackageSearch} hint={short} href="#stockout" />}
+        {f.enough ? <Kpi label="Stockout xavfi" value={String(f.zones.critical)} icon={PackageSearch} tone={f.zones.critical ? "danger" : "success"} badge={<Badge color={f.zones.critical ? "red" : "green"} dot={false}>{f.zones.critical ? "KRITIK" : "OK"}</Badge>} hint={`${f.matForecast.length} xomashyodan ${f.zones.critical} tasi ${f.warnDays} kun ichida tugaydi`} href="#stockout" /> : <Kpi label="Stockout xavfi" value="—" icon={PackageSearch} hint={short} href="#stockout" />}
         <Kpi label="Yuqori anomaliya" value={String(a.cards.high)} icon={AlertTriangle} tone={a.cards.high ? "danger" : "default"} badge={<Badge color={a.cards.high ? "red" : "slate"} dot={false}>HIGH</Badge>} hint={`jami ${a.cards.total} anomaliyaning ${a.cards.total ? fmtNum((a.cards.high / a.cards.total) * 100, 0) : 0}%i`} href="#anomalies" />
         <Kpi label="Churn xavfi" value="→" icon={UserX} tone="warning" hint="Mijozlar bo'limida — xavf zonalari va harakat markazi" href="/bi-tahlil/ml/churn" />
         {w === null ? <Kpi label="Model aniqligi" value="—" icon={Gauge} hint={wapeNote} href="#bashorat" /> : <Kpi label="Model aniqligi" value={`WAPE ${fmtNum(w, 1)}%`} icon={Gauge} tone={w < 30 ? "success" : w < 60 ? "warning" : "danger"} badge={<Badge color={w < 30 ? "green" : w < 60 ? "amber" : "red"} dot={false}>{accuracy}</Badge>} hint={`MAE ${fmtNum(f.mae, 1)} m³/kun · bias ${f.bias >= 0 ? "+" : ""}${fmtNum(f.bias, 0)}%`} href="#bashorat" />}
@@ -50,13 +50,13 @@ export async function ForecastTab({ sp }: { sp: SP }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel title="Zaxira zonalari" info="14 kunlik bashorat asosida: xomashyo necha kunga yetadi.">
-          {f.enough ? <><div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-red-50 py-3"><div className="text-2xl font-bold tabular text-red-700">{f.zones.critical}</div><div className="text-xs text-slate-500">&lt;7 kun</div></div><div className="rounded-lg bg-amber-50 py-3"><div className="text-2xl font-bold tabular text-amber-700">{f.zones.mid}</div><div className="text-xs text-slate-500">7–14 kun</div></div><div className="rounded-lg bg-emerald-50 py-3"><div className="text-2xl font-bold tabular text-emerald-700">{f.zones.ok}</div><div className="text-xs text-slate-500">14+ kun</div></div></div>
+          {f.enough ? <><div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-red-50 py-3"><div className="text-2xl font-bold tabular text-red-700">{f.zones.critical}</div><div className="text-xs text-slate-500">&lt;{f.warnDays} kun</div></div><div className="rounded-lg bg-amber-50 py-3"><div className="text-2xl font-bold tabular text-amber-700">{f.zones.mid}</div><div className="text-xs text-slate-500">{f.warnDays}–{f.warnDays * 2} kun</div></div><div className="rounded-lg bg-emerald-50 py-3"><div className="text-2xl font-bold tabular text-emerald-700">{f.zones.ok}</div><div className="text-xs text-slate-500">{f.warnDays * 2}+ kun</div></div></div>
           <div className="mt-4"><div className="mb-1.5 text-xs font-medium text-slate-500">Hafta kuni indeksi (100 = o'rtacha)</div><BarChart data={f.weekday} tone="violet" formatValue={(v) => `${fmtNum(v, 0)}%`} height={90} /></div></> : <Note>{short}</Note>}
         </Panel>
         <Panel className="xl:col-span-2" title={<span id="stockout">Inventory Forecast — 14 kun</span>} info="Qaysi xomashyo qachon tugaydi va qancha buyurtma qilish kerak. Ehtiyoj = 14 kunlik m³ bashorati × so'nggi 30 kun marka aralashmasi × retsept." padded={false}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>Xomashyo</Th><Th right>Qoldiq</Th><Th right>14 kun ehtiyoj</Th><Th right>Sarf/kun (bash.)</Th><Th right>Yetadi</Th><Th right>Tugash sanasi</Th><Th right>Buyurtma</Th><Th>Zona</Th></tr></thead>
-            <tbody>{f.matForecast.length === 0 && <Empty text="Xomashyo yo'q" />}{f.matForecast.slice(0, 20).map((m) => { const z = m.daysLeft === null ? "Ma'lumot yo'q" : m.daysLeft < 7 ? "Kritik" : m.daysLeft < 14 ? "Xavfli" : "Yaxshi"; return <Tr key={m.id}><Td>{m.name} <span className="text-xs text-slate-400">{m.unit}</span></Td><Td right>{fmtNum(m.balance, 0)}</Td><Td right>{m.need ? fmtNum(m.need, 0) : "—"}</Td><Td right className="text-slate-500">{m.perDayFc ? fmtNum(m.perDayFc, 1) : "—"}</Td><Td right className={cn("font-semibold", z === "Kritik" && "text-red-600", z === "Xavfli" && "text-amber-600")}>{m.daysLeft === null ? "—" : `${fmtNum(Math.min(999, m.daysLeft), 0)} kun`}</Td><Td right className="text-slate-500">{m.runsOut ? fmtDate(m.runsOut) : "—"}</Td><Td right className={m.orderQty > 0 ? "font-semibold" : "text-slate-400"}>{m.orderQty > 0 ? `${fmtNum(m.orderQty, 0)} ${m.unit}` : "—"}</Td><Td><Tag>{z}</Tag></Td></Tr>; })}</tbody>
+            <tbody>{f.matForecast.length === 0 && <Empty text="Xomashyo yo'q" />}{f.matForecast.slice(0, 20).map((m) => { const z = m.daysLeft === null ? "Ma'lumot yo'q" : m.daysLeft < f.warnDays ? "Kritik" : m.daysLeft < f.warnDays * 2 ? "Xavfli" : "Yaxshi"; return <Tr key={m.id}><Td>{m.name} <span className="text-xs text-slate-400">{m.unit}</span></Td><Td right>{fmtNum(m.balance, 0)}</Td><Td right>{m.need ? fmtNum(m.need, 0) : "—"}</Td><Td right className="text-slate-500">{m.perDayFc ? fmtNum(m.perDayFc, 1) : "—"}</Td><Td right className={cn("font-semibold", z === "Kritik" && "text-red-600", z === "Xavfli" && "text-amber-600")}>{m.daysLeft === null ? "—" : `${fmtNum(Math.min(999, m.daysLeft), 0)} kun`}</Td><Td right className="text-slate-500">{m.runsOut ? fmtDate(m.runsOut) : "—"}</Td><Td right className={m.orderQty > 0 ? "font-semibold" : "text-slate-400"}>{m.orderQty > 0 ? `${fmtNum(m.orderQty, 0)} ${m.unit}` : "—"}</Td><Td><Tag>{z}</Tag></Td></Tr>; })}</tbody>
           </Table>
           {critical.length > 0 && <div className="border-t border-slate-100 px-5 py-3"><Action href="/receipts/new">{critical.length} ta xomashyoni BUGUN buyurtma qiling: {critical.map((m) => m.name).join(", ")}</Action></div>}
         </Panel>
@@ -72,7 +72,7 @@ export async function ForecastTab({ sp }: { sp: SP }) {
         </div>
       </Panel>
 
-      <Insight title="XULOSA">{f.enough ? <>Keyingi 7 kunda ≈ {fmtNum(f.next7, 1)} m³ ({moneyShort(f.next7Revenue)} so'm) sotuv kutilmoqda. {f.zones.critical ? `${f.zones.critical} ta xomashyo 7 kun ichida tugaydi — bugun buyurtma bering.` : "Xomashyo zaxirasi 7 kunga yetarli."}</> : `Bashorat: ${short}.`} {a.cards.high ? `${a.cards.high} ta yuqori xavfli anomaliya birma-bir tekshirishni talab qiladi.` : "Yuqori xavfli anomaliya yo'q."}</Insight>
+      <Insight title="XULOSA">{f.enough ? <>Keyingi 7 kunda ≈ {fmtNum(f.next7, 1)} m³ ({moneyShort(f.next7Revenue)} so'm) sotuv kutilmoqda. {f.zones.critical ? `${f.zones.critical} ta xomashyo ${f.warnDays} kun ichida tugaydi — bugun buyurtma bering.` : `Xomashyo zaxirasi ${f.warnDays} kunga yetarli.`}</> : `Bashorat: ${short}.`} {a.cards.high ? `${a.cards.high} ta yuqori xavfli anomaliya birma-bir tekshirishni talab qiladi.` : "Yuqori xavfli anomaliya yo'q."}</Insight>
     </div>
   );
 }

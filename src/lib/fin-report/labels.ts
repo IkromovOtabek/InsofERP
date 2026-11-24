@@ -7,6 +7,7 @@ export const PNL_LINE_LABEL: Record<PnlLine, string> = {
   OTHER_INCOME: "Boshqa tushumlar", CUSTOMER_REFUND: "Sotib oluvchi pulini qaytarish", MATERIALS: "Xom-ashyo (tannarx)", PRODUCTION: "Ishlab chiqarish xarajatlari", PAYROLL: "Ish haqi",
   TRANSPORT: "Avtotransport", ADMIN: "Ma'muriy xarajatlar", COMMERCIAL: "Tijoriy xarajatlar", TAX: "Soliqlar", INTEREST: "Kredit foizi",
   PROJECT: "Loyihalar", DIVIDEND: "Divident", NONE: "Foyda-zararga kirmaydi",
+  UNSORTED: "Aniqlanmagan (tanlash kerak)",
 };
 
 export const NEEDS_LABEL: Record<CashCategoryNeeds, string> = { PROJECT: "Loyiha", LOAN: "Kredit / qarz", ASSET: "Asosiy vosita" };

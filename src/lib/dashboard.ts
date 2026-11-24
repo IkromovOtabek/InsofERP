@@ -1,28 +1,24 @@
 import { db } from "./db";
-
-const DAYS = 30;
+import { daysLeft, materialUsage } from "./material-usage";
 
 /**
- * Xomashyo: qoldiq, o'rtacha kunlik sarf (so'nggi 30 kun), necha kunga yetadi,
- * tasdiqlangan zayavkalar uchun rejadagi ehtiyoj.
- */
-/**
+ * Xomashyo: qoldiq, o'rtacha kunlik sarf va necha kunga yetadi (`lib/material-usage.ts` — Tahlil bilan bitta ta'rif:
+ * so'nggi 30 kundagi haqiqiy chiqim, «Chiqim» ham), tasdiqlangan zayavkalar uchun rejadagi ehtiyoj.
  * `until` — faqat shu vaqtgacha yetkazilishi kerak bo'lgan zayavkalar ehtiyoji (dashboard davr filtri:
  * "bugun" — bugungacha, "hafta" — hafta oxirigacha; kechikkanlar ham kiradi). Berilmasa — hamma ochiq zayavka.
  */
 export async function materialOutlook(opts: { until?: Date } = {}) {
-  const since = new Date(Date.now() - DAYS * 86400000);
-  const [materials, sums, consumed, orders] = await Promise.all([
+  const [materials, sums, usage, orders] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since } }, _sum: { qty: true } }),
+    materialUsage(),
     db.order.findMany({
       where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, ...(opts.until ? { deliveryDate: { lt: opts.until } } : {}) },
       include: { customer: { select: { name: true } }, items: { include: { tasks: { select: { doneQty: true } }, product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } },
     }),
   ]);
   const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
-  const daily = new Map(consumed.map((x) => [x.materialId, -Number(x._sum.qty ?? 0) / DAYS]));
+  const daily = usage.perDay;
 
   // Rejadagi ehtiyoj: har zayavkaning hali ishlab chiqarilmagan qismi × retsept.
   // Beton (m³) — zames bilan qilingani ayriladi; dona mahsulot — brigada topshirig'ida bajarilgani.
@@ -52,8 +48,8 @@ export async function materialOutlook(opts: { until?: Date } = {}) {
     const perDay = daily.get(m.id) ?? 0;
     const planned = need.get(m.id) ?? 0;
     return {
-      id: m.id, name: m.name, unit: m.unit, balance, minStock: Number(m.minStock), perDay, planned,
-      days: perDay > 0 ? balance / perDay : null,
+      id: m.id, name: m.name, unit: m.unit, category: m.category, balance, minStock: Number(m.minStock), perDay, planned,
+      days: daysLeft(balance, perDay),
       short: balance < planned,
       /** Zayavkalarga yetmayotgan miqdor (0 — yetadi). */
       orderGap: Math.max(0, planned - balance),

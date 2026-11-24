@@ -278,6 +278,8 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
     if (!r) { put("UNKNOWN", UNKNOWN_CATEGORY, i, t.type === "EXPENSE" ? a : -a, src); continue; }
     const line = r.top.pnlLine;
     if (line === "NONE") continue;
+    // Import ochgan, PNL qatori hali tanlanmagan manba — daraxtda yo'q yozuv bilan bir qatorda («Manbasi aniqlanmagan pul»)
+    if (line === "UNSORTED") { put("UNKNOWN", r.top.name, i, t.type === "EXPENSE" ? a : -a, src); continue; }
     if (line === "MATERIALS" && mode === "accrual") continue;
     // Kirim hujjati / ta'minot zayavkasi puli — sklad qoldig'iga aylanadi, xarajat skladdan chiqqanda (tannarx yoki «Sklad sarfi»)
     if (mode === "accrual" && t.refType && STOCK_PAY_REFS.has(t.refType)) continue;
@@ -345,15 +347,17 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
   };
 
   const salesTotal = plus(zeros(n), ...sales.values());
+  // Boshqa daromadlar (metallolom, xizmat…) — sotuv emas: Daromad va yalpi foydaga kirmaydi, operatsion foydaga qo'shiladi
+  // (Sarvar rejasi 1.2: «Daromad = sotuv QQS'siz»; ilgari Daromadga qo'shilib, u sotuvdan katta chiqardi)
   const otherIncome = lineSum("OTHER_INCOME");
   // Sotib oluvchiga qaytarilgan pul — xarajat emas, tushumni kamaytiradi (Daromaddan ayiriladi)
   const refund = lineSum("CUSTOMER_REFUND");
-  const income = plus(salesTotal, otherIncome, neg(refund));
+  const income = plus(salesTotal, neg(refund));
   const cogsTotal = mode === "accrual" ? cogs : lineSum("MATERIALS");
   const gross = plus(income, neg(cogsTotal));
   const prodLines: PnlLine[] = ["PRODUCTION", "PAYROLL", "TRANSPORT"];
   const prod = lineSum(...prodLines), admin = lineSum("ADMIN"), comm = lineSum("COMMERCIAL"), unknown = lineSum("UNKNOWN");
-  const operating = plus(gross, neg(prod), neg(admin), neg(comm), neg(unknown));
+  const operating = plus(gross, otherIncome, neg(prod), neg(admin), neg(comm), neg(unknown));
   const tax = lineSum("TAX"), interest = lineSum("INTEREST");
   const net = plus(operating, neg(tax), neg(interest));
   const projects = lineSum("PROJECT");
@@ -370,7 +374,6 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
     ] : []),
     row("income", "Daromad", "total", income),
     ...groupOrder.map((g) => { fixed.add(`sales:${g}`); return row(`sales:${g}`, g, "sub", sales.get(g)!); }),
-    row("other-income", "Boshqa tushumlar", "sub", otherIncome),
     row("refund", "Sotib oluvchiga qaytarilgan pul", "sub", neg(refund)),
     ...(mode === "accrual" && uncosted.some((v) => v > 0) ? [row("uncosted", "shundan tannarxi noma'lum tushum", "sub", uncosted, { hint: "Retsepti yoki xomashyo narxi yo'q mahsulotlar" })] : []),
     row("cogs", mode === "accrual" ? "Sotuv tannarxi (xom-ashyo)" : "Sotuv tannarxi (xom-ashyoga to'langan)", "line", neg(cogsTotal), { hint: mode === "accrual" ? "Retsept bo'yicha xom-ashyo × o'rtacha narx (QQSsiz)" : undefined }),
@@ -378,6 +381,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
     pctRow("cogs-pct", "Tannarx ulushi, %", cogsTotal, income),
     row("gross", "YALPI FOYDA", "total", gross),
     pctRow("gross-pct", "Yalpi marja, %", gross, income),
+    row("other-income", "Boshqa daromadlar (sotuvdan tashqari)", "line", otherIncome, { hint: "Metallolom, xizmat va boshqa sotuv bo'lmagan kirimlar — Daromadga kirmaydi" }),
     row("prod", "Ishlab chiqarish xarajatlari", "line", neg(prod)),
     ...sheetRows(prodLines, "prod", PNL_FIXED.production),
     pctRow("prod-pct", "Ishlab chiqarish xarajatlari ulushi, %", prod, income),
@@ -387,7 +391,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
     row("comm", "Tijoriy xarajatlar", "line", neg(comm)),
     ...sheetRows(["COMMERCIAL"], "comm", PNL_FIXED.commercial),
     pctRow("comm-pct", "Tijoriy xarajatlar ulushi, %", comm, income),
-    row("unknown", "Manbasi yozilmagan pul (0 bo'lishi kerak)", "check", neg(unknown), { hint: "Kategoriyasi daraxtda topilmagan kassa yozuvlari — Moliya → Kategoriyalar" }),
+    row("unknown", "Manbasi aniqlanmagan pul (0 bo'lishi kerak)", "check", neg(unknown), { hint: "Manbasi daraxtda topilmagan yoki PNL qatori «Aniqlanmagan» (import ochgan) kassa yozuvlari — Moliya → Kategoriyalar'da qatorini tanlang" }),
     row("operating", "OPERATSION FOYDA", "total", operating),
     pctRow("operating-pct", "Operatsion foyda rentabelligi, %", operating, income),
     row("tax", "Soliqlar", "line", neg(tax)),
@@ -411,7 +415,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
 
 /** Qatorning bolalari: ota qator kaliti → bola kaliti shu qatorga kiradimi (Daromad ← mahsulot guruhlari + boshqa tushumlar). */
 const CHILDREN: Record<string, (key: string) => boolean> = {
-  income: (k) => k.startsWith("sales:") || k === "other-income" || k === "refund",
+  income: (k) => k.startsWith("sales:") || k === "refund",
   qty: (k) => k.startsWith("qty:"),
   prod: (k) => k.startsWith("prod:"),
   admin: (k) => k.startsWith("admin:"),
@@ -421,7 +425,7 @@ const CHILDREN: Record<string, (key: string) => boolean> = {
 /** Jami qatorlar — boshqa qatorlardan qo'shiladi (jadvalda xarajat manfiy, shuning uchun hammasi qo'shiluvchi). */
 const COMPOSE: Record<string, string[]> = {
   gross: ["income", "cogs"],
-  operating: ["gross", "prod", "admin", "comm", "unknown"],
+  operating: ["gross", "other-income", "prod", "admin", "comm", "unknown"],
   net: ["operating", "tax", "interest"],
   result: ["net", "projects"],
   retained: ["result", "dividend"],

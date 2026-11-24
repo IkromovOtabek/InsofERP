@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { sum, mean, std, safeDiv, addDays, startOfDay, series, ACTIVE_ORDER, loadSales, bucketLabel, WEEKDAYS, goLiveDate } from "./core";
 import { materialOverview } from "./stock";
 import { companyVatPayer } from "@/lib/receipt-vat";
+import { getCompany } from "@/lib/company";
 import { withoutNds } from "@/lib/nds";
 
 /** Bashorat uchun eng kam haqiqiy tarix (kun) — undan kam bo'lsa raqam/trend ko'rsatilmaydi */
@@ -85,8 +86,11 @@ export async function forecastTab() {
   // Hafta kuni indeksi
   const weekday = WEEKDAYS.map((w, i) => ({ label: w, value: fc.season[i] * 100 }));
 
-  const zones = { critical: matForecast.filter((m) => m.daysLeft !== null && m.daysLeft < 7).length, mid: matForecast.filter((m) => m.daysLeft !== null && m.daysLeft >= 7 && m.daysLeft < 14).length, ok: matForecast.filter((m) => m.daysLeft === null || m.daysLeft >= 14).length };
-  return { next7, next30, next7Revenue: next7 * avgPrice, next30Revenue: next30 * avgPrice, mae: fc.mae, wape: enough ? fc.wape : null, bias: fc.bias, slope: fc.slope, labels, histVals, fcVals, matForecast, capacity, weekday, zones, revenueTrend: revenueDaily.slice(-30).map((x) => x.value), modelTrained: today, histDays, enough, minDays: MIN_HIST_DAYS };
+  // Chegara — Sklad holati va Tahlil bilan bitta (Sozlamalar → Limitlar `stockWarnDays`), faqat xomashyo toifasi (Sarvar rejasi 1.2)
+  const warnDays = (await getCompany()).stockWarnDays;
+  const tracked = matForecast.filter((m) => m.tracked);
+  const zones = { critical: tracked.filter((m) => m.daysLeft !== null && m.daysLeft < warnDays).length, mid: tracked.filter((m) => m.daysLeft !== null && m.daysLeft >= warnDays && m.daysLeft < warnDays * 2).length, ok: tracked.filter((m) => m.daysLeft === null || m.daysLeft >= warnDays * 2).length };
+  return { next7, next30, next7Revenue: next7 * avgPrice, next30Revenue: next30 * avgPrice, mae: fc.mae, wape: enough ? fc.wape : null, bias: fc.bias, slope: fc.slope, labels, histVals, fcVals, matForecast: tracked, warnDays, capacity, weekday, zones, revenueTrend: revenueDaily.slice(-30).map((x) => x.value), modelTrained: today, histDays, enough, minDays: MIN_HIST_DAYS };
 }
 
 /* ───────────── Anomaliyalar (qoida asosida) ───────────── */

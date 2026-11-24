@@ -2,16 +2,18 @@ import { db } from "@/lib/db";
 import { receiptTotal } from "@/lib/receipt-vat";
 import { ostatkaSummary } from "@/lib/ostatka";
 import { unitLabel } from "@/lib/unit";
+import { getCompany } from "@/lib/company";
+import { materialOutlook } from "@/lib/dashboard";
+import { CONSUME_TYPES, daysLeft, isRiskTracked, materialUsage, stockRisk } from "@/lib/material-usage";
 import { type Range, type Gran, materialCosts, finishedUnitCosts, sum, addDays, startOfDay, series, bucketsFor, bucketLabel, bucketKey, abc } from "./core";
 
 /**
  * Xomashyo sarfi: zames (PRODUCTION_CONSUME) + brigadaga berilgani (BRIGADE_ISSUE, dona mahsulot uchun)
  * + Sklad → «Расход» orqali oluvchilarga berilgani (ISSUE: shafyorlar, svarchiklar…), brigadadan qaytgani
  * (BRIGADE_RETURN) ayiriladi. Ishorali yig'indi — storno o'zi chiqib ketadi.
- * Snabjeniye hisobotidagi sarf ham shu ro'yxatdan (`lib/procurement-report.ts`) — bitta ta'rif.
+ * Ta'rif — `lib/material-usage.ts` (Sklad holati, Snabjeniye hisoboti va Tahlil bitta ro'yxatdan).
  */
-export const CONSUME_TYPES = ["PRODUCTION_CONSUME", "BRIGADE_ISSUE", "ISSUE", "BRIGADE_RETURN"] as const;
-const DAY = 86400000;
+export { CONSUME_TYPES } from "@/lib/material-usage";
 
 /** Hovlidagi tayyor mahsulotning erkin (zayavkaga band qilinmagan) qismi va uning tannarx bo'yicha qiymati. */
 export async function finishedStock() {
@@ -25,45 +27,51 @@ export async function finishedStock() {
 export type MaterialRow = {
   id: string; code: string; name: string; unit: string; minStock: number; balance: number; avgCost: number; value: number;
   perDay: number; days: number | null; planned: number; short: boolean; zone: "Kritik" | "Xavfli" | "Yaxshi" | "Ma'lumot yo'q";
+  /** Xavf darajasi kuzatiladimi (faqat xomashyo toifasi) — «xavfdagi xomashyo» soni faqat shulardan (`atRiskMaterials`) */
+  tracked: boolean;
   overstock: boolean; dead: boolean; lastConsume: Date | null; abc: "A" | "B" | "C"; suggestQty: number; suggestCost: number; consumed30: number; received30: number;
 };
 
+/**
+ * Xavfdagi xomashyo — BITTA ta'rif (Sarvar rejasi 1.2): xomashyo toifasi, «Kritik» yoki «Xavfli» zona (Sozlamalar → Limitlar
+ * chegarasi). Sklad holati (`stockStatus`), Tahlil kartalari va salomatlik bali shu sondan. Ilgari Tahlil zapchast va ofis
+ * tovarlarini ham sanardi (101–114 ↔ Sklad 3+1).
+ */
+export const atRiskMaterials = <T extends Pick<MaterialRow, "tracked" | "zone">>(rows: T[]) => rows.filter((m) => m.tracked && (m.zone === "Kritik" || m.zone === "Xavfli"));
+
 export async function materialOverview(): Promise<MaterialRow[]> {
   const today = startOfDay(new Date()), since30 = addDays(today, -30), since90 = addDays(today, -90);
-  const [materials, sums, consumed, received, lastConsume, orders, costs, firstMove] = await Promise.all([
+  const [materials, outlook, usage, received, lastConsume, costs, company] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: [...CONSUME_TYPES] }, date: { gte: since30 } }, _sum: { qty: true } }),
+    materialOutlook(),
+    materialUsage(),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "RECEIPT", date: { gte: since30 } }, _sum: { qty: true } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["PRODUCTION_CONSUME", "BRIGADE_ISSUE", "ISSUE"] }, qty: { lt: 0 }, date: { gte: since90 } }, _max: { date: true } }),
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: { include: { product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } } }),
     materialCosts(),
-    db.stockMove.aggregate({ where: { materialId: { not: null } }, _min: { date: true } }),
+    getCompany(),
   ]);
-  // Tizim yangi ishga tushganda tarix 30 kundan qisqa: o'rtacha sarf haqiqiy kunlar soniga bo'linadi,
-  // "muzlagan" belgisi esa 90 kunlik tarix yig'ilgandan keyingina qo'yiladi.
-  const historyDays = firstMove._min.date ? Math.max(1, Math.ceil((today.getTime() + DAY - startOfDay(firstMove._min.date).getTime()) / DAY)) : 0;
-  const window = Math.min(30, Math.max(1, historyDays));
-  const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
-  const cons = new Map(consumed.map((x) => [x.materialId, -Number(x._sum.qty ?? 0)]));
+  // Qoldiq, kunlik sarf va zayavkalar ehtiyoji — Sklad holati bilan bitta manba (`materialOutlook` + `materialUsage`: 30 kunlik
+  // haqiqiy chiqim; beton — zames bilan qilingani, dona — brigada bajargani ayriladi). «Muzlagan» belgisi 90 kunlik tarixdan keyin.
+  const historyDays = usage.historyDays;
+  const outById = new Map(outlook.map((o) => [o.id, o]));
+  const cons = usage.consumed;
   const rec = new Map(received.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
   const last = new Map(lastConsume.map((x) => [x.materialId, x._max.date]));
-  const need = new Map<string, number>();
-  for (const o of orders) {
-    const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0), done = o.batches.reduce((s, b) => s + Number(b.qtyM3), 0);
-    const remaining = Math.max(0, total - done); if (!remaining) continue;
-    // Xomashyo hisobotida faqat xomashyo-ingredientlar hisoblanadi — mahsulot-ingredient (masalan FBS blok) o'tkazib yuboriladi
-    for (const i of o.items) { const share = remaining * (Number(i.qtyM3) / total); for (const ri of i.product.recipes[0]?.items ?? []) { if (!ri.materialId) continue; need.set(ri.materialId, (need.get(ri.materialId) ?? 0) + share * Number(ri.qtyPerM3)); } }
-  }
+  const bal = new Map(outlook.map((o) => [o.id, o.balance]));
+  const need = new Map(outlook.map((o) => [o.id, o.planned]));
+  const t = { critDays: company.stockCritDays, warnDays: company.stockWarnDays };
   const pre = materials.map((m) => {
-    const balance = bal.get(m.id) ?? 0, perDay = Math.max(0, cons.get(m.id) ?? 0) / window, planned = need.get(m.id) ?? 0, avgCost = costs.get(m.id) ?? 0;
-    const days = perDay > 0 ? balance / perDay : null;
-    const zone = days === null ? "Ma'lumot yo'q" : days < 7 ? "Kritik" : days <= 20 ? "Xavfli" : "Yaxshi";
+    const balance = bal.get(m.id) ?? 0, perDay = outById.get(m.id)?.perDay ?? usage.perDay.get(m.id) ?? 0, planned = need.get(m.id) ?? 0, avgCost = costs.get(m.id) ?? 0;
+    const days = daysLeft(balance, perDay);
+    // Zona — Sklad holati bilan bitta chegara (`stockRisk`): Kritik = yetmaydi / `stockCritDays` dan kam, Xavfli = minimaldan
+    // yoki `stockWarnDays` dan kam. Sarf yo'q va xavf yo'q — «Ma'lumot yo'q»
+    const risk = stockRisk({ days, balance, minStock: Number(m.minStock), short: balance < planned }, t);
+    const zone = risk === "short" ? "Kritik" : risk === "low" ? "Xavfli" : days === null ? "Ma'lumot yo'q" : "Yaxshi";
     const lc = last.get(m.id) ?? null;
     const dead = historyDays >= 90 && balance > 0 && (lc === null) && planned === 0;
     const target = Math.max(planned, perDay * 30, Number(m.minStock));
     const suggestQty = Math.max(0, target - balance);
-    return { id: m.id, code: m.code, name: m.name, unit: m.unit, minStock: Number(m.minStock), balance, avgCost, value: balance * avgCost, perDay, days, planned, short: balance < planned, zone, overstock: days !== null && days > 90, dead, lastConsume: lc, suggestQty, suggestCost: suggestQty * avgCost, consumed30: Math.max(0, cons.get(m.id) ?? 0) /* storno bekor qilingan sanada yoziladi — oynada sarf manfiy chiqib, ABC/aylanmani buzmasin */, received30: rec.get(m.id) ?? 0 } as Omit<MaterialRow, "abc">;
+    return { id: m.id, code: m.code, name: m.name, unit: m.unit, minStock: Number(m.minStock), balance, avgCost, value: balance * avgCost, perDay, days, planned, short: balance < planned, zone, tracked: isRiskTracked(m.category), overstock: days !== null && days > 90, dead, lastConsume: lc, suggestQty, suggestCost: suggestQty * avgCost, consumed30: Math.max(0, cons.get(m.id) ?? 0) /* storno bekor qilingan sanada yoziladi — oynada sarf manfiy chiqib, ABC/aylanmani buzmasin */, received30: rec.get(m.id) ?? 0 } as Omit<MaterialRow, "abc">;
   });
   const abcMap = abc(pre, (x) => x.consumed30 * x.avgCost);
   return pre.map((x) => ({ ...x, abc: abcMap.get(x) ?? "C" }));
@@ -126,8 +134,9 @@ export async function stockTab(r: Range, gran: Gran) {
   const abcStock = (["A", "B", "C"] as const).map((a) => ({ abc: a, items: materials.filter((m) => m.abc === a), value: sum(materials.filter((m) => m.abc === a).map((m) => m.value)) }));
 
   return {
-    cards: { value, sku: materials.length, turnoverDays, stockout: materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length, overstock: materials.filter((m) => m.overstock).length, writeOff: woValue, writeOffCount: woInRange.length, purchases },
+    cards: { value, sku: materials.length, turnoverDays, stockout: atRiskMaterials(materials).length, overstock: materials.filter((m) => m.overstock).length, writeOff: woValue, writeOffCount: woInRange.length, purchases },
     materials, finished, queue, dead, deadValue, inflow, outflow, totalIn, totalOut, trend, suppliers, woMonthly, abcStock,
-    zones: { critical: materials.filter((m) => m.zone === "Kritik").length, risky: materials.filter((m) => m.zone === "Xavfli").length, good: materials.filter((m) => m.zone === "Yaxshi").length, unknown: materials.filter((m) => m.zone === "Ma'lumot yo'q").length },
+    // Zonalar — faqat xavfi kuzatiladigan xomashyo (zapchast/ofis tovari «necha kunga yetadi» bilan baholanmaydi)
+    zones: { critical: materials.filter((m) => m.tracked && m.zone === "Kritik").length, risky: materials.filter((m) => m.tracked && m.zone === "Xavfli").length, good: materials.filter((m) => m.tracked && m.zone === "Yaxshi").length, unknown: materials.filter((m) => m.tracked && m.zone === "Ma'lumot yo'q").length },
   };
 }

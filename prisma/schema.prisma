@@ -2671,6 +2671,9 @@ enum PnlLine {
   PROJECT // loyihalar — zavod foydasidan keyin, alohida
   DIVIDEND // egasiga olingan pul — taqsimlanmagan foydadan oldin
   NONE
+  /// Aniqlanmagan — kassa importi o'zi ochgan manba: buxgalter PNL qatorini tanlaguncha daromadga ham, ishlab chiqarish
+  /// xarajatiga ham qo'shilmaydi, PNL'da «Manbasi aniqlanmagan pul» qatorida ko'rinadi (Sarvar rejasi 1.2)
+  UNSORTED
 }
 
 /// Kategoriya qo'shimcha nimani so'raydi: loyiha, kredit yoki asosiy vosita kartochkasi.
