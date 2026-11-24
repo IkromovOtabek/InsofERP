@@ -49,6 +49,34 @@ async function tripShipped(tx: Prisma.TransactionClient, e: EntryLike): Promise<
   });
   return trips.some((t) => ttnKey(t.ttn) === k || ttnKey(t.deliveryNoteNo) === k);
 }
+/**
+ * Teskari tartib: reestr qatori AVVAL kiritilib skladdan chiqargan, keyin shu TTN bilan reys yuklandi (yoki reysga shu TTN
+ * yozildi) — mahsulotni endi reys chiqargan, qatorning chiqimi qaytariladi (ikki marta chiqmasin). `tripLoaded` va
+ * `setTripTtn` tranzaksiyasi ichida chaqiriladi. Qaytarilgan qatorlar soni.
+ */
+export async function releaseRealizationForTrip(tx: Prisma.TransactionClient, tripId: string, userId: string): Promise<number> {
+  const t = await tx.trip.findUnique({ where: { id: tripId }, select: { ttn: true, deliveryNoteNo: true, loadedAt: true, status: true } });
+  if (!t?.loadedAt || t.status === "PLANNED" || t.status === "CANCELLED") return 0;
+  const keys = new Set([ttnKey(t.ttn), ttnKey(t.deliveryNoteNo)].filter(Boolean));
+  if (!keys.size) return 0;
+  const DAY = 86_400_000;
+  // `tripShipped` oynasining teskarisi: reys qator sanasidan −1 … +2 kun ichida yuklangan
+  const entries = await tx.realizationEntry.findMany({
+    where: { cancelledAt: null, ttn: { not: null }, date: { gt: new Date(t.loadedAt.getTime() - 2 * DAY), lte: new Date(t.loadedAt.getTime() + DAY) } },
+    select: { id: true, date: true, productId: true, customerName: true, qty: true, ttn: true },
+  });
+  let n = 0;
+  for (const e of entries) {
+    if (!keys.has(ttnKey(e.ttn))) continue;
+    // Qator hozir skladdan sof chiqarib turibdimi (avval qaytarilgan bo'lsa — yozuvlar bor, lekin yig'indi 0)
+    const net = (await tx.stockMove.aggregate({ where: { refType: RZ_STOCK_REF, refId: e.id }, _sum: { qty: true } }))._sum.qty;
+    if (Math.abs(Number(net ?? 0)) <= STOCK_EPS) continue;
+    await syncRealizationSale(tx, e.id, e, userId);
+    n++;
+  }
+  return n;
+}
+
 type Group = { warehouseId: string; productId: string; owner: string | null; out: number; date: Date };
 type Want = { productId: string; qty: number; date: Date; name: string; unit: string };
 

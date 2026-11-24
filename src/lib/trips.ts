@@ -19,6 +19,7 @@ import { snapshotTripPay } from "@/lib/driver-trip-pay";
 import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { cancelBatchTx, isStornoError, reverseMoves } from "@/lib/storno";
+import { releaseRealizationForTrip } from "@/lib/realization-stock";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -160,6 +161,8 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
       }
       await writeShipment(tx, { tripId: id, orderId: t.orderId, warehouseId: wh.id, line, qty, note, userId });
       await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED", note });
+      // Shu TTN bilan avval kiritilgan reestr qatori skladdan chiqargan bo'lsa — qaytadi (mahsulotni reys chiqardi)
+      await releaseRealizationForTrip(tx, id, userId);
       return true;
     }));
     return { changed: !!ok, orderId: t.orderId };
@@ -867,6 +870,8 @@ export async function setTripTtn(id: string, value: string, userId: string): Pro
     if (taken) return { error: taken };
     await tx.trip.update({ where: { id }, data: { ttn } });
     await audit(tx, userId, "UPDATE", "Trip", id, { ttn: t.ttn }, { ttn });
+    // Yuklangan reysga TTN yozildi — shu TTN bilan avval kiritilgan reestr qatorining sklad chiqimi qaytadi
+    await releaseRealizationForTrip(tx, id, userId);
     return { ok: true } as const;
   });
 }

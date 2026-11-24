@@ -23,6 +23,7 @@ import { stockStatus } from "@/lib/production-report";
 import { materialOverview, atRiskMaterials } from "@/lib/bi/stock";
 import { boshqaruvPaneli } from "@/lib/fin-report/panel";
 import { aliasesAfterRename, guessProductGroup, normalizeProductName, productNameKey } from "@/lib/product-name";
+import { releaseRealizationForTrip, syncRealizationSale } from "@/lib/realization-stock";
 
 const near = (a: number | null | undefined, b: number, eps = 1) => a != null && Math.abs(a - b) <= eps;
 
@@ -113,6 +114,35 @@ async function main() {
   check("xomashyo nomi → «Xomashyo sotuvi»", guessProductGroup("Sheben", ["Sheben", "Qum"]) === "Xomashyo sotuvi");
   check("eski nom boshqa nom bo'lib qoladi", JSON.stringify(aliasesAfterRename("PK 59-12-8", [], "PK 59-12-8 A 400")) === JSON.stringify(["PK 59-12-8"]));
   check("bo'shliq tuzatishi alias qo'shmaydi", aliasesAfterRename("PK  59-12-8", [], "PK 59-12-8").length === 0);
+
+  section("5. Reestr qatori avval, keyin shu TTN bilan reys — sklad ikki marta chiqmaydi");
+  const settings = await db.companySettings.findUnique({ where: { id: "main" }, select: { realizationStockFrom: true } });
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  await db.companySettings.update({ where: { id: "main" }, data: { realizationStockFrom: yesterday } });
+  try {
+    const grp = await db.productGroup.findFirst({ where: { parentId: null }, select: { id: true } });
+    const pk = await db.product.create({ data: { code: `QKT${tag}`, name: `QA KPI plita TTN ${tag}`, unit: "dona", price: 500_000, groupId: grp?.id ?? null } });
+    await mv({ date: yesterday, type: "ADJUSTMENT", productId: pk.id, qty: 5 });
+    const bal = async () => Number((await db.stockMove.aggregate({ where: { productId: pk.id }, _sum: { qty: true } }))._sum.qty ?? 0);
+    const ttn = `QA-${tag}`;
+    const entry = await db.realizationEntry.create({ data: { date: today, payGroup: "CASH", customerName: cust.name, productId: pk.id, productName: pk.name, groupName: "", unit: "dona", qty: 2, price: 500_000, ttn, createdById: U } });
+    await db.$transaction((tx) => syncRealizationSale(tx, entry.id, entry, U));
+    check("reestr qatori skladdan chiqardi: 5 − 2 = 3", near(await bal(), 3, 0.001), await bal());
+    const veh = await db.vehicle.findFirst({ select: { id: true } });
+    const drv = await db.employee.findFirst({ select: { id: true } });
+    const ord = await db.order.create({ data: { orderNo: `QA-KT-${tag}`, customerId: cust.id, deliveryDate: today, deliveryAddress: "QA", status: "IN_PRODUCTION", createdById: U, items: { create: [{ productId: pk.id, qtyM3: 2, price: 500_000 }] } } });
+    if (veh && drv) {
+      const trip = await db.trip.create({ data: { deliveryNoteNo: `QA-KT-${tag}`, orderId: ord.id, vehicleId: veh.id, driverId: drv.id, qtyM3: 2, status: "LOADED", loadedAt: new Date(), ttn } });
+      await mv({ date: new Date(), type: "SHIPMENT", productId: pk.id, qty: -2, refType: "Trip", refId: trip.id }); // reysning o'z jo'natmasi
+      check("reys ham chiqardi — vaqtincha ikki marta: 5 − 2 − 2 = 1", near(await bal(), 1, 0.001), await bal());
+      const n = await db.$transaction((tx) => releaseRealizationForTrip(tx, trip.id, U));
+      check("reys yuklanganda reestr qatorining chiqimi qaytdi: qoldiq 3", n === 1 && near(await bal(), 3, 0.001), { n, bal: await bal() });
+      const n2 = await db.$transaction((tx) => releaseRealizationForTrip(tx, trip.id, U));
+      check("qayta chaqirilsa hech narsa o'zgarmaydi", n2 === 0 && near(await bal(), 3, 0.001), { n2, bal: await bal() });
+    } else check("test bazasida mashina va xodim bor", false);
+  } finally {
+    await db.companySettings.update({ where: { id: "main" }, data: { realizationStockFrom: settings?.realizationStockFrom ?? null } });
+  }
 
   done();
 }
