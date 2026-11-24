@@ -322,6 +322,23 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
           date: u.date, title: u.name, sub: `${fmtNum(u.qty, 3)} ${u.unit} · ${STOCK_TYPE_LABEL[u.type] ?? u.type}`, href: "/stock/rasxod",
         }));
       }
+      // Retseptsiz mahsulot (plita, stolba…) taxminiy tannarxi va shu mahsulotga skladdan chiqqan haqiqiy material
+      // (armatura, sim — retseptda yo'q) — bitta xarajat. Ikkalasi ham kirsa, tannarx ikki marta ayiriladi.
+      // Haqiqiy sarf ustun: taxminiy tannarx shu oydagi «Sklad sarfi» miqdorigacha kamaytiriladi.
+      const used = zeros(n);
+      for (const u of stockUse.moves) { const i = at(u.date); if (i !== undefined && u.value > 0) addInto(used, i, u.value); }
+      let offsetAny = false;
+      for (let i = 0; i < n; i++) {
+        const off = Math.min(cogsEst[i] ?? 0, used[i] ?? 0);
+        if (!(off > 0)) continue;
+        offsetAny = true;
+        cogsEst[i] = (cogsEst[i] ?? 0) - off;
+        cogs[i] = (cogs[i] ?? 0) - off;
+        const item = { date: monthStart(months[i]!), title: "Taxminiy tannarx kamaytirildi", sub: "Retseptsiz mahsulot materiali «Sklad sarfi»da haqiqiy chiqim bilan hisoblangan", href: "/stock/rasxod", amount: off };
+        tr("cogs", i, () => item);
+        tr("cogs-est", i, () => item);
+      }
+      if (offsetAny) notes.push("Retseptsiz mahsulotlarning taxminiy tannarxi «Sklad sarfi» summasigacha kamaytirildi — material skladdan chiqqanda xarajatga yozilgan, ikki marta ayirilmaydi.");
       if (stockUse.top.length) notes.push(`Retseptda yo'q materiallar (yoqilg'i, ehtiyot qism…) skladdan chiqqanda xarajat — «${STOCK_USE_PREFIX}…» qatorlari. Eng kattalari: ${stockUse.top.join(", ")}.`);
       if (stockUse.twins.length) notes.push(`Retsept materialiga o'xshash, lekin retseptga ulanmagan: ${stockUse.twins.join(", ")} — Sklad'da birlashtiring, aks holda ular tannarxga emas, «Sklad sarfi»ga tushadi.`);
     }
