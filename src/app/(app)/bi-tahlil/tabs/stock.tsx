@@ -26,7 +26,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
           <Kpi label="Ombor qiymati" value={moneyShort(c.value)} icon={Warehouse} tone="brand" hint="xomashyo × o'rt. kirim narxi" href="#ombor-holati" />
           <Kpi label="Xomashyo turlari" value={String(c.sku)} icon={Layers} hint="faol pozitsiya" href="#ombor-holati" />
           <Kpi label="Aylanma" value={c.turnoverDays === null ? "—" : `${fmtNum(c.turnoverDays, 0)} kun`} icon={RefreshCw} tone="info" hint="o'rtacha omborda turish" href="#ombor-holati" />
-          <Kpi label="Tugash xavfi" value={String(c.stockout)} icon={AlertTriangle} tone={c.stockout ? "danger" : "success"} hint="xomashyo ≤20 kunga yetadi" href="#stockout-timeline" />
+          <Kpi label="Tugash xavfi" value={String(c.stockout)} icon={AlertTriangle} tone={c.stockout ? "danger" : "success"} hint={`xomashyo ${d.thresholds.warnDays} kundan kamga yetadi`} href="#stockout-timeline" />
           <Kpi label="Ortiqcha zaxira" value={String(c.overstock)} icon={Snowflake} tone={c.overstock ? "warning" : "default"} hint="90+ kunlik zaxira" href="#muzlagan" />
           <Kpi label="Hisobdan chiqarildi" value={moneyShort(c.writeOff)} icon={Trash2} tone={c.writeOff ? "danger" : "default"} hint={`${c.writeOffCount} ta yozuv · davr (brak — tannarxda)`} href="/stock/spisanie" />
         </div>
@@ -38,7 +38,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
         {d.queue.length === 0 ? <div className="p-5"><Note>Buyurtma talab qiladigan xomashyo yo'q — zaxira yetarli.</Note></div> : (
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>#</Th><Th>Xomashyo</Th><Th>Zona</Th><Th right>Qoldiq</Th><Th right>Kunlik sarf</Th><Th right>Yetadi</Th><Th right>Rejadagi ehtiyoj</Th><Th right>Tavsiya miqdor</Th><Th right>Summa</Th></tr></thead>
-            <tbody>{d.queue.map((m, i) => <Tr key={m.id}><Td className="text-slate-400">{i + 1}</Td><Td>{m.name}{m.short && <span className="ml-1.5 text-[10px] font-semibold uppercase text-red-600">zayavkaga yetmaydi</span>}</Td><Td><Tag>{m.zone}</Tag></Td><Td right><Link href={bal(m.id)} title="Qayerdan kelgan — sklad harakatlari" className={DRILL_LINK}>{qty(m.balance)} {m.unit}</Link></Td><Td right>{fmtNum(m.perDay, 1)}</Td><Td right className={m.days !== null && m.days < 7 ? "font-semibold text-red-600" : ""}>{m.days === null ? "—" : `${fmtNum(m.days, 1)} kun`}</Td><Td right>{m.planned ? qty(m.planned) : "—"}</Td><Td right className="font-semibold">{qty(m.suggestQty)} {m.unit}</Td><Td right className="font-semibold">{moneyShort(m.suggestCost)}</Td></Tr>)}</tbody>
+            <tbody>{d.queue.map((m, i) => <Tr key={m.id}><Td className="text-slate-400">{i + 1}</Td><Td>{m.name}{m.short && <span className="ml-1.5 text-[10px] font-semibold uppercase text-red-600">zayavkaga yetmaydi</span>}</Td><Td><Tag>{m.zone}</Tag></Td><Td right><Link href={bal(m.id)} title="Qayerdan kelgan — sklad harakatlari" className={DRILL_LINK}>{qty(m.balance)} {m.unit}</Link></Td><Td right>{fmtNum(m.perDay, 1)}</Td><Td right className={m.days !== null && m.days < d.thresholds.critDays ? "font-semibold text-red-600" : ""}>{m.days === null ? "—" : `${fmtNum(m.days, 1)} kun`}</Td><Td right>{m.planned ? qty(m.planned) : "—"}</Td><Td right className="font-semibold">{qty(m.suggestQty)} {m.unit}</Td><Td right className="font-semibold">{moneyShort(m.suggestCost)}</Td></Tr>)}</tbody>
           </Table>
         )}
         <div className="border-t border-slate-100 px-5 py-3"><Action href="/receipts/new">Jami {moneyShort(d.queue.reduce((s, m) => s + m.suggestCost, 0))} so'mlik buyurtma loyihasi — sklad tasdiqlasin</Action></div>
@@ -55,7 +55,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
             ))}</tbody>
           </Table>
         </Panel>
-        <Panel id="stockout-timeline" title="Bashoratli stockout timeline" info="Joriy qoldiq / kunlik sarf — eng xavfli 15 xomashyo. Kritik <7, Xavfli 7–20, Yaxshi >20 kun.">
+        <Panel id="stockout-timeline" title="Bashoratli stockout timeline" info={`Joriy qoldiq ÷ kunlik sarf (so'nggi 30 kun) — eng xavfli 15 xomashyo. Kritik — ${d.thresholds.critDays} kundan kam yoki zayavkaga yetmaydi, Xavfli — ${d.thresholds.warnDays} kundan kam yoki minimaldan kam (Sozlamalar → Limitlar).`}>
           <div className="mb-3 grid grid-cols-4 gap-1.5 text-center text-xs">{[["Hammasi", d.materials.length, "slate"], ["Kritik", d.zones.critical, "red"], ["Xavfli", d.zones.risky, "amber"], ["Yaxshi", d.zones.good, "emerald"]].map(([l, n, col]) => <div key={l as string} className={`rounded-lg bg-${col}-50 py-1.5`}><div className={`text-lg font-bold tabular text-${col}-700`}>{n as number}</div><div className="text-[10px] text-slate-500">{l as string}</div></div>)}</div>
           {timeline.length ? <HBarList data={timeline.map((m) => ({ label: m.name, value: Math.min(60, m.days ?? 0), hint: m.days !== null && m.days > 60 ? ">60 kun" : undefined, tone: zoneTone[m.zone] === "slate" ? "slate" : zoneTone[m.zone] }))} formatValue={(v) => `${fmtNum(v, 0)} kun`} max={60} /> : <Note>Sarf ma'lumoti yo'q.</Note>}
         </Panel>
@@ -102,7 +102,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
       </div>
 
-      <Insight>Ombor qiymati {money(c.value)}. {c.stockout ? `${c.stockout} ta xomashyo 20 kundan kam qoldi — buyurtma navbatida ${moneyShort(d.queue.reduce((s, m) => s + m.suggestCost, 0))} so'mlik loyiha tayyor.` : "Barcha xomashyo 20+ kunga yetadi."} {d.deadValue > 0 ? `Muzlagan kapital ${moneyShort(d.deadValue)} so'm — bu pulni aylantirish kerak.` : ""} {d.materials.filter((m) => m.dead).length > 0 && `Oxirgi ishlatilgan sana: ${d.materials.filter((m) => m.lastConsume).map((m) => fmtDate(m.lastConsume!)).slice(0, 1)[0] ?? "—"}.`}</Insight>
+      <Insight>Ombor qiymati {money(c.value)}. {c.stockout ? `${c.stockout} ta xomashyo ${d.thresholds.warnDays} kundan kamga yetadi — buyurtma navbatida ${moneyShort(d.queue.reduce((s, m) => s + m.suggestCost, 0))} so'mlik loyiha tayyor.` : `Barcha xomashyo ${d.thresholds.warnDays}+ kunga yetadi.`} {d.deadValue > 0 ? `Muzlagan kapital ${moneyShort(d.deadValue)} so'm — bu pulni aylantirish kerak.` : ""} {d.materials.filter((m) => m.dead).length > 0 && `Oxirgi ishlatilgan sana: ${d.materials.filter((m) => m.lastConsume).map((m) => fmtDate(m.lastConsume!)).slice(0, 1)[0] ?? "—"}.`}</Insight>
       <div><Action href={tabHref(range, "forecast")}><PackagePlus size={14} className="mr-1 inline" />14 kunlik xomashyo ehtiyoji bashoratini ko'rish</Action></div>
     </div>
   );

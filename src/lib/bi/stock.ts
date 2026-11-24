@@ -81,14 +81,17 @@ export async function stockTab(r: Range, gran: Gran) {
   const today = startOfDay(new Date());
   // Trend 180 kun + oylik write-off 6 oy; yillik/eski davr tanlansa kirim/chiqim va write-off davr boshidan olinadi
   const since = new Date(Math.min(addDays(today, -180).getTime(), new Date(today.getFullYear(), today.getMonth() - 5, 1).getTime(), r.from.getTime()));
-  const [materials, moves, writeOffs, receipts, finished, productCost] = await Promise.all([
+  const [materials, moves, writeOffs, receipts, finished, productCost, company] = await Promise.all([
     materialOverview(),
     db.stockMove.findMany({ where: { date: { gte: since }, materialId: { not: null } }, select: { date: true, type: true, qty: true, materialId: true } }),
     db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: since } }, select: { date: true, qty: true, materialId: true, productId: true, note: true } }),
     db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, include: { supplier: true, items: true } }),
     finishedStock(),
     finishedUnitCosts(),
+    getCompany(),
   ]);
+  // Zona chegaralari — Sozlamalar → Limitlar (UI matnlari ham shundan)
+  const thresholds = { critDays: company.stockCritDays, warnDays: company.stockWarnDays };
   const costOf = new Map(materials.map((m) => [m.id, m.avgCost]));
   const value = sum(materials.map((m) => m.value));
   const consumed30Value = sum(materials.map((m) => m.consumed30 * m.avgCost));
@@ -135,7 +138,7 @@ export async function stockTab(r: Range, gran: Gran) {
 
   return {
     cards: { value, sku: materials.length, turnoverDays, stockout: atRiskMaterials(materials).length, overstock: materials.filter((m) => m.overstock).length, writeOff: woValue, writeOffCount: woInRange.length, purchases },
-    materials, finished, queue, dead, deadValue, inflow, outflow, totalIn, totalOut, trend, suppliers, woMonthly, abcStock,
+    materials, finished, queue, dead, deadValue, inflow, outflow, totalIn, totalOut, trend, suppliers, woMonthly, abcStock, thresholds,
     // Zonalar — faqat xavfi kuzatiladigan xomashyo (zapchast/ofis tovari «necha kunga yetadi» bilan baholanmaydi)
     zones: { critical: materials.filter((m) => m.tracked && m.zone === "Kritik").length, risky: materials.filter((m) => m.tracked && m.zone === "Xavfli").length, good: materials.filter((m) => m.tracked && m.zone === "Yaxshi").length, unknown: materials.filter((m) => m.tracked && m.zone === "Ma'lumot yo'q").length },
   };
