@@ -28,7 +28,7 @@ export async function saveSalesRecord(_prev: ActionState, fd: FormData): Promise
     const after = await tx.salesRecord.upsert({ where: { group }, update: data, create: { group, ...data } });
     await audit(tx, s.userId, before ? "UPDATE" : "CREATE", "SalesRecord", after.id, before ?? undefined, after);
   });
-  revalidatePath("/bi-tahlil/moliya/realizatsiya");
+  revalidatePath("/bi-tahlil/sotuvlar/realizatsiya");
   return { ok: true };
 }
 
@@ -66,6 +66,6 @@ export async function saveMonthPlanAction(_prev: ActionState, fd: FormData): Pro
       await audit(tx, s.userId, before ? "UPDATE" : "CREATE", "WorkMonth", after.id, before ?? undefined, after);
     }
   });
-  for (const p of ["/bi-tahlil/moliya/realizatsiya", "/bi-tahlil/reja", "/bi-tahlil", "/dashboard", "/settings/ish-tartibi"]) revalidatePath(p);
+  for (const p of ["/bi-tahlil/sotuvlar/realizatsiya", "/bi-tahlil/reja", "/bi-tahlil", "/dashboard", "/settings/ish-tartibi"]) revalidatePath(p);
   return { ok: true };
 }

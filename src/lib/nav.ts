@@ -198,24 +198,26 @@ export const NAV: NavItem[] = [
   // ── Tahlil (Team24 BI tuzilmasi) ──
   // Umumiy BI ko'rinishi Bosh sahifaga ko'chdi (/bi-tahlil → /dashboard), menyuda band yo'q. Ruxsat ichki sahifalar uchun qoladi
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil", hidden: true },
-  { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil" },
+  // Kunlik realizatsiya hisoboti Moliyadan shu yerga ko'chdi (2026-11-24; eski /bi-tahlil/moliya/realizatsiya — yo'naltirish)
+  { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/realizatsiya", label: "Kunlik realizatsiya hisoboti" }] },
   // Moliya: tahlil + «Insof 2026» jadvalidagi rasmiy hisobotlar (`bi-tahlil/moliya/report-page.tsx`)
-  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/realizatsiya", label: "Kunlik realizatsiya hisoboti" }, { href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }, { href: "/bi-tahlil/moliya/ish-haqi", label: "Ish haqi vedomosti" }, { href: "/bi-tahlil/moliya/kalendar", label: "To'lov kalendari" }, { href: "/bi-tahlil/moliya/tolov-rejasi", label: "To'lov rejasi" }, { href: "/bi-tahlil/moliya/mahsulot-foydasi", label: "Mahsulot foydasi" }, { href: "/bi-tahlil/moliya/tannarx", label: "Tannarx hisobi" }] },
+  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }, { href: "/bi-tahlil/moliya/ish-haqi", label: "Ish haqi vedomosti" }, { href: "/bi-tahlil/moliya/kalendar", label: "To'lov kalendari" }, { href: "/bi-tahlil/moliya/tolov-rejasi", label: "To'lov rejasi" }, { href: "/bi-tahlil/moliya/mahsulot-foydasi", label: "Mahsulot foydasi" }, { href: "/bi-tahlil/moliya/tannarx", label: "Tannarx hisobi" }] },
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
-  { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" }] },
+  { href: "/bi-tahlil/mijozlar",         label: "Kontragentlar",    roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" }] },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ombor/xomashyo", label: "Xom-ashyo balansi" }, { href: "/bi-tahlil/ombor/tayyor-mahsulot", label: "Tayyor mahsulot" }] },
   // Logistika (zayavka, jo'natish, transport ehtiyoji) va Mexanik (texnika: ta'mir, ehtiyot qism, texnik xizmat) — direktor menyusida
   // Mexanik Logistika ichida turadi; o'z bandi ruxsat uchun qoladi (oyna alohida berilgan xodim menyusida — alohida band)
   // Logistika va mexanik summalari (xarajat, daromad, foyda) — faqat direktor; ish boshqaruvchi va mexanik «Logistika moliya» da ko'radi
   { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: ["DIRECTOR"], group: "Tahlil", children: [{ href: "/bi-tahlil/logistika/avtotransport", label: "Avtotransport tahlili" }, { href: "/bi-tahlil/mexanik", label: "Mexanik" }] },
   { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: ["DIRECTOR"], group: "Tahlil", menuHide: ["DIRECTOR"] },
-  { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil" },
+  // Mahsulotlar, Reja nazorati, ML tahlil — menyudan olindi (2026-11-24); sahifalar havola orqali ochiladi
+  { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil", hidden: true },
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },
-  { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil" },
+  { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil", hidden: true },
   // Ma'lumot sog'ligi — tungi avto-tekshiruv natijasi (Sarvar rejasi, 2026-11-24): faqat direktor
   { href: "/bi-tahlil/sogliq",           label: "Ma'lumot sog'ligi", roles: ["DIRECTOR"], group: "Tahlil" },
-  { href: "/bi-tahlil/ml",               label: "ML tahlil",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ml/anomaliyalar", label: "Anomaliyalar" }, { href: "/bi-tahlil/ml/churn", label: "Churn tahlili" }, { href: "/bi-tahlil/ml/klasterlar", label: "Klasterlar" }] },
+  { href: "/bi-tahlil/ml",               label: "ML tahlil",        roles: BI_ROLES, group: "Tahlil", hidden: true, children: [{ href: "/bi-tahlil/ml/anomaliyalar", label: "Anomaliyalar" }, { href: "/bi-tahlil/ml/churn", label: "Churn tahlili" }, { href: "/bi-tahlil/ml/klasterlar", label: "Klasterlar" }] },
   // Direktor menyusida yo'q (tepadagi «Insof AI» tugmasi va havolalar qoladi); moliya va buxgalteriyada — menyuda
   { href: "/bi-tahlil/ai",               label: "Insof AI",         roles: BI_ROLES, group: "Tahlil", menuHide: ["DIRECTOR"], children: [{ href: "/bi-tahlil/ai/chat", label: "AI Chat" }, { href: "/bi-tahlil/ai/telegram", label: "Telegram bot" }] },
   // Ish boshqaruvchi: «Moliya» guruhida to'g'ridan-to'g'ri shu sahifalar (menyusi faqat unga, ichida yana «Moliya» bandi yo'q) — `SUPERVISOR_FIN`.

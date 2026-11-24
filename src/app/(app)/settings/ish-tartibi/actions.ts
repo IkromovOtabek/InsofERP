@@ -15,7 +15,7 @@ import { UZ_FIXED_HOLIDAYS, dbDate, dbDateKey } from "@/lib/work-calendar";
  */
 const writer = () => requireAction("employees", "calendar");
 const refresh = () => {
-  for (const p of ["/settings/ish-tartibi", "/settings", "/bi-tahlil/moliya/realizatsiya", "/bi-tahlil/reja", "/bi-tahlil", "/dashboard"]) revalidatePath(p);
+  for (const p of ["/settings/ish-tartibi", "/settings", "/bi-tahlil/sotuvlar/realizatsiya", "/bi-tahlil/reja", "/bi-tahlil", "/dashboard"]) revalidatePath(p);
 };
 
 export async function saveWorkWeekAction(_p: ActionState, fd: FormData): Promise<ActionState> {

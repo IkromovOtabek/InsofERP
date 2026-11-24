@@ -23,7 +23,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     canFix ? db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
   ]);
   return (
-    <BiPage title="Mijozlar" subtitle="Xaridorlar bilan hisob-kitob" info={<>
+    <BiPage title="Kontragentlar" subtitle="Xaridorlar bilan hisob-kitob" info={<>
       <p>Xaridorlar bilan hisob-kitob: davr boshidagi qarzdorlik/haqdorlik, sotib olgan, to&apos;lagan va hozirgi holat.</p>
       <p>Summani bosing — tafsilot (mahsulot, sana, to&apos;lovlar); nomni bosing — akt sverka.</p>
     </>} tab="customers" range={range} period={false}>

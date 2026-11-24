@@ -150,7 +150,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "moliya", label: "Moliya hisobotlari", paths: ["/bi-tahlil/moliya"], actions: [] },
     { key: "agentlar", label: "Agentlar", paths: ["/bi-tahlil/agentlar"], actions: [] },
     // Eski «mijozlar» oynasi (tahlil + ikkala qarz varag'i birga) uchga bo'lindi — `LEGACY_BUTTONS`
-    { key: "mijoz_tahlil", label: "Mijozlar tahlili (segmentlar, qarz yoshi)", paths: ["/bi-tahlil/mijozlar"], actions: [] },
+    { key: "mijoz_tahlil", label: "Kontragentlar tahlili (segmentlar, qarz yoshi)", paths: ["/bi-tahlil/mijozlar"], actions: [] },
     { key: "debitorka", label: "Mijoz debitorka / kreditorka", paths: ["/bi-tahlil/mijozlar/xaridorlar"], actions: ["debts"] },
     { key: "kreditorka", label: "Ta'minotchi kreditorka / debitorka", paths: ["/bi-tahlil/mijozlar/taminotchilar"], actions: ["supplier_debts"] },
     { key: "ombor", label: "Ombor", paths: ["/bi-tahlil/ombor"], actions: [] },

@@ -15,7 +15,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const day = parseDebtDay(sp.sana);
   const [s, company] = await Promise.all([supplierDebtSheet(day, parseDebtStart(sp.dan, day)), getCompany()]);
   return (
-    <BiPage title="Mijozlar" subtitle="Ta'minotchilar bilan hisob-kitob" info={<>
+    <BiPage title="Kontragentlar" subtitle="Ta'minotchilar bilan hisob-kitob" info={<>
       <p>Ta&apos;minotchilar bilan hisob-kitob: davr boshidagi qarzdorlik/haqdorlik, bizga bergan (kirim), biz to&apos;lagan va hozirgi holat.</p>
       <p>Summani bosing — tafsilot (material, sana, to&apos;lovlar); nomni bosing — akt sverka.</p>
     </>} tab="customers" range={range} period={false}>
