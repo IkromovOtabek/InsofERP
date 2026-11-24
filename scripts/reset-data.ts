@@ -96,7 +96,7 @@ async function main() {
       role: "DIRECTOR",
     },
   });
-  await db.warehouse.create({ data: { id: "main", name: "Asosiy sklad" } });
+  await db.warehouse.create({ data: { id: "main", name: "Asosiy sklad", isDefault: true } });
 
   console.log(`Baza bo'sh. Login: ${ADMIN_LOGIN}`);
   if (ADMIN_PASSWORD === "admin123") {

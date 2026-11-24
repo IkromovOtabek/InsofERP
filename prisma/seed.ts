@@ -40,8 +40,8 @@ async function main() {
 
   const wh = await db.warehouse.upsert({
     where: { id: "main" },
-    update: {},
-    create: { id: "main", name: "Asosiy sklad" },
+    update: { isDefault: true },
+    create: { id: "main", name: "Asosiy sklad", isDefault: true },
   });
 
   const materials = [

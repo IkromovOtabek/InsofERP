@@ -208,7 +208,7 @@ export async function provisionTenant(input: NewTenantInput): Promise<ProvisionR
     await db.companySettings.upsert({ where: { id: "main" }, update: { name: tenant.name }, create: { id: "main", name: tenant.name } });
     // reset-data.ts bilan bir xil minimum: faol "Asosiy sklad" (lib/trips.ts faol sklad bo'lishini talab qiladi).
     // Kassa/bank hisoblari reset-data'da ham yaratilmaydi — direktor Sozlamalar sahifasidan qo'shadi.
-    await db.warehouse.upsert({ where: { id: "main" }, update: { isActive: true }, create: { id: "main", name: "Asosiy sklad", isActive: true } });
+    await db.warehouse.upsert({ where: { id: "main" }, update: { isActive: true, isDefault: true }, create: { id: "main", name: "Asosiy sklad", isActive: true, isDefault: true } });
     await setDirector(dbName, input.director);
     const envFile = await writeEnvFile(tenant);
     return { tenant, envFile, migrateLog };
