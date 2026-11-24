@@ -8,6 +8,7 @@ import { tashkentDay } from "@/lib/nazorat/checks";
 import { botEnabled, sendMessage } from "@/lib/telegram/api";
 import { publicOrigin } from "@/lib/public-url";
 import { fmtNum, moneyShort, dateRu } from "@/lib/format";
+import { ORDER_STATUS } from "@/app/(app)/orders/status";
 
 /**
  * «Ma'lumot sog'ligi» (Tahlil, Sarvar rejasi «Yangi qo'shimchalar» 1, 2026-11-24): raqamlar bir-biriga to'g'ri kelmasligining
@@ -200,7 +201,7 @@ export async function runDataHealth(opts: { now?: Date } = {}): Promise<HealthCh
     key: "open_orders", title: "7 kundan ortiq ochiq zayavka", status: orders.length ? "warn" : "ok",
     value: orders.length ? `${orders.length} ta zayavka` : "Yo'q", count: orders.length, href: "/orders",
     hint: "Yetkazilgani yopilsin, bekor bo'lgani bekor qilinsin — aks holda stockout va «mikser bo'sh» signallari soxta chiqadi.",
-    rows: orders.slice(0, MAX_ROWS).map((o) => ({ label: `${o.orderNo} — ${o.customer.name}`, detail: `${dateRu(o.date)} dan beri, holat ${o.status}`, href: `/orders/${o.id}` })),
+    rows: orders.slice(0, MAX_ROWS).map((o) => ({ label: `${o.orderNo} — ${o.customer.name}`, detail: `${dateRu(o.date)} dan beri, holat: ${ORDER_STATUS[o.status].label.toLowerCase()}`, href: `/orders/${o.id}` })),
   });
 
   return out;
