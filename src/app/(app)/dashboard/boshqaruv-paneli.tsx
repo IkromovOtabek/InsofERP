@@ -38,11 +38,11 @@ export function PulQoldiqlari({ p }: { p: Panel }) {
             <Tr key={a.id}><Td>{a.name}</Td><Td right>{n0(a.open)}</Td><Td right>{n0(a.inToday)}</Td><Td right>{n0(a.outToday)}</Td><Td right>{n0(a.inMonth)}</Td><Td right>{n0(a.outMonth)}</Td><Td right className="text-slate-500">{n0(a.trInMonth)}</Td><Td right className="text-slate-500">{n0(a.trOutMonth)}</Td><Td right className={cn("font-semibold", neg(a.balance))}>{n0(a.balance)}</Td></Tr>
           ))}
           <TotalTr><td>JAMI</td><td className="text-right">{n0(t.open)}</td><td className="text-right">{n0(t.inToday)}</td><td className="text-right">{n0(t.outToday)}</td><td className="text-right">{n0(t.inMonth)}</td><td className="text-right">{n0(t.outMonth)}</td><td className="text-right">{n0(t.trInMonth)}</td><td className="text-right">{n0(t.trOutMonth)}</td><td className="text-right">{n0(t.balance)}</td></TotalTr>
-          <tr className="text-[13px] italic text-slate-500 [&>td]:border-t [&>td]:border-slate-100 [&>td]:px-4 [&>td]:py-2">
-            <td colSpan={9}>Har qator: oy boshi + oy kirim − oy chiqim + o&apos;tkazma kirdi − o&apos;tkazma chiqdi = hozirgi qoldiq. Ichki o&apos;tkazmalar (hisobdan hisobga, naqd yechish, inkassa) oborotga kirmaydi; bugun: kirdi {n0(p.transfers.inToday)}, chiqdi {n0(p.transfers.outToday)}.</td>
-          </tr>
         </tbody>
       </Table>
+      <p className="mt-1.5 px-1 text-[12px] italic text-slate-500">
+        Har qator: oy boshi + oy kirim − oy chiqim + o&apos;tkazma kirdi − o&apos;tkazma chiqdi = hozirgi qoldiq. Ichki o&apos;tkazmalar (hisobdan hisobga, naqd yechish, inkassa) oborotga kirmaydi; bugun: kirdi {n0(p.transfers.inToday)}, chiqdi {n0(p.transfers.outToday)}.
+      </p>
     </Block>
   );
 }
