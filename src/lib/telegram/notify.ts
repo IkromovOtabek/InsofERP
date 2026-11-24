@@ -60,6 +60,12 @@ export const sendResetCodeToBot = (userId: string, code: string) =>
   ].join("\n"));
 
 /**
+ * Telegram Markdown (eski) maxsus belgilari matndan qochiriladi — mijoz/brigada nomidagi `_ * ` [` xabarni rad ettirmasin
+ * (Telegram «can't parse entities» bilan qaytaradi, eslatma umuman yetmaydi).
+ */
+export const escapeMd = (v: string) => v.replace(/([_*`\[])/g, "\\$1");
+
+/**
  * Eslatma matni — bir nechta xodimning o'z chatiga (`lib/reminders.ts`: ertalabki ishlab chiqarish, ochiq zayavkalar).
  * Bot yoki chat ulanmagan xodim o'tkazib yuboriladi (ilova bildirishnomasi baribir boradi). Qaytaradi: yetkazilganlar soni.
  */

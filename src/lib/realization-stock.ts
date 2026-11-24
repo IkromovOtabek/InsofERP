@@ -41,10 +41,14 @@ const ttnKey = (v: string | null | undefined) => (v ?? "").replace(/^.*-0*(?=\d)
  */
 async function tripShipped(tx: Prisma.TransactionClient, e: EntryLike): Promise<boolean> {
   const k = ttnKey(e.ttn);
-  if (!k) return false;
+  if (!k || !e.productId) return false;
   const DAY = 86_400_000;
+  // Raqam bir xil bo'lsa ham boshqa mahsulotli reys bu qatorni «chiqargan» hisoblanmaydi (TTN kaliti faqat raqam qismi)
   const trips = await tx.trip.findMany({
-    where: { status: { notIn: ["PLANNED", "CANCELLED"] }, loadedAt: { gte: new Date(e.date.getTime() - DAY), lt: new Date(e.date.getTime() + 2 * DAY) } },
+    where: {
+      status: { notIn: ["PLANNED", "CANCELLED"] }, loadedAt: { gte: new Date(e.date.getTime() - DAY), lt: new Date(e.date.getTime() + 2 * DAY) },
+      order: { items: { some: { productId: e.productId } } },
+    },
     select: { ttn: true, deliveryNoteNo: true },
   });
   return trips.some((t) => ttnKey(t.ttn) === k || ttnKey(t.deliveryNoteNo) === k);
@@ -55,14 +59,15 @@ async function tripShipped(tx: Prisma.TransactionClient, e: EntryLike): Promise<
  * `setTripTtn` tranzaksiyasi ichida chaqiriladi. Qaytarilgan qatorlar soni.
  */
 export async function releaseRealizationForTrip(tx: Prisma.TransactionClient, tripId: string, userId: string): Promise<number> {
-  const t = await tx.trip.findUnique({ where: { id: tripId }, select: { ttn: true, deliveryNoteNo: true, loadedAt: true, status: true } });
+  const t = await tx.trip.findUnique({ where: { id: tripId }, select: { ttn: true, deliveryNoteNo: true, loadedAt: true, status: true, order: { select: { items: { select: { productId: true } } } } } });
   if (!t?.loadedAt || t.status === "PLANNED" || t.status === "CANCELLED") return 0;
   const keys = new Set([ttnKey(t.ttn), ttnKey(t.deliveryNoteNo)].filter(Boolean));
-  if (!keys.size) return 0;
+  const products = [...new Set(t.order.items.map((i) => i.productId))];
+  if (!keys.size || !products.length) return 0;
   const DAY = 86_400_000;
   // `tripShipped` oynasining teskarisi: reys qator sanasidan −1 … +2 kun ichida yuklangan
   const entries = await tx.realizationEntry.findMany({
-    where: { cancelledAt: null, ttn: { not: null }, date: { gt: new Date(t.loadedAt.getTime() - 2 * DAY), lte: new Date(t.loadedAt.getTime() + DAY) } },
+    where: { cancelledAt: null, ttn: { not: null }, productId: { in: products }, date: { gt: new Date(t.loadedAt.getTime() - 2 * DAY), lte: new Date(t.loadedAt.getTime() + DAY) } },
     select: { id: true, date: true, productId: true, customerName: true, qty: true, ttn: true },
   });
   let n = 0;
@@ -99,6 +104,21 @@ export async function resyncRealizationByTtn(tx: Prisma.TransactionClient, ttns:
   return n;
 }
 
+/**
+ * Importda yangi yaratilgan qatorlar: skladga tegmaydiganlari (sana chegarasidan oldin, katalogsiz, miqdor 0) so'rovsiz
+ * o'tkaziladi — eski oylar importida minglab qatorga sklad tekshiruvi qilinmasin (sklad qulfi uzoq ushlanmasin).
+ */
+export async function syncNewRealizationSales(tx: Prisma.TransactionClient, rows: readonly EntryLike[], userId: string): Promise<SaleSync[]> {
+  if (!rows.length) return [];
+  const settings = await tx.companySettings.findUnique({ where: { id: "main" }, select: { realizationStockFrom: true } });
+  const from = settings?.realizationStockFrom;
+  if (!from) return [];
+  const due = rows.filter((r) => !!r.productId && r.date >= from && Number(r.qty) > STOCK_EPS);
+  const out: SaleSync[] = [];
+  for (const r of due) out.push(await syncRealizationSale(tx, r.id, r, userId, { fresh: true }));
+  return out;
+}
+
 type Group = { warehouseId: string; productId: string; owner: string | null; out: number; date: Date };
 type Want = { productId: string; qty: number; date: Date; name: string; unit: string };
 
@@ -109,12 +129,13 @@ const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.g
  * Qator holatiga sklad yozuvlarini moslaydi (qatorni yozgan tranzaksiya ichida, sklad qulfi shu yerda olinadi).
  * `entry` — yangi holat, `null` — qator o'chirildi.
  */
-export async function syncRealizationSale(tx: Prisma.TransactionClient, id: string, entry: EntryLike | null, userId: string): Promise<SaleSync> {
+export async function syncRealizationSale(tx: Prisma.TransactionClient, id: string, entry: EntryLike | null, userId: string, opts?: { fresh?: boolean }): Promise<SaleSync> {
   await lockStock(tx);
+  // `fresh` — shu tranzaksiyada yaratilgan qator: unga tegishli sklad yozuvi va zames hali bo'lishi mumkin emas
   const [moves, settings, batches] = await Promise.all([
-    tx.stockMove.findMany({ where: { refType: RZ_STOCK_REF, refId: id }, orderBy: { createdAt: "asc" }, select: { warehouseId: true, productId: true, ownerBrigadeId: true, qty: true, date: true } }),
+    opts?.fresh ? [] : tx.stockMove.findMany({ where: { refType: RZ_STOCK_REF, refId: id }, orderBy: { createdAt: "asc" }, select: { warehouseId: true, productId: true, ownerBrigadeId: true, qty: true, date: true } }),
     tx.companySettings.findUnique({ where: { id: "main" }, select: { realizationStockFrom: true, realizationAutoConsume: true } }),
-    tx.productionBatch.findMany({ where: { cancelledAt: null, note: { contains: batchTag(id) } }, select: { id: true, productId: true, qtyM3: true, date: true } }),
+    opts?.fresh ? [] : tx.productionBatch.findMany({ where: { cancelledAt: null, note: { contains: batchTag(id) } }, select: { id: true, productId: true, qtyM3: true, date: true } }),
   ]);
   const productIds = [...new Set([...moves.map((m) => m.productId), entry?.productId].filter((x): x is string => !!x))];
   const products = new Map((await tx.product.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, unit: true } })).map((p) => [p.id, p]));

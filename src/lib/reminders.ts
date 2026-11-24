@@ -21,7 +21,7 @@ import { isLogiRequest } from "@/lib/logistics-finance";
 import { moduleOffNow } from "@/lib/tenant";
 import { isWorkDay, workCalendar } from "@/lib/work-calendar";
 import { dayUtc } from "@/lib/davomat";
-import { sendTextToUsers } from "@/lib/telegram/notify";
+import { escapeMd, sendTextToUsers } from "@/lib/telegram/notify";
 import { OPEN_ORDER_DAYS } from "@/lib/order-open";
 
 const H = 3_600_000;
@@ -79,6 +79,9 @@ const RULES: Rule[] = [
     // Kunlik: 7 kundan ortiq ochiq mijoz zayavkalari — dispetcher/logistika yopsin (yetkazilganicha yoki bekor)
     type: "REMIND_ORDER_OPEN_LONG",
     find: async (now) => {
+      // Kuniga bir marta, ish vaqtida: id kunga bog'langan, takror oynasi esa `REPEAT_H` (12 soat) — oynasiz 00:xx va 12:xx da
+      // ikki marta ketardi. 09:00–20:00 da birinchi aylanish yuboradi, 12 soatdan keyingisi (21:00+) oynadan tashqarida
+      if (now.getHours() < 9 || now.getHours() >= 20) return [];
       const where = { kind: "SALE" as const, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"] as ("DRAFT" | "BLOCKED" | "CONFIRMED" | "IN_PRODUCTION")[] }, date: { lt: ago(now, OPEN_ORDER_DAYS * 24) } };
       const [n, list] = await Promise.all([
         db.order.count({ where }),
@@ -279,7 +282,7 @@ async function sendDue(now: Date): Promise<number> {
       if (d.users?.length) await notifyUsers(d.users, n);
       if (d.tg) {
         const byRole = d.roles?.length ? await db.user.findMany({ where: { role: { in: d.roles }, isActive: true }, select: { id: true } }) : [];
-        await sendTextToUsers([...byRole.map((u) => u.id), ...(d.users ?? [])], `*${d.title}*\n${d.body}`).catch((e) => console.error("[reminders] telegram", e));
+        await sendTextToUsers([...byRole.map((u) => u.id), ...(d.users ?? [])], `*${escapeMd(d.title)}*\n${escapeMd(d.body)}`).catch((e) => console.error("[reminders] telegram", e));
       }
       seen.add(d.id);
       sent++;

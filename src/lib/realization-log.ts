@@ -14,7 +14,7 @@ import { defaultCreditLimit } from "@/lib/credit-default";
 import { customerNameKey, lockCustomerName } from "@/lib/customer-name";
 import { normalizeProductName, productNameKey } from "@/lib/product-name";
 import { lockProductName, resolveProductGroup } from "@/lib/product-name-db";
-import { notifyShortSales, saleWarnText, syncRealizationSale, type SaleSync } from "@/lib/realization-stock";
+import { notifyShortSales, saleWarnText, syncNewRealizationSales, syncRealizationSale } from "@/lib/realization-stock";
 import { ensureSite } from "@/lib/logistics";
 import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
 import { eco, ecoEnabled } from "@/lib/eco/client";
@@ -780,7 +780,7 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
       used.add(twin);
       return false;
     });
-    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [] as string[], newCustomers: [] as string[], syncs: [] as SaleSync[] };
+    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [] as string[], newCustomers: [] as string[], syncs: [] as Awaited<ReturnType<typeof syncNewRealizationSales>> };
     const cat = await addMissingProducts(tx, fresh, userId);
     const cust = await addMissingCustomers(tx, fresh, userId);
     const created = await tx.realizationEntry.createManyAndReturn({
@@ -790,8 +790,7 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
     });
     await auditMany(tx, userId, "CREATE", "RealizationEntry", created.map((row) => ({ id: row.id, after: row })));
     // Har qator — sklad chiqimi / beton zamesi (`lib/realization-stock.ts`)
-    const syncs: SaleSync[] = [];
-    for (const row of created) syncs.push(await syncRealizationSale(tx, row.id, row, userId));
+    const syncs = await syncNewRealizationSales(tx, created, userId);
     // Avvalgi importlardagi (mijoz qo'shilmasdan oldingi) bog'lanmagan qatorlar ham shu yerda bog'lanadi
     const old = await linkEntriesIn(tx, userId);
     return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers], syncs };

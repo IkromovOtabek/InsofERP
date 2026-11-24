@@ -164,6 +164,16 @@ async function main() {
       check("qayta yuklandi — qoldiq 0", lr2.changed && near(await bal2(), 0, 0.001), { lr2, bal: await bal2() });
       const st = await setTripTtn(tr2.id, `8${tag}`, U);
       check("reys TTN'i almashdi — eski TTN'li qator skladdan qayta chiqdi (qoldiq −2)", "ok" in st && near(await bal2(), -2, 0.001), { st, bal: await bal2() });
+
+      section("7. TTN raqami bir xil, mahsulot boshqa — qator reysga bog'lanmaydi");
+      const pk3 = await db.product.create({ data: { code: `QKV${tag}`, name: `QA KPI kolso TTN ${tag}`, unit: "dona", price: 300_000, groupId: grp?.id ?? null } });
+      await mv({ date: yesterday, type: "ADJUSTMENT", productId: pk3.id, qty: 3 });
+      const bal3 = async () => Number((await db.stockMove.aggregate({ where: { productId: pk3.id }, _sum: { qty: true } }))._sum.qty ?? 0);
+      const e3 = await db.realizationEntry.create({ data: { date: today, payGroup: "CASH", customerName: cust.name, productId: pk3.id, productName: pk3.name, groupName: "", unit: "dona", qty: 2, price: 300_000, ttn: `N-2026-8${tag}`, createdById: U } });
+      await db.$transaction((tx) => syncRealizationSale(tx, e3.id, e3, U));
+      check("boshqa mahsulotli reysning TTN'i — qator o'zi skladdan chiqardi (qoldiq 1)", near(await bal3(), 1, 0.001), await bal3());
+      const n3 = await db.$transaction((tx) => releaseRealizationForTrip(tx, tr2.id, U));
+      check("reys boshqa mahsulotli qatorning chiqimini qaytarmaydi", n3 === 0 && near(await bal3(), 1, 0.001), { n3, bal: await bal3() });
     } else check("test bazasida dona tashiydigan mashina va xodim bor", false);
   } finally {
     await db.companySettings.update({ where: { id: "main" }, data: { realizationStockFrom: settings?.realizationStockFrom ?? null } });
