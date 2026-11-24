@@ -30,7 +30,25 @@ const batchTag = (id: string) => `[rz:${id}]`;
 export type ShortSale = { product: string; unit: string; qty: number; have: number; customer: string };
 export type SaleSync = { short: ShortSale | null; warn: string | null };
 
-type EntryLike = { id: string; date: Date; productId: string | null; customerName: string; qty: Prisma.Decimal | number | string };
+type EntryLike = { id: string; date: Date; productId: string | null; customerName: string; qty: Prisma.Decimal | number | string; ttn?: string | null };
+
+/** TTN solishtirish kaliti — Tahlil tushumidagi qoida (`bi/core.ts`): «N-2026-00161», «ТТН-161», «№161», «161» — bitta. */
+const ttnKey = (v: string | null | undefined) => (v ?? "").replace(/^.*-0*(?=\d)/, "").toLowerCase().replace(/[^0-9a-zа-яё]/g, "").replace(/^0+(?=\d)/, "");
+
+/**
+ * Shu TTN bilan ±1 kunda yuklangan reys bormi — u mahsulotni o'zi skladdan chiqargan (reys yuklanganda), qo'lda qator
+ * ikkinchi marta chiqarmasin. Tahlil tushumida ham shu qator ikki marta sanalmaydi.
+ */
+async function tripShipped(tx: Prisma.TransactionClient, e: EntryLike): Promise<boolean> {
+  const k = ttnKey(e.ttn);
+  if (!k) return false;
+  const DAY = 86_400_000;
+  const trips = await tx.trip.findMany({
+    where: { status: { notIn: ["PLANNED", "CANCELLED"] }, loadedAt: { gte: new Date(e.date.getTime() - DAY), lt: new Date(e.date.getTime() + 2 * DAY) } },
+    select: { ttn: true, deliveryNoteNo: true },
+  });
+  return trips.some((t) => ttnKey(t.ttn) === k || ttnKey(t.deliveryNoteNo) === k);
+}
 type Group = { warehouseId: string; productId: string; owner: string | null; out: number; date: Date };
 type Want = { productId: string; qty: number; date: Date; name: string; unit: string };
 
@@ -65,7 +83,7 @@ export async function syncRealizationSale(tx: Prisma.TransactionClient, id: stri
 
   const from = settings?.realizationStockFrom ?? null;
   const p = entry?.productId ? products.get(entry.productId) : undefined;
-  const inRange = !!entry && !!p && !!from && entry.date >= from && Number(entry.qty) > STOCK_EPS;
+  const inRange = !!entry && !!p && !!from && entry.date >= from && Number(entry.qty) > STOCK_EPS && !(await tripShipped(tx, entry));
   const want: Want | null = inRange ? { productId: p!.id, qty: r3(Number(entry!.qty)), date: entry!.date, name: p!.name, unit: p!.unit } : null;
   const note = entry ? "Realizatsiya qatori tuzatildi" : "Realizatsiya qatori o'chirildi";
 

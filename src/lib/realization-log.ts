@@ -395,7 +395,7 @@ async function writeEntry(id: string, before: RealizationEntry | null, d: EntryI
     if (u.count !== 1) return null;
     await audit(tx, userId, "UPDATE", "RealizationEntry", id, before, data);
     // Miqdor / mahsulot / sana o'zgargan bo'lsa sklad yozuvi farq bilan tuzatiladi
-    return syncRealizationSale(tx, id, { id, date: data.date, productId: data.productId, customerName: data.customerName, qty: data.qty }, userId);
+    return syncRealizationSale(tx, id, { id, date: data.date, productId: data.productId, customerName: data.customerName, qty: data.qty, ttn: data.ttn }, userId);
   });
   if (!sync) return { error: "Qator boshqa joyda o'zgartirildi — sahifani yangilang" };
   notifyShortSales([sync], userId);
