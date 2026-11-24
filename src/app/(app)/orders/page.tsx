@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDownRight, Boxes, ScrollText } from "lucide-react";
+import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDownRight, Boxes, ScrollText, AlarmClock } from "lucide-react";
+import { OPEN_ORDER_DAYS } from "@/lib/order-open";
+import { OrdersBulkBar, ORDERS_BULK_FORM } from "./bulk-bar";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -19,8 +21,8 @@ import { EditedMark } from "@/components/edited-mark";
 import { ROW_FLAGS_SELECT, orderRowFlags } from "./row-flags";
 import { OrderRowActions } from "./order-row-actions";
 
-export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string; imported?: string; tur?: string }> }) {
-  const { status, customer, kun, imported, tur } = await searchParams;
+export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string; imported?: string; tur?: string; ochiq?: string }> }) {
+  const { status, customer, kun, imported, tur, ochiq } = await searchParams;
   const s = await requirePage("/orders");
   // Tugmalar amal ruxsatidan: direktor bergan (masalan ishlab chiqarishga "Zayavka ochish") yoki rol bo'yicha
   const can = (a: string) => canDo(s, "orders", a);
@@ -34,8 +36,13 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const dayEnd = day ? new Date(day.getTime() + 864e5) : null;
   // Turi bo'yicha: mijoz zayavkalari yoki sklad zaxirasi zayavkalari (ikkalasi bitta ro'yxatda turadi)
   const kind = tur === "sklad" ? ("STOCK" as const) : tur === "mijoz" ? ("SALE" as const) : undefined;
+  // «7 kundan ortiq ochiq» — kiritilganiga shuncha kun bo'lgan, hali yopilmagan mijoz zayavkalari (dispetcherga har kuni eslatma)
+  const staleWhere = { kind: "SALE" as const, status: { in: OPEN_STATUSES }, date: { lt: new Date(Date.now() - OPEN_ORDER_DAYS * 864e5) } };
+  const stale = ochiq === "1" && !day;
+  const staleCount = await db.order.count({ where: staleWhere });
+  const bulk = stale && can("cancel");
   const orders = await db.order.findMany({
-    where: {
+    where: stale ? staleWhere : {
       ...(kind ? { kind } : {}),
       ...(day
         ? { deliveryDate: { gte: day, lt: dayEnd! }, dateUnknown: false, status: { not: "CANCELLED" as const }, ...(customer ? { customerId: customer } : {}) }
@@ -96,23 +103,38 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           <span className="text-slate-600">{date(day)} kuniga yetkazish: <b className="text-slate-900">{orders.length} ta zayavka</b> · {fmtUnitTotals(orders.flatMap((o) => o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))))}</span>
           <Link href="/orders" className="inline-flex items-center gap-1 font-medium text-slate-600 hover:text-slate-900 hover:underline"><X size={14} /> Kun filtrini olib tashlash</Link>
         </div>
+      ) : stale ? (
+        <>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+            <span className="inline-flex items-center gap-1.5"><AlarmClock size={15} /> {OPEN_ORDER_DAYS} kundan ortiq ochiq mijoz zayavkalari: <b>{staleCount} ta</b>. Yetkazilganini yoping, bo&apos;lmaganini bekor qiling — aks holda «Stockout», kredit limiti va sex rejasi noto&apos;g&apos;ri chiqadi.</span>
+            <Link href="/orders" className="inline-flex items-center gap-1 font-medium text-amber-900 hover:underline"><X size={14} /> Filtrni olib tashlash</Link>
+          </div>
+          {bulk && orders.length > 0 && <OrdersBulkBar total={orders.length} />}
+        </>
       ) : (
         <>
           {/* Zayavka turi: mijoz uchun sotuv zayavkasi yoki sklad zaxirasi */}
-          <div className="mb-3 inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
-            {kindTabs.map((k) => (
-              <Link key={k.key} href={k.href}
-                className={`rounded-md px-2.5 py-1 font-medium transition ${(tur ?? "") === k.key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
-                {k.label}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+              {kindTabs.map((k) => (
+                <Link key={k.key} href={k.href}
+                  className={`rounded-md px-2.5 py-1 font-medium transition ${(tur ?? "") === k.key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                  {k.label}
+                </Link>
+              ))}
+            </div>
+            {staleCount > 0 && (
+              <Link href="/orders?ochiq=1" className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100">
+                <AlarmClock size={13} /> {OPEN_ORDER_DAYS} kundan ortiq ochiq: {staleCount} ta
               </Link>
-            ))}
+            )}
           </div>
           <Tabs current={st ?? ""} items={tabs} />
         </>
       )}
       {/* Ixcham: odatiy noutbukda (≈1000px) ham gorizontal scrollsiz sig'adi — sarlavhalar qatorlanadi, soat sana ostida */}
       <Table className="[&_td]:px-2 [&_td]:py-2 [&_td]:text-[13px] [&_th]:px-2 [&_th]:py-2 [&_th]:whitespace-normal">
-        <thead><tr><Th>Kiritildi</Th><Th>Yetkazish</Th><Th className="min-w-52">Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa, so&apos;m</Th><Th>Kim</Th><Th>Holat</Th><Th /></tr></thead>
+        <thead><tr>{bulk && <Th />}<Th>Kiritildi</Th><Th>Yetkazish</Th><Th className="min-w-52">Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa, so&apos;m</Th><Th>Kim</Th><Th>Holat</Th><Th /></tr></thead>
         <tbody>
           {orders.length === 0 && <Empty text="Bu tabda zayavka yo'q" />}
           {groups.flatMap((g) => g.map((o, idx) => {
@@ -127,6 +149,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             const acts = orderRowFlags(s, o);
             return (
               <Tr key={o.id} className={first && g.length > 1 ? "[&>td]:border-t-2 [&>td]:border-t-slate-200" : ""}>
+                {bulk && <Td><input type="checkbox" form={ORDERS_BULK_FORM} name="ids" value={o.id} aria-label={`${o.orderNo} — belgilash`} className="h-4 w-4 accent-slate-900" /></Td>}
                 <Td className="whitespace-nowrap"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{enteredDay}</Link>{enteredTime && <div className="text-xs text-slate-500">{enteredTime}</div>}</Td>
                 <Td className="whitespace-nowrap">{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : <>{date(o.deliveryDate)}{o.deliveryTime && <div className="text-xs text-slate-500">{o.deliveryTime}</div>}</>}</Td>
                 <Td>
