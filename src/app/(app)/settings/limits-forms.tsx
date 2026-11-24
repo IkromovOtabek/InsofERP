@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { Check, Save, Search } from "lucide-react";
-import { saveAttendanceRadius, saveCustomerLimits, saveDailyOrderLimits, saveDefaultCreditLimit } from "./actions";
+import { saveAttendanceRadius, saveCustomerLimits, saveDailyOrderLimits, saveDefaultCreditLimit, saveSaleStockSettings } from "./actions";
 import { MoneyInput } from "@/components/money-input";
-import { Badge, Button, Empty, Field, FormError, FormSuccess, Input, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Checkbox, Empty, Field, FormError, FormSuccess, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { fmtNum, money } from "@/lib/format";
 
 /* Sozlamalar → Limitlar formalari (faqat direktor). Server action'lar — `./actions.ts`. */
@@ -61,6 +61,26 @@ export function AttendanceRadiusForm({ value }: { value: number }) {
       <Field label="Davomat radiusi, m" hint="50 – 5000 m">
         <Input name="attendanceRadiusM" type="number" min={50} max={5000} step="10" inputMode="numeric" defaultValue={value} required className="w-36" />
       </Field>
+      <div className="flex items-center gap-2 pb-5">
+        <Button disabled={pending}>{state?.ok ? <Check size={16} /> : <Save size={16} />} Saqlash</Button>
+        {state?.note && <FormSuccess text={state.note} />}
+      </div>
+      <div className="basis-full"><FormError error={state?.error} /></div>
+    </form>
+  );
+}
+
+/** Reyssiz sotuv va sklad: chiqim qaysi sanadan, beton qatori xomashyoni sarflaydimi (`lib/realization-stock.ts`). */
+export function SaleStockForm({ from, autoConsume }: { from: string; autoConsume: boolean }) {
+  const [state, action, pending] = useActionState(saveSaleStockSettings, undefined);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-4">
+      <Field label="Dona mahsulot skladdan chiqadi — shu sanadan" hint="bo'sh — o'chiq; eski qatorlar qayta yozilmaydi">
+        <Input name="realizationStockFrom" type="date" defaultValue={from} className="w-44" />
+      </Field>
+      <div className="pb-5">
+        <Checkbox name="realizationAutoConsume" defaultChecked={autoConsume} label="Beton qatori retsept bo'yicha xomashyoni sarflasin (zames)" />
+      </div>
       <div className="flex items-center gap-2 pb-5">
         <Button disabled={pending}>{state?.ok ? <Check size={16} /> : <Save size={16} />} Saqlash</Button>
         {state?.note && <FormSuccess text={state.note} />}

@@ -147,6 +147,25 @@ async function writeBatch(tx: Prisma.TransactionClient, d: BatchInput, recipe: A
 }
 
 /**
+ * Reyssiz beton sotuvi (Realizatsiya reestri, `lib/realization-stock.ts`) — zayavkasiz zames, qoida reysdagidek.
+ * Xomashyo yetmasa yozilmaydi (`error`) — sotuv baribir saqlanadi, chaqiruvchi ogohlantiradi.
+ */
+export async function autoBatchForSale(
+  tx: Prisma.TransactionClient,
+  d: { productId: string; warehouseId: string; qtyM3: number; note: string },
+  userId: string,
+): Promise<{ error: string } | { id: string; batchNo: string }> {
+  const recipe = await activeRecipe(tx, d.productId);
+  if (!recipe) return { error: "faol retsept yo'q — retsept kiritilsin yoki zames qo'lda yozilsin" };
+  try {
+    return await writeBatch(tx, { ...d, orderId: null, shift: 1 }, recipe, userId);
+  } catch (e) {
+    if (e instanceof ShortError) return { error: e.message };
+    throw e;
+  }
+}
+
+/**
  * Beton reysi yuklanganda skladda yetmagan hajmga zames avtomatik yoziladi. Beton ishlab chiqarish
  * bo'limidan o'tmaydi (RBU mikserga yuklash paytida quyadi), lekin xomashyo sarfi va tannarx skladga tushishi
  * kerak. Tranzaksiya ichida, `lockStock` chaqiruvchida olingan bo'ladi. Zayavka bo'yicha «qolgani»

@@ -482,6 +482,32 @@ export async function saveAttendanceRadius(_prev: ActionState, fd: FormData): Pr
   return { ok: true, note: "Saqlandi" };
 }
 
+const saleStockSchema = z.object({
+  // Bo'sh — reyssiz sotuv skladga tegmaydi (o'chiq)
+  realizationStockFrom: z.string().trim().optional().transform((v) => (v ? new Date(`${v}T00:00:00`) : null))
+    .refine((d) => d === null || !Number.isNaN(d.getTime()), "Sana noto'g'ri"),
+  realizationAutoConsume: zBool,
+});
+
+/**
+ * Reyssiz sotuv va sklad (`lib/realization-stock.ts`): qaysi sanadan reestr qatoridagi dona mahsulot skladdan chiqadi va
+ * beton qatori retsept bo'yicha xomashyoni sarflaydimi. Faqat keyingi yozuvlarga ta'sir qiladi — eski qatorlar qayta yozilmaydi.
+ */
+export async function saveSaleStockSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = parseForm(saleStockSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const data = r.data;
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { realizationStockFrom: true, realizationAutoConsume: true } });
+  if (before && before.realizationAutoConsume === data.realizationAutoConsume && (before.realizationStockFrom?.getTime() ?? null) === (data.realizationStockFrom?.getTime() ?? null)) {
+    return { ok: true, note: "O'zgarish yo'q" };
+  }
+  await db.companySettings.upsert({ where: { id: "main" }, update: data, create: { id: "main", ...data } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before, data);
+  revalidatePath("/settings");
+  return { ok: true, note: "Saqlandi" };
+}
+
 const limitChangesSchema = z.array(z.object({
   id: z.string().min(1).max(64),
   limit: z.number().finite().min(0, "Limit manfiy bo'lmasin").max(MAX_AMOUNT, "Limit juda katta"),
