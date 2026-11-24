@@ -160,6 +160,7 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
     { key: "ishlab", label: "Ishlab chiqarish tahlili", paths: ["/bi-tahlil/ishlab-chiqarish"], actions: [] },
     { key: "marketing", label: "Marketing tahlili", paths: ["/bi-tahlil/marketing"], actions: ["marketing"] },
     { key: "reja", label: "Reja nazorati", paths: ["/bi-tahlil/reja"], actions: ["plan"] },
+    { key: "sogliq", label: "Ma'lumot sog'ligi", paths: ["/bi-tahlil/sogliq"], actions: [] },
     { key: "ml", label: "ML tahlil", paths: ["/bi-tahlil/ml"], actions: [] },
     { key: "ai", label: "Insof AI", paths: ["/bi-tahlil/ai"], actions: ["ai"] },
   ],

@@ -19,8 +19,32 @@ export const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0,
 export const addDays = (d: Date, n: number) => new Date(d.getTime() + n * DAY);
 const fmt = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 
-export function parseRange(sp: { period?: string; from?: string; to?: string }): Range {
-  const today = startOfDay(new Date()), tomorrow = addDays(today, 1);
+/**
+ * Taqqoslanadigan davr (Sarvar rejasi 3-bosqich, 2026-11-24): oy — o'tgan oyning SHU kunlari (01.11–23.11 ↔ 01.10–23.10;
+ * o'tgan oy qisqa bo'lsa oy oxirida kesiladi: 31.12 ↔ 01.11–30.11), yil — o'tgan yilning shu kunlari, kun — kecha,
+ * erkin oraliq — undan oldingi teng uzunlikdagi oraliq. Ilgari oy uchun «oldingi N kun» olinardi (01.11–23.11 ↔ 09.10–31.10).
+ * `to` — eksklyuziv (ertangi kun boshi).
+ */
+export function comparisonWindow(period: Period, from: Date, to: Date): { prevFrom: Date; prevTo: Date } {
+  const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / DAY));
+  if (period === "month") {
+    const prevFrom = new Date(from.getFullYear(), from.getMonth() - 1, 1);
+    const prevTo = new Date(Math.min(addDays(prevFrom, days).getTime(), from.getTime()));
+    return { prevFrom, prevTo };
+  }
+  if (period === "year") {
+    const prevFrom = new Date(from.getFullYear() - 1, 0, 1);
+    const last = addDays(to, -1); // davrning oxirgi kuni
+    // 29-fevral → o'tgan yilda 28-fevral (Date 1-martga o'tkazib yubormasin)
+    const sameDay = new Date(from.getFullYear() - 1, last.getMonth(), Math.min(last.getDate(), new Date(from.getFullYear() - 1, last.getMonth() + 1, 0).getDate()));
+    return { prevFrom, prevTo: new Date(Math.min(addDays(sameDay, 1).getTime(), from.getTime())) };
+  }
+  return { prevFrom: addDays(from, -days), prevTo: from };
+}
+
+/** `now` — sinov uchun (standart: hozir). */
+export function parseRange(sp: { period?: string; from?: string; to?: string }, now: Date = new Date()): Range {
+  const today = startOfDay(now), tomorrow = addDays(today, 1);
   let period: Period = sp.period === "day" || sp.period === "year" ? sp.period : "month";
   let from: Date, to: Date;
   if (sp.from && sp.to && !Number.isNaN(Date.parse(sp.from)) && !Number.isNaN(Date.parse(sp.to))) {
@@ -30,11 +54,18 @@ export function parseRange(sp: { period?: string; from?: string; to?: string }):
   else if (period === "year") { from = new Date(today.getFullYear(), 0, 1); to = tomorrow; }
   else { from = new Date(today.getFullYear(), today.getMonth(), 1); to = tomorrow; }
   const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / DAY));
-  const prevTo = from, prevFrom = addDays(from, -days);
+  const { prevFrom, prevTo } = comparisonWindow(period, from, to);
+  const prevDays = Math.max(1, Math.round((prevTo.getTime() - prevFrom.getTime()) / DAY));
   const label = days === 1 ? fmt(from) : `${fmt(from)} — ${fmt(addDays(to, -1))}`;
-  const prevLabel = days === 1 ? fmt(prevFrom) : `${fmt(prevFrom)} — ${fmt(addDays(prevTo, -1))}`;
+  const prevLabel = prevDays === 1 ? fmt(prevFrom) : `${fmt(prevFrom)} — ${fmt(addDays(prevTo, -1))}`;
   return { period, from, to, prevFrom, prevTo, days, label, prevLabel };
 }
+
+/**
+ * Taqqoslash davri uchun ma'lumot bormi: tizim ishga tushgan sanadan (`goLiveDate`) oldin tugagan davr — «ma'lumot yo'q»
+ * (0 emas: aks holda «−100%» / «o'tgan oy jami 0» chiqib, yolg'on pasayish ko'rinadi). Ishga tushish sanasi noma'lum — bor deb olinadi.
+ */
+export const hasPrevData = (r: Pick<Range, "prevTo">, goLive: Date | null) => !goLive || r.prevTo.getTime() > startOfDay(goLive).getTime();
 
 export function rangeQuery(r: Range, extra?: Record<string, string>) {
   const p = new URLSearchParams(extra);

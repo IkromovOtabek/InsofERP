@@ -1,8 +1,10 @@
 import { db } from "@/lib/db";
-import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, monthForecast, goLiveDate, grossOf, marginOf, uncostedRevenue, CAPITAL_RATE_DAY, type Range } from "./core";
+import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, monthForecast, goLiveDate, hasPrevData, grossOf, marginOf, uncostedRevenue, CAPITAL_RATE_DAY, type Range } from "./core";
+import { healthScore } from "./health";
+import { financeHealthInputs } from "@/lib/fin-report/health-inputs";
 import { lossChannels } from "./finance";
 import { customerBase } from "./customers";
-import { materialOverview } from "./stock";
+import { materialOverview, atRiskMaterials } from "./stock";
 import { workCalendar } from "@/lib/work-calendar";
 import { orderTotal } from "@/lib/order-total";
 import { SALES_INCOME } from "@/lib/cash-tx";
@@ -16,7 +18,8 @@ export async function overviewTab(r: Range) {
   const [todayS, yestS, monthS, prevMonthS, cur, prev, loss, customers, materials, mixers, overdueOrders, blockedCount, last30, cashAgg, prevCashAgg, tripsToday, saleTxAgg, prevSaleTxAgg] = await Promise.all([
     loadSales(today, tomorrow), loadSales(yesterday, today), loadSales(monthStart, tomorrow), loadSales(prevMonthStart, monthStart), loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
     lossChannels(r), customerBase(), materialOverview(),
-    db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
+    // Ta'mirdagi (REPAIR) yoki yashirilgan mikser «bo'sh» signal bermaydi — u reysga chiqa olmaydi
+    db.vehicle.findMany({ where: { isActive: true, type: "MIXER", status: { not: "REPAIR" }, hiddenAt: null }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
     db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, deliveryDate: { lt: today } }, include: { customer: true, items: true, trips: { where: { status: { not: "CANCELLED" } } } } }),
     db.order.count({ where: { status: "BLOCKED" } }),
     loadSales(addDays(today, -29), tomorrow),
@@ -38,7 +41,12 @@ export async function overviewTab(r: Range) {
   const prevSameEnd = new Date(Math.min(addDays(prevMonthStart, daysPassed).getTime(), monthStart.getTime()));
   const prevSameRevenue = rev(prevMonthS.filter((x) => x.date < prevSameEnd));
   // Prognoz — Egasi dashbordi bilan bitta funksiya (ish kunlari sur'ati)
-  const monthForecastValue = monthForecast(monthRevenue, await workCalendar(), today, await goLiveDate());
+  const [goLive, finance] = await Promise.all([goLiveDate(), financeHealthInputs(today).catch(() => null)]);
+  const monthForecastValue = monthForecast(monthRevenue, await workCalendar(), today, goLive);
+  // Taqqoslash davri tizim ishga tushishidan oldin tugagan bo'lsa — «ma'lumot yo'q» (0 bilan solishtirilmaydi)
+  const hasPrev = hasPrevData(r, goLive);
+  const prevMonthHasData = hasPrevData({ prevTo: monthStart }, goLive) && prevMonthRevenue > 0;
+  const k = (c: number, p: number) => (hasPrev ? kpi(c, p) : { cur: c, prev: 0, delta: null });
 
   const revenue = rev(cur), prevRevenue = rev(prev);
   // Yalpi foyda/marja — faqat tannarxi ma'lum mahsulotlar bo'yicha (retseptsizlari 100% foyda bo'lib ko'rinmasin)
@@ -52,36 +60,21 @@ export async function overviewTab(r: Range) {
   const lostCount = customers.filter((c) => c.segment === "Lost").length;
   const spark = series(last30, addDays(today, -29), tomorrow, "day", (x) => x.date, (x) => x.revenue).map((x) => x.value);
 
-  // Biznes salomatligi — 5 komponent × 20 ball
+  // Biznes salomatligi — 8 komponent × 20 ball (`lib/bi/health.ts`): pul oqimi, sof foyda va qarz yuki ham kiradi
   const overdueDebt = sum(customers.map((c) => c.overdueDebt));
-  const debtRatio = safeDiv(overdueDebt, Math.max(1, monthRevenue || prevMonthRevenue));
-  const stockOk = safeDiv(materials.filter((m) => m.zone === "Yaxshi" || m.zone === "Ma'lumot yo'q").length, Math.max(1, materials.length));
   const delivered = tripsToday.filter((t) => t.status === "DELIVERED").length;
-  const growth = safeDiv(revenue - prevRevenue, prevRevenue || revenue || 1);
-  const blockedShare = safeDiv(blockedCount, Math.max(1, new Set(cur.map((x) => x.orderId)).size + blockedCount));
-  // Ma'lumoti yo'q ko'rsatkich ballanmaydi (`null`) — aks holda bo'sh baza "yaxshi" ko'rinadi:
-  // qarz yo'q = 20 ball, bloklangan zayavka yo'q = 20 ball → jami 50/100 "E'tibor talab".
-  const ordersInRange = new Set(cur.map((x) => x.orderId)).size;
-  const components: { label: string; score: number | null; text: string }[] = [
-    { label: "Debitorka nazorati", score: customers.length ? Math.round(20 * Math.max(0, 1 - Math.min(1, debtRatio))) : null,
-      text: customers.length ? `Muddati o'tgan qarz oylik sotuvning ${Math.round(debtRatio * 100)}%i` : "Mijoz bazasi bo'sh" },
-    { label: "Xomashyo zaxirasi", score: materials.length ? Math.round(20 * stockOk) : null,
-      text: materials.length ? `${materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length} ta xomashyo xavf zonasida` : "Xomashyo spravochnigi bo'sh" },
-    { label: "Marja", score: revenue > 0 ? Math.round(20 * Math.min(1, Math.max(0, margin / 25))) : null,
-      text: revenue > 0 ? `Yalpi marja ${margin.toFixed(1)}% (maqsad ≥25%)` : "Davr ichida sotuv yo'q" },
-    // O'tgan davrda sotuv bo'lmasa (tizimga yangi o'tilgan) o'sish yo'q — "+100%" ball bermaydi
-    { label: "Sotuv o'sishi", score: prevRevenue > 0 ? Math.round(20 * Math.min(1, Math.max(0, 0.5 + growth))) : null,
-      text: prevRevenue > 0 ? `Oldingi davrga nisbatan ${growth >= 0 ? "▲" : "▼"} ${Math.abs(growth * 100).toFixed(1)}%` : "Taqqoslash uchun o'tgan davr sotuvi yo'q" },
-    { label: "Zayavka oqimi", score: ordersInRange + blockedCount + overdueOrders.length > 0 ? Math.round(20 * (1 - Math.min(1, blockedShare * 3)) * (overdueOrders.length ? 0.6 : 1)) : null,
-      text: ordersInRange + blockedCount + overdueOrders.length > 0 ? `${blockedCount} ta bloklangan, ${overdueOrders.length} ta muddati o'tgan zayavka` : "Davr ichida zayavka yo'q" },
-  ];
-  // Ball mavjud ko'rsatkichlar bo'yicha normallashtiriladi (3 tasi bo'lsa — 60 balldan emas, 100 balldan).
-  // 3 tadan kam bo'lsa umuman ko'rsatilmaydi: "qarz yo'q + xomashyo ogohlantirishi yo'q" ham
-  // 100 ball berardi, holbuki bu shunchaki hali ish boshlanmagani.
-  const MIN_COMPONENTS = 3;
-  const scored = components.filter((c): c is { label: string; score: number; text: string } => c.score !== null);
-  const health = scored.length >= MIN_COMPONENTS ? Math.round(safeDiv(sum(scored.map((c) => c.score)), 20 * scored.length) * 100) : null;
-  const healthLabel = health !== null ? (health >= 75 ? "Sog'lom" : health >= 50 ? "E'tibor talab" : "Xavfli") : scored.length ? "Ma'lumot yetarli emas" : "Ma'lumot yo'q";
+  // Xavfdagi xomashyo — Sklad, Bugun va Tahlil bilan bitta funksiya (`atRiskMaterials`: faqat kuzatiladigan XOMASHYO,
+  // Sozlamalar → Limitlar chegaralari); zapchast va ofis jihozlari ball va matnga kirmaydi
+  const tracked = materials.filter((m) => m.tracked);
+  const atRiskCount = atRiskMaterials(materials).length;
+  const hs = healthScore({
+    customers: customers.length, receivable, overdueDebt,
+    materials: { total: tracked.length, ok: tracked.filter((m) => m.zone === "Yaxshi" || m.zone === "Ma'lumot yo'q").length, atRisk: atRiskCount },
+    revenue, margin, prevRevenue: hasPrev ? prevRevenue : 0,
+    orders: { inRange: new Set(cur.map((x) => x.orderId)).size, blocked: blockedCount, overdue: overdueOrders.length },
+    monthRevenue, prevMonthRevenue, finance,
+  });
+  const { health, label: healthLabel, components } = hs;
 
   // Xavf ostidagi pul
   const risk = {
@@ -115,8 +108,11 @@ export async function overviewTab(r: Range) {
 
   return {
     todayRevenue, yestRevenue, todayDelta: delta(todayRevenue, yestRevenue), todayM3: sum(todayS.filter((x) => x.unit === "m3").map((x) => x.qty)), delivered, tripsToday: tripsToday.filter((t) => t.status !== "CANCELLED").length,
-    month: { revenue: monthRevenue, prev: prevSameRevenue, prevFull: prevMonthRevenue, forecast: monthForecastValue, planPerDay, perDay: monthRevenue / daysPassed, daysPassed, daysLeft: daysInMonth - daysPassed, delta: delta(monthRevenue, prevSameRevenue) },
-    kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: kpi(margin, prevMargin), uncosted, cashIn: kpi(cashIn, prevCashIn), receivable, debtors: customers.filter((c) => c.debt > 0).length, active, total: customers.length, lost: lostCount, activeRate: safeDiv(active, customers.length) * 100 },
-    spark, health, healthLabel, healthBasis: scored.length, components, risk, riskTotal, capitalCost30: riskTotal * CAPITAL_RATE_DAY * 30, loss, tasks: topTasks, goodNews, topProduct, materialsAtRisk: materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length,
+    // `prevHasData` false — o'tgan oy ma'lumoti yo'q (tizim keyin ishga tushgan): «0» va «−100%» o'rniga «ma'lumot yo'q»
+    month: { revenue: monthRevenue, prev: prevSameRevenue, prevFull: prevMonthRevenue, prevHasData: prevMonthHasData, forecast: monthForecastValue, planPerDay, perDay: monthRevenue / daysPassed, daysPassed, daysLeft: daysInMonth - daysPassed, delta: prevMonthHasData ? delta(monthRevenue, prevSameRevenue) : null },
+    kpis: { revenue: k(revenue, prevRevenue), gross: k(gross, prevGross), margin: k(margin, prevMargin), uncosted, cashIn: k(cashIn, prevCashIn), receivable, debtors: customers.filter((c) => c.debt > 0).length, active, total: customers.length,
+      // «Ketgan» mijozlar soni va ulushi BITTA to'plamdan (90+ kun xaridsiz, «Lost» segmenti)
+      lost: lostCount, lostRate: safeDiv(lostCount, customers.length) * 100, activeRate: safeDiv(active, customers.length) * 100 },
+    spark, health, healthLabel, healthBasis: hs.basis, healthCapped: hs.capped, components, risk, hasPrev, riskTotal, capitalCost30: riskTotal * CAPITAL_RATE_DAY * 30, loss, tasks: topTasks, goodNews, topProduct, materialsAtRisk: atRiskCount,
   };
 }

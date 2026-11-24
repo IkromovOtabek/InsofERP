@@ -263,7 +263,8 @@ function HeaderClock() {
   const blink = now && now.getSeconds() % 2 === 0;
 
   return (
-    <div className="hidden items-center gap-2 rounded-xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50 px-3 py-1.5 shadow-xs sm:flex">
+    // Faqat keng ekranda (xl): 640–1280px oralig'ida o'ng tomondagi tugmalar («Yordam», AI…) bilan to'qnashmasin
+    <div className="hidden shrink-0 items-center gap-2 rounded-xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50 px-3 py-1.5 shadow-xs xl:flex">
       <Clock size={15} className="text-brand-500" />
       <div className="flex items-baseline font-semibold tabular-nums tracking-tight text-slate-900">
         <span className="text-[15px] leading-none">{hh}</span>
@@ -351,7 +352,8 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
       <div className="flex min-w-0 flex-1 flex-col transition-[padding] duration-200 lg:pl-[var(--sb-w)]">
         {/* Topbar */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-2 border-b border-slate-200/80 bg-white/85 px-2 backdrop-blur sm:px-4 lg:px-6 print:hidden">
-          <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
+          {/* Chap guruh qisqaradi va kesiladi (overflow-hidden) — soat hech qachon o'ng tugmalar ustiga chiqmaydi */}
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:gap-3">
             <button onClick={() => setOpen(true)} data-tour="menu" aria-expanded={open} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 lg:hidden" aria-label="Menyu"><Menu size={22} /></button>
             {/* Telefonda: logotip o'rniga joriy bo'lim nomi */}
             {pageLabel && <span className="truncate text-[15px] font-semibold text-slate-900 sm:hidden">{pageLabel}</span>}
@@ -368,8 +370,8 @@ export function AppShell({ items, flat = false, user, brand, product = "Insof ER
             <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
             <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
               <Avatar name={user.fullName} className="hidden h-8 w-8 text-xs min-[400px]:flex" />
-              <div className="hidden leading-tight sm:block">
-                <div className="text-[13px] font-medium text-slate-900">{user.fullName}</div>
+              <div className="hidden min-w-0 leading-tight sm:block">
+                <div className="max-w-[9rem] truncate text-[13px] font-medium text-slate-900 xl:max-w-[14rem]" title={user.fullName}>{user.fullName}</div>
               </div>
             </div>
           </div>

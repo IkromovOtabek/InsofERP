@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { fmtNum } from "@/lib/format";
 import { Badge, type BadgeColor, InfoButton, valueLength } from "@/components/ui";
 import { Sparkline } from "@/components/ui/charts";
-import { type Range, rangeQuery, addDays } from "@/lib/bi/core";
+import { type Range, rangeQuery, addDays, goLiveDate, hasPrevData } from "@/lib/bi/core";
 import { DateRangeBar } from "@/components/date-range-bar";
 
 /* ───────────── Marshrutlar (Team24 sidebar tuzilmasi) ───────────── */
@@ -22,10 +22,12 @@ export const routeOf = (tab: string) => (ROUTES as Record<string, string>)[tab] 
 
 /* ───────────── Davr paneli ───────────── */
 
-export function PeriodBar({ range, tab, keep, className }: { range: Range; tab: string; keep?: Record<string, string | undefined>; className?: string }) {
-  // Umumiy «Sanadan — Sanagacha» + tezkor tugmalar; `from`/`to` → `parseRange` da custom davr (taqqoslash — teng oldingi davr)
+export async function PeriodBar({ range, tab, keep, className }: { range: Range; tab: string; keep?: Record<string, string | undefined>; className?: string }) {
+  // Umumiy «Sanadan — Sanagacha» + tezkor tugmalar; `from`/`to` → `parseRange` da custom davr. Taqqoslash: oy — o'tgan oyning
+  // shu kunlari, yil — o'tgan yilning shu kunlari (`comparisonWindow`); tizim ishga tushishidan oldin — «ma'lumot yo'q»
+  const prev = hasPrevData(range, await goLiveDate()) ? range.prevLabel : `${range.prevLabel} (ma'lumot yo'q)`;
   return <DateRangeBar base={routeOf(tab)} from={range.from} to={addDays(range.to, -1)} names={{ from: "from", to: "to" }} keep={keep} yearStart
-    label={`${range.label} · taqqoslash: ${range.prevLabel}`} className={cn("mb-5", className)} />;
+    label={`${range.label} · taqqoslash: ${prev}`} className={cn("mb-5", className)} />;
 }
 
 export const tabHref = (range: Range, tab: string, extra?: Record<string, string>) => `${routeOf(tab)}?${rangeQuery(range, extra)}`;
@@ -33,7 +35,8 @@ export const tabHref = (range: Range, tab: string, extra?: Record<string, string
 /* ───────────── KPI ───────────── */
 
 export function Delta({ value, suffix = "%", invert = false, frac = 1, label }: { value: number | null | undefined; suffix?: string; invert?: boolean; frac?: number; label?: string }) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return <span className="text-xs text-slate-400">—</span>;
+  // Taqqoslash davrida ma'lumot yo'q (o'tgan davr 0 yoki tizim keyin ishga tushgan) — «−100%» / «0» emas
+  if (value === null || value === undefined || !Number.isFinite(value)) return <span className="text-xs text-slate-400" title="Taqqoslash davrida ma'lumot yo'q">ma&apos;lumot yo&apos;q</span>;
   const up = value > 0.05, down = value < -0.05, good = invert ? down : up, bad = invert ? up : down;
   return <span className={cn("inline-flex items-center gap-0.5 text-xs font-medium tabular", good ? "text-emerald-600" : bad ? "text-red-600" : "text-slate-500")}>{up ? "▲" : down ? "▼" : "→"} {fmtNum(Math.abs(value), frac)}{suffix}{label && <span className="ml-1 font-normal text-slate-400">{label}</span>}</span>;
 }

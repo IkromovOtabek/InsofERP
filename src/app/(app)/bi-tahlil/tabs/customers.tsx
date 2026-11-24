@@ -131,7 +131,11 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
         </Table>
         <Pager total={d.list.total} page={d.list.page} size={d.list.size} href={(p) => filterHref({ page: String(p), size: String(size) })} />
       </Panel>
-      <Insight>{c.atRisk} ta mijoz xavf ostida — ular oyiga {moneyShort(d.churn.recoverable / 12)} so'm olib kelardi. Eng katta 5 tasiga bugun qo'ng'iroq qiling. Muddati o'tgan qarz {moneyShort(d.aging["61–90"] + d.aging["90+"])} so'm (60+ kun) — undirish ehtimoli har hafta pasayadi.</Insight>
+      {/* Son va summa bitta to'plamdan (churn modeli: ketish xavfidagilar); nol bo'lsa jumla chiqmaydi */}
+      <Insight>
+        {d.churn.atRisk > 0 ? <>{d.churn.atRisk} ta mijoz ketish xavfida — ular oyiga {moneyShort(d.churn.recoverable / 12)} so&apos;m olib kelardi. Eng kattalariga bugun qo&apos;ng&apos;iroq qiling. </> : <>Ketish xavfidagi mijoz yo&apos;q. </>}
+        {d.aging["61–90"] + d.aging["90+"] > 0 ? <>Muddati o&apos;tgan qarz {moneyShort(d.aging["61–90"] + d.aging["90+"])} so&apos;m (60+ kun) — undirish ehtimoli har hafta pasayadi.</> : <>60 kundan eski qarz yo&apos;q.</>}
+      </Insight>
       <div><Action href="/customers">Mijozlar ro'yxatiga o'tish</Action></div>
     </div>
   );
