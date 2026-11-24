@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
-import { saveInventoryCount, saveStockWriteOff } from "@/lib/stock-adjust";
+import { saveInventoryCount, saveProductCount, saveStockWriteOff } from "@/lib/stock-adjust";
 import { WRITE_OFF_REASONS } from "@/lib/stock-adjust-const";
 
 /**
@@ -38,6 +38,19 @@ export async function saveInventory(_prev: ActionState, fd: FormData): Promise<A
   const r = await saveInventoryCount({ warehouseId: text(fd, "warehouseId"), reason, rows }, s.userId);
   if ("error" in r) return { error: r.error };
   refresh();
+  return { ok: true, note: r.note };
+}
+
+/** Tayyor dona mahsulot sanog'i (sanoq akti) — xomashyo sanog'i bilan bir ruxsat. Qoida `saveProductCount` da. */
+export async function saveProductInventory(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("stock", "adjust");
+  const reason = text(fd, "reason");
+  if (!reason) return { error: "Farq sababini yozing (masalan: oy oxiri sanog'i, hisobga olinmagan sotuv)" };
+  const rows = jsonRows(fd);
+  if (!rows) return { error: "Jadval o'qilmadi" };
+  const r = await saveProductCount({ warehouseId: text(fd, "warehouseId"), reason, rows }, s.userId);
+  if ("error" in r) return { error: r.error };
+  refresh(); revalidatePath("/stock/inventarizatsiya/tayyor"); revalidatePath("/stock/umumiy");
   return { ok: true, note: r.note };
 }
 

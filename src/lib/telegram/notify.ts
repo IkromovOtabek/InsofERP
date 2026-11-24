@@ -58,3 +58,13 @@ export const sendResetCodeToBot = (userId: string, code: string) =>
     "Kod 5 daqiqa amal qiladi.",
     "Kodni hech kimga bermang — biz uni hech qachon so'ramaymiz. Parolni tiklashni siz boshlamagan bo'lsangiz, bu xabarga e'tibor bermang.",
   ].join("\n"));
+
+/**
+ * Eslatma matni — bir nechta xodimning o'z chatiga (`lib/reminders.ts`: ertalabki ishlab chiqarish, ochiq zayavkalar).
+ * Bot yoki chat ulanmagan xodim o'tkazib yuboriladi (ilova bildirishnomasi baribir boradi). Qaytaradi: yetkazilganlar soni.
+ */
+export async function sendTextToUsers(userIds: string[], text: string): Promise<number> {
+  let n = 0;
+  for (const id of [...new Set(userIds)]) if ((await send(id, text)).ok) n++;
+  return n;
+}

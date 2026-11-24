@@ -19,18 +19,80 @@ import { releaseDueRequests } from "@/lib/mechanic-requests";
 import { pruneVisits } from "@/lib/visits";
 import { isLogiRequest } from "@/lib/logistics-finance";
 import { moduleOffNow } from "@/lib/tenant";
+import { isWorkDay, workCalendar } from "@/lib/work-calendar";
+import { dayUtc } from "@/lib/davomat";
+import { sendTextToUsers } from "@/lib/telegram/notify";
+import { OPEN_ORDER_DAYS } from "@/lib/order-open";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
 const LOCK_KEY = 7_402_032;
 
-type Due = { id: string; link: NotifyLink; title: string; body: string; roles?: Role[]; users?: string[] };
+/** `tg` — ilova bildirishnomasidan tashqari mas'ullarning Telegram chatiga ham (bot ulangan bo'lsa). */
+type Due = { id: string; link: NotifyLink; title: string; body: string; roles?: Role[]; users?: string[]; tg?: boolean };
 type Rule = { type: string; find: (now: Date) => Promise<Due[]> };
 
 const ago = (now: Date, hours: number) => new Date(now.getTime() - hours * H);
 const hrs = (from: Date, now: Date) => Math.max(1, Math.round((now.getTime() - from.getTime()) / H));
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const localIso = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const ddmm = (d: Date) => `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
 
 const RULES: Rule[] = [
+  {
+    // Ertalab (12:00 gacha): kecha ishlab chiqarish qayd etilmagan — sex hisoboti («Qayd etish») yo'q yoki ochiq topshirig'i
+    // bor brigada kecha bitta ham mahsulot qayd qilmagan. Dam olish kuni o'tkaziladi. Kuniga bitta (id — sana).
+    type: "REMIND_PRODUCTION_UNRECORDED",
+    find: async (now) => {
+      if (now.getHours() >= 12) return [];
+      const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      if (!isWorkDay(await workCalendar(), y)) return [];
+      const to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const iso = localIso(y);
+      const [report, tasks, outputs] = await Promise.all([
+        db.productionReport.count({ where: { date: dayUtc(iso) } }),
+        db.brigadeTask.findMany({
+          where: { status: { in: ["NEW", "IN_PROGRESS"] }, createdAt: { lt: to }, brigade: { isActive: true } },
+          select: { brigadeId: true, brigade: { select: { name: true } } },
+        }),
+        db.stockMove.findMany({
+          where: { type: "PRODUCTION_OUTPUT", date: { gte: y, lt: to }, product: { unit: { not: "m3" } } },
+          select: { brigadeId: true, ownerBrigadeId: true },
+        }),
+      ]);
+      const made = new Set(outputs.flatMap((m) => [m.brigadeId, m.ownerBrigadeId]).filter(Boolean));
+      const idle = [...new Map(tasks.filter((t) => !made.has(t.brigadeId)).map((t) => [t.brigadeId, t.brigade.name])).values()];
+      if (report && !idle.length) return [];
+      const lines = [
+        !report && `Sex hisoboti «Qayd etish» qilinmagan.`,
+        idle.length && `Ochiq topshirig'i bor, lekin chiqishi qayd qilinmagan brigadalar: ${idle.slice(0, 10).join(", ")}${idle.length > 10 ? ` va yana ${idle.length - 10} ta` : ""}.`,
+      ].filter(Boolean);
+      return [{
+        // `id` = link.id — takror tekshiruvi shu bilan (kuniga bitta)
+        id: `prod-${iso}`, link: { key: "prod-day", id: `prod-${iso}` }, roles: ["SUPERVISOR", "PRODUCTION"], tg: true,
+        title: `Kecha (${ddmm(y)}) ishlab chiqarish qayd etilmagan`,
+        body: `${lines.join(" ")} Kun yopilmagan — sotuv va ombor hisobi noto'g'ri chiqadi.`,
+      }];
+    },
+  },
+  {
+    // Kunlik: 7 kundan ortiq ochiq mijoz zayavkalari — dispetcher/logistika yopsin (yetkazilganicha yoki bekor)
+    type: "REMIND_ORDER_OPEN_LONG",
+    find: async (now) => {
+      const where = { kind: "SALE" as const, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"] as ("DRAFT" | "BLOCKED" | "CONFIRMED" | "IN_PRODUCTION")[] }, date: { lt: ago(now, OPEN_ORDER_DAYS * 24) } };
+      const [n, list] = await Promise.all([
+        db.order.count({ where }),
+        db.order.findMany({ where, orderBy: { date: "asc" }, take: 8, select: { orderNo: true, date: true, customer: { select: { name: true } } } }),
+      ]);
+      if (!n) return [];
+      const days = (d: Date) => Math.floor((now.getTime() - d.getTime()) / (24 * H));
+      return [{
+        id: `ochiq-${localIso(now)}`, link: { key: "orders-open", id: `ochiq-${localIso(now)}` }, roles: ["LOGISTICS", "DISPATCHER", "SALES"], tg: true,
+        title: `${OPEN_ORDER_DAYS} kundan ortiq ochiq zayavkalar: ${n} ta`,
+        body: `${list.map((o) => `${o.orderNo} ${o.customer?.name ?? ""} — ${days(o.date)} kun`).join("; ")}${n > list.length ? ` va yana ${n - list.length} ta` : ""}. Zayavkalar → «${OPEN_ORDER_DAYS} kundan ortiq ochiq»: yetkazilganini yoping, bekorini bekor qiling.`,
+      }];
+    },
+  },
   {
     // «Propushenniy»: yetkazilgan, lekin dispetcher narx qo'ymagan reyslar — bitta umumiy eslatma, hal bo'lmaguncha takrorlanadi
     type: "REMIND_TRIP_UNPRICED",
@@ -215,6 +277,10 @@ async function sendDue(now: Date): Promise<number> {
       const n = { type: rule.type, title: d.title, body: d.body, link: d.link };
       if (d.roles?.length) await notifyRoles(d.roles, n);
       if (d.users?.length) await notifyUsers(d.users, n);
+      if (d.tg) {
+        const byRole = d.roles?.length ? await db.user.findMany({ where: { role: { in: d.roles }, isActive: true }, select: { id: true } }) : [];
+        await sendTextToUsers([...byRole.map((u) => u.id), ...(d.users ?? [])], `*${d.title}*\n${d.body}`).catch((e) => console.error("[reminders] telegram", e));
+      }
       seen.add(d.id);
       sent++;
     }

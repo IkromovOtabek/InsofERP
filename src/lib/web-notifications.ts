@@ -33,6 +33,8 @@ const WEB_PATH: Record<string, (id: string) => string> = {
   smm: (id) => `/marketing/kontent/${id}`,
   receipts: (id) => `/receipts/${id}`,
   "prod-report": (id) => (id ? `/dashboard/hisobot/${id}` : "/dashboard/hisobot"), // ochilganda «ko'rildi» belgilanadi
+  "prod-day": () => "/production", // kecha ishlab chiqarish qayd etilmagan (`lib/reminders.ts`)
+  "orders-open": () => "/orders?ochiq=1", // 7 kundan ortiq ochiq zayavkalar (`lib/reminders.ts`)
   payreq: () => "/pul-qabul",
   invoices: () => "/invoices",
   customers: (id) => `/customers/${id}`,

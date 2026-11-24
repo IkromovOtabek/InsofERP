@@ -30,8 +30,8 @@ export async function createRealizationAction(_prev: ActionState, fd: FormData):
   if ("error" in r) return formError(r);
   const res = await createRealizationEntry(r.data, s.userId);
   if ("error" in res) return { error: res.error };
-  refresh();
-  return { ok: true, note: "Qator qo'shildi" };
+  refresh(); revalidatePath("/stock", "layout");
+  return { ok: true, note: "Qator qo'shildi", warn: res.warn };
 }
 
 export async function updateRealizationAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -40,8 +40,8 @@ export async function updateRealizationAction(id: string, _prev: ActionState, fd
   if ("error" in r) return formError(r);
   const res = await updateRealizationEntry(id, r.data, s.userId);
   if ("error" in res) return { error: res.error };
-  refresh();
-  return { ok: true, note: "Saqlandi" };
+  refresh(); revalidatePath("/stock", "layout");
+  return { ok: true, note: "Saqlandi", warn: res.warn };
 }
 
 /** Excel'dagi jo'natmalar → qo'lda qatorlar; tugagach reestr import qilingan davr va «Qo'lda» tabi bilan ochiladi. */
@@ -59,11 +59,11 @@ export async function importRealizationAction(_prev: ActionState, fd: FormData):
   const list = rows.filter((x): x is ImportRow => !!x && typeof x === "object" && !Array.isArray(x));
   const res = await importRealizationEntries(list, { payGroup: pay }, s.userId);
   if ("error" in res) return { error: res.error };
-  if (res.added) refresh();
+  if (res.added) { refresh(); revalidatePath("/stock", "layout"); }
   const bad = res.problems.length;
-  // Hammasi joyida — reestrga, qo'shilganlar davri bilan
+  // Hammasi joyida — reestrga, qo'shilganlar davri bilan (skladda yetmagan qator bo'lsa — shu sahifada ogohlantirish bilan)
   const fresh = res.newProducts.length, newCust = res.newCustomers.length;
-  if (res.added && !bad) {
+  if (res.added && !bad && !res.warn) {
     redirect(`/sales/realizatsiya?from=${isoDate(res.from)}&to=${isoDate(res.to)}&manba=MANUAL&import=${res.added}-${res.skipped}-${res.guessedUnits}-${fresh}-${newCust}`);
   }
   // O'qilmagan qator bor — shu sahifada qoladi: qo'shilgani yashil, o'tkazilgani sababi bilan sariq (import to'xtamaydi)
@@ -77,6 +77,7 @@ export async function importRealizationAction(_prev: ActionState, fd: FormData):
     warn: [
       !res.added && `Yangi qator yo'q: faylning ${res.skipped} ta qatori reestrda bor (reysdan yoki avval kiritilgan).`,
       bad && `${bad} ta qator o'qilmadi va qo'shilmadi: ${listProblems(res.problems)}. Shularni tuzatib faylni qayta yuklang — qo'shilganlari takrorlanmaydi.`,
+      res.warn,
     ].filter(Boolean).join(" ") || undefined,
   };
 }
@@ -87,7 +88,7 @@ export async function deleteRealizationAction(id: string, reason: string): Promi
   const res = await deleteRealizationEntry(id, String(reason ?? ""), s.userId);
   if ("error" in res) return { error: res.error };
   refresh();
-  for (const p of ["/customers", "/bi-tahlil", "/orders/kun", ...(res.dropped.length ? ["/stock", "/settings"] : [])]) revalidatePath(p, "layout");
+  for (const p of ["/customers", "/bi-tahlil", "/orders/kun", "/stock", ...(res.dropped.length ? ["/settings"] : [])]) revalidatePath(p, "layout");
   return { ok: true, note: res.dropped.length ? `O'chirildi; ${res.dropped.join(", ")} ham o'chdi (boshqa joyda ishlatilmagan edi)` : "O'chirildi" };
 }
 
@@ -133,6 +134,8 @@ export async function saveRealizationCellAction(target: string, field: string, v
     const s = await requireAction("logistika", "real_manual");
     const res = await updateRealizationEntryField(id, field as EntryCell, v, s.userId);
     if ("error" in res) return formError(res);
+    revalidatePath("/stock", "layout");
+    if ("warn" in res && res.warn) { refresh(); return { ok: true, warn: res.warn }; }
   } else if (target.startsWith("a:") && (NOTE_CELLS as readonly string[]).includes(field)) {
     const s = await requireAction("logistika", "real_auto");
     const res = await saveRealizationNoteField(id, field as NoteCell, v, s.userId);

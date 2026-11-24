@@ -8,7 +8,7 @@ import { today } from "@/lib/davomat";
 import { fmtJami, fmtTiyin } from "@/lib/format";
 import { NDS_RATE } from "@/lib/nds";
 import { PRODUCT_UNITS } from "@/lib/unit";
-import { Button, Field, FormError, FormSuccess, IconButton, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, FormSuccess, FormWarning, IconButton, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
 import type { LogFields, LogOptions } from "@/lib/realization-log";
@@ -100,13 +100,15 @@ function EntryDialog({ entry, clientToken, onClose }: { entry?: EntryValues; cli
   const [token, setToken] = useState(clientToken ?? "");
   useEffect(() => {
     if (!state?.ok) return;
-    if (entry) onClose();
+    // Skladda yetmagan sotuv — ogohlantirish ko'rinib tursin (tahrir oynasi yopilmaydi)
+    if (entry) { if (!state.warn) onClose(); }
     else { setRound((n) => n + 1); setToken(crypto.randomUUID()); }
   }, [state, entry, onClose]);
   return (
     <Dialog title={entry ? "Qo'lda qatorni tuzatish" : "Realizatsiyaga qo'lda qator"} onClose={onClose} wide>
-      <p className="text-xs text-slate-500">Tizimga reys bo&apos;lib tushmagan jo&apos;natma. Mijoz debitorkasiga «Sotib olgan» bo&apos;lib tushadi (ro&apos;yxatda yo&apos;q xaridor mijozlarga qo&apos;shiladi); kassa va skladga ta&apos;sir qilmaydi.</p>
+      <p className="text-xs text-slate-500">Tizimga reys bo&apos;lib tushmagan jo&apos;natma. Mijoz debitorkasiga «Sotib olgan» bo&apos;lib tushadi (ro&apos;yxatda yo&apos;q xaridor mijozlarga qo&apos;shiladi). Dona mahsulot (plita, kolso…) tayyor mahsulot skladidan chiqadi; kassaga ta&apos;sir qilmaydi.</p>
       {state?.ok && !entry && <FormSuccess text={state.note ?? "Qo'shildi"} />}
+      {state?.ok && <FormWarning text={state.warn} />}
       <EntryFields key={round} entry={entry} token={token} action={action} pending={pending} error={state?.error} onClose={onClose} />
     </Dialog>
   );
@@ -239,8 +241,10 @@ export function CellEdit({ target, field, label, value, kind = "text", list, pla
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string>();
+  // Saqlandi, lekin skladda yetmadi (reyssiz sotuv skladdan chiqadi) — katak ostida ogohlantirish
+  const [warn, setWarn] = useState<string>();
   const [pending, start] = useTransition();
-  const open = () => { setDraft(value); setError(undefined); setEditing(true); };
+  const open = () => { setDraft(value); setError(undefined); setWarn(undefined); setEditing(true); };
   const close = () => { setEditing(false); setError(undefined); };
   const save = (v: string) => {
     if (pending) return;
@@ -248,7 +252,7 @@ export function CellEdit({ target, field, label, value, kind = "text", list, pla
     start(async () => {
       const r = await saveRealizationCellAction(target, field, v);
       if (r?.error) setError(r.error);
-      else close();
+      else { close(); setWarn(r?.warn); }
     });
   };
 
@@ -257,6 +261,7 @@ export function CellEdit({ target, field, label, value, kind = "text", list, pla
       // Qalamcha katak ustida chiqadi va joy egallamaydi (varaq ixcham); sensorli ekranda doim ko'rinadi
       <span className="group/cell relative block">
         {children}
+        {warn && <span role="status" className="mt-0.5 block text-[10px] leading-tight font-medium whitespace-normal text-amber-700">{warn}</span>}
         <button type="button" onClick={open} aria-label={`${label}: tahrirlash`} title={`${label} — tahrirlash`}
           className={cn("absolute top-1/2 -translate-y-1/2 rounded bg-white p-0.5 text-slate-500 opacity-0 shadow-sm ring-1 ring-slate-200 transition group-hover/cell:opacity-100 hover:bg-slate-100 hover:text-slate-900 focus-visible:opacity-100 print:hidden [@media(hover:none)]:opacity-100", right ? "left-0" : "right-0")}>
           <Pencil size={11} />

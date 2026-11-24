@@ -216,6 +216,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* Qoldiqni faqat hujjat bilan o'zgartirish: sanab chiqish farqi va hisobdan chiqarish (sabab majburiy) */}
             {pathAllowed("/stock/inventarizatsiya", s.role, s.perms) && <>
               <LinkButton href="/stock/inventarizatsiya" variant="secondary"><ScanLine size={16} /> Inventarizatsiya</LinkButton>
+              <LinkButton href="/stock/inventarizatsiya/tayyor" variant="secondary"><ScanLine size={16} /> Tayyor mahsulot sanog&apos;i</LinkButton>
               <LinkButton href="/stock/spisanie" variant="secondary"><PackageMinus size={16} /> Hisobdan chiqarish</LinkButton>
             </>}
             {/* Kerakli mahsulotlar jadvali — snabjeniye zanjirining boshi */}

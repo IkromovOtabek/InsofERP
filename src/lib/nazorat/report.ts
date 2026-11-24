@@ -3,19 +3,25 @@ import { botEnabled, sendMessage } from "@/lib/telegram/api";
 import { publicOrigin } from "@/lib/public-url";
 import type { Role } from "@/generated/prisma";
 import { runChecks, tashkentDay, type Check } from "./checks";
+import { entryStatus, type EntryStatus } from "./entry-status";
 
 /**
  * Kunlik Nazorat hisoboti Telegram'ga: direktorga — to'liq (qizil va sariq bandlar + ma'lumot), mas'ul rollar
  * xodimlariga — faqat o'z bandlari (`controlNotifyOwners`). Faqat bot ulangan (`TelegramAccount`) faol xodimlarga.
  * Avtomatik hisobot bir kunda bir marta: avval `ControlReport` (kun unique) yoziladi — ikkinchi jarayon yoki qayta
  * ishga tushish takror yubormaydi. «Hozir yuborish» (`manual`) — darhol yuboradi; kechki avtomatik hisobot keyin ham bir marta ketadi.
+ * «Bugun kiritilmagan» — Kiritish nazorati (`entry-status.ts`): davomat, sklad, ishlab chiqarish (sex hisoboti «Qayd etish»),
+ * realizatsiya, kassa — yozilmagan yoki chala bo'limlar; direktorga hammasi, mas'ulga — o'z bo'limi (Sarvar rejasi 2-bosqich).
  */
 const TZ = 5 * 3_600_000;
 const dateLabel = (d: Date) => { const x = new Date(d.getTime() + TZ); return `${String(x.getUTCDate()).padStart(2, "0")}.${String(x.getUTCMonth() + 1).padStart(2, "0")}.${x.getUTCFullYear()}`; };
 const line = (c: Check) => `${c.no}. ${c.title} — ${c.value}${c.detail ? ` (${c.detail})` : ""}\n   Mas'ul: ${c.owner}. ${c.action}`;
+/** Bugun yozilmagan yoki chala kiritilgan bo'limlar */
+const gaps = (entries: EntryStatus[]) => entries.filter((e) => e.state === "missing" || e.state === "partial");
+const gapLine = (e: EntryStatus, withWho = true) => `• ${e.dept}: ${e.text}${withWho && e.who.length ? ` (mas'ul: ${e.who.slice(0, 3).join(", ")})` : ""}`;
 
 /** Direktor uchun to'liq matn. */
-export function directorText(checks: Check[], day: Date, link: string): string {
+export function directorText(checks: Check[], day: Date, link: string, entries: EntryStatus[] = []): string {
   const crit = checks.filter((c) => c.status === "crit"), warn = checks.filter((c) => c.status === "warn");
   const ok = checks.filter((c) => c.status === "ok").length, info = checks.filter((c) => c.status === "info");
   const parts = [
@@ -24,30 +30,37 @@ export function directorText(checks: Check[], day: Date, link: string): string {
   ];
   if (crit.length) parts.push("", "SHOSHILINCH", ...crit.map(line));
   if (warn.length) parts.push("", "TEKSHIRISH KERAK", ...warn.map(line));
-  if (!crit.length && !warn.length) parts.push("", "Hammasi joyida.");
+  const missing = gaps(entries);
+  if (missing.length) parts.push("", "BUGUN KIRITILMAGAN", ...missing.map((e) => gapLine(e)));
+  if (!crit.length && !warn.length && !missing.length) parts.push("", "Hammasi joyida.");
   if (info.length) parts.push("", ...info.map((c) => `${c.title}: ${c.value}`));
   parts.push("", `Batafsil: ${link}`);
   return parts.join("\n");
 }
 
 /** Mas'ul xodim uchun — faqat uning rolidagi qizil/sariq bandlar (bo'lmasa — null, xabar yuborilmaydi). */
-export function ownerText(checks: Check[], role: Role, day: Date): string | null {
+export function ownerText(checks: Check[], role: Role, day: Date, entries: EntryStatus[] = []): string | null {
   const mine = checks.filter((c) => (c.status === "crit" || c.status === "warn") && c.roles.includes(role));
-  if (!mine.length) return null;
-  return [`Insof ERP · Nazorat ${dateLabel(day)} — sizga tegishli`, "", ...mine.map((c) => `${c.no}. ${c.title} — ${c.value}${c.detail ? ` (${c.detail})` : ""}\n   ${c.action}`)].join("\n");
+  const myGaps = gaps(entries).filter((e) => e.roles.includes(role));
+  if (!mine.length && !myGaps.length) return null;
+  return [
+    `Insof ERP · Nazorat ${dateLabel(day)} — sizga tegishli`, "",
+    ...mine.map((c) => `${c.no}. ${c.title} — ${c.value}${c.detail ? ` (${c.detail})` : ""}\n   ${c.action}`),
+    ...(myGaps.length ? [...(mine.length ? [""] : []), "Bugun kiritilmagan:", ...myGaps.map((e) => gapLine(e, false))] : []),
+  ].join("\n");
 }
 
 export type Outgoing = { userId: string; chatId: string; text: string; director: boolean };
 
 /** Kimga nima ketadi — yuborishdan oldin (test va «Ko'rib chiqish» ham shundan). */
-export async function planReport(checks: Check[], day: Date): Promise<Outgoing[]> {
+export async function planReport(checks: Check[], day: Date, entries: EntryStatus[] = []): Promise<Outgoing[]> {
   const [settings, accounts, origin] = await Promise.all([
     db.companySettings.findUnique({ where: { id: "main" }, select: { controlNotifyOwners: true } }),
     db.telegramAccount.findMany({ where: { isBlocked: false, userId: { not: null }, user: { isActive: true } }, select: { chatId: true, userId: true, user: { select: { role: true } } }, orderBy: { linkedAt: "desc" } }),
     publicOrigin().catch(() => ({ origin: "" })),
   ]);
   const link = `${origin.origin}/dashboard?view=nazorat`;
-  const full = directorText(checks, day, link);
+  const full = directorText(checks, day, link, entries);
   const seen = new Set<string>();
   const out: Outgoing[] = [];
   for (const a of accounts) {
@@ -55,7 +68,7 @@ export async function planReport(checks: Check[], day: Date): Promise<Outgoing[]
     seen.add(a.userId);
     if (a.user.role === "DIRECTOR") out.push({ userId: a.userId, chatId: a.chatId, text: full, director: true });
     else if (settings?.controlNotifyOwners !== false) {
-      const t = ownerText(checks, a.user.role, day);
+      const t = ownerText(checks, a.user.role, day, entries);
       if (t) out.push({ userId: a.userId, chatId: a.chatId, text: t, director: false });
     }
   }
@@ -69,7 +82,8 @@ export async function sendControlReport(opts: { manual?: boolean; now?: Date } =
   const day = tashkentDay(now);
   const settings = await db.companySettings.findUnique({ where: { id: "main" }, select: { controlReportEnabled: true } });
   if (!opts.manual && settings?.controlReportEnabled === false) return { sent: 0, planned: 0, skipped: "DISABLED" };
-  const checks = await runChecks({ now });
+  // Kiritish nazorati (davomat, ishlab chiqarish «Qayd etish», kassa…) — xato bo'lsa hisobot baribir ketadi
+  const [checks, entries] = await Promise.all([runChecks({ now }), entryStatus(now).catch((e) => { console.error("[nazorat] kiritish", e); return [] as EntryStatus[]; })]);
   const summary = {
     crit: checks.filter((c) => c.status === "crit").map((c) => c.no),
     warn: checks.filter((c) => c.status === "warn").map((c) => c.no),
@@ -90,7 +104,7 @@ export async function sendControlReport(opts: { manual?: boolean; now?: Date } =
       if (!u.count) return { sent: 0, planned: 0, skipped: "ALREADY_SENT" };
     }
   }
-  const plan = await planReport(checks, day);
+  const plan = await planReport(checks, day, entries);
   if (!botEnabled()) return { sent: 0, planned: plan.length, noBot: true };
   let sent = 0;
   for (const o of plan) {

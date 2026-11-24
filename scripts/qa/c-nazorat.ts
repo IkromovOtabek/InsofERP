@@ -12,6 +12,7 @@ import { resetCategoryCache } from "@/lib/fin-report/categories";
 import { runChecks, tashkentDay, tashkentHour, type Check } from "@/lib/nazorat/checks";
 import { directorText, ownerText, planReport, sendControlReport } from "@/lib/nazorat/report";
 import { nazoratTick } from "@/lib/nazorat/watch";
+import { entryStatus, type EntryStatus } from "@/lib/nazorat/entry-status";
 
 process.env.TELEGRAM_BOT_TOKEN = ""; // haqiqiy botga hech narsa ketmasin
 
@@ -87,6 +88,18 @@ async function main() {
   check("kassirga faqat o'z qizil/sariq bandi", !!cashier && cashier.includes("Kassa yopildimi") && !cashier.includes("Ta'minot") && !cashier.includes("Xato yozuvlar"), cashier);
   check("bandi yo'q rolga xabar yo'q (HR)", ownerText(fake, "HR", day) === null);
   check("skladchiga ta'minot bandi", ownerText(fake, "WAREHOUSE", day)?.includes("Ta'minot") === true);
+  // Kiritish nazorati (davomat, ishlab chiqarish «Qayd etish») — 19:00 hisobotida «Bugun kiritilmagan» (Sarvar rejasi 2-bosqich)
+  const gaps: EntryStatus[] = [
+    { key: "hr", dept: "Kadrlar", state: "missing", text: "davomat belgilanmagan · 0/12", who: ["QA Kadr"], roles: ["HR"], href: "/" },
+    { key: "production", dept: "Ishlab chiqarish", state: "partial", text: "brigadalar 40 dona · sex hisoboti «Qayd etish» qilinmagan", who: [], roles: ["PRODUCTION"], href: "/" },
+    { key: "cash", dept: "Kassa", state: "ok", text: "3 yozuv · kassa yopildi", who: [], roles: ["CASHIER"], href: "/" },
+  ];
+  const fullGaps = directorText(fake, day, "https://x", gaps);
+  check("direktor matnida «Bugun kiritilmagan»: davomat va ishlab chiqarish, joyidagi bo'lim yo'q", fullGaps.includes("BUGUN KIRITILMAGAN") && fullGaps.includes("Kadrlar: davomat belgilanmagan") && fullGaps.includes("Qayd etish") && !fullGaps.includes("kassa yopildi"), fullGaps);
+  check("kadrga — faqat o'z bo'limi (bandi yo'q bo'lsa ham xabar ketadi)", ownerText(fake, "HR", day, gaps)?.includes("davomat belgilanmagan") === true && !ownerText(fake, "HR", day, gaps)?.includes("Ishlab chiqarish"));
+  check("ishlab chiqarishga — «Qayd etish» eslatmasi", ownerText(fake, "PRODUCTION", day, gaps)?.includes("Qayd etish") === true);
+  const live = await entryStatus(at("2030-05-10T14:00:00Z"));
+  check("entryStatus: har bo'limda mas'ul rollar, ishlab chiqarish holati bor", live.every((e) => Array.isArray(e.roles)) && live.some((e) => e.key === "production"), live.map((e) => `${e.key}:${e.state}`));
 
   section("6. Qabul qiluvchilar");
   const cashUser = await db.user.create({ data: { login: `qa.naz.kas.${tag}`, passwordHash: "x", fullName: "QA Kassir", role: "CASHIER" } });

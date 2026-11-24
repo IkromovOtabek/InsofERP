@@ -24,7 +24,7 @@ import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
 import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, PayablesSinceForm, VatPayerForm, ProductionChannelForm, UserPermsPanel, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
-import { AttendanceRadiusForm, CustomerLimitsTable, DailyLimitsForm, DefaultCreditLimitForm, type CustomerLimitRow } from "./limits-forms";
+import { AttendanceRadiusForm, CustomerLimitsTable, DailyLimitsForm, DefaultCreditLimitForm, SaleStockForm, type CustomerLimitRow } from "./limits-forms";
 import { ThresholdForm } from "../dashboard/byudjet/budget-form";
 import { SettingsForm as LogisticsSettingsForm } from "../logistika/sozlamalar/settings-form";
 import { customersCredit } from "@/lib/finance";
@@ -157,6 +157,16 @@ async function LimitsTab() {
         <CardHeader icon={ClipboardList} title="Kunlik zayavka limiti va quvvat"
           info="Kunlik quvvat — yumshoq ko'rsatkich, hech narsani bloklamaydi: Zayavkalar taqvimining rangi (unga bekor qilinmagan barcha zayavkalar, sklad zayavkalari ham kiradi), egasi dashbordidagi quvvat foizi va ommaviy saytdagi «Kunlik ishlab chiqarish quvvati». Hajm va son chegarasi — qattiq: bir yetkazish kuniga tasdiqlangan mijoz zayavkalari (sklad, qoralama va bloklanganlar kirmaydi) shundan oshsa, zayavka qabul qilinmaydi va blokdan chiqarilmaydi. 0 yoki bo'sh — cheklov yo'q." />
         <DailyLimitsForm capacity={c.dailyCapacityM3 != null ? Number(c.dailyCapacityM3) : null} pcs={c.dailyCapacityPcs} m3={maxM3} count={c.dailyOrderMaxCount} />
+      </Card></div>
+
+      <div id="reyssiz-sotuv" className="scroll-mt-20"><Card>
+        <CardHeader icon={Warehouse} title="Reyssiz sotuv va sklad"
+          info={<>
+            <p>Realizatsiya reestrining qo&apos;lda va Excel qatori (reyssiz sotuv) endi skladga ham yoziladi: dona mahsulot (plita, kolso, FBS…) tayyor mahsulot skladidan chiqadi. Skladda yetmasa ham sotuv saqlanadi, sklad minusga tushadi — kirituvchiga ogohlantirish, direktorga xabar boradi («ishlab chiqarilmagan yoki qayd qilinmagan»). Qator tahrirlansa yoki o&apos;chirilsa — sklad yozuvi farq bilan tuzatiladi.</p>
+            <p>Sana — shu kundan boshlab kiritilgan qatorlarga; eski oylar orqaga yozilmaydi. Bo&apos;sh qoldirilsa — o&apos;chiq.</p>
+            <p>Beton (m³) qatorida retsept bo&apos;yicha xomashyo sarfi (zames) — sukut bo&apos;yicha o&apos;chiq: hozir sement, sheben, klines «Chiqim» bilan qo&apos;lda chiqariladi. Ikkalasi birga bo&apos;lsa sarf ikki marta yoziladi — yoqishdan oldin qo&apos;lda chiqimni to&apos;xtating.</p>
+          </>} />
+        <SaleStockForm from={c.realizationStockFrom ? isoDate(c.realizationStockFrom) : ""} autoConsume={c.realizationAutoConsume} />
       </Card></div>
 
       <Card>

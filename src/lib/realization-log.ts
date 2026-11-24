@@ -14,6 +14,7 @@ import { defaultCreditLimit } from "@/lib/credit-default";
 import { customerNameKey, lockCustomerName } from "@/lib/customer-name";
 import { normalizeProductName, productNameKey } from "@/lib/product-name";
 import { lockProductName, resolveProductGroup } from "@/lib/product-name-db";
+import { notifyShortSales, saleWarnText, syncRealizationSale, type SaleSync } from "@/lib/realization-stock";
 import { ensureSite } from "@/lib/logistics";
 import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
 import { eco, ecoEnabled } from "@/lib/eco/client";
@@ -261,7 +262,8 @@ export const ENTRY_LABELS: Record<string, string> = {
   note: "Izoh", refName: "Spravka nomi",
 };
 
-type Result = { ok: true; id: string } | { error: string };
+/** `warn` — sotuv saqlandi, lekin skladda yetmadi yoki beton zamesi yozilmadi (`lib/realization-stock.ts`). */
+type Result = { ok: true; id: string; warn?: string } | { error: string };
 
 type ProductHit = { id: string; name: string; unit: string; groupId: string | null };
 type Lookup = { customer: (name: string) => string | null; product: (name: string) => ProductHit | null; group: (groupId: string | null) => string };
@@ -328,13 +330,15 @@ export async function createRealizationEntry(d: EntryInput, userId: string): Pro
   const r = entryData(d, await entryLookup([d.customerName], [d.productName]));
   if ("error" in r) return { error: r.error! };
   try {
-    const e = await db.$transaction(async (tx) => {
+    const { row: e, sync } = await db.$transaction(async (tx) => {
       const customerId = r.data.customerId ?? (await addMissingCustomers(tx, [r.data], userId)).idOf(r.data.customerName);
       const row = await tx.realizationEntry.create({ data: { ...r.data, customerId, clientToken: d.clientToken, createdById: userId } });
       await audit(tx, userId, "CREATE", "RealizationEntry", row.id, undefined, row);
-      return row;
+      // Dona mahsulot skladdan chiqadi, beton — sozlamaga ko'ra zames (`lib/realization-stock.ts`)
+      return { row, sync: await syncRealizationSale(tx, row.id, row, userId) };
     });
-    return { ok: true, id: e.id };
+    notifyShortSales([sync], userId);
+    return { ok: true, id: e.id, warn: saleWarnText([sync]) };
   } catch (e) {
     // Bir vaqtda ikki marta yuborilgan forma — mavjudini qaytaramiz
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002" && d.clientToken) {
@@ -384,21 +388,25 @@ async function writeEntry(id: string, before: RealizationEntry | null, d: EntryI
   if (future(d.date!)) return { error: "Sana kelajakda bo'lmasin" };
   const r = entryData(d, await entryLookup([d.customerName], [d.productName]));
   if ("error" in r) return { error: r.error! };
-  const ok = await db.$transaction(async (tx) => {
+  const sync = await db.$transaction(async (tx) => {
     // Xaridor ro'yxatda yo'q bo'lsa — mijozlarga qo'shiladi (debitorkaga tushishi uchun)
     const data = { ...r.data, customerId: r.data.customerId ?? (await addMissingCustomers(tx, [r.data], userId)).idOf(r.data.customerName) };
     const u = await tx.realizationEntry.updateMany({ where: { id, cancelledAt: null, updatedAt: before.updatedAt }, data });
-    if (u.count !== 1) return false;
+    if (u.count !== 1) return null;
     await audit(tx, userId, "UPDATE", "RealizationEntry", id, before, data);
-    return true;
+    // Miqdor / mahsulot / sana o'zgargan bo'lsa sklad yozuvi farq bilan tuzatiladi
+    return syncRealizationSale(tx, id, { id, date: data.date, productId: data.productId, customerName: data.customerName, qty: data.qty, ttn: data.ttn }, userId);
   });
-  return ok ? { ok: true, id } : { error: "Qator boshqa joyda o'zgartirildi — sahifani yangilang" };
+  if (!sync) return { error: "Qator boshqa joyda o'zgartirildi — sahifani yangilang" };
+  notifyShortSales([sync], userId);
+  return { ok: true, id, warn: saleWarnText([sync]) };
 }
 
 /**
  * Qo'lda / Excel qatorni o'chirish (Otabek, 2026-11-20 — bekor qilish o'rniga): qator bazadan o'chadi. Reestr, mijoz debitorkasi
  * («Sotib olgan», akt sverka, mijoz kartasi), kredit limiti, Tahlil (sotuv, marja, kunlik realizatsiya hisoboti) va «bugun kim
- * kiritmagan» uni jonli o'qiydi — hech qayerda qolmaydi. Kassa va skladga qo'lda qator ta'sir qilmagan, ular o'zgarmaydi.
+ * kiritmagan» uni jonli o'qiydi — hech qayerda qolmaydi. Kassaga qo'lda qator ta'sir qilmagan; uning sklad chiqimi (dona mahsulot)
+ * va beton zamesi bo'lsa — teskari yozuv / storno bilan qaytadi (`lib/realization-stock.ts`).
  * Shu qator uchun avtomatik qo'shilgan mijoz yoki mahsulot (`addMissingCustomers` / `addMissingProducts`) boshqa hech qayerda
  * ishlatilmagan va keyin qo'lda tahrirlanmagan bo'lsa — u ham o'chadi. AuditLog'da DELETE + oxirgi holat nusxasi (sabab bilan) qoladi.
  * O'qilgan holatga shartli: shu payt tahrirlangan yoki boshqa joyda o'chirilgan qator ikkinchi marta yozilmaydi.
@@ -411,6 +419,7 @@ export async function deleteRealizationEntry(id: string, reason: string, userId:
     const r = await tx.realizationEntry.deleteMany({ where: { id, updatedAt: row.updatedAt } });
     if (r.count !== 1) return null;
     await audit(tx, userId, "DELETE", "RealizationEntry", id, row, why ? { reason: why } : undefined);
+    await syncRealizationSale(tx, id, null, userId);
     return row;
   });
   if (!e) return { error: "Qator topilmadi yoki shu payt o'zgardi — sahifani yangilang" };
@@ -640,7 +649,7 @@ export type ImportRow = Record<string, unknown>;
  * mahsulotlar va mijozlar ro'yxatiga qo'shilgan xaridorlar nomi.
  */
 export type ImportResult =
-  | { ok: true; added: number; skipped: number; problems: string[]; guessedUnits: number; newProducts: string[]; newCustomers: string[]; from: Date; to: Date }
+  | { ok: true; added: number; skipped: number; problems: string[]; guessedUnits: number; newProducts: string[]; newCustomers: string[]; from: Date; to: Date; warn?: string }
   | { error: string };
 
 const IMPORT_MAX = 3000;
@@ -771,7 +780,7 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
       used.add(twin);
       return false;
     });
-    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [], newCustomers: [] };
+    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [] as string[], newCustomers: [] as string[], syncs: [] as SaleSync[] };
     const cat = await addMissingProducts(tx, fresh, userId);
     const cust = await addMissingCustomers(tx, fresh, userId);
     const created = await tx.realizationEntry.createManyAndReturn({
@@ -780,11 +789,16 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
       })),
     });
     await auditMany(tx, userId, "CREATE", "RealizationEntry", created.map((row) => ({ id: row.id, after: row })));
+    // Har qator — sklad chiqimi / beton zamesi (`lib/realization-stock.ts`)
+    const syncs: SaleSync[] = [];
+    for (const row of created) syncs.push(await syncRealizationSale(tx, row.id, row, userId));
     // Avvalgi importlardagi (mijoz qo'shilmasdan oldingi) bog'lanmagan qatorlar ham shu yerda bog'lanadi
     const old = await linkEntriesIn(tx, userId);
-    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers] };
-  }, { timeout: 60_000 });
-  return { ok: true, ...res, problems, guessedUnits, from, to };
+    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers], syncs };
+  }, { timeout: 120_000 });
+  const { syncs, ...out } = res;
+  notifyShortSales(syncs, userId);
+  return { ok: true, ...out, problems, guessedUnits, from, to, warn: saleWarnText(syncs) };
 }
 
 /**

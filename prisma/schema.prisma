@@ -196,6 +196,13 @@ model CompanySettings {
   gpsWatchAt          DateTime?
   /// Eski GPS nuqtalarini tozalash (kuniga bir marta) oxirgi marta qachon bo'lgani
   gpsCleanupAt        DateTime?
+  // ── Reyssiz sotuv (Realizatsiya reestri qo'lda / Excel qatori) va sklad — `lib/realization-stock.ts` ──
+  /// Shu sanadan (shu kun ham) boshlab reestr qatoridagi dona mahsulot skladdan avtomatik chiqadi; bo'sh — o'chiq.
+  /// Eski oylar orqaga yozilmasin: migratsiyada 2026-11-25 (Toshkent) qo'yilgan
+  realizationStockFrom   DateTime?
+  /// Beton (m³) reestr qatori retsept bo'yicha xomashyoni skladdan avtomatik sarflaydimi (`lib/realization-stock.ts`).
+  /// Sukut — yo'q: hozir xomashyo «Chiqim» (ISSUE) bilan qo'lda chiqariladi, ikkalasi yoqilsa sarf ikki marta yoziladi
+  realizationAutoConsume Boolean   @default(false)
   // ── Snabjeniye: shu summadan (so'm) katta xarid avval direktor tasdig'idan o'tadi; 0 — cheklov yo'q ──
   supplyDirectorLimit Decimal   @default(50000000) @db.Decimal(18, 2)
   /// "To'lanmagan kirimlar" shu sanadan keyingi kirimlarni ko'rsatadi (bo'sh — 2026-09-30); eski chiqimsiz kirimlar to'lov kutmaydi
