@@ -401,6 +401,9 @@ model Product {
   id            String   @id @default(cuid())
   code          String   @unique // M300
   name          String // Beton M300 (B22.5) P3
+  /// Boshqa nomlari — birlashtirilgan nusxalarning eski nomi («PK 59-12-8» → «PK 59-12-8 A 400»). Excel/reestr importi va
+  /// takror tekshiruvi (`lib/product-name.ts`) shu nomlarni ham taniydi
+  aliases       String[] @default([])
   strengthClass String? // B22.5
   unit          String   @default("m3")
   price         Decimal  @default(0) @db.Decimal(18, 2) // bazaviy narx (1 m3)

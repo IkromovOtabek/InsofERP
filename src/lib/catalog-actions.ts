@@ -11,6 +11,10 @@ import { flatName, num, str } from "@/lib/excel";
 import { normalizeUnit, PRODUCT_UNITS } from "@/lib/unit";
 import { PRODUCT_KINDS, PRODUCT_CATALOG_ROLES, PRODUCT_ADD_ROLES } from "@/lib/catalog";
 import { nextCatalogCode } from "@/lib/numbering";
+import { aliasesAfterRename, normalizeProductName, productNameKey } from "@/lib/product-name";
+import { findSameNameProduct, lockProductName, sameProductError } from "@/lib/product-name-db";
+import { MergeConflict, mergeProductInto } from "@/lib/product-merge";
+import { lockStock } from "@/lib/stock-lock";
 import type { Prisma, Role } from "@/generated/prisma";
 
 /**
@@ -106,12 +110,15 @@ const productSchema = z.object({
 /**
  * Yangi mahsulot — tanlagichdagi "Yangi" tugmasi. Ochiq papka ichiga tushadi.
  * Shu nomli (yoki kodli) mahsulot allaqachon bo'lsa dublikat ochilmaydi — mavjudi yangilanadi.
+ * Papka va sotuv narxi majburiy (Sarvar rejasi 1.1): papkasiz mahsulot hisobotda «Boshqalar»ga tushardi.
  */
 export async function createCatalogProduct(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireCatalogWrite(PRODUCT_ADD_ROLES);
   const r = parseForm(productSchema, fd);
   if ("error" in r) return { error: r.error };
-  const d = r.data;
+  const d = { ...r.data, name: normalizeProductName(r.data.name) };
+  if (!d.groupId) return { error: "Mahsulot papka ichida qo'shiladi — avval papkani oching (Plita, Beton, Kolso…)" };
+  if (!(d.price > 0)) return { error: "Sotuv narxini kiriting" };
   let merged = false;
   try {
     await db.$transaction(async (tx) => {
@@ -120,6 +127,7 @@ export async function createCatalogProduct(_prev: ActionState, fd: FormData): Pr
       merged = res === "updated";
     });
   } catch (e) {
+    if (e instanceof CatalogError) return { error: e.message };
     if (String(e).includes("Unique constraint")) return { error: "Bu nomli mahsulot bor" };
     throw e;
   }
@@ -134,27 +142,32 @@ const renameSchema = z.object({ name: zStr("Mahsulot nomi kerak").pipe(z.string(
 /**
  * Mavjud mahsulot nomi va «1 dona hajmi, m³» ni tuzatish (zayavka va sklad tanlagichidagi qalam, Sklad → Tayyor mahsulot qo'shish).
  * Birlik va narx Sozlamalar → Mahsulotlar'da. Hujjatlar mahsulotga id bilan bog'langan —
- * eski zayavka va harakatlarda ham yangi nom ko'rinadi. Shu nomli boshqa mahsulot bo'lsa — rad etiladi (dublikat ochilmasin).
+ * eski zayavka va harakatlarda ham yangi nom ko'rinadi. Shu nomli (yoki shu boshqa nomli) mahsulot bo'lsa — rad etiladi.
+ * Nom normallashadi (kirill → lotin, «3,5» → «3.5»); eski nom boshqa nomlar (`aliases`) ga qo'shiladi — Excel/reestr
+ * importida eski nom bilan kelgan qator ham shu mahsulotga bog'lanadi.
  * Hajm maydoni formada bo'lmasa (beton m³) — o'zgarmaydi.
  */
 export async function renameCatalogProduct(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireCatalogWrite(CATALOG_ROLES);
   const r = parseForm(renameSchema, fd);
   if ("error" in r) return { error: r.error };
-  const name = r.data.name.replace(/\s+/g, " ");
+  const name = normalizeProductName(r.data.name);
+  if (!name) return { error: "Mahsulot nomi kerak" };
   const withVolume = fd.has("volumeM3");
   const res = await db.$transaction(async (tx): Promise<ActionState> => {
     const before = await tx.product.findUnique({ where: { id } });
     if (!before) return { error: "Mahsulot topilmadi" };
     const volumeChanged = withVolume && (before.volumeM3 == null ? null : Number(before.volumeM3)) !== r.data.volumeM3;
     if (before.name === name && !volumeChanged) return { ok: true, note: "O'zgarish yo'q" };
+    let aliases = before.aliases;
     if (before.name !== name) {
-      const flat = flatName(name);
-      const same = (await tx.product.findMany({ where: { id: { not: id } }, select: { name: true, isActive: true } })).find((p) => flatName(p.name) === flat);
-      if (same) return { error: `«${same.name}» ro'yxatda bor${same.isActive ? "" : ", arxivda"} — ikkinchi bir xil nom ochilmaydi` };
+      await lockProductName(tx, name);
+      const same = await findSameNameProduct(name, id, tx);
+      if (same) return { error: sameProductError(same, name) };
+      aliases = aliasesAfterRename(before.name, before.aliases, name);
     }
-    const after = await tx.product.update({ where: { id }, data: { name, ...(volumeChanged ? { volumeM3: r.data.volumeM3 } : {}) } });
-    await audit(tx, s.userId, "UPDATE", "Product", id, { name: before.name, volumeM3: before.volumeM3 }, { name: after.name, volumeM3: after.volumeM3, by: "rename" });
+    const after = await tx.product.update({ where: { id }, data: { name, aliases, ...(volumeChanged ? { volumeM3: r.data.volumeM3 } : {}) } });
+    await audit(tx, s.userId, "UPDATE", "Product", id, { name: before.name, aliases: before.aliases, volumeM3: before.volumeM3 }, { name: after.name, aliases: after.aliases, volumeM3: after.volumeM3, by: "rename" });
     return { ok: true, note: before.name !== name ? `Nomi o'zgardi: «${before.name}» → «${after.name}»` : "Hajm saqlandi" };
   });
   if (res?.ok) refresh();
@@ -163,6 +176,19 @@ export async function renameCatalogProduct(id: string, _prev: ActionState, fd: F
 
 /* ───────── Ko'p mahsulotni birdan yozish (Excel va matritsa uchun umumiy) ───────── */
 
+/** Katalog qoidasi buzildi (papkasiz yangi mahsulot) — foydalanuvchiga matni ko'rsatiladi, tranzaksiya bekor bo'ladi. */
+class CatalogError extends Error {}
+
+/** Excel / matritsa yozuvi: bitta tranzaksiya; `CatalogError` — hech narsa yozilmaydi, xato matni qaytadi. */
+async function catalogTx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T | { error: string }> {
+  try {
+    return await db.$transaction(fn, { timeout: 120_000, maxWait: 20_000 });
+  } catch (e) {
+    if (e instanceof CatalogError) return { error: e.message };
+    throw e;
+  }
+}
+
 type PutInput = { name: string; code?: string; unit?: string | null; price?: number | null; kind?: string | null; note?: string | null; groupId?: string | null; volumeM3?: number | null };
 
 /**
@@ -170,10 +196,12 @@ type PutInput = { name: string; code?: string; unit?: string | null; price?: num
  * Kod (mahsulot va papka bo'ylab yagona) 1C dagidek eng katta raqamdan davom etadi,
  * papka nomi bo'yicha topiladi yoki yaratiladi, mahsulot kodi/nomi mos kelsa yangilanadi.
  * `rootId` — ochiq turgan papka: papkasiz yozuvlar va yangi papkalar shu ichiga tushadi.
+ * Nom normallashadi va nom kaliti (`productNameKey`, boshqa nomlar ham) bo'yicha solishtiriladi — «ПК 59-12-8» mavjud
+ * «PK 59-12-8» ga tushadi. Yangi mahsulot papkasiz ochilmaydi (`CatalogError`).
  */
 async function catalogWriter(tx: Prisma.TransactionClient, userId: string, rootId: string | null) {
   const [products, groups] = await Promise.all([
-    tx.product.findMany({ select: { id: true, code: true, name: true } }),
+    tx.product.findMany({ select: { id: true, code: true, name: true, aliases: true } }),
     tx.productGroup.findMany({ select: { id: true, code: true, name: true, parentId: true } }),
   ]);
   // Kod ham mahsulot, ham papka bo'ylab yagona bo'lishi kerak
@@ -187,7 +215,10 @@ async function catalogWriter(tx: Prisma.TransactionClient, userId: string, rootI
   };
 
   const idOf = new Map<string, string>();
-  for (const p of products) { idOf.set(p.code.toUpperCase(), p.id); idOf.set(flatName(p.name), p.id); }
+  /** Boshqa nomi bo'yicha topilgan mahsulot — nomi qayta yozilmaydi («PK 59-12-8» kelsa «PK 59-12-8 A 400» qoladi). */
+  const viaAlias = new Map<string, string>();
+  for (const p of products) { idOf.set(p.code.toUpperCase(), p.id); idOf.set(productNameKey(p.name), p.id); }
+  for (const p of products) for (const a of p.aliases) { const k = productNameKey(a); if (k && !idOf.has(k)) { idOf.set(k, p.id); viaAlias.set(k, p.id); } }
   const groupAt = new Map<string, string>();
   for (const g of groups) groupAt.set(`${g.parentId ?? ""}|${flatName(g.name)}`, g.id);
   let newGroups = 0;
@@ -211,15 +242,24 @@ async function catalogWriter(tx: Prisma.TransactionClient, userId: string, rootI
   };
 
   /** Mahsulotni qo'shadi yoki (kodi/nomi mos kelsa) yangilaydi. Bo'sh maydon mavjud qiymatni o'chirmaydi. */
-  const put = async (x: PutInput) => {
+  const put = async (input: PutInput) => {
+    const x = { ...input, name: normalizeProductName(input.name) };
     const code = (x.code ?? "").toUpperCase();
-    const found = (code ? idOf.get(code) : undefined) ?? idOf.get(flatName(x.name));
+    const key = productNameKey(x.name);
+    let found = (code ? idOf.get(code) : undefined) ?? idOf.get(key);
+    if (!found) {
+      // Boshqa oynada shu payt qo'shilgan bo'lishi mumkin — kalit qulfi ostida bazadan qayta tekshiriladi
+      await lockProductName(tx, x.name);
+      const again = await findSameNameProduct(x.name, null, tx);
+      if (again) { found = again.id; if (again.viaAlias) viaAlias.set(key, again.id); }
+    }
     if (found) {
       const before = await tx.product.findUniqueOrThrow({ where: { id: found } });
+      const keepName = viaAlias.get(key) === found && productNameKey(before.name) !== key;
       const after = await tx.product.update({
         where: { id: found },
         data: {
-          name: x.name, isActive: true,
+          ...(keepName ? {} : { name: x.name }), isActive: true,
           ...(x.unit ? { unit: x.unit } : {}),
           ...(x.price != null ? { price: x.price } : {}),
           ...(x.kind ? { kind: x.kind } : {}),
@@ -229,14 +269,16 @@ async function catalogWriter(tx: Prisma.TransactionClient, userId: string, rootI
         },
       });
       await audit(tx, userId, "UPDATE", "Product", found, before, after);
-      idOf.set(flatName(x.name), found);
+      idOf.set(key, found);
       return "updated" as const;
     }
+    const groupId = x.groupId ?? rootId;
+    if (!groupId) throw new CatalogError(`«${x.name}» — papka ko'rsatilmagan. Mahsulot papka ichida qo'shiladi: papkani oching yoki Excel'ga «Papka» ustunini qo'shing`);
     const c = nextCode(code);
     const p = await tx.product.create({
-      data: { code: c, name: x.name, unit: x.unit ?? "dona", price: x.price ?? 0, kind: x.kind ?? null, note: x.note ?? null, groupId: x.groupId ?? null, volumeM3: x.volumeM3 ?? null },
+      data: { code: c, name: x.name, unit: x.unit ?? "dona", price: x.price ?? 0, kind: x.kind ?? null, note: x.note ?? null, groupId, volumeM3: x.volumeM3 ?? null },
     });
-    idOf.set(c, p.id); idOf.set(flatName(x.name), p.id);
+    idOf.set(c, p.id); idOf.set(key, p.id);
     await audit(tx, userId, "CREATE", "Product", p.id, undefined, p);
     return "created" as const;
   };
@@ -283,7 +325,7 @@ export async function importCatalogProducts(_prev: ActionState, fd: FormData): P
   if (!rows.length) return { error: "Faylda mahsulot nomi topilmadi" };
   const groupId = r.data.groupId;
 
-  const out = await db.$transaction(async (tx) => {
+  const out = await catalogTx(async (tx) => {
     const w = await catalogWriter(tx, s.userId, groupId);
     let created = 0, updated = 0, guessed = 0;
     for (const x of rows) {
@@ -302,7 +344,8 @@ export async function importCatalogProducts(_prev: ActionState, fd: FormData): P
       if (res === "created") created++; else updated++;
     }
     return { created, updated, guessed, newGroups: w.newGroups };
-  }, { timeout: 120_000, maxWait: 20_000 });
+  });
+  if ("error" in out) return out;
 
   refresh();
   return {
@@ -346,7 +389,7 @@ export async function createProductMatrix(_prev: ActionState, fd: FormData): Pro
   if (!PRODUCT_UNIT_KEYS.includes(d.unit)) return { error: "O'lchov birligi ro'yxatda yo'q" };
   const perRow = d.folderPerRow === "1";
 
-  const out = await db.$transaction(async (tx) => {
+  const out = await catalogTx(async (tx) => {
     const w = await catalogWriter(tx, s.userId, d.groupId);
     let created = 0, updated = 0;
     for (const x of cells) {
@@ -362,7 +405,8 @@ export async function createProductMatrix(_prev: ActionState, fd: FormData): Pro
       if (res === "created") created++; else updated++;
     }
     return { created, updated, newGroups: w.newGroups };
-  }, { timeout: 120_000, maxWait: 20_000 });
+  });
+  if ("error" in out) return out;
 
   refresh();
   return { ok: true, note: doneNote(out.created, out.updated, out.newGroups) };
@@ -376,17 +420,10 @@ type MergePair = { keepId?: unknown; dropIds?: unknown };
 
 /**
  * Dublikatlarni bitta mahsulotga yig'adi: qaysi yozuv qoladi — foydalanuvchi tanlaydi
- * ("Dublikat" panelidagi nuqta). Qolgan yozuvlardagi hujjatlar (zayavka qatorlari, zameslar,
- * sklad harakatlari, retseptlar, boshqa retseptdagi ingredient qatorlari, brak, ishlab chiqarish plani,
- * do'kon vitrinasi va bannerlar, saytdan kelgan so'rovlar) qoladigan mahsulotga ko'chiriladi,
- * keyin ortiqcha yozuvlar o'chiriladi — shuning uchun qaysi birini qoldirsa ham hech narsa yo'qolmaydi.
- * Yagonalik to'qnashuvlari: bir retseptda ikkalasi ingredient bo'lsa — normalari qo'shiladi; bir oyga
- * ikkalasiga plan bo'lsa — plan qo'shiladi; ikkalasining ham vitrinasi bo'lsa — qoladiganiniki qoladi,
- * ortiqchasi auditga yozilib o'chiriladi (jimgina kaskad bilan emas).
- * Ko'chirilgan retseptlar arxiv bo'lib qoladi (faol retsept bittaligi buzilmasin).
+ * ("Dublikat" panelidagi nuqta). Yadro — `lib/product-merge.ts` (tozalash skripti bilan bitta): qolgan yozuvlarning
+ * hamma hujjati (13 bog'lanish + brigada varag'i) qoladigan mahsulotga ko'chadi, ortiqchasi o'chirilmaydi — arxivlanadi
+ * («(takror)»), nomi qoladigan mahsulotning boshqa nomi bo'lib qoladi. Hammasi sklad qulfi ostida, bitta tranzaksiyada.
  */
-class MergeError extends Error {}
-
 export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireModuleWrite("production", CATALOG_ROLES);
   const r = parseForm(mergeSchema, fd);
@@ -400,90 +437,24 @@ export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<A
   if (!jobs.length) return { error: "Birlashtirish uchun mahsulot tanlanmadi" };
 
   const out = await db.$transaction(async (tx) => {
-    let merged = 0, moved = 0;
+    await lockStock(tx);
+    let merged = 0;
+    const moved: Record<string, number> = {};
     for (const job of jobs) {
-      const keep = await tx.product.findUnique({ where: { id: job.keepId } });
-      if (!keep) continue;
       for (const dropId of job.dropIds) {
-        const drop = await tx.product.findUnique({ where: { id: dropId } });
-        if (!drop || drop.id === keep.id) continue;
-        // m³ beton bilan dona mahsulotni birlashtirsa qoldiqlar bir-biriga qo'shilib ketardi
-        if (drop.unit !== keep.unit) throw new MergeError(`«${drop.name}» (${drop.unit}) va «${keep.name}» (${keep.unit}) birligi har xil — birlashtirib bo'lmaydi`);
-
-        const [items, batches, moves, leads, recipes, keepRecipes] = await Promise.all([
-          tx.orderItem.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
-          tx.productionBatch.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
-          tx.stockMove.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
-          tx.lead.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
-          tx.recipe.findMany({ where: { productId: dropId }, orderBy: { version: "asc" } }),
-          tx.recipe.findMany({ where: { productId: keep.id }, select: { version: true, isActive: true } }),
-        ]);
-        // ── Boshqa retseptlardagi ingredient qatori (masalan katta konstruksiyaga kiradigan blok) ──
-        const ingRows = await tx.recipeItem.findMany({ where: { productId: dropId }, include: { recipe: { select: { productId: true } } } });
-        if (await tx.recipeItem.count({ where: { productId: keep.id, recipe: { productId: dropId } } })) {
-          throw new MergeError(`«${keep.name}» «${drop.name}» retseptiga ingredient sifatida kiradi — birlashtirilsa mahsulot o'ziga ingredient bo'ladi. Avval retseptni tuzating`);
-        }
-        for (const row of ingRows) {
-          // Qoladigan mahsulot o'z retseptiga ingredient bo'lib qolardi — tsikl
-          if (row.recipe.productId === keep.id || row.recipe.productId === dropId) throw new MergeError(`«${drop.name}» «${keep.name}» retseptiga ingredient sifatida kiradi — birlashtirilsa mahsulot o'ziga ingredient bo'ladi. Avval retseptni tuzating`);
-          const twin = await tx.recipeItem.findUnique({ where: { recipeId_productId: { recipeId: row.recipeId, productId: keep.id } } });
-          if (twin) {
-            await tx.recipeItem.update({ where: { id: twin.id }, data: { qtyPerM3: Number(twin.qtyPerM3) + Number(row.qtyPerM3) } });
-            await tx.recipeItem.delete({ where: { id: row.id } });
-          } else {
-            await tx.recipeItem.update({ where: { id: row.id }, data: { productId: keep.id } });
-          }
-        }
-        // ── Brak va bannerlar — oddiy ko'chirish ──
-        const [defects, banners] = await Promise.all([
-          tx.productDefect.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
-          tx.shopBanner.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
-        ]);
-        // ── Ishlab chiqarish plani: bir oyga ikkalasida bo'lsa — qo'shiladi ──
-        const plans = await tx.productionPlan.findMany({ where: { productId: dropId } });
-        for (const pl of plans) {
-          const twin = await tx.productionPlan.findUnique({ where: { year_month_productId: { year: pl.year, month: pl.month, productId: keep.id } } });
-          if (twin) {
-            const dayQty = twin.dayQty == null && pl.dayQty == null ? null : Number(twin.dayQty ?? 0) + Number(pl.dayQty ?? 0);
-            await tx.productionPlan.update({ where: { id: twin.id }, data: { monthQty: Number(twin.monthQty) + Number(pl.monthQty), dayQty } });
-            await tx.productionPlan.delete({ where: { id: pl.id } });
-          } else {
-            await tx.productionPlan.update({ where: { id: pl.id }, data: { productId: keep.id } });
-          }
-        }
-        // ── Do'kon vitrinasi (mahsulotga bitta): mahsulot o'chirilganda kaskad bilan jimgina yo'qolmasin ──
-        const dropShop = await tx.shopItem.findUnique({ where: { productId: dropId } });
-        if (dropShop) {
-          const keepShop = await tx.shopItem.findUnique({ where: { productId: keep.id }, select: { id: true } });
-          if (!keepShop) await tx.shopItem.update({ where: { id: dropShop.id }, data: { productId: keep.id } });
-          else {
-            await tx.shopItem.delete({ where: { id: dropShop.id } });
-            await audit(tx, s.userId, "DELETE", "ShopItem", dropShop.id, dropShop, { mergedInto: keep.id, reason: "qoladigan mahsulotning o'z vitrinasi bor" });
-          }
-        }
-        // Retsept versiyasi mahsulot bo'yicha yagona — ko'chirishda keyingi raqam beriladi
-        let version = keepRecipes.reduce((a, b) => Math.max(a, b.version), 0);
-        let hasActive = keepRecipes.some((x) => x.isActive);
-        for (const rec of recipes) {
-          version++;
-          const keepActive = rec.isActive && !hasActive; // qoladigan mahsulotda faol retsept bo'lmasa — birinchisi faol qoladi
-          if (keepActive) hasActive = true;
-          await tx.recipe.update({ where: { id: rec.id }, data: { productId: keep.id, version, isActive: keepActive } });
-        }
-        await tx.product.delete({ where: { id: dropId } });
-        await audit(tx, s.userId, "DELETE", "Product", dropId, drop, { mergedInto: keep.id, keepName: keep.name });
+        const res = await mergeProductInto(tx, { keepId: job.keepId, dropId, userId: s.userId, via: "dublikat-paneli" });
+        for (const [k, n] of Object.entries(res.moved)) moved[k] = (moved[k] ?? 0) + n;
         merged++;
-        moved += items.count + batches.count + moves.count + leads.count + recipes.length + ingRows.length + defects.count + banners.count + plans.length + (dropShop ? 1 : 0);
       }
-      await audit(tx, s.userId, "UPDATE", "Product", keep.id, undefined, { mergedFrom: job.dropIds });
     }
     return { merged, moved };
-  }, { timeout: 120_000, maxWait: 20_000 }).catch((e: Error) => { if (e instanceof MergeError) return { error: e.message }; throw e; });
+  }, { timeout: 120_000, maxWait: 20_000 }).catch((e: Error) => { if (e instanceof MergeConflict) return { error: e.message }; throw e; });
   if ("error" in out) return { error: out.error };
 
   if (!out.merged) return { error: "Birlashtiriladigan mahsulot topilmadi (ehtimol allaqachon birlashtirilgan)" };
   refresh();
-  return { ok: true, note: `${out.merged} ta ortiqcha yozuv birlashtirildi, ${out.moved} ta hujjat qatori ko'chirildi.` };
+  const parts = Object.entries(out.moved).map(([k, n]) => `${k} ${n}`).join(", ");
+  return { ok: true, note: `${out.merged} ta ortiqcha yozuv birlashtirildi va arxivga olindi${parts ? ` — ko'chirildi: ${parts}` : ""}. Eski nomlari boshqa nom bo'lib qoldi.` };
 }
 
 

@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
 import { canEditProducts } from "@/lib/catalog";
+import { normalizeProductName } from "@/lib/product-name";
+import { findSameNameProduct, lockProductName } from "@/lib/product-name-db";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { removeShopPhoto, saveShopPhoto, saveShopTemplatePhoto } from "@/lib/uploads";
 import { audit } from "@/lib/audit";
@@ -166,19 +168,23 @@ export async function createShopProduct(_prev: ActionState, fd: FormData): Promi
   if (!canEditProducts(s.role)) return { error: "Mahsulot spravochnigini to'ldirish sizning lavozimingizga berilmagan" };
   const parsed = parseForm(newProductSchema, fd);
   if ("error" in parsed) return { error: parsed.error };
-  const d = parsed.data;
+  const d = { ...parsed.data, name: normalizeProductName(parsed.data.name) };
   const code = d.code?.toUpperCase().replace(/\s+/g, "") || null;
+  // Papka va narx majburiy (Sarvar rejasi 1.1): papkasiz mahsulot hisobotlarda «Boshqalar»ga tushardi
+  if (!d.groupId) return { error: "Papkani tanlang" };
+  if (!(d.price > 0)) return { error: "Narxni kiriting" };
 
-  const dup = await db.product.findFirst({
-    where: { OR: [{ name: { equals: d.name, mode: "insensitive" } }, ...(code ? [{ code: { equals: code, mode: "insensitive" as const } }] : [])] },
-    select: { name: true, code: true },
-  });
+  const sameName = await findSameNameProduct(d.name);
+  const dup = sameName ?? (code ? await db.product.findFirst({ where: { code: { equals: code, mode: "insensitive" } }, select: { name: true } }) : null);
   if (dup) return { error: `«${dup.name}» spravochnikda bor — ro'yxatdan «Tahrirlash» orqali do'konga chiqaring` };
-  if (d.groupId && !(await db.productGroup.findUnique({ where: { id: d.groupId }, select: { id: true } }))) return { error: "Papka topilmadi — sahifani yangilang" };
+  if (!(await db.productGroup.findUnique({ where: { id: d.groupId }, select: { id: true } }))) return { error: "Papka topilmadi — sahifani yangilang" };
 
   let product: { id: string; name: string };
   try {
     product = await db.$transaction(async (tx) => {
+      await lockProductName(tx, d.name);
+      const again = await findSameNameProduct(d.name, null, tx);
+      if (again) throw new Error("Unique constraint: product name");
       let c = code;
       if (!c) {
         // Kod mahsulot va papka bo'ylab yagona; 1C dagidek eng katta raqamdan davom etadi (catalog-actions bilan bir xil qoida)

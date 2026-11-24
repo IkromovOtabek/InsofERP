@@ -11,6 +11,8 @@ import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { nextCatalogCode } from "@/lib/numbering";
+import { aliasesAfterRename, normalizeProductName } from "@/lib/product-name";
+import { ensureRootGroup, findSameNameProduct, lockProductName, resolveProductGroup, sameProductError } from "@/lib/product-name-db";
 import { approveRequest, rejectRequest } from "@/lib/account-deletion";
 import { saveDailyOrderLimits as saveDailyOrderLimitsDb } from "@/lib/company";
 import { setCustomerCreditLimits } from "@/lib/customer-limits";
@@ -76,19 +78,34 @@ const productSchema = z.object({
   perTrip: optPositive("Bir reysga max — 1 dan katta butun son", 100_000, true),
 });
 
+/**
+ * Beton markasi (mahsulot) — Sozlamalar. Nom normallashadi (kirill → lotin, «3,5» → «3.5») va takror nom (boshqa nomlari
+ * bilan) rad etiladi; nom o'zgarsa eski nom boshqa nom bo'lib qoladi. Yangisi papkasiz ochilmaydi: m³ — «Beton» papkasi,
+ * boshqasi — nomdan taxmin (`resolveProductGroup`).
+ */
 export async function saveProduct(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(productSchema, fd);
   if ("error" in r) return { error: r.error };
+  const data = { ...r.data, name: normalizeProductName(r.data.name) };
+  if (!data.name) return { error: "Nomi kerak" };
   try {
-    if (id) {
-      const before = await db.product.findUniqueOrThrow({ where: { id } });
-      const after = await db.product.update({ where: { id }, data: r.data });
-      await audit(db, s.userId, "UPDATE", "Product", id, before, after);
-    } else {
-      const p = await db.product.create({ data: { ...r.data, code: await nextCatalogCode(db), isActive: true } });
-      await audit(db, s.userId, "CREATE", "Product", p.id, undefined, p);
-    }
+    const res = await db.$transaction(async (tx): Promise<ActionState | null> => {
+      await lockProductName(tx, data.name);
+      const same = await findSameNameProduct(data.name, id, tx);
+      if (same) return { error: sameProductError(same, data.name) };
+      if (id) {
+        const before = await tx.product.findUniqueOrThrow({ where: { id } });
+        const after = await tx.product.update({ where: { id }, data: { ...data, aliases: aliasesAfterRename(before.name, before.aliases, data.name) } });
+        await audit(tx, s.userId, "UPDATE", "Product", id, before, after);
+      } else {
+        const groupId = data.unit === "m3" ? await ensureRootGroup(tx, "Beton", s.userId) : await resolveProductGroup(tx, { name: data.name }, s.userId);
+        const p = await tx.product.create({ data: { ...data, groupId, code: await nextCatalogCode(tx), isActive: true } });
+        await audit(tx, s.userId, "CREATE", "Product", p.id, undefined, p);
+      }
+      return null;
+    });
+    if (res) return res;
   } catch (e) { return uniq(e, "Mahsulot saqlanmadi — qayta urinib ko'ring") ?? (() => { throw e; })(); }
   refresh(); revalidatePath("/recipes"); revalidatePath("/orders/new");
   return { ok: true };

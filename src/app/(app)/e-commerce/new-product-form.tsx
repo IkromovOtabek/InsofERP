@@ -49,12 +49,12 @@ export function NewProductForm({ groups }: { groups: { id: string; name: string 
             {PRODUCT_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Select>
         </Field>
-        <Field label="Narx, so'm">
+        <Field label="Narx, so'm *">
           <Input name="price" inputMode="decimal" required placeholder="0" />
         </Field>
-        <Field label="Papka" className="sm:col-span-2">
-          <Select name="groupId" defaultValue="">
-            <option value="">— papkasiz —</option>
+        <Field label="Papka *" className="sm:col-span-2">
+          <Select name="groupId" defaultValue="" required>
+            <option value="" disabled>— papkani tanlang —</option>
             {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </Select>
         </Field>

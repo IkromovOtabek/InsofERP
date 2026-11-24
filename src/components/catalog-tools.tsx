@@ -13,6 +13,7 @@ import { ProductDuplicates } from "@/components/product-duplicates";
 import { MoneyInput } from "@/components/money-input";
 import { PRODUCT_UNITS, MATERIAL_UNITS, unitLabel } from "@/lib/unit";
 import { PRODUCT_KINDS } from "@/lib/catalog";
+import { productNameKey } from "@/lib/product-name";
 import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
 
 /**
@@ -91,13 +92,13 @@ export function MaterialPanelBody({ panel, ctx, onDone, onCancel }: {
 }
 
 /**
- * Bir xil nomli mahsulotlar: nom harf-raqamlargacha solishtiriladi — bo'sh joy, tire,
- * nuqta va katta-kichik harf farqi hisobga olinmaydi ("PK 61-10-8" = "pk61108").
+ * Bir xil nomli mahsulotlar: nom kaliti (`productNameKey`) — kirill/lotin, bo'sh joy, tire, nuqta/vergul va
+ * katta-kichik harf farqi hisobga olinmaydi ("PK 61-10-8" = "ПК 61-10-8" = "pk61108").
  */
 export function duplicateNames(products: CatalogProduct[]) {
   const by = new Map<string, CatalogProduct[]>();
   for (const p of products) {
-    const k = p.name.toLowerCase().replace(/[^a-z0-9а-яёўқғҳ]+/gi, "");
+    const k = productNameKey(p.name);
     if (!k) continue;
     const list = by.get(k);
     if (list) list.push(p); else by.set(k, [p]);
@@ -143,8 +144,8 @@ export function NewProductForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDo
         <Field label="O'lchov birligi *">
           <Select name="unit" defaultValue="dona">{PRODUCT_UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
         </Field>
-        <Field label="Sotuv narxi"><MoneyInput name="price" defaultValue="0" /></Field>
-        <Field label="Papka"><Input value={ctx.groupName ?? "Ro'yxat ildizi"} readOnly /></Field>
+        <Field label="Sotuv narxi *"><MoneyInput name="price" defaultValue="0" /></Field>
+        <Field label="Papka *" hint={ctx.groupId ? undefined : "avval papkani oching"}><Input value={ctx.groupName ?? "Papka tanlanmagan"} readOnly /></Field>
         <Field label="Izoh" className="sm:col-span-4"><Textarea name="note" rows={2} /></Field>
       </div>
       <div className="flex flex-wrap items-center gap-2">

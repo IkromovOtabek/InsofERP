@@ -12,6 +12,8 @@ import { PAY_GROUPS, rootGroupName, type PayGroupKey } from "@/lib/order-day-she
 import { nextCatalogCode } from "@/lib/numbering";
 import { defaultCreditLimit } from "@/lib/credit-default";
 import { customerNameKey, lockCustomerName } from "@/lib/customer-name";
+import { normalizeProductName, productNameKey } from "@/lib/product-name";
+import { lockProductName, resolveProductGroup } from "@/lib/product-name-db";
 import { ensureSite } from "@/lib/logistics";
 import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
 import { eco, ecoEnabled } from "@/lib/eco/client";
@@ -271,13 +273,14 @@ type Lookup = { customer: (name: string) => string | null; product: (name: strin
  */
 async function entryLookup(customerNames: string[], productNames: string[]): Promise<Lookup> {
   const cn = uniq(customerNames), pn = uniq(productNames);
-  const ci = (v: string) => ({ equals: v, mode: "insensitive" as const });
   const [customers, products, groups] = await Promise.all([
     cn.length
       ? db.customer.findMany({ where: { isInternal: false }, orderBy: [{ isActive: "desc" }, { createdAt: "asc" }], select: { id: true, name: true, aliases: true } })
       : [],
+    // Mahsulot nom kaliti bilan (kirill/lotin, «3,5»/«3.5», boshqa nomlari ham): «ПК 59-12-8» va eski «PK 59-12-8» —
+    // birlashtirilgan «PK 59-12-8 A 400» ga tushadi. Katalog kichik — hammasi olinadi.
     pn.length
-      ? db.product.findMany({ where: { OR: pn.flatMap((n) => [{ name: ci(n) }, { code: ci(n) }]) }, orderBy: { isActive: "desc" }, select: { id: true, name: true, code: true, unit: true, groupId: true } })
+      ? db.product.findMany({ orderBy: [{ isActive: "desc" }, { createdAt: "asc" }], select: { id: true, name: true, code: true, unit: true, groupId: true, aliases: true } })
       : [],
     pn.length ? db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }) : [],
   ]);
@@ -286,10 +289,11 @@ async function entryLookup(customerNames: string[], productNames: string[]): Pro
   const cust = new Map<string, string>();
   for (const c of customers) { const k = ck(c.name); if (k && !cust.has(k)) cust.set(k, c.id); }
   for (const c of customers) for (const a of c.aliases) { const k = ck(a); if (k && !cust.has(k)) cust.set(k, c.id); }
-  const prod = new Map<string, ProductHit>();
-  for (const p of products) if (!prod.has(lc(p.name))) prod.set(lc(p.name), p);
-  for (const p of products) if (p.code && !prod.has(lc(p.code))) prod.set(lc(p.code), p);
-  return { customer: (n) => cust.get(ck(n)) ?? null, product: (n) => prod.get(lc(n)) ?? null, group: rootGroupName(groups) };
+  const prod = new Map<string, ProductHit>(), byCode = new Map<string, ProductHit>();
+  for (const p of products) { const k = productNameKey(p.name); if (k && !prod.has(k)) prod.set(k, p); }
+  for (const p of products) for (const a of p.aliases) { const k = productNameKey(a); if (k && !prod.has(k)) prod.set(k, p); }
+  for (const p of products) if (p.code && !byCode.has(lc(p.code))) byCode.set(lc(p.code), p);
+  return { customer: (n) => cust.get(ck(n)) ?? null, product: (n) => prod.get(productNameKey(n)) ?? byCode.get(lc(n.trim())) ?? null, group: rootGroupName(groups) };
 }
 
 /** Forma qiymatlari → jadval qatori: mijoz/mahsulot ro'yxatga bog'lanadi, birlik va guruh mahsulotdan, QQS to'lov turidan. */
@@ -785,41 +789,45 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
 
 /**
  * Importda ro'yxatda yo'q mahsulot katalogga ham qo'shiladi (Otabek, 2026-11-12): faol, narxi 0, o'lchovi qatordagidek,
- * papkasi — «Guruh» nomli mavjud papka (yangi papka ochilmaydi, topilmasa ro'yxat ildizida), izohida qayerdan kelgani.
- * Bir xil nom (katta-kichik harfsiz) — bitta mahsulot. Import qulfi ostida qayta tekshiriladi: shu orada qo'shilgan bo'lsa
- * yangisi ochilmaydi, o'shanga bog'lanadi. Faqat yoziladigan (reestrda yo'q) qatorlar uchun.
+ * izohida qayerdan kelgani. Papkasiz ochilmaydi (Sarvar rejasi 1.1, 2026-11-24): «Guruh» nomli mavjud papka, bo'lmasa
+ * nomdan taxmin (PK → Plita, Beton…, xomashyo nomi → «Xomashyo sotuvi»), u ham bo'lmasa «Boshqalar».
+ * Bir xil nom — nom kaliti bo'yicha (kirill/lotin, «3,5»/«3.5», boshqa nomlari ham) bitta mahsulot, nomi normallashib
+ * saqlanadi. Import qulfi ostida qayta tekshiriladi: shu orada qo'shilgan bo'lsa yangisi ochilmaydi, o'shanga bog'lanadi.
+ * Faqat yoziladigan (reestrda yo'q) qatorlar uchun.
  */
 async function addMissingProducts(
   tx: Prisma.TransactionClient,
   rows: readonly { productId: string | null; productName: string; unit: string; groupName: string }[],
   userId: string,
 ): Promise<{ idOf: (name: string) => string | null; created: string[] }> {
-  const lc = (v: string) => v.toLowerCase();
   const want = new Map<string, (typeof rows)[number]>();
-  for (const r of rows) if (!r.productId && !want.has(lc(r.productName))) want.set(lc(r.productName), r);
+  for (const r of rows) { const k = productNameKey(r.productName); if (!r.productId && k && !want.has(k)) want.set(k, r); }
   const idOf = new Map<string, string>();
   const created: string[] = [];
-  const result = { idOf: (n: string) => idOf.get(lc(n)) ?? null, created };
+  const result = { idOf: (n: string) => idOf.get(productNameKey(n)) ?? null, created };
   if (!want.size) return result;
 
-  const ci = (v: string) => ({ equals: v, mode: "insensitive" as const });
   const [have, groups] = await Promise.all([
-    tx.product.findMany({ where: { OR: [...want.values()].flatMap((r) => [{ name: ci(r.productName) }, { code: ci(r.productName) }]) }, orderBy: { isActive: "desc" }, select: { id: true, name: true, code: true } }),
+    tx.product.findMany({ orderBy: [{ isActive: "desc" }, { createdAt: "asc" }], select: { id: true, name: true, code: true, aliases: true } }),
     tx.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
   ]);
-  for (const p of have) if (!idOf.has(lc(p.name))) idOf.set(lc(p.name), p.id);
-  for (const p of have) if (!idOf.has(lc(p.code))) idOf.set(lc(p.code), p.id);
+  for (const p of have) { const k = productNameKey(p.name); if (k && !idOf.has(k)) idOf.set(k, p.id); }
+  for (const p of have) for (const a of p.aliases) { const k = productNameKey(a); if (k && !idOf.has(k)) idOf.set(k, p.id); }
+  for (const p of have) { const k = productNameKey(p.code); if (k && !idOf.has(k)) idOf.set(k, p.id); }
   // Papka nomi `matchKey` bilan (kirill/lotin farqsiz), ildiz papka ustun
   const groupId = (name: string) => {
     const k = matchKey(name);
     const hit = groups.filter((g) => matchKey(g.name) === k);
     return (hit.find((g) => !g.parentId) ?? hit[0])?.id ?? null;
   };
-  let seq = Number(await nextCatalogCode(tx)) - 1;
   for (const [key, r] of want) {
     if (idOf.has(key)) continue;
+    const name = normalizeProductName(r.productName);
+    await lockProductName(tx, name);
+    const gid = groupId(r.groupName) ?? await resolveProductGroup(tx, { name }, userId);
     const p = await tx.product.create({
-      data: { code: String(++seq), name: r.productName, unit: r.unit, groupId: groupId(r.groupName), note: IMPORTED_PRODUCT_NOTE },
+      // Kod papka yaratilgandan keyin olinadi — papka ham shu raqamlar qatoridan kod oladi
+      data: { code: await nextCatalogCode(tx), name, unit: r.unit, groupId: gid, note: IMPORTED_PRODUCT_NOTE },
     });
     await audit(tx, userId, "CREATE", "Product", p.id, undefined, p);
     idOf.set(key, p.id);

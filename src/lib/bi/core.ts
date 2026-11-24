@@ -5,6 +5,7 @@ import { avgUnitCosts } from "@/lib/stock";
 import { companyVatPayer } from "@/lib/receipt-vat";
 import { entryNds, withoutNds } from "@/lib/nds";
 import { normalizeUnit } from "@/lib/unit";
+import { productNameKey } from "@/lib/product-name";
 import { countWorkDays, monthWorkDays, type WorkCalendar } from "@/lib/work-calendar";
 
 /* ───────────── Davr ───────────── */
@@ -152,7 +153,7 @@ export const productCosts = cache(async () => {
     materialCosts(),
   ]);
   const priceOf = new Map(products.map((p) => [p.id, Number(p.price)]));
-  const out = new Map<string, { cost: number | null; price: number; name: string; code: string; unit: string; isActive: boolean }>();
+  const out = new Map<string, { cost: number | null; price: number; name: string; aliases: string[]; code: string; unit: string; isActive: boolean }>();
   for (const p of products) {
     const items = p.recipes[0]?.items ?? [];
     // Retsept yo'q yoki biror xomashyoning narxi hali kiritilmagan bo'lsa — tannarx noma'lum (0 emas: aks holda marja 100% chiqadi)
@@ -160,7 +161,7 @@ export const productCosts = cache(async () => {
     const cost = known
       ? sum(items.map((i) => Number(i.qtyPerM3) * (i.materialId ? (costs.get(i.materialId) ?? 0) : (priceOf.get(i.productId!) ?? 0))))
       : null;
-    out.set(p.id, { cost, price: Number(p.price), name: p.name, code: p.code, unit: p.unit, isActive: p.isActive });
+    out.set(p.id, { cost, price: Number(p.price), name: p.name, aliases: p.aliases, code: p.code, unit: p.unit, isActive: p.isActive });
   }
   return out;
 });
@@ -346,13 +347,15 @@ async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<t
   const tripDays = new Map<string, number[]>();
   for (const t of trips) for (const k of new Set([ttnKey(t.ttn), ttnKey(t.deliveryNoteNo)])) if (k) tripDays.set(k, [...(tripDays.get(k) ?? []), t.deliveredAt!.getTime()]);
   const userByName = new Map(users.map((u) => [nameKey(u.fullName), u]));
-  // Bir xil nomli mahsulotlardan: tannarxi ma'lumi, keyin faoli
+  // Bir xil nomli mahsulotlardan: tannarxi ma'lumi, keyin faoli. Nom kaliti (`productNameKey`: kirill/lotin, «3,5»/«3.5»)
+  // va boshqa nomlari bilan — «ПК 59-12-8» yoki eski «PK 59-12-8» qatori birlashtirilgan «PK 59-12-8 A 400» ga tushadi
   const productByName = new Map<string, string>();
   const rank = (id: string) => { const p = costs.get(id)!; return (p.cost !== null ? 2 : 0) + (p.isActive ? 1 : 0); };
   for (const [id, p] of costs) {
-    const k = nameKey(p.name), cur = productByName.get(k);
-    if (!cur || rank(id) > rank(cur)) productByName.set(k, id);
+    const k = productNameKey(p.name), cur = productByName.get(k);
+    if (k && (!cur || rank(id) > rank(cur))) productByName.set(k, id);
   }
+  for (const [id, p] of costs) for (const a of p.aliases) { const k = productNameKey(a); if (k && !productByName.has(k)) productByName.set(k, id); }
   const out: SaleRow[] = [];
   for (const e of entries) {
     const k = ttnKey(e.ttn);
@@ -366,7 +369,7 @@ async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<t
       : u ? { sellerId: u.id, seller: u.fullName }
       : { sellerId: `${REALIZATION_PREFIX}s:${nameKey(e.seller ?? "")}`, seller: e.seller?.trim() || "Ko'rsatilmagan" };
     // Katalogga bog'lanmagan qator — mahsulot nomi bo'yicha topiladi (bazaga yozilmaydi, faqat hisobda)
-    const pid = e.productId ?? productByName.get(nameKey(e.productName)) ?? null;
+    const pid = e.productId ?? productByName.get(productNameKey(e.productName)) ?? null;
     const lp = pid ? costs.get(pid) : undefined;
     const c = lp?.cost ?? null;
     const gross = qty * price + vat;
