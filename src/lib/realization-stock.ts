@@ -77,6 +77,28 @@ export async function releaseRealizationForTrip(tx: Prisma.TransactionClient, tr
   return n;
 }
 
+/**
+ * Reys yuklashi bekor qilindi yoki reysning TTN'i almashdi: shu TTN'lar bilan reys yuklangan paytga yaqin (−1 … +2 kun)
+ * reestr qatorlari qayta moslanadi — endi ularni reys chiqarmasa, qator skladdan o'zi chiqaradi (`syncRealizationSale`
+ * holatga qarab farqni yozadi, takror chaqiruv zararsiz). Moslangan qatorlar soni.
+ */
+export async function resyncRealizationByTtn(tx: Prisma.TransactionClient, ttns: (string | null | undefined)[], at: Date, userId: string): Promise<number> {
+  const keys = new Set(ttns.map(ttnKey).filter(Boolean));
+  if (!keys.size) return 0;
+  const DAY = 86_400_000;
+  const entries = await tx.realizationEntry.findMany({
+    where: { cancelledAt: null, ttn: { not: null }, date: { gt: new Date(at.getTime() - 2 * DAY), lte: new Date(at.getTime() + DAY) } },
+    select: { id: true, date: true, productId: true, customerName: true, qty: true, ttn: true },
+  });
+  let n = 0;
+  for (const e of entries) {
+    if (!keys.has(ttnKey(e.ttn))) continue;
+    await syncRealizationSale(tx, e.id, e, userId);
+    n++;
+  }
+  return n;
+}
+
 type Group = { warehouseId: string; productId: string; owner: string | null; out: number; date: Date };
 type Want = { productId: string; qty: number; date: Date; name: string; unit: string };
 

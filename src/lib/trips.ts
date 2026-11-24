@@ -19,7 +19,7 @@ import { snapshotTripPay } from "@/lib/driver-trip-pay";
 import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { cancelBatchTx, isStornoError, reverseMoves } from "@/lib/storno";
-import { releaseRealizationForTrip } from "@/lib/realization-stock";
+import { releaseRealizationForTrip, resyncRealizationByTtn } from "@/lib/realization-stock";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -144,13 +144,6 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
       await lockStock(tx);
       const unpaid = await prepayShortError(tx, t.orderId);
       if (unpaid) throw new StockShort(unpaid);
-      let wh = await pickProductWarehouse(tx, line.productId, qty);
-      if ("short" in wh && !wh.none && line.unit === "m3") wh = await pourConcrete(tx, t, line, qty, userId);
-      if ("short" in wh) {
-        if (wh.none) throw new StockShort("Faol sklad yo'q — sklad ochilmagan");
-        const u = unitLabel(line.unit);
-        throw new StockShort(`Skladda ${line.name ?? "mahsulot"} faqat ${fq(Math.max(0, wh.total))} ${u}${wh.detail ? ` (${wh.detail})` : ""} — ${fq(qty)} ${u} bitta skladdan yuklab bo'lmaydi. Avval ishlab chiqarilgani (zames / brigada) qayd qilinsin`);
-      }
       // Miqdor va texnika ham shart: reys tranzaksiyadan tashqarida o'qilgan — shu orada tahrirlangan bo'lsa (`updatePlannedTrip`),
       // skladdan eski miqdor / eski turdagi mahsulot chiqib ketmasin
       const c = await tx.trip.updateMany({ where: { id, status: "PLANNED", qtyM3: t.qtyM3, vehicleId: t.vehicleId }, data: { status: "LOADED", loadedAt: new Date() } });
@@ -159,10 +152,18 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
         if (now?.status === "PLANNED") throw new StockShort("Reys shu payt tahrirlandi (miqdor yoki texnika o'zgardi) — sahifani yangilab, qayta yuklang");
         claimed(c);
       }
+      // Shu TTN bilan avval kiritilgan reestr qatori skladdan chiqargan bo'lsa — qaytadi (mahsulotni reys chiqardi).
+      // Qoldiq tekshiruvidan OLDIN: aks holda qator chiqargan mahsulot reysga «yetmaydi» (qator 10 → qoldiq 0 → reys rad)
+      await releaseRealizationForTrip(tx, id, userId);
+      let wh = await pickProductWarehouse(tx, line.productId, qty);
+      if ("short" in wh && !wh.none && line.unit === "m3") wh = await pourConcrete(tx, t, line, qty, userId);
+      if ("short" in wh) {
+        if (wh.none) throw new StockShort("Faol sklad yo'q — sklad ochilmagan");
+        const u = unitLabel(line.unit);
+        throw new StockShort(`Skladda ${line.name ?? "mahsulot"} faqat ${fq(Math.max(0, wh.total))} ${u}${wh.detail ? ` (${wh.detail})` : ""} — ${fq(qty)} ${u} bitta skladdan yuklab bo'lmaydi. Avval ishlab chiqarilgani (zames / brigada) qayd qilinsin`);
+      }
       await writeShipment(tx, { tripId: id, orderId: t.orderId, warehouseId: wh.id, line, qty, note, userId });
       await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED", note });
-      // Shu TTN bilan avval kiritilgan reestr qatori skladdan chiqargan bo'lsa — qaytadi (mahsulotni reys chiqardi)
-      await releaseRealizationForTrip(tx, id, userId);
       return true;
     }));
     return { changed: !!ok, orderId: t.orderId };
@@ -862,7 +863,7 @@ export async function setTripTtn(id: string, value: string, userId: string): Pro
   if (value.trim().length > 40) return { error: "TTN ko'pi bilan 40 belgi" };
   const ttn = cleanTtn(value);
   return db.$transaction(async (tx) => {
-    const t = await tx.trip.findUnique({ where: { id }, select: { ttn: true, status: true } });
+    const t = await tx.trip.findUnique({ where: { id }, select: { ttn: true, status: true, loadedAt: true } });
     if (!t) return { error: "Reys topilmadi" };
     if (t.status === "CANCELLED") return { error: "Reys bekor qilingan" };
     if ((t.ttn ?? null) === ttn) return { ok: true } as const;
@@ -872,6 +873,8 @@ export async function setTripTtn(id: string, value: string, userId: string): Pro
     await audit(tx, userId, "UPDATE", "Trip", id, { ttn: t.ttn }, { ttn });
     // Yuklangan reysga TTN yozildi — shu TTN bilan avval kiritilgan reestr qatorining sklad chiqimi qaytadi
     await releaseRealizationForTrip(tx, id, userId);
+    // Eski TTN bilan qaytarilgan qatorlar — endi ularni hech bir reys chiqarmaydi, skladdan qayta chiqadi
+    if (t.ttn && t.loadedAt) await resyncRealizationByTtn(tx, [t.ttn], t.loadedAt, userId);
     return { ok: true } as const;
   });
 }
@@ -1183,7 +1186,7 @@ class LoadRevertError extends Error {}
  */
 export async function revertTripLoad(id: string, userId: string, reason: string): Promise<TripResult & { note?: string }> {
   const why = reason.trim().slice(0, 300);
-  const t = await db.trip.findUnique({ where: { id }, select: { orderId: true, status: true, departedAt: true, loadedAt: true, deliveryNoteNo: true, driverId: true, ecoStatus: true, vehicle: { select: { external: true } } } });
+  const t = await db.trip.findUnique({ where: { id }, select: { orderId: true, status: true, departedAt: true, loadedAt: true, deliveryNoteNo: true, ttn: true, driverId: true, ecoStatus: true, vehicle: { select: { external: true } } } });
   if (!t) return { changed: false, orderId: "", error: "Reys topilmadi" };
   if (why.length < 3) return { changed: false, orderId: t.orderId, error: "Bekor qilish sababini yozing" };
   if (t.status !== "LOADED" || t.departedAt) {
@@ -1214,6 +1217,8 @@ export async function revertTripLoad(id: string, userId: string, reason: string)
       // Yuklash paytida betonga yozilgan avtomatik zames — xomashyo skladga qaytadi, beton qoldiqdan chiqadi
       const batches = await tx.productionBatch.findMany({ where: { orderId: t.orderId, note: autoBatchNote(t.deliveryNoteNo), cancelledAt: null }, select: { id: true, batchNo: true } });
       for (const b of batches) await cancelBatchTx(tx, b.id, label, userId);
+      // Shu reys sababli chiqimi qaytarilgan reestr qatorlari — reys endi yuklanmagan, qator skladdan qayta chiqadi
+      if (t.loadedAt) await resyncRealizationByTtn(tx, [t.ttn, t.deliveryNoteNo], t.loadedAt, userId);
       await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "LOADED", loadedAt: t.loadedAt }, { status: "PLANNED", note: label, reason: why, reversedMoves: open.length, batches: batches.map((b) => b.batchNo) });
       return { moves: open.length, batches: batches.map((b) => b.batchNo) };
     }));

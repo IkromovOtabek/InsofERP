@@ -24,6 +24,7 @@ import { materialOverview, atRiskMaterials } from "@/lib/bi/stock";
 import { boshqaruvPaneli } from "@/lib/fin-report/panel";
 import { aliasesAfterRename, guessProductGroup, normalizeProductName, productNameKey } from "@/lib/product-name";
 import { releaseRealizationForTrip, syncRealizationSale } from "@/lib/realization-stock";
+import { tripLoaded, revertTripLoad, setTripTtn } from "@/lib/trips";
 
 const near = (a: number | null | undefined, b: number, eps = 1) => a != null && Math.abs(a - b) <= eps;
 
@@ -140,6 +141,30 @@ async function main() {
       const n2 = await db.$transaction((tx) => releaseRealizationForTrip(tx, trip.id, U));
       check("qayta chaqirilsa hech narsa o'zgarmaydi", n2 === 0 && near(await bal(), 3, 0.001), { n2, bal: await bal() });
     } else check("test bazasida mashina va xodim bor", false);
+
+    section("6. Haqiqiy «Yukladim»: reestr qatori qoldiqni 0 ga tushirgan bo'lsa ham shu TTN'li reys yuklanadi");
+    const pk2 = await db.product.create({ data: { code: `QKU${tag}`, name: `QA KPI plita yuklash ${tag}`, unit: "dona", price: 500_000, groupId: grp?.id ?? null } });
+    await mv({ date: yesterday, type: "ADJUSTMENT", productId: pk2.id, qty: 2 });
+    const bal2 = async () => Number((await db.stockMove.aggregate({ where: { productId: pk2.id }, _sum: { qty: true } }))._sum.qty ?? 0);
+    const ttn2 = `7${tag}`; // ttnKey faqat raqam qismini oladi — 5-bo'limdagi TTN bilan to'qnashmasin
+    const e2 = await db.realizationEntry.create({ data: { date: today, payGroup: "CASH", customerName: cust.name, productId: pk2.id, productName: pk2.name, groupName: "", unit: "dona", qty: 2, price: 500_000, ttn: ttn2, createdById: U } });
+    await db.$transaction((tx) => syncRealizationSale(tx, e2.id, e2, U));
+    check("reestr qatori 2 dona chiqardi — qoldiq 0", near(await bal2(), 0, 0.001), await bal2());
+    const veh2 = await db.vehicle.create({ data: { plate: `QA${tag}TR`, type: "TRUCK" }, select: { id: true } });
+    const drv2 = await db.employee.findFirst({ select: { id: true } });
+    if (veh2 && drv2) {
+      const ord2 = await db.order.create({ data: { orderNo: `QA-KU-${tag}`, customerId: cust.id, deliveryDate: today, deliveryAddress: "QA", status: "IN_PRODUCTION", onCredit: true, createdById: U, items: { create: [{ productId: pk2.id, qtyM3: 2, price: 500_000 }] } } });
+      const tr2 = await db.trip.create({ data: { deliveryNoteNo: `QA-KU-9${tag}`, orderId: ord2.id, vehicleId: veh2.id, driverId: drv2.id, qtyM3: 2, status: "PLANNED", ttn: ttn2 } });
+      const lr = await tripLoaded(tr2.id, U);
+      check("reys yuklandi (qator chiqimi qaytib, reys chiqardi) — qoldiq 0, ikki marta emas", lr.changed && !lr.error && near(await bal2(), 0, 0.001), { lr, bal: await bal2() });
+      const rv = await revertTripLoad(tr2.id, U, "QA sinov");
+      const rzOut = Number((await db.stockMove.aggregate({ where: { refType: "RealizationEntry", refId: e2.id }, _sum: { qty: true } }))._sum.qty ?? 0);
+      check("yuklash bekor qilindi — reestr qatori skladdan qayta chiqdi (qoldiq 0, qator −2)", rv.changed && near(await bal2(), 0, 0.001) && near(rzOut, -2, 0.001), { rv, bal: await bal2(), rzOut });
+      const lr2 = await tripLoaded(tr2.id, U);
+      check("qayta yuklandi — qoldiq 0", lr2.changed && near(await bal2(), 0, 0.001), { lr2, bal: await bal2() });
+      const st = await setTripTtn(tr2.id, `8${tag}`, U);
+      check("reys TTN'i almashdi — eski TTN'li qator skladdan qayta chiqdi (qoldiq −2)", "ok" in st && near(await bal2(), -2, 0.001), { st, bal: await bal2() });
+    } else check("test bazasida dona tashiydigan mashina va xodim bor", false);
   } finally {
     await db.companySettings.update({ where: { id: "main" }, data: { realizationStockFrom: settings?.realizationStockFrom ?? null } });
   }
