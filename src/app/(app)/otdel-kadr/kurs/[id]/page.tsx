@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
+import { allPositionNames } from "@/lib/positions";
 import { canDo } from "@/lib/permissions";
 import { date } from "@/lib/format";
 import { enrollmentsOf, questionsOf, questionsToText } from "@/lib/hr/training";
@@ -23,7 +24,7 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } }),
   ]);
   const enrolled = new Set(rows.map((r) => r.employeeId));
-  const positions = [...new Set(employees.map((e) => e.position))].sort();
+  const positions = await allPositionNames();
   const now = new Date().toISOString().slice(0, 10);
   return (
     <div className="space-y-4">

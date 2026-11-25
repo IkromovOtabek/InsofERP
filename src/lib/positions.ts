@@ -60,6 +60,8 @@ export async function positionCatalog(): Promise<{
   work: string[];
   drivers: string[];
   strays: string[];
+  /** Hamma tanlov uchun bitta tekis ro'yxat: bo'limlar → ishchi lavozimlar → ro'yxatda yo'q eskilari. */
+  names: string[];
 }> {
   const [work, used] = await Promise.all([
     db.workPosition.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { name: true, isDriver: true } }),
@@ -75,14 +77,32 @@ export async function positionCatalog(): Promise<{
     .map((u) => u.position.trim())
     .filter((n) => n && !known.has(n.toLowerCase()))
     .sort((a, b) => a.localeCompare(b));
-  const drivers = work.filter((w) => w.isDriver).map((w) => w.name);
+  const driverList = work.filter((w) => w.isDriver).map((w) => w.name);
+  const drivers = driverList.length ? driverList : ["Haydovchi"];
+  // Ishchi lavozimlar + bazada yozuvi yo'q, lekin tizimda bor lavozimlar (tuzilmadagi «Brigadir», standart «Haydovchi»)
+  const workNames = uniq([
+    ...work.map((w) => w.name),
+    ...ORG_TREE.filter((d) => !POSITIONS.some((p) => p.role === d.role)).map((d) => d.label),
+    ...drivers,
+  ]);
+  const strayList = uniq(strays);
   return {
     departments: POSITIONS,
-    work: work.map((w) => w.name),
-    drivers: drivers.length ? drivers : ["Haydovchi"],
-    strays: [...new Set(strays)],
+    work: workNames,
+    drivers,
+    strays: strayList,
+    names: uniq([...POSITIONS.map((p) => p.label), ...workNames, ...strayList]),
   };
 }
+
+/** Takrorsiz (katta-kichik harf farqsiz), birinchi uchragan yozilishi qoladi. */
+function uniq(list: string[]): string[] {
+  const seen = new Set<string>();
+  return list.filter((n) => { const k = n.trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/** Barcha lavozim nomlari — har bir lavozim tanlovi (jarima, so'rovnoma, kurs, vakansiya…) shundan oladi. */
+export const allPositionNames = async () => (await positionCatalog()).names;
 
 /** Otdel kadr yuritadigan ishchi lavozimlar (login bermaydi). */
 export const workPositions = (opts?: { all?: boolean }) =>

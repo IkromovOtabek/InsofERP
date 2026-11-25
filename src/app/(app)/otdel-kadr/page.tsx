@@ -372,9 +372,9 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "ish-vaqti" && <IshVaqti rows={ishVaqtiRows} std={{ start: DEFAULT_SHIFT.checkIn, end: DEFAULT_SHIFT.checkOut }} />}
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
-      {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} oy={oy} />}
+      {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={catalog.names} oy={oy} />}
       {tab === "komandalar" && <KomandaTab s={s} />}
-      {tab === "qongiroqlar" && <QongiroqTab s={s} month={oyIso} q={q} suhbat={suhbat} lavozim={lavozim} workPositions={positions.filter((p) => p.isActive).map((p) => p.name)} />}
+      {tab === "qongiroqlar" && <QongiroqTab s={s} month={oyIso} q={q} suhbat={suhbat} lavozim={lavozim} workPositions={catalog.names} />}
     </div>
   );
 }

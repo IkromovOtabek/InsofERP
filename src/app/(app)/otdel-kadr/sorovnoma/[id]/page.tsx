@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requirePage, requireRoles } from "@/lib/page-guard";
+import { allPositionNames } from "@/lib/positions";
 import { canDo } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { dateTime } from "@/lib/format";
@@ -17,7 +18,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ id: str
   const editable = canDo(s, "employees", "voice", ["HR"]);
   const sv = r.survey;
   const target = await db.employee.count({ where: { isActive: true, userId: { not: null }, ...(sv.position ? { position: { equals: sv.position, mode: "insensitive" } } : {}) } });
-  const positions = [...new Set((await db.employee.findMany({ where: { isActive: true }, select: { position: true } })).map((e) => e.position))].sort();
+  const positions = await allPositionNames();
   return (
     <div className="space-y-4">
       <PageHeader back={{ href: "/otdel-kadr?tab=sorovnoma", label: "So'rovnomalar" }} eyebrow={sv.anonymous ? "Anonim so'rovnoma" : "So'rovnoma"} title={sv.title} subtitle={sv.description ?? undefined}

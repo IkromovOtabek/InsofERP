@@ -222,7 +222,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
               nextNo: nextOrderNo(orderNos.map((x) => x.no)),
               basis: dismissBasis(e.fullName),
             }}
-            positions={[...new Set([...work, ...drivers])]}
+            positions={catalog.names}
             accept={EMPLOYEE_ACCEPT}
           />
         </Card>

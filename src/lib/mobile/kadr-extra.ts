@@ -937,7 +937,7 @@ export async function kadrForm(user: MobileUser, key: string): Promise<CreateFor
       };
     }
     case "xabar": {
-      const positions = [...new Set((await db.employee.findMany({ where: { isActive: true }, select: { position: true } })).map((e) => e.position))].sort();
+      const positions = (await positionCatalog()).names;
       return {
         key, title: "Ommaviy xabar", submitLabel: "Yuborish",
         fields: [

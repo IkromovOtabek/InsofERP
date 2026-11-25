@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { CalendarClock, FileText, UserCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
+import { allPositionNames } from "@/lib/positions";
 import { canDo } from "@/lib/permissions";
 import { dateTime } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
@@ -66,7 +67,7 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
         <Card>
           <CardHeader title="Ishga qabul qilish" icon={UserCheck} />
           <HireForm id={c.id} position={c.vacancy?.position ?? ""} employees={employees.map((e) => ({ id: e.id, label: `${e.fullName} · ${e.position}` }))} />
-          <datalist id="hr-positions">{[...new Set(employees.map((e) => e.position))].map((p) => <option key={p} value={p} />)}</datalist>
+          <datalist id="hr-positions">{(await allPositionNames()).map((p) => <option key={p} value={p} />)}</datalist>
         </Card>
       )}
       {editable && c.stage !== "HIRED" && (

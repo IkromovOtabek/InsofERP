@@ -60,7 +60,8 @@ export async function QongiroqTab({ s, month, q, suhbat, lavozim, workPositions 
 
   const statCount = new Map(monthStats.map((x) => [x.status, Number(x._count)]));
   const monthTotal = monthStats.reduce((n, x) => n + Number(x._count), 0);
-  const positions = [...new Set([...workPositions, ...usedPositions.map((p) => p.position)])].sort((a, b) => a.localeCompare(b));
+  // Umumiy lavozimlar ro'yxati tartibida, jurnalda yozilgan boshqa nomlar oxirida
+  const positions = [...new Set([...workPositions, ...usedPositions.map((p) => p.position).sort((a, b) => a.localeCompare(b))])];
 
   const data: CallRowData[] = rows.map((r) => ({
     id: r.id, date: isoDay(r.date), position: r.position, phone: r.phone, fullName: r.fullName, address: r.address,
