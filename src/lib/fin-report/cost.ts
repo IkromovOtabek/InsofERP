@@ -43,7 +43,7 @@ const classify = (...names: (string | null | undefined)[]): CostGroup | null => 
 const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
 const DEPTH = 4;
 
-type RecipeLine = { materialId: string | null; productId: string | null; qty: number };
+export type RecipeLine = { materialId: string | null; productId: string | null; qty: number };
 type MaterialInfo = { id: string; name: string; unit: string; group: CostGroup };
 
 /** Xom-ashyo deb hisoblanadigan materiallar: kalit so'z bo'yicha guruhi topilgan yoki faol retseptda bor. */
@@ -68,7 +68,7 @@ async function rawMaterials(recipes: Map<string, RecipeLine[]>) {
 }
 
 /** Faol retseptlar: mahsulot → qatorlar (1 birlik uchun). */
-async function activeRecipes(): Promise<Map<string, RecipeLine[]>> {
+export async function activeRecipes(): Promise<Map<string, RecipeLine[]>> {
   const rs = await db.recipe.findMany({ where: { isActive: true }, orderBy: { version: "desc" }, select: { productId: true, items: { select: { materialId: true, productId: true, qtyPerM3: true } } } });
   const out = new Map<string, RecipeLine[]>();
   for (const r of rs) if (!out.has(r.productId)) out.set(r.productId, r.items.map((i) => ({ materialId: i.materialId, productId: i.productId, qty: Number(i.qtyPerM3) })));
@@ -76,7 +76,7 @@ async function activeRecipes(): Promise<Map<string, RecipeLine[]>> {
 }
 
 /** Mahsulot 1 birligi uchun xom-ashyo sarfi (material → miqdor); ichidagi mahsulot (FBS → beton) o'z retseptiga yoyiladi. */
-function expand(productId: string, recipes: Map<string, RecipeLine[]>, k = 1, depth = 0, acc = new Map<string, number>()): Map<string, number> | null {
+export function expand(productId: string, recipes: Map<string, RecipeLine[]>, k = 1, depth = 0, acc = new Map<string, number>()): Map<string, number> | null {
   const lines = recipes.get(productId);
   if (!lines?.length || depth > DEPTH) return null;
   for (const l of lines) {
@@ -145,7 +145,7 @@ async function context(): Promise<Ctx> {
 }
 
 /** Oyning o'rtacha xarid narxi (kirimdan, QQSsiz + dostavka); shu oyda kirim bo'lmasa — umumiy o'rtacha. */
-async function monthPrices(from: Date, to: Date, vatPayer: boolean, avgAll: Map<string, number>) {
+export async function monthPrices(from: Date, to: Date, vatPayer: boolean, avgAll: Map<string, number>) {
   const items = await db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from, lt: to } } }, select: { materialId: true, qty: true, price: true, vatAmount: true, deliveryCost: true } });
   const q = new Map<string, number>(), v = new Map<string, number>();
   for (const i of items) {

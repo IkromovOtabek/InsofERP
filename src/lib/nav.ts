@@ -212,7 +212,7 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: ["DIRECTOR"], group: "Tahlil", menuHide: ["DIRECTOR"] },
   // Mahsulotlar, Reja nazorati, ML tahlil — menyudan olindi (2026-11-24); sahifalar havola orqali ochiladi
   { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil", hidden: true },
-  { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
+  { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ishlab-chiqarish/plan-fakt", label: "Xomashyo plan-fakt" }] },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },
   { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil", hidden: true },
   // Ma'lumot sog'ligi — tungi avto-tekshiruv natijasi (Sarvar rejasi, 2026-11-24): faqat direktor

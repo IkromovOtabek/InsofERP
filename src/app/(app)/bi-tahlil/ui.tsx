@@ -13,7 +13,7 @@ import { DateRangeBar } from "@/components/date-range-bar";
 // Umumiy ko'rinish (overview) — Bosh sahifada
 export const ROUTES = {
   overview: "/dashboard", sales: "/bi-tahlil/sotuvlar", returns: "/bi-tahlil/sotuvlar/bekor", agents: "/bi-tahlil/agentlar", customers: "/bi-tahlil/mijozlar",
-  stock: "/bi-tahlil/ombor", products: "/bi-tahlil/mahsulotlar", operations: "/bi-tahlil/ishlab-chiqarish", marketing: "/bi-tahlil/marketing",
+  stock: "/bi-tahlil/ombor", products: "/bi-tahlil/mahsulotlar", operations: "/bi-tahlil/ishlab-chiqarish", planFact: "/bi-tahlil/ishlab-chiqarish/plan-fakt", marketing: "/bi-tahlil/marketing",
   marketingPlan: "/bi-tahlil/marketing/reja", marketingData: "/bi-tahlil/marketing/malumotlar", plans: "/bi-tahlil/reja", finance: "/bi-tahlil/moliya",
   forecast: "/bi-tahlil/ml", anomalies: "/bi-tahlil/ml/anomaliyalar", churn: "/bi-tahlil/ml/churn", clusters: "/bi-tahlil/ml/klasterlar", ai: "/bi-tahlil/ai", chat: "/bi-tahlil/ai/chat",
 } as const;
