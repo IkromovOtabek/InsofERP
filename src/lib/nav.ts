@@ -18,8 +18,8 @@ const BI_ROLES: Role[] = ["DIRECTOR", "FINANCE", "ACCOUNTING"];
 /**
  * Ish boshqaruvchi kabinetidagi «Moliya» — Tahlil'ning shu sahifalari (faqat ko'rish): qarz varaqlari (qatordan akt sverka),
  * to'lov kalendari, tannarx, xom-ashyo, DDS, PNL, BSH. Ruxsat har sahifaga alohida (eng uzun mos yo'l) — Tahlil'ning qolgani yopiq.
- * Buxgalter kassa jurnali (Kassa / bank) ham shu yerda: asosiy bandiga SUPERVISOR qo'shilgan (ruxsat), menyuda esa unga
- * shu nom bilan chiqadi. Amallar (yozish, o'chirish) modul ruxsatlari bilan — unga berilmagan.
+ * Kassa / bank (`/payments`) ruxsati asosiy bandda qoldi, lekin uning menyusida chiqmaydi (menuHide).
+ * Amallar (yozish, o'chirish) modul ruxsatlari bilan — unga berilmagan.
  */
 const SUPERVISOR_FIN: NavChild[] = [
   { href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" },
@@ -30,7 +30,6 @@ const SUPERVISOR_FIN: NavChild[] = [
   { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (Cash Flow)" },
   { href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" },
   { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" },
-  { href: "/payments", label: "Kassa jurnali (buxgalter)" },
 ];
 const SUPERVISOR_FIN_ROLES: Role[] = [...BI_ROLES, "SUPERVISOR"];
 /** Sklad sahifasi (`/stock`) va uning menyudagi bo'limlari — bir xil rollar */
@@ -151,7 +150,7 @@ export const NAV: NavItem[] = [
   // Zayavka bosh to'lovi so'rovlari (PS-…): naqd — kassir, perechisleniye — buxgalter qabul qiladi; Finance faqat ko'radi
   { href: "/moliya/umumiy", label: "Moliya — umumiy",  roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/pul-qabul",   label: "Pul qabul qilish",   roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
-  // Ish boshqaruvchi ko'radi (`SUPERVISOR_FIN` — menyuda o'z nomi bilan), shu sabab bu bandlar uning menyusida yashirin
+  // Ish boshqaruvchiga ruxsat bor (to'g'ridan-to'g'ri havola), lekin uning menyusida chiqmaydi
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Moliya", menuHide: ["SUPERVISOR"] },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Kirim QQS reyestri (oy va yetkazuvchi kesimida QQS'siz summa, QQS, jami) — buxgalteriya hisobotlari uchun
