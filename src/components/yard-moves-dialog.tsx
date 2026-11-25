@@ -220,7 +220,11 @@ function Stat({ icon: Icon, k, v, tone }: { icon: React.ComponentType<{ size?: n
  * Jadvaldagi kataklar uchun bitta umumiy oyna: katak ichidagi `<button data-ym-p="<mahsulot>" data-ym-o="<ombor>" data-ym-d="in|out|all">`
  * bosilganda (hodisa delegatsiyasi) shu oyna ochiladi. Har katak alohida klient komponent emas — katta jadval yengil qoladi.
  */
-export function YardMovesHost({ children, load, from, to, periodLabel, edit, remove }: { children: React.ReactNode; load: Load; from?: string; to?: string; periodLabel?: string | null } & YardMoveEditors) {
+export function YardMovesHost({ children, load, from, to, periodLabel, balanceLabel, edit, remove }: {
+  children: React.ReactNode; load: Load; from?: string; to?: string; periodLabel?: string | null;
+  /** Qoldiq katagi (`all`) sarlavhasi: qoldiq — davr oxirigacha barcha harakatlar, davr boshidan oldingilari ham */
+  balanceLabel?: string | null;
+} & YardMoveEditors) {
   const [q, setQ] = useState<YardMovesQuery | null>(null);
   const close = useCallback(() => setQ(null), []);
   return (
@@ -229,10 +233,12 @@ export function YardMovesHost({ children, load, from, to, periodLabel, edit, rem
       if (!el || !e.currentTarget.contains(el)) return;
       e.preventDefault();
       const d = el.dataset.ymD;
-      setQ({ productId: el.dataset.ymP!, owner: el.dataset.ymO ?? "", dir: d === "in" || d === "out" ? d : "all", from, to });
+      const dir: YardDir = d === "in" || d === "out" ? d : "all";
+      // Qoldiq = davr oxirigacha hamma harakat yig'indisi — oynada ham davr boshidan oldingi yozuvlar (boshlang'ich qoldiq) ko'rinsin
+      setQ({ productId: el.dataset.ymP!, owner: el.dataset.ymO ?? "", dir, from: dir === "all" ? undefined : from, to });
     }}>
       {children}
-      {q && <YardMovesDialog query={q} load={load} onClose={close} periodLabel={periodLabel} editors={{ edit, remove }} />}
+      {q && <YardMovesDialog query={q} load={load} onClose={close} periodLabel={q.dir === "all" ? (balanceLabel ?? periodLabel) : periodLabel} editors={{ edit, remove }} />}
     </div>
   );
 }
