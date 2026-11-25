@@ -10,7 +10,7 @@
  * Serverda: cd /var/www/insof-erp/current && ENV_FILE=/var/www/insof-erp/tenants/<slug>.env npx tsx /tmp/excel-hovli-sverka.ts …
  *
  * Qanday tenglashtiriladi (faqat farq yoziladi — qayta ishga tushirilsa hech narsa qo'shilmaydi):
- *   · Excel bo'limi («Jami <ism> Brigadr» qatorigacha) → brigada (BRIGADES); oxirgi bo'lim (plita/opora/FBS…) → umumiy hovli.
+ *   · Excel bo'limi («Jami <ism> Brigadr» qatorigacha) → brigada (BRIGADES); oxirgi bo'lim (plita/opora/FBS…) → LAST_SECTION_BRIGADE.
  *   · Boshlang'ich qoldiq (1-kun qoldig'i − 1-kun ishlab ch. + 1-kun chiqim) ↔ tizimda oy boshigacha + 1-kundagi qo'lda
  *     kiritilgan (ADJUSTMENT) qoldiq. Farq → ADJUSTMENT (refType "Manual") oy boshidan oldingi kun sanasi bilan — oy aylanmasiga aralashmaydi.
  *   · Har kun: Ishlab ch. ↔ tizimdagi kirimlar (PRODUCTION_OUTPUT, qo'lda qo'shish, ko'chirish) netto; farq → PRODUCTION_OUTPUT
@@ -42,6 +42,8 @@ const NOTE = "Excel sverka (ISHLAB CHIQARISH.xlsx)";
 
 /** Excel bo'limi (brigadir ismi) → tizimdagi brigada nomi. 1-noyabr qoldiqlari bo'yicha aniqlangan (2026-11-24 sverka). */
 const BRIGADES: Record<string, string> = { ilxom: "1-Brigada", ilhom: "1-Brigada", shuhrat: "2-Brigada", sardor: "3-Brigada", ismoil: "4-Brigada" };
+/** Oxirgi bo'lim («Jami … Brigadr» qatorisiz: 2 LM plita, bardyor, lotok, kolso, krishka, opora, FBS) — 5-Brigada (Otabek, 2026-11-25). */
+const LAST_SECTION_BRIGADE = "5-Brigada";
 /** Excel nomi → katalogdagi nom (yozilishi farq qiladi, bir mahsulot). */
 const ALIASES: Record<string, string> = {
   "Koltso 1(90)": "Kolso 1(90)",
@@ -98,7 +100,7 @@ function readExcel(file: string): XData {
     if (/^qoldiq$/i.test(name)) break;
     if (name) body.push({ i, name });
   }
-  sections.push({ title: "Umumiy hovli", brigade: null, rows: body.splice(0) });
+  sections.push({ title: LAST_SECTION_BRIGADE, brigade: LAST_SECTION_BRIGADE, rows: body.splice(0) });
 
   const rows: XRow[] = [], skipped: string[] = [], warnings: string[] = [];
   for (const s of sections) {
@@ -189,7 +191,7 @@ async function buildPlan(tx: Tx, x: XData, ctx: Ctx, N: typeof NameMod): Promise
     else xl.set(k, { ...r, prod: [...r.prod], out: [...r.out], productId: pid, owner });
   }
   const excelProducts = new Set([...xl.values()].map((r) => r.productId));
-  const ourOwners = new Set<string | null>([null, ...[...new Set(Object.values(BRIGADES))].map((b) => ctx.brigadeId.get(b)!)]);
+  const ourOwners = new Set<string | null>([null, ...[...new Set([...Object.values(BRIGADES), LAST_SECTION_BRIGADE])].map((b) => ctx.brigadeId.get(b)!)]);
 
   // Ombor: shu mahsulotlar harakati eng ko'p bo'lgan sklad (bo'lmasa — asosiy)
   const whs = await tx.stockMove.groupBy({ by: ["warehouseId"], where: { productId: { in: [...excelProducts] } }, _count: { _all: true } });
