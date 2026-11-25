@@ -71,7 +71,8 @@ export async function brigadeSheet(month: string, brigadeId: string): Promise<Br
     db.brigadeOutput.findMany({ where: { brigadeId, date: { gte: from, lte: to } }, select: { line: true, date: true, qty: true } }),
     db.brigadeMonth.findUnique({ where: { brigadeId_month: { brigadeId, month } } }),
     db.brigadeMonth.findFirst({ where: { brigadeId, month: { lt: month } }, orderBy: { month: "desc" } }),
-    db.employee.findMany({ where: { AND: [{ brigadeId }, employeesInWindow(from, to)] }, select: { id: true } }),
+    // A'zo = shu brigadadagi xodim + brigadiri (Brigade.leaderId; brigadirning Employee.brigadeId si bo'sh bo'lishi mumkin)
+    db.employee.findMany({ where: { AND: [{ OR: [{ brigadeId }, { brigades: { some: { id: brigadeId } } }] }, employeesInWindow(from, to)] }, select: { id: true } }),
     tabelLock(month),
     defectSum([brigadeId], month),
     autoBrigadeHours(month, days[days.length - 1]!.iso, [brigadeId]),
@@ -122,6 +123,7 @@ export type AutoHours = Map<string, Map<string, Map<number, AutoCell>>>;
  * kelgan kuni, agar shu kunga unga HECH QAYSI brigada varag'ida qatori yo'q bo'lsa — davomatdagi soati
  * (`attendanceHours`; vaqtsiz «keldi» — kunlik soat). Qo'lda yozilgan soat (yoki «0» — brigadada ishlamadi) — o'sha.
  * Excel importi varaqdagi bo'sh kataklarga «0» qo'yadi — import qilingan oy Excel'dagidek qoladi.
+ * Brigadasi yozilmagan brigadir (Brigade.leaderId) — o'z brigadasiga.
  * Cheklov: brigada a'zoligi tarixi yo'q — oy ichida brigadasi almashgan xodimning davomati joriy brigadasiga tushadi.
  * `toIso` — shu kungacha (avans davri).
  */
@@ -133,10 +135,15 @@ export async function autoBrigadeHours(month: string, toIso: string, brigadeIds?
   const lastIso = [toIso, nowIso, days[days.length - 1]!.iso].sort()[0]!;
   if (lastIso < days[0]!.iso) return out;
   const to = dayUtc(lastIso);
-  const members = await db.employee.findMany({
-    where: { AND: [{ brigadeId: brigadeIds ? { in: brigadeIds } : { not: null } }, { payType: "PIECE" }, employeesInWindow(from, to)] },
-    select: { id: true, brigadeId: true, hiredAt: true, firedAt: true, workSchedule: true },
+  // Brigadasi yozilmagan brigadir (faqat Brigade.leaderId) — o'zi boshqaradigan brigadaga
+  const led = { brigades: { some: brigadeIds ? { id: { in: brigadeIds } } : {} } };
+  const rows = await db.employee.findMany({
+    where: { AND: [{ OR: [{ brigadeId: brigadeIds ? { in: brigadeIds } : { not: null } }, { brigadeId: null, ...led }] }, { payType: "PIECE" }, employeesInWindow(from, to)] },
+    select: { id: true, brigadeId: true, hiredAt: true, firedAt: true, workSchedule: true, brigades: { where: { isActive: true }, select: { id: true }, take: 1 } },
   });
+  const members = rows
+    .map((m) => ({ ...m, brigadeId: m.brigadeId ?? m.brigades[0]?.id ?? null }))
+    .filter((m) => m.brigadeId && (!brigadeIds || brigadeIds.includes(m.brigadeId)));
   if (!members.length) return out;
   const ids = members.map((m) => m.id);
   const [manual, att, plans, st] = await Promise.all([
