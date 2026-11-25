@@ -33,7 +33,7 @@ const ALIASES: Record<string, string> = { "Koltso 1(90)": "Kolso 1(90)", "Koltso
 /**
  * Narxi yo'q mahsulot → sdelka narxi olinadigan o'xshash mahsulot. PK — katalogdagi pog'ona bo'yicha (uzunligi ≤50 — 79 545,
  * 52–63 — 90 909, ≥65 — 102 273), bir xil eni va pog'onadagi qo'shni o'lcham.
- * Lotok, Bardyor, 2 LM — katalogda o'xshashi yo'q, narx qo'yilmaydi (hisobotda ko'rsatiladi).
+ * Lotok, Bardyor, 2 LM — katalogda o'xshashi yo'q: eng yaqini (2 LM — PK pog'onasi, Lotok — Kolso 1, Bardyor — FBS 09).
  */
 const RATE_LIKE: Record<string, string> = {
   "PK 34-12-8 A 400": "PK 33-12-8 A 400",
@@ -54,6 +54,12 @@ const RATE_LIKE: Record<string, string> = {
   "Opora Sv 95-2.0": "Opora sv 950-2,5",
   "Opora Sv 80-2.0": "Opora cv 8-3,5",
   "FBS 09-4-6": "FBS 12-4-6",
+  // Katalogda o'xshashi yo'q — eng yaqini (Otabek: «o'zing to'ldir», 2026-11-25); sahifada tahrirlanadi
+  "Lotok 5": "Kolso 1(90)",
+  "2 LM 57-10.5-15": "PK 57-10-8 A 400",
+  "2 LM 44-11.5-15": "PK 44-10-8 A 400",
+  "Bardyor 30x18x20": "FBS 09-4-6",
+  "Bardyor 10x18x20": "FBS 09-4-6",
 };
 
 const argv = process.argv.slice(2);
