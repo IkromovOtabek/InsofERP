@@ -32,14 +32,16 @@ export default async function MexanikSorovPage({ params }: { params: Promise<{ i
   const own = r.createdById === s.userId && moduleWriteAllowed(s, "mexanik", MECH_ROLES.create) === true;
   const canCancel = (st === "NEW" || st === "DEFERRED") && own;
   const canEdit = st === "NEW" && own;
-  const sources = canPay && logi ? await paySources(true) : [];
+  // Haydovchi reys haqi — faqat logistika hisobidan (logistika daromadidan)
+  const tripPay = !!r.tripId || r.problem === "Reys haqi";
+  const sources = canPay && logi ? (await paySources(true)).filter((a) => !tripPay || a.group === "Logistika hisobi") : [];
   const accounts = canPay
     ? logi
       ? sources.map((a) => ({ id: a.id, group: a.group, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }))
       : (await payAccounts()).map((a) => ({ id: a.id, label: `${a.name} (${a.type === "CASH" ? "kassa" : "bank"}) · qoldiq ${money(a.balance)}` }))
     : [];
   // Ko'pincha zavod hisobidan beriladi — sukut: zavodning naqd kassasi
-  const defaultId = logi ? (sources.find((a) => a.group === "Zavod hisobi" && a.type === "CASH") ?? sources[0])?.id : undefined;
+  const defaultId = logi ? (tripPay ? sources[0] : sources.find((a) => a.group === "Zavod hisobi" && a.type === "CASH") ?? sources[0])?.id : undefined;
   const v = r.vehicle;
   const failed = st === "REJECTED" || st === "CANCELLED";
 

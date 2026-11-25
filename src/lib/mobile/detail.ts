@@ -1788,8 +1788,10 @@ async function kirimDetail(user: MobileUser, id: string): Promise<MobileDetail> 
     actions.push({ id: "kirim.reject", label: "Rad etish", tone: "danger", form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega rad etilmoqda" }] });
   }
   if (st === "APPROVED" && logi && can(user, "kirim.logipay")) {
-    const src = await paySources(true);
-    const def = src.find((a) => a.group === "Zavod hisobi" && a.type === "CASH") ?? src[0];
+    // Haydovchi reys haqi — faqat logistika hisobidan (logistika daromadidan)
+    const tripPay = !!r.tripId || r.problem === "Reys haqi";
+    const src = (await paySources(true)).filter((a) => !tripPay || a.group === "Logistika hisobi");
+    const def = (tripPay ? undefined : src.find((a) => a.group === "Zavod hisobi" && a.type === "CASH")) ?? src[0];
     actions.push({
       id: "kirim.logipay", label: "Pul berish", tone: "success",
       form: [

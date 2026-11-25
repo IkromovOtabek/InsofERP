@@ -326,6 +326,8 @@ export async function payMechanicRequest(id: string, input: { cashAccountId: str
   const logi = isLogiRequest(r);
   // Logistika so'rovi puli — faqat «Logistika pulini berish» huquqi bilan (ish boshqaruvchi, direktor); kassir bera olmaydi
   if (logi && !(await canDoByUserId(userId, "logistika", "fin_pay"))) return { error: "Logistika so'rovining pulini ish boshqaruvchi beradi" };
+  // Haydovchi reys haqi — faqat logistika hisobidan (logistika daromadidan to'lanadi, 2026-11-25)
+  if ((r.tripId || r.problem === TRIP_PAY) && !(input.cashAccountId && isLogiAcc(input.cashAccountId))) return { error: "Reys haqi faqat logistika hisobidan beriladi" };
   if (input.cashAccountId && isLogiAcc(input.cashAccountId)) {
     if (!logi) return { error: "Logistika hisobidan faqat logistika so'rovi (transport, reys haqi) to'lanadi" };
     return payFromLogistics(r, input.cashAccountId, clean(input.note, 300), userId);

@@ -20,6 +20,7 @@ import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { cancelBatchTx, isStornoError, reverseMoves } from "@/lib/storno";
 import { releaseRealizationForTrip, resyncRealizationByTtn } from "@/lib/realization-stock";
+import { syncOrderDelivery } from "@/lib/logistics-finance";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -361,6 +362,8 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
     return d;
   }));
   if (delivered === null) return { changed: false, orderId: t.orderId };
+  // Dastavka ulushi — logistika hisobiga kirim (`lib/logistics-finance.ts`)
+  await syncOrderDelivery(t.orderId, userId);
   await checkFastDelivery(id, userId);
   // Reys yakuni (km, vaqt, iz). Kech kelgan bufer nuqtalari bo'lsa `recordTrack` qayta hisoblaydi
   await saveTripSummarySafe(id);
@@ -558,6 +561,8 @@ export async function tripCancelled(id: string, userId: string, note?: string): 
   const r = await db.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "CANCELLED" } });
   if (!r.count) return { changed: false, orderId: t.orderId, error: "Faqat rejalashtirilgan reys bekor qilinadi" };
   await audit(db, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "CANCELLED", note });
+  // Reys kamaydi — yetkazilganlarning dastavka ulushi qayta hisoblanadi
+  await syncOrderDelivery(t.orderId, userId);
   // Haydovchi zavodga yo'lga chiqib qolmasin (ECO haydovchisiga status ECO orqali ketadi).
   // Havolasiz: bekor qilingan reys chaqiruvchida bazadan o'chiriladi (`lib/purge-cancelled.ts`)
   notifyAfter(() => notifyEmployees([t.driverId], {
@@ -1086,6 +1091,7 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     body: tripBody(input.qtyM3, c),
     link: { key: "trips", id: created.id },
   }));
+  await syncOrderDelivery(input.orderId, userId);
   return created;
 }
 
@@ -1165,6 +1171,7 @@ export async function updatePlannedTrip(id: string, input: TripEditInput, userId
   if (driverChanged && !t.vehicle.external) notifyAfter(() => notifyEmployees([t.driverId], {
     type: "TRIP_CANCELLED", title: `Reys sizdan olindi — ${t.deliveryNoteNo}`, body: "Dispetcher reysni boshqa haydovchiga berdi",
   }));
+  if (keys.includes("qtyM3")) await syncOrderDelivery(t.orderId, userId);
   return { changed: true, orderId: t.orderId, external: !!c.ext };
 }
 

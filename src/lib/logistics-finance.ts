@@ -308,6 +308,7 @@ export async function cancelLogiTx(id: string, reason: string, userId: string): 
   if (!t) return { error: "Yozuv topilmadi" };
   if (t.cancelledAt) return { error: "Allaqachon bekor qilingan" };
   if (t.refType === "MechanicRequest") return { error: "Mexanik so'rovining puli — bekor qilib bo'lmaydi" };
+  if (t.refType === DELIVERY_REF) return { error: "Zayavka dastavkasi avtomatik yoziladi — zayavka yoki reys o'zgarsa o'zi qayta hisoblanadi" };
   if (t.refType === STOCK_ISSUE_REF) return { error: "Skladdan berilgan zapchast — Sklad → Chiqim jurnalida bekor qilinadi (zapchast skladga qaytadi)" };
   if (t.refType === DRIVER_MONTH_REF) {
     const month = (t.refId ?? "").split(":")[0] ?? "";
@@ -585,8 +586,12 @@ export async function linkCashToLogi(items: CashLinkItem[], userId: string): Pro
 /** Shu oy zavod vedomosti yuborilgan/tasdiqlangan bo'lsa — reys haqi vedomost orqali to'lanadi (xato matni), aks holda null. */
 export async function payrollMonthLock(month: string): Promise<string | null> {
   if (!/^\d{4}-\d{2}$/.test(month)) return "Oy noto'g'ri";
-  const run = await db.payrollRun.findFirst({ where: { month, kind: "FINAL", status: { in: ["SUBMITTED", "APPROVED", "PAID"] } }, select: { docNo: true, status: true } });
-  return run ? `Shu oy yakuniy vedomosti ${run.docNo} ${run.status === "SUBMITTED" ? "tasdiqqa yuborilgan" : "tasdiqlangan"}` : null;
+  // 2026-11-25 dan reys haqi vedomostga kirmaydi — faqat reys haqi ichiga olgan (eski) vedomost bloklaydi
+  const run = await db.payrollRun.findFirst({
+    where: { month, kind: "FINAL", status: { in: ["SUBMITTED", "APPROVED", "PAID"] }, lines: { some: { breakdown: { path: ["trips", "sum"], gt: 0 } } } },
+    select: { docNo: true, status: true },
+  });
+  return run ? `Shu oy yakuniy vedomosti ${run.docNo} (reys haqi bilan) ${run.status === "SUBMITTED" ? "tasdiqqa yuborilgan" : "tasdiqlangan"}` : null;
 }
 
 const monthTrips = (month: string) => {
@@ -628,6 +633,7 @@ export async function payDriverMonth(month: string, driverId: string, source: st
   const lock = await payrollMonthLock(month);
   if (lock) return { error: `${lock} — reys haqi vedomost orqali to'lanadi` };
   if (!source) return { error: "Qaysi hisobdan to'lash — tanlang" };
+  if (!isLogiAcc(source)) return { error: "Haydovchi haqi faqat logistika hisobidan to'lanadi" };
   try {
     const r = await db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`logipay:${month}:${driverId}`}))`;
@@ -661,4 +667,94 @@ export async function logiRequestsToPay() {
     where: { status: "APPROVED", ...LOGI_REQUEST_WHERE }, orderBy: [{ urgent: "desc" }, { decidedAt: "asc" }], take: 200,
     select: { id: true, docNo: true, amount: true, problem: true, payee: true, decidedAt: true, urgent: true, target: true, object: true, vehicle: { select: { plate: true } }, createdBy: { select: { fullName: true } } },
   });
+}
+
+// ───────────────────────── Zayavka dostavkasi → logistika hisobi ─────────────────────────
+
+/**
+ * Dastavka haqi logistika daromadi (foydalanuvchi qarori, 2026-11-25): reys «Yetkazildi» bo'lganda zayavka dastavkasining
+ * shu reysga tushgan ulushi logistika hisobiga kirim bo'ladi. Pul zavod kassasidan olinmaydi — mijoz to'lovi zavodda,
+ * zavod logistikaga qarzdor bo'lib turadi. Ulush `avtoReport` dagi qoida bilan bir xil (Foyda bilan teng chiqsin):
+ * zayavkaning bekor qilinmagan reyslari hajmi bo'yicha (hajm 0 bo'lsa — teng). `refType` = "TripDelivery", `refId` = reys id.
+ * Qo'lda bekor qilinmaydi: reys qo'shilsa/bekor bo'lsa yoki dastavka summasi o'zgarsa `syncOrderDelivery` qayta hisoblaydi.
+ */
+export const DELIVERY_REF = "TripDelivery";
+export const DELIVERY_CATEGORY = "Dastavka (zayavka)";
+/** Shu kundan (yetkazilgan sana) boshlab — avvalgi reyslar logistika hisobiga tushmaydi (eski oylar yopilgan). */
+export const DELIVERY_LOGI_SINCE = new Date(2026, 10, 1);
+const DEFAULT_LOGI_ACC = "logi_kassa_naqd";
+
+async function deliveryAccountId(tx: Tx): Promise<string | null> {
+  const main = await tx.logisticsAccount.findFirst({ where: { id: DEFAULT_LOGI_ACC, isActive: true }, select: { id: true } });
+  if (main) return main.id;
+  const any = await tx.logisticsAccount.findFirst({ where: { isActive: true }, orderBy: [{ type: "asc" }, { createdAt: "asc" }], select: { id: true } });
+  return any?.id ?? null;
+}
+
+/** Zayavka reyslarining dastavka ulushi (yetkazilganlari uchun) — `avtoReport` qoidasi. */
+async function deliveryShares(tx: Tx, orderId: string) {
+  const o = await tx.order.findUnique({ where: { id: orderId }, select: { orderNo: true, deliveryFee: true, needsDelivery: true } });
+  const trips = await tx.trip.findMany({
+    where: { orderId, status: { not: "CANCELLED" } },
+    select: { id: true, deliveryNoteNo: true, qtyM3: true, status: true, deliveredAt: true, vehicleId: true, driverId: true },
+  });
+  const fee = o && o.needsDelivery ? Number(o.deliveryFee ?? 0) : 0;
+  const qty = trips.reduce((s, t) => s + Number(t.qtyM3), 0);
+  const want = new Map<string, { amount: number; trip: (typeof trips)[number] }>();
+  for (const t of trips) {
+    if (t.status !== "DELIVERED" || !t.deliveredAt || t.deliveredAt < DELIVERY_LOGI_SINCE) continue;
+    const amount = fee > 0 ? r2(qty > 0 ? (fee * Number(t.qtyM3)) / qty : fee / trips.length) : 0;
+    want.set(t.id, { amount, trip: t });
+  }
+  return { orderNo: o?.orderNo ?? "", want };
+}
+
+/**
+ * Zayavka dastavkasini logistika hisobi bilan tenglashtiradi (tranzaksiya ichida, idempotent). Yozuv avtomatik — summasi
+ * o'zgarsa joyida yangilanadi (audit bilan), ulush 0 bo'lsa yoki reys yetkazilgan emas bo'lsa — bekor qilinadi.
+ */
+export async function syncOrderDeliveryTx(tx: Tx, orderId: string, userId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"logidlv:" + orderId}))`;
+  const { orderNo, want } = await deliveryShares(tx, orderId);
+  const allTrips = await tx.trip.findMany({ where: { orderId }, select: { id: true } });
+  const have = allTrips.length
+    ? await tx.logisticsTx.findMany({ where: { refType: DELIVERY_REF, refId: { in: allTrips.map((t) => t.id) }, cancelledAt: null }, select: { id: true, refId: true, amount: true, docNo: true } })
+    : [];
+  const haveBy = new Map(have.map((h) => [h.refId!, h]));
+  const now = new Date();
+
+  for (const h of have) {
+    const w = want.get(h.refId!);
+    if (w && w.amount > 0) {
+      if (Math.abs(Number(h.amount) - w.amount) < 0.005) continue;
+      await tx.logisticsTx.update({ where: { id: h.id }, data: { amount: w.amount } });
+      await audit(tx, userId, "UPDATE", "LogisticsTx", h.id, { amount: Number(h.amount) }, { amount: w.amount, reason: "Dastavka ulushi qayta hisoblandi" });
+    } else {
+      await tx.logisticsTx.update({ where: { id: h.id }, data: { cancelledAt: now, cancelledById: userId, cancelReason: "Dastavka ulushi yo'q (reys yoki zayavka o'zgardi)" } });
+      await audit(tx, userId, "STATUS_CHANGE", "LogisticsTx", h.id, { cancelledAt: null }, { cancelledAt: now, docNo: h.docNo, reason: "Dastavka ulushi yo'q" });
+    }
+  }
+
+  const accountId = [...want.values()].some((w) => w.amount > 0 && !haveBy.has(w.trip.id)) ? await deliveryAccountId(tx) : null;
+  if (!accountId) return;
+  for (const [tripId, w] of want) {
+    if (!(w.amount > 0) || haveBy.has(tripId)) continue;
+    await writeLogiTx(tx, {
+      type: "INCOME", date: w.trip.deliveredAt!, amount: w.amount, category: DELIVERY_CATEGORY, source: `${LOGI_ACC}${accountId}`,
+      vehicleId: w.trip.vehicleId, driverId: w.trip.driverId, counterparty: "Zavod (zayavka dastavkasi)",
+      note: `Dastavka: zayavka ${orderNo} · reys ${w.trip.deliveryNoteNo}`, refType: DELIVERY_REF, refId: tripId,
+    }, userId);
+  }
+}
+
+/**
+ * Asosiy amaldan keyin (reys yetkazildi / qo'shildi / bekor / zayavka tahriri): o'z tranzaksiyasida. Xato asosiy amalni
+ * buzmasin — logga yoziladi, keyingi o'zgarishda yoki `scripts/logi-dastavka.ts` bilan tenglashadi.
+ */
+export async function syncOrderDelivery(orderId: string, userId: string): Promise<void> {
+  try {
+    await db.$transaction((tx) => syncOrderDeliveryTx(tx, orderId, userId));
+  } catch (e) {
+    console.error("[logistika] dastavka sinxronlanmadi", orderId, e);
+  }
 }

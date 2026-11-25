@@ -176,7 +176,8 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
   const month = parseMonth(sp.oy);
   const pay = canLogiPay(s);
   const [mp, sources] = await Promise.all([driverMonthPays(month), pay ? paySources(true) : Promise.resolve([])]);
-  const srcOpts: SourceOpt[] = sources.map((a) => ({ id: a.id, group: a.group, type: a.type, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }));
+  // Haydovchi oylik reys haqi — faqat logistika hisobidan
+  const srcOpts: SourceOpt[] = sources.filter((a) => a.group === "Logistika hisobi").map((a) => ({ id: a.id, group: a.group, type: a.type, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }));
   return (
     <div>
       {header}

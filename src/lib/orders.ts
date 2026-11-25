@@ -19,6 +19,7 @@ import { linkOrderTx, syncDealLater } from "@/lib/amocrm/sync";
 import { orderTotal } from "@/lib/order-total";
 import { purgeOrderTx } from "@/lib/purge-cancelled";
 import { orderLines, TRIP_STEP } from "@/lib/trips";
+import { syncOrderDelivery } from "@/lib/logistics-finance";
 import { fmtUnitTotals } from "@/lib/unit";
 import { checkStockSources } from "./brigade-stock-source";
 
@@ -832,6 +833,8 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
   }
 
   if (res.notifyReq) notifyNewPaymentRequest(res.notifyReq, userId);
+  // Dastavka summasi o'zgarsa — yetkazilgan reyslar ulushi logistika hisobida qayta hisoblanadi
+  if (Number(o.deliveryFee ?? 0) !== deliveryFee || o.needsDelivery !== needsDelivery) await syncOrderDelivery(id, userId);
   const link = { key: "orders", id };
   const name = isStock ? "Sklad zayavkasi" : o.customer.name;
   notifyAfter(async () => {

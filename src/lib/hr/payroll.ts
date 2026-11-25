@@ -240,7 +240,6 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     }
     const tp = tripPay.get(e.id);
     if (rate <= 0 && e.payType !== "PIECE" && !tp?.trips) warnings.push("Tarif stavka kiritilmagan — kartada «Tarif stavka» ni to'ldiring");
-    if (tp?.unpriced) warnings.push(`${tp.unpriced} ta reys yoki qo'lda yozilgan haq narxsiz yoki ish boshqaruvchi tasdig'ini kutmoqda — ular oylikka kirmadi`);
 
     // Asosiy
     let base = 0, units = 0;
@@ -270,8 +269,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       : e.payType === "DAILY" ? rate
       : e.payType === "HOURLY" ? rate * shiftHours
       : present > 0 ? base / present : 0;
-    // Reys haqi asosiyga qo'shiladi (kunlik o'rtachaga — ta'til/kasallik puliga — ta'sir qilmaydi)
-    if (tp && tp.sum > 0) base += tp.sum;
+    // Reys haqi vedomostga kirmaydi (2026-11-25): logistika daromadidan, faqat logistika hisobidan to'lanadi —
+    // Logistika moliya → «Oylik reys haqi» (`lib/logistics-finance.ts` → `payDriverMonth`)
     if (e.payType !== "PIECE") base += sheetSum;
 
     const tenureYears = e.hiredAt ? (dayUtc(to).getTime() - e.hiredAt.getTime()) / (365.25 * 864e5) : 0;
@@ -410,7 +409,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
         ...(sheetItems.length ? { sheets: sheetItems } : {}),
         // Oy yakunida taqsimot har doim yoziladi (bo'sh bo'lsa ham) — daftar «ushlangan»ni shundan oladi, eski vedomostlarni ajratadi
         ...(kind === "FINAL" ? { debts: debtsAlloc, withholds: withholdsAlloc } : {}),
-        ...(pieceInfo ? { piece: pieceInfo } : {}), ...(tp ? { trips: { count: tp.trips, km: tp.km, sum: r0(tp.sum), unpriced: tp.unpriced } } : {}), rules: hits, manual: manualList, advances: adv,
+        ...(pieceInfo ? { piece: pieceInfo } : {}), rules: hits, manual: manualList, advances: adv,
         ...(advanceFormula ? { advanceFormula } : {}), warnings,
       },
     });
