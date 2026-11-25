@@ -10,7 +10,7 @@ import { Book, addrOf, colName, displayVal, isErr, parseInput, rawText, type Cel
 import { Button, Field, FormError } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { PAY_RATE_HINT, PAY_TYPE_LABEL } from "@/lib/hr/labels";
-import type { RateCell } from "@/lib/hr/erp-workbook";
+import type { RateCell, SheetFilter } from "@/lib/hr/erp-workbook";
 import { saveCellsAction, saveRateAction } from "./varaq-actions";
 
 /**
@@ -21,8 +21,11 @@ import { saveCellsAction, saveRateAction } from "./varaq-actions";
  * Saqlash darhol (`saveCellsAction`), formulalar shu zahoti brauzerda qayta hisoblanadi (`lib/sheet-calc.ts`).
  */
 
-/** `rates` — ERP kitobida «Stavka» katagidagi qalam (manzil → xodim), `canRate` bo'lsa ko'rinadi. */
-export type GridSheet = { id: string; name: string; hidden: boolean; data: SheetData; rates?: Record<string, RateCell> };
+/**
+ * `rates` — ERP kitobida «Stavka» katagidagi qalam (manzil → xodim), `canRate` bo'lsa ko'rinadi.
+ * `filter` — guruh filtri (komanda / brigada bo'limlari): tanlanganidan boshqa bo'limlar va Jami qatori yashiriladi.
+ */
+export type GridSheet = { id: string; name: string; hidden: boolean; data: SheetData; rates?: Record<string, RateCell>; filter?: SheetFilter };
 
 const HEAD_H = 22, NUM_W = 44, DEF_W = 64, DEF_H = 20, PAD = 3;
 const EXTRA_R = 15, EXTRA_C = 3; // tahrirda varaq oxiridan keyin bo'sh qator/ustunlar
@@ -44,9 +47,10 @@ type Model = {
 
 const key = (r: number, c: number) => `${r}:${c}`;
 
-function buildModel(d: SheetData, extra: boolean, z: number, showHidden: boolean): Model {
+/** `off` — filtr yashirgan satrlar («Yashirinlar» tugmasidan qat'i nazar yashirin). */
+function buildModel(d: SheetData, extra: boolean, z: number, showHidden: boolean, off: number[] = []): Model {
   const nr = Math.max(1, d.nr + (extra ? EXTRA_R : 0)), nc = Math.max(1, d.nc + (extra ? EXTRA_C : 0));
-  const hr = new Set(showHidden ? [] : d.hr ?? []), hc = new Set(showHidden ? [] : d.hc ?? []);
+  const hr = new Set([...(showHidden ? [] : d.hr ?? []), ...off]), hc = new Set(showHidden ? [] : d.hc ?? []);
   const rows: number[] = [], cols: number[] = [];
   for (let r = 0; r < nr; r++) if (!hr.has(r)) rows.push(r);
   for (let c = 0; c < nc; c++) if (!hc.has(c)) cols.push(c);
@@ -260,7 +264,18 @@ export function SheetGrid({ sheets, canEdit, initial, canRate = false }: { sheet
   // Excel'da yashirilgan ustun/satrlar (masalan, kunlik summalar) — tugma bilan ko'rsatiladi
   const [showHidden, setShowHidden] = useState(false);
   const hasHidden = !!(data.hc?.length || data.hr?.length);
-  const m = useMemo(() => buildModel(data, canEdit, zoom / 100, showHidden), [data, canEdit, zoom, showHidden]);
+  // Guruh filtri: varaq bo'yicha tanlangan bo'lim (-1 — hammasi)
+  const [grps, setGrps] = useState<Record<number, number>>({});
+  const flt = sheet.filter;
+  const grp = flt ? grps[si] ?? -1 : -1;
+  const off = useMemo(() => {
+    if (!flt || grp < 0 || !flt.groups[grp]) return [];
+    const g = flt.groups[grp];
+    const out: number[] = [];
+    for (let r = flt.groups[0].r1; r <= flt.total; r++) if (r <= g.r1 || r > g.r2) out.push(r);
+    return out;
+  }, [flt, grp]);
+  const m = useMemo(() => buildModel(data, canEdit, zoom / 100, showHidden, off), [data, canEdit, zoom, showHidden, off]);
   const rates = sheet.rates;
   const ctx = useMemo<Ctx>(() => ({
     m, d: data, cells: effCells[si], book, si, val: (r, c) => book.value(si, r, c),
@@ -537,6 +552,18 @@ export function SheetGrid({ sheets, canEdit, initial, canRate = false }: { sheet
   return (
     <div className="xg flex min-w-0 flex-col overflow-hidden rounded-(--radius-card) border border-slate-300/80 bg-white shadow-(--shadow-card) [--xl-bd:var(--color-slate-500)] [--xl-grid:var(--color-slate-200)] [--xl-mix:88%] [--xl-sel:rgb(37_99_235/0.12)] dark:[--xl-mix:38%] dark:[--xl-sel:rgb(96_165_250/0.18)]">
       <style>{css}</style>
+      {flt && (
+        <div className="flex items-center gap-1.5 overflow-x-auto border-b border-slate-200 bg-white px-2 py-1.5" role="group" aria-label="Guruh filtri">
+          <span className="shrink-0 text-xs font-medium text-slate-500">Guruh:</span>
+          {[{ label: "Hammasi", i: -1 }, ...flt.groups.map((g, i) => ({ label: g.label, i }))].map((x) => (
+            <button key={x.i} type="button" aria-pressed={grp === x.i} onClick={() => setGrps((p) => ({ ...p, [si]: x.i }))}
+              className={cn("shrink-0 rounded-full border px-2.5 py-0.5 text-xs whitespace-nowrap transition",
+                grp === x.i ? "border-brand-600 bg-brand-600 font-medium text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50")}>
+              {x.label}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Formula satri */}
       <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
         <span className="w-24 shrink-0 truncate rounded border border-slate-200 bg-white px-2 py-1 text-center text-xs font-medium text-slate-700 tabular" title={refLabel}>{refLabel}</span>

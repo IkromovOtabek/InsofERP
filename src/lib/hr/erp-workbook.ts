@@ -27,7 +27,9 @@ import { SHEET_COLS, sheetGroups, type SheetSrcLine } from "./vedomost-sheet";
 
 /** «Stavka» katagidagi qalam (tahrir oynasi) — manzil (A1) → xodim. Ko'rsatish ruxsatini sahifa hal qiladi (payroll.rate). */
 export type RateCell = { employeeId: string; fullName: string; payType: PayType; rate: number };
-export type ErpSheet = { id: string; name: string; hidden: boolean; data: SheetData; rates?: Record<string, RateCell> };
+/** Guruh filtri («Barcha xodimlar»): har komanda / brigada bo'limi qatorlari (bo'sh qator + sarlavha + xodimlar) va Jami qatori. */
+export type SheetFilter = { groups: { label: string; r1: number; r2: number }[]; total: number };
+export type ErpSheet = { id: string; name: string; hidden: boolean; data: SheetData; rates?: Record<string, RateCell>; filter?: SheetFilter };
 
 const S = {
   title: { b: 1, fs: 1.25 } as SheetStyle,
@@ -51,6 +53,7 @@ const S = {
   totDec: { bd: 15, b: 1, bg: "F1F5F9", z: "0.##;-0.##;", ha: "center" } as SheetStyle,
   group: { b: 1, bg: "FEF3C7", bd: 15 } as SheetStyle,
   groupNum: { b: 1, bg: "FEF3C7", bd: 15, z: "#,##0;-#,##0;" } as SheetStyle,
+  groupDec: { b: 1, bg: "FEF3C7", bd: 15, z: "0.##;-0.##;", ha: "center" } as SheetStyle,
 };
 
 /** Kichik varaq yasovchi: uslublar indekslanadi, kataklar A1 manzil bilan. */
@@ -61,6 +64,7 @@ class Sheet {
   cw: Record<number, number> = {};
   mg: [number, number, number, number][] = [];
   rates: Record<string, RateCell> = {};
+  filter?: SheetFilter;
   nr = 0; nc = 0;
   frz?: [number, number];
   /** Sarlavha / izoh qatorlari — butun eniga birlashtiriladi (matn qisqa ustunda kesilmasin) */
@@ -184,7 +188,7 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
   const used = new Set<string>();
   const push = (name: string, sh: Sheet) => {
     const n = sheetName(name, used);
-    out.push({ id: `erp:${month}:${out.length}`, name: n, hidden: false, data: sh.data(), ...(Object.keys(sh.rates).length ? { rates: sh.rates } : {}) });
+    out.push({ id: `erp:${month}:${out.length}`, name: n, hidden: false, data: sh.data(), ...(Object.keys(sh.rates).length ? { rates: sh.rates } : {}), ...(sh.filter ? { filter: sh.filter } : {}) });
   };
 
   const [tabel, ded, st, given] = await Promise.all([tabelMonth(month, "all"), deductionsMonth(month), payrollSettings(), givenAdvances(month)]);
@@ -240,22 +244,22 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
   }
 
   // ── Tabel: komandalar va biriktirilmaganlar; brigadadagi oklad/kunbay/soatbay xodimlar — «<brigada> — tabel» ──
-  // `groupCol` — «Barcha xodimlar» varag'ida Lavozimdan keyin «Guruh» (komanda / brigada) ustuni
+  // `grouped` — «Barcha xodimlar»: har komanda / brigada oldidan bo'sh qator va sarlavha qatori (C2026 kabi), Guruh ustunisiz;
+  // sarlavhada guruh jamilari, varaq ustida guruh filtri (`Sheet.filter`)
   const groupLabel = new Map(tabel.groups.map((g) => [g.key, g.label]));
-  const tabelSheet = (label: string, rows: typeof tabel.rows, groupCol = false) => {
+  const tabelSheet = (label: string, rows: typeof tabel.rows, grouped = false) => {
     const sh = new Sheet();
     sh.line(0, `${label} — ${title} tabeli`, S.title);
     sh.line(1, `Soat yoki H — kelmadi, K — kasal, T — ta'til, D — dam olish. Kul rang — davomatdan, yashil — bugun ishda (davom etmoqda). ${taxCol} — Hisobdan; Ushlanmalar — Ish haqi → Ushlanmalar jadvalidan; Avans — shu oy berilgan avans; Jami = Hisob − Soliq − Ushlanmalar − Avans (qo'lga tegadi). Sdelkachining soliq va jamisi (ko'k) — brigada varag'idan.`, S.note);
-    const H = 3, c0 = groupCol ? 4 : 3, cS = c0 + nDays;
+    const H = 3, c0 = 3, cS = c0 + nDays;
     // Ustunlar: cS Soat · +1 Kun · +2 Norma · +3 Stavka · +4 Hisob · +5 Soliq · +6 Ushlanmalar · +7 Avans · +8 Jami
     const cH = cS + 4, cT = cS + 5, cU = cS + 6, cA = cS + 7, cJ = cS + 8;
-    ["№", "F.I.O.", "Lavozim", ...(groupCol ? ["Guruh"] : [])].forEach((t, i) => sh.set(H, i, t, S.head));
+    const sumCols = [cS, cS + 1, cH, cT, cU, cA, cJ];
+    ["№", "F.I.O.", "Lavozim"].forEach((t, i) => sh.set(H, i, t, S.head));
     tabel.days.forEach((d, i) => sh.set(H, c0 + i, d.day, d.weekend ? S.headWe : S.head));
     ["Soat", "Kun", "Norma", "Stavka", "Hisob", taxCol, "Ushlanmalar", "Avans", "Jami"].forEach((t, i) => sh.set(H, cS + i, t, S.head));
-    rows.forEach((r, i) => {
-      const rr = H + 1 + i;
-      sh.set(rr, 0, i + 1, S.hrs); sh.set(rr, 1, r.fullName, S.txt); sh.set(rr, 2, r.position, S.txt);
-      if (groupCol) sh.set(rr, 3, groupLabel.get(r.group) ?? "Biriktirilmagan", S.txt);
+    const rowAt = (rr: number, r: (typeof rows)[number], no: number) => {
+      sh.set(rr, 0, no, S.hrs); sh.set(rr, 1, r.fullName, S.txt); sh.set(rr, 2, r.position, S.txt);
       let days = 0, hours = 0;
       for (let d = 1; d <= nDays; d++) {
         const c = r.cells[d];
@@ -289,15 +293,47 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
         sh.set(rr, cT, p?.tax || null, S.autoNum);
         if (p) sh.set(rr, cJ, p.jami, S.autoNumB);
       }
-    });
-    const tr = H + 1 + rows.length;
-    sh.set(tr, 1, `Jami (${rows.length})`, S.tot);
-    for (let d = 0; d < nDays; d++) sh.set(tr, c0 + d, null, S.totDec, sumF(H + 1, c0 + d, tr - 1, c0 + d));
-    sh.set(tr, cS, null, S.totDec, sumF(H + 1, cS, tr - 1, cS));
-    sh.set(tr, cS + 1, null, S.totDec, sumF(H + 1, cS + 1, tr - 1, cS + 1));
-    for (const c of [cH, cT, cU, cA, cJ]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, tr - 1, c));
+    };
+    let tr: number;
+    if (grouped) {
+      // Bo'limlar: bo'sh qator → sarlavha (guruh nomi, kishi soni, jamilar) → xodimlar
+      const parts: { label: string; rows: typeof rows }[] = [];
+      for (const r of rows) {
+        const lb = groupLabel.get(r.group) ?? "Biriktirilmagan";
+        const last = parts[parts.length - 1];
+        if (last && last.label === lb) last.rows.push(r); else parts.push({ label: lb, rows: [r] });
+      }
+      const heads: number[] = [];
+      const fGroups: SheetFilter["groups"] = [];
+      let rr = H + 1, no = 0;
+      for (const g of parts) {
+        const r1 = rr;
+        rr++; // bo'sh qator
+        const hr = rr++;
+        heads.push(hr);
+        sh.set(hr, 0, null, S.group); sh.set(hr, 1, g.label, S.group); sh.set(hr, 2, `${g.rows.length} kishi`, S.group);
+        for (let d = 0; d < nDays; d++) sh.set(hr, c0 + d, null, S.group);
+        for (const c of [cS + 2, cS + 3]) sh.set(hr, c, null, S.group);
+        for (const r of g.rows) rowAt(rr++, r, ++no);
+        for (const c of sumCols) sh.set(hr, c, null, c === cS || c === cS + 1 ? S.groupDec : S.groupNum, sumF(hr + 1, c, rr - 1, c));
+        fGroups.push({ label: g.label, r1, r2: rr - 1 });
+      }
+      tr = rr;
+      sh.set(tr, 1, `Jami (${no})`, S.tot);
+      for (let d = 0; d < nDays; d++) sh.set(tr, c0 + d, null, S.totDec, sumF(H + 1, c0 + d, tr - 1, c0 + d));
+      // Jami — guruh sarlavhalaridagi jamilar yig'indisi (xodim qatorlari ikki marta qo'shilmasin)
+      for (const c of sumCols) sh.set(tr, c, null, c === cS || c === cS + 1 ? S.totDec : S.tot, heads.map((h) => addrOf(h, c)).join("+") || "0");
+      if (fGroups.length > 1) sh.filter = { groups: fGroups, total: tr };
+    } else {
+      rows.forEach((r, i) => rowAt(H + 1 + i, r, i + 1));
+      tr = H + 1 + rows.length;
+      sh.set(tr, 1, `Jami (${rows.length})`, S.tot);
+      for (let d = 0; d < nDays; d++) sh.set(tr, c0 + d, null, S.totDec, sumF(H + 1, c0 + d, tr - 1, c0 + d));
+      sh.set(tr, cS, null, S.totDec, sumF(H + 1, cS, tr - 1, cS));
+      sh.set(tr, cS + 1, null, S.totDec, sumF(H + 1, cS + 1, tr - 1, cS + 1));
+      for (const c of [cH, cT, cU, cA, cJ]) sh.set(tr, c, null, S.tot, sumF(H + 1, c, tr - 1, c));
+    }
     sh.width(0, 32); sh.width(1, 220); sh.width(2, 140);
-    if (groupCol) sh.width(3, 150);
     for (let d = 0; d < nDays; d++) sh.width(c0 + d, 34);
     sh.width(cS + 3, 100);
     for (const c of [cH, cT, cU, cA, cJ]) sh.width(c, 100);

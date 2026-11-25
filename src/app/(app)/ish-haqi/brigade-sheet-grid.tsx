@@ -153,6 +153,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
   const applyH = (next: Record<string, string>) => { setHv((p) => ({ ...p, ...next })); for (const k of Object.keys(next)) dirtyH.current.add(k); };
   const [newLine, setNewLine] = useState({ name: "", rate: "" });
   const [addEmp, setAddEmp] = useState("");
+  const notPiece = data.members.filter((m) => !m.guest && m.payType !== "PIECE");
   const brakUsed = brakTxt.trim() ? Number(numText(brakTxt)) || 0 : data.brakAuto;
 
   const cellCls = "h-8 w-full min-w-9 bg-transparent px-0.5 text-center outline-none focus:bg-brand-50 focus:ring-2 focus:ring-brand-500 focus:ring-inset disabled:cursor-not-allowed";
@@ -171,7 +172,13 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
           <span>{msg.text}</span><button type="button" className="opacity-70 hover:underline" onClick={() => setMsg(null)}>Yopish</button>
         </div>
       )}
-      {calc.lost > 0 && <p className="flex items-center gap-1 text-xs text-amber-700"><AlertTriangle size={13} /> {fmtNum(Math.round(calc.lost))} so&apos;m fond soat yozilmagan kunlarda — hech kimga tushmadi.</p>}
+      {calc.lost > 0 && <p className="flex items-center gap-1 text-xs text-amber-700"><AlertTriangle size={13} /> {fmtNum(Math.round(calc.lost))} so&apos;m fond soat yozilmagan kunlarda — hech kimga tushmadi. Fond shu kuni soati yozilgan a&apos;zolarga bo&apos;linadi.</p>}
+      {notPiece.length > 0 && (
+        <p className="flex items-start gap-1 text-xs text-amber-700">
+          <AlertTriangle size={13} className="mt-px shrink-0" />
+          <span>{notPiece.length} a&apos;zo «Sdelka» turida emas ({notPiece.slice(0, 3).map((m) => m.fullName).join(", ")}{notPiece.length > 3 ? "…" : ""}): davomatdan soati bu varaqqa o&apos;zi tushmaydi va oy yakunida oklad ham, varaq ulushi ham hisoblanadi. Xodim kartasida «Ish haqi turi» → Sdelka qiling yoki soatni shu yerda qo&apos;lda yozing.</span>
+        </p>
+      )}
 
       {/* A'zolar × kun — soat */}
       <div className="relative max-w-full overflow-auto overscroll-contain rounded-(--radius-card) border border-slate-300/80 bg-white shadow-(--shadow-card)" style={{ maxHeight: "calc(100dvh - 340px)", minHeight: 260 }}>
