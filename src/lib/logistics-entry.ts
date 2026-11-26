@@ -7,7 +7,7 @@ import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import { monthLocked, PAY_APPROVER_ROLES, PAY_TYPE_LABEL, PAY_TYPES, TRIP_PAY_PROBLEM } from "@/lib/driver-trip-pay";
 import { dayField, numIn } from "@/lib/logistics-admin";
 import { lastFuelPrice } from "@/lib/logistics-costs";
-import { money } from "@/lib/format";
+import { fmtNum, money } from "@/lib/format";
 import { LEDGER_REVENUE_REQUIRED, LEDGER_REVENUE_TYPES } from "@/lib/ledger-revenue";
 import { syncEntryRevenueTx } from "@/lib/logistics-finance";
 
@@ -392,4 +392,82 @@ export async function entryRows(where: Prisma.LogisticsEntryWhereInput, take = 5
     cashStatus: r.mechanicRequestId ? mech.get(r.mechanicRequestId) ?? null : null,
     createdBy: r.createdBy.fullName, createdAt: r.createdAt, cancelledAt: r.cancelledAt, cancelReason: r.cancelReason,
   }));
+}
+
+// ───────────────────────── Realizatsiya (qo'lda, reyssiz qator) → Hisob varag'i ─────────────────────────
+
+/** Mashina raqami solishtirish uchun: bo'shliqsiz, katta harf. */
+const plateKey = (v: string | null | undefined) => (v ?? "").replace(/[\s-]/g, "").toUpperCase();
+const REAL_PAY: Record<string, "BANK" | "CASH"> = { CASH: "CASH", BANK: "BANK", DEBT: "BANK" };
+
+/**
+ * Realizatsiyadagi qo'lda (reyssiz) qator Hisob varag'ida qator bo'lib turadi (foydalanuvchi qarori, 2026-11-26):
+ * bitta `LogisticsEntry` (`realizationEntryId`). Realizatsiyadan olinadi: sana, mashina (raqami ro'yxatdagiga mos kelsa),
+ * ortilgan joy → yuklash, manzil (bo'lmasa xaridor) → tushirish, mahsulot va miqdor → yuk, dastavka → kirim (to'lov turi bo'yicha:
+ * naqd — «Dostavka — naqd», perech./qarz — «Dostavka — perech.»). Haydovchi, km, haq va xarajatni dispetcher to'ldiradi — bo'sh
+ * bo'lsa qator «Qisman». Kirim logistika kassasiga (`syncEntryRevenueTx`).
+ *
+ * Realizatsiya qatori tahrirlansa — shu maydonlar yangilanadi (dispetcher to'ldirgan km, haydovchi, haq tegilmaydi; mashina va
+ * joylar faqat bo'sh bo'lsa). O'chirilsa — Hisob varag'idagi qator bekor (haqi tasdiqlangan bo'lsa — bog'lanish uziladi, qator qoladi).
+ * Idempotent, tranzaksiya ichida.
+ */
+export async function syncRealizationLedgerTx(tx: Prisma.TransactionClient, realizationEntryId: string, userId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"realledger:" + realizationEntryId}))`;
+  const [re, le] = await Promise.all([
+    tx.realizationEntry.findUnique({ where: { id: realizationEntryId } }),
+    tx.logisticsEntry.findUnique({ where: { realizationEntryId } }),
+  ]);
+  const now = new Date();
+  if (!re || re.cancelledAt) {
+    if (!le || le.cancelledAt) return;
+    if (le.payApprovedAt) {
+      await tx.logisticsEntry.update({ where: { id: le.id }, data: { realizationEntryId: null } });
+      await audit(tx, userId, "UPDATE", "LogisticsEntry", le.id, { realizationEntryId }, { realizationEntryId: null, reason: "Realizatsiya qatori o'chirildi — haq tasdiqlangan, qator qoldi" });
+      return;
+    }
+    const why = "Realizatsiya qatori o'chirildi";
+    await tx.logisticsEntry.update({ where: { id: le.id }, data: { cancelledAt: now, cancelledById: userId, cancelReason: why } });
+    await audit(tx, userId, "STATUS_CHANGE", "LogisticsEntry", le.id, { cancelledAt: null }, { cancelledAt: now, cancelReason: why });
+    await cancelLinked(tx, le.id, le.docNo, why, userId, now);
+    return;
+  }
+
+  const plates = await tx.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true } });
+  const vehicleId = re.vehicle ? plates.find((v) => plateKey(v.plate) === plateKey(re.vehicle))?.id ?? null : null;
+  const revenue = Number(re.delivery) > 0 ? Number(re.delivery) : null;
+  const cargo = `${re.productName} · ${fmtNum(Number(re.qty), 3)} ${re.unit === "m3" ? "m³" : re.unit}`.slice(0, 120);
+  const note = `Realizatsiya: ${re.customerName}${re.ttn ? ` · TTN ${re.ttn}` : ""}`.slice(0, 300);
+  const base = {
+    date: re.date, revenue, revenueType: revenue ? REAL_PAY[re.payGroup] ?? "BANK" : null, cargo, note,
+  };
+  if (le) {
+    // Dispetcher bekor qilgan (masalan, takror bo'lgani uchun) — qayta tiklanmaydi
+    if (le.cancelledAt) return;
+    const data = {
+      ...base,
+      ...(!le.vehicleId && vehicleId ? { vehicleId } : {}),
+      ...(!le.pickup && re.loadPlace ? { pickup: re.loadPlace.slice(0, 120) } : {}),
+      ...(!le.dropoff ? { dropoff: (re.destination || re.customerName).slice(0, 160) } : {}),
+    };
+    // Haqi tasdiqlangan qatorning sanasi o'zgarmaydi (oylik/kassa shu sanaga bog'langan)
+    if (le.payApprovedAt) delete (data as { date?: Date }).date;
+    const changed = Object.entries(data).some(([k, v]) => {
+      const cur = (le as Record<string, unknown>)[k];
+      return cur instanceof Date ? (v as Date).getTime() !== cur.getTime() : cur != null && typeof cur === "object" ? Number(cur) !== Number(v ?? 0) : (cur ?? null) !== (v ?? null);
+    });
+    if (changed) {
+      await tx.logisticsEntry.update({ where: { id: le.id }, data });
+      await audit(tx, userId, "UPDATE", "LogisticsEntry", le.id, undefined, { ...data, via: "realizatsiya" });
+    }
+    await syncEntryRevenueTx(tx, le.id, userId);
+    return;
+  }
+  const e = await tx.logisticsEntry.create({
+    data: {
+      ...base, docNo: await nextNo(tx, "logisticsEntry", ENTRY_PREFIX), realizationEntryId, vehicleId, driverId: null, trips: 1,
+      pickup: re.loadPlace?.slice(0, 120) || null, dropoff: (re.destination || re.customerName).slice(0, 160), createdById: userId,
+    },
+  });
+  await audit(tx, userId, "CREATE", "LogisticsEntry", e.id, undefined, { ...e, via: "realizatsiya" });
+  await syncEntryRevenueTx(tx, e.id, userId);
 }

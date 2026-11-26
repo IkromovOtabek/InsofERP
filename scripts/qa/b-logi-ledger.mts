@@ -184,5 +184,31 @@ if (notDelivered) {
   check(/yetkazilgan reys/.test(r.error ?? ""), "yetkazilmagan reys qatori tahrirlanmaydi", r.error);
 }
 
+// ── Realizatsiya qo'lda qatori → Hisob varag'i (2026-11-26): qator, kirim kassaga, «Qisman», o'chirilsa bekor ──
+{
+  const RA = "(app)/sales/realizatsiya/actions";
+  const prod = q1(`select name from "Product" where unit='m3' and "isActive" order by name limit 1`) ?? "Beton M300";
+  const rt = token();
+  let rr = await disp.action(`${RA}#createRealizationAction`, [undefined, fd({
+    date: today, payGroup: "CASH", customerName: `QA Real Mijoz ${tag}`, productName: prod, qty: 8, price: 500000, delivery: 300000,
+    vehicle: PLATE.toLowerCase().replace(/^(\d+)/, "$1 "), loadPlace: "BSU-1", destination: `QA Real Obyekt ${tag}`, clientToken: rt,
+  })], "/sales/realizatsiya");
+  check(rr.ok, "realizatsiya qo'lda qatori qo'shildi", rr.error ?? rr.text.slice(0, 200));
+  const RE = q1(`select id from "RealizationEntry" where "clientToken"=${lit(rt)}`) ?? "";
+  const le = q(`select id, "vehicleId", revenue::int, "revenueType", pickup, dropoff from "LogisticsEntry" where "realizationEntryId"=${lit(RE)} and "cancelledAt" is null`)[0];
+  check(!!le && le[1] === VEH && le[2] === "300000" && le[3] === "CASH" && le[4] === "BSU-1" && le[5] === `QA Real Obyekt ${tag}`,
+    "Hisob varag'ida qator: mashina raqamdan topildi, dastavka → kirim (naqd), joylar", le);
+  const LE = le?.[0] ?? "";
+  check(n1(`select count(*) from "LogisticsTx" where "refType"='LedgerEntry' and "refId"=${lit(LE)} and "cancelledAt" is null and amount=300000`) === 1, "realizatsiya dastavkasi logistika kassasiga tushdi");
+  const rrow = (await sheet()).find((x) => x.id === LE);
+  check(!!rrow && rrow.realId === RE && rrow.partial.includes("haydovchi") && rrow.partial.includes("km") && rrow.partial.includes("haq"), "qator «Qisman»: haydovchi, km, haq", rrow?.partial);
+  const g = await disp.get(`${P}&qisman=1`);
+  check(g.status === 200 && g.text.includes("Qisman"), "«Qisman» filtri ochiladi", g.status);
+  rr = await disp.action(`${RA}#deleteRealizationAction`, [RE, "QA sinov"], "/sales/realizatsiya");
+  check(rr.ok && !!q1(`select "cancelledAt" from "LogisticsEntry" where id=${lit(LE)}`)
+    && n1(`select count(*) from "LogisticsTx" where "refType"='LedgerEntry' and "refId"=${lit(LE)} and "cancelledAt" is null`) === 0,
+    "realizatsiya qatori o'chirildi — Hisob varag'i qatori va kassadagi kirimi bekor", rr.error);
+}
+
 summary("b-logi-ledger");
 process.exit();

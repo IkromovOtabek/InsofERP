@@ -148,7 +148,7 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
 const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "ombor", "tarif"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
-export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string; davr?: string; dan?: string; gacha?: string; karta?: string; tur?: string; qator?: string; jt?: string }> }) {
+export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string; davr?: string; dan?: string; gacha?: string; karta?: string; tur?: string; qator?: string; jt?: string; qisman?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
   // Foyda, dostavka/usluga bo'yicha kirim va logistika kassasi — faqat direktor, ish boshqaruvchi, mexanik (Logistika moliya);
   // Hisob varag'ida jami xarajat va bajarilgan ish (perech. / naqd / obyekt) dispetcherga ham ko'rinadi
@@ -207,7 +207,12 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     withExtras ? ledgerExtras(hisobRange.from, hisobRange.to) : Promise.resolve(null),
   ]);
   // Mashina varag'i (tab) — butun hisobdan filtr (qoldiq baribir mashina bo'yicha hisoblangan)
-  const ledgerRows = view === "hisob" ? hisobFull.rows.filter((r) => (!sp.transport || r.vehicleId === sp.transport) && (!sp.driver || r.driverId === sp.driver)) : [];
+  const sheetRows = view === "hisob" ? hisobFull.rows.filter((r) => (!sp.transport || r.vehicleId === sp.transport) && (!sp.driver || r.driverId === sp.driver)) : [];
+  // «Qisman» filtri (`?qisman=1`): to'ldirilmagan (mashina, haydovchi, km, haq) yoki ehtimoliy takror qatorlar — to'ldirib chiqish uchun
+  const needsFill = (r: (typeof sheetRows)[number]) => r.partial.length > 0 || !!r.dup;
+  const partialN = sheetRows.filter(needsFill).length;
+  const onlyPartial = sp.qisman === "1";
+  const ledgerRows = onlyPartial ? sheetRows.filter(needsFill) : sheetRows;
   const ledger = view === "hisob" ? { rows: ledgerRows, total: ledgerTotals(ledgerRows) } : null;
   // Qator qo'shish: hisob varag'i huquqi (logistika, dispetcher) yoki reys narxi huquqi (avvalgi «Qo'lda yozuvlar»)
   const canAddRow = canLedger || canPrice;
@@ -518,6 +523,15 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           editHref={canLedger && detailRow.kind === "trip" ? `${qs({})}&tahrir=${detailRow.id}` : null} />}
         {detailExtra && <ExtraDetail x={detailExtra} closeHref={cardBack} />}
         <DayRangeBar base="/logistika/tabel" range={hisobRange} keep={{ bolim: "hisob", transport: sp.transport, driver: sp.driver }} />
+        {(partialN > 0 || onlyPartial) && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+            <Link href={onlyPartial ? qs({}) : `${qs({})}&qisman=1`} scroll={false}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium ${onlyPartial ? "border-amber-400 bg-amber-100 text-amber-900" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>
+              <PencilLine size={14} /> {onlyPartial ? `Faqat qisman: ${partialN} ta — hammasini ko'rsatish` : `Qisman qatorlar: ${partialN} ta — to'ldirish uchun ko'rsatish`}
+            </Link>
+            <span className="text-xs text-slate-500">mashina, haydovchi, km yoki haq yozilmagan; «Takror?» — Realizatsiyadan tushgan qator bilan shu kun, shu mashinada boshqa qator bor</span>
+          </div>
+        )}
         <Tabs scroll={false} current={sp.transport ?? "all"} className="[&_a]:tabular" items={[
           { key: "all", label: "Hammasi", href: qs({ transport: null }), count: [...sheetCount.values()].reduce((a, n) => a + n, 0) },
           ...sheetTabs.map(([id, plate]) => ({ key: id, label: plate, href: qs({ transport: id }), ...(sheetCount.get(id) ? { count: sheetCount.get(id) } : {}) })),

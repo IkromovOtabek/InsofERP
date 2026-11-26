@@ -34,6 +34,13 @@ const isVulc = (note: string | null) => !!note && /vulkaniz/i.test(note);
 
 export type LedgerKind = "trip" | "entry" | "cost";
 
+/**
+ * Mashinasi yozilmagan qo'lda qator (Realizatsiyadan tushgan yoki mashinasiz yozilgan) — alohida «Mashina yo'q» varag'ida;
+ * mashina tanlanguncha «Qisman». Yoqilg'i normasi yo'q (sarf 0).
+ */
+export const NO_VEHICLE = "-";
+export const NO_VEHICLE_PLATE = "Mashina yo'q";
+
 /** Qatorga tushgan zapravka va xarajat yozuvlari (id) — tahrirda shular o'zgaradi (`lib/ledger-edit.ts`). */
 export type LedgerRefs = { fuel: string[]; repair: string[]; parts: string[]; vulc: string[]; other: string[] };
 
@@ -76,6 +83,12 @@ export type LedgerRow = {
   refuelPrice: number | null;
   /** Qo'lda qatorning o'zi bilan yozilgan zapravka/xarajat bor — transporti o'zgarmaydi */
   ownCosts: boolean;
+  /** Realizatsiyadagi qo'lda qatordan tushgan (`RealizationEntry.id`) */
+  realId: string | null;
+  /** To'ldirilmagan asosiy kataklar: mashina, haydovchi, km, haq — bo'lsa qator «Qisman» */
+  partial: string[];
+  /** Ehtimoliy takror: Realizatsiya qatori va shu kun, shu mashinadagi boshqa qator (raqami) */
+  dup: string | null;
 };
 
 export type LedgerTotals = Pick<LedgerRow, "km" | "refuel" | "fuelSum" | "pay" | "repair" | "parts" | "vulc" | "other" | "total" | "revBank" | "revCash" | "revDebt" | "svcBank" | "svcCash" | "revOther" | "revenue" | "profit"> & {
@@ -111,8 +124,11 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   const [base, entries, fuelLogs, expenses] = await Promise.all([
     payTrips({ status: "DELIVERED", deliveredAt: period, ...vf }, 5000),
     db.logisticsEntry.findMany({
-      where: { cancelledAt: null, date: period, vehicleId: opts.vehicleId ?? { not: null } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      // Mashinasiz qatorlar ham (Realizatsiyadan tushgan, mashinasi hali yozilmagan) — «Mashina yo'q» varag'ida
+      where: { cancelledAt: null, date: period, ...(opts.vehicleId ? { vehicleId: opts.vehicleId === NO_VEHICLE ? null : opts.vehicleId } : {}) },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
       select: {
+        realizationEntryId: true,
         id: true, docNo: true, date: true, driverId: true, vehicleId: true, trips: true, km: true, drumHours: true, payAmount: true, payType: true, payApprovedAt: true,
         revenue: true, revenueType: true, pickup: true, dropoff: true, cargo: true, note: true, kmGas: true, drumHoursGas: true, driver: { select: { fullName: true } },
       },
@@ -134,7 +150,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   const ex = new Map(extra.map((t) => [t.id, t]));
   const expVehicle = (e: (typeof expenses)[number]) => e.vehicleId ?? e.trip?.vehicleId ?? null;
   const vehicleIds = [...new Set([
-    ...extra.map((t) => t.vehicleId), ...entries.map((e) => e.vehicleId!), ...fuelLogs.map((f) => f.vehicleId),
+    ...extra.map((t) => t.vehicleId), ...entries.flatMap((e) => (e.vehicleId ? [e.vehicleId] : [])), ...fuelLogs.map((f) => f.vehicleId),
     ...expenses.map(expVehicle).filter((x): x is string => !!x),
   ])];
 
@@ -161,6 +177,9 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     db.fuelLog.findMany({ where: { cancelledAt: null, date: { lt: to }, pricePerL: { gt: 0 } }, orderBy: { date: "desc" }, select: { date: true, fuelType: true, pricePerL: true }, take: 5000 }),
   ]);
 
+  if (entries.some((e) => !e.vehicleId)) {
+    vehicles.push({ id: NO_VEHICLE, plate: NO_VEHICLE_PLATE, fuelType: null, fuelNormL100: null, idleNormPerHour: null, gasNormPer100: null, gasIdlePerHour: null });
+  }
   // Kartada yoqilg'i turi yo'q — qoldiq shu mashina zapravkalari turida (ko'prog'i)
   for (const v of vehicles) {
     if (v.fuelType) continue;
@@ -196,7 +215,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   // O'rinlar: reyslar va qo'lda qatorlar (qo'lda qator — kun oxirida); qatori yo'q mashinaga — xarajat kunlari
   const slots: Slot[] = [];
   for (const r of base) { const t = ex.get(r.id); if (t) slots.push({ kind: "trip", id: r.id, vehicleId: t.vehicleId, sortAt: r.deliveredAt.getTime() }); }
-  for (const e of entries) slots.push({ kind: "entry", id: e.id, vehicleId: e.vehicleId!, sortAt: dayEnd(e.date) });
+  for (const e of entries) slots.push({ kind: "entry", id: e.id, vehicleId: e.vehicleId ?? NO_VEHICLE, sortAt: dayEnd(e.date) });
   const hasRows = new Set(slots.map((s) => s.vehicleId));
   const costSlot = (vehicleId: string, at: Date) => {
     const id = `${vehicleId}:${dayKey(at)}`;
@@ -256,7 +275,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     const e = expOf.get(s.id) ?? { repair: 0, parts: 0, vulc: 0, other: 0, notes: [] };
 
     // Qator turiga qarab: km, soat, haq, daromad va matnlar
-    let row: Omit<LedgerRow, "unit" | "balBefore" | "refuel" | "use" | "drumUse" | "balAfter" | "useExtra" | "fuelSum" | "fuelPriceMissing" | "repair" | "parts" | "vulc" | "other" | "total" | "profit" | "refs" | "refuelPrice" | "ownCosts">;
+    let row: Omit<LedgerRow, "unit" | "balBefore" | "refuel" | "use" | "drumUse" | "balAfter" | "useExtra" | "fuelSum" | "fuelPriceMissing" | "repair" | "parts" | "vulc" | "other" | "total" | "profit" | "refs" | "refuelPrice" | "ownCosts" | "partial" | "dup">;
     let use: number | null, useExtra: number | null;
     /** Baraban sarfi uchun soat: kuzatiladigan yoqilg'ida ishlagan qismi (bo'lingan qatorda) */
     let drumH: number | null | undefined;
@@ -281,6 +300,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         revBank: pm === "BANK" ? revenue : 0, revCash: pm === "CASH" ? revenue : 0, revDebt: pm ? 0 : revenue, svcBank: 0, svcCash: 0, revOther: 0, revenue: r2(revenue),
         remarks: [hr >= 20 || hr < 6 ? `Tun ${String(hr).padStart(2, "0")}:${String(r.deliveredAt.getMinutes()).padStart(2, "0")}` : null, r.note, t.deliveryComment, ...e.notes].filter((x): x is string => !!x),
         src: { pickup: t.pickupAddress?.trim() || null, dropoff: null, cargo: null, note: t.deliveryComment, revenueType: null, priced: !!r.pricedAt, suggested: r.suggested },
+        realId: null,
       };
     } else if (s.kind === "entry") {
       const q = entryRow.get(s.id)!;
@@ -315,6 +335,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         // Izoh yozilmagan qatorda `note` = «yuklash → tushirish» (logistics-entry) — takrorlanmasin
         remarks: [q.dropoff && q.note !== [q.pickup, q.dropoff].filter(Boolean).join(" → ") ? q.note : null, ...e.notes].filter((x): x is string => !!x),
         src: { pickup: q.pickup, dropoff: q.dropoff, cargo: q.cargo, note: q.note, revenueType: q.revenueType, priced: pay > 0, suggested: null },
+        realId: q.realizationEntryId,
       };
     } else {
       const at = new Date(s.sortAt - DAY + 1000);
@@ -325,6 +346,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         pay: 0, amount: null, suggestText: null, payType: null, approvedAt: null,
         revBank: 0, revCash: 0, revDebt: 0, svcBank: 0, svcCash: 0, revOther: 0, revenue: 0, remarks: e.notes,
         src: { pickup: null, dropoff: null, cargo: null, note: null, revenueType: null, priced: false, suggested: null },
+        realId: null,
       };
     }
 
@@ -349,7 +371,25 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       repair: e.repair, parts: e.parts, vulc: e.vulc, other: e.other, total: r2(total), profit: r2(row.revenue - total),
       refs: refsOf.get(s.id) ?? { fuel: [], repair: [], parts: [], vulc: [], other: [] },
       refuelPrice: refuel > 0 ? r2((refuelSumOf.get(s.id) ?? 0) / refuel) : null, ownCosts: ownCosts.has(s.id),
+      partial: row.kind === "cost" ? [] : [
+        row.vehicleId === NO_VEHICLE ? "mashina" : null, !row.driverId ? "haydovchi" : null, !(row.km > 0) ? "km" : null, !(row.pay > 0) ? "haq" : null,
+      ].filter((x): x is string => !!x),
+      dup: null,
     });
+  }
+  // Ehtimoliy takror: Realizatsiyadan tushgan qator va shu kun, shu mashinadagi boshqa ish (reys yoki qo'lda qator) — bir ish
+  // ikki joyda yozilgan bo'lishi mumkin. Ikkalasiga ham belgi; dispetcher keraksizini bekor qiladi
+  const byDay = new Map<string, LedgerRow[]>();
+  for (const r of all) {
+    if (r.kind === "cost" || r.vehicleId === NO_VEHICLE) continue;
+    const k = `${r.vehicleId}|${dayKey(r.at)}`;
+    byDay.set(k, [...(byDay.get(k) ?? []), r]);
+  }
+  for (const list of byDay.values()) {
+    const real = list.filter((r) => r.realId), other = list.filter((r) => !r.realId);
+    if (!real.length || !other.length) continue;
+    for (const r of real) r.dup = other.map((o) => o.no).join(", ");
+    for (const o of other) o.dup = real.map((r) => r.no).join(", ");
   }
 
   const rows = opts.driverId ? all.filter((r) => r.driverId === opts.driverId) : all;

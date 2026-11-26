@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { DriverPayType, FuelType, LedgerRevenueType, Prisma, TransportExpenseKind } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { driverLedger, type LedgerKind, type LedgerRefs, type LedgerRow } from "@/lib/driver-ledger";
+import { driverLedger, NO_VEHICLE, type LedgerKind, type LedgerRefs, type LedgerRow } from "@/lib/driver-ledger";
 import { driverTariff, monthLocked, priceTrip, suggestPay } from "@/lib/driver-trip-pay";
 import { entrySchema, updateLogisticsEntry } from "@/lib/logistics-entry";
 import { lastFuelPrice } from "@/lib/logistics-costs";
@@ -75,7 +75,7 @@ async function findRow(kind: LedgerKind, id: string): Promise<LedgerRow | string
   if (kind === "entry") {
     const e = await db.logisticsEntry.findUnique({ where: { id }, select: { vehicleId: true, date: true, cancelledAt: true } });
     if (!e || e.cancelledAt) return "Qator topilmadi yoki bekor qilingan — sahifani yangilang";
-    vehicleId = e.vehicleId; at = e.date;
+    vehicleId = e.vehicleId ?? NO_VEHICLE; at = e.date;
   } else if (kind === "trip") {
     const t = await db.trip.findUnique({ where: { id }, select: { vehicleId: true, deliveredAt: true, status: true } });
     if (!t || t.status !== "DELIVERED" || !t.deliveredAt) return "Faqat yetkazilgan reys qatori tahrirlanadi";
@@ -106,7 +106,7 @@ export async function ledgerEditData(kind: LedgerKind, id: string): Promise<Ledg
   // Izoh yozilmagan qo'lda qatorda `note` = «yuklash → tushirish» — oynada bo'sh (saqlaganda yangi joylardan qayta tuziladi)
   const autoNote = [r.src.pickup, r.src.dropoff].filter(Boolean).join(" → ");
   return {
-    kind, id, no: r.no, date: isoDay(r.at), dateText: fmtDate(r.at), vehicleId: r.vehicleId, plate: r.plate, unit: r.unit,
+    kind, id, no: r.no, date: isoDay(r.at), dateText: fmtDate(r.at), vehicleId: r.vehicleId === NO_VEHICLE ? "" : r.vehicleId, plate: r.plate, unit: r.unit,
     driverId: r.driverId, driver: r.driver,
     pickup: r.kind === "cost" ? "" : r.src.pickup ?? "", dropoff: r.kind === "trip" ? r.dropoff : r.src.dropoff ?? "", address: r.address,
     cargo: r.kind === "trip" ? r.cargo : r.src.cargo ?? "", trips: r.trips, km: r.km, hours: r.workHours, kmGas: r.kmGas, hoursGas: r.hoursGas,
@@ -229,6 +229,10 @@ export async function updateLedgerRow(kind: LedgerKind, id: string, d: LedgerEdi
   const v = await db.vehicle.findUnique({ where: { id: r.vehicleId }, select: { fuelType: true } });
   const plan = await planCosts(r, d, fuelTypeOf(v?.fuelType, r.unit));
   if ("error" in plan) return plan;
+  // Mashinasiz qator: zapravka/xarajat mashinaga yoziladi — avval transport tanlansin (bo'sh qiymat mashina emas)
+  const toVehicle = d.vehicleId && d.vehicleId !== NO_VEHICLE ? d.vehicleId : null;
+  if (r.vehicleId === NO_VEHICLE && !toVehicle && (plan.fuel || plan.costs.length)) return { error: "Avval transportni tanlang — zapravka va xarajat mashinaga yoziladi" };
+  if (d.vehicleId === NO_VEHICLE) d = { ...d, vehicleId: null };
   try {
     if (kind === "entry") {
       const res = await updateLogisticsEntry(id, d, userId, {

@@ -487,6 +487,8 @@ function LedgerEditForm({ x, onClose }: { x: LedgerEditData; onClose: () => void
             {/* Qatorning o'z zapravka/xarajati bor — transport o'zgarmaydi (qiymat baribir yuboriladi) */}
             {x.ownCosts && <input type="hidden" name="vehicleId" value={x.vehicleId} />}
             <Select name={x.ownCosts ? undefined : "vehicleId"} defaultValue={x.vehicleId} disabled={x.ownCosts} required>
+              {/* Realizatsiyadan tushgan qatorda mashina hali yo'q — tanlanmaguncha saqlanmaydi */}
+              {!x.vehicleId && <option value="" disabled>Mashina</option>}
               {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate}</option>)}
             </Select>
           </Field>

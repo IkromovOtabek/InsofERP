@@ -20,6 +20,7 @@ import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
 import { eco, ecoEnabled } from "@/lib/eco/client";
 import { notifyAfter } from "@/lib/notify";
 import { syncOrderDeliveryTx } from "@/lib/logistics-finance";
+import { syncRealizationLedgerTx } from "@/lib/logistics-entry";
 
 /**
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
@@ -335,6 +336,7 @@ export async function createRealizationEntry(d: EntryInput, userId: string): Pro
       const customerId = r.data.customerId ?? (await addMissingCustomers(tx, [r.data], userId)).idOf(r.data.customerName);
       const row = await tx.realizationEntry.create({ data: { ...r.data, customerId, clientToken: d.clientToken, createdById: userId } });
       await audit(tx, userId, "CREATE", "RealizationEntry", row.id, undefined, row);
+      await syncRealizationLedgerTx(tx, row.id, userId); // Hisob varag'iga qator (logistika to'ldiradi)
       // Dona mahsulot skladdan chiqadi, beton — sozlamaga ko'ra zames (`lib/realization-stock.ts`)
       return { row, sync: await syncRealizationSale(tx, row.id, row, userId) };
     });
@@ -395,6 +397,7 @@ async function writeEntry(id: string, before: RealizationEntry | null, d: EntryI
     const u = await tx.realizationEntry.updateMany({ where: { id, cancelledAt: null, updatedAt: before.updatedAt }, data });
     if (u.count !== 1) return null;
     await audit(tx, userId, "UPDATE", "RealizationEntry", id, before, data);
+    await syncRealizationLedgerTx(tx, id, userId);
     // Miqdor / mahsulot / sana o'zgargan bo'lsa sklad yozuvi farq bilan tuzatiladi
     return syncRealizationSale(tx, id, { id, date: data.date, productId: data.productId, customerName: data.customerName, qty: data.qty, ttn: data.ttn }, userId);
   });
@@ -420,6 +423,7 @@ export async function deleteRealizationEntry(id: string, reason: string, userId:
     const r = await tx.realizationEntry.deleteMany({ where: { id, updatedAt: row.updatedAt } });
     if (r.count !== 1) return null;
     await audit(tx, userId, "DELETE", "RealizationEntry", id, row, why ? { reason: why } : undefined);
+    await syncRealizationLedgerTx(tx, id, userId); // Hisob varag'idagi qatori ham bekor
     await syncRealizationSale(tx, id, null, userId);
     return row;
   });
@@ -794,9 +798,11 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
     const syncs = await syncNewRealizationSales(tx, created, userId);
     // Avvalgi importlardagi (mijoz qo'shilmasdan oldingi) bog'lanmagan qatorlar ham shu yerda bog'lanadi
     const old = await linkEntriesIn(tx, userId);
-    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers], syncs };
+    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers], syncs, ids: created.map((r) => r.id) };
   }, { timeout: 120_000 });
-  const { syncs, ...out } = res;
+  const { syncs, ids, ...out } = res;
+  // Hisob varag'iga qatorlar — har biri o'z tranzaksiyasida (katta importda uzun tranzaksiya bo'lmasin)
+  for (const id of ids ?? []) await db.$transaction((tx) => syncRealizationLedgerTx(tx, id, userId));
   notifyShortSales(syncs, userId);
   return { ok: true, ...out, problems, guessedUnits, from, to, warn: saleWarnText(syncs) };
 }

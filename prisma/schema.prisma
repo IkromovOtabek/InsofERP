@@ -2164,6 +2164,8 @@ model LogisticsEntry {
   payApprovedAt     DateTime?
   payApprovedById   String?
   revenue           Decimal?       @db.Decimal(18, 2) // kirim (daromad)
+  /// Realizatsiyadagi qo'lda (reyssiz) qatordan avtomatik yaratilgan qator — `RealizationEntry.id` (2026-11-26)
+  realizationEntryId String?       @unique
   note              String
   mechanicRequestId String?        @unique // naqd haq kassaga o'tgan so'rov
   /// Oylik haq Logistika moliyadan to'langan bo'lsa — shu yozuv; zavod vedomostiga tushmaydi

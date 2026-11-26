@@ -152,7 +152,7 @@ export function LedgerSheet({ rows, month, file, showDriver, showPlate, canEdit,
       { key: "total", title: "Jami xarajat", kind: "num", val: (r) => numVal(r.total) },
       ...revCols.map((c): Col => ({ key: `rev-${c.key}`, title: c.title, kind: "num", val: (r) => numVal(c.v(r)) })),
       ...(money ? [{ key: "profit", title: "Foyda", kind: "num" as const, val: (r: LedgerRow) => numVal(r.profit) }] : []),
-      { key: "note", title: "Izoh", kind: "text", val: (r) => [r.payType === "CASH" ? "Naqd" : null, ...r.remarks].filter(Boolean).join(" · ") },
+      { key: "note", title: "Izoh", kind: "text", val: (r) => [r.realId ? "Realizatsiya" : null, r.partial.length ? `Qisman: ${r.partial.join(", ")}` : null, r.dup ? `Takror? ${r.dup}` : null, r.payType === "CASH" ? "Naqd" : null, ...r.remarks].filter(Boolean).join(" · ") },
     ];
     const colOf = new Map(cols.map((c) => [c.key, c]));
     return { revCols, colOf };
@@ -336,7 +336,10 @@ export function LedgerSheet({ rows, month, file, showDriver, showPlate, canEdit,
                 ))}
                 {money && <SheetTd right tone="yellow" strong><N v={r.profit} neg /></SheetTd>}
                 <SheetTd className="max-w-48 text-[12px] text-slate-600">
-                  {ed("note", "Izoh", <span className="block truncate" title={r.remarks.join(" · ")}>
+                  {ed("note", "Izoh", <span className="block truncate" title={[r.partial.length ? `Qisman: ${r.partial.join(", ")} yozilmagan` : null, r.dup ? `Takror? ${r.dup}` : null, ...r.remarks].filter(Boolean).join(" · ")}>
+                    {r.realId && <span className="mr-1 rounded bg-blue-50 px-1 font-semibold text-blue-700">Realizatsiya</span>}
+                    {r.partial.length > 0 && <span className="mr-1 rounded bg-amber-100 px-1 font-semibold text-amber-800">Qisman: {r.partial.join(", ")}</span>}
+                    {r.dup && <span className="mr-1 rounded bg-red-50 px-1 font-semibold text-red-700">Takror? {r.dup}</span>}
                     {r.payType === "CASH" && <span className="mr-1 font-semibold text-amber-800">Naqd</span>}
                     {r.remarks.join(" · ")}
                   </span>)}
