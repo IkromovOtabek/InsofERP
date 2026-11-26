@@ -25,7 +25,8 @@ const submitWith = (action: (fd: FormData) => void) => (e: React.FormEvent<HTMLF
 };
 
 /** Kirim turi: dostavka / usluga (perech. yoki naqd) va «Obyekt» — zavodning o'zi uchun ish. */
-const REVENUE_OPTIONS = <><option value="">—</option>{LEDGER_REVENUE_TYPES.map((t) => <option key={t} value={t}>{LEDGER_REVENUE_LABEL[t]}</option>)}</>;
+const REVENUE_TYPE_OPTIONS = LEDGER_REVENUE_TYPES.map((t) => <option key={t} value={t}>{LEDGER_REVENUE_LABEL[t]}</option>);
+const REVENUE_OPTIONS = <><option value="">—</option>{REVENUE_TYPE_OPTIONS}</>;
 
 export type LedgerVehicle = {
   id: string; plate: string; driverId: string | null; unit: string;
@@ -113,39 +114,39 @@ function RowFields({ options, v, vid, setVid, date, setDate, token, action, pend
         <Field label="Sana *"><Input name="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} max={today()} required /></Field>
         <Field label="Transport *">
           <Select name="vehicleId" value={vid} required onChange={(e) => { setVid(e.target.value); const d = options.vehicles.find((x) => x.id === e.target.value)?.driverId; if (d) setDriver(d); }}>
-            <option value="" disabled>Tanlang</option>
+            <option value="" disabled>Mashina</option>
             {options.vehicles.map((x) => <option key={x.id} value={x.id}>{x.plate}</option>)}
           </Select>
         </Field>
         <Field label="Haydovchi" className="col-span-2">
           <Select name="driverId" value={driver} onChange={(e) => setDriver(e.target.value)}>
-            <option value="">—</option>{options.drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            <option value="">Kim haydadi</option>{options.drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </Select>
         </Field>
-        <Field label="Yuklash joyi"><Input name="pickup" list="ledger-pickups" placeholder="Zavod" maxLength={120} /></Field>
+        <Field label="Yuklash joyi"><Input name="pickup" list="ledger-pickups" placeholder="Qayerdan" maxLength={120} /></Field>
         <Field label="Reys soni"><Input name="trips" type="number" min="0" max="1000" step="1" defaultValue="1" className="text-right tabular" /></Field>
 
-        <Field label="Tushirish joyi *" className="col-span-2"><Input name="dropoff" list="ledger-dropoffs" placeholder="Obyekt yoki mijoz" required minLength={3} maxLength={160} /></Field>
-        <Field label="Yuk" className="col-span-2"><Input name="cargo" list="ledger-cargos" placeholder="M-250 10 m³" maxLength={120} /></Field>
-        <Field label="Probeg, km"><Input name="km" type="number" min="0" step="0.1" value={km} onChange={(e) => setKm(e.target.value)} className="text-right tabular" /></Field>
-        <Field label="Baraban, soat"><Input name="drumHours" type="number" min="0" max="24" step="0.1" value={hours} onChange={(e) => setHours(e.target.value)} className="text-right tabular" /></Field>
+        <Field label="Tushirish joyi *" className="col-span-2"><Input name="dropoff" list="ledger-dropoffs" placeholder="Qayerga: obyekt yoki mijoz" required minLength={3} maxLength={160} /></Field>
+        <Field label="Yuk" className="col-span-2"><Input name="cargo" list="ledger-cargos" placeholder="Nima: M-250 10 m³" maxLength={120} /></Field>
+        <Field label="Probeg, km"><Input name="km" type="number" min="0" step="0.1" value={km} onChange={(e) => setKm(e.target.value)} placeholder="Necha km" className="text-right tabular" /></Field>
+        <Field label="Baraban, soat"><Input name="drumHours" type="number" min="0" max="24" step="0.1" value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Necha soat" className="text-right tabular" /></Field>
 
-        <Field label={`Zapravka, ${v?.unit ?? "m³ / l"}`}><Input name="refuel" type="number" min="0" max="1000" step="0.1" className="text-right tabular" /></Field>
-        <Field label="Zapravka narxi" hint={v?.lastPrice ? `bo'sh — ${fmtNum(v.lastPrice, 0)}` : undefined}><Input name="fuelPrice" type="number" min="0" step="0.01" placeholder={v?.lastPrice ? String(v.lastPrice) : ""} className="text-right tabular" /></Field>
-        <Field label="Ta'mir (usta)"><Input name="repair" type="number" min="0" step="1000" className="text-right tabular" /></Field>
-        <Field label="Zapchast"><Input name="parts" type="number" min="0" step="1000" className="text-right tabular" /></Field>
-        <Field label="Vulkanizator"><Input name="vulc" type="number" min="0" step="1000" className="text-right tabular" /></Field>
-        <Field label="Boshqa xarajat"><Input name="other" type="number" min="0" step="1000" className="text-right tabular" /></Field>
+        <Field label={`Zapravka, ${v?.unit ?? "m³ / l"}`}><Input name="refuel" type="number" min="0" max="1000" step="0.1" placeholder="Quyildi" className="text-right tabular" /></Field>
+        <Field label="Zapravka narxi" hint={v?.lastPrice ? `bo'sh — ${fmtNum(v.lastPrice, 0)}` : undefined}><Input name="fuelPrice" type="number" min="0" step="0.01" placeholder={v?.lastPrice ? String(v.lastPrice) : "Narx, so'm"} className="text-right tabular" /></Field>
+        <Field label="Ta'mir (usta)"><Input name="repair" type="number" min="0" step="1000" placeholder="Usta puli" className="text-right tabular" /></Field>
+        <Field label="Zapchast"><Input name="parts" type="number" min="0" step="1000" placeholder="Qism puli" className="text-right tabular" /></Field>
+        <Field label="Vulkanizator"><Input name="vulc" type="number" min="0" step="1000" placeholder="Balon puli" className="text-right tabular" /></Field>
+        <Field label="Boshqa xarajat"><Input name="other" type="number" min="0" step="1000" placeholder="Yo'l, jarima" className="text-right tabular" /></Field>
 
-        <Field label="Haydovchi haqi"><Input name="payAmount" type="number" min="0" step="1000" value={pay} onChange={(e) => setPay(e.target.value)} className="text-right tabular" /></Field>
+        <Field label="Haydovchi haqi"><Input name="payAmount" type="number" min="0" step="1000" value={pay} onChange={(e) => setPay(e.target.value)} placeholder="Haydovchiga" className="text-right tabular" /></Field>
         <Field label={`To'lov turi${num(pay) > 0 ? " *" : ""}`}>
-          <Select name="payType" defaultValue="" required={num(pay) > 0}><option value="">—</option><option value="PAYROLL">Oylik</option><option value="CASH">Naqd</option></Select>
+          <Select name="payType" defaultValue="" required={num(pay) > 0}><option value="">Oylik / naqd</option><option value="PAYROLL">Oylik</option><option value="CASH">Naqd</option></Select>
         </Field>
-        <Field label="Kirim (bajarilgan)"><Input name="revenue" type="number" min="0" step="1000" value={revenue} onChange={(e) => setRevenue(e.target.value)} className="text-right tabular" /></Field>
+        <Field label="Kirim (bajarilgan)" hint="dastavka / xizmat puli — logistika kassasiga"><Input name="revenue" type="number" min="0" step="1000" value={revenue} onChange={(e) => setRevenue(e.target.value)} placeholder="Olinadigan pul" className="text-right tabular" /></Field>
         <Field label={`Kirim turi${num(revenue) > 0 ? " *" : ""}`}>
-          <Select name="revenueType" defaultValue="" required={num(revenue) > 0}>{REVENUE_OPTIONS}</Select>
+          <Select name="revenueType" defaultValue="" required={num(revenue) > 0}><option value="">Qanday pul</option>{REVENUE_TYPE_OPTIONS}</Select>
         </Field>
-        <Field label="Izoh" className="col-span-2"><Input name="note" placeholder="Tun 22:30, 3 soat kutdi…" maxLength={300} /></Field>
+        <Field label="Izoh" className="col-span-2"><Input name="note" placeholder="Qo'shimcha: tun 22:30, 3 soat kutdi" maxLength={300} /></Field>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Qator qo'shish"}</Button>
