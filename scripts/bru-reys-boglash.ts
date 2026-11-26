@@ -2,6 +2,7 @@
  * Eski reyslarni BRU brigadasiga bog'lash — bir martalik. BRU ilgari Logistika sozlamalarida operator ismi bilan yozilgan
  * («HUSAN AKA BRU YANGI ZOVOD», «BEGZOD AKA JBI»…); endi BRU — Otdel kadr komandasidan o'tgan BRU brigadasi (BRU-1, BRU-2).
  * `Trip.bru` matni (nakladnoyda ko'rinadi) o'zgarmaydi, faqat `Trip.bruId` yoziladi — yetkazilgan m³ BRU varag'iga tushadi.
+ * Olinadi: BRU si bo'sh reys yoki eski nomdan ochilib yopilgan BRU ga (migratsiya bru_komanda) bog'langan reys / zayavka qatori.
  * Shu reyslar zayavkasining BRU si bo'sh beton qatori ham shu BRU ga bog'lanadi (keyingi reys o'zi tushsin).
  *
  *   ENV_FILE=/var/www/insof-erp/tenants/<slug>.env npx tsx scripts/bru-reys-boglash.ts          (faqat ro'yxat)
@@ -9,7 +10,7 @@
  *   ... --map "ELBEK AKA MIXALIFKA BRU=BRU-2"   — qo'shimcha / boshqa moslik (bir necha marta berish mumkin)
  *
  * Sukut moslik — BRU komandalari a'zolari bo'yicha (2026-11-26): Kuchkarov Bekzod, Teshabaev Tohirjon — BRU-1; Mirxidoyatov Xusan — BRU-2.
- * Tegilmaydi: BRU si allaqachon bog'langan reys. Har o'zgarish AuditLog'ga yoziladi. Oldin pg_dump zaxira oling.
+ * Tegilmaydi: faol BRU ga bog'langan reys/qator. Har o'zgarish AuditLog'ga yoziladi. Oldin pg_dump zaxira oling.
  */
 import { loadEnv } from "./env";
 loadEnv();
@@ -35,21 +36,28 @@ async function main() {
     map.set(key(from), to.trim());
   });
 
-  const brus = await db.brigade.findMany({ where: { isBru: true }, select: { id: true, name: true } });
-  const bruOf = new Map(brus.map((b) => [key(b.name), b]));
+  const brus = await db.brigade.findMany({ where: { isBru: true }, select: { id: true, name: true, isActive: true } });
+  const bruOf = new Map(brus.filter((b) => b.isActive).map((b) => [key(b.name), b]));
+  // Eski nomdan ochilib yopilgan BRU lar (masalan «HUSAN AKA BRU YANGI ZOVOD») — id → yangi BRU
+  const oldBru = new Map<string, { id: string; name: string }>();
   const target = new Map<string, { id: string; name: string }>();
   for (const [from, to] of map) {
     const b = bruOf.get(key(to));
     if (!b) { console.log(`! «${to}» BRU brigadasi topilmadi (Brigadalar → Turi: BRU) — «${from}» o'tkazib yuborildi`); continue; }
     target.set(from, b);
   }
+  for (const b of brus) if (!b.isActive && target.has(key(b.name))) oldBru.set(b.id, target.get(key(b.name))!);
 
-  const trips = await db.trip.findMany({ where: { bruId: null, bru: { not: null } }, select: { id: true, bru: true, orderId: true, status: true } });
-  const hits = trips.flatMap((t) => { const b = target.get(key(t.bru!)); return b ? [{ t, b }] : []; });
+  const trips = await db.trip.findMany({
+    where: { OR: [{ bruId: null, bru: { not: null } }, { bruId: { in: [...oldBru.keys()] } }] },
+    select: { id: true, bru: true, bruId: true, orderId: true, status: true },
+  });
+  const hits = trips.flatMap((t) => { const b = (t.bruId && oldBru.get(t.bruId)) || (t.bru ? target.get(key(t.bru)) : undefined); return b ? [{ t, b }] : []; });
+  const oldItems = await db.orderItem.findMany({ where: { bruId: { in: [...oldBru.keys()] } }, select: { id: true, bruId: true } });
   const rest = new Map<string, number>();
-  for (const t of trips) if (!target.has(key(t.bru!))) rest.set(t.bru!, (rest.get(t.bru!) ?? 0) + 1);
+  for (const t of trips) if (!hits.some((h) => h.t.id === t.id)) rest.set(t.bru ?? "(nomsiz)", (rest.get(t.bru ?? "(nomsiz)") ?? 0) + 1);
 
-  console.log(`Baza: ${dbLabel()}. BRU si bog'lanmagan reys: ${trips.length}, moslik topilgani: ${hits.length}\n`);
+  console.log(`Baza: ${dbLabel()}. BRU si bo'sh yoki eski BRU dagi reys: ${trips.length}, moslik topilgani: ${hits.length}; eski BRU dagi zayavka qatori: ${oldItems.length}\n`);
   const groups = new Map<string, number>();
   for (const h of hits) groups.set(`«${h.t.bru}» → ${h.b.name}`, (groups.get(`«${h.t.bru}» → ${h.b.name}`) ?? 0) + 1);
   for (const [g, n] of groups) console.log(`  ${g} — ${n} ta`);
@@ -57,7 +65,7 @@ async function main() {
     console.log("\nMoslik yo'q (tegilmaydi — kerak bo'lsa --map bilan bering):");
     for (const [n, c] of rest) console.log(`  «${n}» — ${c} ta`);
   }
-  if (!hits.length) return;
+  if (!hits.length && !oldItems.length) return;
   if (!confirmed) { console.log("\nYozish uchun --yes bilan qayta ishga tushiring."); return; }
 
   const director = await db.user.findFirst({ where: { role: "DIRECTOR", isActive: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
@@ -67,15 +75,20 @@ async function main() {
     const orderBru = new Map<string, string>();
     for (const { t, b } of hits) {
       // Shartli: oraliqda qo'lda bog'langan bo'lsa — tegilmaydi
-      const r = await tx.trip.updateMany({ where: { id: t.id, bruId: null }, data: { bruId: b.id } });
+      const r = await tx.trip.updateMany({ where: { id: t.id, bruId: t.bruId }, data: { bruId: b.id } });
       if (!r.count) continue;
-      changed.push({ id: t.id, before: { bruId: null }, after: { bruId: b.id, bru: t.bru, via: "bru-reys-boglash" } });
+      changed.push({ id: t.id, before: { bruId: t.bruId }, after: { bruId: b.id, bru: t.bru, via: "bru-reys-boglash" } });
       if (t.status !== "CANCELLED") orderBru.set(t.orderId, b.id);
     }
     await auditMany(tx, director.id, "UPDATE", "Trip", changed);
     // Zayavkaning BRU si bo'sh beton qatori — shu BRU
     const items = await tx.orderItem.findMany({ where: { orderId: { in: [...orderBru.keys()] }, bruId: null, product: { unit: "m3" } }, select: { id: true, orderId: true } });
     const itemChanged: { id: string; before: unknown; after: unknown }[] = [];
+    for (const i of oldItems) {
+      const bruId = oldBru.get(i.bruId!)!.id;
+      const r = await tx.orderItem.updateMany({ where: { id: i.id, bruId: i.bruId }, data: { bruId } });
+      if (r.count) itemChanged.push({ id: i.id, before: { bruId: i.bruId }, after: { bruId, via: "bru-reys-boglash" } });
+    }
     for (const i of items) {
       const bruId = orderBru.get(i.orderId)!;
       const r = await tx.orderItem.updateMany({ where: { id: i.id, bruId: null }, data: { bruId } });
