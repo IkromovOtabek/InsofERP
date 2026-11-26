@@ -51,15 +51,15 @@ export async function LogiOverview({ period, accounts, toPay }: {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Jami tushum" value={moneyShort(revenue)} hint={`dostavka ${moneyShort(delivery)} · usluga ${moneyShort(service)} · obyekt ${moneyShort(t.revOther)}${exIn ? ` · boshqa ${moneyShort(exIn)}` : ""}`} icon={TrendingUp} tone="success" href={hisob("&karta=tushum")} />
-        <StatCard label="Xarajat (oyliksiz)" value={moneyShort(cost)} hint={`yoqilg'i ${moneyShort(t.fuelSum)} · ta'mir ${moneyShort(t.repair + t.parts + t.vulc)}${exOut ? ` · mashinasiz ${moneyShort(exOut)}` : ""}`} icon={TrendingDown} tone="warning" href={hisob("&karta=xarajat")} />
-        <StatCard label="Haydovchilar oyligi" value={moneyShort(t.pay)} hint="reys haqi" icon={HandCoins} href={hisob("&karta=oylik")} />
-        <StatCard label="Jami (sof)" value={moneyShort(net)} hint={revenue > 0 ? `tushum − xarajat − oylik · ${fmtNum((net / revenue) * 100, 1)}%` : period.label} icon={Calculator} tone={net < 0 ? "danger" : "info"} href={hisob("&karta=jami")} />
-        <StatCard label="Logistika kassasi — qoldiq" value={moneyShort(kassa)} hint="hozirgi · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href="/logistika/moliya?tab=jurnal" />
-        <StatCard label="Pul kirimi" value={moneyShort(j.totals.income)} hint={j.totals.transferIn ? `shundan zavoddan o'tkazma ${moneyShort(j.totals.transferIn)}` : period.label} icon={ArrowDownLeft} tone="success" href="/logistika/moliya?tab=jurnal" />
-        <StatCard label="Pul chiqimi" value={moneyShort(j.totals.expense)} hint={`zavod hisobidan ${moneyShort(j.totals.expenseFactory)} · logistikadan ${moneyShort(j.totals.expenseLogi)}`} icon={ArrowUpRight} href="/logistika/moliya?tab=jurnal" />
-        <StatCard label="To'lanishi kerak" value={moneyShort(due)} hint={`${toPay.length} ta tasdiqlangan so'rov`} icon={HandCoins} tone={toPay.length ? "warning" : "default"} href="/logistika/moliya?tab=tolov" />
-        <StatCard label="Reys va probeg" value={`${fmtNum(t.trips, 0)} reys`} hint={`${fmtNum(t.km, 0)} km${unpriced.length ? ` · narxsiz ${unpriced.length}` : ""}`} icon={Route} tone={unpriced.length ? "warning" : "info"} href={hisob("&karta=reys")} />
+        <StatCard label="Jami tushum" tag="xarajatsiz" value={moneyShort(revenue)} hint={`dostavka ${moneyShort(delivery)} · usluga ${moneyShort(service)} · obyekt ${moneyShort(t.revOther)}${exIn ? ` · boshqa ${moneyShort(exIn)}` : ""}`} icon={TrendingUp} tone="success" href={hisob("&karta=tushum")} />
+        <StatCard label="Xarajat (oyliksiz)" tag="yoqilg'i + ta'mir" value={moneyShort(cost)} hint={`yoqilg'i ${moneyShort(t.fuelSum)} · ta'mir ${moneyShort(t.repair + t.parts + t.vulc)}${exOut ? ` · mashinasiz ${moneyShort(exOut)}` : ""}`} icon={TrendingDown} tone="warning" href={hisob("&karta=xarajat")} />
+        <StatCard label="Haydovchilar oyligi" tag="reys haqi" value={moneyShort(t.pay)} hint="reys haqi" icon={HandCoins} href={hisob("&karta=oylik")} />
+        <StatCard label="Jami (sof)" tag="tushum − chiqim" value={moneyShort(net)} hint={revenue > 0 ? `tushum − xarajat − oylik · ${fmtNum((net / revenue) * 100, 1)}%` : period.label} icon={Calculator} tone={net < 0 ? "danger" : "info"} href={hisob("&karta=jami")} />
+        <StatCard label="Logistika kassasi — qoldiq" tag="hozirgi qoldiq" value={moneyShort(kassa)} hint="hozirgi · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href="/logistika/moliya?tab=jurnal" />
+        <StatCard label="Pul kirimi" tag="kassaga kirgan" value={moneyShort(j.totals.income)} hint={j.totals.transferIn ? `shundan zavoddan o'tkazma ${moneyShort(j.totals.transferIn)}` : period.label} icon={ArrowDownLeft} tone="success" href="/logistika/moliya?tab=jurnal" />
+        <StatCard label="Pul chiqimi" tag="kassadan chiqqan" value={moneyShort(j.totals.expense)} hint={`zavod hisobidan ${moneyShort(j.totals.expenseFactory)} · logistikadan ${moneyShort(j.totals.expenseLogi)}`} icon={ArrowUpRight} href="/logistika/moliya?tab=jurnal" />
+        <StatCard label="To'lanishi kerak" tag="to'lanmagan" value={moneyShort(due)} hint={`${toPay.length} ta tasdiqlangan so'rov`} icon={HandCoins} tone={toPay.length ? "warning" : "default"} href="/logistika/moliya?tab=tolov" />
+        <StatCard label="Reys va probeg" tag="reys · km" value={`${fmtNum(t.trips, 0)} reys`} hint={`${fmtNum(t.km, 0)} km${unpriced.length ? ` · narxsiz ${unpriced.length}` : ""}`} icon={Route} tone={unpriced.length ? "warning" : "info"} href={hisob("&karta=reys")} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3 [&>*]:min-w-0">

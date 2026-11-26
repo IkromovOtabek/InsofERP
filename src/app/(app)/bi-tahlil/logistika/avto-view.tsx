@@ -56,8 +56,8 @@ export function AvtoView({ r, period, base, keep }: { r: AvtoReport; period: Day
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Reyslar" value={fmtNum(t.trips)} hint={`${fmtNum(t.km)} km · ${worked} mashina ishladi`} icon={Truck} href="#mashinalar" />
         <StatCard label="Yoqilg'i (berilgan)" value={moneyShort(t.fuelSum)} hint={normSum != null ? `norma ${moneyShort(normSum)}${overFuel != null && Math.abs(overFuel) >= 1 ? ` · ${overFuel > 0 ? "ortiqcha" : "tejaldi"} ${moneyShort(Math.abs(overFuel))}` : ""}` : "norma kiritilmagan"} icon={Fuel} tone={normSum != null && normFuel > normSum * 1.05 ? "danger" : "default"} href="#mashinalar" />
-        <StatCard label="Jami xarajat" value={moneyShort(t.total)} hint={t.perKm != null ? `1 km ga ${fmtNum(t.perKm)} so'm` : "yoqilg'i + ish haqi + remont"} icon={Gauge} href="#mashinalar" />
-        <StatCard label="Foyda (dastavka)" value={moneyShort(t.profit)} hint={`daromad ${moneyShort(t.revenue)}`} icon={Wallet} tone={t.profit < 0 ? "danger" : "success"} href="#mashinalar" />
+        <StatCard label="Jami xarajat" tag="yoqilg'i + haq + ta'mir" value={moneyShort(t.total)} hint={t.perKm != null ? `1 km ga ${fmtNum(t.perKm)} so'm` : "yoqilg'i + ish haqi + remont"} icon={Gauge} href="#mashinalar" />
+        <StatCard label="Foyda (dastavka)" tag="tushum − xarajat" value={moneyShort(t.profit)} hint={`daromad ${moneyShort(t.revenue)}`} icon={Wallet} tone={t.profit < 0 ? "danger" : "success"} href="#mashinalar" />
       </div>
 
       <Section id="mashinalar" title="1. Har bir mashina bo'yicha (tanlangan davr)" className="mt-2">

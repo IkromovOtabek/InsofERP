@@ -113,11 +113,11 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
           <DayRangeBar base={BASE} range={period} keep={{ tab: "jurnal" }} />
           <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
             {accounts.map((a) => (
-              <StatCard key={a.id} label={`${a.name} — qoldiq`} value={moneyShort(a.balance)} hint="butun davr · kassaga kirmaydi" icon={Landmark} tone={a.balance < 0 ? "danger" : "brand"} />
+              <StatCard key={a.id} label={`${a.name} — qoldiq`} tag="butun davr" value={moneyShort(a.balance)} hint="butun davr · kassaga kirmaydi" icon={Landmark} tone={a.balance < 0 ? "danger" : "brand"} />
             ))}
-            <StatCard label="Kirim" value={moneyShort(j.totals.income)} hint={j.totals.transferIn ? `shundan zavoddan o'tkazma ${moneyShort(j.totals.transferIn)}` : period.label} icon={ArrowDownLeft} tone="success" />
-            <StatCard label="Chiqim — zavod hisobidan" value={moneyShort(j.totals.expenseFactory)} hint="kassa/bankdan berilgan logistika puli" icon={Building2} />
-            <StatCard label="Chiqim — logistika hisobidan" value={moneyShort(j.totals.expenseLogi)} hint={`jami chiqim ${moneyShort(j.totals.expense)}`} icon={ArrowUpRight} tone="warning" />
+            <StatCard label="Kirim" tag="kassaga kirgan" value={moneyShort(j.totals.income)} hint={j.totals.transferIn ? `shundan zavoddan o'tkazma ${moneyShort(j.totals.transferIn)}` : period.label} icon={ArrowDownLeft} tone="success" />
+            <StatCard label="Chiqim — zavod hisobidan" tag="zavod kassasidan" value={moneyShort(j.totals.expenseFactory)} hint="kassa/bankdan berilgan logistika puli" icon={Building2} />
+            <StatCard label="Chiqim — logistika hisobidan" tag="logistika kassasidan" value={moneyShort(j.totals.expenseLogi)} hint={`jami chiqim ${moneyShort(j.totals.expense)}`} icon={ArrowUpRight} tone="warning" />
           </div>
 
           {write && (
@@ -258,9 +258,9 @@ async function SpendView({ sp }: { sp: Record<string, string | undefined> }) {
     <div>
       <PageHeader title="Logistika kassasi" info="Logistika hisobidagi jami pul va undan chiqim. Chiqim tasdiqsiz yoziladi, qoldiqdan oshmaydi; hammasi Logistika moliya jurnaliga tushadi." />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Jami puli" value={moneyShort(total)} hint="hozirgi qoldiq · zavod kassasiga kirmaydi" icon={Landmark} tone={total < 0 ? "danger" : "brand"} />
+        <StatCard label="Jami puli" tag="hozirgi qoldiq" value={moneyShort(total)} hint="hozirgi qoldiq · zavod kassasiga kirmaydi" icon={Landmark} tone={total < 0 ? "danger" : "brand"} />
         {accounts.length > 1 && accounts.map((a) => <StatCard key={a.id} label={a.name} value={moneyShort(a.balance)} icon={Landmark} />)}
-        <StatCard label="Chiqim" value={moneyShort(spent.reduce((a, r) => a + r.amount, 0))} hint={`${spent.length} ta · ${period.label}`} icon={ArrowUpRight} tone="warning" />
+        <StatCard label="Chiqim" tag="davrdagi chiqim" value={moneyShort(spent.reduce((a, r) => a + r.amount, 0))} hint={`${spent.length} ta · ${period.label}`} icon={ArrowUpRight} tone="warning" />
       </div>
       <Card className="mb-5">
         <CardHeader title="Chiqim qilish" info="Faqat logistika hisobidan. Mashina tanlansa — ta'mir, zapchast, yo'l xarajati shu mashina hisobiga ham yoziladi." />

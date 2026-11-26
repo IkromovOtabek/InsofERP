@@ -92,8 +92,9 @@ export const valueLength = (v: React.ReactNode) => (typeof v === "string" || typ
 const statValueSize = (n: number | null) =>
   n == null || n <= 7 ? "text-[24px] sm:text-[30px]" : n <= 10 ? "text-[22px] sm:text-[26px]" : n <= 14 ? "text-[19px] sm:text-[22px]" : "text-[16px] sm:text-[19px]";
 
-export function StatCard({ label, value, hint, icon: Icon, tone = "default", href }: {
-  label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: LucideIcon; tone?: Tone; href?: string;
+/** `tag` — o'ng burchakdagi qisqa yorliq: summa nimaning summasi (masalan «xarajatsiz», «tushum − chiqim»). */
+export function StatCard({ label, value, hint, icon: Icon, tone = "default", href, tag }: {
+  label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: LucideIcon; tone?: Tone; href?: string; tag?: string;
 }) {
   const t = tones[tone];
   // h-full — bir qatordagi kartalar bir xil balandlikda (grid qatori bo'yicha cho'ziladi)
@@ -102,7 +103,12 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "default", hre
       {/* Ikonka yorliq qatorida — qiymat kartaning to'liq enini oladi va bo'linmaydi */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 text-[13px] font-medium leading-snug text-slate-500">{label}</div>
-        {Icon && <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", t.icon)}><Icon size={18} /></div>}
+        {(tag || Icon) && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {tag && <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium leading-4 text-slate-600">{tag}</span>}
+            {Icon && <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", t.icon)}><Icon size={18} /></div>}
+          </div>
+        )}
       </div>
       <div className={cn("mt-1 break-words leading-tight font-bold tracking-tight tabular", statValueSize(valueLength(value)), t.value)}>{value}</div>
       {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
