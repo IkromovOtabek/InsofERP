@@ -50,15 +50,18 @@ check(logiBal() - l0 === 1000000 && c0 - cashBal() === 1000000, "o'tkazma: logis
 check(n1(`select count(*) from "CashTransaction" where "refType"='LogisticsTx' and "refId"=${lit(tr)} and type='EXPENSE'`) === 1, "o'tkazma: kassada hujjatga bog'langan bitta qator");
 
 // ── Logistika boshlig'i (spend, 2026-11-26): jami pulni ko'radi, faqat logistika hisobidan o'zi chiqim qiladi ──
+// Qoldiq hisoblanadi (Tushum − Xarajat − Oylik): chiqim uchun tushum kerak — bugungi kirimli qator (oxirida bekor qilinadi)
+const QYQ = `qa_lm_rev_${tag}`;
+q(`insert into "LogisticsEntry" (id, "docNo", date, "vehicleId", trips, revenue, "revenueType", dropoff, note, "createdById", "createdAt") values (${lit(QYQ)}, ${lit(`QY-QAR-${tag}`)}, now(), ${lit(veh)}, 1, 900000000, 'OBJECT', 'QA tushum', 'QA tushum', ${lit(prorabId)}, now())`);
 {
   const g = await logist.get("/logistika/moliya");
-  check(g.status === 200 && g.text.includes("Jami puli") && !g.text.includes("Chiqim — logistika hisobidan"), "logistika boshlig'i: kassa qoldig'i ko'rinadi, to'liq moliya yopiq", g.status);
+  check(g.status === 200 && g.text.includes("Qoldiq") && !g.text.includes("Chiqim — logistika hisobidan"), "logistika boshlig'i: kassa qoldig'i ko'rinadi, to'liq moliya yopiq", g.status);
   const l1 = logiBal(), c1 = cashBal();
   let rs = await logist.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: L, counterparty: "QA logist", amount: 50000 })], "/logistika/moliya");
   check(rs.ok && l1 - logiBal() === 50000 && cashBal() === c1, "logistika boshlig'i: logistika hisobidan chiqim yozildi, kassa o'zgarmadi", rs.error ?? rs.text.slice(0, 200));
   rs = await logist.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: cashAcc, amount: 1000 })], "/logistika/moliya");
   check(!rs.ok, "logistika boshlig'i: zavod kassasidan chiqim qila olmaydi");
-  rs = await logist.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: L, amount: logiBal() + 1000000 })], "/logistika/moliya");
+  rs = await logist.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: L, amount: 5000000000 })], "/logistika/moliya");
   check(!rs.ok, "logistika boshlig'i: qoldiqdan ortiq chiqim yo'q");
   rs = await disp.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: L, amount: 1000 })], "/logistika/moliya");
   check(!rs.ok, "dispetcher: chiqim qila olmaydi");
@@ -186,4 +189,5 @@ check(g.status === 200 && !g.text.includes(">Foyda<"), "transport ro'yxati: logi
 g = await buh.get("/bi-tahlil/logistika/avtotransport");
 check(g.status !== 200 || !g.text.includes("Avtotransport tahlili"), "Tahlil → Avtotransport buxgalteriyaga yopiq", g.status);
 
+q(`update "LogisticsEntry" set "cancelledAt"=now(), "cancelReason"='QA' where id=${lit(QYQ)}`);
 summary("b-logi-moliya");

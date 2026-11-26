@@ -113,9 +113,9 @@ export async function logiAccounts() {
 async function logiOutflowError(tx: Tx, accountId: string, amount: number): Promise<string | null> {
   const acc = await tx.logisticsAccount.findUnique({ where: { id: accountId }, select: { name: true, isActive: true } });
   if (!acc || !acc.isActive) return "Logistika hisobi topilmadi";
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"logi:" + accountId}))`;
-  const left = (await logiBalances(tx, [accountId])).get(accountId) ?? 0;
-  if (amount > left + 0.005) return `${acc.name}da yetarli pul yo'q: qoldiq ${money(left)}, chiqim ${money(amount)}`;
+  // 2026-11-26 dan logistika puli hisoblanadi (Tushum − Xarajat − Oylik, `lib/logistics-balance.ts`) — hisob yozuvlari
+  // yig'indisi qoldiq emas, shuning uchun bu yerda tekshirilmaydi. Logistika boshlig'i chiqimi qoldiqqa `spendTx` da tekshiriladi
+  void amount;
   return null;
 }
 
@@ -477,7 +477,7 @@ export function guessLogiCategory(c: { type: CashTxType; category: string; subCa
 const plateKey = (s: string | null | undefined) => (s ?? "").toUpperCase().replace(/[^0-9A-ZА-ЯЁ]/g, "");
 
 /** Zavod kassasidagi transport yozuvlari manbalari: «Transport» va PNL «Avtotransport» qatoridagi manbalar (chiqim), transport xizmati (kirim). */
-async function transportCashNames() {
+export async function transportCashNames() {
   const cats = await db.cashCategory.findMany({ where: { pnlLine: "TRANSPORT" }, select: { name: true } });
   return [...new Set([CASH_EXPENSE_CATEGORY, ...cats.map((c) => c.name)])];
 }
@@ -682,6 +682,12 @@ export async function logiRequestsToPay() {
  * Qo'lda bekor qilinmaydi: reys qo'shilsa/bekor bo'lsa yoki dastavka summasi o'zgarsa `syncOrderDelivery` qayta hisoblaydi.
  */
 export const DELIVERY_REF = "TripDelivery";
+/**
+ * Kirimning logistika hisobidagi nusxasi (dastavka va Hisob varag'i qatori kirimi → `LogisticsTx`) — 2026-11-26 dan TO'XTATILGAN:
+ * logistika qoldig'i endi to'g'ridan hisoblanadi (Tushum − Xarajat − Oylik, `lib/logistics-balance.ts`), nusxa ikki xil raqam
+ * berib chalkashtirardi. Mavjud nusxalar `scripts/logi-nusxa-bekor.ts` bilan bekor qilinadi.
+ */
+export const LOGI_MIRROR = false;
 export const DELIVERY_CATEGORY = "Dastavka (zayavka)";
 /** Shu kundan (yetkazilgan sana) boshlab — avvalgi reyslar logistika hisobiga tushmaydi (eski oylar yopilgan). */
 export const DELIVERY_LOGI_SINCE = new Date(2026, 10, 1);
@@ -717,6 +723,7 @@ async function deliveryShares(tx: Tx, orderId: string) {
  * o'zgarsa joyida yangilanadi (audit bilan), ulush 0 bo'lsa yoki reys yetkazilgan emas bo'lsa — bekor qilinadi.
  */
 export async function syncOrderDeliveryTx(tx: Tx, orderId: string, userId: string): Promise<void> {
+  if (!LOGI_MIRROR) return;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"logidlv:" + orderId}))`;
   const { orderNo, want } = await deliveryShares(tx, orderId);
   const allTrips = await tx.trip.findMany({ where: { orderId }, select: { id: true } });
@@ -774,6 +781,7 @@ export const ENTRY_REVENUE_REF = "LedgerEntry";
 export const ENTRY_REVENUE_CATEGORY = "Hisob varag'i kirimi";
 
 export async function syncEntryRevenueTx(tx: Tx, entryId: string, userId: string): Promise<void> {
+  if (!LOGI_MIRROR) return;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"logient:" + entryId}))`;
   const e = await tx.logisticsEntry.findUnique({
     where: { id: entryId },

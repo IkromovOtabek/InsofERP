@@ -15,6 +15,7 @@ import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard,
 import { DRILL_LINK, DrillPanel } from "@/components/drill-panel";
 import { AvtoView } from "@/app/(app)/bi-tahlil/logistika/avto-view";
 import { DayRangeBar, MonthBar, monthTitle, parseDayRange, parseMonth } from "@/app/(app)/bi-tahlil/month-bar";
+import { logiQoldiqNow } from "@/lib/logistics-balance";
 import { CancelTx, LinkCashForm, MonthPayForm, SpendForm, TxForm, type SourceOpt } from "./forms";
 import { LogiOverview } from "./umumiy";
 
@@ -89,12 +90,13 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
   if (tab === "jurnal") {
     const period = parseDayRange(sp);
     const write = canLogiWrite(s);
-    const [j, links, sources, vehicles, drivers] = await Promise.all([
+    const [j, links, sources, vehicles, drivers, now] = await Promise.all([
       logiJournal(period.from, period.to),
       write ? cashLinkCandidates() : Promise.resolve({ total: 0, rows: [] }),
       write ? paySources(true) : Promise.resolve([]),
       write ? db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }) : Promise.resolve([]),
       write ? driverEmployees({ activeOnly: true }) : Promise.resolve([]),
+      logiQoldiqNow(),
     ]);
     const srcOpts: SourceOpt[] = sources.map((a) => ({ id: a.id, group: a.group, type: a.type, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }));
     // Davr parametrlari saqlanadi: zapchast paneli ochilib-yopilganda jurnal o'sha davrda qoladi
@@ -112,9 +114,7 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
         <div className="mt-4">
           <DayRangeBar base={BASE} range={period} keep={{ tab: "jurnal" }} />
           <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-            {accounts.map((a) => (
-              <StatCard key={a.id} label={`${a.name} — qoldiq`} tag="butun davr" value={moneyShort(a.balance)} hint="butun davr · kassaga kirmaydi" icon={Landmark} tone={a.balance < 0 ? "danger" : "brand"} />
-            ))}
+            <StatCard label="Logistika qoldig'i" tag="1-noyabrdan" value={moneyShort(now.qoldiq)} hint="tushum − xarajat − oylik" icon={Landmark} tone={now.qoldiq < 0 ? "danger" : "brand"} href={BASE} />
             <StatCard label="Kirim" tag="kassaga kirgan" value={moneyShort(j.totals.income)} hint={j.totals.transferIn ? `shundan zavoddan o'tkazma ${moneyShort(j.totals.transferIn)}` : period.label} icon={ArrowDownLeft} tone="success" />
             <StatCard label="Chiqim — zavod hisobidan" tag="zavod kassasidan" value={moneyShort(j.totals.expenseFactory)} hint="kassa/bankdan berilgan logistika puli" icon={Building2} />
             <StatCard label="Chiqim — logistika hisobidan" tag="logistika kassasidan" value={moneyShort(j.totals.expenseLogi)} hint={`jami chiqim ${moneyShort(j.totals.expense)}`} icon={ArrowUpRight} tone="warning" />
@@ -246,20 +246,21 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
  */
 async function SpendView({ sp }: { sp: Record<string, string | undefined> }) {
   const period = parseDayRange(sp);
-  const [accounts, j, vehicles, drivers] = await Promise.all([
+  const [accounts, j, vehicles, drivers, now] = await Promise.all([
     logiAccounts(), logiJournal(period.from, period.to),
     db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }),
     driverEmployees({ activeOnly: true }),
+    logiQoldiqNow(),
   ]);
-  const total = accounts.reduce((a, x) => a + x.balance, 0);
+  // Logistika puli — hisoblangan qoldiq (Tushum − Xarajat − Oylik, 01.11.2026 dan): chiqim shundan oshmaydi
+  const total = now.qoldiq;
   const spent = j.rows.filter((r) => r.type === "EXPENSE" && r.kind === "LOGI");
-  const srcOpts: SourceOpt[] = accounts.map((a) => ({ id: `L:${a.id}`, group: "Logistika hisobi", type: a.type, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }));
+  const srcOpts: SourceOpt[] = accounts.map((a) => ({ id: `L:${a.id}`, group: "Logistika hisobi", type: a.type, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(total)}` }));
   return (
     <div>
       <PageHeader title="Logistika kassasi" info="Logistika hisobidagi jami pul va undan chiqim. Chiqim tasdiqsiz yoziladi, qoldiqdan oshmaydi; hammasi Logistika moliya jurnaliga tushadi." />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Jami puli" tag="hozirgi qoldiq" value={moneyShort(total)} hint="hozirgi qoldiq · zavod kassasiga kirmaydi" icon={Landmark} tone={total < 0 ? "danger" : "brand"} />
-        {accounts.length > 1 && accounts.map((a) => <StatCard key={a.id} label={a.name} value={moneyShort(a.balance)} icon={Landmark} />)}
+        <StatCard label="Qoldiq — jami puli" tag="1-noyabrdan" value={moneyShort(total)} hint="tushum − xarajat − oylik" icon={Landmark} tone={total < 0 ? "danger" : "brand"} />
         <StatCard label="Chiqim" tag="davrdagi chiqim" value={moneyShort(spent.reduce((a, r) => a + r.amount, 0))} hint={`${spent.length} ta · ${period.label}`} icon={ArrowUpRight} tone="warning" />
       </div>
       <Card className="mb-5">

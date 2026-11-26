@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, Calculator, Fuel, HandCoins, Landmark, PackageOpen, Route, TrendingDown, TrendingUp } from "lucide-react";
+import { Calculator, Fuel, HandCoins, Landmark, PackageOpen, Route, TrendingDown, TrendingUp } from "lucide-react";
 import { driverLedger, driverPaySums, fuelBalances, type LedgerRow } from "@/lib/driver-ledger";
-import { logiJournal } from "@/lib/logistics-finance";
-import { ledgerExtras } from "@/lib/ledger-extras";
+import { BAL_GROUPS, logiBalance, logiQoldiqNow } from "@/lib/logistics-balance";
 import { dispatcherStock } from "@/lib/dispatcher-stock";
 import { fmtNum, isoDate, money } from "@/lib/format";
 import { Card, CardHeader, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -31,9 +30,11 @@ const Line = ({ label, v, strong }: { label: string; v: number; strong?: boolean
 export async function LogiOverview({ period, accounts, toPay }: {
   period: DayRange; accounts: { id: string; name: string; balance: number }[]; toPay: { amount: unknown }[];
 }) {
-  const [led, j, disp, ex] = await Promise.all([driverLedger(period.from, period.to), logiJournal(period.from, period.to), dispatcherStock(), ledgerExtras(period.from, period.to)]);
+  const [led, disp, now] = await Promise.all([driverLedger(period.from, period.to), dispatcherStock(), logiQoldiqNow()]);
+  // To'rt raqam — Hisob varag'i kartalari bilan bitta hisob (`lib/logistics-balance.ts`): Tushum, Xarajat, Oylik, Qoldiq
+  const bal = await logiBalance(period.from, period.to, led);
   const t = led.total;
-  const kassa = accounts.reduce((a, x) => a + x.balance, 0);
+  void accounts;
   const due = toPay.reduce((a, r) => a + Number(r.amount), 0);
   const unpriced = led.rows.filter((r) => r.kind === "trip" && r.amount == null && r.pay > 0);
   const vehicles = byVehicle(led.rows);
@@ -41,49 +42,47 @@ export async function LogiOverview({ period, accounts, toPay }: {
   const pays = driverPaySums(led.rows);
   const held = disp.rows.filter((r) => r.held > 0.0005);
   const heldSum = held.reduce((a, r) => a + r.held * (r.price ?? 0), 0);
-  const delivery = t.revBank + t.revCash + t.revDebt, service = t.svcBank + t.svcCash;
   const range = `dan=${isoDate(period.from)}&gacha=${isoDate(new Date(period.to.getTime() - 1))}`;
   const hisob = (extra = "") => `/logistika/tabel?bolim=hisob&${range}${extra}`;
-  // Hisob varag'i kartalari bilan bir xil: jurnaldagi varaqqa tushmaydigan kirim/chiqim ham qo'shiladi (`lib/ledger-extras.ts`)
-  const exIn = ex.income.reduce((a, x) => a + x.amount, 0), exOut = ex.expense.reduce((a, x) => a + x.amount, 0);
-  // Jami xarajat — hammasi: yoqilg'i + haydovchi haqi + ta'mir + zapchast + vulkanizator + boshqa + mashinasiz (Chiqim tarkibi bilan bir xil)
-  const revenue = t.revenue + exIn, cost = t.total + exOut, net = revenue - cost;
   const n = (v: number) => fmtNum(v, 0);
+  const tp = bal.tushumParts;
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Jami tushum" tag="xarajatsiz" value={money(revenue)} hint={`dostavka ${n(delivery)} · usluga ${n(service)} · obyekt ${n(t.revOther)}${exIn ? ` · boshqa ${n(exIn)}` : ""}`} icon={TrendingUp} tone="success" href={hisob("&karta=tushum")} />
-        <StatCard label="Jami xarajat" tag="hamma chiqim" value={money(cost)} hint={`yoqilg'i ${n(t.fuelSum)} · haydovchi haqi ${n(t.pay)} · ta'mir ${n(t.repair + t.parts + t.vulc)}${t.other ? ` · boshqa ${n(t.other)}` : ""}${exOut ? ` · mashinasiz ${n(exOut)}` : ""}`} icon={TrendingDown} tone="warning" href={hisob("&karta=xarajat")} />
-        <StatCard label="Jami (sof)" tag="tushum − xarajat" value={money(net)} hint={revenue > 0 ? `${fmtNum((net / revenue) * 100, 1)}% tushumdan` : period.label} icon={Calculator} tone={net < 0 ? "danger" : "info"} href={hisob("&karta=jami")} />
-        <StatCard label="Logistika kassasi — qoldiq" tag="hozirgi qoldiq" value={money(kassa)} hint="hozirgi · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href="/logistika/moliya?tab=jurnal" />
-        <StatCard label="Pul kirimi" tag="kassaga kirgan" value={money(j.totals.income)} hint={j.totals.transferIn ? `shundan zavoddan o'tkazma ${n(j.totals.transferIn)}` : period.label} icon={ArrowDownLeft} tone="success" href="/logistika/moliya?tab=jurnal" />
-        <StatCard label="Pul chiqimi" tag="kassadan chiqqan" value={money(j.totals.expense)} hint={`zavod hisobidan ${n(j.totals.expenseFactory)} · logistikadan ${n(j.totals.expenseLogi)}`} icon={ArrowUpRight} href="/logistika/moliya?tab=jurnal" />
+        <StatCard label="Tushum" tag="bajarilgan ish" value={money(bal.tushum)} hint={`dostavka ${n(tp.dostavka)} · usluga ${n(tp.usluga)} · zavod uchun ${n(tp.obyekt)}${tp.boshqa ? ` · boshqa ${n(tp.boshqa)}` : ""}`} icon={TrendingUp} tone="success" href={hisob("&karta=tushum")} />
+        <StatCard label="Xarajat" tag="transportga ketgan" value={money(bal.xarajat)} hint={BAL_GROUPS.filter((g) => bal.xarajatByGroup[g] >= 1).map((g) => `${g.toLowerCase()} ${n(bal.xarajatByGroup[g])}`).join(" · ") || period.label} icon={TrendingDown} tone="warning" href={hisob("&karta=xarajat")} />
+        <StatCard label="Haydovchilar oyligi" tag="hisoblangan" value={money(bal.oylik)} hint={`reys haqi · ${fmtNum(t.trips, 0)} reys`} icon={HandCoins} href={hisob("&karta=oylik")} />
+        <StatCard label="Qoldiq" tag="tushum − xarajat − oylik" value={money(bal.qoldiq)} hint={period.label} icon={Calculator} tone={bal.qoldiq < 0 ? "danger" : "info"} href={hisob("&karta=jami")} />
+        <StatCard label="Qoldiq — 1-noyabrdan beri" tag="hozirgi" value={money(now.qoldiq)} hint="logistika boshlig'i chiqimi shundan" icon={Landmark} tone={now.qoldiq < 0 ? "danger" : "brand"} />
         <StatCard label="To'lanishi kerak" tag="to'lanmagan" value={money(due)} hint={`${toPay.length} ta tasdiqlangan so'rov`} icon={HandCoins} tone={toPay.length ? "warning" : "default"} href="/logistika/moliya?tab=tolov" />
         <StatCard label="Reys va probeg" tag="reys · km" value={`${fmtNum(t.trips, 0)} reys`} hint={`${fmtNum(t.km, 0)} km${unpriced.length ? ` · narxsiz ${unpriced.length}` : ""}`} icon={Route} tone={unpriced.length ? "warning" : "info"} href={hisob("&karta=reys")} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3 [&>*]:min-w-0">
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Kirim tarkibi" icon={TrendingUp} action={<Link href={hisob()} className="text-sm text-blue-700 hover:underline">Batafsil</Link>} /></div>
+          <div className="px-5 pt-5"><CardHeader title="Tushum tarkibi" icon={TrendingUp} action={<Link href={hisob("&karta=tushum")} className="text-sm text-blue-700 hover:underline">Batafsil</Link>} /></div>
           <Table>
             <tbody>
               <Line label="Dostavka — perech." v={t.revBank} /><Line label="Dostavka — naqd" v={t.revCash} />
               {t.revDebt >= 1 && <Line label="Dostavka — qarzga (to'lov turi yo'q)" v={t.revDebt} />}
               <Line label="Usluga — perech." v={t.svcBank} /><Line label="Usluga — naqd" v={t.svcCash} />
-              <Line label="Obyekt (zavod uchun)" v={t.revOther} />
-              {exIn >= 1 && <Line label="Boshqa kirim (jurnal)" v={exIn} />}<Line label="Jami tushum" v={revenue} strong />
-              <Line label="Jami xarajat (chiqim tarkibi)" v={-cost} /><Line label="Sof natija (tushum − xarajat)" v={net} strong />
+              <Line label="Zavod uchun ish (obyekt)" v={t.revOther} />
+              {tp.boshqa >= 1 && <Line label="Boshqa kirim (jurnal)" v={tp.boshqa} />}<Line label="Tushum" v={bal.tushum} strong />
+              <Line label="− Xarajat" v={-bal.xarajat} /><Line label="− Haydovchilar oyligi" v={-bal.oylik} /><Line label="Qoldiq" v={bal.qoldiq} strong />
             </tbody>
           </Table>
         </Card>
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Chiqim tarkibi" icon={TrendingDown} action={<Link href={hisob()} className="text-sm text-blue-700 hover:underline">Batafsil</Link>} /></div>
+          <div className="px-5 pt-5"><CardHeader title="Xarajat tarkibi" icon={TrendingDown} action={<Link href={hisob("&karta=xarajat")} className="text-sm text-blue-700 hover:underline">Batafsil</Link>} /></div>
           <Table>
             <tbody>
-              <Line label="Yoqilg'i (norma × narx)" v={t.fuelSum} /><Line label="Haydovchi haqi" v={t.pay} /><Line label="Ta'mir" v={t.repair} />
-              <Line label="Zapchast" v={t.parts} /><Line label="Vulkanizator" v={t.vulc} /><Line label="Boshqa" v={t.other} />
-              {exOut >= 1 && <Line label="Mashinasiz xarajat (jurnal)" v={exOut} />}<Line label="Jami chiqim" v={cost} strong />
+              {BAL_GROUPS.map((g) => <Line key={g} label={g} v={bal.xarajatByGroup[g]} />)}
+              <Line label="Xarajat" v={bal.xarajat} strong />
+              <Line label="shundan zavod kassasidan (Transport)" v={bal.xarajatBySource.kassa} />
+              <Line label="shundan mashina xarajati (sklad, ta'mir…)" v={bal.xarajatBySource.mashina} />
+              <Line label="shundan Logistika moliyadan" v={bal.xarajatBySource.logistika} />
+              <Line label="shundan dispetcher omboridan yoqilg'i" v={bal.xarajatBySource.sklad} />
             </tbody>
           </Table>
         </Card>

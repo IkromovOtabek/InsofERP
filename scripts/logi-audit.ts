@@ -17,7 +17,8 @@ async function main() {
   const { db } = await import("@/lib/db");
   const { driverLedger, ledgerTotals } = await import("@/lib/driver-ledger");
   const { avtoReport } = await import("@/lib/fin-report/avto");
-  const { DELIVERY_REF, DELIVERY_LOGI_SINCE, logiBalances, logiJournal } = await import("@/lib/logistics-finance");
+  const { DELIVERY_REF, DELIVERY_LOGI_SINCE, LOGI_MIRROR, logiBalances, logiJournal } = await import("@/lib/logistics-finance");
+  const { logiBalance } = await import("@/lib/logistics-balance");
   const { money } = await import("@/lib/format");
   const { dbLabel } = await import("./demo-guard");
 
@@ -91,7 +92,7 @@ async function main() {
   const re = ledgerTotals(led.rows);
   if (near(re.revenue, t.revenue) && near(re.total, t.total)) ok(`Hisob varag'i jami qatorlardan: tushum ${money(t.revenue)}, xarajat ${money(t.total)}, foyda ${money(t.profit)}`);
   else bad("Hisob varag'i jami qatorlar yig'indisiga teng emas");
-  const rowBad = led.rows.filter((r) => !near(r.total, r.fuelSum + r.pay + r.repair + r.parts + r.vulc + r.other) || !near(r.revenue, r.revBank + r.revCash + r.revDebt + r.svcBank + r.svcCash + r.revOther) || !near(r.profit, r.revenue - r.total));
+  const rowBad = led.rows.filter((r) => !near(r.total, r.pay + r.repair + r.parts + r.vulc + r.other) || !near(r.revenue, r.revBank + r.revCash + r.revDebt + r.svcBank + r.svcCash + r.revOther) || !near(r.profit, r.revenue - r.total));
   if (rowBad.length) bad(`Qator jami ustunlarga mos emas: ${rowBad.length} (${rowBad.slice(0, 5).map((r) => r.no || r.id).join(", ")})`);
   else ok(`${led.rows.length} qatorda jami = ustunlar yig'indisi`);
   const ids = led.rows.map((r) => r.id);
@@ -103,7 +104,8 @@ async function main() {
   log(`  · Hisob varag'i: reys dastavkasi ${money(tripRev)}, qo'lda qator kirimi ${money(t.revenue - tripRev)}`);
   if (!near(av.total.revenue, t.revenue, 100)) log(`    (farq ${money(t.revenue - av.total.revenue)} — Foyda tabi qo'lda qator kirimini va boshqa usulni hisobga olishi mumkin, ko'rib chiqing)`);
 
-  if (to > DELIVERY_LOGI_SINCE) {
+  // Kirim nusxasi (2026-11-26 gacha) — endi o'chirilgan; faqat yoqiq bo'lsa solishtiriladi
+  if (LOGI_MIRROR && to > DELIVERY_LOGI_SINCE) {
     const tripIds = led.rows.filter((r) => r.kind === "trip" && r.at >= DELIVERY_LOGI_SINCE).map((r) => r.id);
     const dl = await db.logisticsTx.findMany({ where: { refType: DELIVERY_REF, cancelledAt: null, date: { gte: from, lt: to } }, select: { refId: true, amount: true } });
     const dlBy = new Map(dl.map((x) => [x.refId!, Number(x.amount)]));
@@ -126,6 +128,10 @@ async function main() {
   const jSum = logiRows.reduce((s, r) => s + (r.type === "INCOME" ? r.amount : -r.amount), 0);
   if (near(balSum, jSum)) ok(`Logistika kassasi qoldig'i ${money(balSum)} = jurnal (kirim − chiqim)`);
   else bad(`Logistika kassasi qoldig'i ${money(balSum)} ≠ jurnal ${money(jSum)}`);
+
+  const b = await logiBalance(from, to);
+  log(`  · Logistika hisobi (davr): tushum ${money(b.tushum)} − xarajat ${money(b.xarajat)} − oylik ${money(b.oylik)} = qoldiq ${money(b.qoldiq)}`);
+  log(`    xarajat manbasi: kassa ${money(b.xarajatBySource.kassa)}, mashina ${money(b.xarajatBySource.mashina)}, logistika moliya ${money(b.xarajatBySource.logistika)}, dispetcher yoqilg'isi ${money(b.xarajatBySource.sklad)}`);
 
   log(`\nNatija: ${problems ? `${problems} ta muammo` : "muammo topilmadi"}`);
   const text = out.join("\n") + "\n";

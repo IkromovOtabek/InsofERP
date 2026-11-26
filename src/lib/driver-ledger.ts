@@ -360,7 +360,8 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     const refuel = refuelOf.get(s.id) ?? 0;
     const balAfter = balBefore + refuel - (use ?? 0);
     balance.set(v.id, balAfter);
-    const total = fuelSum + row.pay + e.repair + e.parts + e.vulc + e.other;
+    // Yoqilg'i normasi (fuelSum) xarajat emas — faqat nazorat ustuni (2026-11-26); yoqilg'i puli kassa/sklad orqali logistika hisobida
+    const total = row.pay + e.repair + e.parts + e.vulc + e.other;
 
     all.push({
       ...row,

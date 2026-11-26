@@ -5,6 +5,14 @@ import { z } from "zod";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
 import { addLogiTx, cancelLogiTx, isLogiAcc, linkCashToLogi, payDriverMonth } from "@/lib/logistics-finance";
+import { logiQoldiqNow } from "@/lib/logistics-balance";
+import { money } from "@/lib/format";
+
+/** Logistika hisobidan chiqim — logistika qoldig'idan (Tushum − Xarajat − Oylik, 01.11.2026 dan) oshmasin. */
+async function qoldiqError(amount: number): Promise<string | null> {
+  const { qoldiq } = await logiQoldiqNow();
+  return amount > qoldiq + 0.005 ? `Logistika qoldig'ida yetarli pul yo'q: qoldiq ${money(qoldiq)}, chiqim ${money(amount)}` : null;
+}
 
 /**
  * Logistika moliya amallari (veb). Qoida `lib/logistics-finance.ts` da: yozish — `fin_write`, pul berish — `fin_pay`
@@ -42,6 +50,7 @@ export async function addTx(_prev: ActionState, fd: FormData): Promise<ActionSta
   if ("error" in p) return { error: p.error };
   const date = dayOf(p.data.date);
   if (!date) return { error: "Sana noto'g'ri (kelajak sana bo'lmaydi)" };
+  if (p.data.type === "EXPENSE" && isLogiAcc(p.data.source)) { const e = await qoldiqError(p.data.amount); if (e) return { error: e }; }
   const r = await addLogiTx({ ...p.data, date, fromCashAccountId: p.data.fromCashAccountId || null }, s.userId);
   if (r.error) return { error: r.error };
   refresh();
@@ -60,6 +69,8 @@ export async function spendTx(_prev: ActionState, fd: FormData): Promise<ActionS
   if (!isLogiAcc(p.data.source)) return { error: "Chiqim faqat logistika hisobidan" };
   const date = dayOf(p.data.date);
   if (!date) return { error: "Sana noto'g'ri (kelajak sana bo'lmaydi)" };
+  const qe = await qoldiqError(p.data.amount);
+  if (qe) return { error: qe };
   const r = await addLogiTx({ ...p.data, type: "EXPENSE", date, fromCashAccountId: null }, s.userId);
   if (r.error) return { error: r.error };
   refresh();

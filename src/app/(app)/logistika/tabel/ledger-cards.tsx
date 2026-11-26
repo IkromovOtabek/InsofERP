@@ -4,6 +4,7 @@ import type { Drill, DrillItem, DrillPart } from "@/lib/drill";
 import { DRILL_LIMIT, sortDrill } from "@/lib/drill";
 import type { LedgerRow } from "@/lib/driver-ledger";
 import type { LedgerExtra } from "@/lib/ledger-extras";
+import { BAL_GROUPS, BAL_SOURCE_LABEL, type LogiBalance } from "@/lib/logistics-balance";
 import { PAY_TYPE_LABEL } from "@/lib/driver-trip-pay";
 import { date, dateTime, fmtNum, money } from "@/lib/format";
 import { Badge } from "@/components/ui";
@@ -29,14 +30,14 @@ const REVENUE: Metric[] = [
   { key: "svcCash", label: "Usluga — naqd", of: (r) => r.svcCash },
   { key: "revOther", label: "Obyekt (zavod uchun)", of: (r) => r.revOther },
 ];
+// Mashina varag'i (filtrda): qatorlarga yozilgan xarajat. Yoqilg'i normasi xarajat emas (faqat nazorat) — 2026-11-26
 const COST: Metric[] = [
-  { key: "fuel", label: "Yoqilg'i (norma × narx)", of: (r) => r.fuelSum },
   { key: "repair", label: "Ta'mir", of: (r) => r.repair },
   { key: "parts", label: "Zapchast", of: (r) => r.parts },
   { key: "vulc", label: "Vulkanizator", of: (r) => r.vulc },
   { key: "other", label: "Boshqa", of: (r) => r.other },
 ];
-const costOf = (r: LedgerRow) => r.fuelSum + r.repair + r.parts + r.vulc + r.other;
+const costOf = (r: LedgerRow) => r.repair + r.parts + r.vulc + r.other;
 const EXTRA_IN = "jurnal_kirim", EXTRA_OUT = "jurnal_chiqim";
 
 const rowTitle = (r: LedgerRow) => [r.no || (r.kind === "cost" ? "Reyssiz kun" : "Qo'lda qator"), r.plate, r.driver].filter(Boolean).join(" · ");
@@ -47,7 +48,7 @@ const rowSub = (r: LedgerRow) => [r.dropoff ? `${r.pickup} → ${r.dropoff}` : n
  * `extras` — jurnaldagi varaqqa tushmaydigan pul (faqat filtrsiz varaqda, summa huquqi bilan).
  */
 export function ledgerCardDrill(key: CardKey, tur: string | null, rows: LedgerRow[], extras: { income: LedgerExtra[]; expense: LedgerExtra[] } | null,
-  period: string, href: (p: Record<string, string>) => string): Drill {
+  period: string, href: (p: Record<string, string>) => string, bal: LogiBalance | null = null): Drill {
   const rowItem = (r: LedgerRow, amount: number): DrillItem => ({ date: r.at, title: rowTitle(r), sub: rowSub(r) || undefined, amount, href: href({ karta: key, ...(tur ? { tur } : {}), qator: r.id }) });
   const extraItem = (x: LedgerExtra, sign = 1): DrillItem => ({
     date: x.at, title: `${x.docNo} · ${x.category}`, sub: [x.account, x.vehicle, x.who, x.note].filter(Boolean).join(" · ") || undefined,
@@ -75,28 +76,44 @@ export function ledgerCardDrill(key: CardKey, tur: string | null, rows: LedgerRo
     return { title: `Jami tushum${sl ? ` — ${sl}` : ""}`, period, value, parts: tur ? [] : parts, items: limit(items),
       note: "Faqat kirimi bor qatorlar. Tarkibdagi qatorni bosing — shu turdagilari, yozuvni bosing — batafsil." };
   }
+  if (key === "xarajat" && bal) {
+    // Butun logistika: kassa (Transport), mashina xarajati, Logistika moliya, dispetcher omboridan yoqilg'i — `lib/logistics-balance.ts`
+    const pick = tur ? bal.items.filter((i) => i.group === tur) : bal.items;
+    const items: DrillItem[] = pick.map((i) => ({ date: i.date, title: i.title, sub: [BAL_SOURCE_LABEL[i.source], i.sub].filter(Boolean).join(" · "), amount: i.amount, href: i.href }));
+    return {
+      title: `Xarajat${tur ? ` — ${tur}` : ""}`, period, value: pick.reduce((a, i) => a + i.amount, 0),
+      parts: tur ? [] : BAL_GROUPS.map((g) => ({ key: g, label: g, value: bal.xarajatByGroup[g] })).filter((p) => Math.abs(p.value) >= 1),
+      items: limit(items),
+      note: `Manba: ${(Object.keys(bal.xarajatBySource) as (keyof typeof bal.xarajatBySource)[]).filter((k) => bal.xarajatBySource[k] >= 1).map((k) => `${BAL_SOURCE_LABEL[k]} ${money(bal.xarajatBySource[k])}`).join(" · ")}. Haydovchi oyligi alohida, yoqilg'i normasi xarajatga kirmaydi.`,
+    };
+  }
   if (key === "xarajat") {
     const lbl = "Mashinasiz xarajat (Logistika moliya jurnali)";
     const { parts, items } = fromMetrics(COST, extras ? { key: EXTRA_OUT, label: lbl, list: extras.expense } : null);
     const value = tur ? items.reduce((s, i) => s + i.amount, 0) : parts.reduce((s, p) => s + p.value, 0);
     const sl = subLabel(COST, EXTRA_OUT, lbl);
     return { title: `Xarajat (oyliksiz)${sl ? ` — ${sl}` : ""}`, period, value, parts: tur ? [] : parts, items: limit(items),
-      note: "Haydovchi oyligi alohida kartada. Yoqilg'i — norma bo'yicha sarf × zapravka narxi." };
+      note: "Faqat shu varaq qatorlariga yozilgan xarajat. Kassadan to'langan umumiy transport xarajati — filtrsiz varaqda." };
   }
   if (key === "oylik") {
     const items = rows.filter((r) => r.pay > 0).map((r) => ({ ...rowItem(r, r.pay), sub: [r.amount == null ? "narxsiz — taklif" : r.payType ? PAY_TYPE_LABEL[r.payType] : null, r.approvedAt ? "tasdiqlangan" : null, rowSub(r)].filter(Boolean).join(" · ") }));
     return { title: "Haydovchilar oyligi (reys haqi)", period, value: rows.reduce((s, r) => s + r.pay, 0), parts: [], items: limit(items),
       note: "Reys narxi yoki qo'lda yozilgan haq; narxlanmagan reysda — taklif narx." };
   }
+  if (key === "jami" && bal) {
+    return { title: "Qoldiq (tushum − xarajat − oylik)", period, value: bal.qoldiq,
+      parts: [{ key: "tushum", label: "Tushum", value: bal.tushum }, { key: "xarajat", label: "Xarajat", value: -bal.xarajat }, { key: "oylik", label: "Haydovchilar oyligi", value: -bal.oylik }],
+      items: [], note: "Qatorni bosing — o'sha karta ochiladi." };
+  }
   if (key === "jami") {
     const inc = rows.reduce((s, r) => s + r.revenue, 0) + (extras ? sumOf(extras.income) : 0);
     const cost = rows.reduce((s, r) => s + costOf(r), 0) + (extras ? sumOf(extras.expense) : 0);
     const pay = rows.reduce((s, r) => s + r.pay, 0);
-    const items: DrillItem[] = rows.filter((r) => Math.abs(r.profit) >= 0.5).map((r) => rowItem(r, r.profit));
+    const items: DrillItem[] = rows.map((r) => ({ r, v: r.revenue - costOf(r) - r.pay })).filter((x) => Math.abs(x.v) >= 0.5).map((x) => rowItem(x.r, x.v));
     if (extras) items.push(...extras.income.map((x) => extraItem(x)), ...extras.expense.map((x) => extraItem(x, -1)));
-    return { title: "Jami (tushum − xarajat − oylik)", period, value: inc - cost - pay,
+    return { title: "Qoldiq (tushum − xarajat − oylik)", period, value: inc - cost - pay,
       parts: [{ key: "tushum", label: "Jami tushum", value: inc }, { key: "xarajat", label: "Xarajat (oyliksiz)", value: -cost }, { key: "oylik", label: "Haydovchilar oyligi", value: -pay }],
-      items: limit(items), note: "Har qator: uning tushumi − xarajati − haydovchi haqi." };
+      items: limit(items.map((i) => i)), note: "Har qator: uning tushumi − xarajati − haydovchi haqi (yoqilg'i normasi kirmaydi)." };
   }
   if (key === "reys") {
     return { title: "Reyslar", period, value: rows.reduce((s, r) => s + r.trips, 0), isQty: true, unit: "reys", parts: [],
@@ -173,6 +190,7 @@ export function LedgerRowDetail({ r, closeHref, showMoney, editHref }: { r: Ledg
         <Row label="Sarf (norma)">{r.use != null ? fmtNum(r.use, 1) : "—"}{r.drumUse ? ` (baraban ${fmtNum(r.drumUse, 1)})` : ""}</Row>
         {r.useExtra != null && <Row label="Dizel (qo'shimcha), l">{fmtNum(r.useExtra, 1)}</Row>}
         <Row label="Qoldiq (keyin)" tone={r.balAfter < 0 ? "red" : undefined}>{fmtNum(r.balAfter, 1)}</Row>
+        {showMoney && <Row label="Normaga ko'ra, so'm (nazorat, xarajat emas)">{sm(r.fuelSum)}</Row>}
       </Block>
       <Block title="Haydovchi haqi (oylik)">
         <Row label="Summa" strong>{sm(r.pay)}</Row>
@@ -180,7 +198,7 @@ export function LedgerRowDetail({ r, closeHref, showMoney, editHref }: { r: Ledg
       </Block>
       {showMoney && <>
         <Block title="Xarajat">
-          <Row label="Yoqilg'i">{sm(r.fuelSum)}</Row><Row label="Ta'mir">{sm(r.repair)}</Row><Row label="Zapchast">{sm(r.parts)}</Row>
+          <Row label="Ta'mir">{sm(r.repair)}</Row><Row label="Zapchast">{sm(r.parts)}</Row>
           <Row label="Vulkanizator">{sm(r.vulc)}</Row><Row label="Boshqa">{sm(r.other)}</Row><Row label="Haydovchi haqi">{sm(r.pay)}</Row>
           <Row label="Jami xarajat" strong>{sm(r.total)}</Row>
         </Block>

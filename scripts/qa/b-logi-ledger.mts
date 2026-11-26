@@ -59,7 +59,8 @@ check(costs.length === 2 && costs[0]![0] === "OTHER" && costs[0]![1] === "30000"
 check(n1(`select count(*) from "AuditLog" where entity in ('LogisticsEntry','FuelLog','TransportExpense') and ("entityId"=${lit(E)} or "entityId" in (select id from "FuelLog" where "entryId"=${lit(E)}) or "entityId" in (select id from "TransportExpense" where "entryId"=${lit(E)})) and action='CREATE'`) === 4, "qator, zapravka va 2 xarajat AuditLog'da");
 // Kirim logistika kassasiga (2026-11-26): qator kirimi = LogisticsTx «LedgerEntry»
 const lkIn = () => q(`select amount::int, type from "LogisticsTx" where "refType"='LedgerEntry' and "refId"=${lit(E)} and "cancelledAt" is null`);
-check(lkIn().length === 1 && lkIn()[0]![0] === "500000" && lkIn()[0]![1] === "INCOME", "qator kirimi logistika kassasiga tushdi (500 000)", lkIn());
+// 2026-11-26 dan kirim nusxasi ochilmaydi — logistika qoldig'i hisoblanadi (lib/logistics-balance.ts)
+check(lkIn().length === 0, "qator kirimining kassa nusxasi ochilmadi (qoldiq hisoblanadi)", lkIn());
 
 // ── Hisob varag'i: qator Excel ustunlarida ──
 let rows = await sheet();
@@ -67,7 +68,7 @@ const me = rows.find((x) => x.kind === "entry" && x.id === E);
 check(!!me && me.km === 30 && me.workHours === 4.5 && me.drumUse === 18 && me.use === 33 && me.refuel === 50, "varaq: km 30, baraban 4,5 soat → baraban sarfi 18, jami sarf 33 m³, zapravka 50", me && [me.km, me.workHours, me.drumUse, me.use, me.refuel]);
 check(!!me && me.repair === 100000 && me.vulc === 30000 && me.revOther === 500000 && me.pay === 120000 && me.payType === "CASH", "varaq: ta'mir, vulkanizator, obyekt kirimi, naqd haq", me && [me.repair, me.vulc, me.revOther, me.pay, me.payType]);
 check(!!me && Math.abs(me.balAfter - (me.balBefore + 50 - 33)) < 0.11, "varaq: gaz qoldig'i = oldingi + zapravka − sarf", me && [me.balBefore, me.balAfter]);
-check(!!me && Math.abs(me.profit - (me.revenue - me.total)) < 0.01 && Math.abs(me.total - (me.fuelSum + me.pay + me.repair + me.parts + me.vulc + me.other)) < 0.01, "varaq: jami xarajat va foyda formulasi");
+check(!!me && Math.abs(me.profit - (me.revenue - me.total)) < 0.01 && Math.abs(me.total - (me.pay + me.repair + me.parts + me.vulc + me.other)) < 0.01, "varaq: jami xarajat va foyda formulasi");
 
 // Faqat km (haqsiz, kirimsiz) qator ham yoziladi — ECO'siz reys; logistika ham qo'sha oladi
 r = await logist.action(`${LA}#createLedgerRowAction`, [undefined, row({ km: 12, drumHours: 2, driverId: "", dropoff: `QA Logist ${tag}` })], P);
@@ -199,7 +200,11 @@ if (notDelivered) {
   check(!!le && le[1] === VEH && le[2] === "300000" && le[3] === "CASH" && le[4] === "BSU-1" && le[5] === `QA Real Obyekt ${tag}`,
     "Hisob varag'ida qator: mashina raqamdan topildi, dastavka → kirim (naqd), joylar", le);
   const LE = le?.[0] ?? "";
-  check(n1(`select count(*) from "LogisticsTx" where "refType"='LedgerEntry' and "refId"=${lit(LE)} and "cancelledAt" is null and amount=300000`) === 1, "realizatsiya dastavkasi logistika kassasiga tushdi");
+  check(n1(`select count(*) from "LogisticsTx" where "refType"='LedgerEntry' and "refId"=${lit(LE)} and "cancelledAt" is null`) === 0, "realizatsiya dastavkasining kassa nusxasi ochilmadi");
+  const { logiBalance } = await import("../../src/lib/logistics-balance");
+  const bal = await logiBalance(from, to);
+  const realRow = (await sheet()).find((x) => x.id === LE);
+  check(!!realRow && realRow.revenue === 300000 && Math.abs(bal.qoldiq - (bal.tushum - bal.xarajat - bal.oylik)) < 0.01, "realizatsiya dastavkasi tushumda; qoldiq = tushum − xarajat − oylik", [realRow?.revenue, bal.tushum, bal.xarajat, bal.oylik, bal.qoldiq]);
   const rrow = (await sheet()).find((x) => x.id === LE);
   check(!!rrow && rrow.realId === RE && rrow.partial.includes("haydovchi") && rrow.partial.includes("km") && rrow.partial.includes("haq"), "qator «Qisman»: haydovchi, km, haq", rrow?.partial);
   const g = await disp.get(`${P}&qisman=1`);

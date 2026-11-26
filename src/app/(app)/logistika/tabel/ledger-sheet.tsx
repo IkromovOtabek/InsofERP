@@ -52,7 +52,7 @@ const excelRow = (r: LedgerRow, money: boolean) => ({
   Mashina: r.plate, Haydovchi: r.driver, "Yuklash joyi": r.pickup, "Tushirish joyi": r.dropoff, Reys: r.trips, Yuk: r.cargo,
   "Probeg, km": r.km, "shundan gazda, km": r.kmGas, "Baraban, soat": r.workHours, "shundan gazda, soat": r.hoursGas,
   "Baraban sarfi": r.drumUse, Birlik: r.unit, "Qoldiq (oldin)": r.balBefore, Zapravka: r.refuel, Sarf: r.use, "Sarf, dizel l": r.useExtra, "Qoldiq (keyin)": r.balAfter,
-  "Yoqilg'i, so'm": r.fuelSum, "Haydovchi haqi": r.pay, "Haq turi": r.amount == null ? (r.pay ? "Taklif" : null) : r.payType === "CASH" ? "Naqd" : "Oylik",
+  "Yoqilg'i normasi, so'm": r.fuelSum, "Haydovchi haqi": r.pay, "Haq turi": r.amount == null ? (r.pay ? "Taklif" : null) : r.payType === "CASH" ? "Naqd" : "Oylik",
   "Ta'mir": r.repair, Zapchast: r.parts, Vulkanizator: r.vulc, "Boshqa xarajat": r.other, "Jami xarajat": r.total,
   // Dostavka / usluga alohida va foyda — faqat logistika moliyasini ko'radiganlarga (`canSeeLogiMoney`);
   // qolganlarga (dispetcher) — Excel'idagi «Выполнения в суммах»: П/Р, Н/Л, Обект
@@ -143,7 +143,7 @@ export function LedgerSheet({ rows, month, file, showDriver, showPlate, canEdit,
       { key: "refuel", title: "Zapravka", kind: "num", frac: 1, val: (r) => numVal(r.refuel, 1) },
       { key: "use", title: "Sarf", kind: "num", frac: 1, val: (r) => numVal(r.use, 1) },
       { key: "balAfter", title: "Qoldiq (keyin)", kind: "num", frac: 1, val: (r) => numVal(r.balAfter, 1) },
-      { key: "fuelSum", title: "Yoqilg'i, so'm", kind: "num", val: (r) => numVal(r.fuelSum) },
+      { key: "fuelSum", title: "Yoqilg'i normasi, so'm", kind: "num", val: (r) => numVal(r.fuelSum) },
       { key: "pay", title: "Haydovchi haqi", kind: "num", val: (r) => numVal(r.pay) },
       { key: "repair", title: "Ta'mir", kind: "num", val: (r) => numVal(r.repair) },
       { key: "parts", title: "Zapchast", kind: "num", val: (r) => numVal(r.parts) },
@@ -256,7 +256,7 @@ export function LedgerSheet({ rows, month, file, showDriver, showPlate, canEdit,
             {fth("hours", "Baraban, soat", { rowSpan: 2, right: true, title: "Mikser barabani ishlagan soat" })}
             {fth("drumUse", "Baraban sarfi", { rowSpan: 2, right: true, tone: "blue", title: "Baraban soati × soat normasi" })}
             <SheetTh colSpan={4} tone="blue">Gaz / yoqilg&apos;i, {unit}</SheetTh>
-            {fth("fuelSum", <>Yoqilg&apos;i, so&apos;m</>, { rowSpan: 2, right: true, tone: "blue" })}
+            {fth("fuelSum", <>Yoqilg&apos;i normasi, so&apos;m</>, { rowSpan: 2, right: true, tone: "blue" })}
             {fth("pay", "Haydovchi haqi", { rowSpan: 2, right: true })}
             <SheetTh colSpan={4} tone="red">Xarajat</SheetTh>
             {fth("total", "Jami xarajat", { rowSpan: 2, right: true, tone: "red", title: "Umumiy rasxod: yoqilg'i + haydovchi haqi + ta'mir + zapchast + vulkanizator + boshqa" })}

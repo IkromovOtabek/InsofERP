@@ -20,7 +20,8 @@ import { LedgerSheet } from "./ledger-sheet";
 import { LedgerFormsProvider, LedgerRowForm, type LedgerOptions } from "./ledger-forms";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { cancelEntryAction } from "../actions";
-import { canSeeLogiMoney, logiAccounts } from "@/lib/logistics-finance";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
+import { logiBalance, logiQoldiqNow, type LogiBalance } from "@/lib/logistics-balance";
 import { DayRangeBar, parseDayRange } from "@/app/(app)/bi-tahlil/month-bar";
 import { pathAllowed } from "@/lib/nav";
 import { OmborSection } from "./ombor-section";
@@ -201,11 +202,13 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const canSpend = canDo(s, "logistika", "spend");
   // Jurnaldagi varaqqa tushmaydigan kirim/chiqim — faqat filtrsiz varaqda (mashina/haydovchiga bog'lanmagan)
   const withExtras = view === "hisob" && showMoney && !sp.transport && !sp.driver;
-  const [hisobFull, logiAcc, extras] = await Promise.all([
+  const [hisobFull, qoldiqNow, extras] = await Promise.all([
     ranged ? driverLedger(hisobRange.from, hisobRange.to) : Promise.resolve(full),
-    view === "hisob" && (showMoney || canSpend) ? logiAccounts() : Promise.resolve([]),
+    view === "hisob" && (showMoney || canSpend) ? logiQoldiqNow().then((x) => x.qoldiq) : Promise.resolve(null),
     withExtras ? ledgerExtras(hisobRange.from, hisobRange.to) : Promise.resolve(null),
   ]);
+  // Logistika hisobi (Tushum, Xarajat, Oylik, Qoldiq) — filtrsiz varaqda: kassa va sklad xarajati mashinaga bog'lanmagan bo'lishi mumkin
+  const balance: LogiBalance | null = withExtras ? await logiBalance(hisobRange.from, hisobRange.to, hisobFull) : null;
   // Mashina varag'i (tab) — butun hisobdan filtr (qoldiq baribir mashina bo'yicha hisoblangan)
   const sheetRows = view === "hisob" ? hisobFull.rows.filter((r) => (!sp.transport || r.vehicleId === sp.transport) && (!sp.driver || r.driverId === sp.driver)) : [];
   // «Qisman» filtri (`?qisman=1`): to'ldirilmagan (mashina, haydovchi, km, haq) yoki ehtimoliy takror qatorlar — to'ldirib chiqish uchun
@@ -320,7 +323,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     return `/logistika/tabel?${u}`;
   };
   const karta = view === "hisob" && ledger && isCardKey(sp.karta) && (showMoney || PUBLIC_CARDS.includes(sp.karta)) ? sp.karta : null;
-  const cardDrill = karta && ledger ? ledgerCardDrill(karta, sp.tur ?? null, ledger.rows, extras, hisobLabel, cardHref) : null;
+  const cardDrill = karta && ledger ? ledgerCardDrill(karta, sp.tur ?? null, ledger.rows, extras, hisobLabel, cardHref, balance) : null;
   const cardBack = karta ? cardHref({ karta, ...(sp.tur ? { tur: sp.tur } : {}) }) : "";
   const detailRow = karta && sp.qator ? ledger?.rows.find((r) => r.id === sp.qator) ?? null : null;
   const detailExtra: LedgerExtra | null = karta && sp.jt && extras ? [...extras.income, ...extras.expense].find((x) => x.id === sp.jt) ?? null : null;
@@ -516,8 +519,8 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       {/* ── Hisob varag'i (dispetcher Excel'i ko'rinishida): har mashina — alohida varaq ── */}
       {bolim === "hisob" && ledger && ledgerOpts && <Section title={ranged ? `${picked ? `${picked.name} — ` : ""}${hisobRange.label}` : monthTitleText} className="mt-0" action={monthNav}>
         {/* Eng tepada — kirim va chiqim: logistika moliyasi zavod kassasidan alohida (summalar faqat `canSeeLogiMoney`) */}
-        <LedgerSummary total={ledger.total} money={showMoney} kassa={logiAcc.reduce((a, x) => a + x.balance, 0)} hasKassa={logiAcc.length > 0} label={hisobLabel}
-          extras={extras} href={(k) => cardHref({ karta: k })} kassaHref={showMoney ? "/logistika/moliya?tab=jurnal" : "/logistika/moliya"} />
+        <LedgerSummary total={ledger.total} money={showMoney} qoldiqNow={qoldiqNow} label={hisobLabel} balance={balance}
+          href={(k) => cardHref({ karta: k })} kassaHref="/logistika/moliya" />
         {cardDrill && karta && <DrillPanel drill={cardDrill} closeHref={sp.tur ? cardHref({ karta }) : qs({})} partHref={cardPartHref(karta, cardHref)} />}
         {detailRow && <LedgerRowDetail r={detailRow} closeHref={cardBack} showMoney={showMoney}
           editHref={canLedger && detailRow.kind === "trip" ? `${qs({})}&tahrir=${detailRow.id}` : null} />}
@@ -781,19 +784,17 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 }
 
 /**
- * Hisob varag'i tepasidagi yig'ma. Har karta bosiladi (`?karta=`) — faqat shu ko'rsatkich qatorlari panelda, qator bosilsa batafsil.
- * Summa huquqi bilan (direktor, ish boshqaruvchi, mexanik): Jami tushum (dostavka, usluga, obyekt + jurnaldagi boshqa kirim),
- * Xarajat (oyliksiz: yoqilg'i, ta'mir, zapchast, boshqa + jurnaldagi mashinasiz chiqim), Haydovchilar oyligi va Jami
- * (tushum − xarajat − oylik), logistika kassasi qoldig'i. Qolganlarga (dispetcher, logistika) — summasiz ko'rsatkichlar;
- * logistika boshlig'iga (`spend`) kassa qoldig'i ham. Raqamlar varaqdagi filtr (davr, mashina, haydovchi) bo'yicha.
+ * Hisob varag'i tepasidagi yig'ma — logistika hisobi (`lib/logistics-balance.ts`): Tushum, Xarajat, Haydovchilar oyligi, Qoldiq
+ * (tushum − xarajat − oylik) va 01.11.2026 dan beri qoldiq. Har karta bosiladi (`?karta=`) — tarkibi va yozuvlari.
+ * Mashina/haydovchi filtrida — faqat shu qatorlar (kassadan to'langan umumiy transport xarajati kirmaydi). Summa huquqisizlarga
+ * (dispetcher, logistika) — summasiz ko'rsatkichlar; logistika boshlig'iga (`spend`) qoldiq ham.
  */
-function LedgerSummary({ total: t, money: showMoney, kassa, hasKassa, label, extras, href, kassaHref }: {
-  total: LedgerTotals; money: boolean; kassa: number; hasKassa: boolean; label: string;
-  extras: { income: LedgerExtra[]; expense: LedgerExtra[] } | null; href: (k: string) => string; kassaHref: string;
+function LedgerSummary({ total: t, money: showMoney, qoldiqNow, label, balance: b, href, kassaHref }: {
+  total: LedgerTotals; money: boolean; qoldiqNow: number | null; label: string; balance: LogiBalance | null; href: (k: string) => string; kassaHref: string;
 }) {
   const join = (xs: [string, number][]) => xs.filter(([, v]) => Math.abs(v) >= 1).map(([k, v]) => `${k} ${moneyShort(v)}`).join(" · ");
-  const kassaCard = hasKassa
-    ? <StatCard label="Logistika kassasi — jami puli" value={moneyShort(kassa)} hint="hozirgi qoldiq · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href={kassaHref} />
+  const nowCard = qoldiqNow != null
+    ? <StatCard label="Qoldiq — 1-noyabrdan beri" value={moneyShort(qoldiqNow)} hint="tushum − xarajat − oylik · hozirgi" icon={Landmark} tone={qoldiqNow < 0 ? "danger" : "brand"} href={kassaHref} />
     : null;
   if (!showMoney) {
     return (
@@ -802,23 +803,25 @@ function LedgerSummary({ total: t, money: showMoney, kassa, hasKassa, label, ext
         <StatCard label="Probeg" value={`${fmtNum(t.km, 0)} km`} hint={t.hours ? `baraban ${fmtNum(t.hours, 1)} soat` : undefined} icon={Truck} href={href("probeg")} />
         <StatCard label="Yoqilg'i" value={[t.useGas ? `${fmtNum(t.useGas, 0)} m³` : null, t.useDt ? `${fmtNum(t.useDt, 0)} l` : null].filter(Boolean).join(" + ") || "—"} hint={`sarf (norma) · zapravka ${fmtNum(t.refuel, 0)}`} icon={Fuel} href={href("yoqilgi")} />
         <StatCard label="Haydovchi haqi" value={money(t.pay)} icon={Coins} tone="success" href={href("oylik")} />
-        {kassaCard}
+        {nowCard}
       </div>
     );
   }
-  const exIn = extras ? extras.income.reduce((a, x) => a + x.amount, 0) : 0;
-  const exOut = extras ? extras.expense.reduce((a, x) => a + x.amount, 0) : 0;
-  const revenue = t.revenue + exIn, cost = t.total - t.pay + exOut, net = revenue - cost - t.pay;
   const delivery = t.revBank + t.revCash + t.revDebt, service = t.svcBank + t.svcCash;
+  // Filtrsiz — butun logistika; mashina/haydovchi varag'ida — shu qatorlar
+  const tushum = b ? b.tushum : t.revenue;
+  const xarajat = b ? b.xarajat : t.repair + t.parts + t.vulc + t.other;
+  const oylik = b ? b.oylik : t.pay;
+  const qoldiq = tushum - xarajat - oylik;
+  const xHint = b ? join(Object.entries(b.xarajatByGroup) as [string, number][]) : join([["ta'mir", t.repair + t.vulc], ["zapchast", t.parts], ["boshqa", t.other]]);
   return (
     <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
-      <StatCard label="Jami tushum" value={moneyShort(revenue)} icon={ArrowDownLeft} tone="success" href={href("tushum")}
-        hint={join([["dostavka", delivery], ["usluga", service], ["obyekt", t.revOther], ["boshqa kirim", exIn]]) || label} />
-      <StatCard label="Xarajat" value={moneyShort(cost)} icon={ArrowUpRight} tone="warning" href={href("xarajat")}
-        hint={join([["yoqilg'i", t.fuelSum], ["ta'mir", t.repair + t.vulc], ["zapchast", t.parts], ["boshqa", t.other + exOut]]) || label} />
-      <StatCard label="Haydovchilar oyligi" value={moneyShort(t.pay)} hint={`reys haqi · ${fmtNum(t.trips, 0)} reys`} icon={Coins} href={href("oylik")} />
-      <StatCard label="Jami (sof)" value={moneyShort(net)} hint={`tushum − xarajat − oylik · ${label}`} icon={Calculator} tone={net < 0 ? "danger" : "info"} href={href("jami")} />
-      {kassaCard ?? <StatCard label="Logistika moliya" value="Ochish" hint="kirim-chiqim jurnali" icon={Landmark} href="/logistika/moliya" />}
+      <StatCard label="Tushum" value={moneyShort(tushum)} icon={ArrowDownLeft} tone="success" href={href("tushum")}
+        hint={join([["dostavka", delivery], ["usluga", service], ["zavod uchun", t.revOther], ["boshqa", b?.tushumParts.boshqa ?? 0]]) || label} />
+      <StatCard label="Xarajat" value={moneyShort(xarajat)} icon={ArrowUpRight} tone="warning" href={href("xarajat")} hint={(b ? xHint : `faqat shu qatorlar · ${xHint}`) || label} />
+      <StatCard label="Haydovchilar oyligi" value={moneyShort(oylik)} hint={`reys haqi · ${fmtNum(t.trips, 0)} reys`} icon={Coins} href={href("oylik")} />
+      <StatCard label="Qoldiq" value={moneyShort(qoldiq)} hint={`tushum − xarajat − oylik · ${label}`} icon={Calculator} tone={qoldiq < 0 ? "danger" : "info"} href={href("jami")} />
+      {nowCard ?? <StatCard label="Logistika moliya" value="Ochish" hint="kirim-chiqim jurnali" icon={Landmark} href="/logistika/moliya" />}
     </div>
   );
 }
