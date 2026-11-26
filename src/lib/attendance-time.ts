@@ -20,6 +20,15 @@ export function shiftOf(workSchedule: string | null | undefined): Shift {
   return { start: m[0] ?? DEFAULT_SHIFT.checkIn, end: m[1] ?? DEFAULT_SHIFT.checkOut };
 }
 
+/**
+ * Kartadagi haftalik grafik → dam olish kunlari (`getUTCDay`: 0 — yakshanba, 6 — shanba).
+ * "5/2" — shanba va yakshanba, "6/1" va boshqasi — yakshanba. Siljuvchi grafik (2/2, 1/3) hafta kuniga
+ * bog'lanmaydi — uni otdel kadr «Grafik» naqshi bilan kataklarga yozadi.
+ */
+export function weeklyOffDays(workSchedule: string | null | undefined): number[] {
+  return /(^|\D)5\s*\/\s*2(\D|$)/.test(workSchedule ?? "") ? [0, 6] : [0];
+}
+
 const HHMM_ONE = /^([01]?\d|2[0-3])[:.]([0-5]\d)$/;
 /** "8:00" / "08.00" → "08:00"; vaqt bo'lmasa null. */
 export function normTime(v: string | null | undefined): string | null {

@@ -1,12 +1,12 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { dayUtc, isoDay, monthDays, shiftDay } from "@/lib/davomat";
-import { normTime, shiftOf, type Shift } from "@/lib/attendance-time";
+import { normTime, shiftOf, weeklyOffDays, type Shift } from "@/lib/attendance-time";
 import type { Prisma } from "@/generated/prisma";
 
 /**
  * Smena grafigi — xodimning har kungi smenasi yoki dam olish kuni (`ShiftAssignment`).
- * Katak bo'lmasa — xodim kartasidagi "Ish grafigi" (`workSchedule`) va zavod standarti (yakshanba — dam).
+ * Katak bo'lmasa — xodim kartasidagi "Ish grafigi" (`workSchedule`): 5/2 — shanba-yakshanba dam, aks holda yakshanba.
  *
  * Bir qoida hamma joyda: kechikish ("Keldim", skaner, sex, kadr tabeli), oyning norma kunlari va ish haqi
  * shu fayldagi `dayPlan` / `plansFor` dan o'qiydi.
@@ -16,9 +16,9 @@ export type DayPlan = Shift & { off: boolean; templateId: string | null; label: 
 
 export const SHIFT_COLORS = ["slate", "sky", "emerald", "amber", "violet", "rose"] as const;
 
-/** Grafik katagi yo'q kun: kartadagi smena, yakshanba — dam olish. */
+/** Grafik katagi yo'q kun: kartadagi smena, dam — kartadagi haftalik grafik bo'yicha (5/2 — shanba-yakshanba, aks holda yakshanba). */
 function fallback(workSchedule: string | null | undefined, iso: string): DayPlan {
-  return { ...shiftOf(workSchedule), off: dayUtc(iso).getUTCDay() === 0, templateId: null, label: null, fromGrid: false };
+  return { ...shiftOf(workSchedule), off: weeklyOffDays(workSchedule).includes(dayUtc(iso).getUTCDay()), templateId: null, label: null, fromGrid: false };
 }
 
 type Cell = { employeeId: string; date: Date; off: boolean; start: string | null; end: string | null; templateId: string | null; template: { name: string; start: string; end: string } | null };
