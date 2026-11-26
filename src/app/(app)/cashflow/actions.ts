@@ -6,7 +6,7 @@ import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 import { cancelCashEntry, createCashEntry, payReceiptEntry, updateCashEntry } from "@/lib/cash-entry";
 import { createTransfer } from "@/lib/cash-transfer";
-import { PEREKIT_CATEGORY, isStaffSettleCategory } from "@/lib/cash-categories";
+import { PEREKIT_CATEGORY, isStaffSettle } from "@/lib/cash-categories";
 
 const schema = z.object({
   type: z.enum(["INCOME", "EXPENSE"]),
@@ -50,7 +50,7 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   }
   const s = await requireAction("cashflow", "create");
   const { staff, debtOn, debtMonths, debtStart, ...data } = r.data;
-  const staffSettle = r.data.type === "EXPENSE" && isStaffSettleCategory(r.data.category);
+  const staffSettle = r.data.type === "EXPENSE" && isStaffSettle(r.data.category, r.data.subCategory);
   const m = staffSettle && staff ? /^([ebt]):(\S+)$/.exec(staff) : null;
   if (staffSettle && !m) return { error: "Kimga: xodimni (yoki «+» bilan brigada / komandani) tanlang", field: "staff" };
   const who = { employeeId: m?.[1] === "e" ? m[2] : null, brigadeId: m?.[1] === "b" ? m[2] : null, teamId: m?.[1] === "t" ? m[2] : null };

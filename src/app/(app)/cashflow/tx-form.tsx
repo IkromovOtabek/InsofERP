@@ -8,7 +8,7 @@ import { Button, Callout, Field, FormError, FormSuccess, InfoButton, Input, Sele
 import { MoneyInput } from "@/components/money-input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { cn } from "@/lib/utils";
-import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, isLentCategory, isStaffSettleCategory, type CashMethod } from "@/lib/cash-categories";
+import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, SALES_CATEGORY, isLentCategory, isStaffSettle, type CashMethod } from "@/lib/cash-categories";
 import type { CategoryOption } from "@/lib/fin-report/categories";
 import { PNL_LINE_LABEL } from "@/lib/fin-report/labels";
 import { QuickAdd, QuickDelete, QuickEdit, SupplierAdd, WithAdd, type QuickAdded } from "@/components/quick-add";
@@ -79,7 +79,7 @@ export function TxForm({ accounts, suppliers, customers = [], receipts = [], inc
   const supplierList = merge(suppliers, added.suppliers, (p) => p.id);
   const cat = cur?.name ?? "";
   const perekit = type === "EXPENSE" && cat === PEREKIT_CATEGORY;
-  const staffMode = type === "EXPENSE" && !!staff && isStaffSettleCategory(cat);
+  const staffMode = type === "EXPENSE" && !!staff && isStaffSettle(cat, sub);
   const staffOpts = !staff ? [] : groupMode
     ? [...staff.brigades.map((b) => ({ id: `b:${b.id}`, name: `Brigada · ${b.name}` })), ...staff.teams.map((t) => ({ id: `t:${t.id}`, name: `Komanda · ${t.name}` }))]
     : staff.employees.map((e) => ({ id: `e:${e.id}`, name: e.name }));

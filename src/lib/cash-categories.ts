@@ -22,6 +22,14 @@ export const PEREKIT_CATEGORY = "Perekit (o'z hisoblararo)";
  */
 export const isStaffSettleCategory = (name: string | null | undefined) => !!name && /[xh]odim/i.test(name) && /hisob/i.test(name);
 /**
+ * «Oylik hisobidan avans/qarz» sub manbasi — qaysi manba ostida bo'lmasin, xodimga oylik hisobidan berilgan pul:
+ * chiqimda «Kimga — xodim» so'raladi va summa Ish haqi → Ushlanmalar → «Oylikdan qarz» ga tushadi (`staffCashFor`).
+ * Nomi har xil yozilishi mumkin (hisob/xisob, avans/qarz) — nom bo'yicha topiladi.
+ */
+export const isSalaryHoldSub = (name: string | null | undefined) => !!name && /oylik/i.test(name) && /[xh]isob/i.test(name) && /avans|qarz/i.test(name);
+/** Chiqim xodim bilan hisob-kitobmi: manba «Hodimlar bilan hisob-kitob» yoki sub manba «Oylik hisobidan avans/qarz». */
+export const isStaffSettle = (category: string | null | undefined, sub: string | null | undefined) => isStaffSettleCategory(category) || isSalaryHoldSub(sub);
+/**
  * Kredit manbalaridan biz bergan qarzlarniki («Qarz berildi», «Berilgan qarz qaytdi») — tanlovda faqat `Loan.kind = LENT`;
  * qolgan kredit manbalarida — bank kreditlari va olingan qarzlar. Kirim-Chiqim formasi va Kassa / bank tahriri shundan.
  */

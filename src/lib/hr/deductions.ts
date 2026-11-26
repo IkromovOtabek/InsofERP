@@ -4,7 +4,7 @@ import { audit } from "@/lib/audit";
 import { fmtNum } from "@/lib/format";
 import { dayUtc, monthDays, monthTitle, shiftMonth } from "@/lib/davomat";
 import { employeesInWindow } from "@/lib/attendance-report";
-import { isStaffSettleCategory } from "@/lib/cash-categories";
+import { isStaffSettle } from "@/lib/cash-categories";
 import { tabelLock } from "./tabel-lock";
 import { allocOf, closedLines, debtHeld, debtsDue, dueIn, listDebts, type Alloc, type HeldLine } from "./employee-debt";
 import { deductionLabel, installment, isDeductionCat, type DeductionCat } from "./deduction-cats";
@@ -96,7 +96,7 @@ export async function staffCashFor(month: string, employeeIds: string[]): Promis
   });
   const from = new Date(y!, m! - 1, 1);
   for (const r of rows) {
-    if (!r.employeeId || !isStaffSettleCategory(r.category)) continue;
+    if (!r.employeeId || !isStaffSettle(r.category, r.subCategory)) continue;
     if (r.date < from && prevManual.has(r.employeeId)) continue;
     const list = out.get(r.employeeId) ?? [];
     list.push({ id: r.id, date: r.date, amount: num(r.amount), account: r.cashAccount.name, sub: r.subCategory, note: r.note, carried: r.date < from });
