@@ -111,7 +111,7 @@ export const NAV: NavItem[] = [
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
   // Logistika moliyasi alohida hisob: foyda (dastavka − tannarx), kirim-chiqim (zavod va logistika hisobidan), to'lovlar.
   // Summalar faqat direktor, ish boshqaruvchi va mexanikka (`lib/logistics-finance.ts`); logistika va dispetcher ko'rmaydi
-  { href: "/logistika/moliya",      label: "Logistika moliya",   roles: ["SUPERVISOR", "MECHANIC"], group: "Logistika" },
+  { href: "/logistika/moliya",      label: "Logistika moliya",   roles: ["SUPERVISOR", "MECHANIC", "LOGISTICS"], group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi).
   // Ish boshqaruvchi — ko'rish uchun: «Sklad holati — xomashyo» va hovli bosh sahifadan shu yerga ko'chgan; amallar o'z ruxsatlari bilan yopiq
   { href: "/stock/umumiy", label: "Sklad — umumiy", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SUPERVISOR", "MECHANIC"], group: "Sklad" },

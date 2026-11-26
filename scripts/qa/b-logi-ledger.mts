@@ -57,6 +57,9 @@ check(fuel.length === 1 && fuel[0]![0] === "50" && fuel[0]![1] === "5200" && fue
 const costs = q(`select kind, amount::int, note from "TransportExpense" where "entryId"=${lit(E)} and "cancelledAt" is null order by kind::text`);
 check(costs.length === 2 && costs[0]![0] === "OTHER" && costs[0]![1] === "30000" && /Vulkanizatsiya/.test(costs[0]![2]!) && costs[1]![0] === "REPAIR" && costs[1]![1] === "100000", "ta'mir va vulkanizator TransportExpense'ga bog'lanib yozildi", costs);
 check(n1(`select count(*) from "AuditLog" where entity in ('LogisticsEntry','FuelLog','TransportExpense') and ("entityId"=${lit(E)} or "entityId" in (select id from "FuelLog" where "entryId"=${lit(E)}) or "entityId" in (select id from "TransportExpense" where "entryId"=${lit(E)})) and action='CREATE'`) === 4, "qator, zapravka va 2 xarajat AuditLog'da");
+// Kirim logistika kassasiga (2026-11-26): qator kirimi = LogisticsTx «LedgerEntry»
+const lkIn = () => q(`select amount::int, type from "LogisticsTx" where "refType"='LedgerEntry' and "refId"=${lit(E)} and "cancelledAt" is null`);
+check(lkIn().length === 1 && lkIn()[0]![0] === "500000" && lkIn()[0]![1] === "INCOME", "qator kirimi logistika kassasiga tushdi (500 000)", lkIn());
 
 // ── Hisob varag'i: qator Excel ustunlarida ──
 let rows = await sheet();
@@ -120,6 +123,7 @@ check(/Kirim turini/.test(r.error ?? ""), "tahrirda kirim turisiz rad etildi", r
 r = await logist.action(`${LA}#cancelEntryAction`, [E2, "QA xato yozildi"], P);
 check(r.ok && !!q1(`select "cancelledAt" from "LogisticsEntry" where id=${lit(E2)}`), "logistika o'z qatorini bekor qildi", r.error);
 r = await disp.action(`${LA}#cancelEntryAction`, [E, "QA qayta yoziladi"], P);
+check(lkIn().length === 0, "qator bekor — logistika kassasidagi kirimi ham bekor", lkIn());
 check(r.ok, "dispetcher to'liq qatorni bekor qildi", r.error);
 check(n1(`select count(*) from "FuelLog" where "entryId"=${lit(E)} and "cancelledAt" is null`) === 0 && n1(`select count(*) from "TransportExpense" where "entryId"=${lit(E)} and "cancelledAt" is null`) === 0, "qator bilan zapravka va xarajatlar ham bekor qilindi");
 check(/QY-.*bekor qilindi: QA qayta/.test(q1(`select "cancelReason" from "FuelLog" where "entryId"=${lit(E)}`) ?? ""), "zapravka bekor sababi qatorga ishora qiladi");

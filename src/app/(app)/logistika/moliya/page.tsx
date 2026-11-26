@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowDownLeft, ArrowUpRight, Building2, Landmark } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
 import { avtoReport } from "@/lib/fin-report/avto";
 import {
-  LOGI_EXPENSE, LOGI_INCOME, LOGI_TRANSFER_IN, canLogiPay, canLogiWrite, cashLinkCandidates, driverMonthPays, logiAccounts, logiJournal, logiRequestsToPay, paySources,
+  LOGI_EXPENSE, LOGI_INCOME, LOGI_TRANSFER_IN, canLogiPay, canLogiSpend, canLogiWrite, canSeeLogiMoney, cashLinkCandidates, driverMonthPays, logiAccounts, logiJournal, logiRequestsToPay, paySources,
 } from "@/lib/logistics-finance";
 import { driverEmployees } from "@/lib/logistics";
 import { stockIssueDrill } from "@/lib/stock-drill";
@@ -14,7 +15,7 @@ import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard,
 import { DRILL_LINK, DrillPanel } from "@/components/drill-panel";
 import { AvtoView } from "@/app/(app)/bi-tahlil/logistika/avto-view";
 import { DayRangeBar, MonthBar, monthTitle, parseDayRange, parseMonth } from "@/app/(app)/bi-tahlil/month-bar";
-import { CancelTx, LinkCashForm, MonthPayForm, TxForm, type SourceOpt } from "./forms";
+import { CancelTx, LinkCashForm, MonthPayForm, SpendForm, TxForm, type SourceOpt } from "./forms";
 import { LogiOverview } from "./umumiy";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,11 @@ const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSt
 export default async function LogistikaMoliyaPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requirePage(BASE);
   const sp = await searchParams;
+  // Logistika boshlig'i (summa huquqisiz, `spend` bilan): faqat kassa qoldig'i, o'z chiqimi va logistika hisobidan chiqimlar
+  if (!canSeeLogiMoney(s)) {
+    if (!canLogiSpend(s)) redirect("/dashboard?denied=1");
+    return <SpendView sp={sp} />;
+  }
   const tab = sp.tab === "jurnal" || sp.tab === "tolov" || sp.tab === "foyda" ? sp.tab : "umumiy";
   const [accounts, toPay] = await Promise.all([logiAccounts(), logiRequestsToPay()]);
 
@@ -230,6 +236,57 @@ export default async function LogistikaMoliyaPage({ searchParams }: { searchPara
         </Section>
         <p className="text-xs text-slate-500">Hisob qoldig&apos;i: {accounts.map((a) => `${a.name} — ${money(a.balance)}`).join(" · ") || "logistika hisobi yo'q"} · {date(new Date())}</p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Logistika boshlig'i ko'rinishi: logistika kassasining jami puli (qoldig'i), shu puldan o'zi chiqim qilish (tasdiqsiz, qoldiqdan
+ * oshmaydi) va davrdagi logistika hisobidan chiqimlar. Daromad, foyda va zavod kassasi yozuvlari ko'rinmaydi.
+ */
+async function SpendView({ sp }: { sp: Record<string, string | undefined> }) {
+  const period = parseDayRange(sp);
+  const [accounts, j, vehicles, drivers] = await Promise.all([
+    logiAccounts(), logiJournal(period.from, period.to),
+    db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }),
+    driverEmployees({ activeOnly: true }),
+  ]);
+  const total = accounts.reduce((a, x) => a + x.balance, 0);
+  const spent = j.rows.filter((r) => r.type === "EXPENSE" && r.kind === "LOGI");
+  const srcOpts: SourceOpt[] = accounts.map((a) => ({ id: `L:${a.id}`, group: "Logistika hisobi", type: a.type, label: `${a.name} (${a.type === "CASH" ? "naqd" : "bank"}) · qoldiq ${money(a.balance)}` }));
+  return (
+    <div>
+      <PageHeader title="Logistika kassasi" info="Logistika hisobidagi jami pul va undan chiqim. Chiqim tasdiqsiz yoziladi, qoldiqdan oshmaydi; hammasi Logistika moliya jurnaliga tushadi." />
+      <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard label="Jami puli" value={moneyShort(total)} hint="hozirgi qoldiq · zavod kassasiga kirmaydi" icon={Landmark} tone={total < 0 ? "danger" : "brand"} />
+        {accounts.length > 1 && accounts.map((a) => <StatCard key={a.id} label={a.name} value={moneyShort(a.balance)} icon={Landmark} />)}
+        <StatCard label="Chiqim" value={moneyShort(spent.reduce((a, r) => a + r.amount, 0))} hint={`${spent.length} ta · ${period.label}`} icon={ArrowUpRight} tone="warning" />
+      </div>
+      <Card className="mb-5">
+        <CardHeader title="Chiqim qilish" info="Faqat logistika hisobidan. Mashina tanlansa — ta'mir, zapchast, yo'l xarajati shu mashina hisobiga ham yoziladi." />
+        {srcOpts.length ? <SpendForm sources={srcOpts} vehicles={vehicles.map((v) => ({ id: v.id, label: v.plate }))} drivers={drivers.map((d) => ({ id: d.id, label: d.fullName }))}
+          expense={LOGI_EXPENSE} today={isoDay(new Date())} /> : <Empty text="Logistika hisobi ochilmagan — direktorga murojaat qiling" />}
+      </Card>
+      <DayRangeBar base={BASE} range={period} />
+      <Section title={`Chiqimlar — ${period.label}`}>
+        {spent.length === 0 ? <Empty text="Bu davrda chiqim yo'q" /> : (
+          <Table>
+            <thead><Tr><Th>Sana</Th><Th>Hujjat</Th><Th>Toifa</Th><Th>Mashina / kim</Th><Th right>Summa</Th><Th>Izoh</Th></Tr></thead>
+            <tbody>
+              {spent.map((r) => (
+                <Tr key={r.key}>
+                  <Td className="whitespace-nowrap tabular">{dateTime(r.at)}</Td>
+                  <Td className="whitespace-nowrap font-medium">{r.docNo}</Td>
+                  <Td>{r.category}</Td>
+                  <Td>{[r.vehicle, r.who].filter(Boolean).join(" · ") || "—"}</Td>
+                  <Td right className="tabular">{money(r.amount)}</Td>
+                  <Td className="max-w-72 text-xs text-slate-500">{r.note ?? ""}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Section>
     </div>
   );
 }

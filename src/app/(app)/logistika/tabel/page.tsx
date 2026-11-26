@@ -15,17 +15,18 @@ import { avtoReport } from "@/lib/fin-report/avto";
 import { entryRows, pendingEntryWhere, type EntryRow } from "@/lib/logistics-entry";
 import { date, dateTime, fmtNum, isoDate, money, moneyShort, opAt } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, InfoButton, PageHeader, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { AllCheck, ApproveButton, EntryEditButton, EntryEditProvider, EntryForm, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
+import { AllCheck, ApproveButton, EntryEditButton, EntryEditProvider, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
 import { LedgerFormsProvider, LedgerRowForm, type LedgerOptions } from "./ledger-forms";
 import { ConfirmButton } from "../../payments/confirm-button";
-import { ExpenseForm } from "../cost-forms";
-import { costOptions } from "../cost-data";
 import { cancelEntryAction } from "../actions";
 import { canSeeLogiMoney, logiAccounts } from "@/lib/logistics-finance";
 import { DayRangeBar, parseDayRange } from "@/app/(app)/bi-tahlil/month-bar";
 import { pathAllowed } from "@/lib/nav";
 import { OmborSection } from "./ombor-section";
+import { ledgerExtras, type LedgerExtra } from "@/lib/ledger-extras";
+import { DrillPanel } from "@/components/drill-panel";
+import { cardPartHref, ExtraDetail, isCardKey, LedgerRowDetail, ledgerCardDrill, PUBLIC_CARDS } from "./ledger-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -144,10 +145,10 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
  * «Ombor» — skladdan haydovchilarga va transportga berilgan narsalar: kimda nima bor + oy jurnali (`lib/driver-stock.ts`).
  */
 /** Sahifa bo'limlari — sarlavha ostidagi bar. Eski havolalar (`?view=hisob`) ham ishlaydi. */
-const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "qolda", "ombor", "tarif"] as const;
+const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "ombor", "tarif"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
-export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string; davr?: string; dan?: string; gacha?: string }> }) {
+export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string; kesim?: string; tahrir?: string; davr?: string; dan?: string; gacha?: string; karta?: string; tur?: string; qator?: string; jt?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
   // Foyda, dostavka/usluga bo'yicha kirim va logistika kassasi — faqat direktor, ish boshqaruvchi, mexanik (Logistika moliya);
   // Hisob varag'ida jami xarajat va bajarilgan ish (perech. / naqd / obyekt) dispetcherga ham ko'rinadi
@@ -159,7 +160,8 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const canPrice = canDo(s, "logistika", "pay");
   const canApprove = canDo(s, "logistika", "pay_approve");
   const monthAgo = new Date(Date.now() - 30 * 86_400_000);
-  const bolim: SectionKey = (SECTIONS as readonly string[]).includes(sp.bolim ?? "") ? (sp.bolim as SectionKey)
+  // «Qo'lda yozuvlar» bo'limi olib tashlandi (2026-11-26) — qator Hisob varag'ida «Qator qo'shish» bilan yoziladi
+  const bolim: SectionKey = sp.bolim === "qolda" ? "hisob" : (SECTIONS as readonly string[]).includes(sp.bolim ?? "") ? (sp.bolim as SectionKey)
     : sp.view === "hisob" ? "hisob" : sp.driver ? "reyslar" : "narxsiz";
   const view = bolim === "hisob" ? "hisob" : "tabel";
   const canLedger = canDo(s, "logistika", "ledger");
@@ -182,14 +184,12 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 
   // Qo'lda yozuvlar: tasdiq kutayotganlari — tab soni uchun; oy ro'yxati (bekor qilinganlari ham) — oylik va «Qo'lda yozuvlar» da
   const kesim = sp.kesim === "transport" ? "transport" : "haydovchi";
-  const canExpense = canDo(s, "logistika", "expense");
-  const [pendingEntries, monthEntries, staff, avto, extVehicles, opts] = await Promise.all([
+  const [pendingEntries, monthEntries, staff, avto, extVehicles] = await Promise.all([
     entryRows(pendingEntryWhere()),
-    bolim === "oylik" || bolim === "qolda" ? entryRows({ date: { gte: from, lt: to }, ...(bolim === "oylik" && sp.driver ? { driverId: sp.driver } : {}) }, 2000) : Promise.resolve([] as EntryRow[]),
+    bolim === "oylik" ? entryRows({ date: { gte: from, lt: to }, ...(bolim === "oylik" && sp.driver ? { driverId: sp.driver } : {}) }, 2000) : Promise.resolve([] as EntryRow[]),
     bolim === "oylik" && kesim === "haydovchi" ? driverEmployees({ activeOnly: true }) : Promise.resolve([]),
     bolim === "oylik" && kesim === "transport" && showMoney ? avtoReport(from, to) : Promise.resolve(null),
     bolim === "oylik" && kesim === "transport" ? db.vehicle.findMany({ where: { external: true }, select: { id: true } }) : Promise.resolve([]),
-    bolim === "qolda" && (canPrice || canExpense) ? costOptions() : Promise.resolve(null),
   ]);
   const liveEntries = monthEntries.filter((e) => !e.cancelledAt);
 
@@ -197,14 +197,21 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   // bo'lsa varaq shu davr uchun alohida hisoblanadi (gaz qoldig'i baribir mashina bo'yicha PAY_SINCE dan)
   const ranged = view === "hisob" && !!(sp.davr || sp.dan || sp.gacha);
   const hisobRange = parseDayRange({ davr: sp.davr, dan: sp.dan, gacha: sp.gacha, oy: month });
-  const [hisobFull, logiAcc] = await Promise.all([
+  // Logistika boshlig'i (`spend`): summalarsiz ham logistika kassasi qoldig'ini ko'radi va o'zi chiqim qiladi (Logistika moliya)
+  const canSpend = canDo(s, "logistika", "spend");
+  // Jurnaldagi varaqqa tushmaydigan kirim/chiqim — faqat filtrsiz varaqda (mashina/haydovchiga bog'lanmagan)
+  const withExtras = view === "hisob" && showMoney && !sp.transport && !sp.driver;
+  const [hisobFull, logiAcc, extras] = await Promise.all([
     ranged ? driverLedger(hisobRange.from, hisobRange.to) : Promise.resolve(full),
-    view === "hisob" && showMoney ? logiAccounts() : Promise.resolve([]),
+    view === "hisob" && (showMoney || canSpend) ? logiAccounts() : Promise.resolve([]),
+    withExtras ? ledgerExtras(hisobRange.from, hisobRange.to) : Promise.resolve(null),
   ]);
   // Mashina varag'i (tab) — butun hisobdan filtr (qoldiq baribir mashina bo'yicha hisoblangan)
   const ledgerRows = view === "hisob" ? hisobFull.rows.filter((r) => (!sp.transport || r.vehicleId === sp.transport) && (!sp.driver || r.driverId === sp.driver)) : [];
   const ledger = view === "hisob" ? { rows: ledgerRows, total: ledgerTotals(ledgerRows) } : null;
-  const ledgerOpts: LedgerOptions | null = view === "hisob" ? await ledgerOptions(canLedger) : null;
+  // Qator qo'shish: hisob varag'i huquqi (logistika, dispetcher) yoki reys narxi huquqi (avvalgi «Qo'lda yozuvlar»)
+  const canAddRow = canLedger || canPrice;
+  const ledgerOpts: LedgerOptions | null = view === "hisob" ? await ledgerOptions(canAddRow) : null;
   // Tablar: faol o'z transporti va shu davrda qatori borlari (ko'chadan mashina ham)
   const sheetCount = new Map<string, number>();
   for (const r of hisobFull.rows) if (!sp.driver || r.driverId === sp.driver) sheetCount.set(r.vehicleId, (sheetCount.get(r.vehicleId) ?? 0) + 1);
@@ -300,6 +307,18 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       {month < cur && <Link href={qs({ oy: shiftMonth(month, 1) })} scroll={false} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Keyingi oy"><ChevronRight size={16} /></Link>}
     </div>
   );
+  // Karta paneli (`?karta=`): varaqning joriy havolasi + karta/tur/qator parametrlari
+  const hisobLabel = ranged ? hisobRange.label : monthTitle(month);
+  const cardHref = (p: Record<string, string>) => {
+    const u = new URLSearchParams(qs({ bolim: "hisob" }).split("?")[1]);
+    for (const [k, v] of Object.entries(p)) u.set(k, v);
+    return `/logistika/tabel?${u}`;
+  };
+  const karta = view === "hisob" && ledger && isCardKey(sp.karta) && (showMoney || PUBLIC_CARDS.includes(sp.karta)) ? sp.karta : null;
+  const cardDrill = karta && ledger ? ledgerCardDrill(karta, sp.tur ?? null, ledger.rows, extras, hisobLabel, cardHref) : null;
+  const cardBack = karta ? cardHref({ karta, ...(sp.tur ? { tur: sp.tur } : {}) }) : "";
+  const detailRow = karta && sp.qator ? ledger?.rows.find((r) => r.id === sp.qator) ?? null : null;
+  const detailExtra: LedgerExtra | null = karta && sp.jt && extras ? [...extras.income, ...extras.expense].find((x) => x.id === sp.jt) ?? null : null;
   const monthTitleText = picked ? `${picked.name} — ${monthTitle(month)}` : `Oy bo'yicha: ${monthTitle(month)}`;
 
   return (
@@ -315,7 +334,6 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         { key: "reyslar", label: "Reyslar va narx", href: qs({ bolim: "reyslar" }), icon: Route },
         { key: "hisob", label: "Hisob varag'i", href: qs({ bolim: "hisob" }), icon: FileSpreadsheet },
         { key: "oylik", label: "Oylik hisoblash", href: qs({ bolim: "oylik" }), icon: Calculator },
-        { key: "qolda", label: "Qo'lda yozuvlar", href: qs({ bolim: "qolda" }), icon: PencilLine },
         { key: "ombor", label: "Ombor", href: qs({ bolim: "ombor" }), icon: Package },
         { key: "tarif", label: "Tarif", href: qs({ bolim: "tarif" }), icon: Settings2 },
       ]} />
@@ -493,7 +511,12 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       {/* ── Hisob varag'i (dispetcher Excel'i ko'rinishida): har mashina — alohida varaq ── */}
       {bolim === "hisob" && ledger && ledgerOpts && <Section title={ranged ? `${picked ? `${picked.name} — ` : ""}${hisobRange.label}` : monthTitleText} className="mt-0" action={monthNav}>
         {/* Eng tepada — kirim va chiqim: logistika moliyasi zavod kassasidan alohida (summalar faqat `canSeeLogiMoney`) */}
-        <LedgerSummary total={ledger.total} money={showMoney} kassa={logiAcc.reduce((a, x) => a + x.balance, 0)} hasKassa={logiAcc.length > 0} label={ranged ? hisobRange.label : monthTitle(month)} />
+        <LedgerSummary total={ledger.total} money={showMoney} kassa={logiAcc.reduce((a, x) => a + x.balance, 0)} hasKassa={logiAcc.length > 0} label={hisobLabel}
+          extras={extras} href={(k) => cardHref({ karta: k })} kassaHref={showMoney ? "/logistika/moliya?tab=jurnal" : "/logistika/moliya"} />
+        {cardDrill && karta && <DrillPanel drill={cardDrill} closeHref={sp.tur ? cardHref({ karta }) : qs({})} partHref={cardPartHref(karta, cardHref)} />}
+        {detailRow && <LedgerRowDetail r={detailRow} closeHref={cardBack} showMoney={showMoney}
+          editHref={canLedger && detailRow.kind === "trip" ? `${qs({})}&tahrir=${detailRow.id}` : null} />}
+        {detailExtra && <ExtraDetail x={detailExtra} closeHref={cardBack} />}
         <DayRangeBar base="/logistika/tabel" range={hisobRange} keep={{ bolim: "hisob", transport: sp.transport, driver: sp.driver }} />
         <Tabs scroll={false} current={sp.transport ?? "all"} className="[&_a]:tabular" items={[
           { key: "all", label: "Hammasi", href: qs({ transport: null }), count: [...sheetCount.values()].reduce((a, n) => a + n, 0) },
@@ -504,7 +527,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           <LedgerSheet rows={ledger.rows} month={month} showDriver={!picked} showPlate={!sp.transport} canEdit={canLedger} money={showMoney} openTrip={sp.tahrir ?? null}
             vehicleId={sp.transport ?? null}
             file={`Hisob varag'i ${ranged ? hisobRange.label : month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${sheetTabs.find(([id]) => id === sp.transport)?.[1] ?? ""}` : ""}`} />
-          {canLedger && <div className="mt-3"><LedgerRowForm vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
+          {canAddRow && <div className="mt-3"><LedgerRowForm vehicleId={sp.transport ?? null} clientToken={crypto.randomUUID()} /></div>}
         </LedgerFormsProvider>
       </Section>}
 
@@ -565,7 +588,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <InfoButton title="Oylik hisoblash">
                 <p>Hamma faol haydovchi — reysi yo&apos;q yoki ECO&apos;ga ulanmagani ham.</p>
-                <p>Reys tizimga tushmagan ishni <Link href={qs({ bolim: "qolda" })} className="text-blue-700 hover:underline">«Qo&apos;lda yozuvlar»</Link> da yozing.</p>
+                <p>Reys tizimga tushmagan ishni <Link href={qs({ bolim: "hisob" })} className="text-blue-700 hover:underline">Hisob varag&apos;i → «Qator qo&apos;shish»</Link> bilan yozing.</p>
                 <p>Oklad, avans va ushlanmalar bilan to&apos;liq oylik — Ish haqi bo&apos;limida.</p>
               </InfoButton>
               <ExcelButton file={`Haydovchilar oyligi ${month}`} sheets={[{ name: "Oylik hisoblash", rows: [...payRows, payTotal].map((r) => ({
@@ -728,29 +751,6 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       </Section>}
 
       {/* ── Qo'lda yozuvlar: reys tizimga tushmagan ish, haq va kirim (`lib/logistics-entry.ts`) + transport chiqimi ── */}
-      {bolim === "qolda" && <Section title={`Qo'lda yozuvlar: ${monthTitle(month)}`} className="mt-0" action={monthNav}>
-        {canPrice && opts && (
-          <Card className="mb-4">
-            <CardHeader title="Qo'lda yozuv: ish, haq, kirim" icon={PencilLine}
-              info="Reys tizimga tushmagan ish (ECO'ga ulanmagan haydovchi, zavoddan tashqari ish), oyiga qat'iy haq yoki transport kirimi. Haq ish boshqaruvchi tasdig'idan keyin: oylik — vedomostga, naqd — kassaga" />
-            <EntryForm drivers={opts.drivers.map((d) => ({ ...d, vehicleId: opts.vehicles.find((v) => v.driverId === d.id)?.id ?? null }))} vehicles={opts.vehicles} clientToken={crypto.randomUUID()} />
-          </Card>
-        )}
-        {canExpense && opts && (
-          <Card className="mb-4">
-            <CardHeader title="Transport chiqimi" icon={Wrench} info="Ta'mir, zapchast, yo'l, jarima va boshqalar — Transport xarajatlariga yoziladi (Avtotransport tahlili va transport kartasi bilan bitta manba)" />
-            <ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} />
-          </Card>
-        )}
-        <Card padded={false}>
-          <div className="px-5 pt-5">
-            <CardHeader title={`${monthTitle(month)} — qo'lda yozuvlar`} icon={FileSpreadsheet}
-              description={`Haq: ${money(liveEntries.reduce((a, e) => a + e.pay, 0))}${showMoney ? ` · kirim: ${money(liveEntries.reduce((a, e) => a + e.revenue, 0))}` : ""}`} info="Yozuv o'chirilmaydi — bekor qilinadi (sababi bilan)" />
-          </div>
-          {monthEntries.length === 0 ? <Empty text="Bu oyda qo'lda yozuv yo'q" icon={PencilLine} /> : <EntryTable rows={monthEntries} canCancel={canPrice} edit={canPrice && opts ? { drivers: opts.drivers, vehicles: opts.vehicles.map((v) => ({ id: v.id, label: v.label })) } : null} />}
-        </Card>
-      </Section>}
-
       {/* ── Ombor: skladdan haydovchilarga va transportga berilgani (kimda nima bor) ── */}
       {bolim === "ombor" && <OmborSection from={from} to={to} title={monthTitle(month)} driverId={sp.driver ?? null} showMoney={showMoney} monthNav={monthNav}
         driverHref={(id) => qs({ driver: id })} dispatchHref={pathAllowed("/stock/dispetcher", s.role, s.perms) ? "/stock/dispetcher" : null} />}
@@ -767,33 +767,44 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 }
 
 /**
- * Hisob varag'i tepasidagi yig'ma: logistika moliyasini ko'radiganlarga (direktor, ish boshqaruvchi, mexanik) — kirim (bajarilgan ish:
- * dostavka, usluga, obyekt), chiqim (jami xarajat), foyda va logistika kassasi qoldig'i; qolganlarga (dispetcher) — summasiz
- * ko'rsatkichlar: reys, km, yoqilg'i, haydovchi haqi. Raqamlar varaqdagi filtr (davr, mashina, haydovchi) bo'yicha.
+ * Hisob varag'i tepasidagi yig'ma. Har karta bosiladi (`?karta=`) — faqat shu ko'rsatkich qatorlari panelda, qator bosilsa batafsil.
+ * Summa huquqi bilan (direktor, ish boshqaruvchi, mexanik): Jami tushum (dostavka, usluga, obyekt + jurnaldagi boshqa kirim),
+ * Xarajat (oyliksiz: yoqilg'i, ta'mir, zapchast, boshqa + jurnaldagi mashinasiz chiqim), Haydovchilar oyligi va Jami
+ * (tushum − xarajat − oylik), logistika kassasi qoldig'i. Qolganlarga (dispetcher, logistika) — summasiz ko'rsatkichlar;
+ * logistika boshlig'iga (`spend`) kassa qoldig'i ham. Raqamlar varaqdagi filtr (davr, mashina, haydovchi) bo'yicha.
  */
-function LedgerSummary({ total: t, money: showMoney, kassa, hasKassa, label }: { total: LedgerTotals; money: boolean; kassa: number; hasKassa: boolean; label: string }) {
+function LedgerSummary({ total: t, money: showMoney, kassa, hasKassa, label, extras, href, kassaHref }: {
+  total: LedgerTotals; money: boolean; kassa: number; hasKassa: boolean; label: string;
+  extras: { income: LedgerExtra[]; expense: LedgerExtra[] } | null; href: (k: string) => string; kassaHref: string;
+}) {
   const join = (xs: [string, number][]) => xs.filter(([, v]) => Math.abs(v) >= 1).map(([k, v]) => `${k} ${moneyShort(v)}`).join(" · ");
+  const kassaCard = hasKassa
+    ? <StatCard label="Logistika kassasi — jami puli" value={moneyShort(kassa)} hint="hozirgi qoldiq · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href={kassaHref} />
+    : null;
   if (!showMoney) {
     return (
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Reys" value={fmtNum(t.trips, 0)} hint={`${t.rows} qator · ${label}`} icon={Route} tone="info" />
-        <StatCard label="Probeg" value={`${fmtNum(t.km, 0)} km`} hint={t.hours ? `baraban ${fmtNum(t.hours, 1)} soat` : undefined} icon={Truck} />
-        <StatCard label="Yoqilg'i" value={[t.useGas ? `${fmtNum(t.useGas, 0)} m³` : null, t.useDt ? `${fmtNum(t.useDt, 0)} l` : null].filter(Boolean).join(" + ") || "—"} hint={`sarf (norma) · zapravka ${fmtNum(t.refuel, 0)}`} icon={Fuel} />
-        <StatCard label="Haydovchi haqi" value={money(t.pay)} icon={Coins} tone="success" />
+        <StatCard label="Reys" value={fmtNum(t.trips, 0)} hint={`${t.rows} qator · ${label}`} icon={Route} tone="info" href={href("reys")} />
+        <StatCard label="Probeg" value={`${fmtNum(t.km, 0)} km`} hint={t.hours ? `baraban ${fmtNum(t.hours, 1)} soat` : undefined} icon={Truck} href={href("probeg")} />
+        <StatCard label="Yoqilg'i" value={[t.useGas ? `${fmtNum(t.useGas, 0)} m³` : null, t.useDt ? `${fmtNum(t.useDt, 0)} l` : null].filter(Boolean).join(" + ") || "—"} hint={`sarf (norma) · zapravka ${fmtNum(t.refuel, 0)}`} icon={Fuel} href={href("yoqilgi")} />
+        <StatCard label="Haydovchi haqi" value={money(t.pay)} icon={Coins} tone="success" href={href("oylik")} />
+        {kassaCard}
       </div>
     );
   }
+  const exIn = extras ? extras.income.reduce((a, x) => a + x.amount, 0) : 0;
+  const exOut = extras ? extras.expense.reduce((a, x) => a + x.amount, 0) : 0;
+  const revenue = t.revenue + exIn, cost = t.total - t.pay + exOut, net = revenue - cost - t.pay;
   const delivery = t.revBank + t.revCash + t.revDebt, service = t.svcBank + t.svcCash;
   return (
-    <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-      <StatCard label="Kirim (bajarilgan ish)" value={moneyShort(t.revenue)} icon={ArrowDownLeft} tone="success"
-        hint={join([["dostavka", delivery], ["usluga", service], ["obyekt", t.revOther]]) || label} />
-      <StatCard label="Chiqim (xarajat)" value={moneyShort(t.total)} icon={ArrowUpRight} tone="warning"
-        hint={join([["yoqilg'i", t.fuelSum], ["haq", t.pay], ["ta'mir", t.repair + t.vulc], ["zapchast", t.parts], ["boshqa", t.other]]) || label} />
-      <StatCard label="Foyda" value={moneyShort(t.profit)} hint={`kirim − chiqim · ${label}`} icon={Calculator} tone={t.profit < 0 ? "danger" : "info"} />
-      {hasKassa
-        ? <StatCard label="Logistika kassasi — qoldiq" value={moneyShort(kassa)} hint="hozirgi · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href="/logistika/moliya?tab=jurnal" />
-        : <StatCard label="Logistika moliya" value="Ochish" hint="kirim-chiqim jurnali" icon={Landmark} href="/logistika/moliya" />}
+    <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
+      <StatCard label="Jami tushum" value={moneyShort(revenue)} icon={ArrowDownLeft} tone="success" href={href("tushum")}
+        hint={join([["dostavka", delivery], ["usluga", service], ["obyekt", t.revOther], ["boshqa kirim", exIn]]) || label} />
+      <StatCard label="Xarajat" value={moneyShort(cost)} icon={ArrowUpRight} tone="warning" href={href("xarajat")}
+        hint={join([["yoqilg'i", t.fuelSum], ["ta'mir", t.repair + t.vulc], ["zapchast", t.parts], ["boshqa", t.other + exOut]]) || label} />
+      <StatCard label="Haydovchilar oyligi" value={moneyShort(t.pay)} hint={`reys haqi · ${fmtNum(t.trips, 0)} reys`} icon={Coins} href={href("oylik")} />
+      <StatCard label="Jami (sof)" value={moneyShort(net)} hint={`tushum − xarajat − oylik · ${label}`} icon={Calculator} tone={net < 0 ? "danger" : "info"} href={href("jami")} />
+      {kassaCard ?? <StatCard label="Logistika moliya" value="Ochish" hint="kirim-chiqim jurnali" icon={Landmark} href="/logistika/moliya" />}
     </div>
   );
 }

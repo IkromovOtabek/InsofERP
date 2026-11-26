@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { Ban, HandCoins, Link2, Plus, Unlink } from "lucide-react";
-import { addTx, cancelTx, linkCash, payMonth } from "./actions";
+import { addTx, cancelTx, linkCash, payMonth, spendTx } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 
@@ -85,6 +85,35 @@ export function TxForm({ sources, vehicles, drivers, expense, income, transfer, 
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Yozildi"} />}
       <Button disabled={pending || !sources.length}><Plus size={16} /> {pending ? "Yozilmoqda…" : type === "EXPENSE" ? "Chiqimni yozish" : isTransfer ? "O'tkazish" : "Kirimni yozish"}</Button>
+    </form>
+  );
+}
+
+/** Logistika boshlig'i chiqimi: faqat logistika hisobidan, faqat chiqim (`spendTx`). */
+export function SpendForm({ sources, vehicles, drivers, expense, today }: { sources: SourceOpt[]; vehicles: Opt[]; drivers: Opt[]; expense: readonly string[]; today: string }) {
+  const [state, action, pending] = useActionState(spendTx, undefined);
+  const [token, setToken] = useState(() => crypto.randomUUID());
+  useEffect(() => { if (state?.ok) setToken(crypto.randomUUID()); }, [state]);
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="clientToken" value={token} />
+      <div key={token} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Sana *"><Input type="date" name="date" defaultValue={today} max={today} required /></Field>
+        <Field label="Summa *"><MoneyInput name="amount" required decimals={0} /></Field>
+        <Field label="Toifa *"><Select name="category" defaultValue={expense[0]} required>{expense.map((c) => <option key={c} value={c}>{c}</option>)}</Select></Field>
+        <Field label="Qaysi hisobdan *"><SourceSelect name="source" sources={sources} /></Field>
+        <Field label="Mashina" hint="Ta'mir, zapchast, yo'l xarajati mashina hisobiga ham tushadi">
+          <Select name="vehicleId" defaultValue=""><option value="">—</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</Select>
+        </Field>
+        <Field label="Haydovchi">
+          <Select name="driverId" defaultValue=""><option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}</Select>
+        </Field>
+        <Field label="Kimga"><Input name="counterparty" placeholder="Usta, zapravka, do'kon…" /></Field>
+        <Field label="Izoh"><Input name="note" placeholder="Nima uchun" /></Field>
+      </div>
+      <FormError error={state?.error} />
+      {state?.ok && <FormSuccess text={state.note ?? "Yozildi"} />}
+      <Button disabled={pending || !sources.length}><Plus size={16} /> {pending ? "Yozilmoqda…" : "Chiqimni yozish"}</Button>
     </form>
   );
 }

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
-import { addLogiTx, cancelLogiTx, linkCashToLogi, payDriverMonth } from "@/lib/logistics-finance";
+import { addLogiTx, cancelLogiTx, isLogiAcc, linkCashToLogi, payDriverMonth } from "@/lib/logistics-finance";
 
 /**
  * Logistika moliya amallari (veb). Qoida `lib/logistics-finance.ts` da: yozish — `fin_write`, pul berish — `fin_pay`
@@ -43,6 +43,24 @@ export async function addTx(_prev: ActionState, fd: FormData): Promise<ActionSta
   const date = dayOf(p.data.date);
   if (!date) return { error: "Sana noto'g'ri (kelajak sana bo'lmaydi)" };
   const r = await addLogiTx({ ...p.data, date, fromCashAccountId: p.data.fromCashAccountId || null }, s.userId);
+  if (r.error) return { error: r.error };
+  refresh();
+  return { ok: true, note: r.note };
+}
+
+/**
+ * Logistika boshlig'i chiqimi (`spend`): faqat logistika hisobidan va faqat chiqim — tasdiqsiz, qoldiqdan oshmaydi
+ * (`writeLogiTx` tekshiradi). Zavod kassasi tanlab bo'lmaydi.
+ */
+export async function spendTx(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "spend");
+  fd.set("type", "EXPENSE");
+  const p = parseForm(TxSchema, fd);
+  if ("error" in p) return { error: p.error };
+  if (!isLogiAcc(p.data.source)) return { error: "Chiqim faqat logistika hisobidan" };
+  const date = dayOf(p.data.date);
+  if (!date) return { error: "Sana noto'g'ri (kelajak sana bo'lmaydi)" };
+  const r = await addLogiTx({ ...p.data, type: "EXPENSE", date, fromCashAccountId: null }, s.userId);
   if (r.error) return { error: r.error };
   refresh();
   return { ok: true, note: r.note };

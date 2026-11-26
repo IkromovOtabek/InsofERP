@@ -79,8 +79,8 @@ function RowForm({ options, vehicleId, clientToken, onClose }: { options: Ledger
     <div className="space-y-3 rounded-(--radius-card) border border-slate-200 bg-white p-4 shadow-(--shadow-card)">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Qo&apos;lda qator{v ? ` — ${v.plate}` : ""}
-            <InfoButton title="Qo'lda qator" className="ml-1">ECO&apos;ga tushmagan reys. Zapravka va xarajat shu mashinaga yoziladi, haq ish boshqaruvchi tasdig&apos;iga boradi.</InfoButton>
+          <h3 className="text-sm font-semibold">Qator qo&apos;shish{v ? ` — ${v.plate}` : ""}
+            <InfoButton title="Qator qo'shish" className="ml-1">Reys tizimga (ECO) tushmagan ish: yo&apos;nalish, km, zapravka, xarajat, haydovchi haqi va kirim. Zapravka va xarajat shu mashinaga yoziladi, haq ish boshqaruvchi tasdig&apos;iga boradi, kirim logistika kassasiga tushadi.</InfoButton>
           </h3>
         </div>
         <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
@@ -148,7 +148,7 @@ function RowFields({ options, v, vid, setVid, date, setDate, token, action, pend
         <Field label="Izoh" className="col-span-2"><Input name="note" placeholder="Tun 22:30, 3 soat kutdi…" maxLength={300} /></Field>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Qatorni qo'shish"}</Button>
+        <Button disabled={pending}><Plus size={15} /> {pending ? "Saqlanmoqda…" : "Qator qo'shish"}</Button>
         {use != null && <span className="text-xs text-slate-500">Sarf (norma): <b className="tabular text-slate-800">{fmtNum(use, 1)} {v?.unit}</b></span>}
       </div>
     </form>

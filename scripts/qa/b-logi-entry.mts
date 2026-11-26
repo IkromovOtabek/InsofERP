@@ -168,8 +168,9 @@ check(r.ok && tp?.sum === 320000, "qayta tasdiqdan keyin vedomost: 320 000", [r.
 
 // ── Sahifalar ──
 g = await disp.get(P);
-check(g.status === 200 && g.text.includes('aria-label="Tahrirlash"'), "«Qo'lda yozuvlar»: qatorda tahrirlash tugmasi", g.status);
-check(g.status === 200 && g.text.includes(q1(`select "docNo" from "LogisticsEntry" where id=${lit(ePay)}`)!) && g.text.includes("Bekor qilingan"), "«Qo'lda yozuvlar» sahifasi: yozuvlar va bekor qilingani", g.status);
+// «Qo'lda yozuvlar» bo'limi olib tashlandi (2026-11-26): eski havola Hisob varag'ini ochadi, yozuv — «Qator qo'shish» bilan
+check(g.status === 200 && g.text.includes("Qator qo&#x27;shish") && !g.text.includes("Qo&#x27;lda yozuvlar:"), "eski «Qo'lda yozuvlar» havolasi → Hisob varag'i («Qator qo'shish» bor)", g.status);
+check(g.status === 200 && g.text.includes(q1(`select "docNo" from "LogisticsEntry" where id=${lit(ePay)}`)!), "qo'lda yozuv Hisob varag'ida qator bo'lib ko'rinadi", g.status);
 g = await disp.get(`/logistika/tabel?bolim=oylik&driver=${DRV}`);
 check(g.status === 200 && g.text.includes("Qo&#x27;lda yozilgan haq"), "haydovchi oyligi: qo'lda yozilgan haq ko'rinadi", g.status);
 g = await sklad.get(P);

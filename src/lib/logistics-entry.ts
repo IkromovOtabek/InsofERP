@@ -9,6 +9,7 @@ import { dayField, numIn } from "@/lib/logistics-admin";
 import { lastFuelPrice } from "@/lib/logistics-costs";
 import { money } from "@/lib/format";
 import { LEDGER_REVENUE_REQUIRED, LEDGER_REVENUE_TYPES } from "@/lib/ledger-revenue";
+import { syncEntryRevenueTx } from "@/lib/logistics-finance";
 
 /**
  * Dispetcherning qo'lda yozuvi (Haydovchilar tabeli → «Qo'lda yozuvlar»): tizimga reys bo'lib tushmagan ish —
@@ -140,6 +141,8 @@ export async function createLogisticsEntry(d: EntryInput, userId: string, opts: 
         });
         await audit(tx, userId, "CREATE", "TransportExpense", x.id, undefined, x);
       }
+      // Kirim — logistika hisobiga (zayavka dastavkasi kabi)
+      if (revenue > 0) await syncEntryRevenueTx(tx, e.id, userId);
       return e;
     });
     if (pay > 0 && !opts.silent) notifyAfter(() => notifyRoles(PAY_APPROVER_ROLES, {
@@ -169,6 +172,7 @@ async function cancelLinked(tx: Prisma.TransactionClient, entryId: string, docNo
   if (costs.length) await tx.transportExpense.updateMany({ where: { id: { in: costs.map((c) => c.id) } }, data });
   for (const f of fuel) await audit(tx, userId, "STATUS_CHANGE", "FuelLog", f.id, { cancelledAt: null }, data);
   for (const c of costs) await audit(tx, userId, "STATUS_CHANGE", "TransportExpense", c.id, { cancelledAt: null }, data);
+  await syncEntryRevenueTx(tx, entryId, userId); // logistika hisobidagi kirimi ham bekor
 }
 
 /** Bekor qilish / tahrirni nima to'sadi: naqdi kassaga o'tgan, yoki oyi vedomostda yopilgan oylik haq. */
@@ -282,6 +286,7 @@ export async function updateLogisticsEntry(id: string, d: EntryInput, userId: st
       await tx.transportExpense.updateMany({ where: { entryId: id, cancelledAt: null }, data: move });
     }
     if (sheet) await sheet.apply(tx, { date, driverId: data.driverId, vehicleId: data.vehicleId, docNo: e.docNo });
+    await syncEntryRevenueTx(tx, id, userId); // kirim summasi/sanasi logistika hisobida ham
     return true;
   });
   if (!ok) return { error: "Yozuv boshqa joyda o'zgartirildi — sahifani yangilang" };

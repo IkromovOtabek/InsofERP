@@ -127,6 +127,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     // Logistika moliyasi — alohida hisob (`lib/logistics-finance.ts`). Summalar faqat direktor, ish boshqaruvchi va mexanikka
     { key: "money",     label: "Logistika summalarini ko'rish (jami xarajat, daromad, foyda)", roles: ["SUPERVISOR", "MECHANIC"], hint: "Logistika moliya oynasi; tabel, transport va hisobotlarda jami xarajat, daromad va foyda faqat shu huquq bilan ko'rinadi" },
     { key: "fin_write", label: "Logistika moliya: kirim, chiqim va o'tkazma yozish", roles: ["SUPERVISOR"], explicit: true, hint: "Logistika hisobidan yoki zavod kassa/bankidan" },
+    { key: "spend",     label: "Logistika kassasi: jami pulini ko'rish va o'zi chiqim qilish", roles: ["LOGISTICS", "SUPERVISOR"], hint: "Faqat logistika hisobidan, tasdiqsiz, qoldiqdan oshmaydi. Daromad va foyda ko'rinmaydi — ular «summalar» huquqida" },
     { key: "fin_pay",   label: "Logistika pulini berish (naqd reys haqi, usta puli, ta'mir, oylik reys haqi)", roles: ["SUPERVISOR"], explicit: true, hint: "Zavod kassa/bankidan yoki logistika hisobidan — tanlab. Kassir bu so'rovlarni ko'rmaydi" },
   ],
   stock: [

@@ -150,11 +150,18 @@ async function planCosts(r: LedgerRow, d: LedgerEditInput, fuelType: FuelType): 
     };
   }
 
+  // Logistika moliyada to'langan (yoki kassadan biriktirilgan) xarajat — varaqda o'zgartirilsa, pul yozuvi bilan ajralib qoladi
+  // (kassa/jurnalda to'langan, varaqda yo'q). Bunday xarajat o'sha yozuv orqali o'zgaradi
+  const paid = new Map((await db.logisticsTx.findMany({
+    where: { cancelledAt: null, transportExpenseId: { in: exps.map((x) => x.id) } }, select: { docNo: true, transportExpenseId: true },
+  })).map((t) => [t.transportExpenseId!, t.docNo]));
   const costs: CostPlan[] = [];
   for (const c of CATS) {
     const old = exps.filter((x) => r.refs[c.key].includes(x.id));
     const want = Math.round(d[c.key] ?? 0);
     if (Math.abs(want - old.reduce((a, x) => a + Number(x.amount), 0)) < 0.5) continue;
+    const doc = old.map((x) => paid.get(x.id)).find(Boolean);
+    if (doc) return { error: `${c.title} Logistika moliyada ${doc} bilan to'langan — summani o'sha yozuv orqali o'zgartiring (Logistika moliya → Kirim-chiqim: bekor qilib qayta yozing)` };
     costs.push({
       title: c.title, ids: old.map((x) => x.id), single: old.length === 1 ? old[0]!.id : null, amount: want,
       kind: old.length && old.every((x) => x.kind === old[0]!.kind) ? old[0]!.kind : c.kind,

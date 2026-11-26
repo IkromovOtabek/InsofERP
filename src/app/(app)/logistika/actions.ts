@@ -298,7 +298,9 @@ export async function cancelEntryAction(id: string, reason: string): Promise<Act
  * Bitta `LogisticsEntry` + zapravka (`FuelLog`) + xarajatlar (`TransportExpense`) — `lib/logistics-entry.ts`.
  */
 export async function createLedgerRowAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireAction("logistika", "ledger");
+  // «Qator qo'shish» — hisob varag'i huquqi yoki reys narxi huquqi (avvalgi «Qo'lda yozuvlar» formasi shu bilan birlashdi)
+  const cur = await getSession();
+  const s = cur && canDo(cur, "logistika", "ledger") ? cur : await requireAction("logistika", "pay");
   const r = parseForm(entrySchema, fd);
   if ("error" in r) return { error: r.error };
   if (!r.data.vehicleId) return { error: "Transportni tanlang" };

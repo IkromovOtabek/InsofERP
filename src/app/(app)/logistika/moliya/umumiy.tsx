@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Calculator, Fuel, HandCoins, Landmark, PackageOpen, Route, TrendingDown, TrendingUp } from "lucide-react";
 import { driverLedger, driverPaySums, fuelBalances, type LedgerRow } from "@/lib/driver-ledger";
 import { logiJournal } from "@/lib/logistics-finance";
+import { ledgerExtras } from "@/lib/ledger-extras";
 import { dispatcherStock } from "@/lib/dispatcher-stock";
 import { fmtNum, isoDate, money, moneyShort } from "@/lib/format";
 import { Card, CardHeader, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -30,7 +31,7 @@ const Line = ({ label, v, strong }: { label: string; v: number; strong?: boolean
 export async function LogiOverview({ period, accounts, toPay }: {
   period: DayRange; accounts: { id: string; name: string; balance: number }[]; toPay: { amount: unknown }[];
 }) {
-  const [led, j, disp] = await Promise.all([driverLedger(period.from, period.to), logiJournal(period.from, period.to), dispatcherStock()]);
+  const [led, j, disp, ex] = await Promise.all([driverLedger(period.from, period.to), logiJournal(period.from, period.to), dispatcherStock(), ledgerExtras(period.from, period.to)]);
   const t = led.total;
   const kassa = accounts.reduce((a, x) => a + x.balance, 0);
   const due = toPay.reduce((a, r) => a + Number(r.amount), 0);
@@ -43,18 +44,22 @@ export async function LogiOverview({ period, accounts, toPay }: {
   const delivery = t.revBank + t.revCash + t.revDebt, service = t.svcBank + t.svcCash;
   const range = `dan=${isoDate(period.from)}&gacha=${isoDate(new Date(period.to.getTime() - 1))}`;
   const hisob = (extra = "") => `/logistika/tabel?bolim=hisob&${range}${extra}`;
+  // Hisob varag'i kartalari bilan bir xil: jurnaldagi varaqqa tushmaydigan kirim/chiqim ham qo'shiladi (`lib/ledger-extras.ts`)
+  const exIn = ex.income.reduce((a, x) => a + x.amount, 0), exOut = ex.expense.reduce((a, x) => a + x.amount, 0);
+  const revenue = t.revenue + exIn, cost = t.total - t.pay + exOut, net = revenue - cost - t.pay;
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Kirim (bajarilgan ish)" value={moneyShort(t.revenue)} hint={`dostavka ${moneyShort(delivery)} · usluga ${moneyShort(service)} · obyekt ${moneyShort(t.revOther)}`} icon={TrendingUp} tone="success" href={hisob()} />
-        <StatCard label="Chiqim (tannarx)" value={moneyShort(t.total)} hint={`yoqilg'i ${moneyShort(t.fuelSum)} · haq ${moneyShort(t.pay)} · ta'mir ${moneyShort(t.repair + t.parts + t.vulc)}`} icon={TrendingDown} tone="warning" href={hisob()} />
-        <StatCard label="Foyda" value={moneyShort(t.profit)} hint={t.revenue > 0 ? `rentabellik ${fmtNum((t.profit / t.revenue) * 100, 1)}%` : period.label} icon={Calculator} tone={t.profit < 0 ? "danger" : "info"} href="/logistika/moliya?tab=foyda" />
+        <StatCard label="Jami tushum" value={moneyShort(revenue)} hint={`dostavka ${moneyShort(delivery)} · usluga ${moneyShort(service)} · obyekt ${moneyShort(t.revOther)}${exIn ? ` · boshqa ${moneyShort(exIn)}` : ""}`} icon={TrendingUp} tone="success" href={hisob("&karta=tushum")} />
+        <StatCard label="Xarajat (oyliksiz)" value={moneyShort(cost)} hint={`yoqilg'i ${moneyShort(t.fuelSum)} · ta'mir ${moneyShort(t.repair + t.parts + t.vulc)}${exOut ? ` · mashinasiz ${moneyShort(exOut)}` : ""}`} icon={TrendingDown} tone="warning" href={hisob("&karta=xarajat")} />
+        <StatCard label="Haydovchilar oyligi" value={moneyShort(t.pay)} hint="reys haqi" icon={HandCoins} href={hisob("&karta=oylik")} />
+        <StatCard label="Jami (sof)" value={moneyShort(net)} hint={revenue > 0 ? `tushum − xarajat − oylik · ${fmtNum((net / revenue) * 100, 1)}%` : period.label} icon={Calculator} tone={net < 0 ? "danger" : "info"} href={hisob("&karta=jami")} />
         <StatCard label="Logistika kassasi — qoldiq" value={moneyShort(kassa)} hint="hozirgi · zavod kassasiga kirmaydi" icon={Landmark} tone={kassa < 0 ? "danger" : "brand"} href="/logistika/moliya?tab=jurnal" />
         <StatCard label="Pul kirimi" value={moneyShort(j.totals.income)} hint={j.totals.transferIn ? `shundan zavoddan o'tkazma ${moneyShort(j.totals.transferIn)}` : period.label} icon={ArrowDownLeft} tone="success" href="/logistika/moliya?tab=jurnal" />
         <StatCard label="Pul chiqimi" value={moneyShort(j.totals.expense)} hint={`zavod hisobidan ${moneyShort(j.totals.expenseFactory)} · logistikadan ${moneyShort(j.totals.expenseLogi)}`} icon={ArrowUpRight} href="/logistika/moliya?tab=jurnal" />
         <StatCard label="To'lanishi kerak" value={moneyShort(due)} hint={`${toPay.length} ta tasdiqlangan so'rov`} icon={HandCoins} tone={toPay.length ? "warning" : "default"} href="/logistika/moliya?tab=tolov" />
-        <StatCard label="Reys va probeg" value={`${fmtNum(t.trips, 0)} reys`} hint={`${fmtNum(t.km, 0)} km${unpriced.length ? ` · narxsiz ${unpriced.length}` : ""}`} icon={Route} tone={unpriced.length ? "warning" : "info"} href={hisob()} />
+        <StatCard label="Reys va probeg" value={`${fmtNum(t.trips, 0)} reys`} hint={`${fmtNum(t.km, 0)} km${unpriced.length ? ` · narxsiz ${unpriced.length}` : ""}`} icon={Route} tone={unpriced.length ? "warning" : "info"} href={hisob("&karta=reys")} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3 [&>*]:min-w-0">
@@ -65,7 +70,8 @@ export async function LogiOverview({ period, accounts, toPay }: {
               <Line label="Dostavka — perech." v={t.revBank} /><Line label="Dostavka — naqd" v={t.revCash} />
               {t.revDebt >= 1 && <Line label="Dostavka — qarzga (to'lov turi yo'q)" v={t.revDebt} />}
               <Line label="Usluga — perech." v={t.svcBank} /><Line label="Usluga — naqd" v={t.svcCash} />
-              <Line label="Obyekt (zavod uchun)" v={t.revOther} /><Line label="Jami kirim" v={t.revenue} strong />
+              <Line label="Obyekt (zavod uchun)" v={t.revOther} />
+              {exIn >= 1 && <Line label="Boshqa kirim (jurnal)" v={exIn} />}<Line label="Jami tushum" v={revenue} strong />
             </tbody>
           </Table>
         </Card>
@@ -74,7 +80,8 @@ export async function LogiOverview({ period, accounts, toPay }: {
           <Table>
             <tbody>
               <Line label="Yoqilg'i (norma × narx)" v={t.fuelSum} /><Line label="Haydovchi haqi" v={t.pay} /><Line label="Ta'mir" v={t.repair} />
-              <Line label="Zapchast" v={t.parts} /><Line label="Vulkanizator" v={t.vulc} /><Line label="Boshqa" v={t.other} /><Line label="Jami chiqim" v={t.total} strong />
+              <Line label="Zapchast" v={t.parts} /><Line label="Vulkanizator" v={t.vulc} /><Line label="Boshqa" v={t.other} />
+              {exOut >= 1 && <Line label="Mashinasiz xarajat (jurnal)" v={exOut} />}<Line label="Jami chiqim" v={t.total + exOut} strong />
             </tbody>
           </Table>
         </Card>

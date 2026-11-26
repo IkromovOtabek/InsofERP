@@ -8,6 +8,7 @@ import type { Perms } from "./auth";
 import { accountBalances, cashOutflowError } from "./payments";
 import { money } from "./format";
 import { monthRange } from "./brigade-pay";
+import { LEDGER_REVENUE_LABEL } from "./ledger-revenue";
 
 /* ───────────────────────── Logistika moliya — alohida hisob ─────────────────────────
  *
@@ -31,6 +32,8 @@ type Who = { role: Role; perms?: Perms };
 export const canSeeLogiMoney = (who: Who) => canDo(who, "logistika", "money");
 /** Logistika pulini beradi: mexanik so'rovi (transport, reys haqi), oylik reys haqi. */
 export const canLogiPay = (who: Who) => canDo(who, "logistika", "fin_pay");
+/** Logistika boshlig'i: logistika kassasi qoldig'ini ko'radi va undan o'zi chiqim qiladi (daromad/foydasiz). */
+export const canLogiSpend = (who: Who) => canDo(who, "logistika", "spend");
 /** Logistika moliyaga qo'lda kirim / chiqim / o'tkazma yozadi. */
 export const canLogiWrite = (who: Who) => canDo(who, "logistika", "fin_write");
 
@@ -421,7 +424,7 @@ export async function logiJournal(from: Date, to: Date) {
       type: t.type, category: t.category, vehicle: t.vehicleId ? plate.get(t.vehicleId) ?? null : null,
       who: t.driverId ? drv.get(t.driverId) ?? t.counterparty : t.counterparty, amount: Number(t.amount), note: t.note,
       href: t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}` : null,
-      logiTxId: t.id, cancellable: t.refType !== "MechanicRequest" && t.refType !== STOCK_ISSUE_REF, linked: t.refType === CASH_LINK_REF,
+      logiTxId: t.id, cancellable: t.refType !== "MechanicRequest" && t.refType !== STOCK_ISSUE_REF && t.refType !== DELIVERY_REF && t.refType !== ENTRY_REVENUE_REF, linked: t.refType === CASH_LINK_REF,
       stockRef: t.refType === STOCK_ISSUE_REF ? t.refId : null,
     });
   }
@@ -757,4 +760,47 @@ export async function syncOrderDelivery(orderId: string, userId: string): Promis
   } catch (e) {
     console.error("[logistika] dastavka sinxronlanmadi", orderId, e);
   }
+}
+
+// ───────────────────────── Hisob varag'idagi qo'lda qator kirimi → logistika hisobi ─────────────────────────
+
+/**
+ * Hisob varag'idagi qo'lda qator (`LogisticsEntry`) kirimi — zayavka dastavkasi kabi logistika hisobiga avtomatik kirim
+ * (foydalanuvchi qarori, 2026-11-26: zayavkaga kiritilmagan, qo'lda yozilgan ish ham logistika pulini ko'paytiradi).
+ * `refType` = "LedgerEntry", `refId` = qator. Qator yaratilsa/tahrirlansa/bekor bo'lsa — shu yozuv ham (idempotent).
+ * `DELIVERY_LOGI_SINCE` dan oldingi qatorlar tushmaydi (eski oylar yopilgan).
+ */
+export const ENTRY_REVENUE_REF = "LedgerEntry";
+export const ENTRY_REVENUE_CATEGORY = "Hisob varag'i kirimi";
+
+export async function syncEntryRevenueTx(tx: Tx, entryId: string, userId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"logient:" + entryId}))`;
+  const e = await tx.logisticsEntry.findUnique({
+    where: { id: entryId },
+    select: { id: true, docNo: true, date: true, revenue: true, revenueType: true, cancelledAt: true, vehicleId: true, driverId: true, dropoff: true, note: true },
+  });
+  const have = await tx.logisticsTx.findMany({ where: { refType: ENTRY_REVENUE_REF, refId: entryId, cancelledAt: null }, select: { id: true, docNo: true, amount: true, date: true } });
+  const amount = e && !e.cancelledAt && e.date >= DELIVERY_LOGI_SINCE ? r2(Number(e.revenue ?? 0)) : 0;
+  const now = new Date();
+  const [keep, ...extra] = have;
+  // Takror bo'lib qolgani (bo'lmasligi kerak) va keraksizi — bekor
+  for (const h of amount > 0 ? extra : have) {
+    await tx.logisticsTx.update({ where: { id: h.id }, data: { cancelledAt: now, cancelledById: userId, cancelReason: "Hisob varag'i qatori kirimi yo'q (qator o'zgardi yoki bekor)" } });
+    await audit(tx, userId, "STATUS_CHANGE", "LogisticsTx", h.id, { cancelledAt: null }, { cancelledAt: now, docNo: h.docNo, reason: "Qator kirimi yo'q" });
+  }
+  if (!e || !(amount > 0)) return;
+  const label = e.revenueType ? LEDGER_REVENUE_LABEL[e.revenueType] : "Obyekt (zavod uchun)";
+  if (keep) {
+    if (Math.abs(Number(keep.amount) - amount) < 0.005 && keep.date.getTime() === e.date.getTime()) return;
+    await tx.logisticsTx.update({ where: { id: keep.id }, data: { amount, date: e.date, vehicleId: e.vehicleId, driverId: e.driverId } });
+    await audit(tx, userId, "UPDATE", "LogisticsTx", keep.id, { amount: Number(keep.amount), date: keep.date }, { amount, date: e.date, reason: `Qator ${e.docNo} tahrirlandi` });
+    return;
+  }
+  const accountId = await deliveryAccountId(tx);
+  if (!accountId) return;
+  await writeLogiTx(tx, {
+    type: "INCOME", date: e.date, amount, category: ENTRY_REVENUE_CATEGORY, source: `${LOGI_ACC}${accountId}`,
+    vehicleId: e.vehicleId, driverId: e.driverId, counterparty: e.dropoff ?? null,
+    note: `Hisob varag'i: ${e.docNo} · ${label}`, refType: ENTRY_REVENUE_REF, refId: e.id,
+  }, userId);
 }

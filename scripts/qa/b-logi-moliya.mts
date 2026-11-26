@@ -49,6 +49,21 @@ const tr = lastLm();
 check(logiBal() - l0 === 1000000 && c0 - cashBal() === 1000000, "o'tkazma: logistika +1 mln, zavod kassasi −1 mln");
 check(n1(`select count(*) from "CashTransaction" where "refType"='LogisticsTx' and "refId"=${lit(tr)} and type='EXPENSE'`) === 1, "o'tkazma: kassada hujjatga bog'langan bitta qator");
 
+// ── Logistika boshlig'i (spend, 2026-11-26): jami pulni ko'radi, faqat logistika hisobidan o'zi chiqim qiladi ──
+{
+  const g = await logist.get("/logistika/moliya");
+  check(g.status === 200 && g.text.includes("Jami puli") && !g.text.includes("Chiqim — logistika hisobidan"), "logistika boshlig'i: kassa qoldig'i ko'rinadi, to'liq moliya yopiq", g.status);
+  const l1 = logiBal(), c1 = cashBal();
+  let rs = await logist.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: L, counterparty: "QA logist", amount: 50000 })], "/logistika/moliya");
+  check(rs.ok && l1 - logiBal() === 50000 && cashBal() === c1, "logistika boshlig'i: logistika hisobidan chiqim yozildi, kassa o'zgarmadi", rs.error ?? rs.text.slice(0, 200));
+  rs = await logist.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: cashAcc, amount: 1000 })], "/logistika/moliya");
+  check(!rs.ok, "logistika boshlig'i: zavod kassasidan chiqim qila olmaydi");
+  rs = await logist.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: L, amount: logiBal() + 1000000 })], "/logistika/moliya");
+  check(!rs.ok, "logistika boshlig'i: qoldiqdan ortiq chiqim yo'q");
+  rs = await disp.action(`${LM}#spendTx`, [undefined, tx({ category: "Boshqa chiqim", source: L, amount: 1000 })], "/logistika/moliya");
+  check(!rs.ok, "dispetcher: chiqim qila olmaydi");
+}
+
 // ── Logistika hisobidan chiqim: kassaga tushmaydi, mashina ta'miri Foydaga (transport xarajati) ──
 c0 = cashBal(); l0 = logiBal();
 r = await prorab.action(`${LM}#addTx`, [undefined, tx({ type: "EXPENSE", category: "Ta'mir", source: L, vehicleId: veh, counterparty: "QA usta", amount: 300000 })], P);
