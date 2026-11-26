@@ -19,6 +19,7 @@ import { ensureSite } from "@/lib/logistics";
 import { STOCK_EPS, lockStock } from "@/lib/stock-lock";
 import { eco, ecoEnabled } from "@/lib/eco/client";
 import { notifyAfter } from "@/lib/notify";
+import { syncOrderDeliveryTx } from "@/lib/logistics-finance";
 
 /**
  * Logistika → «Realizatsiya» (dispetcher): jo'natmalar reestri — Google varag'idagi ustunlar bilan
@@ -1095,6 +1096,8 @@ export async function saveSourceLineField(key: string, field: SourceLineCell, va
         if (u.count !== 1) throw new SourceError("Zayavka shu payt o'zgardi — sahifani yangilang");
         await audit(tx, userId, "UPDATE", "Order", order.id, { deliveryFee: order.deliveryFee }, { deliveryFee: fee, via: "realizatsiya" });
         await dropLine(tx, [key], ["delivery"]);
+        // Dastavka logistika kassasida ham (Hisob varag'i zayavkadan jonli o'qiydi — ikkalasi teng tursin)
+        await syncOrderDeliveryTx(tx, order.id, userId);
       });
     }, key, field);
   }
@@ -1165,6 +1168,8 @@ export async function saveSourceLineField(key: string, field: SourceLineCell, va
         }
         await audit(tx, userId, "UPDATE", "Trip", trip.id, { qtyM3: trip.qtyM3, acceptedQty: trip.acceptedQty }, { qtyM3, acceptedQty: trip.acceptedQty != null ? q : null, via: "realizatsiya" });
         await dropLine(tx, [key], ["qty"]);
+        // Reys yuki o'zgardi — dastavka ulushlari (hajm bo'yicha) logistika kassasida qayta
+        await syncOrderDeliveryTx(tx, trip.orderId, userId);
       });
     }, key, field);
   }
