@@ -172,7 +172,8 @@ export function LedgerSheet({ rows, month, file, showDriver, showPlate, canEdit,
   const shown = useMemo(() => {
     const list = rows.filter((r) => passes(r));
     const c = sort ? colOf.get(sort.key) : undefined;
-    if (!c || !sort) return list;
+    // Sukut: eng yangi kun tepada (Realizatsiyadagidek); kun ichida varaqdagi tartib qoladi — sort barqaror
+    if (!c || !sort) return list.map((r, i) => ({ r, i, d: dayOf(r.at) })).sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : a.i - b.i)).map((x) => x.r);
     const cmp = rowCmp(c), dir = sort.dir === "asc" ? 1 : -1;
     return list.map((r, i) => ({ r, i })).sort((a, b) => dir * cmp(a.r, b.r) || a.i - b.i).map((x) => x.r);
   }, [rows, passes, sort, colOf]);
