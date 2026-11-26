@@ -14,6 +14,7 @@ const schema = z.object({
   leaderId: zOpt,
   phone: zOpt,
   note: zOpt,
+  turi: zOpt,
 });
 
 /** Brigada ochish / tahrirlash — qoida `lib/brigades.ts` da (mobil ilova ham shuni chaqiradi). */
@@ -21,9 +22,10 @@ export async function saveBrigade(id: string | null, _prev: ActionState, fd: For
   const s = await requireAction("tasks", "brigade");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const res = await saveBrigadeData(id, r.data, s.userId);
+  const { turi, ...rest } = r.data;
+  const res = await saveBrigadeData(id, { ...rest, isBru: turi === "bru" }, s.userId);
   if ("error" in res) return { error: res.error };
-  revalidatePath("/brigades"); revalidatePath("/orders/new");
+  revalidatePath("/brigades"); revalidatePath("/orders/new"); revalidatePath("/ish-haqi");
   return { ok: true };
 }
 
@@ -47,7 +49,7 @@ export async function toggleBrigade(id: string): Promise<ActionState> {
     return true;
   });
   if (!changed) return { error: "Brigada holati shu payt boshqa joyda o'zgardi — sahifani yangilang" };
-  revalidatePath("/brigades"); revalidatePath("/orders/new");
+  revalidatePath("/brigades"); revalidatePath("/orders/new"); revalidatePath("/ish-haqi");
   return { ok: true, note: b.isActive ? "Nofaol qilindi" : "Faollashtirildi" };
 }
 

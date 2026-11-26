@@ -9,6 +9,7 @@ import { brigadeStockFor } from "@/lib/brigade-stock-source";
 import { PageHeader, Tabs } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { BLOCK_ORDER } from "@/lib/site-blocks";
+import { activeBrus } from "@/lib/brigades";
 import { OrderForm, type CustomerOpt, type OrderPrefill, type ProductStock } from "../order-form";
 import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
 import { canDo, writeScripts } from "@/lib/permissions";
@@ -112,7 +113,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
         <RememberView cookie={ORDER_VIEW_COOKIE} view="excel" />
         <PageHeader back={{ href: "/orders", label: "Zayavkalar" }} title="Yangi zayavka" action={viewTabs}
           info="Excel ko'rinish: tanlangan kunga olingan barcha zayavkalar va yangi qatorlar — perechisleniye, naqd va qarzga bo'limlari. Saqlangach har biri qoralama bo'ladi, sotuv qabul qiladi." />
-        <OrderGrid day={day} existing={existing} orderCount={sheet.orderCount} customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()} brigadeStock={brigadeStock}
+        <OrderGrid day={day} existing={existing} orderCount={sheet.orderCount} customers={opts} scripts={writeScripts(s)} geoSearch={geoSearchEnabled()} brigadeStock={brigadeStock} brus={await activeBrus()}
           products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: unitLabel(p.unit), price: Number(p.price) }))} />
       </div>
     );
@@ -181,7 +182,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       {/* Blanka keng (QQS ustunli jadval) — to'liq kenglikda; sklad qoldig'i pastda */}
       <div className="space-y-5">
         <div>
-          <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} brigadeStock={brigadeStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
+          <OrderForm docHeader={<DocHeader />} managerName={s.fullName} brus={await activeBrus()} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={productCreateLevel(s.role)} stock={productStock} brigadeStock={brigadeStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
         </div>
         <div>
           {/* Uzun jadval formani siqib qo'ymasligi uchun bo'limlar yig'iladi */}

@@ -278,7 +278,7 @@ async function tasksOpen(ids: string[] | null, kind: "all" | "overdue" | "inwork
 
 async function brigadesActive({ r }: Ctx): Promise<Part> {
   const [brigades, progress] = await Promise.all([
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } }, _count: { select: { members: true, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } }, _count: { select: { members: true, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } } } }),
     db.taskProgress.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { qty: true, task: { select: { brigadeId: true, orderItem: { select: { product: { select: { unit: true } } } } } } } }),
   ]);
   const byB = groupBy(progress, (p) => p.task.brigadeId);

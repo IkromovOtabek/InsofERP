@@ -248,7 +248,7 @@ async function defects(r: DashRange): Promise<MobileDetail> {
 
 async function brigades(r: DashRange): Promise<MobileDetail> {
   const [list, progress, staff] = await Promise.all([
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, select: { dueDate: true } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, select: { dueDate: true } } } }),
     db.taskProgress.findMany({
       where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" },
       select: { id: true, qty: true, date: true, createdBy: { select: { fullName: true } }, task: { select: { id: true, brigadeId: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } },

@@ -362,7 +362,7 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
     if (!hasAny && !b.members.length) continue;
     const sh = new Sheet();
     sh.line(0, `${b.brigade.name} — ${title} (brigada varag'i)`, S.title);
-    sh.line(1, `Kunlik fond = Σ soni × narx, shu kungi soatga bo'linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. Kul rang soat — davomatdan. Kul rang son — ishlab chiqarishda brigada «bajarildi» qayd qilgani. ${taxCol} — Hisoblandidan; Ushlanmalar — Ushlanmalar jadvalidan; Avans — shu oy berilgan; Jami = Summa − Soliq − Ushlanmalar − Avans (qo'lga tegadi).`, S.note);
+    sh.line(1, `Kunlik fond = Σ soni × narx, shu kungi soatga bo'linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. Kul rang soat — davomatdan. Kul rang son — ${b.brigade.isBru ? "shu BRU dan yetkazilgan beton (m³)" : "ishlab chiqarishda brigada «bajarildi» qayd qilgani"}. ${taxCol} — Hisoblandidan; Ushlanmalar — Ushlanmalar jadvalidan; Avans — shu oy berilgan; Jami = Summa − Soliq − Ushlanmalar − Avans (qo'lga tegadi).`, S.note);
     const H = 3, c0 = 2, cS = c0 + nDays;
     // Ustunlar: cS Soat · +1 Kun · +2 Ulush · +3 Hisoblandi · +4 Brak · +5 Summa · +6 Soliq · +7 Ushlanmalar · +8 Avans · +9 Jami
     const cAm = cS + 3, cSum = cS + 5, cT = cS + 6, cU = cS + 7, cA = cS + 8, cJ = cS + 9;
@@ -415,7 +415,19 @@ export async function erpWorkbook(month: string): Promise<ErpSheet[]> {
       sh.set(rr, cS, q, S.totDec, sumF(rr, c0, rr, c0 + nDays - 1));
       sh.set(rr, cS + 1, r0(q * l.rate), S.num, `${addrOf(rr, cS)}*${addrOf(rr, 0)}`);
     });
-    const fr = P + 1 + b.lines.length;
+    // Jami: barcha mahsulot soni (kun bo'yicha), oy jami soni va summasi
+    const jr = P + 1 + b.lines.length;
+    if (b.lines.length) {
+      sh.set(jr, 1, b.brigade.isBru ? "Jami sotilgan, m³" : "Jami", S.tot);
+      for (let d = 0; d < nDays; d++) {
+        const q = b.lines.reduce((a, l) => a + (qtyOf(l.name, d + 1)?.q ?? 0), 0);
+        sh.set(jr, c0 + d, q || null, S.totDec, sumF(P + 1, c0 + d, jr - 1, c0 + d));
+      }
+      const qOf = (name: string) => Array.from({ length: nDays }, (_, d) => qtyOf(name, d + 1)?.q ?? 0).reduce((a, x) => a + x, 0);
+      sh.set(jr, cS, b.lines.reduce((a, l) => a + qOf(l.name), 0), S.totDec, sumF(P + 1, cS, jr - 1, cS));
+      sh.set(jr, cS + 1, b.lines.reduce((a, l) => a + r0(qOf(l.name) * l.rate), 0), S.tot, sumF(P + 1, cS + 1, jr - 1, cS + 1));
+    }
+    const fr = jr + (b.lines.length ? 1 : 0);
     sh.set(fr, 1, "Kunlik fond", S.tot);
     for (let d = 0; d < nDays; d++) sh.set(fr, c0 + d, calc.pool[d] ? r0(calc.pool[d]!) : null, S.tot);
     sh.set(fr, cS + 1, r0(calc.total.pool), S.tot);

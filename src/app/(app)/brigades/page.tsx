@@ -23,6 +23,8 @@ import { BrigadeCardActions } from "./card-actions";
  * Brigadalar: ro'yxat (brigadir, topshiriq, xomashyo), «Xodimlar» — brigadaga xodim tayinlash, «Mahsulotlar» — qaysi brigadada qanday mahsulot va necha pullik,
  * «Oylik» — sdelka fondi − brak = brigada oyligi, «Brak» — kunlik brak va summasini tahrirlash (`lib/brigade-pay.ts`).
  */
+const TURI: [string, string][] = [["", "Brigada (ishlab chiqarish)"], ["bru", "BRU (beton qorishma uzeli)"]];
+
 export default async function BrigadesPage({ searchParams }: { searchParams: Promise<{ tab?: string; oy?: string; brigada?: string }> }) {
   const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "HR", "SALES"], { module: "tasks" });
   const sp = await searchParams;
@@ -101,7 +103,8 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
             { name: "name", label: "Nomi *", placeholder: "1-brigada", required: true },
             { name: "leaderId", label: "Brigadir", type: "select", options: leaderOptions },
             { name: "phone", label: "Telefon" },
-            { name: "note", label: "Izoh", className: "sm:col-span-2" },
+            { name: "turi", label: "Turi", type: "select", options: TURI },
+            { name: "note", label: "Izoh" },
           ]} />
         </Card>
       )}
@@ -122,7 +125,10 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
                       {b.note && <div className="text-xs text-slate-500">{b.note}</div>}
                     </div>
                   </div>
-                  {b.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}
+                  <div className="flex shrink-0 gap-1">
+                    {b.isBru && <Badge color="blue">BRU</Badge>}
+                    {b.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}
+                  </div>
                 </div>
 
                 <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
@@ -178,6 +184,7 @@ export default async function BrigadesPage({ searchParams }: { searchParams: Pro
                     { name: "leaderId", label: "Brigadir", type: "select", defaultValue: b.leaderId ?? "",
                       options: b.leader && !employees.some((e) => e.id === b.leaderId) ? [...leaderOptions, [b.leader.id, `${b.leader.fullName} (nofaol)`]] : leaderOptions },
                     { name: "phone", label: "Telefon", defaultValue: b.phone ?? "" },
+                    { name: "turi", label: "Turi", type: "select", defaultValue: b.isBru ? "bru" : "", options: TURI },
                     { name: "note", label: "Izoh", defaultValue: b.note ?? "" },
                   ]} />
                 )}

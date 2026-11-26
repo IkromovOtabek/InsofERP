@@ -17,6 +17,7 @@ import type { BrigadeStockMap } from "@/lib/brigade-stock-source";
 import { BrigadeSourceCell, BrigadeSourceToggle } from "./brigade-source";
 import { ndsOf } from "@/lib/nds";
 import { cn } from "@/lib/utils";
+import { BruSelect, type BruOpt } from "./bru-select";
 
 type Product = CatalogProduct;
 export type CustomerOpt = {
@@ -56,6 +57,7 @@ export type ProductStock = Record<string, { free: number; total: number; owned: 
 type Row = {
   key: number; productId: string; qtyM3: string; price: string; nds: boolean; /** Obyekt bloki nomi, "" — blokka bog'lanmagan */ block: string;
   /** «Brigadadan olish» belgilangan va qaysi brigada omboridan (dona mahsulot) */ src: boolean; srcId: string;
+  /** Beton qatori — qaysi BRU dan (majburiy) */ bru: string;
 };
 export type CashAccountOpt = { id: string; name: string; type: "CASH" | "BANK" };
 
@@ -208,7 +210,7 @@ function StockNote({ st, need, unit }: { st?: ProductStock[string]; need: number
  * (rekvizitlar, mijoz bloki, QQS ustunli jadval, dastavka qatori, to'lov va bosh to'lov). Dizayn manbasi:
  * `docs/design/zayavka-shablonlar.html`; oldingi forma — `git tag zayavka-forma-eski`.
  */
-export function OrderForm({ customers, products, groups, canCreateProduct, stock, brigadeStock = {}, preselectCustomer, preselectSite, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; stock: ProductStock; /** «Brigadadan olish»: mahsulot → brigada omborlari (erkin qoldiq bilan) */ brigadeStock?: BrigadeStockMap; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; /** Mijoz kartasidagi obyektdan ochilgan zayavka (`?site=`) */ preselectSite?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string }) {
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, brigadeStock = {}, preselectCustomer, preselectSite, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName, brus = [] }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; stock: ProductStock; /** «Brigadadan olish»: mahsulot → brigada omborlari (erkin qoldiq bilan) */ brigadeStock?: BrigadeStockMap; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; /** Mijoz kartasidagi obyektdan ochilgan zayavka (`?site=`) */ preselectSite?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string; /** Faol BRU lar — beton qatorida tanlanadi */ brus?: BruOpt[] }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   // "Yangi mijoz" telefoni ilovada ro'yxatdan o'tganmi — saqlanganda hisob o'zi ulanadi, sotuvchi buni oldindan ko'radi
@@ -250,7 +252,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const [tripNds, setTripNds] = useState(false);
   // Arizadan kelgan mahsulot ro'yxatda bo'lsa — birinchi qator shu bilan to'ldiriladi
   const firstProduct = products.find((p) => p.id === prefill?.productId) ?? products[0];
-  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false, block: "", src: false, srcId: "" }]);
+  const defBru = brus.length === 1 ? brus[0]!.id : "";
+  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false, block: "", src: false, srcId: "", bru: defBru }]);
   const [pickFor, setPickFor] = useState<number | null>(null); // qaysi qator uchun spravochnik ochiq
 
   // Mahsulot yonidagi qoldiq izohi: beton — xomashyodan qancha chiqadi, dona mahsulot — hovlidagi erkin qoldiq
@@ -527,10 +530,12 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                       <input type="hidden" name="nds[]" value={showVat && r.nds ? "1" : "0"} />
                       <input type="hidden" name="block[]" value={r.block} />
                       <input type="hidden" name="stockBrigade[]" value={r.src && unit !== "m³" ? r.srcId : ""} />
+                      <input type="hidden" name="bru[]" value={p && unit === "m³" ? r.bru : ""} />
                       {/* Yozilgan harflar bo'yicha qidiradi; "…" tugmasi papkali spravochnikni ochadi */}
                       <ProductField products={products} value={r.productId} onPick={(id) => onProduct(r.key, id)} onOpenPicker={() => setPickFor(r.key)} hint={stockHint} />
                       <div className="mt-1"><StockNote st={stock[r.productId]} need={Number(r.qtyM3) || 0} unit={unit} /></div>
                       {/* Plita, ustun, blok… (beton emas): tayyorini brigada omboridan olish — belgilansa «Brigada omboridan» ustuni chiqadi */}
+                      {p && unit === "m³" && <BruSelect className="mt-1 w-44" brus={brus} value={r.bru} onChange={(id) => update(r.key, { bru: id })} />}
                       {p && unit !== "m³" && <BrigadeSourceToggle className="mt-1" checked={r.src} options={brigadeStock[r.productId]} onChange={(on) => toggleSource(r, on)} />}
                     </td>
                     {showSource && (
@@ -603,7 +608,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                 <td className={cn(cell, "text-center font-serif italic")}>{rows.length + 2}</td>
                 <td className={cell} colSpan={cols - 1}>
                   <span className="flex flex-wrap items-center gap-x-5">
-                    <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: showVat, block: "", src: false, srcId: "" }])}
+                    <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: showVat, block: "", src: false, srcId: "", bru: defBru }])}
                       className="inline-flex items-center gap-1 py-1 font-serif text-sm italic text-[#2f6fc9] hover:underline"><Plus size={14} /> mahsulot qo&apos;shish</button>
                     {/* Obyektda hali blok kiritilmagan bo'lsa ham — qatorlarni A, B… bloklarga bo'lish (yangi nom obyektga qo'shiladi) */}
                     {!showBlocks && (

@@ -18,7 +18,7 @@ const EPS = 0.0005;
 
 export async function holdingsOverview(): Promise<Holding[]> {
   const [brigades, employees, recipients, brSums, issued, materials] = await Promise.all([
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
     db.employee.findMany({ where: { isActive: true }, select: { id: true, fullName: true, position: true } }),
     db.stockRecipient.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
     db.brigadeMove.groupBy({ by: ["brigadeId", "materialId"], _sum: { qty: true } }),

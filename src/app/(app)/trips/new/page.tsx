@@ -3,6 +3,7 @@ import { normalizePhone } from "@/lib/eco/client";
 import { driverPositionNames } from "@/lib/positions";
 import { customerMarks, markedName } from "@/lib/finance";
 import { requireRoles } from "@/lib/page-guard";
+import { activeBrus } from "@/lib/brigades";
 import { PageHeader } from "@/components/ui";
 import { TripForm } from "../trip-form";
 import { unitLabel } from "@/lib/unit";
@@ -17,7 +18,7 @@ const localInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${p
 export default async function NewTrip({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
   await requireRoles(["LOGISTICS", "PRODUCTION"], { module: "trips", actions: ["create"] });
   const { orderId } = await searchParams;
-  const [orders, vehicles, drivers, settings, externals] = await Promise.all([
+  const [orders, vehicles, drivers, brus, externals] = await Promise.all([
     db.order.findMany({
       where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" },
       // Reyslar texnika turi bilan — aralash zayavkada jo'natilgani beton/dona qatoriga bo'linadi (`orderLines`)
@@ -27,11 +28,13 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
     // Ta'mirdagi texnika reysga berilmaydi; band bo'lgani ro'yxatda qoladi, lekin holati yoziladi
     db.vehicle.findMany({ where: { isActive: true, status: { not: "REPAIR" }, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }], include: { trips: { where: { status: { in: ACTIVE_TRIP } }, select: { status: true } } } }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" } }),
-    db.companySettings.findUnique({ where: { id: "main" }, select: { bruNames: true } }),
+    activeBrus(),
     // Avval chaqirilgan ko'cha mashinalari — ro'yxatdan tanlanadi yoki raqam yozilganda haydovchi va sig'im o'zi to'ladi.
     // Ro'yxatdan olingani (hiddenAt) ko'rinmaydi
     db.vehicle.findMany({ where: { external: true, hiddenAt: null }, orderBy: { plate: "asc" }, select: { id: true, plate: true, type: true, capacityM3: true, drivers: { where: { external: true }, select: { fullName: true, phone: true }, take: 1 } } }),
-  ]);
+  ]);  // Zayavkadagi beton qatorining BRU si — reysda o'zi tanlangan turadi
+  const bruOf = (items: { bruId: string | null; product: { unit: string } }[]) => brus.find((b) => b.id === items.find((i) => i.product.unit === "m3" && i.bruId)?.bruId)?.name ?? null;
+
   // Otdel kadr "haydovchi ilovasiga chiqsin" deb belgilagan lavozimlar — reys faqat shularga ochiladi (`createTrip` ham tekshiradi)
   const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
   const driverOpts = drivers.filter((d) => driverNames.includes(d.position.trim().toLowerCase()));
@@ -52,6 +55,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
       plannedAt: plan ? localInput(plan) : "", id: o.id, date: date(o.deliveryDate), time: o.deliveryTime ?? null, customer: markedName(o.customer.name, o.customerId, marks), address: o.deliveryAddress,
       remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks,
       unit: mixed ? "birlik" : unitLabel(rd.unit ?? "m3"), mixed, pieceUnit: unitLabel(pieceUnit), lines,
+      bru: bruOf(o.items),
     };
   });
   const opts = all.filter((o) => o.remainingM3 > 0);
@@ -65,7 +69,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
         waiting={waiting.map((o) => ({ id: o.id, date: o.date, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))}
         vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 && v.capacityUnit === "M3" ? Number(v.capacityM3) : null, mainDriverId: v.mainDriverId, state: v.trips.length ? VEHICLE_LIVE[vehicleLive(v, v.trips)].label.toLowerCase() : undefined }))}
         drivers={driverList}
-        bruNames={settings?.bruNames ?? []}
+        bruNames={brus.map((b) => b.name)}
         externals={externals.map((v) => ({ id: v.id, plate: v.plate, type: v.type === "MIXER" ? "MIXER" : "TRUCK", capacity: v.capacityM3 != null ? Number(v.capacityM3) : null, driverName: v.drivers[0]?.fullName ?? "", driverPhone: v.drivers[0]?.phone ?? "" }))}
         initialOrderId={orderId}
       />

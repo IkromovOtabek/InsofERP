@@ -26,7 +26,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
     ? await Promise.all([
         db.stockMove.groupBy({ by: ["warehouseId", "ownerBrigadeId"], where: { productId }, _sum: { qty: true } }),
         brigadeNames(),
-        db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true } }),
+        db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true } }),
         db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
       ])
     : [[], new Map<string, string>(), [], []];

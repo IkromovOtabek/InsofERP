@@ -76,7 +76,7 @@ export async function productionDay(iso: string) {
 
   const [staff, brigades, progressToday, progressMonth, openTasks, load, outputs, plans, defects, productRows] = await Promise.all([
     productionStaff(iso),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
     db.taskProgress.findMany({
       where: { date: { gte: from, lt: to } },
       orderBy: { date: "asc" },

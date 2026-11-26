@@ -32,6 +32,8 @@ export type GridRow = {
   block?: string | null;
   /** «Brigadadan olish»: tayyor mahsulot shu brigada omboridan (`OrderItem.stockBrigadeId`) */
   stockBrigadeId?: string | null;
+  /** Beton qatori — qaysi BRU dan (`OrderItem.bruId`) */
+  bruId?: string | null;
   qty: number;
   /** QQS'siz narx — perechisleniyeda QQS ustiga qo'shiladi */
   price: number;
@@ -145,22 +147,23 @@ export async function createGridOrders(
     const place = marked ? { lat: marked.lat!, lng: marked.lng! } : c?.sites.find((s) => norm(s.address) === norm(address));
 
     // Bir blokda bir mahsulot takrorlansa — bir qator (narx birinchisidan); QQS narx va dastavka ustiga qo'shiladi
-    const items = new Map<string, { productId: string; block: string | null; qty: number; price: number; stockBrigadeId: string | null }>();
+    const items = new Map<string, { productId: string; block: string | null; qty: number; price: number; stockBrigadeId: string | null; bruId: string | null }>();
     let fee = 0, prepay = 0, trips = 0;
     for (const r of g.rows) {
       const p = (r.productId && productById.get(r.productId)) || productByName.get(flatName(r.product))!;
       const block = blockName(r.block);
       // Bir mahsulot ikki brigada omboridan olinsa — ikki qator bo'lib qoladi
       const src = r.stockBrigadeId || null;
-      const k = `${p.id}|${blockKey(block) ?? ""}|${src ?? ""}`, prev = items.get(k);
-      items.set(k, { productId: p.id, block, qty: (prev?.qty ?? 0) + r.qty, price: prev?.price ?? r.price, stockBrigadeId: src });
+      const bru = r.bruId || null; // bir beton ikki BRU dan — ikki qator
+      const k = `${p.id}|${blockKey(block) ?? ""}|${src ?? ""}|${bru ?? ""}`, prev = items.get(k);
+      items.set(k, { productId: p.id, block, qty: (prev?.qty ?? 0) + r.qty, price: prev?.price ?? r.price, stockBrigadeId: src, bruId: bru });
       if (r.trips !== 0) fee += r.fee; // reys 0 — dastavka yo'q
       prepay += r.prepay ?? 0;
       trips += r.trips ?? 0;
     }
     // Dastavka: hamma qatorda reys 0 — mijoz o'zi olib ketadi; biror qatorda reys bor yoki bo'sh (soni noma'lum) — dastavka bor
     const needsDelivery = !g.rows.every((r) => r.trips === 0);
-    const lines = [...items.values()].map((v) => ({ productId: v.productId, qtyM3: v.qty, price: vat ? withNds(v.price) : v.price, nds: vat, block: v.block, stockBrigadeId: v.stockBrigadeId }));
+    const lines = [...items.values()].map((v) => ({ productId: v.productId, qtyM3: v.qty, price: vat ? withNds(v.price) : v.price, nds: vat, block: v.block, stockBrigadeId: v.stockBrigadeId, bruId: v.bruId }));
     const deliveryFee = needsDelivery ? r2(fee + (vat ? ndsOf(fee) : 0)) : 0;
 
     // Saqlash ikki marta bosilsa (javob kelmay qolgan) — shu xodim yaqinda ochgan aynan shu zayavka takrorlanmaydi
@@ -197,7 +200,7 @@ export async function createGridOrders(
           note: [receivers.length ? `Qabul qiluvchi: ${receivers.join("; ")}` : null, trips > 0 ? `Dastavka: ${trips} reys` : null, "Excel ko'rinishdan"].filter(Boolean).join("\n"),
         },
         userId,
-        { viaImport: true }, // «create» va «excel» ruxsati chaqiruvchida tekshirilgan; sotuvga bitta umumiy xabar boradi
+        { viaImport: true, requireBru: true }, // «create» va «excel» ruxsati chaqiruvchida tekshirilgan; sotuvga bitta umumiy xabar boradi
       );
       if (!customerId) newCustomers.set(flatName(g.customer), res.customerId);
       created.push({ id: res.id, orderNo: res.orderNo, customer: g.customer, credit: res.onCredit, keys });

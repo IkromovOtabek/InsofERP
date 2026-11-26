@@ -939,7 +939,7 @@ function withoutTrip<T extends { trips: { id: string }[] }>(o: T, tripId?: strin
 type CheckedTrip = {
   line: TripLine; mixed: boolean; plate: string; deliveryAddress: string;
   ext: ExternalCar | null; extPhone: string;
-  driverName: string; driverPhone: string | null; driverReason: string | null; bru: string | null;
+  driverName: string; driverPhone: string | null; driverReason: string | null; bru: string | null; bruId: string | null;
 };
 
 /**
@@ -1023,9 +1023,19 @@ async function checkTrip(input: NewTripInput, opts: { exceptTripId?: string; pre
   }
 
   const mixed = new Set(items.map((i) => i.productId)).size > 1;
-  // BRU faqat betonga tegishli (dona mahsulot sex/hovlidan chiqadi)
-  const bru = line.unit === "m3" ? input.bru?.trim().slice(0, 80) || null : null;
-  return { line, mixed, plate: v.plate, deliveryAddress: o.deliveryAddress, ext, extPhone, driverName, driverPhone, driverReason, bru };
+  // BRU faqat betonga tegishli (dona mahsulot sex/hovlidan chiqadi). Tanlanmasa — zayavkadagi beton qatorining BRU si.
+  // `input.bru` — BRU brigadasi id si yoki nomi; ro'yxatda yo'q nom (eski) matn bo'lib qoladi, BRU varag'iga tushmaydi
+  let bru: string | null = null, bruId: string | null = null;
+  if (line.unit === "m3") {
+    const raw = input.bru?.trim().slice(0, 80) || "";
+    const own = items.find((i) => i.productId === line.productId && i.bruId)?.bruId ?? null;
+    const b = raw
+      ? await db.brigade.findFirst({ where: { isBru: true, OR: [{ id: raw }, { name: { equals: raw, mode: "insensitive" } }] }, select: { id: true, name: true } })
+      : own ? await db.brigade.findUnique({ where: { id: own }, select: { id: true, name: true } }) : null;
+    bru = b?.name ?? (raw || null);
+    bruId = b?.id ?? null;
+  }
+  return { line, mixed, plate: v.plate, deliveryAddress: o.deliveryAddress, ext, extPhone, driverName, driverPhone, driverReason, bru, bruId };
 }
 
 /**
@@ -1074,7 +1084,7 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     if (taken) throw new Error(taken);
     const t = await tx.trip.create({
       data: {
-        deliveryNoteNo: await nextNo(tx, "trip", "N"), ttn, orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru: c.bru, driverReason: c.driverReason,
+        deliveryNoteNo: await nextNo(tx, "trip", "N"), ttn, orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru: c.bru, bruId: c.bruId, driverReason: c.driverReason,
         // QR havolasidagi kalit: raqam ketma-ket, kalitsiz ochiq sahifadan mijozlar ro'yxatini yig'ib bo'lmasin
         verifyToken: randomBytes(18).toString("base64url"),
       },
@@ -1143,8 +1153,8 @@ export async function updatePlannedTrip(id: string, input: TripEditInput, userId
 
   // Ko'chadan mashina hamma tekshiruvdan keyin yoziladi (yangi reysdagi kabi, raqami/telefoni bo'yicha avvalgisi)
   const ids = c.ext ? await upsertExternalCar(c.ext, c.extPhone, userId) : { vehicleId: input.vehicleId, driverId: input.driverId };
-  const data = { vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3, plannedAt, bru: c.bru, driverReason: c.driverReason, note };
-  const before = { vehicleId: t.vehicleId, driverId: t.driverId, qtyM3: Number(t.qtyM3), plannedAt: t.plannedAt, bru: t.bru, driverReason: t.driverReason, note: t.note };
+  const data = { vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3, plannedAt, bru: c.bru, bruId: c.bruId, driverReason: c.driverReason, note };
+  const before = { vehicleId: t.vehicleId, driverId: t.driverId, qtyM3: Number(t.qtyM3), plannedAt: t.plannedAt, bru: t.bru, bruId: t.bruId, driverReason: t.driverReason, note: t.note };
   const keys = (Object.keys(data) as (keyof typeof data)[]).filter((k) => !sameVal(before[k], data[k]));
   if (!keys.length) return { changed: false, orderId: t.orderId, external: !!c.ext };
   const vehicleChanged = keys.includes("vehicleId"), driverChanged = keys.includes("driverId");

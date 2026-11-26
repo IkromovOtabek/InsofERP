@@ -105,7 +105,8 @@ export async function clearBrigadeLeader(employeeId: string, userId: string, bri
 }
 
 /** Brigada rekvizitlari (veb «Brigadalar» formasi va mobil «Brigadani tahrirlash» — bir xil maydonlar). */
-export type BrigadeData = { name: string; leaderId: string | null; phone: string | null; note: string | null };
+/** `isBru` — BRU (beton qorishma uzeli); berilmasa o'zgarmaydi (mobil formada yo'q). */
+export type BrigadeData = { name: string; leaderId: string | null; phone: string | null; note: string | null; isBru?: boolean };
 
 /**
  * Brigada ochish (`id` = null) yoki tahrirlash — yagona joy (veb `brigades/actions.ts` ham, mobil ilova ham).
@@ -129,6 +130,10 @@ export async function saveBrigade(id: string | null, d: BrigadeData, userId: str
   });
   return { ok: true, id: saved };
 }
+
+/** Faol BRU lar (zayavkada beton qatori, reysda BRU tanlovi). */
+export const activeBrus = () =>
+  db.brigade.findMany({ where: { isActive: true, isBru: true }, orderBy: { name: "asc" }, select: { id: true, name: true } });
 
 /** Brigadir tanlash ro'yxati uchun — faol brigadalar, brigadiri bilan. */
 export const activeBrigades = () =>

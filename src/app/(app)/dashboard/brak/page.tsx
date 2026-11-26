@@ -18,7 +18,7 @@ export default async function BrakPage() {
   if (s.role !== "DIRECTOR" && !(PRODUCTION_HOME_ROLES as readonly string[]).includes(s.role)) redirect("/dashboard?denied=1");
   const [d, brigades] = await Promise.all([
     productionDay(today()),
-    db.brigade.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const isDirector = s.role === "DIRECTOR";
   const todayText = d.defects.today.length ? fmtUnitTotals(d.defects.today.map((r) => ({ unit: r.product.unit, qty: r.qty }))) : "0";

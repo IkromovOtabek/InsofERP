@@ -43,7 +43,7 @@ const avgCosts = (ids?: string[]) => avgUnitCosts(ids);
 export async function brigadeStocks(opts?: { productId?: string; includeInactive?: boolean }): Promise<BrigadeStock[]> {
   const [brigades, sums, materials, products, costs] = await Promise.all([
     db.brigade.findMany({
-      where: opts?.includeInactive ? {} : { isActive: true },
+      where: opts?.includeInactive ? { isBru: false } : { isActive: true, isBru: false },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
       include: { leader: { select: { fullName: true } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, select: { qty: true, doneQty: true } } },
     }),

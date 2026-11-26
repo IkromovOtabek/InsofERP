@@ -22,6 +22,7 @@ import { orderLines, TRIP_STEP } from "@/lib/trips";
 import { syncOrderDelivery } from "@/lib/logistics-finance";
 import { fmtUnitTotals } from "@/lib/unit";
 import { checkStockSources } from "./brigade-stock-source";
+import { applyBru } from "./bru";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -357,6 +358,8 @@ export type NewOrderItem = {
   block?: string | null;
   /** «Brigadadan olish»: tayyor mahsulot shu brigada omboridan beriladi (`lib/brigade-stock-source.ts`); faqat dona mahsulot */
   stockBrigadeId?: string | null;
+  /** Beton qatori — qaysi BRU dan (`lib/bru.ts`) */
+  bruId?: string | null;
 };
 export type NewOrderInput = {
   /** Mavjud mijoz; `newCustomer` berilsa bo'sh qoldiriladi. */
@@ -411,7 +414,7 @@ export async function createOrder(
   /** `allowPastDate` — Excel importi: eski zayavkalar o'tgan sana bilan ham kiritiladi.
    *  `viaAgent` — sotuv agenti kabinetidan (o'z faylidagi action ruxsatni o'zi tekshirgan): "orders"
    *  moduli tekshiruvi o'tkazib yuboriladi, chunki agent "orders" roliga kirmaydi. */
-  opts?: { id?: string; contractFile?: { stored: string; name: string; type: string }; allowPastDate?: boolean; viaAgent?: boolean; viaImport?: boolean },
+  opts?: { id?: string; contractFile?: { stored: string; name: string; type: string }; allowPastDate?: boolean; viaAgent?: boolean; viaImport?: boolean; requireBru?: boolean },
 ): Promise<NewOrderResult> {
   // Amal ruxsati: zayavka ochish (rol yoki direktor bergan "create"); agent kabineti o'z ruxsatini o'zi tekshiradi
   // Excel importi (`viaImport`) — chaqiruvchi "import" amalini tekshirgan
@@ -423,6 +426,9 @@ export async function createOrder(
   if (items.some((i) => !Number.isFinite(i.qtyM3) || i.qtyM3 > 100_000)) throw new Error("Miqdor juda katta (100 000 dan oshmasin)");
   const srcErr = await checkStockSources(db, items);
   if (srcErr) throw new Error(srcErr);
+  // Beton qatori — qaysi BRU dan: veb formalarda majburiy, boshqa yo'llarda yagona BRU bo'lsa o'sha
+  const bruErr = await applyBru(items, { required: !!opts?.requireBru });
+  if (bruErr) throw new Error(bruErr);
   if (items.some((i) => !Number.isFinite(i.price) || i.price < 0)) throw new Error("Narx manfiy bo'lmasin");
   if (items.some((i) => i.price > MAX_AMOUNT)) throw new Error("Narx juda katta");
   if (!input.deliveryAddress.trim()) throw new Error("Obyekt manzili kerak");
@@ -586,6 +592,8 @@ export type EditOrderItem = {
   id?: string | null; productId: string; qtyM3: number; price: number; nds: boolean; block?: string | null;
   /** «Brigadadan olish» brigadasi: null — olib tashlandi, undefined — o'zgarmaydi */
   stockBrigadeId?: string | null;
+  /** Beton qatori BRU si: undefined — o'zgarmaydi; forma yuborsa — majburiy (`lib/bru.ts`) */
+  bruId?: string | null;
 };
 export type EditOrderInput = {
   items: EditOrderItem[];
@@ -662,6 +670,8 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
   if (isStock) for (const i of items) if (i.stockBrigadeId !== undefined) i.stockBrigadeId = null;
   const srcErr = await checkStockSources(db, items);
   if (srcErr) return { changed: false, error: srcErr };
+  const bruErr = await applyBru(items, { required: true, editing: true, keep: new Set(o.items.map((i) => i.bruId).filter((x): x is string => !!x)) });
+  if (bruErr) return { changed: false, error: bruErr };
   // Brigadaga berilgan qator: o'chmaydi, mahsuloti almashmaydi, soni berilgan/bajarilganidan kam bo'lmaydi
   for (const prev of o.items) {
     if (!prev.tasks.length) continue;
@@ -781,6 +791,7 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
           productId: i.productId, qtyM3: i.qtyM3, price: i.price, nds: i.nds,
           ...(i.block !== undefined ? { blockId: isStock ? null : blocks.get(blockKey(i.block) ?? "") ?? null } : {}),
           ...(i.stockBrigadeId !== undefined ? { stockBrigadeId: i.stockBrigadeId || null } : {}),
+          ...(i.bruId !== undefined ? { bruId: i.bruId || null } : {}),
         };
         if (!i.id) { await tx.orderItem.create({ data: { ...data, orderId: id } }); continue; }
         const prev = old.get(i.id)!;
@@ -823,7 +834,7 @@ export async function orderEdit(id: string, input: EditOrderInput, userId: strin
         needsDelivery: x.needsDelivery, deliveryFee: Number(x.deliveryFee ?? 0), onCredit: x.onCredit, prepayAmount: x.prepayAmount == null ? null : Number(x.prepayAmount), payMethod: x.payMethod,
       });
       await audit(tx, userId, "UPDATE", "Order", id,
-        { status: o.status, total: oldTotal, ...pick(o), items: o.items.map((i) => ({ id: i.id, productId: i.productId, qtyM3: Number(i.qtyM3), price: Number(i.price), nds: i.nds, blockId: i.blockId, stockBrigadeId: i.stockBrigadeId })) },
+        { status: o.status, total: oldTotal, ...pick(o), items: o.items.map((i) => ({ id: i.id, productId: i.productId, qtyM3: Number(i.qtyM3), price: Number(i.price), nds: i.nds, blockId: i.blockId, stockBrigadeId: i.stockBrigadeId, bruId: i.bruId })) },
         { status, total, ...pick({ deliveryDate, dateUnknown, isUrgent: !!input.isUrgent, note, deliveryAddress, needsPump: isStock ? o.needsPump : !!input.needsPump, needsDelivery, deliveryFee, onCredit, prepayAmount, payMethod, deliveryTime }), items, via: input.via ?? "order-edit" });
       return { status, notifyReq };
     });

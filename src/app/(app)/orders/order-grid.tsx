@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Save, CheckCircle2, MapPin, FileSignature, UserPlus, Building2, CalendarDays, Clock, ChevronLeft, ChevronRight, Pencil, HardHat } from "lucide-react";
+import { Plus, X, Save, CheckCircle2, MapPin, FileSignature, UserPlus, Building2, CalendarDays, Clock, ChevronLeft, ChevronRight, Pencil, HardHat, Factory } from "lucide-react";
 import type { DaySheetRow } from "@/lib/order-day-sheet";
 import { ORDER_STATUS, OrderStatusBadge } from "./status";
 import { Button, Callout, Card, Field as FormField, InfoButton, Input, LinkButton } from "@/components/ui";
@@ -23,6 +23,7 @@ import { editOrderGridCell, type GridCellField } from "./grid-cell-action";
 import { customerDefaults, type CustomerDefaults } from "./customer-defaults-action";
 import type { BrigadeStockMap } from "@/lib/brigade-stock-source";
 import { BrigadeSourceCell, BrigadeSourceToggle } from "./brigade-source";
+import type { BruOpt } from "./bru-select";
 
 /** Mijoz obyekti va uning bloklari (A blok, B blok…) */
 export type GridSite = SavedPlace & { blocks: string[] };
@@ -46,8 +47,10 @@ type Row = {
   receiver: string; phone: string; site: string; date: string; time: string; prepay: string; lat: number | null; lng: number | null; error?: string;
   /** «Brigadadan olish»: tayyor dona mahsulot qaysi brigada omboridan (brigada id, "" — belgilanmagan) */
   src: string;
+  /** Beton qatori — qaysi BRU dan (brigada id, "" — tanlanmagan; bitta BRU bo'lsa o'sha) */
+  bru: string;
 };
-type Field = Exclude<keyof Row, "key" | "error" | "lat" | "lng" | "src">;
+type Field = Exclude<keyof Row, "key" | "error" | "lat" | "lng" | "src" | "bru">;
 type Calc = "unit" | "sum" | "vat" | "total";
 type Col = { f: Field | null; calc?: Calc; label: string; w: string; yellow?: boolean; num?: boolean };
 
@@ -96,7 +99,7 @@ export function RememberView({ cookie, view }: { cookie: string; view: "tizim" |
 let seq = 0;
 const blank = (): Row => ({
   key: `r${Date.now().toString(36)}${(seq++).toString(36)}`,
-  customer: "", product: "", block: "", qty: "", price: "", trips: "", fee: "", receiver: "", phone: "", site: "", date: "", time: "", prepay: "", lat: null, lng: null, src: "",
+  customer: "", product: "", block: "", qty: "", price: "", trips: "", fee: "", receiver: "", phone: "", site: "", date: "", time: "", prepay: "", lat: null, lng: null, src: "", bru: "",
 });
 const filled = (r: Row) => EDITABLE.some((f) => r[f].trim() !== "");
 const n = (v: string) => { const x = Number(numText(v)); return Number.isFinite(x) ? x : 0; };
@@ -146,10 +149,11 @@ type CustOpt = { c: GridCustomer; site?: GridSite; block?: string };
  * Har bo'lim tepasida — varaq kuniga olingan barcha zayavkalar (kulrang, faqat ko'rish; mijoz nomi zayavkaga olib boradi).
  * Varaq sanasi URL'da (`?sana=`): kun almashsa server o'sha kun zayavkalarini beradi, yozilgan yangi qatorlar joyida qoladi.
  */
-export function OrderGrid({ day, existing, orderCount, customers, products, scripts, geoSearch, brigadeStock = {} }: {
+export function OrderGrid({ day, existing, orderCount, customers, products, scripts, geoSearch, brigadeStock = {}, brus = [] }: {
   /** Varaq kuni «YYYY-MM-DD» */ day: string; existing: GridExisting; /** Shu kunga olingan zayavkalar soni */ orderCount: number;
   customers: GridCustomer[]; products: GridProduct[]; /** Ruxsat berilgan yozuvlar (`writeScripts`) */ scripts: string[]; /** Xarita qidiruvi kaliti sozlanganmi (`geoSearchEnabled`) */ geoSearch: boolean;
   /** «Brigadadan olish»: dona mahsulot → brigada omborlaridagi erkin qoldiq (`lib/brigade-stock-source.ts`) */ brigadeStock?: BrigadeStockMap;
+  /** Faol BRU lar — beton qatorida majburiy */ brus?: BruOpt[];
 }) {
   const router = useRouter();
   const [date, setDate] = useState(day);
@@ -171,7 +175,7 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
   const [creditPay, setCreditPay] = useState<"CASH" | "BANK">("CASH");
   const [siteFor, setSiteFor] = useState<{ sec: Section; key: string } | null>(null); // «Obyekt joyi» xarita oynasi
   // Katak ostidagi tanlagich: mijozlar ro'yxati, sana, vaqt
-  const [pop, setPop] = useState<{ kind: "customer" | "date" | "time" | "src"; sec: Section; key: string; el: HTMLElement } | null>(null);
+  const [pop, setPop] = useState<{ kind: "customer" | "date" | "time" | "src" | "bru"; sec: Section; key: string; el: HTMLElement } | null>(null);
   const [hi, setHi] = useState(0); // mijozlar ro'yxatida belgilangan qator (0 — «Yangi mijoz»)
   const [newCust, setNewCust] = useState<Map<string, NewCustomer>>(() => new Map());
   const [custFor, setCustFor] = useState<{ sec: Section; key: string; initial: NewCustomer } | null>(null); // «Yangi mijoz» oynasi
@@ -451,6 +455,9 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
     setTimeout(() => focusCell(sec, at, EDITABLE.indexOf("product")), 0);
   };
 
+  /** Beton qatorining BRU si: tanlangani, bo'lmasa yagona BRU */
+  const bruOf = (r: Row) => r.bru || (brus.length === 1 ? brus[0]!.id : "");
+
   /** Qatorning sanasi — serverga va guruhlashga */
   const dayOf = (r: Row) => parseDay(r.date, date);
 
@@ -458,6 +465,8 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
     setError(null);
     const bad = SECTIONS.flatMap(({ sec, title }) => rows[sec].map((r, i) => (filled(r) && (!dayOf(r) || normTime(r.time) == null) ? `${title} ${i + 1}-qator` : null)).filter(Boolean));
     if (bad.length) { setError(`Sana yoki vaqt noto'g'ri: ${bad.slice(0, 5).join(", ")} — masalan 10.11.2026 va 9:00`); return; }
+    const noBru = brus.length ? SECTIONS.flatMap(({ sec, title }) => rows[sec].map((r, i) => (filled(r) && productOf(r)?.unit === "m³" && !bruOf(r) ? `${title} ${i + 1}-qator` : null)).filter(Boolean)) : [];
+    if (noBru.length) { setError(`Beton qaysi BRU dan olinishini tanlang: ${noBru.slice(0, 5).join(", ")} — mahsulot katagidagi «BRU» belgisini bosing`); return; }
     const payload = SECTIONS.flatMap(({ sec }) => rows[sec].filter(filled).map((r) => {
       const d = dayOf(r)!;
       return {
@@ -465,6 +474,7 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
         customer: r.customer, customerId: customerOf(r)?.id ?? null,
         product: r.product, productId: productOf(r)?.id ?? null, block: blockName(r.block),
         stockBrigadeId: r.src && productOf(r) && productOf(r)!.unit !== "m³" ? r.src : null,
+        bruId: productOf(r)?.unit === "m³" ? bruOf(r) || null : null,
         qty: n(r.qty), price: n(r.price), fee: noDelivery(r) ? 0 : n(r.fee), prepay: n(r.prepay),
         trips: /^\d+$/.test(r.trips.trim()) ? Number(r.trips.trim()) : null,
         receiver: r.receiver, phone: r.phone, site: r.site, time: normTime(r.time) ?? "", lat: r.lat, lng: r.lng,
@@ -685,6 +695,9 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
                 const srcOpts = f === "product" && p && p.unit !== "m³" ? brigadeStock[p.id] : undefined;
                 const showSrc = !!srcOpts?.length || (f === "product" && !!r.src);
                 const srcName = r.src ? srcOpts?.find((o) => o.brigadeId === r.src)?.name ?? "brigada" : "";
+                // Beton qatori — BRU belgisi (majburiy)
+                const showBru = f === "product" && p?.unit === "m³" && brus.length > 0;
+                const bruName = showBru ? brus.find((b) => b.id === bruOf(r))?.name ?? "" : "";
                 return (
                   <td key={ci} className={cn(cell, "relative", col.w, (prepayBad || badDate || badTime) && "bg-red-50", off && "bg-slate-50")}
                     title={prepayBad ? "Bosh to'lov zayavka summasidan katta"
@@ -702,7 +715,7 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
                         : f === "customer" ? (e) => openCustomers(sec, r.key, e.currentTarget.closest("td")!)
                         : f === "date" || f === "time" ? (e) => setPop({ kind: f, sec, key: r.key, el: e.currentTarget.closest("td")! }) : undefined}
                       className={cn(inp, (col.num || f === "trips") && "text-right tabular-nums", unknownProduct && "text-red-600",
-                        newCustomer && "pr-12", noCredit && "pr-16", showSrc && (r.src ? "pr-24" : "pr-8"), f === "prepay" && "pl-12", (f === "site" || f === "date" || f === "time") && "cursor-pointer pr-6",
+                        newCustomer && "pr-12", noCredit && "pr-16", showSrc && (r.src ? "pr-24" : "pr-8"), showBru && "pr-20", f === "prepay" && "pl-12", (f === "site" || f === "date" || f === "time") && "cursor-pointer pr-6",
                         f === "trips" && "pr-11", f === "date" && r.date.trim().toLowerCase() === UNKNOWN && "text-amber-700")}
                       title={unknownProduct ? "Bunday mahsulot ro'yxatda yo'q" : noCredit ? "Kredit limiti to'lgan — qarzga berilmaydi, Naqd yoki Perechisleniye bo'limida oching" : undefined}
                     />
@@ -717,6 +730,13 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
                         title={r.src ? `Brigada omboridan: ${srcName} — o'zgartirish` : `Brigadadan olish — brigadalarda erkin ${fmtNum((srcOpts ?? []).reduce((a, o) => a + o.free, 0), 3)}`}
                         className={cn(badge, "inline-flex max-w-24 items-center gap-0.5", r.src ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-800")}>
                         <HardHat size={11} className="shrink-0" />{r.src && <span className="truncate">{srcName}</span>}
+                      </button>
+                    )}
+                    {showBru && (
+                      <button type="button" tabIndex={-1} onClick={(e) => setPop({ kind: "bru", sec, key: r.key, el: e.currentTarget.closest("td")! })}
+                        title={bruName ? `Beton ${bruName} dan — o'zgartirish` : "Beton qaysi BRU dan olinadi — tanlang (majburiy)"}
+                        className={cn(badge, "inline-flex max-w-20 items-center gap-0.5", bruName ? "bg-sky-100 text-sky-800" : "bg-red-100 text-red-700")}>
+                        <Factory size={11} className="shrink-0" /><span className="truncate">{bruName || "BRU?"}</span>
                       </button>
                     )}
                     {f === "trips" && r.trips.trim() !== "" && (
@@ -844,7 +864,18 @@ export function OrderGrid({ day, existing, orderCount, customers, products, scri
 
       {pop && popRow && (
         <Popover anchor={pop.el} onClose={closePop} width={pop.kind === "customer" ? 380 : pop.kind === "time" ? 300 : pop.kind === "src" ? 320 : 260}>
-          {pop.kind === "src" ? (() => {
+          {pop.kind === "bru" ? (
+            <div className="space-y-1 p-1">
+              <div className="text-[12px] font-semibold text-slate-800">Beton qaysi BRU dan?</div>
+              {brus.map((b) => (
+                <button key={b.id} type="button" onClick={() => { patchRow(pop.sec, pop.key, () => ({ bru: b.id })); closePop(); }}
+                  className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sky-50", bruOf(popRow) === b.id && "bg-sky-50 font-semibold text-sky-800")}>
+                  <Factory size={14} className="text-slate-400" /> {b.name}
+                </button>
+              ))}
+              <p className="px-2 text-[11px] leading-snug text-slate-500">Reysga o&apos;zi tushadi; yetkazilgan m³ shu BRU varag&apos;iga (Ish haqi) yoziladi.</p>
+            </div>
+          ) : pop.kind === "src" ? (() => {
             // «Brigadadan olish»: belgilansa — brigadalar (nomi va erkin miqdori), soat belgisi — ombordagi harakatlar oynasi
             const pp = productOf(popRow);
             if (!pp || pp.unit === "m³") return <p className="p-2 text-xs text-slate-500">Avval dona mahsulotni tanlang</p>;

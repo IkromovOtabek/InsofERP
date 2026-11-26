@@ -75,8 +75,10 @@ check(n1(`select count(*) from "Trip" where id='${t2}'`) === 0 && n1(`select cou
 
 // Ko'chadan chaqirilgan mashina (o'z parki band): mashina va haydovchi `external` + nofaol — park, kadr va ECO
 // ro'yxatlariga kirmaydi, raqam/telefon bo'yicha qayta ishlatiladi; BRU faqat betonda saqlanadi va nakladnoyda chiqadi
-r = await logist.action("(app)/logistika/actions#saveBruNames", [undefined, fd({ bruNames: "BRU-1\n BRU-2 \nBRU-1" })], "/logistika/sozlamalar");
-check(r.ok && q1(`select array_to_string("bruNames", '|') from "CompanySettings" where id='main'`) === "BRU-1|BRU-2", "BRU ro'yxati saqlandi (takror va bo'shliqsiz)", r.error);
+// BRU — brigada turi (Brigade.isBru, «Brigadalar» sahifasi). Faol BRU bitta bo'lsin: boshqa to'plamlardagi beton zayavkasi
+// (BRU tanlovisiz) yagona BRU ga o'zi tushadi; ikkitasi bo'lsa veb formada tanlash majburiy
+q(`insert into "Brigade" (id, name, "isBru", "isActive", aliases, "createdAt") values ('qa-bru-1', 'BRU-1', true, false, '{}', now()), ('qa-bru-2', 'BRU-2', true, true, '{}', now()) on conflict (id) do nothing`);
+check(n1(`select count(*) from "Brigade" where "isBru" and "isActive"`) >= 1, "BRU brigadalari bor");
 const extNo = Date.now() % 100000;
 const extF = (o: Record<string, string | number> = {}) => fd({ orderId: oid, external: "1", extType: "MIXER", extPlate: `01 q ${extNo} xt`, extCapacity: "8", extDriverName: "QA Ko'cha Haydovchi", extDriverPhone: "90 777 66 55", qtyM3: 1, bru: "BRU-2", ...o });
 r = await logist.action(`${TA}#createTrip`, [undefined, extF({ extDriverPhone: "12345" })], "/trips/new");
@@ -93,6 +95,7 @@ const extOf = (t: string) => q(`select v.id, v.plate, v.external, v."isActive", 
 const [xv, xplate, vExt, vAct, xe, eExt, eAct, ePhone, xbru] = extOf(tx1);
 check(vExt === "t" && vAct === "f" && eExt === "t" && eAct === "f", "ko'chadan mashina va haydovchi external, nofaol", extOf(tx1));
 check(xplate === `01Q${extNo}XT` && ePhone === "+998907776655" && xbru === "BRU-2", "raqam, telefon normallashdi; BRU yozildi", extOf(tx1));
+check(q1(`select "bruId" from "Trip" where id='${tx1}'`) === "qa-bru-2", "reys BRU brigadasiga bog'landi (BRU varag'iga tushadi)", q1(`select "bruId" from "Trip" where id='${tx1}'`));
 // Ikkinchi chaqiruv — boshqacha yozilgan raqam va telefon bilan: o'sha mashina va haydovchi qayta ishlatiladi
 r = await logist.action(`${TA}#createTrip`, [undefined, extF({ extPlate: `01Q${extNo}XT`, extDriverPhone: "+998 90 777 66 55", qtyM3: 0.5, bru: "" })], "/trips/new");
 const tx2 = idFrom(r.redirect)!;

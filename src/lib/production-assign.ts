@@ -58,8 +58,8 @@ export async function assignOrderBrigades(orderId: string, picks: Record<string,
   }
   // Brigada mavjud va faol bo'lsin: soxta/eskirgan id bazada FK xatosi (500) berardi, yopilgan brigadaga topshiriq ketardi
   const ids = [...new Set(chosen.map((p) => p.brigadeId))];
-  const active = await db.brigade.count({ where: { id: { in: ids }, isActive: true } });
-  if (active !== ids.length) return { error: "Tanlangan brigada topilmadi yoki yopilgan — sahifani yangilab, qayta tanlang" };
+  const active = await db.brigade.count({ where: { id: { in: ids }, isActive: true, isBru: false } });
+  if (active !== ids.length) return { error: "Tanlangan brigada topilmadi, yopilgan yoki BRU (BRU ga topshiriq berilmaydi) — sahifani yangilab, qayta tanlang" };
 
   const made = await db.$transaction(async (tx) => {
     // Qatorlar qulflanadi: berilgan miqdor qulf ostida qayta o'qiladi

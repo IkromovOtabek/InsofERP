@@ -55,7 +55,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     where: { id },
     include: {
       customer: true, createdBy: true,
-      items: { include: { product: true, block: { select: { name: true } }, stockBrigade: { select: { name: true } }, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
+      items: { include: { product: true, block: { select: { name: true } }, stockBrigade: { select: { name: true } }, bru: { select: { name: true } }, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
       batches: { include: { product: true }, orderBy: { date: "desc" } },
       trips: { include: { vehicle: true, driver: true }, orderBy: { createdAt: "desc" } },
       invoices: { where: { status: { not: "CANCELLED" } }, include: { payments: true } },
@@ -417,6 +417,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                     <Td>
                       {i.product.name}{i.block && <BlockTag name={i.block.name} className="ml-2 align-middle" />}
                       {/* «Brigadadan olish»: reys yuklanganda chiqim shu brigada omboridan */}
+                      {i.bru && <div className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-sky-700" title="Beton shu BRU dan olinadi — reysga o'zi tushadi"><Factory size={12} /> {i.bru.name}</div>}
                       {i.stockBrigade && <div className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-amber-700" title="Tayyor mahsulot shu brigada omboridan beriladi — reys yuklanganda chiqim shu ombordan yoziladi"><HardHat size={12} /> {i.stockBrigade.name} omboridan</div>}
                     </Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td>
                     {!isStock && <><Td right>{money(i.price)}{i.nds && <span className="ml-1 text-[11px] font-medium text-slate-500">{NDS_LABEL}</span>}</Td><Td right className="font-semibold">{money(Number(i.qtyM3) * Number(i.price))}</Td></>}

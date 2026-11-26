@@ -58,7 +58,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } },
       take: 300,
     }),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" } }),
   ]);
   // «Qolganini boshqa o'lchamda bajardim» — o'rinbosar uchun dona mahsulotlar (beton zames orqali yuritiladi)
   const subProducts = canProgress ? await db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, select: { id: true, name: true, unit: true }, orderBy: { name: "asc" } }) : [];

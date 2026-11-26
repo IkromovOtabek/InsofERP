@@ -163,7 +163,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
   return (
     <div ref={rootRef} className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
-        <span>Kunlik fond = Σ soni × narx → shu kungi soatga bo&apos;linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. <i className="text-slate-400">Kul rang soat</i> — davomatdan (qo&apos;lda yozilmagan katak), <i className="font-medium text-emerald-600">yashil</i> — bugun ishda; <b>0</b> — shu kuni brigadada ishlamadi. <i className="text-slate-400">Kul rang son</i> — ishlab chiqarishda brigada «bajarildi» qayd qilgani; ustiga yozilsa — qo&apos;lda, <b>0</b> — olinmaydi.</span>
+        <span>Kunlik fond = Σ soni × narx → shu kungi soatga bo&apos;linadi; oy jami 10 000 ga yaxlitlanadi; brak soatga qarab. <i className="text-slate-400">Kul rang soat</i> — davomatdan (qo&apos;lda yozilmagan katak), <i className="font-medium text-emerald-600">yashil</i> — bugun ishda; <b>0</b> — shu kuni brigadada ishlamadi. <i className="text-slate-400">Kul rang son</i> — {data.brigade.isBru ? <>shu BRU dan yetkazilgan beton (mijoz qabul qilgan m³, yetkazilgan kuni)</> : <>ishlab chiqarishda brigada «bajarildi» qayd qilgani</>}; ustiga yozilsa — qo&apos;lda, <b>0</b> — olinmaydi.</span>
         {data.inherited && <span className="text-amber-700">Qatorlar va narxlar o&apos;tgan oydan — o&apos;zgartirsangiz shu oy uchun saqlanadi.</span>}
         <span className="ml-auto flex items-center gap-1">{busy > 0 ? <><Loader2 size={13} className="animate-spin" /> Saqlanmoqda…</> : editable ? <><Check size={13} className="text-emerald-600" /> Saqlangan</> : "Faqat ko'rish"}</span>
       </div>
@@ -269,7 +269,7 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
         <table lang="ru" className="border-separate border-spacing-0 font-(family-name:--font-inter) text-[12px] tabular text-slate-800">
           <thead>
             <tr>
-              <th className={cn(th, "sticky left-0 z-20 min-w-60 text-left")}>Mahsulot — soni (dona / m³)</th>
+              <th className={cn(th, "sticky left-0 z-20 min-w-60 text-left")}>{data.brigade.isBru ? "Beton — sotilgan m³" : "Mahsulot — soni (dona / m³)"}</th>
               <th className={cn(th, "min-w-24 text-right")}>Narx</th>
               {data.days.map((d) => <th key={d.day} className={dayTh(d)}>{d.day}</th>)}
               <th className={cn(th, "bg-emerald-50 px-2 text-right")}>Soni</th>
@@ -310,7 +310,23 @@ export function BrigadeSheetGrid({ data, canEdit }: { data: BrigadeSheetData; ca
                 </tr>
               );
             })}
-            {lines.length === 0 && <tr><td colSpan={nDays + 4} className="px-3 py-6 text-center text-slate-500">Mahsulot qatori yo&apos;q — pastdan qo&apos;shing (masalan: Plita 63-12, narx 90 909) yoki Excel&apos;dan import qiling</td></tr>}
+            {lines.length > 0 && (() => {
+              // Jami: har kun bo'yicha barcha mahsulot soni, oy jami soni va summasi
+              const perDay = Array.from({ length: nDays }, (_, i) => lines.reduce((a, l) => a + (qtyOf(l.name, i + 1) ?? 0), 0));
+              const all = perDay.reduce((a, x) => a + x, 0);
+              const sum = lines.reduce((a, l) => a + Math.round(Array.from({ length: nDays }, (_, i) => qtyOf(l.name, i + 1) ?? 0).reduce((x, y) => x + y, 0) * l.rate), 0);
+              const tdJ = "border-t-2 border-r border-slate-300 bg-slate-100 px-1 text-center font-semibold";
+              return (
+                <tr>
+                  <td className="sticky left-0 z-10 border-t-2 border-r border-slate-300 bg-slate-100 px-2 py-1.5 font-semibold">{data.brigade.isBru ? "Jami sotilgan, m³" : "Jami"}</td>
+                  <td className={tdJ} />
+                  {perDay.map((q, i) => <td key={i} className={tdJ}>{q ? fmtNum(q, 3) : ""}</td>)}
+                  <td className="border-t-2 border-r border-slate-300 bg-emerald-100 px-2 text-right font-bold">{fmtNum(all, 3)}</td>
+                  <td className="border-t-2 border-slate-300 bg-amber-100 px-2 text-right font-bold">{fmtNum(sum)}</td>
+                </tr>
+              );
+            })()}
+            {lines.length === 0 && <tr><td colSpan={nDays + 4} className="px-3 py-6 text-center text-slate-500">{data.brigade.isBru ? <>Hali yetkazilgan beton yo&apos;q — reys yetkazilganda m³ o&apos;zi tushadi (narx — mahsulotdagi sdelka narxi, 1 m³ uchun; shu yerda o&apos;zgartiriladi)</> : <>Mahsulot qatori yo&apos;q — pastdan qo&apos;shing (masalan: Plita 63-12, narx 90 909) yoki Excel&apos;dan import qiling</>}</td></tr>}
           </tbody>
         </table>
       </div>

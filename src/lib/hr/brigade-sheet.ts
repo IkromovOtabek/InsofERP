@@ -8,6 +8,7 @@ import { tabelLock } from "./tabel-lock";
 import { parseTabelValue } from "./tabel-value";
 import { attendanceHours } from "./attendance-hours";
 import { plansInRange } from "./shifts";
+import { tripCoveredQty } from "@/lib/trips";
 
 /**
  * Brigada varag'i (Ish haqi → Tabel → brigada): Excel'dagi brigada varag'ining ERP'dagi o'rni.
@@ -20,7 +21,7 @@ import { plansInRange } from "./shifts";
  */
 
 export type BrigadeSheetData = {
-  month: string; title: string; brigade: { id: string; name: string };
+  month: string; title: string; brigade: { id: string; name: string; isBru: boolean };
   days: { day: number; iso: string; weekend: boolean; future: boolean }[];
   members: { id: string; fullName: string; position: string; payType: string; guest: boolean; from: number; to: number }[];
   hours: Record<string, Record<number, number>>;
@@ -63,7 +64,7 @@ async function defectSum(brigadeIds: string[], month: string): Promise<Map<strin
 
 export async function brigadeSheet(month: string, brigadeId: string): Promise<BrigadeSheetData | null> {
   const { days, from, to } = monthRangeUtc(month);
-  const brigade = await db.brigade.findUnique({ where: { id: brigadeId }, select: { id: true, name: true } });
+  const brigade = await db.brigade.findUnique({ where: { id: brigadeId }, select: { id: true, name: true, isBru: true } });
   if (!brigade) return null;
   const now = today();
   const [hoursRows, outRows, bm, prevBm, members, locked, brak, autoAll, autoOut] = await Promise.all([
@@ -181,7 +182,8 @@ const localIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).pad
 
 /**
  * Ishlab chiqarishda brigada bajargan son (`TaskProgress` — topshiriq bo'yicha «bajarildi» qaydi, hovliga kirim bilan bir xil;
- * bekor qilingan topshiriqniki olinmaydi): brigada → mahsulot → kun (mahalliy sana). `toIso` — shu kungacha (avans davri).
+ * bekor qilingan topshiriqniki olinmaydi); BRU uchun — shu BRU dan yetkazilgan beton m³: brigada → mahsulot → kun (mahalliy sana).
+ * `toIso` — shu kungacha (avans davri).
  */
 export async function autoBrigadeOutput(month: string, toIso: string, brigadeIds?: string[]): Promise<Map<string, AutoProduct[]>> {
   const out = new Map<string, AutoProduct[]>();
@@ -195,16 +197,25 @@ export async function autoBrigadeOutput(month: string, toIso: string, brigadeIds
     where: { date: { gte: new Date(y!, m! - 1, 1), lt: new Date(ly!, lm! - 1, ld! + 1) }, task: { status: { not: "CANCELLED" }, ...(brigadeIds ? { brigadeId: { in: brigadeIds } } : {}) } },
     select: { qty: true, date: true, task: { select: { brigadeId: true, orderItem: { select: { product: { select: { id: true, name: true, pieceRate: true } } } } } } },
   });
-  for (const r of rows) {
-    const q = Number(r.qty);
-    if (!(q > 0)) continue;
-    const p = r.task.orderItem.product;
-    const list = out.get(r.task.brigadeId) ?? [];
+  const add = (brigadeId: string, p: { id: string; name: string; pieceRate: unknown }, date: Date, q: number) => {
+    if (!(q > 0)) return;
+    const list = out.get(brigadeId) ?? [];
     let a = list.find((x) => x.productId === p.id);
     if (!a) { a = { productId: p.id, name: p.name, rate: Number(p.pieceRate ?? 0), byDay: new Map() }; list.push(a); }
-    const day = Number(localIso(r.date).slice(8, 10));
+    const day = Number(localIso(date).slice(8, 10));
     a.byDay.set(day, Math.round(((a.byDay.get(day) ?? 0) + q) * 1000) / 1000);
-    out.set(r.task.brigadeId, list);
+    out.set(brigadeId, list);
+  };
+  for (const r of rows) add(r.task.brigadeId, r.task.orderItem.product, r.date, Number(r.qty));
+  // BRU (Brigade.isBru): yetkazilgan beton reyslari — mijoz qabul qilgan m³ (`tripCoveredQty`), yetkazilgan kuni, BRU si bo'yicha
+  const trips = await db.trip.findMany({
+    where: { status: "DELIVERED", bruId: brigadeIds ? { in: brigadeIds } : { not: null }, deliveredAt: { gte: new Date(y!, m! - 1, 1), lt: new Date(ly!, lm! - 1, ld! + 1) } },
+    select: { bruId: true, deliveredAt: true, status: true, qtyM3: true, acceptedQty: true, returnedQty: true,
+      order: { select: { items: { where: { product: { unit: "m3" } }, select: { bruId: true, product: { select: { id: true, name: true, pieceRate: true } } } } } } },
+  });
+  for (const t of trips) {
+    const item = t.order.items.find((i) => i.bruId === t.bruId) ?? t.order.items[0];
+    if (item && t.deliveredAt) add(t.bruId!, item.product, t.deliveredAt, tripCoveredQty(t));
   }
   return out;
 }

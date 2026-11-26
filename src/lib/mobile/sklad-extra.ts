@@ -748,7 +748,7 @@ async function productsForm(): Promise<CreateForm> {
   const [products, warehouse, brigades] = await Promise.all([
     db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, orderBy: { code: "asc" }, select: { id: true, code: true, name: true, unit: true } }),
     warehouseField(),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
   ]);
   return {
     key: "products", title: "Tayyor mahsulot qo'shish", submitLabel: "Qo'shish",

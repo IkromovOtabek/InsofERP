@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
-import { BruForm, SettingsForm } from "./settings-form";
+import { SettingsForm } from "./settings-form";
+import { activeBrus } from "@/lib/brigades";
+import Link from "next/link";
 import { DRUM_MAX_MIN } from "@/lib/logistics";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +11,7 @@ export const dynamic = "force-dynamic";
 /** Logistika sozlamalari: kechikish/GPS/yuklash chegaralari, smena, ETA uchun o'rtacha tezlik. */
 export default async function LogisticsSettingsPage() {
   await requireRoles(["LOGISTICS"], { module: "logistika" });
-  const s = await db.companySettings.findUnique({ where: { id: "main" } });
+  const [s, brus] = await Promise.all([db.companySettings.findUnique({ where: { id: "main" } }), activeBrus()]);
   return (
     <div>
       <PageHeader title="Logistika sozlamalari" info="Dashbord, ogohlantirishlar, kalendar va hisobotlar shu qiymatlarga qaraydi" />
@@ -27,8 +29,11 @@ export default async function LogisticsSettingsPage() {
         }} />
       </Card>
       <Card className="mt-5">
-        <CardHeader title="BRU ro'yxati" info="Beton qorishma uzellari — «Yangi reys»da beton qaysi BRU dan olinishi tanlanadi va nakladnoyda ko'rinadi" />
-        <BruForm names={s?.bruNames ?? []} />
+        <CardHeader title="BRU ro'yxati" info="Beton qorishma uzellari — brigada kabi «Brigadalar» sahifasida (Turi: BRU) ochiladi: a'zolari, brigadiri bo'ladi. Zayavkada beton qatori qaysi BRU dan olinishi majburiy tanlanadi, reysga va nakladnoyga o'tadi, BRU varag'iga (Ish haqi → Tabel) yetkazilgan m³ tushadi" />
+        <div className="text-sm">
+          {brus.length ? <span className="font-medium">{brus.map((b) => b.name).join(", ")}</span> : <span className="text-slate-500">BRU yo&apos;q</span>}
+          {" · "}<Link href="/brigades" className="text-brand-700 underline">Brigadalar sahifasida tahrirlash</Link>
+        </div>
       </Card>
     </div>
   );

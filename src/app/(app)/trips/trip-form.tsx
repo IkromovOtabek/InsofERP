@@ -16,6 +16,8 @@ type Line = { productId: string; name: string; unit: string; qty: number; ready:
 type Order = {
   id: string; date: string; time: string | null; customer: string; address: string; remainingM3: number; inProduction: number;
   unit: string; plannedAt: string; mixed?: boolean; pieceUnit?: string; lines: Line[];
+  /** Zayavkadagi beton qatorining BRU si */
+  bru?: string | null;
 };
 /** Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavka — ro'yxatga kirmaydi, sababi ko'rsatiladi. */
 type Waiting = { id: string; date: string; customer: string; inProduction: number; unit: string; hasTasks: boolean };
@@ -95,7 +97,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   // Biriktirilgani ro'yxat boshida tursin
   const driverList = [...drivers].sort((a, b) => Number(b.vehicleId === vehicleId) - Number(a.vehicleId === vehicleId));
   const [qty, setQty] = useState(edit ? String(edit.qty) : firstOrder ? String(Math.min(vehicle?.capacityM3 ?? availOf(firstOrder, vehicle?.type), availOf(firstOrder, vehicle?.type))) : "");
-  const [bru, setBru] = useState(edit ? edit.bru : bruNames.length === 1 ? bruNames[0]! : "");
+  const [bru, setBru] = useState(edit ? edit.bru : firstOrder?.bru ?? (bruNames.length === 1 ? bruNames[0]! : ""));
   // Reysdagi BRU ro'yxatdan olib tashlangan bo'lsa ham tanlovda ko'rinsin (aks holda forma uni jimgina bo'shatardi)
   const bruList = edit?.bru && !bruNames.includes(edit.bru) ? [...bruNames, edit.bru] : bruNames;
   // Boshqariladigan: xato bilan qaytganda (`<form action>` formani tozalaydi) yozilgan TTN, izoh va sabab yo'qolmasin
@@ -142,6 +144,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
     setOrderId(oid);
     const o = orders.find((x) => x.id === oid);
     setPlannedAt(o?.plannedAt ?? "");
+    if (o?.bru) setBru(o.bru);
     if (!o) return;
     if (external) {
       const e = { ...ext, type: fits(o, ext.type) ? ext.type : wantType(o) };
@@ -313,7 +316,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
               <Input name="qtyM3" type="number" step="0.5" min="0.5" max={order ? avail : undefined} value={qty} onChange={(e) => setQty(e.target.value)} onFocus={() => !qty && suggest(order, vType, external ? extCap(ext) : vehicle?.capacityM3)} required />
             </Field>
             {concrete && (
-              <Field label={`BRU${bruNames.length ? " *" : ""}`} hint={bruNames.length ? "Beton qaysi BRU dan olinadi — nakladnoyda ko'rinadi" : "BRU ro'yxati Logistika → Sozlamalar sahifasida kiritiladi"}>
+              <Field label={`BRU${bruNames.length ? " *" : ""}`} hint={bruNames.length ? (order?.bru && bru !== order.bru ? `Zayavkada: ${order.bru}` : "Zayavkadan olinadi · nakladnoyda va BRU varag'ida (Ish haqi) ko'rinadi") : "BRU Brigadalar sahifasida (Turi: BRU) ochiladi"}>
                 {bruNames.length ? (
                   <Select name="bru" value={bru} onChange={(e) => setBru(e.target.value)} required>
                     <option value="">— tanlang —</option>

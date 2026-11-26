@@ -16,12 +16,13 @@ import { cn } from "@/lib/utils";
 import { editOrder } from "../../actions";
 import type { BrigadeStockMap } from "@/lib/brigade-stock-source";
 import { BrigadeSourceCell, BrigadeSourceToggle } from "../../brigade-source";
+import { BruSelect, type BruOpt } from "../../bru-select";
 import { blockEnterSubmit, siteByAddress, submitKeepingState, type SitePlace } from "../../order-form";
 
 export type OrderEditData = {
   id: string; kind: "SALE" | "STOCK"; status: OrderStatus; customerName: string;
   /** `price` — NDS'siz; `locked` — brigadaga berilgan qator, `min` — undan kam qilib bo'lmaydigan miqdor */
-  items: { id: string; productId: string; qty: number; price: number; nds: boolean; locked: boolean; min: number; /** obyekt bloki nomi, "" — yo'q */ block: string; /** «Brigadadan olish» brigadasi, "" — yo'q */ stockBrigadeId: string }[];
+  items: { id: string; productId: string; qty: number; price: number; nds: boolean; locked: boolean; min: number; /** obyekt bloki nomi, "" — yo'q */ block: string; /** «Brigadadan olish» brigadasi, "" — yo'q */ stockBrigadeId: string; /** Beton qatori BRU si, "" — yo'q */ bruId: string }[];
   deliveryDate: string; dateUnknown: boolean;
   deliveryAddress: string; lat: number | null; lng: number | null;
   needsPump: boolean; needsDelivery: boolean; deliveryFee: number; isUrgent: boolean; note: string;
@@ -31,20 +32,21 @@ export type OrderEditData = {
   invoices: string[];
 };
 
-type Row = { key: string; id: string | null; productId: string; qty: string; price: string; nds: boolean; locked: boolean; min: number; block: string; src: boolean; srcId: string };
+type Row = { key: string; id: string | null; productId: string; qty: string; price: string; nds: boolean; locked: boolean; min: number; block: string; src: boolean; srcId: string; bru: string };
 const num = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000));
 
 /**
  * Zayavkani tahrirlash formasi. Saqlash faqat tugma bilan (Enter yubormaydi); xato qaytsa kiritilgani o'chmaydi. Server qoidalari (`orderEdit`):
  * brigadaga berilgan qator qulflanadi, tasdiqlangan zayavkada summa oshsa limit qayta tekshiriladi.
  */
-export function OrderEditForm({ data, products, groups, canCreateProduct, sites, geoSearch, brigadeStock = {} }: {
+export function OrderEditForm({ data, products, groups, canCreateProduct, sites, geoSearch, brigadeStock = {}, brus = [] }: {
   data: OrderEditData; products: CatalogProduct[]; groups: CatalogGroup[]; canCreateProduct: ProductCreate; sites: SitePlace[]; geoSearch: boolean;
   /** «Brigadadan olish»: mahsulot → brigada omborlari (shu zayavkaning o'z bandi hisobga olinmagan) */ brigadeStock?: BrigadeStockMap;
+  /** BRU lar (beton qatori) — faollari + qatorlarda saqlangani */ brus?: BruOpt[];
 }) {
   const [state, action, pending] = useActionState(editOrder.bind(null, data.id), undefined);
   const isStock = data.kind === "STOCK";
-  const [rows, setRows] = useState<Row[]>(() => data.items.map((i) => ({ key: i.id, id: i.id, productId: i.productId, qty: num(i.qty), price: String(i.price), nds: i.nds, locked: i.locked, min: i.min, block: i.block, src: !!i.stockBrigadeId, srcId: i.stockBrigadeId })));
+  const [rows, setRows] = useState<Row[]>(() => data.items.map((i) => ({ key: i.id, id: i.id, productId: i.productId, qty: num(i.qty), price: String(i.price), nds: i.nds, locked: i.locked, min: i.min, block: i.block, src: !!i.stockBrigadeId, srcId: i.stockBrigadeId, bru: i.bruId })));
   // Obyekt bloklari: «Obyekt» katagidagi manzil bo'yicha mijoz obyekti + qatorlarda yozilgani
   const [addr, setAddr] = useState(data.deliveryAddress);
   const blockOpts = [...new Set([...(siteByAddress(sites, addr)?.blocks ?? []), ...rows.map((r) => r.block.trim()).filter(Boolean)])];
@@ -78,7 +80,7 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
   });
   const addRow = () => {
     const p = products[0];
-    setRows((rs) => [...rs, { key: `n${Date.now()}`, id: null, productId: p?.id ?? "", qty: "", price: isStock ? "0" : p?.price ?? "0", nds: kind === "bank", locked: false, min: 0, block: "", src: false, srcId: "" }]);
+    setRows((rs) => [...rs, { key: `n${Date.now()}`, id: null, productId: p?.id ?? "", qty: "", price: isStock ? "0" : p?.price ?? "0", nds: kind === "bank", locked: false, min: 0, block: "", src: false, srcId: "", bru: brus.length === 1 ? brus[0]!.id : "" }]);
   };
 
   const lineOf = (r: Row) => (Number(r.qty) || 0) * (r.nds ? withNds(Number(r.price) || 0) : Number(r.price) || 0);
@@ -117,6 +119,7 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
                 {!isStock && <input type="hidden" name="nds[]" value={r.nds ? "1" : "0"} />}
                 {!isStock && <input type="hidden" name="block[]" value={r.block} />}
                 {!isStock && <input type="hidden" name="stockBrigade[]" value={r.src && p?.unit !== "m³" ? r.srcId : ""} />}
+                {!isStock && <input type="hidden" name="bru[]" value={p?.unit === "m³" ? r.bru : ""} />}
                 <div className={cn("grid grid-cols-1 gap-3", isStock ? "sm:grid-cols-[minmax(0,1fr)_160px_40px]" : "sm:grid-cols-[minmax(0,1fr)_150px_130px_170px_40px]")}>
                   <div className="min-w-0">
                     <div className="mb-1.5 text-[13px] font-medium text-slate-700">{idx + 1}. Mahsulot</div>
@@ -157,6 +160,7 @@ export function OrderEditForm({ data, products, groups, canCreateProduct, sites,
                     <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
                       <Checkbox label="QQS 12% qo'shilsin" checked={r.nds} onChange={(e) => update(r.key, { nds: e.target.checked })} />
                       {/* Plita, ustun, blok… (beton emas): tayyorini brigada omboridan olish */}
+                      {p && p.unit === "m³" && <BruSelect className="w-44" brus={brus} value={r.bru} onChange={(id) => update(r.key, { bru: id })} />}
                       {p && p.unit !== "m³" && <BrigadeSourceToggle checked={r.src} options={brigadeStock[r.productId]} onChange={(on) => toggleSource(r, on)} />}
                     </span>
                     <span className="text-slate-500">Summa: <b className="tabular text-slate-900">{fmtNum(lineOf(r))}</b> so&apos;m</span>

@@ -59,6 +59,8 @@ const schema = z.object({
   block: z.array(z.string()).optional(),
   // «Brigadadan olish»: tayyor mahsulot qaysi brigada omboridan beriladi (bo'sh — belgilanmagan)
   stockBrigade: z.array(z.string()).optional(),
+  // Beton qatori qaysi BRU dan (dona qatorida bo'sh)
+  bru: z.array(z.string()).optional(),
 });
 
 /**
@@ -106,7 +108,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         items: d.productId.map((productId, i) => {
           const nds = d.nds?.[i] === "1";
           const price = d.price[i]!;
-          return { productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block?.[i] ?? null, stockBrigadeId: d.stockBrigade?.[i] || null };
+          return { productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block?.[i] ?? null, stockBrigadeId: d.stockBrigade?.[i] || null, bruId: d.bru?.[i] || null };
         }).filter((i) => i.productId),
         needsPump: d.needsPump,
         needsDelivery: d.needsDelivery,
@@ -121,7 +123,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         amoDealId: d.amoDealId ?? null,
       },
       s.userId,
-      { id: orderId, contractFile: saved ?? undefined },
+      { id: orderId, contractFile: saved ?? undefined, requireBru: true },
     );
   } catch (e) {
     return { error: userError(e) };
@@ -172,6 +174,7 @@ const editSchema = z.object({
   nds: z.array(z.string()).optional(),
   block: z.array(z.string()).optional(),
   stockBrigade: z.array(z.string()).optional(),
+  bru: z.array(z.string()).optional(),
   deliveryDate: zOpt.refine((v) => !v || Number.isFinite(new Date(v).getTime()), "Yetkazish sanasi noto'g'ri"),
   dateUnknown: z.string().optional().transform((v) => v === "1"),
   isUrgent: z.string().optional().transform((v) => v === "on"),
@@ -203,7 +206,7 @@ export async function editOrder(id: string, _prev: ActionState, fd: FormData): P
       items: d.productId.map((productId, i) => {
         const nds = d.nds?.[i] === "1";
         const price = d.price?.[i] ?? 0;
-        return { id: d.itemId?.[i] || null, productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block ? d.block[i] ?? null : undefined, stockBrigadeId: d.stockBrigade ? d.stockBrigade[i] || null : undefined };
+        return { id: d.itemId?.[i] || null, productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds, block: d.block ? d.block[i] ?? null : undefined, stockBrigadeId: d.stockBrigade ? d.stockBrigade[i] || null : undefined, bruId: d.bru ? d.bru[i] || null : undefined };
       }),
       deliveryDate: d.deliveryDate ? new Date(d.deliveryDate) : new Date(),
       dateUnknown: d.dateUnknown,
@@ -369,6 +372,8 @@ const gridSchema = z.object({
     lng: z.number().min(-180).max(180).nullish(),
     // «Brigadadan olish»: tayyor dona mahsulot qaysi brigada omboridan (bo'sh — belgilanmagan)
     stockBrigadeId: z.string().max(40).nullish(),
+    // Beton qatori — qaysi BRU dan (majburiy, `lib/bru.ts`)
+    bruId: z.string().max(40).nullish(),
   })).min(1, "Jadval bo'sh").max(300, "Bir varaqda 300 qatordan ko'p bo'lmasin"),
 });
 

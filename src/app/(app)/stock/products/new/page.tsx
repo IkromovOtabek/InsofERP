@@ -21,7 +21,7 @@ export default async function AddStockPage() {
   const [catalog, warehouses, brigades] = await Promise.all([
     productCatalog({ pieceOnly: true }), // hamma joyda bir xil ro'yxat; beton (m³) hovlida saqlanmaydi
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
   ]);
   // Sana chegaralari server vaqti bilan (brauzer soati boshqa bo'lsa ham bir xil)
   const today = new Date();

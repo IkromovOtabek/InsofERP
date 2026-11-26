@@ -42,7 +42,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
       },
       take: 400,
     }),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, include: { leader: true } }),
     db.productionBatch.findMany({ orderBy: { createdAt: "desc" }, take: 200, include: { product: true, order: { include: { customer: true } }, createdBy: true } }),
     productionMatrix(),
   ]);

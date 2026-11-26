@@ -15,7 +15,7 @@ export default async function DistributePage({ searchParams }: { searchParams: P
   const [sums, products, brigades, names, warehouses] = await Promise.all([
     db.stockMove.groupBy({ by: ["warehouseId", "productId", "ownerBrigadeId"], where: { productId: { not: null }, product: { unit: { not: "m3" } } }, _sum: { qty: true } }),
     db.product.findMany({ where: { unit: { not: "m3" } }, select: { id: true, name: true, unit: true } }),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true } }),
     brigadeNames(),
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
   ]);

@@ -199,13 +199,14 @@ export type LogOptions = {
 const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.map((x) => x?.trim()).filter((x): x is string => !!x))];
 
 export async function realizationOptions(): Promise<LogOptions> {
-  const [customers, products, groups, sellers, vehicles, settings, warehouses, entries, notes] = await Promise.all([
+  const [customers, products, groups, sellers, vehicles, settings, brus, warehouses, entries, notes] = await Promise.all([
     db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { name: true } }),
     db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true, unit: true, groupId: true } }),
     db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
     db.user.findMany({ where: { isActive: true, role: "SALES" }, orderBy: { fullName: "asc" }, select: { fullName: true } }),
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true } }),
     db.companySettings.findUnique({ where: { id: "main" }, select: { bruNames: true } }),
+    db.brigade.findMany({ where: { isBru: true, isActive: true }, orderBy: { name: "asc" }, select: { name: true } }),
     db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true } }),
     db.realizationEntry.findMany({ where: { cancelledAt: null }, orderBy: { createdAt: "desc" }, take: 500, select: { seller: true, loadPlace: true, destination: true, groupName: true } }),
     db.realizationNote.findMany({ orderBy: { updatedAt: "desc" }, take: 500, select: { loadPlace: true, destination: true } }),
@@ -218,7 +219,7 @@ export async function realizationOptions(): Promise<LogOptions> {
     groups: uniq([...groups.filter((g) => !g.parentId).map((g) => g.name), ...entries.map((e) => e.groupName), "Boshqa"]),
     sellers: uniq([...sellers.map((u) => u.fullName), ...entries.map((e) => e.seller)]),
     vehicles: uniq(vehicles.map((v) => v.plate)),
-    loadPlaces: uniq([...(settings?.bruNames ?? []), ...warehouses.map((w) => w.name), ...notes.map((n) => n.loadPlace), ...entries.map((e) => e.loadPlace)]),
+    loadPlaces: uniq([...brus.map((b) => b.name), ...(settings?.bruNames ?? []), ...warehouses.map((w) => w.name), ...notes.map((n) => n.loadPlace), ...entries.map((e) => e.loadPlace)]),
     destinations: uniq([...notes.map((n) => n.destination), ...entries.map((e) => e.destination)]).slice(0, 300),
   };
 }

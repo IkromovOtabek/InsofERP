@@ -34,7 +34,7 @@ export async function dailyMatrix(iso: string): Promise<DailyMatrix> {
   const [groups, products, brigades, moves, saved, plans] = await Promise.all([
     db.productGroup.findMany({ select: { id: true, name: true, parentId: true, sortOrder: true, isActive: true } }),
     db.product.findMany({ where: { unit: { not: "m3" } }, select: { id: true, name: true, unit: true, groupId: true, isActive: true } }),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
     db.stockMove.findMany({
       where: { type: "PRODUCTION_OUTPUT", productId: { not: null }, date: { gte: monthFrom, lt: to }, product: { unit: { not: "m3" } } },
       select: { date: true, qty: true, productId: true, brigadeId: true, ownerBrigadeId: true },

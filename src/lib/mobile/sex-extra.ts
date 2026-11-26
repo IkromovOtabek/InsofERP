@@ -68,7 +68,7 @@ export async function withOrderActions(user: MobileUser, d: MobileDetail): Promi
   const base = { id: "order.assign", label: "Brigada tayinlash", tone: "brand" as const };
   if (o.status === "DRAFT") return { ...d, actions: [{ ...base, disabled: true, hint: "Zayavka hali tasdiqlanmagan (qoralama) — sotuv bo'limi qabul qilgach brigada tayinlanadi" }, ...d.actions] };
   const [brigades, stocks] = await Promise.all([
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
     brigadeStocks(),
   ]);
   if (!brigades.length) return { ...d, actions: [{ ...base, disabled: true, hint: "Faol brigada yo'q — avval «Brigadalar» bo'limida brigada oching" }, ...d.actions] };
@@ -296,7 +296,7 @@ export async function withDefectActions(user: MobileUser, d: MobileDetail): Prom
   if (!can(user, "defect.add")) return { ...d, sections };
   const [products, brigades] = await Promise.all([
     db.product.findMany({ where: { isActive: true }, select: { id: true, code: true, name: true, unit: true }, orderBy: { code: "asc" } }),
-    db.brigade.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.brigade.findMany({ where: { isActive: true, isBru: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const add: DetailAction = {
     id: "defect.add", label: "Brak yozish", tone: "danger",

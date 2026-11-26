@@ -6,6 +6,7 @@ import { driverPositionNames } from "@/lib/positions";
 import { customerMarks, markedName } from "@/lib/finance";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
+import { activeBrus } from "@/lib/brigades";
 import { Callout, PageHeader } from "@/components/ui";
 import { TripForm } from "../../trip-form";
 import { unitLabel } from "@/lib/unit";
@@ -30,7 +31,7 @@ export default async function EditTrip({ params }: { params: Promise<{ id: strin
   if (t.status !== "PLANNED" || !canDo(s, "trips", "create")) redirect(`/trips/${id}`);
 
   const ownVehicle = t.vehicle.external ? null : t.vehicleId;
-  const [order, vehicles, drivers, settings, externals] = await Promise.all([
+  const [order, vehicles, drivers, brus, externals] = await Promise.all([
     db.order.findUniqueOrThrow({
       where: { id: t.orderId },
       include: { customer: true, ...READINESS_INCLUDE, trips: { select: { id: true, status: true, qtyM3: true, acceptedQty: true, returnedQty: true, vehicle: { select: { type: true } } } } },
@@ -43,9 +44,11 @@ export default async function EditTrip({ params }: { params: Promise<{ id: strin
       include: { trips: { where: { status: { in: ACTIVE_TRIP }, id: { not: id } }, select: { status: true } } },
     }),
     db.employee.findMany({ where: { OR: [{ isActive: true }, { id: t.driverId }] }, orderBy: { fullName: "asc" } }),
-    db.companySettings.findUnique({ where: { id: "main" }, select: { bruNames: true } }),
+    activeBrus(),
     db.vehicle.findMany({ where: { external: true, hiddenAt: null }, orderBy: { plate: "asc" }, select: { id: true, plate: true, type: true, capacityM3: true, drivers: { where: { external: true }, select: { fullName: true, phone: true }, take: 1 } } }),
-  ]);
+  ]);  // Zayavkadagi beton qatorining BRU si — reysda o'zi tanlangan turadi
+  const bruOf = (items: { bruId: string | null; product: { unit: string } }[]) => brus.find((b) => b.id === items.find((i) => i.product.unit === "m3" && i.bruId)?.bruId)?.name ?? null;
+
   // Haydovchi lavozimidagilar (`createTrip` qoidasi) + reysning hozirgi haydovchisi — xuddi texnika kabi
   const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
   const driverOpts = drivers.filter((d) => (d.id === t.driverId && !t.vehicle.external) || (d.isActive && driverNames.includes(d.position.trim().toLowerCase())));
@@ -61,6 +64,7 @@ export default async function EditTrip({ params }: { params: Promise<{ id: strin
     plannedAt: t.plannedAt ? localInput(t.plannedAt) : "", id: order.id, date: date(order.deliveryDate), time: order.deliveryTime ?? null,
     customer: markedName(order.customer.name, order.customerId, marks), address: order.deliveryAddress,
     remainingM3: rd.available, inProduction: rd.inProduction, unit: mixed ? "birlik" : unitLabel(rd.unit ?? "m3"), mixed, pieceUnit: unitLabel(pieceUnit), lines,
+    bru: bruOf(order.items),
   };
 
   // Haydovchi ilovasi: reys yuborilgan bo'lsa — haydovchi qabul qilguncha yangilanadi, keyin faqat BRU o'zgaradi
@@ -83,7 +87,7 @@ export default async function EditTrip({ params }: { params: Promise<{ id: strin
         orders={[opt]}
         vehicles={vehicles.map((x) => ({ id: x.id, plate: x.plate, type: x.type, capacityM3: x.capacityM3 && x.capacityUnit === "M3" ? Number(x.capacityM3) : null, mainDriverId: x.mainDriverId, state: x.status === "REPAIR" ? "ta'mirda" : !x.isActive ? "nofaol" : x.trips.length ? VEHICLE_LIVE[vehicleLive(x, x.trips)].label.toLowerCase() : undefined }))}
         drivers={driverOpts.map((d) => ({ id: d.id, fullName: d.fullName, vehicleId: d.vehicleId, phoneOk: !!normalizePhone(d.phone) }))}
-        bruNames={settings?.bruNames ?? []}
+        bruNames={brus.map((b) => b.name)}
         externals={externals.map((x) => ({ id: x.id, plate: x.plate, type: x.type === "MIXER" ? "MIXER" : "TRUCK", capacity: x.capacityM3 != null ? Number(x.capacityM3) : null, driverName: x.drivers[0]?.fullName ?? "", driverPhone: x.drivers[0]?.phone ?? "" }))}
         initialOrderId={order.id}
         edit={{
