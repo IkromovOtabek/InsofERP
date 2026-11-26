@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Fuel, Gauge, Truck, Wallet } from "lucide-react";
-import type { AvtoReport, AvtoRow } from "@/lib/fin-report/avto";
+import { AVTO_NO_VEHICLE, type AvtoReport, type AvtoRow } from "@/lib/fin-report/avto";
 import { date, fmtNum, moneyShort } from "@/lib/format";
 import { InfoButton, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
@@ -78,7 +78,9 @@ export function AvtoView({ r, period, base, keep }: { r: AvtoReport; period: Day
             {active.map((x) => (
               <Tr key={x.id}>
                 <Td className={cn(sticky, "min-w-44")}>
-                  <Link href={`/logistika/transport/${x.id}`} className="font-semibold hover:underline">{x.plate}</Link>
+                  {x.id === AVTO_NO_VEHICLE
+                    ? <span className="font-semibold">{x.plate}</span>
+                    : <Link href={`/logistika/transport/${x.id}`} className="font-semibold hover:underline">{x.plate}</Link>}
                   <div className="text-xs font-normal text-slate-500">{[x.type, x.model].filter(Boolean).join(" · ")}</div>
                 </Td>
                 <Td right><N v={x.trips} /></Td><Td right><N v={x.km} /></Td><Td right><N v={x.hours} frac={1} /></Td>
