@@ -139,7 +139,8 @@ export async function autoBrigadeHours(month: string, toIso: string, brigadeIds?
   // Brigadasi yozilmagan brigadir (faqat Brigade.leaderId) — o'zi boshqaradigan brigadaga
   const led = { brigades: { some: brigadeIds ? { id: { in: brigadeIds } } : {} } };
   const rows = await db.employee.findMany({
-    where: { AND: [{ OR: [{ brigadeId: brigadeIds ? { in: brigadeIds } : { not: null } }, { brigadeId: null, ...led }] }, { payType: "PIECE" }, employeesInWindow(from, to)] },
+    // BRU a'zolari oklad oladi (SALARY) — beton m³ puli ustiga, ulush shu soatdan: ular ham davomatdan soat oladi
+    where: { AND: [{ OR: [{ brigadeId: brigadeIds ? { in: brigadeIds } : { not: null } }, { brigadeId: null, ...led }] }, { OR: [{ payType: "PIECE" }, { brigade: { isBru: true } }] }, employeesInWindow(from, to)] },
     select: { id: true, brigadeId: true, hiredAt: true, firedAt: true, workSchedule: true, brigades: { where: { isActive: true }, select: { id: true }, take: 1 } },
   });
   const members = rows

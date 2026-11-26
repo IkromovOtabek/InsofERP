@@ -70,13 +70,13 @@ export async function KomandaTab({ s }: { s: Session }) {
       </Card>
 
       <Card padded={false}>
-        <div className="p-5 pb-0"><CardHeader title={`Brigadalar — ${brigades.length} ta`} icon={Hammer} info="Ishlab chiqarish brigadalari — tarkibi va brigadiri Ishlab chiqarish → Brigadalar bo'limida o'zgaradi." /></div>
+        <div className="p-5 pb-0"><CardHeader title={`Brigadalar — ${brigades.length} ta`} icon={Hammer} info="Ishlab chiqarish brigadalari va BRU lar — tarkibi, brigadiri va turi (BRU) Ishlab chiqarish → Brigadalar bo'limida o'zgaradi. Zayavkada beton qaysi BRU dan olinishi shu BRU lardan tanlanadi; yetkazilgan m³ × narx BRU varag'iga (Ish haqi → Tabel) tushadi va a'zolarning oyligiga qo'shiladi." /></div>
         {!brigades.length ? <div className="p-5"><Empty text="Faol brigada yo'q" /></div> : (
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>Brigada</Th><Th>Brigadir</Th><Th right>Kishi</Th><Th>A&apos;zolar</Th><Th right>Kassadan</Th></tr></thead>
             <tbody>{brigades.map((b) => (
               <Tr key={b.id}>
-                <Td className="font-medium"><Link href="/brigades" className="hover:underline">{b.name}</Link></Td>
+                <Td className="font-medium"><Link href="/brigades" className="hover:underline">{b.name}</Link>{b.isBru && <span className="ml-2"><Badge color="blue">BRU</Badge></span>}</Td>
                 <Td>{b.leader?.fullName ?? "—"}</Td>
                 <Td right className="tabular">{b.members.length}</Td>
                 <Td className="text-slate-600">{b.members.map((m) => m.fullName).join(", ") || "—"}</Td>
