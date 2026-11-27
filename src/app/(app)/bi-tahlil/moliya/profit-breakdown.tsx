@@ -10,9 +10,10 @@ import { money, pct } from "@/lib/format";
 
 /**
  * Foyda tarkibi qatori: `sign` — summa oldidagi belgi (+ daromad, − xarajat, = natija), `kind` — ko'rinishi
- * (`head` — guruh sarlavhasi, `line` — oddiy, `total` — oraliq natija, `grand` — yakuniy natija).
+ * (`head` — guruh sarlavhasi, `line` — oddiy, `sub` — qator tarkibi, `total` — oraliq natija, `grand` — yakuniy natija,
+ * `excluded` — ma'lumot uchun ko'rsatiladi, lekin hisobga kirmaydi: kulrang, ulush o'rniga «kirmaydi»).
  */
-export type BreakdownLine = { label: string; value: number; sign?: "+" | "−" | "="; kind?: "head" | "line" | "total" | "grand"; hint?: string;
+export type BreakdownLine = { label: string; value: number; sign?: "+" | "−" | "="; kind?: "head" | "line" | "sub" | "total" | "grand" | "excluded"; hint?: string;
   /** Bosilsa — manba paneli (qaysi yozuvlar, qachon) */
   href?: string };
 
@@ -78,18 +79,18 @@ function Dialog({ title, period, base, lines, notes, onClose }: { title: string;
             </tr>
           </thead>
           <tbody>
-            {lines.filter((l) => l.kind !== undefined && l.kind !== "line" || l.value !== 0).map((l, i) => l.kind === "head" ? (
+            {lines.filter((l) => !(l.kind === undefined || l.kind === "line" || l.kind === "sub") || l.value !== 0).map((l, i) => l.kind === "head" ? (
               <tr key={i}><td colSpan={3} className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{l.label}</td></tr>
             ) : (
               <tr key={i} onClick={l.href ? () => go(l.href!) : undefined}
-                className={cn("border-b border-slate-100", l.kind === "total" && "bg-slate-50 font-medium", l.kind === "grand" && "border-t-2 border-slate-300 bg-brand-50 font-semibold", l.href && "cursor-pointer hover:bg-brand-50/60")}>
+                className={cn("border-b border-slate-100", l.kind === "sub" && "text-[13px] text-slate-600 [&>td:first-child]:pl-6", l.kind === "excluded" && "opacity-60", l.kind === "total" && "bg-slate-50 font-medium", l.kind === "grand" && "border-t-2 border-slate-300 bg-brand-50 font-semibold", l.href && "cursor-pointer hover:bg-brand-50/60")}>
                 <td className="py-1.5 pr-2 text-slate-700">
                   <span className="inline-block w-4 text-slate-400">{l.sign ?? ""}</span>
                   {l.href ? <Link href={l.href} onClick={(e) => { e.stopPropagation(); onClose(); }} className="decoration-slate-300 underline-offset-2 hover:text-brand-700 hover:underline">{l.label}</Link> : l.label}
                   {l.hint && <div className="pl-4 text-xs font-normal text-slate-400">{l.hint}</div>}
                 </td>
                 <td className={cn("whitespace-nowrap py-1.5 text-right tabular", (l.kind === "total" || l.kind === "grand") && l.value < 0 ? "text-rose-600" : "text-slate-900")}>{money(shown(l))}</td>
-                <td className="py-1.5 text-right tabular text-slate-500">{base > 0 ? pct((shown(l) / base) * 100) : "–"}</td>
+                <td className="py-1.5 text-right tabular text-slate-500">{l.kind === "excluded" ? <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">kirmaydi</span> : base > 0 ? pct((shown(l) / base) * 100) : "–"}</td>
               </tr>
             ))}
           </tbody>

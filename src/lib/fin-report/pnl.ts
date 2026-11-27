@@ -43,7 +43,11 @@ export type PnlParts = {
   prod: number[]; admin: number[]; comm: number[]; unknown: number[]; operating: number[];
   tax: number[]; interest: number[]; net: number[]; projects: number[]; dividend: number[]; retained: number[];
 };
-export type PnlReport = { months: MonthKey[]; mode: PnlMode; rows: FinRow[]; retained: number[]; notes: string[]; parts: PnlParts };
+export type PnlReport = {
+  months: MonthKey[]; mode: PnlMode; rows: FinRow[]; retained: number[]; notes: string[]; parts: PnlParts;
+  /** «Boshqa tushumlar» kassa manbalari bo'yicha (davr jami, kattasidan) — «Jami daromad» tarkibi uchun */
+  otherIncomeBy: { name: string; total: number }[];
+};
 /** Ustunlar yig'indisi (`col` berilsa — shu ustun). */
 export const pnlSum = (p: PnlParts, k: keyof PnlParts, col?: number) => (col === undefined ? p[k].reduce((s, v) => s + v, 0) : p[k][col] ?? 0);
 
@@ -255,6 +259,7 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
 
   // ── Kassa: PNL qatori → manba → oylar (xarajat musbat; teskari yozuv — qaytgan pul — ayiriladi) ──
   const byLine = new Map<PnlLine | "UNKNOWN", Map<string, number[]>>();
+  const otherByCat = new Map<string, number>();
   /** `src` — drill-down uchun yozuvning o'zi (jadvalda xarajat manfiy, «Boshqa tushumlar» musbat ko'rinadi). */
   const put = (line: PnlLine | "UNKNOWN", name: string, i: number, v: number, src?: () => Omit<DrillItem, "amount">) => {
     let m = byLine.get(line);
@@ -300,6 +305,8 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
     // Qator nomi — jadvaldagi atama («Xodimlar maoshlari», «Zavod xarajatlari»…), loyihada — loyiha nomi
     const name = line === "PROJECT" ? (t.project?.name ?? "Loyiha tanlanmagan") : sheetLine(r.top.name, r.sub?.name);
     put(line, name, i, v, src);
+    // «Jami daromad» tarkibi uchun boshqa tushumlar haqiqiy kassa manbasi nomi bilan (jadval atamasi emas)
+    if (line === "OTHER_INCOME") { const k = r.sub ? `${r.top.name} → ${r.sub.name}` : r.top.name; otherByCat.set(k, (otherByCat.get(k) ?? 0) + v); }
   }
   if (mode === "accrual") {
     for (const p of payroll) {
@@ -427,7 +434,8 @@ async function buildPnl(months: MonthKey[], mode: PnlMode, trace?: Trace, clip?:
     sales: salesTotal, otherIncome, refund, income, cogs: cogsTotal, cogsEst, uncosted, gross,
     prod, admin, comm, unknown, operating, tax, interest, net, projects, dividend, retained,
   };
-  return { months, mode, rows: visible, retained, notes, parts };
+  const otherIncomeBy = [...otherByCat.entries()].map(([name, total]) => ({ name, total })).filter((o) => o.total !== 0).sort((x, y) => y.total - x.total);
+  return { months, mode, rows: visible, retained, notes, parts, otherIncomeBy };
 }
 
 /** Qatorning bolalari: ota qator kaliti → bola kaliti shu qatorga kiradimi (Daromad ← mahsulot guruhlari + boshqa tushumlar). */

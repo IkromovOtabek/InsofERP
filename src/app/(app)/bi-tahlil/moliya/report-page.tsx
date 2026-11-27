@@ -1,7 +1,10 @@
 import { ArrowDownCircle, ArrowUpCircle, Banknote, Calculator, FileWarning, Landmark, Percent, PiggyBank, Receipt, Scale, TrendingUp, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
-import { delta, goLiveDate, loadRevenue, type SaleRow } from "@/lib/bi/core";
+import { delta, goLiveDate, isRealizationRow, loadRevenue, type SaleRow } from "@/lib/bi/core";
 import { pnlReport, pnlSum } from "@/lib/fin-report/pnl";
+import { avtoReport } from "@/lib/fin-report/avto";
+import { getSession } from "@/lib/auth";
+import { canSeeLogiMoney } from "@/lib/logistics-finance";
 import { ddsReport } from "@/lib/fin-report/dds";
 import { balanceReport } from "@/lib/fin-report/balance";
 import { type MonthKey, addMonths, isMonthKey, monthDiff, monthEnd, monthKeyOf, monthLabel, monthRange, monthStart } from "@/lib/fin-report/period";
@@ -75,17 +78,30 @@ async function deliveryBilled(rows: SaleRow[]): Promise<number> {
  * (`?drill=`) ochiladi, shuning uchun qatorlar PNL qatorlari bilan bir xil bo'linadi (transport — ishlab chiqarish ichida).
  */
 async function totalIncome(months: MonthKey[], sp: SP) {
-  const { parts: p } = await pnlReport(months, "accrual");
+  const from = monthStart(months[0]!), to = monthEnd(months[months.length - 1]!);
+  // Logistika daromadi — faqat ma'lumot uchun («kirmaydi»), summasini ko'rish huquqi bor rollarga
+  const session = await getSession();
+  const [{ parts: p, otherIncomeBy }, sold, avto] = await Promise.all([
+    pnlReport(months, "accrual"), loadRevenue(from, to), session && canSeeLogiMoney(session) ? avtoReport(from, to) : Promise.resolve(null),
+  ]);
   const t = (k: Parameters<typeof pnlSum>[1]) => pnlSum(p, k);
-  const sales = t("income"), other = t("otherIncome");
+  const sales = t("income"), other = t("otherIncome"), refund = t("refund");
+  // Sotuv manbasi bo'yicha (QQSsiz — PNL bilan bir xil): zayavka reyslari va Realizatsiya reestri qatorlari
+  const fromReg = sold.filter(isRealizationRow).reduce((x, r) => x + r.net, 0);
+  const fromOrders = sold.reduce((x, r) => x + r.net, 0) - fromReg;
   const income = sales + other, net = t("net");
   // Qator bosilsa — PNL'ning manba paneli (hisoblangan rejim, shu davr): qaysi yozuv, qachon, qancha
   const href = (drill: string) => `${BASE}/pnl?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), drill })}`;
   const lines: BreakdownLine[] = [
     { label: "Daromad", value: 0, kind: "head" },
-    { label: "Zavod sotuvi", value: sales, sign: "+", hint: "yetkazilgan mahsulot, qaytarilgan pul ayirilgan", href: href("income") },
-    { label: "Boshqa tushumlar", value: other, sign: "+", hint: "brak/chiqindi sotuvi, xizmat, boshqa", href: href("other-income") },
+    { label: "Zavod sotuvi", value: sales, sign: "+", hint: "yetkazilgan mahsulot (QQSsiz)", href: href("income") },
+    { label: "Zayavka reyslari", value: fromOrders, kind: "sub", hint: "Manba: Buyurtmalar → yetkazilgan reyslar", href: href("income") },
+    { label: "Realizatsiya reestri", value: fromReg, kind: "sub", hint: "Manba: Sotuv → Realizatsiya (qo'lda / Excel qatorlar)", href: href("income") },
+    { label: "Mijozga qaytarilgan pul", value: -refund, sign: "−", kind: "sub", hint: "Manba: Kassa → «Sotib oluvchi pulini qaytarish»", href: href("refund") },
+    { label: "Boshqa tushumlar", value: other, sign: "+", hint: "sotuvdan tashqari kirim", href: href("other-income") },
+    ...otherIncomeBy.map((o): BreakdownLine => ({ label: o.name, value: o.total, kind: "sub", hint: "Manba: Kassa → Kirim-Chiqim", href: href("other-income") })),
     { label: "Jami daromad", value: income, sign: "=", kind: "total", href: href("total-income") },
+    ...(avto && avto.total.revenue ? [{ label: "Logistika daromadi", value: avto.total.revenue, kind: "excluded" as const, hint: "Manba: Logistika → Moliya (dostavka, usluga) — alohida hisob, zavodga qo'shilmaydi", href: "/logistika/moliya" }] : []),
     { label: "Xarajatlar", value: 0, kind: "head" },
     { label: "Mahsulot tannarxi", value: -t("cogs"), sign: "−", hint: "retsept × xomashyo narxi", href: href("cogs") },
     { label: "Ishlab chiqarish va transport", value: -t("prod"), sign: "−", hint: "ish haqi, sex xarajatlari, yoqilg'i, ta'mir (zavod kassasidan)", href: href("prod") },
@@ -98,10 +114,10 @@ async function totalIncome(months: MonthKey[], sp: SP) {
   ];
   const notes = [
     "Qator ustiga bosing — summa qaysi yozuvlardan, qachon tushgani ochiladi.",
-    "Logistika moliyasi alohida hisob — bu yerga kirmaydi (Logistika → Moliya).",
+    "Kirmaydi: logistika daromadi (dostavka, usluga — alohida hisob, Logistika → Moliya), mijoz to'lovlari (pul oqimi, daromad emas), kredit va hisoblar orasidagi o'tkazmalar.",
     ...(t("uncosted") > 0 ? [`Tannarxi noma'lum sotuv ${moneyShort(t("uncosted"))} — foyda biroz oshib ko'rinishi mumkin.`] : []),
   ];
-  return { income, net, lines, notes };
+  return { income, net, sales, other, lines, notes };
 }
 
 /** Hisobot ustidagi statistika qatori — jadval bilan bir xil hisob (`cache`: jadval qayta hisoblamaydi). */
@@ -132,7 +148,7 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
       <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <ProfitBreakdown title="Zavod daromadi va foyda tarkibi" period={`${period} · QQSsiz`} base={total.income} lines={total.lines} notes={total.notes}>
-          <Kpi label="Jami daromad" value={moneyShort(total.income)} icon={PiggyBank} tone="brand" hint={`sof foyda ${moneyShort(total.net)} · bosing — tarkibi`} />
+          <Kpi label="Jami daromad" value={moneyShort(total.income)} icon={PiggyBank} tone="brand" hint={`sotuv ${moneyShort(total.sales)} · boshqa ${moneyShort(total.other)} · bosing — tarkibi`} />
         </ProfitBreakdown>
         <Kpi label="Zavod daromadi — sotildi" value={moneyShort(soldGross)} icon={TrendingUp} tone="brand" hint={`${period} · yetkazilgan mahsulot · QQSsiz ${moneyShort(soldNet)}`} href={dq("pnl", "income")} />
         <Kpi label="Pul tushdi" value={moneyShort(collected)} icon={Banknote} tone="success" hint="mijozlar to'lovi + kassaga «Savdo» kirimi − qaytarilgan pul" href={`${BASE}/pnl?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), mode: "cash", drill: "income" })}`} />
