@@ -10,7 +10,7 @@ import { T } from "@/lib/crm/labels";
 const ITEMS: { href: string; label: string; icon: LucideIcon; ready: boolean }[] = [
   { href: "/crm", label: T.nav.today, icon: CalendarCheck, ready: true },
   { href: "/crm/mijozlar", label: T.nav.clients, icon: Users, ready: true },
-  { href: "/crm/voronka", label: T.nav.funnel, icon: Filter, ready: false },
+  { href: "/crm/voronka", label: T.nav.funnel, icon: Filter, ready: true },
   { href: "/crm/aloqalar", label: T.nav.contacts, icon: MessagesSquare, ready: false },
 ];
 

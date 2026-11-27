@@ -1,4 +1,4 @@
-import { Prisma, type CrmClientStatus, type CrmOptionKind, type CrmResultGroup } from "@/generated/prisma";
+import type { CrmClientStatus, CrmOptionKind, CrmResultGroup, Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
 import type { Activity } from "./labels";
@@ -71,7 +71,7 @@ export async function lastResults(ids?: string[]): Promise<Map<string, LastResul
   const rows = await db.$queryRaw<LastResult[]>`
     SELECT DISTINCT ON (c."customerId") c."customerId", c.date, r.label, r."group", r.stage
     FROM "CrmContact" c LEFT JOIN "CrmResult" r ON r.id = c."resultId"
-    WHERE c."cancelledAt" IS NULL ${ids ? Prisma.sql`AND c."customerId" IN (${Prisma.join(ids)})` : Prisma.empty}
+    WHERE c."cancelledAt" IS NULL AND (${!ids}::boolean OR c."customerId" = ANY(${ids ?? []}::text[]))
     ORDER BY c."customerId", c.date DESC, c."createdAt" DESC`;
   return new Map(rows.map((r) => [r.customerId, r]));
 }
