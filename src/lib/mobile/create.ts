@@ -14,6 +14,7 @@ import { createCashEntry } from "@/lib/cash-entry";
 import { createTransfer } from "@/lib/cash-transfer";
 import { TRANSFER_REF } from "@/lib/cash-tx";
 import { categoryOptions } from "@/lib/fin-report/categories";
+import { isSalaryHoldSub, isStaffSettle, isStaffSettleCategory } from "@/lib/cash-categories";
 import { unpaidReceipts } from "@/lib/receipt-payables";
 import { MAX_AMOUNT } from "@/lib/action";
 import { date as day } from "@/lib/format";
@@ -364,15 +365,24 @@ async function paymentForm(): Promise<CreateForm> {
 
 /** Kirim / chiqim — veb `/cashflow` formasi: kategoriya, yetkazuvchi va to'lanmagan kirim hujjatiga bog'lash. */
 async function cashForm(): Promise<CreateForm> {
-  const [acc, suppliers, unpaid, inCats, outCats] = await Promise.all([
+  const [acc, suppliers, unpaid, inTree, outTree, emps, brigades, teams] = await Promise.all([
     cashAccountOptions(),
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     unpaidReceipts(),
-    // Kategoriyalar — veb bilan bitta daraxt (`CashCategory`, faqat manbalar); loyiha/kredit tanlovi hozircha vebda
-    categoryOptions("INCOME").then((c) => c.map((x) => x.name)),
-    categoryOptions("EXPENSE").then((c) => c.map((x) => x.name)),
+    // Kategoriyalar — veb bilan bitta daraxt (`CashCategory`: manba → sub manba); loyiha/kredit tanlovi hozircha vebda
+    categoryOptions("INCOME"),
+    categoryOptions("EXPENSE"),
+    // «Kimga — xodim»: veb `/cashflow` formasidagi kabi xodimlar, brigadalar va komandalar
+    db.employee.findMany({ where: { isActive: true, firedAt: null }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } }),
+    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.team.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
+  const inCats = inTree.map((x) => x.name), outCats = outTree.map((x) => x.name);
+  const subOpts = (tree: typeof inTree, field: string) => tree.flatMap((c) => c.subs.map((sub) => ({ value: sub, label: sub, extra: { [field]: c.name } })));
   const expense = { field: "type", equals: "EXPENSE" }, income = { field: "type", equals: "INCOME" };
+  // «Kimga — xodim» faqat xodim bilan hisob-kitob manbasi yoki «Oylik hisobidan avans/qarz» sub manbasida (yangi ilova
+  // `showWhen` bo'yicha yashiradi; eski ilova maydonni chiqimda doim ko'rsatadi — server baribir tekshiradi)
+  const staffCats = outCats.filter(isStaffSettleCategory), holdSubs = outTree.flatMap((c) => c.subs).filter(isSalaryHoldSub);
   return {
     key: "cashflow", title: "Kirim / chiqim", submitLabel: "Saqlash",
     fields: [
@@ -381,6 +391,18 @@ async function cashForm(): Promise<CreateForm> {
       { name: "amount", label: "Summa (so'm)", type: "number", required: true, placeholder: "0" },
       { name: "categoryExpense", label: "Kategoriya", type: "select", required: true, value: outCats[0], options: outCats.map((c) => ({ value: c, label: c })), showIf: expense },
       { name: "categoryIncome", label: "Kategoriya", type: "select", required: true, value: inCats[0], options: inCats.map((c) => ({ value: c, label: c })), showIf: income },
+      { name: "subExpense", label: "Sub manba", type: "select", dependsOn: "categoryExpense", options: subOpts(outTree, "categoryExpense"), showIf: expense },
+      { name: "subIncome", label: "Sub manba", type: "select", dependsOn: "categoryIncome", options: subOpts(inTree, "categoryIncome"), showIf: income },
+      {
+        name: "staff", label: "Kimga — xodim", type: "select", showIf: expense,
+        showWhen: [...(staffCats.length ? [{ field: "categoryExpense", in: staffCats }] : []), ...(holdSubs.length ? [{ field: "subExpense", in: holdSubs }] : [])],
+        options: [
+          ...emps.map((e) => ({ value: `e:${e.id}`, label: e.fullName, hint: e.position })),
+          ...brigades.map((b) => ({ value: `b:${b.id}`, label: `Brigada · ${b.name}` })),
+          ...teams.map((t) => ({ value: `t:${t.id}`, label: `Komanda · ${t.name}` })),
+        ],
+        hint: "«Hodimlar bilan hisob-kitob» yoki «Oylik hisobidan avans/qarz» bo'lsa — majburiy. Xodimga berilgani Ish haqi → Ushlanmalar → «Oylikdan qarz» ga tushadi",
+      },
       { name: "supplierId", label: "Yetkazuvchi", type: "select", options: suppliers.map((s) => ({ value: s.id, label: s.name })), showIf: expense, hint: "Xomashyo uchun to'lov bo'lsa" },
       {
         name: "receiptId", label: "Kirim hujjati (ixtiyoriy)", type: "select", dependsOn: "supplierId", showIf: expense,
@@ -874,6 +896,10 @@ const CashBody = z.object({
   category: z.string().trim().optional(),
   categoryExpense: z.string().trim().optional(),
   categoryIncome: z.string().trim().optional(),
+  subExpense: z.string().trim().optional(),
+  subIncome: z.string().trim().optional(),
+  // «Kimga — xodim»: "e:<xodim>" | "b:<brigada>" | "t:<komanda>"
+  staff: z.string().trim().optional(),
   supplierId: z.string().trim().optional(),
   receiptId: z.string().trim().optional(),
   counterparty: z.string().trim().max(200).optional(),
@@ -1290,16 +1316,25 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       const expense = d.type === "EXPENSE";
       const category = (expense ? d.categoryExpense : d.categoryIncome) || d.category;
       if (!category || !(await categoryOptions(expense ? "EXPENSE" : "INCOME")).some((c) => c.name === category)) throw new Error("Kategoriya tanlanmagan");
+      // Sub manba — eski ilova yubormaydi; yuborilsa `createCashEntry` shu manbaniki ekanini tekshiradi
+      const sub = (expense ? d.subExpense : d.subIncome) || null;
+      // Xodim bilan hisob-kitob (veb bilan bir qoida — `cashflow/actions.ts`): kimga — xodim / brigada / komanda shart
+      const settle = expense && isStaffSettle(category, sub);
+      const m = settle && d.staff ? /^([ebt]):(\S+)$/.exec(d.staff) : null;
+      if (settle && !m) throw new Error("Kimga: xodimni (yoki brigada / komandani) tanlang");
+      const who = { employeeId: m?.[1] === "e" ? m[2]! : null, brigadeId: m?.[1] === "b" ? m[2]! : null, teamId: m?.[1] === "t" ? m[2]! : null };
       // Qoidalar (qulf, kirim hujjati qoldig'i, kassa minusi/overdraft) — veb bilan bitta joyda
       const r = await createCashEntry({
-        type: d.type, date: cashDate(d.date), cashAccountId: d.cashAccountId, amount: d.amount, category,
+        type: d.type, date: cashDate(d.date), cashAccountId: d.cashAccountId, amount: d.amount, category, subCategory: sub,
         counterparty: d.counterparty || null,
-        supplierId: expense ? d.supplierId || null : null,
-        receiptId: expense ? d.receiptId || null : null,
+        supplierId: expense && !settle ? d.supplierId || null : null,
+        receiptId: expense && !settle ? d.receiptId || null : null,
         note: d.note || null,
+        ...who,
       }, user.id);
       if (r.error || !r.id) throw new Error(r.error ?? "Saqlanmadi");
-      return { key: "cashflow", id: r.id, message: `${expense ? "Chiqim" : "Kirim"} saqlandi: ${money(d.amount)} · ${category}` };
+      const tail = who.employeeId ? " — Ish haqi → Ushlanmalar → «Oylikdan qarz» ga tushdi" : "";
+      return { key: "cashflow", id: r.id, message: `${expense ? "Chiqim" : "Kirim"} saqlandi: ${money(d.amount)} · ${sub ?? category}${tail}` };
     }
     if (key === "transfer") {
       const p = TransferBody.safeParse(payload);

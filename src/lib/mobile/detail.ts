@@ -107,6 +107,12 @@ export type FormField = {
   /** Shart: boshqa maydon shu qiymatda bo'lsagina ko'rinadi. */
   showIf?: { field: string; equals: string };
   /**
+   * Qo'shimcha shart (`showIf` bilan birga): shu ro'yxatdagi shartlardan BIRORTASI bajarilsa ko'rinadi — maydon qiymati
+   * `in` ro'yxatida. Eski ilova buni bilmaydi va maydonni ko'rsataveradi — shuning uchun bunday maydon `required` emas,
+   * majburiyligini server tekshiradi.
+   */
+  showWhen?: { field: string; in: string[] }[];
+  /**
    * `select` uchun: variantlar boshqa maydonga bog'liq — faqat `option.extra[dependsOn]` shu maydon qiymatiga
    * teng bo'lganlari ko'rinadi (u bo'sh bo'lsa — hammasi). Masalan mijozning schyotlari. Eski ilova buni
    * bilmaydi va hamma variantni ko'rsatadi — moslikni server baribir tekshiradi.
