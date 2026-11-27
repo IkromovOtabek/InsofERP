@@ -198,6 +198,8 @@ export type MobileDetail = {
   fields: DetailField[];
   sections: HomeSection[];
   actions: DetailAction[];
+  /** Kartochka haqida izoh («i» tugmasi): bu yerda nima ko'rinadi, raqam qayerdan. Eski ilova e'tiborsiz qoldiradi. */
+  info?: string[];
   receipt?: DetailReceipt;
   /**
    * Hujjat surati (mexanik so'rovi): `url` — mobil API yo'li, Bearer token bilan GET → `{ data: "data:image/...;base64,..." }`

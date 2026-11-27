@@ -1,10 +1,10 @@
 import { db } from "@/lib/db";
-import { pnlRange, pnlReport, type PnlReport } from "@/lib/fin-report/pnl";
+import { pnlDrill, pnlDrillRange, pnlRange, pnlReport, type PnlReport } from "@/lib/fin-report/pnl";
 import { monthKeyOf } from "@/lib/fin-report/period";
 import { expenseItems, incomeBreakdown, pnlTotals, type BreakdownLine } from "@/lib/fin-report/income-breakdown";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
 import { loadRevenue } from "@/lib/bi/core";
-import { day, money, num, sum, sumFull } from "./fmt";
+import { day, money, num, sum, sumFull, time } from "./fmt";
 import type { DashRange } from "./dashboard";
 import type { MobileUser } from "./auth";
 import type { DetailField, MobileDetail } from "./detail";
@@ -29,6 +29,15 @@ const dmy = (iso: string) => iso.split("-").reverse().join(".");
 function periodPnl(r: DashRange): Promise<PnlReport> {
   return r.key === "month" ? pnlReport([monthKeyOf(r.from)], "accrual") : pnlRange(r.from, r.to);
 }
+
+/** Davr kaliti — bosh sahifa filtri bilan bir xil (`month`, `week`, `custom~YYYY-MM-DD~YYYY-MM-DD`). */
+const pidOf = (r: DashRange) => (r.key === "custom" ? `custom~${localYmd(r.from)}~${localYmd(new Date(r.to.getTime() - 86_400_000))}` : r.key);
+/**
+ * PNL qatori manbasi kartochkasi kaliti: `dash/pnl~<kalit>.<davr>`. Kalit base64url — PNL kalitlarida «:» bor
+ * (`prod:Avtotransport`), `mobileDetail` esa «:» ni aralash ro'yxat belgisi deb ajratadi.
+ */
+export const PNL_DRILL = "pnl~";
+const drillId = (key: string, r: DashRange) => `${PNL_DRILL}${Buffer.from(key, "utf8").toString("base64url")}.${pidOf(r)}`;
 
 // ───────────────────────── Bosh sahifa kartalari ─────────────────────────
 
@@ -80,17 +89,18 @@ export async function plitaCard(r: DashRange, pl: string, open: (k: string) => {
 // ───────────────────────── Batafsil kartochkalar ─────────────────────────
 
 /** Foyda tarkibi qatorlari → bo'limlar: har «head» — yangi bo'lim, qator o'ng tomonida summa, izohida ulush va manba. */
-function linesToSections(lines: BreakdownLine[], base: number): HomeSection[] {
+function linesToSections(lines: BreakdownLine[], base: number, r: DashRange): HomeSection[] {
   const out: HomeSection[] = [];
   lines.forEach((l, i) => {
-    if (l.kind === "head") { out.push(sec(l.label, [], { icon: out.length ? "wallet" : "trending-up", empty: "Bu davrda yozuv yo'q" })); return; }
+    // Har qator bosiladi — manba yozuvlari (`pnlDrillDetail`); logistika qatori — alohida hisob izohi
+    if (l.kind === "head") { out.push(sec(l.label, [], { icon: out.length ? "wallet" : "trending-up", empty: "Bu davrda yozuv yo'q", target: "dash" })); return; }
     if ((l.kind === undefined || l.kind === "line" || l.kind === "sub") && Math.round(l.value) === 0) return;
     const shown = l.kind === "total" || l.kind === "grand" ? l.value : Math.abs(l.value);
     const tone: Tone | undefined = l.kind === "grand" ? (l.value < 0 ? "danger" : "success") : l.kind === "total" ? "brand" : l.kind === "excluded" ? "info" : undefined;
     const share = l.kind === "excluded" ? "kirmaydi" : `ulushi ${pctOf(shown, base)}`;
-    if (!out.length) out.push(sec("Tarkibi", []));
+    if (!out.length) out.push(sec("Tarkibi", [], { target: "dash" }));
     out[out.length - 1]!.rows.push({
-      id: `l${i}`, title: `${l.kind === "sub" ? "· " : l.sign ? `${l.sign} ` : ""}${l.label}`,
+      id: l.drill ? drillId(l.drill, r) : l.kind === "excluded" ? drillId("logi", r) : `l${i}`, title: `${l.kind === "sub" ? "· " : l.sign ? `${l.sign} ` : ""}${l.label}`,
       subtitle: [share, l.hint].filter(Boolean).join(" · "), right: shown < 0 ? sumFull(shown) : money(shown), tone,
     });
   });
@@ -105,7 +115,7 @@ export async function incomeDetail(user: MobileUser, r: DashRange): Promise<Part
     title: "Jami daromad va foyda tarkibi",
     subtitle: `Davr: ${r.label} · QQSsiz · vebdagi «Foyda va zarar» (PNL) bilan bitta hisob`,
     fields: [f("Jami daromad", money(b.income)), f("Zavod sof foydasi", sumFull(b.net), b.net < 0 ? "danger" : "success")],
-    sections: [...linesToSections(b.lines, b.income), sec("Izoh", b.notes.map((n, i) => ({ id: `n${i}`, title: n })), { icon: "info" })],
+    sections: [...linesToSections(b.lines, b.income, r), sec("Izoh", ["Qatorni bosing — summa qaysi yozuvlardan, qachon tushgani (fakt) ochiladi.", ...b.notes].map((n, i) => ({ id: `n${i}`, title: n })), { icon: "info" })],
   };
 }
 
@@ -120,9 +130,9 @@ export async function factoryOutDetail(r: DashRange): Promise<Part> {
     subtitle: `Davr: ${r.label} · tannarx + zavod xarajatlari (PNL) · logistika alohida`,
     fields: [f("Jami chiqim", money(T.expenses), "warning"), f("Daromadga nisbatan", pctOf(T.expenses, T.income))],
     sections: [
-      sec("Guruhlar bo'yicha", groups.map((g) => ({ id: g.key, title: g.label, subtitle: [`ulushi ${pctOf(g.value, T.expenses)}`, "hint" in g ? g.hint : undefined].filter(Boolean).join(" · "), right: money(g.value) })), { icon: "wallet", empty: "Bu davrda xarajat yo'q" }),
+      sec("Guruhlar bo'yicha", groups.map((g) => ({ id: drillId(g.key, r), title: g.label, subtitle: [`ulushi ${pctOf(g.value, T.expenses)}`, "hint" in g ? g.hint : undefined].filter(Boolean).join(" · "), right: money(g.value) })), { icon: "wallet", empty: "Bu davrda xarajat yo'q", target: "dash" }),
       ...groups.map((g) => ({ g, items: expenseItems(rep, g.key) })).filter((x) => x.items.length).map(({ g, items }) =>
-        sec(g.label, items.slice(0, 25).map((x, i) => ({ id: `${g.key}-${i}`, title: x.label, subtitle: `ulushi ${pctOf(x.value, g.value)}`, right: money(x.value) })), { icon: "receipt" })),
+        sec(g.label, items.slice(0, 25).map((x) => ({ id: drillId(`${g.key}:${x.label}`, r), title: x.label, subtitle: `ulushi ${pctOf(x.value, g.value)}`, right: money(x.value) })), { icon: "receipt", target: "dash" })),
     ],
   };
 }
@@ -217,3 +227,53 @@ export async function betonDetail(r: DashRange): Promise<Part> {
     ],
   };
 }
+
+// ───────────────────────── PNL qatori — fakt yozuvlari ─────────────────────────
+
+/**
+ * «Jami daromad» / «Umumiy zavod chiqimi» tarkibidagi qator bosilganda: qaysi yozuv (kassa, reestr qatori, sklad sarfi),
+ * qachon, qancha — vebdagi PNL manba paneli (`?drill=`) bilan bitta hisob. Jami qator bo'lsa — tarkibi (har biri yana bosiladi).
+ */
+export async function pnlDrillDetail(rawKey: string, r: DashRange): Promise<Part> {
+  let key: string;
+  try { key = Buffer.from(rawKey, "base64url").toString("utf8"); } catch { key = ""; }
+  if (key === "logi") {
+    return {
+      title: "Logistika daromadi", subtitle: `Davr: ${r.label} · alohida hisob`,
+      fields: [],
+      sections: [sec("Izoh", [{ id: "n0", title: "Dostavka va usluga daromadi Logistika → Moliya bo'limida yuritiladi va zavod daromadiga qo'shilmaydi." }], { icon: "info" })],
+    };
+  }
+  const d = key ? (r.key === "month" ? await pnlDrill([monthKeyOf(r.from)], "accrual", key, null) : await pnlDrillRange(r.from, r.to, key, r.label)) : null;
+  if (!d) return { title: "Ma'lumot topilmadi", subtitle: `Davr: ${r.label}`, fields: [], sections: [] };
+  const unit = d.isQty ? ` ${d.unit ?? ""}`.trimEnd() : "";
+  const val = (v: number) => (d.isQty ? `${num(v)}${unit}` : v < 0 ? sumFull(v) : money(v));
+  const items = d.items;
+  return {
+    title: d.title, subtitle: `Davr: ${r.label}${d.note ? ` · ${d.note}` : ""}`,
+    fields: [f("Summa", val(d.value)), ...(items.length ? [f("Yozuvlar", `${items.length} ta`)] : [])],
+    sections: [
+      ...(d.parts.length ? [sec("Tarkibi", d.parts.map((x) => ({ id: drillId(x.key, r), title: x.label, right: val(x.value) })), { icon: "layers", target: "dash" })] : []),
+      ...(items.length || !d.parts.length ? [sec("Yozuvlar (fakt)", items.slice(0, 200).map((it, i) => ({
+        id: `i${i}`, title: `${it.date ? `${day(it.date)}${it.date.getHours() || it.date.getMinutes() ? ` ${time(it.date)}` : ""} · ` : ""}${it.title}`, subtitle: it.sub, right: val(it.amount),
+      })), { icon: "receipt", empty: "Bu davrda yozuv yo'q" })] : []),
+    ],
+  };
+}
+
+// ───────────────────────── Kartochka ichida nima bor (info tugmasi) ─────────────────────────
+
+/** Direktor kartochkalari — «i» tugmasi bosilganda: bu kartochkada nima ko'rinadi va raqam qayerdan olinadi. */
+export const DIRECTOR_INFO: Record<string, string[]> = {
+  revenue: ["Tushum — tanlangan davrda sotilgan mahsulot summasi (Sotuv → Realizatsiya reestri, QQS va dastavka bilan).", "Ichida: mahsulot, mijoz, sotuvchi va kunlar kesimi, zayavkalar ro'yxati."],
+  profit: ["Jami daromad — vebdagi Foyda va zarar (PNL) → «Jami daromad»: zavod sotuvi + boshqa tushumlar, QQSsiz.", "Ichida: daromad qismlari (zayavka reyslari, Realizatsiya reestri, kassadagi boshqa kirimlar), xarajat guruhlari va zavod sof foydasi, har birining ulushi.", "Har qatorni bosing — summa qaysi yozuvlardan, qachon tushgani (fakt) ochiladi.", "Logistika daromadi (dostavka, usluga) alohida hisob — jamiga kirmaydi."],
+  "factory-out": ["Umumiy zavod chiqimi — PNL bo'yicha mahsulot tannarxi + barcha zavod xarajatlari (ishlab chiqarish va transport, ma'muriy, tijoriy, soliq, kredit foizi).", "Ichida: guruhlar va har guruhning kassa kategoriyalari, ulushi bilan; har qator bosilsa — fakt yozuvlar.", "Kredit tanasi, asosiy vosita xaridi va logistika xarajatlari bu yerga kirmaydi."],
+  expenses: ["Xarajatlar — kassadan chiqqan xarajatlar (kirim-chiqim), byudjet bilan taqqoslash.", "Ichida: kategoriyalar, byudjetdan oshganlar, rejalashtirilmaganlar."],
+  cash: ["Pul — hozir qo'ldagi pul: kassa + bank qoldig'i.", "Ichida: har kassa va bank hisobi qoldig'i."],
+  receivable: ["Debitorka — mijozlar qarzi: schyot va qarzga sotuv minus to'lovlar.", "Ichida: qarzdorlar, qarz yoshi (0–7, 8–30, 31–60, 60+ kun), ochiq schyotlar, mijozlar avansi."],
+  problems: ["Muammolar — egasi qarorini kutayotgan masalalar.", "Ichida: har masala, mas'ul, muddat va summa."],
+  production: ["Beton — tanlangan davrda sotilgan beton (Sotuv → Realizatsiya reestri, m³).", "Ichida: qaysi kuni qancha, qaysi mijozga va qaysi manzilga; kunlar, mijozlar va marka bo'yicha.", "Oxirida — ERP'ga yozilgan zameslar (quyish qaydi) va plan/fakt."],
+  shipment: ["Otgruzka — «Yetkazildi» bosilgan reyslar hajmi.", "Ichida: haydovchi, mijoz, transport va kunlar bo'yicha, reyslar ro'yxati."],
+  plita: ["Plita — brigadalar sklad orqali qayd etgan ishlab chiqarilgan plita (dona).", "Ichida: kunlar, kim ishlab chiqargani (brigada), mahsulot, qaysi mijozga va manzilga yetkazilgani, reyslar."],
+  [PNL_DRILL]: ["Bu qator summasi qaysi yozuvlardan yig'ilgani: sana, manba (kassa, reestr qatori, sklad sarfi) va summa.", "Jami qator bo'lsa — tarkibi; har birini bosib ichiga kiring.", "Vebdagi Foyda va zarar (PNL) manba paneli bilan bitta hisob."],
+};

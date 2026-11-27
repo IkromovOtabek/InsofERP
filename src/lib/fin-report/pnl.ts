@@ -466,6 +466,21 @@ const VIRTUAL: Record<string, string> = { expenses: "Xarajatlar (ishlab chiqaris
  * qolganlari tarkibi (bo'lsa) va katakni tashkil qilgan yozuvlarni qaytaradi: kassa yozuvi, reys/zayavka, vedomost, sklad sarfi,
  * amortizatsiya. Hisob `buildPnl` ning o'zi — jadvaldagi son bilan bir xil.
  */
+/**
+ * Ixtiyoriy davr (bugun, hafta, kalendar oralig'i) qatorining manbasi — `pnlRange` qoidalari bilan (hisoblangan rejim):
+ * mobil direktor «Jami daromad» tarkibidagi qator bosilganda — qaysi yozuv, qachon, qancha. Davr jami (ustun emas).
+ */
+export async function pnlDrillRange(from: Date, to: Date, key: string, label: string): Promise<Drill | null> {
+  const months: MonthKey[] = [];
+  for (let d = new Date(from.getFullYear(), from.getMonth(), 1); d.getTime() < to.getTime(); d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) months.push(monthKeyOf(d));
+  if (!months.length) months.push(monthKeyOf(from));
+  const compose = own(COMPOSE, key), child = own(CHILDREN, key);
+  const trace: Trace | undefined = compose ? undefined : { match: (k) => k === key || !!child?.(k), month: null, items: [] };
+  const rep = await buildPnl(months, "accrual", trace, { from, to });
+  const parts = compose ?? rep.rows.filter((r) => r.key !== key && child?.(r.key)).map((r) => r.key);
+  return finDrill(rep.rows, label, key, null, { parts, items: trace?.items ?? [], compose: !!compose, virtual: own(VIRTUAL, key), isQty: key === "qty" || key.startsWith("qty:") });
+}
+
 export async function pnlDrill(months: MonthKey[], mode: PnlMode, key: string, col: number | null): Promise<Drill | null> {
   if (col !== null && (col < 0 || col >= months.length)) return null;
   const compose = own(COMPOSE, key), child = own(CHILDREN, key);
