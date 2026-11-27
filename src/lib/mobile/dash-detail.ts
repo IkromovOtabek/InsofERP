@@ -1188,26 +1188,85 @@ async function ownerProblems(): Promise<Part> {
   };
 }
 
-async function ownerProduction(): Promise<Part> {
-  const d = await ownerCached();
-  const P = d.production, S = d.summary.production;
-  const t0 = today0(), t1 = new Date(t0); t1.setDate(t1.getDate() + 1);
-  const batches = await db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: t0, lt: t1 } }, orderBy: { date: "desc" }, select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } } } });
+/**
+ * Ishlab chiqarish ↔ otgruzka farqi (direktor kartalari): "Ishlab chiqarish" — davrdagi beton zameslari (m³),
+ * "Otgruzka" — davrda «Yetkazildi» bo'lgan reyslar. Farq: omborga quyilgan, hali yo'lda / yuklangan yoki reysi
+ * yopilmagan beton; zayavkalar kesimida qaysi buyurtmada qancha qolgani ko'rinadi.
+ */
+async function prodShipGap(r: DashRange): Promise<HomeSection[]> {
+  const [batches, delivered, open] = await Promise.all([
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to }, product: { unit: "m3" } }, select: { qtyM3: true, orderId: true, order: { select: { orderNo: true, customer: { select: { name: true } } } } } }),
+    db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { qtyM3: true, orderId: true } }),
+    db.trip.findMany({ where: { status: { in: ["PLANNED", "LOADED", "ON_ROAD"] }, createdAt: { lt: r.to } }, select: { qtyM3: true, orderId: true, status: true } }),
+  ]);
+  const m3 = (v: number) => `${num(v)} m³`;
+  const P = sumBy(batches, (b) => sum(b.qtyM3)), W = sumBy(batches.filter((b) => !b.orderId), (b) => sum(b.qtyM3));
+  const S = sumBy(delivered, (t) => sum(t.qtyM3));
+  const loaded = open.filter((t) => t.status !== "PLANNED"), planned = open.filter((t) => t.status === "PLANNED");
+  const rest = P - W - S;
+  const summary = sec("Farq qayerda", [
+    { id: "gap-p", title: "Ishlab chiqarildi (zames)", subtitle: cnt(batches.length, "zames"), right: m3(P), tone: "brand" },
+    { id: "gap-w", title: "Omborga (zayavkasiz zames)", subtitle: "mijozga reys bilan chiqmaydi", right: m3(W), tone: "info" },
+    { id: "gap-s", title: "Yetkazildi (Otgruzka)", subtitle: cnt(delivered.length, "reys «Yetkazildi»"), right: m3(S), tone: "success" },
+    { id: "gap-o", title: "Yuklangan / yo'lda (hozir)", subtitle: cnt(loaded.length, "reys — hali «Yetkazildi» bosilmagan"), right: m3(sumBy(loaded, (t) => sum(t.qtyM3))), tone: loaded.length ? "warning" : undefined },
+    ...(planned.length ? [{ id: "gap-pl", title: "Rejadagi reyslar (hozir)", subtitle: cnt(planned.length, "reys — yuklanmagan"), right: m3(sumBy(planned, (t) => sum(t.qtyM3))), tone: "info" as Tone }] : []),
+    { id: "gap-r", title: rest >= 0 ? "Zayavkaga quyilgan, yetkazilmagan" : "Oldingi davr zameslaridan yetkazilgan", subtitle: "zames − omborga − yetkazildi", right: m3(Math.abs(rest)), tone: rest > 0 ? "warning" : "success" },
+  ], { icon: "scale" });
+  // Zayavkalar kesimi: shu davrda quyilgan (zames) va yetkazilgan hajm; farqi kattasi tepada
+  const by = new Map<string, { name: string; no: string; made: number; shipped: number; onRoad: number }>();
+  for (const b of batches) if (b.orderId && b.order) {
+    const x = by.get(b.orderId) ?? { name: b.order.customer.name, no: b.order.orderNo, made: 0, shipped: 0, onRoad: 0 };
+    x.made += sum(b.qtyM3); by.set(b.orderId, x);
+  }
+  for (const t of delivered) { const x = by.get(t.orderId); if (x) x.shipped += sum(t.qtyM3); }
+  for (const t of loaded) { const x = by.get(t.orderId); if (x) x.onRoad += sum(t.qtyM3); }
+  const orders = [...by.entries()].map(([id, x]) => ({ id, ...x, gap: x.made - x.shipped })).filter((x) => Math.abs(x.gap) > 0.001).sort((a, b) => b.gap - a.gap).slice(0, 20);
+  return [
+    summary,
+    sec("Zayavkalar bo'yicha farq", orders.map((x) => ({
+      id: x.id, title: x.name, subtitle: `${x.no} · zames ${m3(x.made)} · yetkazildi ${m3(x.shipped)}${x.onRoad ? ` · yo'lda ${m3(x.onRoad)}` : ""}`,
+      right: `${x.gap > 0 ? "−" : "+"}${m3(Math.abs(x.gap))}`, tone: x.gap > 0 ? "warning" as Tone : "success" as Tone,
+    })), { icon: "clipboard-list", target: "orders", empty: "Zayavkalar bo'yicha farq yo'q" }),
+  ];
+}
+
+/** Direktor "Ishlab chiqarish" kartasi — tanlangan davr tarkibi: mahsulot, mijoz, kun, zameslar va otgruzka bilan farq. */
+async function ownerProduction(r: DashRange): Promise<Part> {
+  const month = r.key === "month";
+  const [d, batches, gap] = await Promise.all([
+    month ? ownerCached() : null,
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } } } }),
+    prodShipGap(r),
+  ]);
   const tone = (l: string): Tone => (l === "crit" ? "danger" : l === "warn" ? "warning" : "success");
+  const concrete = batches.filter((b) => b.product.unit === "m3");
+  const total = sumBy(concrete, (b) => sum(b.qtyM3));
+  const qtyOf = (list: typeof batches) => totalsText(list.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 })));
+  const S = d?.summary.production;
   return {
-    title: "Ishlab chiqarish", subtitle: "Joriy oy · plan / fakt",
-    fields: [f("Beton (oy)", `${num(S.concreteMonth)} m³${S.concretePlan ? ` / ${num(S.concretePlan)} m³ · ${share(S.concreteMonth, S.concretePlan)}` : ""}`, tone(d.levels.production)), f("Bugun", `${num(S.concreteToday)} m³ · ${cnt(batches.length, "zames")}`), f("Quvvat yuklanishi", pctText(S.capacityPct)), f("Plan qatorlari", cnt(P.rows.length, "mahsulot"))],
-    sections: [
-      sec("Mahsulotlar (plan / fakt)", P.rows.map((x) => ({ id: x.id, title: `${x.code} · ${x.name}`, subtitle: `plan ${inUnit(x.plan, x.unit)} · fakt ${inUnit(x.fact, x.unit)} · bugun ${inUnit(x.factDay, x.unit)}${x.behind > 0 ? ` · ortda ${inUnit(x.behind, x.unit)}` : ""}`, right: pctText(x.pct), tone: tone(x.level) })), { icon: "factory", empty: "Bu oyga plan belgilanmagan" }),
-      sec("Bugungi zameslar", batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${time(b.date)} · ${b.shift}-smena · ${b.order ? b.order.customer.name : "Omborga"}`, right: inUnit(sum(b.qtyM3), b.product.unit) })), { target: "production", empty: "Bugun zames yo'q" }),
+    title: "Ishlab chiqarish", subtitle: `${period(r)} · tarkibi`,
+    fields: [
+      f("Beton", `${num(total)} m³${S?.concretePlan ? ` / plan ${num(S.concretePlan)} m³ · ${share(total, S.concretePlan)}` : ""}`, d ? tone(d.levels.production) : undefined),
+      f("Zameslar", `${cnt(batches.length, "ta")}${batches.length > concrete.length ? ` · dona mahsulot ${qtyOf(batches.filter((b) => b.product.unit !== "m3"))}` : ""}`),
+      f("Omborga", `${num(sumBy(concrete.filter((b) => !b.order), (b) => sum(b.qtyM3)))} m³`),
+      ...(S ? [f("Bugun", `${num(S.concreteToday)} m³`), f("Quvvat yuklanishi", pctText(S.capacityPct))] : []),
     ],
+    sections: pick(
+      ...gap,
+      breakdown("Beton — mahsulot bo'yicha", concrete, (b) => b.product.name, (b) => sum(b.qtyM3), (v) => `${num(v)} m³`, { icon: "package", unitWord: "zames" }),
+      breakdown("Beton — mijozlar bo'yicha", concrete, (b) => (b.order ? b.order.customer.name : "Omborga"), (b) => sum(b.qtyM3), (v) => `${num(v)} m³`, { icon: "users", unitWord: "zames" }),
+      d && sec("Mahsulotlar (plan / fakt)", d.production.rows.map((x) => ({ id: x.id, title: `${x.code} · ${x.name}`, subtitle: `plan ${inUnit(x.plan, x.unit)} · fakt ${inUnit(x.fact, x.unit)} · bugun ${inUnit(x.factDay, x.unit)}${x.behind > 0 ? ` · ortda ${inUnit(x.behind, x.unit)}` : ""}`, right: pctText(x.pct), tone: tone(x.level) })), { icon: "factory", empty: "Bu oyga plan belgilanmagan" }),
+      byDays(r, batches, (b) => b.date, qtyOf, (l) => cnt(l.length, "zames")),
+      sec("Zameslar", batches.slice(0, 50).map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${dt(b.date)} · ${b.shift}-smena · ${b.order ? `${b.order.customer.name} · ${b.order.orderNo}` : "Omborga"}`, right: inUnit(sum(b.qtyM3), b.product.unit) })), { target: "production", empty: "Bu davrda zames yo'q" }),
+    ),
   };
 }
 
 async function ownerShipment(): Promise<Part> {
   const d = await ownerCached();
   const S = d.summary.shipment, T = d.transport;
-  const part = await deliveredTrips(dashRange({ period: "month" }), null, "Otgruzka");
+  const mr = dashRange({ period: "month" });
+  const [part, gap] = await Promise.all([deliveredTrips(mr, null, "Otgruzka"), prodShipGap(mr)]);
   return {
     ...part, subtitle: "Joriy oy",
     fields: [
@@ -1216,7 +1275,14 @@ async function ownerShipment(): Promise<Part> {
       f("Yoqilg'i (oy)", `${money(T.fuelFact)}${T.fuelNorm != null ? ` / norma ${money(T.fuelNorm)}` : ""}`, T.fuelOver > 0 ? "danger" : undefined),
       ...part.fields.filter((x) => x.label === "Kechikkan (>15 daq)"),
     ],
+    sections: [...gap, ...part.sections],
   };
+}
+
+/** Direktor "Otgruzka" (oydan boshqa davr): yetkazilgan reyslar + ishlab chiqarish bilan farq. */
+async function shipmentPeriod(r: DashRange): Promise<Part> {
+  const [part, gap] = await Promise.all([deliveredTrips(r, null, "Otgruzka"), prodShipGap(r)]);
+  return { ...part, sections: [...gap, ...part.sections] };
 }
 
 async function ownerReceivable(): Promise<Part> {
@@ -1398,8 +1464,8 @@ const BUILDERS: Partial<Record<Role, Record<string, Builder>>> = {
     cash: (c) => (c.r.key === "month" ? ownerCash() : balances(c)),
     receivable: (c) => (c.r.key === "month" ? ownerReceivable() : receivablesDetail(c.r)),
     problems: () => ownerProblems(),
-    production: () => ownerProduction(),
-    shipment: (c) => (c.r.key === "month" ? ownerShipment() : deliveredTrips(c.r, null, "Otgruzka")),
+    production: (c) => ownerProduction(c.r),
+    shipment: (c) => (c.r.key === "month" ? ownerShipment() : shipmentPeriod(c.r)),
   },
 };
 
