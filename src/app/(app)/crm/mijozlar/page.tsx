@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, Plus, Search } from "lucide-react";
+import { ChevronRight, FileSpreadsheet, Plus, Search } from "lucide-react";
 import { Avatar, Badge, Card, EmptyState, Input, LinkButton, PageHeader, Tabs } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -27,7 +27,10 @@ export default async function CrmClientsPage({ searchParams }: { searchParams: P
   return (
     <div>
       <PageHeader title={T.clients.title} back={false} subtitle={sp.q ? T.clients.searchAllHint : undefined}
-        action={canAdd ? <LinkButton href="/crm/mijozlar/new" className="hidden sm:inline-flex"><Plus size={16} /> {T.clients.add}</LinkButton> : undefined} />
+        action={<>
+          {canDo(s, "crm", "import") && <LinkButton href="/crm/import" variant="secondary" className="hidden sm:inline-flex"><FileSpreadsheet size={16} /> Import</LinkButton>}
+          {canAdd && <LinkButton href="/crm/mijozlar/new" className="hidden sm:inline-flex"><Plus size={16} /> {T.clients.add}</LinkButton>}
+        </>} />
 
       <form className="relative mb-3">
         {sp.f && <input type="hidden" name="f" value={sp.f} />}

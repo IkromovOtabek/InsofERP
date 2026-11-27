@@ -84,6 +84,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "client",  label: "CRM mijozini qo'shish / tahrirlash", roles: ["SALES", "SUPERVISOR"] },
     { key: "contact", label: "Aloqa (qo'ng'iroq natijasi) yozish", roles: ["SALES", "SUPERVISOR"] },
     { key: "manage",  label: "CRM menejeri: mas'ul xodim, holat, aloqani bekor qilish, ro'yxatlar", roles: ["SUPERVISOR"], hint: "Barcha xodimlar mijozlari va aloqalari, ma'lumotnomalarni tahrirlash" },
+    { key: "import",  label: "CRM importi (Google Sheets, amoCRM)", roles: ["SUPERVISOR"], hint: "Avval quruq ishga tushirish hisoboti, keyin tasdiq bilan yoziladi" },
   ],
   // Sotuv agentlari sahifasi (`/agent`): ko'rish darajasi; mijozni agentga biriktirish — «customers» → «agent»
   agent: [],
