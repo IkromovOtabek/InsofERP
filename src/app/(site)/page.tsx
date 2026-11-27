@@ -11,8 +11,7 @@ import { getCompany } from "@/lib/company";
 import { fmtNum } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import { apkInfo, apkSize, iosAppUrl } from "@/lib/apk";
-import { FactoryTour } from "./tour/factory-tour";
-import { archivo } from "./tour/font";
+import { CinematicHero } from "./hero";
 import { PartnersSection } from "./tour/sections";
 import { LeadForm } from "./lead-form";
 import { Showreel, type Clip } from "./showreel";
@@ -150,10 +149,11 @@ export default async function LandingPage() {
       {/* JSON-LD xavfsiz satrga aylantiriladi (safeJsonLd): sozlamalardagi matnda "</script>" bo'lsa ham
           skript tegi yopilib, sahifaga HTML/JS kiritib bo'lmasin */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
-      {/* ───────── Zavod bo'ylab 3D tur (sahna + sarlavha + bekat kartasi); saytning qolgan bo'limlari uning ustidan chiqadi ───────── */}
-      <FactoryTour fontFamily={archivo.style.fontFamily}>
+      {/* ───────── Hero: kinematografik foto (avvalgi 3D tur o'rniga) ───────── */}
+      <CinematicHero />
+      <main>
       {/* ───────── Yugurma lenta ───────── */}
-      <div className="marka overflow-hidden rounded-t-[28px] border-y border-white/10 bg-insof-900 py-3.5" aria-hidden>
+      <div className="marka overflow-hidden border-y border-white/10 bg-insof-900 py-3.5" aria-hidden>
         <div className="marka-run flex w-max whitespace-nowrap font-mono text-[12px] tracking-[0.16em] text-white/55 uppercase">
           {[...ticker, ...ticker].map((t, i) => (
             <span key={i} className="flex items-center">
@@ -464,7 +464,7 @@ export default async function LandingPage() {
         </div>
       </footer>
 
-      </FactoryTour>
+      </main>
 
       <MobileBar phone={phone} />
     </>
