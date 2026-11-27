@@ -5,12 +5,14 @@ import { Badge, Card, CardHeader, DL, EmptyState, LinkButton, PageHeader } from 
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { date, dateRu, money } from "@/lib/format";
+import { date, money } from "@/lib/format";
+import { dbToIso, fullIso } from "@/lib/crm/dates";
 import { formatPhone } from "@/lib/phone";
 import { orderTotal } from "@/lib/order-total";
 import { clientCard, telLink, telegramLink } from "@/lib/crm/clients";
 import { ACTIVITY_COLOR, ACTIVITY_LABEL, FUNNEL_STAGES, GROUP_COLOR, STATUS_COLOR, STATUS_LABEL, T } from "@/lib/crm/labels";
 import { OrderStatusBadge } from "../../../orders/status";
+import { CancelContact } from "./cancel-contact";
 
 const bigBtn = "flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-center text-[12px] font-medium leading-tight transition sm:text-[13px]";
 
@@ -24,6 +26,8 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
   const tg = telegramLink(c.phone);
   const canEdit = canDo(s, "crm", "client");
   const canOrder = canDo(s, "orders", "create");
+  const canContact = canDo(s, "crm", "contact");
+  const manager = canDo(s, "crm", "manage");
   const phone = c.phone ? formatPhone(c.phone) : null;
 
   return (
@@ -42,8 +46,8 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
           : <span className={cn(bigBtn, "border-slate-200 text-slate-300")}><Phone size={20} />{T.card.call}</span>}
         {tg ? <a href={tg} target="_blank" rel="noopener noreferrer" className={cn(bigBtn, "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100")}><Send size={20} />{T.card.telegram}</a>
           : <span className={cn(bigBtn, "border-slate-200 text-slate-300")}><Send size={20} />{T.card.telegram}</span>}
-        {/* Aloqa yozish formasi — 3-bosqichda */}
-        <span title={T.card.soon} aria-disabled className={cn(bigBtn, "border-slate-900 bg-slate-900/60 text-white")}><MessageCircle size={20} />{T.card.writeContact}</span>
+        {canContact ? <Link href={`/crm/mijozlar/${id}/aloqa`} className={cn(bigBtn, "border-slate-900 bg-slate-900 text-white hover:bg-slate-800")}><MessageCircle size={20} />{T.card.writeContact}</Link>
+          : <span className={cn(bigBtn, "border-slate-200 text-slate-300")}><MessageCircle size={20} />{T.card.writeContact}</span>}
         {canOrder ? <Link href={`/orders/new?customer=${id}`} className={cn(bigBtn, "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100")}><ClipboardPlus size={20} />{T.card.order}</Link>
           : <span className={cn(bigBtn, "border-slate-200 text-slate-300")}><ClipboardPlus size={20} />{T.card.order}</span>}
       </div>
@@ -72,7 +76,7 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
           { k: T.field.region, v: [c.region, c.district].filter(Boolean).join(", ") || "—" },
           { k: T.field.source, v: c.source?.label ?? "—" },
           { k: T.field.owner, v: c.owner?.fullName ?? "—" },
-          { k: T.field.nextContact, v: c.nextContactAt ? dateRu(c.nextContactAt) : "—" },
+          { k: T.field.nextContact, v: c.nextContactAt ? fullIso(dbToIso(c.nextContactAt)) : "—" },
           { k: T.field.clientType, v: c.clientType?.label ?? "—" },
           { k: T.field.objectType, v: c.objectType || "—" },
           { k: T.field.inn, v: c.inn || "—" },
@@ -94,10 +98,11 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
                   {x.result ? <Badge color={GROUP_COLOR[x.result.group]}>{x.result.label}</Badge> : <Badge>{T.card.noResult}</Badge>}
                   {x.cancelledAt && <Badge color="red" dot={false}>{T.card.cancelled}</Badge>}
                 </div>
-                <div className="mt-1 text-[13px] text-slate-500">{[dateRu(x.date), x.channel?.label, x.user.fullName].filter(Boolean).join(" · ")}</div>
+                <div className="mt-1 text-[13px] text-slate-500">{[fullIso(dbToIso(x.date)), x.channel?.label, x.user.fullName].filter(Boolean).join(" · ")}</div>
                 {(x.product || x.offeredPrice) && <div className="text-[13px] text-slate-600">{[x.product?.label, x.offeredPrice ? money(x.offeredPrice) : null].filter(Boolean).join(" · ")}</div>}
                 {x.note && <p className="mt-1 whitespace-pre-line text-sm text-slate-800">{x.note}</p>}
                 {x.cancelledAt && x.cancelReason && <p className="mt-1 text-xs text-red-600">{x.cancelReason}{x.cancelledBy ? ` — ${x.cancelledBy.fullName}` : ""}</p>}
+                {manager && !x.cancelledAt && <CancelContact id={x.id} />}
               </li>
             ))}
           </ol>

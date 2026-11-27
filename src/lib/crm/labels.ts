@@ -61,6 +61,48 @@ export const T = {
     linkInvalid: "Havola http:// yoki https:// bilan boshlansin",
   },
 
+  contact: {
+    title: "Aloqa yozish",
+    channel: "Aloqa turi",
+    other: "Boshqa",
+    result: "Natija",
+    next: "Keyingi aloqa sanasi",
+    quick: [["Ertaga", 1], ["3 kun", 3], ["1 hafta", 7], ["1 oy", 30]] as const,
+    sunday: "Yakshanba — dam olish kuni",
+    toMonday: "Dushanbaga o'tkazish",
+    nextNone: "Keyingi aloqa kerak emas",
+    nextOptional: "ixtiyoriy",
+    win: "Saqlangach zayafka formasi ochiladi",
+    note: "Izoh",
+    notePh: "Nima deyildi? (ixtiyoriy)",
+    more: "Qo'shimcha: sana, mahsulot, narx, obyekt",
+    date: "Sana",
+    product: "Mahsulot",
+    price: "Taklif narxi (so'm)",
+    objectName: "Obyekt nomi / ish tavsifi",
+    objectArea: "Obyekt hududi",
+    leadSource: "Lid manbasi",
+    save: "Saqlash",
+    saving: "Saqlanmoqda…",
+    pickResult: "Natijani tanlang",
+    cancel: "Bekor qilish",
+    cancelReason: "Bekor qilish sababi",
+    cancelDo: "Aloqani bekor qilish",
+  },
+  today: {
+    title: "Bugun",
+    count: (n: number) => `${n} ta mijoz`,
+    overdue: "O'tib ketgan",
+    today: "Bugun",
+    tomorrow: "Ertaga",
+    later: "Keyingi kunlar",
+    overdueAt: (d: string) => `Muddat o'tgan: ${d}`,
+    mine: "Mening mijozlarim",
+    all: "Hammasi",
+    empty: "Bugun qo'ng'iroq qilinadigan mijoz yo'q",
+    emptyOther: "Bu ro'yxat bo'sh",
+    lastNote: "Oxirgi",
+  },
   card: {
     call: "Qo'ng'iroq",
     telegram: "Telegram",
@@ -108,6 +150,14 @@ export const GROUP_LABEL: Record<CrmResultGroup, string> = {
   LOSS: "Yo'qotish",
   WIN: "Yutuq",
 };
+/** Aloqa formasidagi natija guruhlari tartibi (CRM_SPEC 5.4): Davom / Kutilayotgan / Otkaz / Javob yo'q */
+export const RESULT_SECTIONS: { label: string; groups: CrmResultGroup[] }[] = [
+  { label: "Davom", groups: ["WIN", "CONTINUE"] },
+  { label: "Kutilayotgan", groups: ["WAITING"] },
+  { label: "Otkaz", groups: ["REFUSAL"] },
+  { label: "Javob yo'q", groups: ["NO_ANSWER", "LOSS"] },
+];
+
 export const GROUP_COLOR: Record<CrmResultGroup, BadgeColor> = {
   CONTINUE: "blue",
   WAITING: "violet",
