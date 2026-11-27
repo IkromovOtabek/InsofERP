@@ -9,6 +9,7 @@ import { crmUsers, telLink } from "@/lib/crm/clients";
 import { fullIso, shortIso } from "@/lib/crm/dates";
 import { STATUS_COLOR, STATUS_LABEL, T } from "@/lib/crm/labels";
 import { todayList, type TodayBucket } from "@/lib/crm/today";
+import { refreshStaleStatuses } from "@/lib/crm/orders";
 import { FilterSelect } from "./mijozlar/filters";
 
 const VIEWS = ["now", "overdue", "today", "tomorrow", "later"] as const;
@@ -22,6 +23,7 @@ export default async function CrmToday({ searchParams }: { searchParams: Promise
   const view: View = (VIEWS as readonly string[]).includes(sp.v ?? "") ? (sp.v as View) : "now";
   const mineOnly = manager ? false : sp.kim !== "hammasi";
   const ownerId = mineOnly ? s.userId : manager && sp.xodim ? sp.xodim : null;
+  await refreshStaleStatuses(); // «Ishlayotgan» → «Eski mijoz» (vaqt o'tishi bilan), soatiga bir marta
   const [{ today, rows, counts }, users] = await Promise.all([todayList({ ownerId }), manager ? crmUsers() : []]);
   const shown = rows.filter((r) => (view === "now" ? r.bucket === "overdue" || r.bucket === "today" : r.bucket === view));
   const canWrite = canDo(s, "crm", "contact");

@@ -13,6 +13,16 @@ import { clientCard, telLink, telegramLink } from "@/lib/crm/clients";
 import { ACTIVITY_COLOR, ACTIVITY_LABEL, FUNNEL_STAGES, GROUP_COLOR, STATUS_COLOR, STATUS_LABEL, T } from "@/lib/crm/labels";
 import { OrderStatusBadge } from "../../../orders/status";
 import { CancelContact } from "./cancel-contact";
+import { orderPayments, PAY_COLOR, PAY_LABEL } from "@/lib/crm/order-pay";
+
+/** Zayavka holati CRM tilida (CRM_SPEC 3.3): Yangi / Tasdiqlandi / Yuk xati berildi / Yetkazildi / Bekor qilindi */
+function orderStage(status: string, trips: number): string {
+  if (status === "CANCELLED") return "Bekor qilindi";
+  if (status === "DELIVERED" || status === "CLOSED") return "Yetkazildi";
+  if (trips > 0) return "Yuk xati berildi";
+  if (status === "CONFIRMED" || status === "IN_PRODUCTION") return "Tasdiqlandi";
+  return "Yangi";
+}
 
 const bigBtn = "flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-center text-[12px] font-medium leading-tight transition sm:text-[13px]";
 
@@ -29,6 +39,7 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
   const canContact = canDo(s, "crm", "contact");
   const manager = canDo(s, "crm", "manage");
   const phone = c.phone ? formatPhone(c.phone) : null;
+  const pays = await orderPayments([id]);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -115,14 +126,18 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
           <ul className="divide-y divide-slate-100">
             {c.orders.map((o) => (
               <li key={o.id}>
-                <Link href={`/orders/${o.id}`} className="flex min-h-12 items-center justify-between gap-3 py-2 hover:bg-slate-50">
+                <Link href={`/orders/${o.id}`} className="flex min-h-14 items-center justify-between gap-3 py-2 hover:bg-slate-50">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-slate-900">№{o.orderNo}</div>
-                    <div className="text-xs text-slate-500">{date(o.date)}</div>
+                    <div className="text-sm font-medium text-slate-900">№{o.orderNo}{o.crmContactId && <span className="ml-1.5 text-xs font-normal text-emerald-700">· CRM</span>}</div>
+                    <div className="text-xs text-slate-500">{date(o.date)} · {orderStage(o.status, o._count.trips)}</div>
                   </div>
-                  <div className="flex items-center gap-2 text-right">
+                  <div className="flex flex-col items-end gap-1 text-right">
                     <span className="text-sm font-medium tabular text-slate-900">{money(orderTotal(o))}</span>
-                    <OrderStatusBadge status={o.status} />
+                    {(() => {
+                      const p = pays.get(o.id);
+                      if (!p) return <OrderStatusBadge status={o.status} />;
+                      return <span className="flex items-center gap-1.5"><Badge color={PAY_COLOR[p.status]}>{PAY_LABEL[p.status]}</Badge>{p.status === "PARTIAL" && <span className="text-xs tabular text-slate-500">{money(p.paid)}</span>}</span>;
+                    })()}
                   </div>
                 </Link>
               </li>

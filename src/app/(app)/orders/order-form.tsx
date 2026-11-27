@@ -168,7 +168,7 @@ function CustomerPicker({ customers, value, onChange }: { customers: CustomerOpt
 }
 
 /** Sayt arizasidan (`/leads` → "Zayavka ochish") kelgan boshlang'ich ma'lumot. */
-export type OrderPrefill = { productId?: string | null; qty?: number | null; address?: string | null; note?: string | null; /** amoCRM kelishuvi (`?amo=`) — zayavka unga bog'lanadi */ amoDealId?: string | null };
+export type OrderPrefill = { productId?: string | null; qty?: number | null; address?: string | null; note?: string | null; /** amoCRM kelishuvi (`?amo=`) — zayavka unga bog'lanadi */ amoDealId?: string | null; /** CRM aloqasi (`?crm=`) */ crmContactId?: string | null };
 
 /** Kichik tanlov tugmalari (blanka ichida): «Kerak | Yo'q», «Naqd | Perechisleniye | Qarzga»… */
 type SegOpt<T> = { v: T; l: string; danger?: boolean; disabled?: boolean };
@@ -747,6 +747,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
         <Field label="Izoh"><Textarea name="note" defaultValue={prefill?.note ?? ""} /></Field>
         {prefill?.amoDealId ? <input type="hidden" name="amoDealId" value={prefill.amoDealId} /> : null}
+        {prefill?.crmContactId ? <input type="hidden" name="crmContactId" value={prefill.crmContactId} /> : null}
 
         <FormActions>
           <Button disabled={pending || blocked || (mode === "existing" && !customer)}>{pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>

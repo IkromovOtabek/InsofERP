@@ -188,7 +188,11 @@ export async function clientCard(id: string) {
         where: { kind: "SALE" },
         orderBy: { date: "desc" },
         take: 50,
-        select: { id: true, orderNo: true, date: true, status: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } } },
+        select: {
+          id: true, orderNo: true, date: true, status: true, deliveryFee: true, crmContactId: true,
+          items: { select: { qtyM3: true, price: true } },
+          _count: { select: { trips: { where: { status: { not: "CANCELLED" } } } } },
+        },
       },
     },
   });

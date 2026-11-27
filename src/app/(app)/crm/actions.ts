@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zDec, zOpt, type ActionState } from "@/lib/action";
 import { cancelContact, saveContact } from "@/lib/crm/contacts";
+import { canDo } from "@/lib/permissions";
 
 const schema = z.object({
   customerId: z.string().min(1),
@@ -32,7 +33,8 @@ export async function saveContactAction(_prev: ActionState, fd: FormData): Promi
   const res = await saveContact({ ...d, date: d.date, resultId: d.resultId }, s.userId);
   if (!res.ok) return { error: res.error, field: res.field };
   revalidatePath("/crm");
-  if (res.win) redirect(`/orders/new?customer=${d.customerId}&crm=${res.id}`);
+  // Zayavka ochish huquqi bo'lsa — forma mijoz bilan ochiladi; bo'lmasa kartochkaga (zayavkani sotuv ochadi)
+  if (res.win && canDo(s, "orders", "create")) redirect(`/orders/new?customer=${d.customerId}&crm=${res.id}`);
   // Faqat ichki yo'l (ochiq redirect bo'lmasin)
   redirect(back && back.startsWith("/crm") && !back.startsWith("//") ? back : `/crm/mijozlar/${d.customerId}`);
 }

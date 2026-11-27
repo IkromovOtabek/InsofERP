@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { linkCrmOrderTx, refreshCrmCustomer } from "@/lib/crm/orders";
 import { ensureSite } from "@/lib/logistics";
 import { blockKey, blockName, ensureBlocks } from "@/lib/site-blocks";
 import { audit } from "@/lib/audit";
@@ -337,6 +338,7 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
   }).catch((e) => { if (e instanceof PurgeFailed) return "purge" as const; throw e; });
   if (done === "purge") return { changed: false, error: "Zayavkani o'chirib bo'lmadi — unga bog'langan hujjat bor" };
   if (!done) return { changed: false, error: "Zayavka shu payt o'zgardi — sahifani yangilang" };
+  await refreshCrmCustomer(o.customerId); // CRM holati: bekor qilingan zayavka endi hisoblanmaydi
   // Tasdiqlangan zayavkani sex va logistika rejalashtirgan bo'lishi mumkin — bekor qilingani darhol bilinsin.
   // Havolasiz: zayavka o'chirilgan, ochiladigan sahifa yo'q
   notifyAfter(async () => {
@@ -397,6 +399,8 @@ export type NewOrderInput = {
   note?: string | null;
   /** amoCRM kelishuvidan ochilgan zayavka (`/orders/new?amo=`) — holati sdelkaga qaytariladi */
   amoDealId?: string | null;
+  /** CRM: «Zayafka oldim» aloqasidan ochilgan zayavka (`/orders/new?crm=`) — shu mijozning aloqasi bo'lsagina bog'lanadi */
+  crmContactId?: string | null;
 };
 export type NewOrderResult = { id: string; orderNo: string; customerId: string; onCredit: boolean; contractNo: string | null; requestId?: string | null };
 
@@ -548,6 +552,8 @@ export async function createOrder(
     });
     await audit(tx, userId, "CREATE", "Order", o.id, undefined, { ...o, items, contractAmount });
     if (input.amoDealId) await linkOrderTx(tx, input.amoDealId, o.id, customerId, userId);
+    // CRM: aloqaga bog'lash (boshqa mijozning aloqasi bo'lsa jim o'tkaziladi) va mijozning CRM holatini yangilash
+    if (o.kind === "SALE") await linkCrmOrderTx(tx, o.id, customerId, input.crmContactId ?? null);
     // Bosh to'lov — «Pul qabul qilish» so'rovi: naqd — Kassa xodimiga, perechisleniye — Buxgalterga
     const rq = prepayAmount && prepayAmount > 0 && o.kind === "SALE" ? await createPaymentRequestTx(tx, o, payMethod ?? "CASH", prepayAmount, userId) : null;
     return { id: o.id, orderNo: o.orderNo, customerId, onCredit, contractNo: o.contractNo, requestId: rq?.id ?? null };

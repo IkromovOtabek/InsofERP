@@ -64,10 +64,10 @@ async function DocHeader() {
  * Sklad (zaxira) zayavkasi bu yerdan olindi: u Ishlab chiqarish → «Skladga zayavka» da (`/production/sklad`),
  * eski `?tur=sklad` havolasi va sotuv ruxsati yo'q xodim (ishlab chiqarish, sklad) o'sha yerga yo'naltiriladi.
  */
-export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string; view?: string; sana?: string }> }) {
+export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string; view?: string; sana?: string; crm?: string }> }) {
   // Direktor "create" yoki "stock" ruxsatini bergan xodim ham kiradi (rol ro'yxatida bo'lmasa ham)
   const s = await requireRoles([...STOCK_ORDER_ROLES], { module: "orders", actions: ["create", "stock"] });
-  const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId, view: viewParam, sana } = await searchParams;
+  const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId, view: viewParam, sana, crm: crmId } = await searchParams;
   const canSale = canDo(s, "orders", "create");
   if (tur === "sklad" || !canSale) redirect("/production/sklad");
 
@@ -77,7 +77,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
   const fromLink = !!(customerParam || siteParam || leadId || amoId);
   const view = viewParam ?? (fromLink ? "tizim" : (await cookies()).get(ORDER_VIEW_COOKIE)?.value);
   const excel = canExcel && view === "excel";
-  const keep = new URLSearchParams(Object.entries({ customer: customerParam, site: siteParam, lead: leadId, amo: amoId }).filter((e): e is [string, string] => !!e[1]));
+  const keep = new URLSearchParams(Object.entries({ customer: customerParam, site: siteParam, lead: leadId, amo: amoId, crm: crmId }).filter((e): e is [string, string] => !!e[1]));
   const viewTabs = canExcel ? (
     <Tabs className="mb-0" current={excel ? "excel" : "tizim"} items={[
       { key: "tizim", label: "Tizim ko'rinish", icon: LayoutTemplate, href: `/orders/new?${new URLSearchParams([...keep, ["view", "tizim"]])}` },
@@ -119,7 +119,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
     );
   }
 
-  const [catalog, stock, brigadeStock, lead, amoDeal] = await Promise.all([
+  const [catalog, stock, brigadeStock, lead, amoDeal, crmContact] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
     stockSnapshot(),
     brigadeStockFor(), // «Brigadadan olish»: dona mahsulot brigada omborlarida qancha erkin turibdi
@@ -127,12 +127,16 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
     leadId ? db.lead.findUnique({ where: { id: leadId }, select: { productId: true, qty: true, address: true, message: true, customerId: true } }) : null,
     // amoCRM kelishuvidan: mijoz, manzil va sdelka nomi; zayavka sdelkaga bog'lanadi (`lib/amocrm/sync.ts`)
     amoId ? db.amoDeal.findFirst({ where: { id: amoId, state: { in: ["READY", "ORDERED", "IN_AMO"] } }, select: { id: true, name: true, amoLeadId: true, address: true, customerId: true, lead: { select: { productId: true, qty: true } } } }) : null,
+    // CRM «Zayafka oldim» aloqasidan: zayavka shu aloqaga bog'lanadi, izohga aloqa ma'lumoti
+    crmId && customerParam ? db.crmContact.findFirst({ where: { id: crmId, customerId: customerParam, cancelledAt: null }, select: { id: true, note: true, objectName: true, objectArea: true, product: { select: { label: true } } } }) : null,
   ]);
   const customer = amoDeal?.customerId ?? customerParam;
   const prefill: OrderPrefill | undefined = amoDeal
     ? { productId: amoDeal.lead?.productId, qty: amoDeal.lead?.qty != null ? Number(amoDeal.lead.qty) : null, address: amoDeal.address, note: `amoCRM sdelka #${amoDeal.amoLeadId}: ${amoDeal.name}`, amoDealId: amoDeal.id }
     : lead && (!customer || lead.customerId === customer)
     ? { productId: lead.productId, qty: lead.qty != null ? Number(lead.qty) : null, address: lead.address, note: ["Sayt arizasidan", lead.message].filter(Boolean).join(": ") }
+    : crmContact
+    ? { address: crmContact.objectArea, note: ["CRM", crmContact.product?.label, crmContact.objectName, crmContact.note].filter(Boolean).join(" · "), crmContactId: crmContact.id }
     : undefined;
 
   // Zayavka qabul qilayotgan xodim har mahsulot bo'yicha nima borligini ko'rishi uchun:
