@@ -116,6 +116,9 @@ model User {
   crmCustomers           Customer[]               @relation("CustomerCrmOwner")
   crmContacts            CrmContact[]             @relation("CrmContactBy")
   crmContactsCancelled   CrmContact[]             @relation("CrmContactCancelledBy")
+  crmCalls               CrmCall[]
+  /// onlinePBX ichki raqami (CRM: «Qo'ng'iroq» tugmasi avval shu raqamni chaqiradi, qo'ng'iroqlar tarixi xodimga bog'lanadi)
+  pbxExt                 String?                  @unique
   /// Modul bo'yicha qo'shimcha ruxsat (direktor beradi): { "modul": "view" | "write" }. Rol ustiga qo'shiladi/cheklaydi.
   perms                  Json?
 }
@@ -139,6 +142,8 @@ model CompanySettings {
   /// CRM faolligi (CRM_SPEC 4.4): oxirgi zayavkadan shuncha kungacha «Faol», `crmColdDays` gacha «Sovib qoldi», undan keyin «Eski»
   crmActiveDays          Int       @default(30)
   crmColdDays            Int       @default(90)
+  /// onlinePBX qo'ng'iroqlar tarixi shu paytgacha sinxronlangan (`lib/pbx/sync.ts`)
+  pbxSyncedAt            DateTime?
   // Zavod joyi — barcha masofa shu nuqtadan hisoblanadi (Sozlamalar sahifasida xaritadan belgilanadi)
   lat                    Float?
   lng                    Float?
@@ -332,6 +337,7 @@ model Customer {
   clientType   CrmOption?             @relation("CustomerClientType", fields: [clientTypeId], references: [id])
   source       CrmOption?             @relation("CustomerSource", fields: [sourceId], references: [id])
   crmContacts  CrmContact[]
+  crmCalls     CrmCall[]
 
   @@index([agentId])
   @@index([phoneNorm])
@@ -5438,9 +5444,40 @@ model CrmContact {
   user        User       @relation("CrmContactBy", fields: [userId], references: [id])
   cancelledBy User?      @relation("CrmContactCancelledBy", fields: [cancelledById], references: [id])
   orders      Order[]
+  call        CrmCall?
 
   @@index([customerId, date])
   @@index([date])
   @@index([userId, date])
   @@index([resultId])
+}
+
+/// onlinePBX qo'ng'irog'i (`lib/pbx`) — tarixdan har daqiqada sinxronlanadi. Mijoz telefon, xodim ichki raqam bo'yicha bog'lanadi.
+/// O'tkazib yuborilgan kiruvchi qo'ng'iroq avtomatik aloqa ochadi; qolganlari operator yozgan aloqaga bog'lanadi.
+model CrmCall {
+  id          String   @id @default(cuid())
+  /// onlinePBX uuid — takror sinxronda dublikat bo'lmaydi
+  uuid        String   @unique
+  /// OUT — chiquvchi, IN — kiruvchi (javob berildi), MISSED — o'tkazib yuborilgan, INTERNAL — ichki
+  direction   String
+  ext         String?
+  /// Tashqi raqam (+998XXXXXXXXX yoki o'zicha)
+  phone       String?
+  userId      String?
+  customerId  String?
+  contactId   String?  @unique
+  startedAt   DateTime
+  durationSec Int      @default(0)
+  /// Gaplashilgan vaqt (0 — javob bo'lmadi)
+  talkSec     Int      @default(0)
+  hangupCause String?
+  createdAt   DateTime @default(now())
+
+  user     User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customer Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  contact  CrmContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, startedAt])
+  @@index([userId, startedAt])
+  @@index([startedAt])
 }

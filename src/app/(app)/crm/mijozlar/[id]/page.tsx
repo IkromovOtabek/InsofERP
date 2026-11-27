@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ClipboardPlus, ExternalLink, MessageCircle, Pencil, Phone, Send } from "lucide-react";
+import { ClipboardPlus, ExternalLink, MessageCircle, Pencil, Send } from "lucide-react";
 import { Badge, Card, CardHeader, DL, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -13,9 +13,16 @@ import { clientCard, telLink, telegramLink } from "@/lib/crm/clients";
 import { ACTIVITY_COLOR, ACTIVITY_LABEL, FUNNEL_STAGES, GROUP_COLOR, STATUS_COLOR, STATUS_LABEL, T } from "@/lib/crm/labels";
 import { OrderStatusBadge } from "../../../orders/status";
 import { CancelContact } from "./cancel-contact";
+import { CallButton } from "../../call-button";
+import { canPbxCall, mmss } from "@/lib/pbx/me";
+import { db } from "@/lib/db";
+import { PhoneIncoming, PhoneMissed, PhoneOutgoing } from "lucide-react";
 import { orderPayments, PAY_COLOR, PAY_LABEL } from "@/lib/crm/order-pay";
 
 /** Zayavka holati CRM tilida (CRM_SPEC 3.3): Yangi / Tasdiqlandi / Yuk xati berildi / Yetkazildi / Bekor qilindi */
+/** Qo'ng'iroq vaqti Toshkent bo'yicha: «27.11 14:05» */
+const dateTimeTz = (d: Date) => new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(d).replace(",", "");
+
 function orderStage(status: string, trips: number): string {
   if (status === "CANCELLED") return "Bekor qilindi";
   if (status === "DELIVERED" || status === "CLOSED") return "Yetkazildi";
@@ -39,7 +46,11 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
   const canContact = canDo(s, "crm", "contact");
   const manager = canDo(s, "crm", "manage");
   const phone = c.phone ? formatPhone(c.phone) : null;
-  const pays = await orderPayments([id]);
+  const [pays, pbx, calls] = await Promise.all([
+    orderPayments([id]),
+    canPbxCall(s.userId),
+    db.crmCall.findMany({ where: { customerId: id }, orderBy: { startedAt: "desc" }, take: 30, include: { user: { select: { fullName: true } } } }),
+  ]);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -53,8 +64,7 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
 
       {/* 4 ta katta tugma (5.3) */}
       <div className="mb-4 grid grid-cols-4 gap-2">
-        {tel ? <a href={tel} className={cn(bigBtn, "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100")}><Phone size={20} />{T.card.call}</a>
-          : <span className={cn(bigBtn, "border-slate-200 text-slate-300")}><Phone size={20} />{T.card.call}</span>}
+        <CallButton customerId={id} tel={tel} pbx={pbx && !!tel} variant="big" label={T.card.call} />
         {tg ? <a href={tg} target="_blank" rel="noopener noreferrer" className={cn(bigBtn, "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100")}><Send size={20} />{T.card.telegram}</a>
           : <span className={cn(bigBtn, "border-slate-200 text-slate-300")}><Send size={20} />{T.card.telegram}</span>}
         {canContact ? <Link href={`/crm/mijozlar/${id}/aloqa`} className={cn(bigBtn, "border-slate-900 bg-slate-900 text-white hover:bg-slate-800")}><MessageCircle size={20} />{T.card.writeContact}</Link>
@@ -119,6 +129,30 @@ export default async function CrmClientCard({ params }: { params: Promise<{ id: 
           </ol>
         )}
       </Card>
+
+      {calls.length > 0 && (
+        <Card className="mb-4">
+          <CardHeader title="Qo'ng'iroqlar" description={`onlinePBX · ${calls.length}`} />
+          <ul className="divide-y divide-slate-100">
+            {calls.map((k) => {
+              const Icon = k.direction === "MISSED" ? PhoneMissed : k.direction === "OUT" ? PhoneOutgoing : PhoneIncoming;
+              const tone = k.direction === "MISSED" || k.talkSec === 0 ? "text-red-600" : "text-emerald-600";
+              return (
+                <li key={k.id} className="py-2.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Icon size={16} className={tone} />
+                    <span className="font-medium text-slate-900">{k.direction === "MISSED" ? "O'tkazib yuborilgan" : k.direction === "OUT" ? "Chiquvchi" : "Kiruvchi"}</span>
+                    <span className="text-slate-500">{dateTimeTz(k.startedAt)}</span>
+                    <span className="ml-auto tabular text-slate-700">{k.talkSec > 0 ? mmss(k.talkSec) : "javob yo'q"}</span>
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate-500">{[k.user?.fullName, k.ext ? `ichki ${k.ext}` : null, k.contactId ? "aloqaga bog'langan" : null].filter(Boolean).join(" · ")}</div>
+                  {k.talkSec > 0 && <audio controls preload="none" src={`/api/pbx/record/${k.uuid}`} className="mt-1.5 h-9 w-full" />}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
 
       <Card>
         <CardHeader title={T.card.orders} description={c.orders.length ? String(c.orders.length) : undefined} />

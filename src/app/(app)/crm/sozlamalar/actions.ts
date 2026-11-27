@@ -89,3 +89,34 @@ export async function saveActivity(_p: ActionState, fd: FormData): Promise<Actio
   revalidatePath("/crm", "layout");
   return { ok: true, note: "Saqlandi" };
 }
+
+/** Telefoniya: xodim ↔ onlinePBX ichki raqami */
+export async function saveExt(userId: string, _p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("crm", "manage");
+  const ext = String(fd.get("ext") ?? "").trim();
+  if (ext && !/^\d{2,5}$/.test(ext)) return { error: "Ichki raqam 2–5 raqam" };
+  const before = await db.user.findUnique({ where: { id: userId }, select: { pbxExt: true, fullName: true } });
+  if (!before) return { error: "Xodim topilmadi" };
+  if (ext) {
+    const taken = await db.user.findFirst({ where: { pbxExt: ext, id: { not: userId } }, select: { fullName: true } });
+    if (taken) return { error: `${ext} — ${taken.fullName} da` };
+  }
+  await db.user.update({ where: { id: userId }, data: { pbxExt: ext || null } });
+  await audit(db, s.userId, "UPDATE", "UserPbxExt", userId, { pbxExt: before.pbxExt }, { pbxExt: ext || null, xodim: before.fullName });
+  revalidatePath("/crm/sozlamalar");
+  return { ok: true, note: "Saqlandi" };
+}
+
+/** Qo'ng'iroqlar tarixini hozir olish (oxirgi 7 kun) */
+export async function syncPbxNow(): Promise<ActionState> {
+  const s = await requireAction("crm", "manage");
+  const { syncCalls } = await import("@/lib/pbx/sync");
+  const { PbxError } = await import("@/lib/pbx/onlinepbx");
+  try {
+    const r = await syncCalls({ sinceUnix: Math.floor(Date.now() / 1000) - 7 * 86_400, userId: s.userId });
+    revalidatePath("/crm", "layout");
+    return { ok: true, note: `onlinePBX: ${r.fetched} ta qo'ng'iroq o'qildi, ${r.added} tasi yangi` };
+  } catch (e) {
+    return { error: e instanceof PbxError ? e.message : `Sinxron xatosi: ${e instanceof Error ? e.message : e}` };
+  }
+}

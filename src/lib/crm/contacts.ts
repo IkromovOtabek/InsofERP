@@ -71,6 +71,12 @@ export async function saveContact(input: ContactInput, userId: string): Promise<
         },
       });
       await audit(tx, userId, "CREATE", "CrmContact", c.id, undefined, c);
+      // onlinePBX: shu mijoz bilan oxirgi 3 soatdagi bog'lanmagan qo'ng'iroq shu aloqaga (yozuvi kartochkada aloqa yonida)
+      const call = await tx.crmCall.findFirst({
+        where: { customerId: customer.id, contactId: null, startedAt: { gte: new Date(Date.now() - 3 * 3_600_000) }, OR: [{ userId }, { userId: null }] },
+        orderBy: { startedAt: "desc" }, select: { id: true },
+      });
+      if (call) await tx.crmCall.update({ where: { id: call.id }, data: { contactId: c.id } });
       await refreshClient(tx, customer.id, userId);
       return c.id;
     });

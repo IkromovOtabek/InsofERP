@@ -19,16 +19,19 @@ const chip = "min-h-11 min-w-0 break-words rounded-xl border px-3 py-2 text-left
  * Aloqa yozish (CRM_SPEC 5.4) — eng ko'p ishlatiladigan forma. Oddiy holat: natija → (sana o'zi to'ladi) → Saqlash.
  * Natija — chip-tugmalar, guruhlab; keyingi aloqa sanasi natija standartidan, tezkor tugmalar bilan.
  */
-export function ContactForm({ customerId, today, results, channels, products, sources, back }: {
+export function ContactForm({ customerId, today, results, channels, products, sources, back, suggest }: {
   customerId: string; today: string; results: ResultOpt[]; channels: Opt[]; products: Opt[]; sources: Opt[]; back: string;
+  /** onlinePBX: oxirgi qo'ng'iroqdan taklif (javobsiz bo'lsa «Telefon ko'tarmadi») */
+  suggest?: { resultId: string; hint: string } | null;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(saveContactAction, undefined);
   // Ikki marta bosilsa / tarmoq qayta yuborsa — bitta aloqa (serverda clientToken unikal). Birinchi yuborishda yaratiladi
   const token = useRef<string | null>(null);
-  const [resultId, setResultId] = useState("");
+  const sug = suggest ? results.find((r) => r.id === suggest.resultId) : undefined;
+  const [resultId, setResultId] = useState(sug?.id ?? "");
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [otherChannel, setOtherChannel] = useState(false);
-  const [next, setNext] = useState("");
+  const [next, setNext] = useState(sug && sug.nextRule !== "NONE" ? defaultNext(sug.defaultDays, today) ?? "" : "");
   const [productId, setProductId] = useState("");
   const result = results.find((r) => r.id === resultId);
   const main = channels.slice(0, 3);
@@ -59,6 +62,8 @@ export function ContactForm({ customerId, today, results, channels, products, so
       <input type="hidden" name="channelId" value={channelId} />
       <input type="hidden" name="productId" value={productId} />
       <input type="hidden" name="back" value={back} />
+
+      {suggest && <p className="rounded-lg bg-slate-50 px-3 py-2 text-[13px] text-slate-600 ring-1 ring-slate-200">{suggest.hint}</p>}
 
       {/* Aloqa turi — 3 segment (+ boshqalari) */}
       <div>

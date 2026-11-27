@@ -25,7 +25,11 @@ export type FunnelData = {
   summary: { contacts: number; answered: number; noAnswer: number; offers: number; orders: number; expensive: number; refusals: number; waiting: number };
 };
 
-export type EmployeeRow = { userId: string; name: string; total: number; answered: number; noAnswer: number; offer: number; order: number; expensive: number; refusal: number };
+export type EmployeeRow = { userId: string; name: string; total: number; answered: number; noAnswer: number; offer: number; order: number; expensive: number; refusal: number;
+  /** onlinePBX: davrdagi qo'ng'iroqlar soni va gaplashilgan vaqt (soniya) */
+  calls: number; talkSec: number };
+
+const blank = (userId: string): EmployeeRow => ({ userId, name: "", total: 0, answered: 0, noAnswer: 0, offer: 0, order: 0, expensive: 0, refusal: 0, calls: 0, talkSec: 0 });
 
 /** Toshkent kuni → vaqt chegarasi (zayavka sanasi DateTime) */
 const tzStart = (iso: string) => new Date(`${iso}T00:00:00+05:00`);
@@ -64,7 +68,7 @@ export async function funnel(p: Period): Promise<FunnelData> {
   // ── Xodimlar ──
   const emp = new Map<string, EmployeeRow>();
   for (const c of contacts) {
-    const e = emp.get(c.userId) ?? { userId: c.userId, name: "", total: 0, answered: 0, noAnswer: 0, offer: 0, order: 0, expensive: 0, refusal: 0 };
+    const e = emp.get(c.userId) ?? blank(c.userId);
     e.total++;
     const r = c.result;
     if (r && r.stage >= 2) e.answered++;
@@ -74,6 +78,19 @@ export async function funnel(p: Period): Promise<FunnelData> {
     if (r?.code === "expensive") e.expensive++;
     if (r?.group === "REFUSAL" || r?.group === "LOSS") e.refusal++;
     emp.set(c.userId, e);
+  }
+  // onlinePBX qo'ng'iroqlari (chiquvchi + kiruvchi, ichkisiz)
+  const calls = await db.crmCall.groupBy({
+    by: ["userId"],
+    where: { userId: p.userId ? p.userId : { not: null }, direction: { in: ["OUT", "IN", "MISSED"] }, startedAt: { gte: tzStart(p.from), lt: tzStart(addDaysIso(p.to, 1)) } },
+    _count: { _all: true }, _sum: { talkSec: true },
+  });
+  for (const k of calls) {
+    if (!k.userId) continue;
+    const e = emp.get(k.userId) ?? blank(k.userId);
+    e.calls = k._count._all;
+    e.talkSec = k._sum.talkSec ?? 0;
+    emp.set(k.userId, e);
   }
   const users = await db.user.findMany({ where: { id: { in: [...emp.keys()] } }, select: { id: true, fullName: true } });
   const employees = [...emp.values()].map((e) => ({ ...e, name: users.find((u) => u.id === e.userId)?.fullName ?? "—" })).sort((a, b) => b.total - a.total);

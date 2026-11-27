@@ -5,7 +5,7 @@ import { Check, Plus } from "lucide-react";
 import { Button, Checkbox, Field, FormError, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 import { GROUP_LABEL } from "@/lib/crm/labels";
-import { saveActivity, saveOption, saveResult } from "./actions";
+import { saveActivity, saveExt, saveOption, saveResult, syncPbxNow } from "./actions";
 
 type Act = (p: ActionState, fd: FormData) => Promise<ActionState>;
 
@@ -71,6 +71,29 @@ export function ActivityForm({ active, cold }: { active: number; cold: number })
       <Field label="«Faol» — oxirgi zayafkadan, kun" hint={`0–${active} kun`}><Input name="crmActiveDays" type="number" defaultValue={active} required /></Field>
       <Field label="«Sovib qoldi» — gacha, kun" hint={`${active + 1}–${cold}; undan keyin «Eski: qayta aloqa kerak»`}><Input name="crmColdDays" type="number" defaultValue={cold} required /></Field>
       <div className="flex items-center gap-3 sm:col-span-2"><Button type="submit" disabled={pending}>Saqlash</Button><Status state={state} /></div>
+    </form>
+  );
+}
+
+/** Telefoniya: xodimning onlinePBX ichki raqami */
+export function ExtForm({ userId, name, ext }: { userId: string; name: string; ext: string }) {
+  const { state, pending, onSubmit, ref } = useForm(saveExt.bind(null, userId));
+  return (
+    <form ref={ref} onSubmit={onSubmit} className="grid grid-cols-[1fr_6rem_auto] items-center gap-2 py-2">
+      <span className="min-w-0 truncate text-sm font-medium text-slate-900">{name}</span>
+      <Input name="ext" defaultValue={ext} inputMode="numeric" placeholder="101" aria-label={`${name} — ichki raqam`} />
+      <Button type="submit" variant="secondary" size="sm" disabled={pending} className="min-h-10">Saqlash</Button>
+      <div className="col-span-full empty:hidden"><Status state={state} /></div>
+    </form>
+  );
+}
+
+export function SyncButton() {
+  const [state, action, pending] = useActionState<ActionState, FormData>(async () => syncPbxNow(), undefined);
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); startTransition(() => action(new FormData())); }} className="flex flex-wrap items-center gap-3">
+      <Button type="submit" variant="secondary" disabled={pending}>{pending ? "Olinmoqda…" : "Qo'ng'iroqlarni hozir olish (7 kun)"}</Button>
+      <Status state={state} />
     </form>
   );
 }

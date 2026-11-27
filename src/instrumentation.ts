@@ -16,6 +16,7 @@ export async function register() {
   startSmmWatch(isTestMode());
   startReminderWatch(isTestMode());
   startAmoWatch(isTestMode());
+  startPbxWatch(isTestMode());
   startNazoratWatch(isTestMode());
   startDataHealthWatch(isTestMode());
   if (!isTestMode()) return;
@@ -62,6 +63,17 @@ function startReminderWatch(test: boolean) {
   if (flag === "off" || (test && flag !== "on")) return;
   if (process.env.NEXT_RUNTIME === "nodejs") {
     void import("./lib/reminders").then((m) => m.startReminders()).catch((e) => console.error("[reminders] ishga tushmadi", e));
+  }
+}
+
+/** onlinePBX qo'ng'iroqlari → CRM (`lib/pbx/watch.ts`): ONLINEPBX_DOMAIN/API_KEY bo'lmasa hech narsa qilmaydi. `ONLINEPBX_WATCH=off` — o'chirish. */
+function startPbxWatch(test: boolean) {
+  if (process.env.INSOF_MODE === "control" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const flag = (process.env.ONLINEPBX_WATCH ?? "").trim().toLowerCase();
+  if (flag === "off" || (test && flag !== "on")) return;
+  if (!process.env.ONLINEPBX_DOMAIN || !process.env.ONLINEPBX_API_KEY) return;
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    void import("./lib/pbx/watch").then((m) => m.startPbxWatch()).catch((e) => console.error("[pbx-watch] ishga tushmadi", e));
   }
 }
 

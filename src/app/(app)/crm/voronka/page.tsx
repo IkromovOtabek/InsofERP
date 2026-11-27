@@ -12,6 +12,7 @@ import { funnel } from "@/lib/crm/funnel";
 import { FUNNEL_STAGES, STATUS_COLOR, STATUS_LABEL } from "@/lib/crm/labels";
 import { FilterSelect } from "../mijozlar/filters";
 import { PeriodForm } from "./period-form";
+import { mmss } from "@/lib/pbx/me";
 
 const COLORS = ["bg-red-500", "bg-orange-500", "bg-amber-500", "bg-yellow-400", "bg-lime-500", "bg-green-500", "bg-emerald-600"];
 const MONTHS = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"];
@@ -35,6 +36,7 @@ export default async function FunnelPage({ searchParams }: { searchParams: Promi
     const p = new URLSearchParams(Object.entries({ ...base, ...extra }).filter((e): e is [string, string] => !!e[1]));
     return `/crm/voronka${p.size ? `?${p}` : ""}`;
   };
+  const hasCalls = f.employees.some((e) => e.calls > 0);
   const stageSel = Number(sp.bosqich) >= 1 && Number(sp.bosqich) <= 7 ? Number(sp.bosqich) : null;
   const waitSel = sp.kutish !== undefined ? f.waiting.find((w) => w.month === sp.kutish) : undefined;
   const listIds = stageSel ? [...f.levels.entries()].filter(([, v]) => v >= stageSel).map(([id]) => id) : waitSel?.ids ?? [];
@@ -148,14 +150,14 @@ export default async function FunnelPage({ searchParams }: { searchParams: Promi
       <Card className="mt-4">
         <CardHeader title="Xodimlar bo'yicha" description="Davrdagi aloqalar soni" />
         <Table>
-          <thead><tr><Th>Xodim</Th><Th right>Jami aloqa</Th><Th right>Javob berdi</Th><Th right>Ko'tarmadi</Th><Th right>Taklif</Th><Th right>Zayafka</Th><Th right>Qimmat dedi</Th><Th right>Otkaz</Th></tr></thead>
+          <thead><tr><Th>Xodim</Th><Th right>Jami aloqa</Th><Th right>Javob berdi</Th><Th right>Ko'tarmadi</Th><Th right>Taklif</Th><Th right>Zayafka</Th><Th right>Qimmat dedi</Th><Th right>Otkaz</Th>{hasCalls && <><Th right>Qo&apos;ng&apos;iroq</Th><Th right>Gaplashdi</Th></>}</tr></thead>
           <tbody>
             {f.employees.length === 0 && <Empty text="Davrda aloqa yo'q" />}
             {f.employees.map((e) => (
-              <Tr key={e.userId}><Td>{e.name}</Td><Td right>{e.total}</Td><Td right>{e.answered}</Td><Td right>{e.noAnswer}</Td><Td right>{e.offer}</Td><Td right>{e.order}</Td><Td right>{e.expensive}</Td><Td right>{e.refusal}</Td></Tr>
+              <Tr key={e.userId}><Td>{e.name}</Td><Td right>{e.total}</Td><Td right>{e.answered}</Td><Td right>{e.noAnswer}</Td><Td right>{e.offer}</Td><Td right>{e.order}</Td><Td right>{e.expensive}</Td><Td right>{e.refusal}</Td>{hasCalls && <><Td right>{e.calls}</Td><Td right>{mmss(e.talkSec)}</Td></>}</Tr>
             ))}
             {f.employees.length > 1 && (
-              <Tr className="font-semibold"><Td>Jami</Td><Td right>{f.summary.contacts}</Td><Td right>{f.summary.answered}</Td><Td right>{f.summary.noAnswer}</Td><Td right>{f.summary.offers}</Td><Td right>{f.summary.orders}</Td><Td right>{f.summary.expensive}</Td><Td right>{f.summary.refusals}</Td></Tr>
+              <Tr className="font-semibold"><Td>Jami</Td><Td right>{f.summary.contacts}</Td><Td right>{f.summary.answered}</Td><Td right>{f.summary.noAnswer}</Td><Td right>{f.summary.offers}</Td><Td right>{f.summary.orders}</Td><Td right>{f.summary.expensive}</Td><Td right>{f.summary.refusals}</Td>{hasCalls && <><Td right>{f.employees.reduce((a, e) => a + e.calls, 0)}</Td><Td right>{mmss(f.employees.reduce((a, e) => a + e.talkSec, 0))}</Td></>}</Tr>
             )}
           </tbody>
         </Table>

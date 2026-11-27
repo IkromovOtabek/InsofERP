@@ -7,6 +7,8 @@ import { requireAction } from "@/lib/auth";
 import { parseForm, zDec, zOpt, type ActionState } from "@/lib/action";
 import { cancelContact, saveContact } from "@/lib/crm/contacts";
 import { canDo } from "@/lib/permissions";
+import { db } from "@/lib/db";
+import { normalizePhone } from "@/lib/phone";
 
 const schema = z.object({
   customerId: z.string().min(1),
@@ -47,4 +49,27 @@ export async function cancelContactAction(id: string, _prev: ActionState, fd: Fo
   revalidatePath(`/crm/mijozlar/${res.customerId}`);
   revalidatePath("/crm");
   return { ok: true };
+}
+
+/**
+ * onlinePBX orqali qo'ng'iroq (click-to-call): avval xodimning ichki raqami jiringlaydi, ko'targach mijozga ulanadi.
+ * Natija keyin tarix sinxronida `CrmCall` bo'lib tushadi.
+ */
+export async function callClientAction(customerId: string): Promise<ActionState> {
+  const s = await requireAction("crm", "contact");
+  const { pbxEnabled, callNow, PbxError } = await import("@/lib/pbx/onlinepbx");
+  if (!pbxEnabled()) return { error: "Telefoniya ulanmagan" };
+  const [me, c] = await Promise.all([
+    db.user.findUnique({ where: { id: s.userId }, select: { pbxExt: true } }),
+    db.customer.findFirst({ where: { id: customerId, isInternal: false }, select: { name: true, phone: true } }),
+  ]);
+  if (!me?.pbxExt) return { error: "Sizga onlinePBX ichki raqami biriktirilmagan (CRM → Sozlamalar → Telefoniya)" };
+  const phone = normalizePhone(c?.phone);
+  if (!c || !phone) return { error: "Mijozning telefon raqami yo'q yoki noto'g'ri" };
+  try {
+    await callNow(me.pbxExt, phone, c.name);
+    return { ok: true, note: `Telefoningiz (${me.pbxExt}) jiringlaydi — ko'taring, keyin mijozga ulanadi` };
+  } catch (e) {
+    return { error: e instanceof PbxError ? e.message : "Qo'ng'iroq boshlanmadi" };
+  }
 }

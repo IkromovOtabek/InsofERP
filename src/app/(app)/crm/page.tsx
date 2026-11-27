@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageCircle, Phone, Settings } from "lucide-react";
+import { MessageCircle, Settings } from "lucide-react";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Tabs } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -10,6 +10,8 @@ import { fullIso, shortIso } from "@/lib/crm/dates";
 import { STATUS_COLOR, STATUS_LABEL, T } from "@/lib/crm/labels";
 import { todayList, type TodayBucket } from "@/lib/crm/today";
 import { refreshStaleStatuses } from "@/lib/crm/orders";
+import { canPbxCall } from "@/lib/pbx/me";
+import { CallButton } from "./call-button";
 import { FilterSelect } from "./mijozlar/filters";
 
 const VIEWS = ["now", "overdue", "today", "tomorrow", "later"] as const;
@@ -24,7 +26,7 @@ export default async function CrmToday({ searchParams }: { searchParams: Promise
   const mineOnly = manager ? false : sp.kim !== "hammasi";
   const ownerId = mineOnly ? s.userId : manager && sp.xodim ? sp.xodim : null;
   await refreshStaleStatuses(); // «Ishlayotgan» → «Eski mijoz» (vaqt o'tishi bilan), soatiga bir marta
-  const [{ today, rows, counts }, users] = await Promise.all([todayList({ ownerId }), manager ? crmUsers() : []]);
+  const [{ today, rows, counts }, users, pbx] = await Promise.all([todayList({ ownerId }), manager ? crmUsers() : [], canPbxCall(s.userId)]);
   const shown = rows.filter((r) => (view === "now" ? r.bucket === "overdue" || r.bucket === "today" : r.bucket === view));
   const canWrite = canDo(s, "crm", "contact");
 
@@ -93,11 +95,7 @@ export default async function CrmToday({ searchParams }: { searchParams: Promise
                         <MessageCircle size={18} />
                       </Link>
                     )}
-                    {tel && (
-                      <a href={tel} aria-label={`${T.card.call}: ${r.name}`} className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm hover:bg-emerald-600">
-                        <Phone size={20} />
-                      </a>
-                    )}
+                    <CallButton customerId={r.id} tel={tel} pbx={pbx && !!tel} variant="round" label={`${T.card.call}: ${r.name}`} />
                   </div>
                 </li>
               );

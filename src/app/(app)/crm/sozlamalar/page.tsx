@@ -3,7 +3,10 @@ import { Card, CardHeader, PageHeader, Tabs } from "@/components/ui";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { ActivityForm, OptionForm, ResultForm } from "./forms";
+import { ActivityForm, ExtForm, OptionForm, ResultForm, SyncButton } from "./forms";
+import { crmUsers } from "@/lib/crm/clients";
+import { extensions, pbxConfig } from "@/lib/pbx/onlinepbx";
+import { dateTime } from "@/lib/format";
 
 const KINDS = [
   { key: "SOURCE", label: "Manba", count: "sourceCustomers" },
@@ -22,6 +25,7 @@ export default async function CrmSettings({ searchParams }: { searchParams: Prom
     ...KINDS.map((k) => ({ key: k.key, label: k.label, href: `/crm/sozlamalar?tab=${k.key}` })),
     { key: "RESULT", label: "Natijalar", href: "/crm/sozlamalar?tab=RESULT" },
     { key: "ACTIVITY", label: "Faollik", href: "/crm/sozlamalar?tab=ACTIVITY" },
+    { key: "PBX", label: "Telefoniya", href: "/crm/sozlamalar?tab=PBX" },
   ];
   return (
     <div className="mx-auto max-w-5xl">
@@ -30,6 +34,7 @@ export default async function CrmSettings({ searchParams }: { searchParams: Prom
       {kind && <OptionsCard kind={kind.key} label={kind.label} />}
       {tab === "RESULT" && <ResultsCard />}
       {tab === "ACTIVITY" && <ActivityCard />}
+      {tab === "PBX" && <PbxCard />}
     </div>
   );
 }
@@ -70,5 +75,44 @@ async function ActivityCard() {
       <CardHeader title="Faollik chegaralari" description="Mijoz kartochkasidagi belgi: Faol · Sovib qoldi · Eski: qayta aloqa kerak. «Ishlayotgan» → «Eski mijoz» holati ham «Sovib qoldi» chegarasidan" />
       <ActivityForm active={s?.crmActiveDays ?? 30} cold={s?.crmColdDays ?? 90} />
     </Card>
+  );
+}
+
+/** Telefoniya (onlinePBX): ulanish holati, xodim ↔ ichki raqam, tarixni qo'lda olish */
+async function PbxCard() {
+  const cfg = pbxConfig();
+  const [users, st, calls] = await Promise.all([
+    crmUsers(),
+    db.companySettings.findUnique({ where: { id: "main" }, select: { pbxSyncedAt: true } }),
+    db.crmCall.count(),
+  ]);
+  const withExt = await db.user.findMany({ where: { id: { in: users.map((u) => u.id) } }, select: { id: true, pbxExt: true } });
+  const extOf = new Map(withExt.map((u) => [u.id, u.pbxExt ?? ""]));
+  let pbxExts: { num: string; name: string }[] = [];
+  let pbxErr: string | null = null;
+  if (cfg) { try { pbxExts = await extensions(); } catch (e) { pbxErr = e instanceof Error ? e.message : String(e); } }
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader title="onlinePBX" description={cfg ? `Ulangan: ${cfg.domain}` : "Ulanmagan"}
+          info="«Qo'ng'iroq» bosilganda avval xodimning ichki raqami (softfon yoki onlinePBX ilovasi) jiringlaydi, ko'targach mijozga ulanadi — mijoz kompaniya raqamini ko'radi. Qo'ng'iroqlar tarixi har daqiqada olinadi: mijoz va xodimga bog'lanadi, o'tkazib yuborilgan kiruvchi qo'ng'iroq «Bugun»ga tushadi, yozuvni kartochkada tinglash mumkin. Ulash: korxona sozlamasiga ONLINEPBX_DOMAIN va ONLINEPBX_API_KEY (onlinePBX kabineti → API)." />
+        {cfg ? (
+          <div className="grid gap-3 text-sm">
+            <p className="text-slate-600">Oxirgi sinxron: <b>{st?.pbxSyncedAt ? dateTime(st.pbxSyncedAt) : "hali yo'q"}</b> · bazada {calls} ta qo'ng'iroq</p>
+            {pbxErr && <p className="text-red-600">{pbxErr}</p>}
+            {pbxExts.length > 0 && <p className="text-slate-600">onlinePBX ichki raqamlari: {pbxExts.map((x) => `${x.num}${x.name ? ` (${x.name})` : ""}`).join(", ")}</p>}
+            <SyncButton />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">Korxona sozlamasiga (serverda <code>tenants/&lt;korxona&gt;.env</code>) <code>ONLINEPBX_DOMAIN</code> va <code>ONLINEPBX_API_KEY</code> yozilib, ERP qayta ishga tushirilgach ulanadi. Hozircha «Qo&apos;ng&apos;iroq» telefonning o&apos;zidan (tel:) ishlaydi.</p>
+        )}
+      </Card>
+      <Card>
+        <CardHeader title="Xodimlar va ichki raqamlar" description="Qo'ng'iroq qiladigan xodimga onlinePBX'dagi ichki raqamini yozing (masalan Mushtariy — 101)" />
+        <div className="divide-y divide-slate-100">
+          {users.map((u) => <ExtForm key={u.id} userId={u.id} name={u.fullName} ext={extOf.get(u.id) ?? ""} />)}
+        </div>
+      </Card>
+    </div>
   );
 }
