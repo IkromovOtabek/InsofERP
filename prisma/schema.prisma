@@ -113,6 +113,9 @@ model User {
   agentCustomers         Customer[]               @relation("CustomerAgent")
   aiChats                AiChat[]                 @relation("AiChatUser")
   rentTx                 RentTx[]                 @relation("RentTxCreatedBy")
+  crmCustomers           Customer[]               @relation("CustomerCrmOwner")
+  crmContacts            CrmContact[]             @relation("CrmContactBy")
+  crmContactsCancelled   CrmContact[]             @relation("CrmContactCancelledBy")
   /// Modul bo'yicha qo'shimcha ruxsat (direktor beradi): { "modul": "view" | "write" }. Rol ustiga qo'shiladi/cheklaydi.
   perms                  Json?
 }
@@ -133,6 +136,9 @@ model CompanySettings {
   address                String?
   /// Zavoddagi BRU (beton qorishma uzeli) nomlari — «Yangi reys»da tanlanadi (Logistika → Sozlamalar)
   bruNames               String[]  @default([])
+  /// CRM faolligi (CRM_SPEC 4.4): oxirgi zayavkadan shuncha kungacha «Faol», `crmColdDays` gacha «Sovib qoldi», undan keyin «Eski»
+  crmActiveDays          Int       @default(30)
+  crmColdDays            Int       @default(90)
   // Zavod joyi — barcha masofa shu nuqtadan hisoblanadi (Sozlamalar sahifasida xaritadan belgilanadi)
   lat                    Float?
   lng                    Float?
@@ -277,9 +283,34 @@ model Customer {
   isActive      Boolean    @default(true)
   /// Ko'chadagi sotuv agenti (bu mijozni olib kelgan / yurituvchi). Agent o'z mijozlari va ularning qarzini ko'radi.
   agentId       String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  sites         Site[]
+
+  // ── Sotuv / CRM (docs/CRM_SPEC.md 3.1) — mavjud mijoz kartasi kengaytirilgan, alohida `clients` jadvali yo'q ──
+  /// CRM'ga kiritilgan vaqt: bo'sh — oddiy ERP mijozi (CRM ro'yxatida sukut bo'yicha ko'rinmaydi, qidiruvda topiladi)
+  crmAt           DateTime?
+  /// `phone` ning +998XXXXXXXXX shakli — dublikat tekshiruvi va qidiruv uchun (`lib/phone.ts → normalizePhone`)
+  phoneNorm       String?
+  region          String?
+  district        String?
+  /// Nima qurilmoqda
+  objectType      String?
+  foremanName     String?
+  foremanPhone    String?
+  clientTypeId    String?
+  sourceId        String?
+  /// Avtomatik holat (`lib/crm/status.ts`); `crmStatusManual` — menejer qo'lda qo'ygan, avto ustidan yozmaydi
+  crmStatus       CrmClientStatus?
+  crmStatusManual Boolean          @default(false)
+  /// Mas'ul xodim (standart — yaratgan xodim)
+  ownerId         String?
+  /// Tender sahifasi havolasi
+  link            String?
+  crmNote         String?
+  /// Kesh: eng oxirgi (bekor qilinmagan) aloqaning sanasi va undagi keyingi aloqa sanasi — «Bugun» ro'yxati shu bo'yicha
+  lastContactAt   DateTime?        @db.Date
+  nextContactAt   DateTime?        @db.Date
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  sites           Site[]
 
   orders       Order[]
   invoices     Invoice[]
@@ -297,8 +328,16 @@ model Customer {
   /// Qarz o'tkazmalari: shu mijozning qarzini boshqa mijoz to'lagan (debtor) / shu mijoz boshqaning qarzini to'lagan (payer)
   debtPaidBy   CustomerDebtTransfer[] @relation("DebtTransferDebtor")
   debtPaidFor  CustomerDebtTransfer[] @relation("DebtTransferPayer")
+  owner        User?                  @relation("CustomerCrmOwner", fields: [ownerId], references: [id])
+  clientType   CrmOption?             @relation("CustomerClientType", fields: [clientTypeId], references: [id])
+  source       CrmOption?             @relation("CustomerSource", fields: [sourceId], references: [id])
+  crmContacts  CrmContact[]
 
   @@index([agentId])
+  @@index([phoneNorm])
+  @@index([crmAt])
+  @@index([ownerId])
+  @@index([nextContactAt])
 }
 
 model Supplier {
@@ -1537,22 +1576,26 @@ model Order {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  customer   Customer          @relation(fields: [customerId], references: [id])
-  site       Site?             @relation(fields: [siteId], references: [id])
-  createdBy  User              @relation("OrderCreatedBy", fields: [createdById], references: [id])
-  items      OrderItem[]
-  batches    ProductionBatch[]
-  trips      Trip[]
-  invoices   Invoice[]
-  tasks      BrigadeTask[]
-  payments   Payment[] // oldindan to'lov (avans) — zayavka ochilganda olingan pul
-  payRequest PaymentRequest? // bosh to'lovni qabul qilish so'rovi (kassa yoki buxgalteriyaga)
-  offers     CommercialOffer[] // shu zayavka asosida tuzilgan tijorat takliflari
+  customer     Customer          @relation(fields: [customerId], references: [id])
+  site         Site?             @relation(fields: [siteId], references: [id])
+  createdBy    User              @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  items        OrderItem[]
+  batches      ProductionBatch[]
+  trips        Trip[]
+  invoices     Invoice[]
+  tasks        BrigadeTask[]
+  payments     Payment[] // oldindan to'lov (avans) — zayavka ochilganda olingan pul
+  payRequest   PaymentRequest? // bosh to'lovni qabul qilish so'rovi (kassa yoki buxgalteriyaga)
+  offers       CommercialOffer[] // shu zayavka asosida tuzilgan tijorat takliflari
   /// amoCRM sdelkasidan ochilgan zayavka (`lib/amocrm`): holati va summasi sdelkaga qaytariladi
-  amoDealId  String?
-  amoDeal    AmoDeal?          @relation(fields: [amoDealId], references: [id])
+  amoDealId    String?
+  amoDeal      AmoDeal?          @relation(fields: [amoDealId], references: [id])
+  /// CRM: «Zayafka oldim» aloqasidan ochilgan zayavka (docs/CRM_SPEC.md 3.3)
+  crmContactId String?
+  crmContact   CrmContact?       @relation(fields: [crmContactId], references: [id], onDelete: SetNull)
 
   @@index([deliveryDate])
+  @@index([crmContactId])
   @@index([siteId])
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([customerId])
@@ -5290,4 +5333,114 @@ model AmoDeal {
 
   @@index([state, nextPushAt])
   @@index([customerId])
+}
+
+// ───────────────────────── Sotuv / CRM (docs/CRM_SPEC.md) ─────────────────────────
+
+enum CrmOptionKind {
+  SOURCE // Manba
+  CLIENT_TYPE // Mijoz turi
+  PRODUCT // Mahsulot
+  CHANNEL // Aloqa turi
+}
+
+enum CrmClientStatus {
+  NEW // Yangi
+  CONTACTED // Aloqa qilindi
+  NEGOTIATION // Muzokara
+  ACTIVE // Ishlayotgan
+  OLD // Eski mijoz
+  LOST // Yo'qotilgan
+}
+
+/// Natija guruhi — voronka yonidagi bloklar va chip-tugmalar guruhlanishi
+enum CrmResultGroup {
+  NO_ANSWER // Javob yo'q
+  CONTINUE // Davom
+  WAITING // Kutilayotgan
+  REFUSAL // Otkaz
+  LOSS // Yo'qotish (raqam noto'g'ri)
+  WIN // Yutuq
+}
+
+/// Keyingi aloqa sanasi qoidasi
+enum CrmNextRule {
+  REQUIRED
+  OPTIONAL
+  NONE
+}
+
+/// Sozlanadigan ro'yxatlar (menejer qo'shadi/nofaol qiladi). `code` — barqaror kalit (import, API, hisobot)
+model CrmOption {
+  id       String        @id @default(cuid())
+  kind     CrmOptionKind
+  code     String
+  label    String
+  sort     Int           @default(0)
+  isActive Boolean       @default(true)
+
+  sourceCustomers    Customer[]   @relation("CustomerSource")
+  typeCustomers      Customer[]   @relation("CustomerClientType")
+  channelContacts    CrmContact[] @relation("CrmContactChannel")
+  productContacts    CrmContact[] @relation("CrmContactProduct")
+  leadSourceContacts CrmContact[] @relation("CrmContactLeadSource")
+
+  @@unique([kind, code])
+}
+
+/// Aloqa natijasi — butun tizimning yuragi (CRM_SPEC 3.5): voronka bosqichi, guruh, keyingi sana qoidasi
+model CrmResult {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  label       String
+  /// Voronkada eng yuqori yetgan bosqich (1–6)
+  stage       Int
+  group       CrmResultGroup
+  nextRule    CrmNextRule
+  /// Keyingi aloqa sanasi standarti: bugundan necha kun (null — standart yo'q)
+  defaultDays Int?
+  sort        Int            @default(0)
+  isActive    Boolean        @default(true)
+
+  contacts CrmContact[]
+}
+
+/// Aloqa (qo'ng'iroq / yozishma) — har biri yangi qator, tahrirlanmaydi. Faqat menejer bekor qiladi (sababi bilan, AuditLog).
+model CrmContact {
+  id              String    @id @default(cuid())
+  customerId      String
+  date            DateTime  @db.Date
+  channelId       String?
+  /// Natija — majburiy; faqat Google Sheets'dan import qilingan eski yozuvlarda bo'sh (voronkada faqat 1-bosqich)
+  resultId        String?
+  productId       String?
+  offeredPrice    Decimal?  @db.Decimal(18, 2)
+  nextContactDate DateTime? @db.Date
+  userId          String
+  leadSourceId    String?
+  objectName      String?
+  objectArea      String?
+  note            String?
+  /// Formani ikki marta yuborishdan himoya (P2002 — mavjud yozuvni qaytarish)
+  clientToken     String?   @unique
+  /// Import kaliti — qayta import dublikat yaratmasin
+  importKey       String?   @unique
+  cancelledAt     DateTime?
+  cancelledById   String?
+  cancelReason    String?
+  createdAt       DateTime  @default(now())
+
+  customer    Customer   @relation(fields: [customerId], references: [id])
+  channel     CrmOption? @relation("CrmContactChannel", fields: [channelId], references: [id])
+  result      CrmResult? @relation(fields: [resultId], references: [id])
+  product     CrmOption? @relation("CrmContactProduct", fields: [productId], references: [id])
+  leadSource  CrmOption? @relation("CrmContactLeadSource", fields: [leadSourceId], references: [id])
+  user        User       @relation("CrmContactBy", fields: [userId], references: [id])
+  cancelledBy User?      @relation("CrmContactCancelledBy", fields: [cancelledById], references: [id])
+  orders      Order[]
+
+  @@index([customerId, date])
+  @@index([date])
+  @@index([userId, date])
+  @@index([resultId])
 }
