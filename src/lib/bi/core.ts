@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { isoDate } from "@/lib/format";
 import { avgUnitCosts } from "@/lib/stock";
 import { companyVatPayer } from "@/lib/receipt-vat";
-import { entryNds, withoutNds } from "@/lib/nds";
+import { withoutNds } from "@/lib/nds";
 import { normalizeUnit } from "@/lib/unit";
 import { productNameKey } from "@/lib/product-name";
 import { countWorkDays, monthWorkDays, type WorkCalendar } from "@/lib/work-calendar";
@@ -274,18 +274,15 @@ export async function loadOrders(from: Date, to: Date, statuses: string[] = ACTI
 }
 
 /**
- * Tushum (realizatsiya) qatorlari — YETKAZILGAN reyslar bo'yicha, `deliveredAt` sanasida.
- * Zayavka qabul qilingani hali tushum emas: pul va tannarx mahsulot mijozga topshirilganda yuzaga keladi.
+ * Tushum (sotuv) qatorlari — Sotuv → «Realizatsiya» reestrining o'zi (`realizationLog`, 2026-11-27 qaror: Tahlil «Jami sotuv»
+ * = Realizatsiya «Jami»). Bekor qilinmagan har reys (yuklangan kun, bo'lmasa ochilgan kun), reyssiz yopilgan zayavka
+ * (yetkazish sanasi) va qo'lda / Excel qatorlar; dispetcher tuzatishlari (sana, miqdor, narx, dastavka) bilan.
  *
- *   miqdor = mijoz qabul qilgani (acceptedQty; bo'lmasa yuklangan − qaytarilgan)
- *   narx   = zayavka pozitsiyalari narxi; reys pozitsiyaga bog'lanmagan — zayavka tarkibi ulushida taqsimlanadi
+ *   revenue = reestr «Jami» (mahsulot + dastavka, QQS bilan) — Tahlil, Egasi paneli, mobil va AI'dagi sotuv
+ *   net     = mahsulot qismi QQS'siz, dastavkasiz — marja va PNL (logistika dastavkasi zavod daromadi emas)
+ *   rz      = har qatorda: to'lov turi, dastavka va uning QQS'i, guruh, manzil
  *
- * Reyssiz yopilgan zayavka (o'zi olib ketish, ЖБИ hovlidan) — DELIVERED/CLOSED va birorta yetkazilgan reysi
- * yo'q bo'lsa, to'liq summasi yetkazish sanasida (deliveryDate) tushum bo'ladi.
- *
- * Logistika → Realizatsiya reestrining qo'lda / Excel qatorlari (`RealizationEntry`) — tizimga reys bo'lib tushmagan
- * jo'natma ham tushum (`realizationRows` pastda). Shu TTN bilan ±1 kunda yetkazilgan reys bo'lsa, qator ikki marta sanalmaydi.
- * Qaytadigan qator `SaleRow` bilan bir xil — marja, mahsulot kesimi va trend shu funksiyadan.
+ * Reysdan qatorda `orderId` — zayavka (sotuvchi, holat shundan); qo'lda qatorda `rz:` kalit.
  */
 export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
   // Nusxa: chaqiruvchi massivni joyida saralasa, keshdagi boshqa chaqiruvchiga ta'sir qilmasin (qatorlar o'zgartirilmaydi)
@@ -295,36 +292,62 @@ export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
 const revenueOnce = cache((from: number, to: number) => queryRevenue(new Date(from), new Date(to)));
 
 async function queryRevenue(from: Date, to: Date): Promise<SaleRow[]> {
-  const orderSelect = {
-    id: true, orderNo: true, date: true, deliveryDate: true, status: true, customerId: true, ...SELLER_SELECT,
-    items: { select: { productId: true, qtyM3: true, price: true, nds: true, product: { select: { name: true, code: true, unit: true, price: true } } } },
-  } as const;
-  const [trips, noTrip, costs, vatPayer] = await Promise.all([
-    db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to }, order: { kind: "SALE" } }, select: { deliveredAt: true, qtyM3: true, acceptedQty: true, returnedQty: true, order: { select: orderSelect } } }),
-    db.order.findMany({ where: { kind: "SALE", status: { in: ["DELIVERED", "CLOSED"] }, deliveryDate: { gte: from, lt: to }, trips: { none: { status: "DELIVERED" } } }, select: orderSelect }),
-    productCosts(),
-    companyVatPayer(),
+  // Sotuv → «Realizatsiya» reestri bilan bitta manba: o'sha qatorlar, o'sha sana va o'sha «Jami» (dinamik import — halqali bog'lanish)
+  const { realizationLog } = await import("@/lib/realization-log");
+  const last = new Date(to.getTime() - 1);
+  if (last < from) return [];
+  const [log, costs, vatPayer] = await Promise.all([realizationLog(from, last), productCosts(), companyVatPayer()]);
+  const orderIds = [...new Set(log.flatMap((r) => (r.source === "AUTO" && r.orderId ? [r.orderId] : [])))];
+  const manual = log.filter((r) => r.source === "MANUAL");
+  const custIds = [...new Set(manual.flatMap((r) => (r.customerId ? [r.customerId] : [])))];
+  const [orders, customers, users] = await Promise.all([
+    orderIds.length ? db.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, orderNo: true, status: true, customerId: true, ...SELLER_SELECT } }) : [],
+    custIds.length ? db.customer.findMany({ where: { id: { in: custIds } }, select: { id: true, agentId: true, agent: { select: { fullName: true } } } }) : [],
+    manual.some((r) => r.seller) ? db.user.findMany({ select: { id: true, fullName: true } }) : [],
   ]);
-  type O = (typeof noTrip)[number];
-  const rowsOf = (o: O, date: Date, share: number): SaleRow[] => o.items.map((i) => {
-    const qty = Number(i.qtyM3) * share, price = Number(i.price), c = costs.get(i.productId)?.cost ?? null;
-    const netPrice = vatPayer && i.nds ? withoutNds(price) : price;
-    return {
-      date, orderId: o.id, orderNo: o.orderNo, status: o.status, customerId: o.customerId, customer: o.customer.name, ...sellerOf(o),
-      productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * (c ?? 0),
-      net: qty * netPrice, costKnown: c !== null,
-    };
-  });
-  const out: SaleRow[] = [];
-  for (const t of trips) {
-    const total = sum(t.order.items.map((i) => Number(i.qtyM3)));
-    if (total <= 0) continue;
-    const loaded = Number(t.qtyM3);
-    const accepted = t.acceptedQty != null ? Math.min(loaded, Number(t.acceptedQty)) : Math.max(0, loaded - Number(t.returnedQty ?? 0));
-    out.push(...rowsOf(t.order, t.deliveredAt!, accepted / total));
+  const orderOf = new Map(orders.map((o) => [o.id, o]));
+  const agentOf = new Map(customers.map((c) => [c.id, c]));
+  const userByName = new Map(users.map((u) => [nameKey(u.fullName), u]));
+  // Bir xil nomli mahsulotlardan: tannarxi ma'lumi, keyin faoli. Nom kaliti (`productNameKey`: kirill/lotin, «3,5»/«3.5»)
+  // va boshqa nomlari bilan — «ПК 59-12-8» yoki eski «PK 59-12-8» qatori birlashtirilgan «PK 59-12-8 A 400» ga tushadi
+  const productByName = new Map<string, string>();
+  const rank = (id: string) => { const p = costs.get(id)!; return (p.cost !== null ? 2 : 0) + (p.isActive ? 1 : 0); };
+  for (const [id, p] of costs) {
+    const k = productNameKey(p.name), cur = productByName.get(k);
+    if (k && (!cur || rank(id) > rank(cur))) productByName.set(k, id);
   }
-  for (const o of noTrip) out.push(...rowsOf(o, o.deliveryDate, 1));
-  out.push(...(await realizationRows(from, to, costs, vatPayer)));
+  for (const [id, p] of costs) for (const a of p.aliases) { const k = productNameKey(a); if (k && !productByName.has(k)) productByName.set(k, id); }
+
+  const out: SaleRow[] = [];
+  for (const r of log) {
+    const o = r.source === "AUTO" && r.orderId ? orderOf.get(r.orderId) : undefined;
+    // Katalogga bog'lanmagan (yoki nomi tuzatilgan) qator — mahsulot nomi bo'yicha (faqat hisobda, reestr o'zgarmaydi)
+    const pid = (r.productId && costs.has(r.productId) ? r.productId : null) ?? productByName.get(productNameKey(r.product)) ?? null;
+    const lp = pid ? costs.get(pid) : undefined;
+    const c = lp?.cost ?? null;
+    // «Jami» = mahsulot (QQS bilan) + dastavka (QQS bilan); marja va PNL uchun mahsulot qismi dastavkasiz
+    const goods = r.total - r.delivery - r.deliveryVat;
+    const goodsNet = vatPayer ? r.net - r.delivery : goods;
+    const unitPrice = r.qty > 0 ? goods / r.qty : r.price;
+    let head: Pick<SaleRow, "orderId" | "orderNo" | "status" | "customerId" | "customer" | "sellerId" | "seller">;
+    if (o) head = { orderId: o.id, orderNo: o.orderNo, status: o.status, customerId: r.customerId ?? o.customerId, customer: r.customer, ...sellerOf(o) };
+    else {
+      const customerId = r.customerId ?? `${REALIZATION_PREFIX}c:${nameKey(r.customer)}`;
+      const ag = r.customerId ? agentOf.get(r.customerId) : undefined;
+      const u = r.seller ? userByName.get(nameKey(r.seller)) : undefined;
+      const seller = ag?.agentId && ag.agent ? { sellerId: ag.agentId, seller: ag.agent.fullName }
+        : u ? { sellerId: u.id, seller: u.fullName }
+        : { sellerId: `${REALIZATION_PREFIX}s:${nameKey(r.seller)}`, seller: r.seller.trim() || "Ko'rsatilmagan" };
+      head = { orderId: `${REALIZATION_PREFIX}${isoDate(r.date)}:${customerId}`, orderNo: r.ttn ? `TTN ${r.ttn}` : "Realizatsiya", status: "DELIVERED", customerId, customer: r.customer, ...seller };
+    }
+    out.push({
+      date: r.date, ...head,
+      productId: pid ?? `${REALIZATION_PREFIX}p:${nameKey(r.product)}`, product: lp?.name ?? r.product, code: lp?.code ?? "", unit: lp?.unit ?? r.unitKey,
+      qty: r.qty, price: unitPrice, basePrice: o && lp ? lp.price : unitPrice, revenue: r.total, cost: r.qty * (c ?? 0),
+      net: goodsNet, costKnown: c !== null,
+      rz: { payGroup: r.pay, delivery: r.delivery, deliveryVat: r.deliveryVat, group: r.group, address: r.destination },
+    });
+  }
   estimateCosts(out, costs);
   return out;
 }
@@ -362,73 +385,7 @@ function estimateCosts(rows: SaleRow[], costs: Awaited<ReturnType<typeof product
 /** Realizatsiya reestri qatori (`RealizationEntry`) — `SaleRow.orderId` shu prefiks bilan boshlanadi (zayavka emas, havola reestrga). */
 export const REALIZATION_PREFIX = "rz:";
 export const isRealizationRow = (r: { orderId: string }) => r.orderId.startsWith(REALIZATION_PREFIX);
-/** TTN solishtirish kaliti: «N-2026-00161», «ТТН-161», «№161», «161» — bitta (`lib/realization-log.ts` dagi qoida). */
-const ttnKey = (v: string | null | undefined) => (v ?? "").replace(/^.*-0*(?=\d)/, "").toLowerCase().replace(/[^0-9a-zа-яё]/g, "").replace(/^0+(?=\d)/, "");
 const nameKey = (v: string) => v.trim().toLowerCase().replace(/[ʻʼ’‘`']/g, "").replace(/\s+/g, " ");
-
-/**
- * Reestrning qo'lda / Excel qatorlari → `SaleRow` (sana — jo'natma sanasi). Pul: miqdor × narx (QQSsiz) + QQS;
- * dastavka zayavkalardagi kabi tushumga kirmaydi. Mijoz / mahsulot katalogga bog'langan bo'lsa — o'sha, aks holda nomi
- * bo'yicha (`rz:` kalit, mijoz kartasi yo'q). Bog'lanmagan mahsulot nomi katalogdagi mahsulot nomiga teng bo'lsa — o'sha
- * mahsulot (faqat hisobda, reestr o'zgarmaydi). «Zayavka» — bir kunda bitta xaridorga jo'natmalar.
- * Sotuvchi: mijozga biriktirilgan agent → qatordagi sotuvchi nomi (xodimga mos kelsa — o'sha xodim) → «Ko'rsatilmagan».
- * Tannarx faqat katalogdagi mahsulotda (retsept bo'yicha); chegirma hisoblanmaydi (bazaviy narx = sotilgan narx).
- */
-async function realizationRows(from: Date, to: Date, costs: Awaited<ReturnType<typeof productCosts>>, vatPayer: boolean): Promise<SaleRow[]> {
-  const entries = await db.realizationEntry.findMany({
-    where: { cancelledAt: null, date: { gte: from, lt: to } },
-    select: {
-      id: true, date: true, payGroup: true, seller: true, customerId: true, customerName: true, productId: true, productName: true, groupName: true, unit: true, ttn: true, qty: true, price: true, delivery: true, vat: true, destination: true,
-      customer: { select: { name: true, agentId: true, agent: { select: { fullName: true } } } }, product: { select: { name: true, code: true, unit: true } },
-    },
-  });
-  if (!entries.length) return [];
-  const DAY = 86_400_000;
-  const withTtn = entries.some((e) => ttnKey(e.ttn));
-  const [trips, users] = await Promise.all([
-    withTtn ? db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: new Date(from.getTime() - DAY), lt: new Date(to.getTime() + DAY) } }, select: { ttn: true, deliveryNoteNo: true, deliveredAt: true } }) : [],
-    entries.some((e) => e.seller) ? db.user.findMany({ select: { id: true, fullName: true } }) : [],
-  ]);
-  const tripDays = new Map<string, number[]>();
-  for (const t of trips) for (const k of new Set([ttnKey(t.ttn), ttnKey(t.deliveryNoteNo)])) if (k) tripDays.set(k, [...(tripDays.get(k) ?? []), t.deliveredAt!.getTime()]);
-  const userByName = new Map(users.map((u) => [nameKey(u.fullName), u]));
-  // Bir xil nomli mahsulotlardan: tannarxi ma'lumi, keyin faoli. Nom kaliti (`productNameKey`: kirill/lotin, «3,5»/«3.5»)
-  // va boshqa nomlari bilan — «ПК 59-12-8» yoki eski «PK 59-12-8» qatori birlashtirilgan «PK 59-12-8 A 400» ga tushadi
-  const productByName = new Map<string, string>();
-  const rank = (id: string) => { const p = costs.get(id)!; return (p.cost !== null ? 2 : 0) + (p.isActive ? 1 : 0); };
-  for (const [id, p] of costs) {
-    const k = productNameKey(p.name), cur = productByName.get(k);
-    if (k && (!cur || rank(id) > rank(cur))) productByName.set(k, id);
-  }
-  for (const [id, p] of costs) for (const a of p.aliases) { const k = productNameKey(a); if (k && !productByName.has(k)) productByName.set(k, id); }
-  const out: SaleRow[] = [];
-  for (const e of entries) {
-    const k = ttnKey(e.ttn);
-    if (k && (tripDays.get(k) ?? []).some((d) => Math.abs(d - e.date.getTime()) <= DAY)) continue;
-    const qty = Number(e.qty), price = Number(e.price), delivery = Number(e.delivery);
-    // Tushumga faqat mahsulot QQS'i — dastavka (va uning QQS'i) tushumga kirmaydi
-    const nds = entryNds(e.payGroup, qty, price, delivery), vat = nds.goods;
-    const customer = e.customer?.name ?? e.customerName, customerId = e.customerId ?? `${REALIZATION_PREFIX}c:${nameKey(e.customerName)}`;
-    const u = e.seller ? userByName.get(nameKey(e.seller)) : undefined;
-    const seller = e.customer?.agentId && e.customer.agent ? { sellerId: e.customer.agentId, seller: e.customer.agent.fullName }
-      : u ? { sellerId: u.id, seller: u.fullName }
-      : { sellerId: `${REALIZATION_PREFIX}s:${nameKey(e.seller ?? "")}`, seller: e.seller?.trim() || "Ko'rsatilmagan" };
-    // Katalogga bog'lanmagan qator — mahsulot nomi bo'yicha topiladi (bazaga yozilmaydi, faqat hisobda)
-    const pid = e.productId ?? productByName.get(productNameKey(e.productName)) ?? null;
-    const lp = pid ? costs.get(pid) : undefined;
-    const c = lp?.cost ?? null;
-    const gross = qty * price + vat;
-    out.push({
-      date: e.date, orderId: `${REALIZATION_PREFIX}${isoDate(e.date)}:${customerId}`, orderNo: e.ttn ? `TTN ${e.ttn}` : "Realizatsiya", status: "DELIVERED",
-      customerId, customer, ...seller,
-      productId: pid ?? `${REALIZATION_PREFIX}p:${nameKey(e.productName)}`, product: e.product?.name ?? lp?.name ?? e.productName, code: e.product?.code ?? lp?.code ?? "", unit: e.product?.unit ?? lp?.unit ?? e.unit,
-      qty, price: qty > 0 ? gross / qty : price, basePrice: qty > 0 ? gross / qty : price, revenue: gross, cost: qty * (c ?? 0),
-      net: vatPayer ? qty * price : gross, costKnown: c !== null,
-      rz: { payGroup: e.payGroup === "BANK" || e.payGroup === "DEBT" ? e.payGroup : "CASH", delivery, deliveryVat: nds.delivery, group: e.groupName, address: e.destination ?? "" },
-    });
-  }
-  return out;
-}
 
 /* ───────────── Oy prognozi (bitta formula: Owner dashboard, BI, AI chat) ───────────── */
 

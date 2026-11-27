@@ -68,7 +68,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
           <Kpi label={r.isToday ? "Bugungi sotuv" : "Shu kungi sotuv"} value={moneyShort(r.payTotal.total)} icon={ShoppingCart} tone="brand" hint={`${r.rows.length} ta qator · QQS va dostavka bilan`} href="#sotuvlar" />
           <Kpi label="Oy boshidan sotuv" value={moneyShort(r.payTotal.month)} icon={TrendingUp} tone="info" hint={`QQS va dostavka bilan · ${MONTHS[r.day.getMonth()]}`} />
           <Kpi label="Oylik reja bajarilishi" value={p1(r.plan.pctMonth)} icon={Target} tone={kpiTone(r.plan.pctMonth)} hint={r.plan.month > 0 ? `fakt ${moneyShort(r.plan.factMonth)} / reja ${moneyShort(r.plan.month)}` : "reja kiritilmagan"} />
-          <Kpi label="Oylik prognoz" value={moneyShort(r.plan.forecast)} icon={Gauge} tone={kpiTone(r.plan.forecastPct)} hint={r.plan.forecastPct !== null ? `rejaning ${pct(r.plan.forecastPct)} · dastavkasiz` : "dastavkasiz, ish kuni sur'atida"} />
+          <Kpi label="Oylik prognoz" value={moneyShort(r.plan.forecast)} icon={Gauge} tone={kpiTone(r.plan.forecastPct)} hint={r.plan.forecastPct !== null ? `rejaning ${pct(r.plan.forecastPct)} · dastavka bilan` : "dastavka bilan, ish kuni sur'atida"} />
           <Kpi label="Qarzga sotuv (oy)" value={moneyShort(debt?.month ?? 0)} icon={FileWarning} tone={debt?.month ? "warning" : "default"} hint={`oydagi ulushi ${pct(debt?.share ?? 0)}`} />
           <Kpi label="Ish kuni" value={`${r.wdPassed} / ${r.wdTotal}`} icon={CalendarDays} hint={`o'rtacha kunlik fakt ${moneyShort(r.plan.avgDay)}`} />
         </div>
@@ -125,7 +125,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
         <div className="grid gap-6 xl:grid-cols-2">
           <Block title="3. Realizatsiya rejasi (so'm, QQS bilan)" info={<>
             <p>{MONTHS[r.day.getMonth()]} {r.day.getFullYear()}: bugungi reja = oylik reja ÷ {r.wdTotal} ish kuni. Ish kuni bo&apos;sh qolsa — kalendardan ({r.wdAuto}, dam olish va bayramlarsiz, <Link href="/settings/ish-tartibi" className="font-medium text-blue-600 hover:underline">Ish tartibi</Link>).</p>
-            <p>Sotuvchilar rejasi — <Link href="/bi-tahlil/reja" className="font-medium text-blue-600 hover:underline">Reja nazorati</Link>da. Fakt — yetkazilgan mahsulot, dastavkasiz.</p>
+            <p>Sotuvchilar rejasi — <Link href="/bi-tahlil/reja" className="font-medium text-blue-600 hover:underline">Reja nazorati</Link>da. Fakt — Realizatsiya reestri «Jami» (QQS va dastavka bilan).</p>
           </>}>
             <Table>
               <thead><tr><Th>Ko&apos;rsatkich</Th><Th right>Oylik</Th><Th right>Bugun</Th></tr></thead>

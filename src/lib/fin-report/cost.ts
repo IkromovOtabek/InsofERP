@@ -338,11 +338,8 @@ export async function productProfit(month: MonthKey): Promise<ProductProfit> {
   const groups = [...g.values()].map((x) => ({ ...x, revenue: r2(x.revenue), cost: r2(x.cost), profit: r2(x.revenue - x.cost), margin: x.revenue > 0 ? Math.round(((x.revenue - x.cost) / x.revenue) * 1000) / 10 : null })).sort((a, b) => b.revenue - a.revenue);
   const rev = r2(sum(groups.map((x) => x.revenue))), cost = r2(sum(groups.map((x) => x.cost)));
 
-  // Dostavka — zayavkadagi «Доставка» summasi, shu oyda yetkazilgan ulushi bo'yicha (tushumga kirmaydi)
-  const share = new Map<string, number>();
-  for (const r of revenue) share.set(r.orderId, (share.get(r.orderId) ?? 0) + r.qty);
-  const orders = share.size ? await db.order.findMany({ where: { id: { in: [...share.keys()] }, deliveryFee: { gt: 0 } }, select: { id: true, deliveryFee: true, items: { select: { qtyM3: true } } } }) : [];
-  const delivery = r2(sum(orders.map((o) => { const t = sum(o.items.map((i) => Number(i.qtyM3))); return t > 0 ? Number(o.deliveryFee) * Math.min(1, (share.get(o.id) ?? 0) / t) : 0; })));
+  // Dostavka — Realizatsiya reestridagi dastavka (QQS bilan), shu oy sotuv qatorlari bo'yicha (tushumga kirmaydi)
+  const delivery = r2(sum(revenue.map((r) => (r.rz ? r.rz.delivery + r.rz.deliveryVat : 0))));
 
   return {
     month, params, items, groups, revenue: rev, cost, profit: r2(rev - cost), margin: rev > 0 ? Math.round(((rev - cost) / rev) * 1000) / 10 : null,

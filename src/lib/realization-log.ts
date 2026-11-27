@@ -62,6 +62,10 @@ export type LogRow = {
   /** Reysdan qatorda — dispetcher yozgan TTN (`Trip.ttn`, tahrir qiymati); bo'lmasa ko'rinadigani nakladnoy raqami */
   tripTtn: string | null;
   unitKey: string; unit: string; qty: number; price: number; delivery: number; net: number; vat: number; total: number;
+  /** Dastavka QQS'i (`vat` ichida) — Tahlil sotuvi (`lib/bi/core.ts`) mahsulot tushumini dastavkasiz ham ajratadi */
+  deliveryVat: number;
+  /** Katalog mahsuloti: reysdan — zayavka qatoriniki (dispetcher mahsulot nomini tuzatgan bo'lsa null), qo'lda — bog'langani */
+  productId: string | null;
   /** Ko'rinadigan qiymat: to'ldirilgani, bo'lmasa taklif */
   loadPlace: string; destination: string; note: string; refName: string;
   /** Reysdan qatorda: dispetcher to'ldirgani (formada) va taklif (placeholder) */
@@ -121,6 +125,7 @@ function autoEdits(r: RealizationRow, n: RealizationNote | undefined, l: Realiza
     product: pick("productName", l?.productName, r.product, (v) => v),
     group: pick("groupName", l?.groupName, r.group, (v) => v),
     unitKey, unit: unitLabel(unitKey), qty, price, delivery, net, vat, total: money ? r3(net + vat) : r.total,
+    deliveryVat: over ? over.vat : r.deliveryVat,
     orig,
   };
 }
@@ -157,7 +162,7 @@ export async function realizationLog(from: Date, to: Date, opts?: { customerIds?
     const filled: LogFields = { loadPlace: n?.loadPlace ?? null, destination: n?.destination ?? null, note: n?.note ?? null, refName: n?.refName ?? null };
     const suggest = suggestOf(r);
     rows.push({
-      ...e, key: `a-${r.key}`, source: "AUTO", ref, line: r.key, orderId: r.orderId, tripId: r.tripId, customerId: r.customerId,
+      ...e, key: `a-${r.key}`, source: "AUTO", ref, line: r.key, productId: "productName" in e.orig ? null : r.productId || null, orderId: r.orderId, tripId: r.tripId, customerId: r.customerId,
       at: r.tripId && !("date" in e.orig) ? r.date : null, customer: r.customer, tripTtn: r.tripTtn,
       loadPlace: filled.loadPlace ?? suggest.loadPlace ?? "", destination: filled.destination ?? suggest.destination ?? "",
       note: filled.note ?? suggest.note ?? "", refName: filled.refName ?? suggest.refName ?? "",
@@ -170,11 +175,12 @@ export async function realizationLog(from: Date, to: Date, opts?: { customerIds?
     const pay = (PAY_KEYS as string[]).includes(e.payGroup) ? (e.payGroup as PayGroupKey) : "CASH";
     const customer = (e.customerId && cardName.get(e.customerId)) || e.customerName;
     // QQS qoidadan (saqlangan `vat` dan emas): dastavka QQS'i qo'shilishidan oldin yozilgan qatorlar ham bir xil hisoblansin
-    const vat = entryNds(pay, qty, price, delivery).total;
+    const nds = entryNds(pay, qty, price, delivery), vat = nds.total;
     rows.push({
       key: `m-${e.id}`, source: "MANUAL", ref: e.id, orderId: null, tripId: null, customerId: e.customerId,
       date: e.date, at: e.createdAt, pay, payLabel: PAY_LABEL[pay], seller: e.seller ?? "", customer, typedName: customer === e.customerName ? null : e.customerName, product: e.productName, group: e.groupName,
       ttn: e.ttn, tripTtn: null, vehicle: e.vehicle, unitKey: e.unit, unit: unitLabel(e.unit), qty, price, delivery, net, vat, total: r3(net + vat),
+      deliveryVat: nds.delivery, productId: e.productId,
       loadPlace: e.loadPlace ?? "", destination: e.destination ?? "", note: e.note ?? "", refName: e.refName ?? customer,
       filled: null, suggest: null, line: null, orig: {},
     });

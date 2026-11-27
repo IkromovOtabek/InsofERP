@@ -18,7 +18,7 @@ import { r2 } from "./rows";
  * `feeHasNds`; reestr qatorida perechisleniyeda 12%) «QQS»ga qo'shiladi — Realizatsiya reestri bilan bir qoida.
  * To'lov turi — `order-day-sheet` qoidasi: qarzga → «Qarz», keyin `payMethod`; usul yozilmagan zayavka NDS'li
  * bo'lsa perechisleniyega, aks holda naqdga tushadi va «Nazorat» qatorida ko'rsatiladi.
- * Reja va sotuvchilar — QQS bilan, dastavkasiz (Reja nazorati bilan bir xil). Ish kuni — Dushanba–Shanba.
+ * Reja va sotuvchilar — Realizatsiya reestri «Jami» (QQS va dastavka bilan, Reja nazorati bilan bir xil). Ish kuni — Dushanba–Shanba.
  */
 export type RzRow = {
   pay: PayGroupKey; payLabel: string; seller: string; customer: string; product: string; unit: string;
@@ -87,7 +87,8 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const all = revMonth.map((r) => {
     const o = orderOf.get(r.orderId);
     const totalQty = o ? sum(o.items.map((i) => Number(i.qtyM3))) : 0;
-    // Realizatsiya reestri qatori (`r.rz`) — zayavkasi yo'q: dastavka, to'lov turi, guruh va manzil qatorning o'zidan
+    // Har sotuv qatori Realizatsiya reestridan (`r.rz`): dastavka, to'lov turi, guruh va manzil qatorning o'zidan;
+    // `r.revenue` — reestr «Jami» (dastavka bilan), shuning uchun dastavka qayta qo'shilmaydi
     // Dastavka mijoz to'laydigani (QQS bilan); QQS'i mahsulotnikidek faqat QQS to'lovchisi korxonada ajratiladi (`r.net`)
     const fee = r.rz ? r.rz.delivery + r.rz.deliveryVat : o && totalQty > 0 ? (Number(o.deliveryFee) * r.qty) / totalQty : 0;
     const feeVat = !vatPayer ? 0 : r.rz ? r.rz.deliveryVat : o && feeHasNds(o.items) ? splitNds(fee).vat : 0;
@@ -97,7 +98,7 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
       src: r, unset: !!o && !o.onCredit && !o.payMethod, group: prods.get(r.productId)?.group ?? r.rz?.group ?? "Boshqalar",
       row: {
         pay, payLabel: payLabel.get(pay) ?? pay, seller: r.seller, customer: r.customer, product: r.product, unit: unitLabel(r.unit),
-        qty: r.qty, price: r.qty ? r.net / r.qty : r.price, delivery, net: r.net + delivery, vat: r.revenue - r.net + feeVat, total: r.revenue + fee,
+        qty: r.qty, price: r.qty ? r.net / r.qty : r.price, delivery, net: r.net + delivery, vat: r.revenue - fee - r.net + feeVat, total: r.revenue,
         address: o?.site?.name || o?.deliveryAddress || r.rz?.address || "",
       } satisfies RzRow,
     };
@@ -146,7 +147,7 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
     };
   });
 
-  // ── 3. Realizatsiya rejasi (QQS bilan, dastavkasiz) ──
+  // ── 3. Realizatsiya rejasi (reestr «Jami»: QQS va dastavka bilan) ──
   const companyRow = plans.find((p) => p.sellerId === null);
   const sellerPlans = plans.filter((p) => p.sellerId !== null);
   const planMonth = companyRow ? Number(companyRow.amount) : sum(sellerPlans.map((p) => Number(p.amount)));

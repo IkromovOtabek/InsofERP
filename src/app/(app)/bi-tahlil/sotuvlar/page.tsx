@@ -9,7 +9,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const { sp, range } = await biContext(searchParams);
   return (
     <BiPage title="Sotuvlar" info={<>
-      <p>Sotuv — mijozga yetkazilgan mahsulot, yetkazilgan sana bo&apos;yicha (Moliya va Egasi paneli bilan bir xil).</p>
+      <p>Sotuv — Sotuv → Realizatsiya reestrining o&apos;zi: o&apos;sha qatorlar, o&apos;sha sana, «Jami» QQS va dastavka bilan (Moliya va Egasi paneli bilan bir xil). Marja va PNL — QQS&apos;siz, dastavkasiz.</p>
       <p>Sotuvchi — mijozga biriktirilgan agent, bo&apos;lmasa zayavkani kiritgan xodim.</p>
     </>} tab="sales" range={range}>
       <SalesTab range={range} sp={sp} />

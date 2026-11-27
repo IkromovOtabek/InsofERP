@@ -21,7 +21,9 @@ import { PAY_GROUPS, payGroupOf, rootGroupName, type PayGroupKey } from "@/lib/o
 export type RealizationRow = {
   key: string; orderId: string; tripId: string | null;
   date: Date; pay: PayGroupKey; payLabel: string; seller: string;
-  customerId: string; customer: string; product: string; group: string;
+  customerId: string; customer: string;
+  /** Zayavka qatoridagi mahsulot (faqat dastavka qatorida bo'sh) */
+  productId: string; product: string; group: string;
   /** TTN: dispetcher yozgani (`Trip.ttn`), bo'lmasa nakladnoy raqami; `tripTtn` — faqat yozilgani (tahrir uchun) */
   ttn: string | null; tripTtn: string | null; vehicle: string | null; unit: string; qty: number;
   /** Mahsulot birligi kaliti (m3, dona…) va zayavka qatorida «QQS 12%» belgisi — Logistika reestridagi tuzatish qayta hisobi uchun */
@@ -49,7 +51,7 @@ const ORDER_SELECT = {
   customerId: true, customer: { select: { name: true, phone: true } },
   site: { select: { name: true, contactPhone: true } },
   createdBy: { select: { fullName: true } },
-  items: { orderBy: { id: "asc" as const }, select: { id: true, qtyM3: true, price: true, nds: true, product: { select: { name: true, unit: true, groupId: true } } } },
+  items: { orderBy: { id: "asc" as const }, select: { id: true, productId: true, qtyM3: true, price: true, nds: true, product: { select: { name: true, unit: true, groupId: true } } } },
   invoices: { where: { status: { not: "CANCELLED" as const }, isOpening: false }, orderBy: { date: "asc" as const }, select: { invoiceNo: true } },
   // Zayavkaning barcha reyslari tartib bilan: dastavka birinchisiga, qatorlar navbat bilan — davrdan oldingi reyslar ham kerak
   trips: { where: { status: { not: "CANCELLED" as const } }, orderBy: [{ loadedAt: "asc" as const }, { createdAt: "asc" as const }, { id: "asc" as const }], select: { id: true, qtyM3: true, acceptedQty: true } },
@@ -117,14 +119,14 @@ export async function realizationRows(from: Date, to: Date, extra?: { tripIds: s
       const delivery = n === 0 ? feePart.net : 0, deliveryVat = n === 0 ? feePart.vat : 0;
       rows.push({
         // Kalit zayavka qatori id si bilan — qator qo'shilsa/olinsa ham dispetcher tuzatishi (`RealizationLine`) o'z qatorida qoladi
-        ...base, key: `${trip?.id ?? o.id}-${i.id}`, product: i.product.name, group: rootName(i.product.groupId), unit: unitLabel(i.product.unit),
+        ...base, key: `${trip?.id ?? o.id}-${i.id}`, productId: i.productId, product: i.product.name, group: rootName(i.product.groupId), unit: unitLabel(i.product.unit),
         unitKey: i.product.unit, nds: i.nds, feeNds, qty, price: i.nds ? withoutNds(price) : price, delivery, deliveryVat,
         net: r2(line - vat + delivery), vat: r2(vat + deliveryVat), total: r2(line + delivery + deliveryVat),
       });
     });
     // Mahsulot qatorisiz zayavka (faqat dastavka)
     if (o.items.length === 0 && fee > 0) {
-      rows.push({ ...base, key: `${trip?.id ?? o.id}-fee`, product: "Dastavka", group: "Boshqa", unit: "", unitKey: "", nds: false, feeNds, qty: 0, price: 0, delivery: fee, deliveryVat: 0, net: fee, vat: 0, total: fee });
+      rows.push({ ...base, key: `${trip?.id ?? o.id}-fee`, productId: "", product: "Dastavka", group: "Boshqa", unit: "", unitKey: "", nds: false, feeNds, qty: 0, price: 0, delivery: fee, deliveryVat: 0, net: fee, vat: 0, total: fee });
     }
   };
 
