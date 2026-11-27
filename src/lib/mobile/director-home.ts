@@ -3,6 +3,7 @@ import { pnlRange, pnlReport, type PnlReport } from "@/lib/fin-report/pnl";
 import { monthKeyOf } from "@/lib/fin-report/period";
 import { expenseItems, incomeBreakdown, pnlTotals, type BreakdownLine } from "@/lib/fin-report/income-breakdown";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
+import { loadRevenue } from "@/lib/bi/core";
 import { day, money, num, sum, sumFull } from "./fmt";
 import type { DashRange } from "./dashboard";
 import type { MobileUser } from "./auth";
@@ -163,6 +164,56 @@ export async function plitaDetail(r: DashRange): Promise<Part> {
       sec("Mahsulot bo'yicha", products.map(([name, g], i) => ({ id: `p${i}`, title: name, subtitle: `ulushi ${pctOf(g.v, total)}`, right: `${num(g.v)} dona` })), { icon: "package" }),
       sec("Qayerga ketdi (mijoz · manzil)", dest.map(([k, g], i) => { const [name, addr] = k.split("\u0000"); return { id: `c${i}`, title: name!, subtitle: `${addr} · ${g.n} reys`, right: `${num(g.v)} dona` }; }), { icon: "map-pin", empty: "Bu davrda plita yetkazilmagan" }),
       sec("Reyslar", plitaTrips.slice(0, 50).map((t) => ({ id: t.id, title: `${day(t.deliveredAt!)} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.driver.fullName} · ${t.vehicle.plate}`, right: `${num(sum(t.qtyM3))} dona` })), { target: "trips", empty: "Bu davrda plita reysi yo'q" }),
+    ],
+  };
+}
+
+// ───────────────────────── Beton — Realizatsiya reestridan ─────────────────────────
+
+/**
+ * Beton (m³) — Sotuv → «Realizatsiya» reestri qatorlari (`loadRevenue`: reyslar + qo'lda / Excel qatorlar, dispetcher
+ * tuzatishlari bilan) — Tahlil, PNL va Jami daromad bilan bitta manba. Zames (ERP'da quyish qaydi) ko'p kunlari
+ * yozilmaydi (2026-11: 33 m³ ↔ reestrda 3563 m³), shuning uchun karta reestrdan; zames izohda va tafsilot oxirida.
+ */
+const isM3 = (u: string) => /^(m3|м3|m³|куб)$/i.test(u.trim());
+const betonRows = async (r: DashRange) => (await loadRevenue(r.from, r.to)).filter((x) => isM3(x.unit));
+
+export async function betonCard(r: DashRange, pl: string, open: (k: string) => { key: string; id: string }, zamesM3: number): Promise<HomeCard> {
+  const rows = await betonRows(r);
+  const qty = rows.reduce((s, x) => s + x.qty, 0);
+  return {
+    key: "production", label: `Beton ${pl}`.trim(), value: `${num(qty)} m³`,
+    hint: `${new Set(rows.map((x) => x.customerId)).size} mijoz · zames ${num(zamesM3)} m³`, tone: "success", icon: "factory", open: open("production"),
+  };
+}
+
+export async function betonDetail(r: DashRange): Promise<Part> {
+  const rows = await betonRows(r);
+  const qty = rows.reduce((s, x) => s + x.qty, 0);
+  const where = (x: (typeof rows)[number]) => x.rz?.address?.trim() || "manzil yozilmagan";
+  const group = <K extends string>(key: (x: (typeof rows)[number]) => K) => {
+    const m = new Map<K, { v: number; n: number; list: typeof rows }>();
+    for (const x of rows) { const k = key(x); const g = m.get(k) ?? { v: 0, n: 0, list: [] }; g.v += x.qty; g.n++; g.list.push(x); m.set(k, g); }
+    return [...m];
+  };
+  const m3 = (v: number) => `${num(v)} m³`;
+  const days = group((x) => localYmd(x.date)).sort((a, b) => b[0].localeCompare(a[0]));
+  const who = group((x) => `${localYmd(x.date)}\u0000${x.customer}\u0000${where(x)}`).sort((a, b) => b[0].localeCompare(a[0]) || b[1].v - a[1].v);
+  const customers = group((x) => x.customer).sort((a, b) => b[1].v - a[1].v);
+  const grades = group((x) => x.product).sort((a, b) => b[1].v - a[1].v);
+  return {
+    title: "Beton — sotilgan (Realizatsiya reestri)",
+    subtitle: `Davr: ${r.label} · qaysi kuni qancha, kimga va qayerga · Sotuv → Realizatsiya bilan bitta hisob`,
+    fields: [
+      f("Jami beton", m3(qty)),
+      f("Mijozlar", `${customers.length} ta`),
+      f("Reestr qatorlari", `${rows.length} ta`),
+    ],
+    sections: [
+      sec("Kunlar · kim · qayerga", who.slice(0, 120).map(([k, g], i) => { const [iso, name, addr] = k.split("\u0000"); return { id: `w${i}`, title: `${dmy(iso!)} · ${name}`, subtitle: `${addr} · ${g.n} qator`, right: m3(g.v) }; }), { icon: "map-pin", empty: "Bu davrda beton sotilmagan" }),
+      sec("Kunlar bo'yicha", days.map(([iso, g]) => ({ id: `d-${iso}`, title: dmy(iso), subtitle: `${new Set(g.list.map((x) => x.customerId)).size} mijoz · ${g.n} qator`, right: m3(g.v) })), { icon: "calendar-days" }),
+      sec("Mijozlar bo'yicha", customers.slice(0, 40).map(([name, g], i) => ({ id: `c${i}`, title: name, subtitle: `${g.n} qator · ulushi ${pctOf(g.v, qty)}`, right: m3(g.v) })), { icon: "users" }),
+      sec("Marka bo'yicha", grades.map(([name, g], i) => ({ id: `g${i}`, title: name, subtitle: `ulushi ${pctOf(g.v, qty)}`, right: m3(g.v) })), { icon: "package" }),
     ],
   };
 }

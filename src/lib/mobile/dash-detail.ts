@@ -30,7 +30,7 @@ import type { BrigadeIssueKind, Role } from "@/generated/prisma";
 import { procReportDetail } from "./sklad-extra";
 import { opAt } from "@/lib/format";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
-import { factoryOutDetail, incomeDetail, plitaDetail } from "./director-home";
+import { betonDetail, factoryOutDetail, incomeDetail, plitaDetail } from "./director-home";
 
 /**
  * Dashboard kartasi bosilganda ochiladigan "batafsil" kartochka — barcha rollar uchun.
@@ -1408,7 +1408,12 @@ const BUILDERS: Partial<Record<Role, Record<string, Builder>>> = {
     cash: (c) => (c.r.key === "month" ? ownerCash() : balances(c)),
     receivable: (c) => (c.r.key === "month" ? ownerReceivable() : receivablesDetail(c.r)),
     problems: () => ownerProblems(),
-    production: (c) => ownerProduction(c.r),
+    // Beton — Realizatsiya reestridan; oxirida ERP'dagi zames qaydi (plan/fakt va zameslar ro'yxati)
+    production: async (c) => {
+      const [a, z] = await Promise.all([betonDetail(c.r), ownerProduction(c.r)]);
+      const keep = z.sections.filter((s) => /^(Mahsulotlar \(plan|Zameslar$)/.test(s.title));
+      return { ...a, fields: [...a.fields, ...z.fields.filter((x) => x.label === "Beton").map((x) => ({ ...x, label: "Zames (ERP'da quyish qaydi)" }))], sections: [...a.sections, ...keep] };
+    },
     shipment: (c) => (c.r.key === "month" ? ownerShipment() : shipmentPeriod(c.r)),
   },
 };
