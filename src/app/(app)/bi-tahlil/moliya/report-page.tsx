@@ -1,13 +1,15 @@
 import { ArrowDownCircle, ArrowUpCircle, Banknote, Calculator, FileWarning, Landmark, Percent, PiggyBank, Receipt, Scale, TrendingUp, Wallet } from "lucide-react";
-import { delta, goLiveDate } from "@/lib/bi/core";
-import { pnlReport } from "@/lib/fin-report/pnl";
+import { db } from "@/lib/db";
+import { delta, goLiveDate, loadRevenue, type SaleRow } from "@/lib/bi/core";
+import { pnlReport, pnlSum } from "@/lib/fin-report/pnl";
 import { ddsReport } from "@/lib/fin-report/dds";
 import { balanceReport } from "@/lib/fin-report/balance";
-import { type MonthKey, addMonths, isMonthKey, monthDiff, monthKeyOf, monthLabel, monthRange } from "@/lib/fin-report/period";
+import { type MonthKey, addMonths, isMonthKey, monthDiff, monthEnd, monthKeyOf, monthLabel, monthRange, monthStart } from "@/lib/fin-report/period";
 import type { FinRow } from "@/lib/fin-report/rows";
 import { moneyShort, pct } from "@/lib/format";
 import { biContext, BiPage, type SP } from "../shell";
 import { Kpi } from "../ui";
+import { ProfitBreakdown, type BreakdownLine } from "./profit-breakdown";
 import { FinReportView, type ReportTab } from "../../moliya/report-view";
 
 /**
@@ -47,6 +49,61 @@ const totalOf = (rows: FinRow[], key: string) => rowOf(rows, key)?.total ?? 0;
 const valueAt = (rows: FinRow[], key: string, i: number) => rowOf(rows, key)?.values[i] ?? 0;
 const signTone = (v: number) => (v >= 0 ? "success" : "danger");
 
+/**
+ * Yetkazilgan sotuvga tushgan dostavka summasi (mijozdan olinadi, lekin zavod daromadi emas): zayavkada — `Order.deliveryFee`
+ * yetkazilgan ulush bo'yicha (reys bilan qisman yetkazilsa — qism), reestr qatorida — o'z dostavkasi va uning QQS'i.
+ */
+async function deliveryBilled(rows: SaleRow[]): Promise<number> {
+  let fee = 0;
+  const qtyByOrder = new Map<string, number>();
+  for (const r of rows) {
+    if (r.rz) fee += r.rz.delivery + r.rz.deliveryVat;
+    else qtyByOrder.set(r.orderId, (qtyByOrder.get(r.orderId) ?? 0) + r.qty);
+  }
+  if (!qtyByOrder.size) return fee;
+  const orders = await db.order.findMany({ where: { id: { in: [...qtyByOrder.keys()] }, deliveryFee: { gt: 0 } }, select: { id: true, deliveryFee: true, items: { select: { qtyM3: true } } } });
+  for (const o of orders) {
+    const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
+    if (total > 0) fee += Number(o.deliveryFee) * Math.min(1, (qtyByOrder.get(o.id) ?? 0) / total);
+  }
+  return fee;
+}
+
+/**
+ * Jami daromad va foyda tarkibi — faqat zavod (QQSsiz, hisoblangan PNL bilan bir hisob): zavod sotuvi + boshqa tushumlar.
+ * Logistika moliyasi alohida hisob — bu yerga qo'shilmaydi (foydalanuvchi qarori, 2026-11-27). Har qator PNL manba paneliga
+ * (`?drill=`) ochiladi, shuning uchun qatorlar PNL qatorlari bilan bir xil bo'linadi (transport — ishlab chiqarish ichida).
+ */
+async function totalIncome(months: MonthKey[], sp: SP) {
+  const { parts: p } = await pnlReport(months, "accrual");
+  const t = (k: Parameters<typeof pnlSum>[1]) => pnlSum(p, k);
+  const sales = t("income"), other = t("otherIncome");
+  const income = sales + other, net = t("net");
+  // Qator bosilsa — PNL'ning manba paneli (hisoblangan rejim, shu davr): qaysi yozuv, qachon, qancha
+  const href = (drill: string) => `${BASE}/pnl?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), drill })}`;
+  const lines: BreakdownLine[] = [
+    { label: "Daromad", value: 0, kind: "head" },
+    { label: "Zavod sotuvi", value: sales, sign: "+", hint: "yetkazilgan mahsulot, qaytarilgan pul ayirilgan", href: href("income") },
+    { label: "Boshqa tushumlar", value: other, sign: "+", hint: "brak/chiqindi sotuvi, xizmat, boshqa", href: href("other-income") },
+    { label: "Jami daromad", value: income, sign: "=", kind: "total", href: href("total-income") },
+    { label: "Xarajatlar", value: 0, kind: "head" },
+    { label: "Mahsulot tannarxi", value: -t("cogs"), sign: "−", hint: "retsept × xomashyo narxi", href: href("cogs") },
+    { label: "Ishlab chiqarish va transport", value: -t("prod"), sign: "−", hint: "ish haqi, sex xarajatlari, yoqilg'i, ta'mir (zavod kassasidan)", href: href("prod") },
+    { label: "Ma'muriy xarajatlar", value: -t("admin"), sign: "−", href: href("admin") },
+    { label: "Tijoriy xarajatlar", value: -t("comm"), sign: "−", href: href("comm") },
+    { label: "Kategoriyasiz xarajat", value: -t("unknown"), sign: "−", href: href("unknown") },
+    { label: "Soliqlar", value: -t("tax"), sign: "−", href: href("tax") },
+    { label: "Kredit foizi", value: -t("interest"), sign: "−", href: href("interest") },
+    { label: "Zavod sof foydasi", value: net, sign: "=", kind: "grand", href: href("net") },
+  ];
+  const notes = [
+    "Qator ustiga bosing — summa qaysi yozuvlardan, qachon tushgani ochiladi.",
+    "Logistika moliyasi alohida hisob — bu yerga kirmaydi (Logistika → Moliya).",
+    ...(t("uncosted") > 0 ? [`Tannarxi noma'lum sotuv ${moneyShort(t("uncosted"))} — foyda biroz oshib ko'rinishi mumkin.`] : []),
+  ];
+  return { income, net, lines, notes };
+}
+
 /** Hisobot ustidagi statistika qatori — jadval bilan bir xil hisob (`cache`: jadval qayta hisoblamaydi). */
 async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
   const months = await reportMonths(sp);
@@ -63,7 +120,24 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
     const expenses = -["prod", "admin", "comm", "unknown", "tax", "interest"].reduce((s, k) => s + totalOf(rows, k), 0);
     const netPct = rowOf(rows, "net-pct")?.total ?? null, grossPct = rowOf(rows, "gross-pct")?.total ?? null, cogsPct = rowOf(rows, "cogs-pct")?.total ?? null;
     const uncosted = totalOf(rows, "uncosted");
+    // «Zavod daromadi» — rejimdan qat'i nazar: yetkazilgan mahsulot (QQS bilan) va shu davrda mijozlardan tushgan pul yonma-yon
+    const [sold, cashPnl] = await Promise.all([loadRevenue(monthStart(months[0]!), monthEnd(months[months.length - 1]!)), pnlReport(months, "cash")]);
+    const soldGross = sold.reduce((s, r) => s + r.revenue, 0), soldNet = sold.reduce((s, r) => s + r.net, 0);
+    // Mijoz mahsulot + dostavka uchun to'laydi: qarz farqida dostavka ham hisobga olinadi (daromadga esa kirmaydi — logistikaniki)
+    const delivery = await deliveryBilled(sold);
+    // Tushgan pul — mijozga qaytarilgani ayirilgan holda
+    const collected = pnlSum(cashPnl.parts, "sales") - pnlSum(cashPnl.parts, "refund"), gap = soldGross + delivery - collected;
+    const total = await totalIncome(months, sp);
     return (
+      <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
+        <ProfitBreakdown title="Zavod daromadi va foyda tarkibi" period={`${period} · QQSsiz`} base={total.income} lines={total.lines} notes={total.notes}>
+          <Kpi label="Jami daromad" value={moneyShort(total.income)} icon={PiggyBank} tone="brand" hint={`sof foyda ${moneyShort(total.net)} · bosing — tarkibi`} />
+        </ProfitBreakdown>
+        <Kpi label="Zavod daromadi — sotildi" value={moneyShort(soldGross)} icon={TrendingUp} tone="brand" hint={`${period} · yetkazilgan mahsulot · QQSsiz ${moneyShort(soldNet)}`} href={dq("pnl", "income")} />
+        <Kpi label="Pul tushdi" value={moneyShort(collected)} icon={Banknote} tone="success" hint="mijozlar to'lovi + kassaga «Savdo» kirimi − qaytarilgan pul" href={`${BASE}/pnl?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), mode: "cash", drill: "income" })}`} />
+        <Kpi label={gap >= 0 ? "Qarzga qoldi" : "Eski qarzdan yig'ildi"} value={moneyShort(Math.abs(gap))} icon={Scale} tone={gap > 0 ? "warning" : "success"} hint={`sotilgan + dostavka ${moneyShort(delivery)} − tushgan pul (shu davr)`} href="/bi-tahlil/mijozlar" />
+      </div>
       <div className={grid}>
         <Kpi label="Daromad" value={moneyShort(income)} icon={TrendingUp} tone="brand" hint={`${period} · ${cash ? "pul asosida" : "QQSsiz"}`} href={dq("pnl", "income")} />
         <Kpi label="Sotuv tannarxi" value={moneyShort(cogs)} icon={Calculator} tone="info" hint={cogsPct !== null ? `daromadning ${pct(cogsPct)}` : "daromad yo'q"} href={dq("pnl", "cogs")} />
@@ -71,6 +145,7 @@ async function ReportKpis({ tab, sp }: { tab: ReportTab; sp: SP }) {
         <Kpi label="Xarajatlar" value={moneyShort(expenses)} icon={Receipt} tone="warning" hint="ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz" href={dq("pnl", "expenses")} />
         <Kpi label="Zavod sof foydasi" value={moneyShort(net)} icon={PiggyBank} tone={signTone(net)} hint={period} href={dq("pnl", "net")} />
         <Kpi label="Sof rentabellik" value={netPct !== null ? pct(netPct) : "–"} icon={Percent} tone={netPct === null ? "default" : signTone(netPct)} hint={uncosted > 0 ? `tannarxsiz tushum ${moneyShort(uncosted)} — foyda oshib ko'rinadi` : "sof foyda ÷ daromad"} />
+      </div>
       </div>
     );
   }

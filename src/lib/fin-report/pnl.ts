@@ -448,8 +448,10 @@ const COMPOSE: Record<string, string[]> = {
   retained: ["result", "dividend"],
   // Jadvalda alohida qatori yo'q — statistika kartasi «Xarajatlar»
   expenses: ["prod", "admin", "comm", "unknown", "tax", "interest"],
+  // «Jami daromad» kartasi (zavod): sotuv + boshqa tushumlar
+  "total-income": ["income", "other-income"],
 };
-const VIRTUAL: Record<string, string> = { expenses: "Xarajatlar (ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz)" };
+const VIRTUAL: Record<string, string> = { expenses: "Xarajatlar (ishlab chiqarish, ma'muriy, tijoriy, soliq, foiz)", "total-income": "Jami daromad (sotuv + boshqa tushumlar)" };
 
 /**
  * PNL katagining manbasi: `key` — qator kaliti, `col` — oy ustuni (null — davr jami). Jami qatorlar (Yalpi foyda…) tarkibini,
