@@ -14,6 +14,7 @@ import { prixodJournal, prixodTotals } from "@/lib/receipts";
 import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
 import { materialTurnover, type TurnoverRow } from "@/lib/stock-turnover";
 import { canDo } from "@/lib/permissions";
+import { buttonMode, windowOpen } from "@/lib/perm-buttons";
 import type { MobileUser } from "./auth";
 import { reportRows } from "./sex";
 import { brigDaysList, brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
@@ -196,6 +197,34 @@ const KEY_MODULE: Record<string, string> = {
 /** Modul ichidagi, platforma alohida o'chiradigan qism (`PLATFORM_SUB_LABELS`): perms modulidan tashqari tekshiriladi. */
 const KEY_PLATFORM: Record<string, string> = { leads: "leads" };
 
+/**
+ * Ro'yxat/kartochka kaliti → veb oyna yo'li. Direktor modulni tugma rejimida bergan bo'lsa (`@kirim`, `@zayavkalar` …),
+ * ilovadagi ro'yxat vebdagi shu oyna berilgandagina ochiladi (`windowOpen`). Ro'yxatda yo'q kalit — modul ochiq bo'lsa ochiq.
+ */
+const KEY_WEB: Record<string, string> = {
+  orders: "/orders", sales: "/sales", realizatsiya: "/sales/realizatsiya", leads: "/leads", customers: "/customers",
+  invoices: "/invoices", payments: "/payments", cashflow: "/cashflow",
+  production: "/production", recipes: "/recipes", tasks: "/tasks", brigades: "/brigades", trips: "/trips", drivers: "/drivers",
+  stock: "/stock", ostatki: "/stock", prixod: "/stock/prixod", receipts: "/receipts", rasxod: "/stock/rasxod",
+  snabjeniye: "/snabjeniye", suppliers: "/suppliers", supply: "/taminot", kirim: "/mexanik-sorovlar",
+  employees: "/employees", "arenda-jurnal": "/arenda", "arenda-tx": "/arenda", "arenda-shops": "/arenda/dokon", "arenda-shop": "/arenda/dokon",
+  "kirim-qqs": "/kirim-qqs", openings: "/settings/boshlangich-qoldiq",
+};
+
+/**
+ * Direktor «Ruxsatlar»da shu ro'yxat moduliga nima bergan — vebdagi `pathAllowed` bilan bitta qoida (ruxsat rol USTIDAN ishlaydi):
+ * `true` — berilgan (rol ko'rmasa ham ochiladi), `false` — yopilgan, `undefined` — modulga ruxsat yozilmagan (rol hal qiladi).
+ * Ruxsat har so'rovda bazadan o'qiladi (`auth.ts`), shuning uchun vebda berilgan / olingan huquq ilovada darhol ishlaydi.
+ */
+export function permOpens(user: Pick<MobileUser, "role" | "perms">, key: string): boolean | undefined {
+  const mod = Object.hasOwn(KEY_MODULE, key) ? KEY_MODULE[key] : undefined;
+  const lvl = mod ? user.perms?.[mod] : undefined;
+  if (!mod || !lvl) return undefined;
+  if (lvl === "none") return false;
+  const path = Object.hasOwn(KEY_WEB, key) ? KEY_WEB[key] : undefined;
+  return buttonMode(lvl) && path ? windowOpen(mod, path, lvl) : true;
+}
+
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
 export function moduleClosed(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
   const mod = Object.hasOwn(KEY_MODULE, key) ? KEY_MODULE[key] : undefined;
@@ -203,7 +232,8 @@ export function moduleClosed(user: Pick<MobileUser, "role" | "perms">, key: stri
   if (isModuleOff(mod) || (Object.hasOwn(KEY_PLATFORM, key) && isModuleOff(KEY_PLATFORM[key]))) return true;
   if (user.role === "DIRECTOR") return false;
   if ((user.role === "DRIVER" && key === "trips") || (user.role === "BRIGADIER" && key === "tasks")) return false;
-  return !!mod && user.perms?.[mod] === "none";
+  // "yo'q" — yopiq; tugma rejimida shu ro'yxatning veb oynasi berilmagan bo'lsa ham yopiq (vebdagi kabi)
+  return permOpens(user, key) === false;
 }
 
 /**
@@ -221,7 +251,8 @@ export function journalGranted(user: Pick<MobileUser, "role" | "perms">, key: st
 export function listAllowed(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
   const meta = Object.hasOwn(ACCESS, key) ? ACCESS[key] : undefined; // "constructor" kabi prototip kalitlari — ro'yxat emas
   if (!meta) return false;
-  return (user.role === "DIRECTOR" || meta.roles.includes(user.role) || journalGranted(user, key)) && !moduleClosed(user, key);
+  // Direktor bergan modul ruxsati rol ro'yxatida yo'q xodimga ham ochadi (veb menyusi kabi)
+  return (user.role === "DIRECTOR" || meta.roles.includes(user.role) || journalGranted(user, key) || permOpens(user, key) === true) && !moduleClosed(user, key);
 }
 
 /**
@@ -230,7 +261,7 @@ export function listAllowed(user: Pick<MobileUser, "role" | "perms">, key: strin
  */
 export function listsFor(role: Role, perms?: MobileUser["perms"]) {
   return Object.entries(ACCESS)
-    .filter(([key, m]) => ((role === "DIRECTOR" || m.roles.includes(role)) && !m.menuHide?.includes(role)) || journalGranted({ role, perms }, key))
+    .filter(([key, m]) => ((role === "DIRECTOR" || m.roles.includes(role)) && !m.menuHide?.includes(role)) || journalGranted({ role, perms }, key) || (role !== "DIRECTOR" && permOpens({ role, perms }, key) === true))
     .filter(([key]) => !moduleClosed({ role, perms }, key))
     .map(([key, m]) => ({ key, title: m.title }));
 }

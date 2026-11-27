@@ -9,13 +9,12 @@ import { SUPPLY_LABEL } from "@/lib/supply";
 import { procurementHome } from "@/lib/procurement-home";
 import { skladLogistika } from "@/lib/sklad-logistika";
 import { logisticsDashboard } from "@/lib/logistics-dashboard";
-import { ownerPeriod } from "./owner-period";
 import { payables } from "./payables";
 import { ORDER_LOGI } from "@/lib/logistics";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { unitLabel, unitTotals, type UnitRow } from "@/lib/unit";
 import { BRIGADE_ISSUE, dayPlan, taskPhase } from "@/lib/brigade-shift";
-import { day, inUnit, money, num, pctText, short, shortSigned, sum, sumFull, time, totalsText, tripQty } from "./fmt";
+import { day, inUnit, money, num, pctText, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
 import { ATT_LABEL, INVOICE_LABEL, MOVE_LABEL, ORDER_LABEL, asOf, dashRange, monthShares, procRange, staffAt, type DashRange } from "./dashboard";
 import { parsePeriod } from "./sex";
 import { tripPayKm } from "@/lib/trip-summary";
@@ -31,6 +30,7 @@ import type { BrigadeIssueKind, Role } from "@/generated/prisma";
 import { procReportDetail } from "./sklad-extra";
 import { opAt } from "@/lib/format";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
+import { factoryOutDetail, incomeDetail, plitaDetail } from "./director-home";
 
 /**
  * Dashboard kartasi bosilganda ochiladigan "batafsil" kartochka — barcha rollar uchun.
@@ -1068,79 +1068,6 @@ async function activeStaff(r?: DashRange): Promise<Part> {
 
 // ───────────────────────── Direktor (Egasi dashbordi) ─────────────────────────
 
-/**
- * Tannarxi aniq emas mahsulotlar: katalogga bog'lanmagan yoki retsepti yo'q — foydada tannarxi taxminiy (yoki yo'q).
- * Direktor ro'yxatdan qaysi mahsulotni bog'lash / retsept kiritish kerakligini ko'radi.
- */
-function uncostedSection(rows: SaleRow[]): HomeSection {
-  const byNet = (g: SaleRow[]) => sumBy(g, (s) => s.net);
-  const list = groupBy(rows.filter((s) => !s.costKnown), (s) => s.productId).sort((a, b) => byNet(b[1]) - byNet(a[1])).map(([id, g]) => {
-    const est = sumBy(g, (s) => s.estCost ?? 0), linked = !id.startsWith("rz:");
-    return {
-      id: `u-${id}`, title: `${g[0]!.code ? `${g[0]!.code} · ` : ""}${g[0]!.product}`,
-      subtitle: `${linked ? "retsept yo'q" : "katalogga bog'lanmagan"} · ${inUnit(sumBy(g, (s) => s.qty), g[0]!.unit)} · ${est > 0 ? `taxminiy tannarx ${short(est)}` : "tannarx noma'lum"}`,
-      right: short(byNet(g)), tone: "warning" as Tone,
-    };
-  });
-  return sec("Tannarxi aniq emas mahsulotlar", list, { icon: "triangle-alert", empty: "Hamma sotilgan mahsulotning retsepti bor" });
-}
-
-/** Mahsulot marjasi — faqat tannarxi ma'lum (retseptli) sotuv bo'yicha; retseptsizlari `uncostedSection` da. */
-function marginRows(rows: SaleRow[]): HomeRow[] {
-  const byNet = (g: SaleRow[]) => sumBy(g, (s) => s.net);
-  return groupBy(rows.filter((s) => s.costKnown), (s) => s.productId).sort((a, b) => byNet(b[1]) - byNet(a[1])).map(([id, list]) => {
-    const rev = byNet(list), cost = sumBy(list, (s) => s.cost);
-    const margin = rev > 0 ? ((rev - cost) / rev) * 100 : 0;
-    return { id, title: `${list[0]!.code} · ${list[0]!.product}`, subtitle: `sotuv ${short(rev)} · tannarx ${short(cost)} · ${inUnit(sumBy(list, (s) => s.qty), list[0]!.unit)}`, right: pctText(margin), tone: (margin >= 20 ? "success" : margin >= 10 ? "warning" : "danger") as Tone };
-  });
-}
-
-/** Foyda bo'limining umumiy maydonlari: tannarxning taxminiy qismi va tannarxsiz tushum (bo'lsa). */
-const costFields = (x: { cogs: number; cogsEst: number; uncosted: number }) => [
-  f("Tannarx", `${money(x.cogs)}${x.cogsEst > 0 ? ` · shundan taxminiy ${short(x.cogsEst)}` : ""}`),
-  ...(x.uncosted > 0 ? [f("Tannarxsiz kirgan tushum", money(x.uncosted), "warning" as Tone)] : []),
-];
-
-/** Sof foyda — oydan boshqa davr uchun: vebdagi «Foyda-zarar» qoidalari shu davrga (`ownerPeriod` → `pnlRange`). */
-async function ownerProfitPeriod(r: DashRange): Promise<Part> {
-  const [P, sales] = await Promise.all([ownerPeriod(r), loadSales(r.from, r.to)]);
-  const x = P.profit;
-  return {
-    title: `Sof foyda — ${period(r)}`, subtitle: "daromad − tannarx − xarajatlar · vebdagi «Foyda-zarar» bilan bir hisob",
-    fields: [
-      f("Sof foyda", sumFull(x.net), x.net < 0 ? "danger" : "success"), f("Daromad (QQS'siz)", money(x.revenue)), ...costFields(x),
-      f("Yalpi foyda", sumFull(x.gross)), f("Xarajatlar", money(x.opex)), f("Rentabellik", pctText(x.revenue > 0 ? (x.net / x.revenue) * 100 : null)),
-    ],
-    sections: [
-      uncostedSection(sales),
-      sec("Mahsulot marjasi", marginRows(sales), { icon: "package", empty: "Bu davrda retseptli mahsulot sotilmagan" }),
-    ],
-  };
-}
-
-async function ownerProfit(): Promise<Part> {
-  const d = await ownerCached();
-  const S = d.summary;
-  const tone = (l: string): Tone => (l === "crit" ? "danger" : l === "warn" ? "warning" : "success");
-  const cogs = d.profitTable.find((t) => t.key === "cogs")?.month ?? 0;
-  const sales = await loadSales(d.monthStart, new Date(d.today.getFullYear(), d.today.getMonth(), d.today.getDate() + 1));
-  return {
-    title: "Sof foyda", subtitle: "Joriy oy · vebdagi «Foyda-zarar» bilan bir hisob",
-    fields: [
-      f("Sof foyda (oy)", sumFull(S.profit.month), tone(d.levels.profit)),
-      f("Bugun", sumFull(S.profit.today)), f("Plan (oy)", S.profit.plan == null ? "—" : money(S.profit.plan)), f("Prognoz (oy oxiri)", sumFull(S.profit.forecast)),
-      f("Yalpi foyda", sumFull(S.profit.gross)), ...costFields({ cogs, cogsEst: S.profit.cogsEst, uncosted: S.profit.uncosted }),
-      f("Marja (retseptli mahsulotlar)", `${pctText(S.margin.total)}${S.margin.plan != null ? ` · plan ${pctText(S.margin.plan)}` : ""}`),
-    ],
-    sections: [
-      sec("Foyda jadvali (oy)", d.profitTable.map((x) => ({ id: x.key, title: x.label, subtitle: `bugun ${shortSigned(x.today)}${x.plan != null ? ` · plan ${short(x.plan)}` : ""}`, right: shortSigned(x.month), tone: (x.pct == null ? "info" : x.invert ? (x.pct > 100 ? "danger" : "success") : x.pct >= 90 ? "success" : x.pct >= 60 ? "warning" : "danger") as Tone })), { icon: "banknote" }),
-      uncostedSection(sales),
-      sec("Mahsulot marjasi", S.margin.byProduct.map((p) => ({ id: p.id, title: `${p.code} · ${p.name}`, subtitle: `sotuv ${short(p.revenue)} · tannarx ${short(p.cost)} · ${inUnit(p.qty, p.unit)}`, right: pctText(p.margin), tone: (p.margin >= 20 ? "success" : p.margin >= 10 ? "warning" : "danger") as Tone })), { icon: "package", empty: "Bu oyda sotuv yo'q" }),
-      sec("Dinamika — 3 oy", d.trend.map((t) => ({ id: `tr-${t.key}`, title: t.label, subtitle: `tushum ${short(t.revenue)} · xarajat ${short(t.expenses)}`, right: shortSigned(t.profit), tone: (t.profit >= 0 ? "success" : "danger") as Tone })), { icon: "chart-column" }),
-    ],
-  };
-}
-
 async function ownerExpenses(): Promise<Part> {
   const d = await ownerCached();
   const E = d.expenses;
@@ -1235,7 +1162,7 @@ async function ownerProduction(r: DashRange): Promise<Part> {
   const month = r.key === "month";
   const [d, batches, gap] = await Promise.all([
     month ? ownerCached() : null,
-    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } } } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, deliveryAddress: true, customer: { select: { name: true } } } } } }),
     prodShipGap(r),
   ]);
   const tone = (l: string): Tone => (l === "crit" ? "danger" : l === "warn" ? "warning" : "success");
@@ -1244,7 +1171,7 @@ async function ownerProduction(r: DashRange): Promise<Part> {
   const qtyOf = (list: typeof batches) => totalsText(list.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 })));
   const S = d?.summary.production;
   return {
-    title: "Ishlab chiqarish", subtitle: `${period(r)} · tarkibi`,
+    title: "Beton ishlab chiqarish", subtitle: `${period(r)} · qaysi kuni qancha, kimga va qayerga`,
     fields: [
       f("Beton", `${num(total)} m³${S?.concretePlan ? ` / plan ${num(S.concretePlan)} m³ · ${share(total, S.concretePlan)}` : ""}`, d ? tone(d.levels.production) : undefined),
       f("Zameslar", `${cnt(batches.length, "ta")}${batches.length > concrete.length ? ` · dona mahsulot ${qtyOf(batches.filter((b) => b.product.unit !== "m3"))}` : ""}`),
@@ -1252,6 +1179,7 @@ async function ownerProduction(r: DashRange): Promise<Part> {
       ...(S ? [f("Bugun", `${num(S.concreteToday)} m³`), f("Quvvat yuklanishi", pctText(S.capacityPct))] : []),
     ],
     sections: pick(
+      betonWhere(concrete),
       ...gap,
       breakdown("Beton — mahsulot bo'yicha", concrete, (b) => b.product.name, (b) => sum(b.qtyM3), (v) => `${num(v)} m³`, { icon: "package", unitWord: "zames" }),
       breakdown("Beton — mijozlar bo'yicha", concrete, (b) => (b.order ? b.order.customer.name : "Omborga"), (b) => sum(b.qtyM3), (v) => `${num(v)} m³`, { icon: "users", unitWord: "zames" }),
@@ -1260,6 +1188,19 @@ async function ownerProduction(r: DashRange): Promise<Part> {
       sec("Zameslar", batches.slice(0, 50).map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${dt(b.date)} · ${b.shift}-smena · ${b.order ? `${b.order.customer.name} · ${b.order.orderNo}` : "Omborga"}`, right: inUnit(sum(b.qtyM3), b.product.unit) })), { target: "production", empty: "Bu davrda zames yo'q" }),
     ),
   };
+}
+
+/** Beton: kun → mijoz → manzil (yangi kun tepada) — «qaysi kuni qancha, kim, qayerga». Omborga quyilgani — «Omborga». */
+function betonWhere(rows: { date: Date; qtyM3: unknown; order: { deliveryAddress: string; customer: { name: string } } | null }[]): HomeSection {
+  const m = new Map<string, { iso: string; who: string; where: string; v: number; n: number }>();
+  for (const b of rows) {
+    const iso = localYmd(b.date), who = b.order?.customer.name ?? "Omborga", where = b.order?.deliveryAddress ?? "zavod ombori";
+    const k = `${iso}\u0000${who}\u0000${where}`;
+    const x = m.get(k) ?? { iso, who, where, v: 0, n: 0 };
+    x.v += sum(b.qtyM3); x.n++; m.set(k, x);
+  }
+  const list = [...m.values()].sort((a, b) => b.iso.localeCompare(a.iso) || b.v - a.v);
+  return sec("Kunlar · kim · qayerga", list.slice(0, 80).map((x, i) => ({ id: `w${i}`, title: `${x.iso.split("-").reverse().join(".")} · ${x.who}`, subtitle: `${x.where} · ${cnt(x.n, "zames")}`, right: `${num(x.v)} m³` })), { icon: "map-pin", empty: "Bu davrda beton quyilmagan" });
 }
 
 async function ownerShipment(): Promise<Part> {
@@ -1459,7 +1400,10 @@ const BUILDERS: Partial<Record<Role, Record<string, Builder>>> = {
   DIRECTOR: {
     revenue: (c) => salesRevenue(c.r, undefined, "Tushum"),
     // "Oy" — Egasi dashbordi (vebdagi raqam); boshqa davr — shu davr bo'yicha
-    profit: (c) => (c.r.key === "month" ? ownerProfit() : ownerProfitPeriod(c.r)),
+    // «Jami daromad» (hero) — PNL foyda tarkibi; surganda «Umumiy zavod chiqimi» (`./director-home.ts`)
+    profit: (c) => incomeDetail(c.user, c.r),
+    "factory-out": (c) => factoryOutDetail(c.r),
+    plita: (c) => plitaDetail(c.r),
     expenses: (c) => (c.r.key === "month" ? ownerExpenses() : expenses(c.r)),
     cash: (c) => (c.r.key === "month" ? ownerCash() : balances(c)),
     receivable: (c) => (c.r.key === "month" ? ownerReceivable() : receivablesDetail(c.r)),

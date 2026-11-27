@@ -7,15 +7,10 @@ import { useRouter } from "next/navigation";
 import { PieChart, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { money, pct } from "@/lib/format";
+import type { BreakdownLine } from "@/lib/fin-report/income-breakdown";
 
-/**
- * Foyda tarkibi qatori: `sign` — summa oldidagi belgi (+ daromad, − xarajat, = natija), `kind` — ko'rinishi
- * (`head` — guruh sarlavhasi, `line` — oddiy, `sub` — qator tarkibi, `total` — oraliq natija, `grand` — yakuniy natija,
- * `excluded` — ma'lumot uchun ko'rsatiladi, lekin hisobga kirmaydi: kulrang, ulush o'rniga «kirmaydi»).
- */
-export type BreakdownLine = { label: string; value: number; sign?: "+" | "−" | "="; kind?: "head" | "line" | "sub" | "total" | "grand" | "excluded"; hint?: string;
-  /** Bosilsa — manba paneli (qaysi yozuvlar, qachon) */
-  href?: string };
+/** Foyda tarkibi qatori — `lib/fin-report/income-breakdown.ts` (veb PNL va mobil direktor bosh sahifasi bitta hisobdan). */
+export type { BreakdownLine };
 
 /**
  * «Jami daromad» kartasi — bosilganda foyda tarkibi oynasi: daromad qismlari → tannarx → xarajatlar → sof foyda.

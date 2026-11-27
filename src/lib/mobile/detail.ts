@@ -34,7 +34,7 @@ import {
 } from "@/lib/procurement-const";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
-import { DETAIL_KEY, OSTATKI_SUM, PAY_LABEL, driverEmployeeId, journalGranted, listAllowed, moduleClosed, myBrigadeIds, payreqMethods, qtyUnit, shortSum, skladPeriod, turnoverLow, turnoverSums, ListError } from "./list";
+import { DETAIL_KEY, OSTATKI_SUM, PAY_LABEL, driverEmployeeId, journalGranted, listAllowed, moduleClosed, permOpens, myBrigadeIds, payreqMethods, qtyUnit, shortSum, skladPeriod, turnoverLow, turnoverSums, ListError } from "./list";
 import { unitLabel, unitShort, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
 import { dateRu, fmtNum, opAt, time } from "@/lib/format";
 import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
@@ -654,7 +654,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   const card = DETAIL_KEY[key] ?? key;
   const allowed = DETAIL_ROLES[card];
   // Istisno: o'zi yozgan «Chiqim» kartochkasi — direktor «issue» ruxsatini bergan boshqa rol xodimiga ham (ro'yxat bilan bir qoida)
-  if (allowed && user.role !== "DIRECTOR" && !allowed.includes(user.role) && !journalGranted(user, card)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  // Direktor «Ruxsatlar»da modulni bergan bo'lsa — kartochka ham ochiladi (ro'yxat bilan bir qoida, `permOpens`)
+  if (allowed && user.role !== "DIRECTOR" && !allowed.includes(user.role) && !journalGranted(user, card) && permOpens(user, card) !== true) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Direktor modulni "yo'q" qilgan bo'lsa kartochka ham ochilmaydi (veb sahifa kabi) — id qo'lda yuborilsa ham
   if (moduleClosed(user, card)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   if (key === "activity") {

@@ -25,8 +25,9 @@ import { MECH_STATUS_SHORT, MECH_STATUS_TONE, mechSubject } from "@/lib/mechanic
 import { FACTORY_REQUEST_WHERE, LOGI_REQUEST_WHERE, canLogiPay, canSeeLogiMoney } from "@/lib/logistics-finance";
 import type { MechanicRequestStatus } from "@/generated/prisma";
 import { soleUnit } from "@/lib/unit";
-import { day, inUnit, money, num, short, sum, sumFull, time, totalsText, tripQty } from "./fmt";
+import { day, inUnit, money, num, short, sum, time, totalsText, tripQty } from "./fmt";
 import { dashRange, roleDashboard } from "./dashboard";
+import { directorMoneyCards, plitaCard } from "./director-home";
 import { ownerPeriod } from "./owner-period";
 import { ownerCached } from "./owner-cache";
 import { periodId } from "./sex";
@@ -465,31 +466,38 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const pid = period === "custom" ? `custom~${fmtYmd(cFrom!)}~${fmtYmd(cToIn!)}` : period;
       revenueCard.open = { key: "dash", id: `revenue.${pid}` };
       const dOpen = (k: string) => ({ key: "dash", id: `${k}.${pid}` });
+      // Hero: «Jami daromad» (PNL) va surganda «Umumiy zavod chiqimi»; Otgruzka o'rnida — «Plita» (`./director-home.ts`)
+      const pr = dashRange({ period, from: opts.from, to: opts.to });
+      const [moneyCards, plita] = await Promise.all([
+        directorMoneyCards(pr, period === "month" ? "" : `(${periodLabel})`, dOpen),
+        plitaCard(pr, period === "month" ? "" : `(${periodLabel})`, dOpen),
+      ]);
       if (period !== "month") {
-        const pr = dashRange({ period, from: opts.from, to: opts.to });
         const P = await ownerPeriod(pr);
         const pl = `(${periodLabel})`;
         const endTag = P.until ? ` (${periodLabel} oxirida)` : "";
         cards.push(
           revenueCard,
-          { key: "profit", label: `Sof foyda ${pl}`, value: sumFull(P.profit.net), hint: `yalpi ${short(P.profit.gross)} · xarajat ${short(P.profit.opex)}${P.profit.cogsEst > 0 ? ` · taxminiy tannarx ${short(P.profit.cogsEst)}` : ""}`, tone: P.profit.net < 0 ? "danger" : "success", icon: "banknote", open: dOpen("profit") },
+          ...moneyCards,
           { key: "expenses", label: `Xarajatlar ${pl}`, value: short(P.expenses.total), hint: P.expenses.plan ? `byudjet ${short(P.expenses.plan)}` : `tushumning ${pctTxt(P.expenses.ratio)}`, tone: P.expenses.plan && P.expenses.total > P.expenses.plan ? "danger" : "success", icon: "wallet", open: dOpen("expenses") },
           { key: "cash", label: `Pul${endTag}`, value: short(P.cash.total), hint: `kassa ${short(P.cash.cash)} · bank ${short(P.cash.bank)}`, tone: P.cash.total < 0 ? "danger" : "success", icon: "landmark", open: dOpen("cash") },
           { key: "receivable", label: `Debitorka${endTag}`, value: short(P.receivable.total), hint: `${P.receivable.debtors} ta qarzdor`, tone: P.receivable.total > 0 ? "warning" : "success", icon: "receipt", open: dOpen("receivable") },
           // Muammolar — qaror kutayotgan hozirgi holat (tarixi yo'q)
           { key: "problems", label: "Muammolar (hozir)", value: String(d.problems.length), hint: d.problems.length ? "qaror kerak" : "hammasi joyida", tone: d.problems.length ? (d.problems.some((p) => p.level === "crit") ? "danger" : "warning") : "success", icon: "triangle-alert", open: dOpen("problems") },
-          { key: "production", label: `Ishlab chiqarish ${pl}`, value: `${num(P.production.concrete)} m³`, hint: P.production.plan ? `plan ${num(P.production.plan)} m³ · ${pctTxt((P.production.concrete / P.production.plan) * 100)}` : `plan bajarilishi ${pctTxt(P.production.planPct)}`, tone: P.production.plan && P.production.concrete < P.production.plan * 0.9 ? "warning" : "success", icon: "factory", open: dOpen("production") },
+          { key: "production", label: `Beton ${pl}`, value: `${num(P.production.concrete)} m³`, hint: P.production.plan ? `plan ${num(P.production.plan)} m³ · ${pctTxt((P.production.concrete / P.production.plan) * 100)}` : `plan bajarilishi ${pctTxt(P.production.planPct)}`, tone: P.production.plan && P.production.concrete < P.production.plan * 0.9 ? "warning" : "success", icon: "factory", open: dOpen("production") },
           { key: "shipment", label: `Otgruzka ${pl}`, value: `${num(P.shipment.m3)} m³`, hint: `${P.shipment.trips} reys`, tone: "info", icon: "truck", open: dOpen("shipment") },
+          plita,
         );
       } else cards.push(
         revenueCard,
-        { key: "profit", label: "Sof foyda", value: sumFull(S.profit.month), hint: `prognoz ${short(S.profit.forecast)}${S.profit.cogsEst > 0 ? ` · taxminiy tannarx ${short(S.profit.cogsEst)}` : ""}`, tone: tone(L.profit), icon: "banknote", open: dOpen("profit") },
+        ...moneyCards,
         { key: "expenses", label: "Xarajatlar", value: short(S.expenses.month), hint: S.expenses.plan ? `byudjet ${short(S.expenses.plan)}` : `tushumning ${pctTxt(S.expenses.ratio)}`, tone: tone(L.expenses), icon: "wallet", open: dOpen("expenses") },
         { key: "cash", label: "Pul", value: short(S.cash.total), hint: `kassa ${short(S.cash.cash)} · bank ${short(S.cash.bank)}`, tone: tone(L.cash), icon: "landmark", open: dOpen("cash") },
         { key: "receivable", label: "Debitorka", value: short(S.receivable.total), hint: S.receivable.overdue ? `muddati o'tgan ${short(S.receivable.overdue)}` : `${S.receivable.debtors} ta qarzdor`, tone: tone(L.receivable), icon: "receipt", open: dOpen("receivable") },
         { key: "problems", label: "Muammolar", value: String(d.problems.length), hint: d.problems.length ? "qaror kerak" : "hammasi joyida", tone: d.problems.length ? (d.problems.some((p) => p.level === "crit") ? "danger" : "warning") : "success", icon: "triangle-alert", open: dOpen("problems") },
-        { key: "production", label: "Ishlab chiqarish", value: `${num(S.production.concreteMonth)} m³`, hint: S.production.concretePlan ? `plan ${num(S.production.concretePlan)} m³ · bugun ${num(S.production.concreteToday)}` : `bugun ${num(S.production.concreteToday)} m³`, tone: tone(L.production), icon: "factory", open: dOpen("production") },
+        { key: "production", label: "Beton", value: `${num(S.production.concreteMonth)} m³`, hint: S.production.concretePlan ? `plan ${num(S.production.concretePlan)} m³ · bugun ${num(S.production.concreteToday)}` : `bugun ${num(S.production.concreteToday)} m³`, tone: tone(L.production), icon: "factory", open: dOpen("production") },
         { key: "shipment", label: "Otgruzka", value: `${num(S.shipment.month)} m³`, hint: `bugun ${num(S.shipment.today)} m³ · ${S.shipment.tripsToday} reys`, tone: tone(L.transport), icon: "truck", open: dOpen("shipment") },
+        plita,
       );
       const decisionsSection: HomeSection = {
         title: "Egasi qarori kerak", empty: "Qaror talab qiladigan masala yo'q", icon: "triangle-alert",

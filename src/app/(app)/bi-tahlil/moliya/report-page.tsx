@@ -1,8 +1,8 @@
 import { ArrowDownCircle, ArrowUpCircle, Banknote, Calculator, FileWarning, Landmark, Percent, PiggyBank, Receipt, Scale, TrendingUp, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
-import { delta, goLiveDate, isRealizationRow, loadRevenue, type SaleRow } from "@/lib/bi/core";
+import { delta, goLiveDate, loadRevenue, type SaleRow } from "@/lib/bi/core";
 import { pnlReport, pnlSum } from "@/lib/fin-report/pnl";
-import { avtoReport } from "@/lib/fin-report/avto";
+import { incomeBreakdown } from "@/lib/fin-report/income-breakdown";
 import { getSession } from "@/lib/auth";
 import { canSeeLogiMoney } from "@/lib/logistics-finance";
 import { ddsReport } from "@/lib/fin-report/dds";
@@ -81,43 +81,12 @@ async function totalIncome(months: MonthKey[], sp: SP) {
   const from = monthStart(months[0]!), to = monthEnd(months[months.length - 1]!);
   // Logistika daromadi — faqat ma'lumot uchun («kirmaydi»), summasini ko'rish huquqi bor rollarga
   const session = await getSession();
-  const [{ parts: p, otherIncomeBy }, sold, avto] = await Promise.all([
-    pnlReport(months, "accrual"), loadRevenue(from, to), session && canSeeLogiMoney(session) ? avtoReport(from, to) : Promise.resolve(null),
-  ]);
-  const t = (k: Parameters<typeof pnlSum>[1]) => pnlSum(p, k);
-  const sales = t("income"), other = t("otherIncome"), refund = t("refund");
-  // Sotuv manbasi bo'yicha (QQSsiz — PNL bilan bir xil): zayavka reyslari va Realizatsiya reestri qatorlari
-  const fromReg = sold.filter(isRealizationRow).reduce((x, r) => x + r.net, 0);
-  const fromOrders = sold.reduce((x, r) => x + r.net, 0) - fromReg;
-  const income = sales + other, net = t("net");
+  const b = await incomeBreakdown(await pnlReport(months, "accrual"), from, to, { logi: !!session && canSeeLogiMoney(session) });
   // Qator bosilsa — PNL'ning manba paneli (hisoblangan rejim, shu davr): qaysi yozuv, qachon, qancha
   const href = (drill: string) => `${BASE}/pnl?${new URLSearchParams({ ...(sp.oy ? { oy: sp.oy } : {}), ...(sp.n ? { n: sp.n } : {}), drill })}`;
-  const lines: BreakdownLine[] = [
-    { label: "Daromad", value: 0, kind: "head" },
-    { label: "Zavod sotuvi", value: sales, sign: "+", hint: "yetkazilgan mahsulot (QQSsiz)", href: href("income") },
-    { label: "Zayavka reyslari", value: fromOrders, kind: "sub", hint: "Manba: Buyurtmalar → yetkazilgan reyslar", href: href("income") },
-    { label: "Realizatsiya reestri", value: fromReg, kind: "sub", hint: "Manba: Sotuv → Realizatsiya (qo'lda / Excel qatorlar)", href: href("income") },
-    { label: "Mijozga qaytarilgan pul", value: -refund, sign: "−", kind: "sub", hint: "Manba: Kassa → «Sotib oluvchi pulini qaytarish»", href: href("refund") },
-    { label: "Boshqa tushumlar", value: other, sign: "+", hint: "sotuvdan tashqari kirim", href: href("other-income") },
-    ...otherIncomeBy.map((o): BreakdownLine => ({ label: o.name, value: o.total, kind: "sub", hint: "Manba: Kassa → Kirim-Chiqim", href: href("other-income") })),
-    { label: "Jami daromad", value: income, sign: "=", kind: "total", href: href("total-income") },
-    ...(avto && avto.total.revenue ? [{ label: "Logistika daromadi", value: avto.total.revenue, kind: "excluded" as const, hint: "Manba: Logistika → Moliya (dostavka, usluga) — alohida hisob, zavodga qo'shilmaydi", href: "/logistika/moliya" }] : []),
-    { label: "Xarajatlar", value: 0, kind: "head" },
-    { label: "Mahsulot tannarxi", value: -t("cogs"), sign: "−", hint: "retsept × xomashyo narxi", href: href("cogs") },
-    { label: "Ishlab chiqarish va transport", value: -t("prod"), sign: "−", hint: "ish haqi, sex xarajatlari, yoqilg'i, ta'mir (zavod kassasidan)", href: href("prod") },
-    { label: "Ma'muriy xarajatlar", value: -t("admin"), sign: "−", href: href("admin") },
-    { label: "Tijoriy xarajatlar", value: -t("comm"), sign: "−", href: href("comm") },
-    { label: "Kategoriyasiz xarajat", value: -t("unknown"), sign: "−", href: href("unknown") },
-    { label: "Soliqlar", value: -t("tax"), sign: "−", href: href("tax") },
-    { label: "Kredit foizi", value: -t("interest"), sign: "−", href: href("interest") },
-    { label: "Zavod sof foydasi", value: net, sign: "=", kind: "grand", href: href("net") },
-  ];
-  const notes = [
-    "Qator ustiga bosing — summa qaysi yozuvlardan, qachon tushgani ochiladi.",
-    "Kirmaydi: logistika daromadi (dostavka, usluga — alohida hisob, Logistika → Moliya), mijoz to'lovlari (pul oqimi, daromad emas), kredit va hisoblar orasidagi o'tkazmalar.",
-    ...(t("uncosted") > 0 ? [`Tannarxi noma'lum sotuv ${moneyShort(t("uncosted"))} — foyda biroz oshib ko'rinishi mumkin.`] : []),
-  ];
-  return { income, net, sales, other, lines, notes };
+  const lines: BreakdownLine[] = b.lines.map((l) => (l.drill && !l.href ? { ...l, href: href(l.drill) } : l));
+  const notes = ["Qator ustiga bosing — summa qaysi yozuvlardan, qachon tushgani ochiladi.", ...b.notes];
+  return { income: b.income, net: b.net, sales: b.sales, other: b.other, lines, notes };
 }
 
 /** Hisobot ustidagi statistika qatori — jadval bilan bir xil hisob (`cache`: jadval qayta hisoblamaydi). */
