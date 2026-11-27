@@ -1,0 +1,117 @@
+diff --git a/.env.example b/.env.example
+index c476ae1..d4f5d99 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,3 +1,6 @@
+ # Shu faylni ".env" deb nusxalang va qiymatlarni yozing
+ BOT_TOKEN=123456789:AAAA_BotFatherdan_olingan_token
+ GROUP_ID=-1001234567890
++# Insof ERP (Sotuv CRM): yangi obyekt va takliflar CRM'ga ham yoziladi. Bo'sh bo'lsa — ulanmaydi
++ERP_URL=https://insof-erp.uz
++ERP_TOKEN=
+diff --git a/bot.py b/bot.py
+index 1f39a83..66c54b9 100644
+--- a/bot.py
++++ b/bot.py
+@@ -21,6 +21,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
+ 
+ import config as C
+ import db
++import erp
+ from masofa import yol_masofa_km
+ from praylist import PRAYSLAR
+ from rasmiy import mahsulotlar_royxati, make_rasmiy
+@@ -636,6 +637,7 @@ async def t_tasdiq(cb: CallbackQuery, state: FSMContext, bot: Bot):
+     await state.clear()
+     _, _, jami, avans, qoldiq = hisobla(t)
+     tid = db.taklif_qosh(cb.from_user.id, cb.from_user.full_name, t, jami)
++    erp.taklif(tid, cb.from_user, t, jami)  # Insof ERP → Sotuv CRM (ERP_URL/ERP_TOKEN bo'lsa)
+     t["raqam"] = f"{tid:04d}"
+     t["sana"] = date.today().strftime("%d.%m.%Y")
+     C.TAKLIF_PAPKA.mkdir(exist_ok=True)
+@@ -928,6 +930,7 @@ async def o_joy(m: Message, state: FSMContext, bot: Bot):
+                         egasi=o["egasi"], tel=o["tel"], prorab=o.get("prorab"), prorab_tel=o.get("prorab_tel"),
+                         manzil=o["manzil"], ehtiyojlar=nomlar,
+                         lat=lat, lon=lon, rasm_file_id=o["rasm_file_id"])
++    erp.obyekt(oid, m.from_user, o, nomlar, lat, lon)  # Insof ERP → Sotuv CRM
+     qator = "\n".join(("✅ " if i in o["ehtiyojlar"] else "❓ ") + n for i, n in enumerate(C.EHTIYOJLAR))
+     km = ""
+     if lat is not None:
+diff --git a/erp.py b/erp.py
+new file mode 100644
+index 0000000..c7ced29
+--- /dev/null
++++ b/erp.py
+@@ -0,0 +1,72 @@
++"""Insof ERP (Sotuv CRM) bilan bog'lanish: yangi obyekt va tijorat taklifi CRM'ga ham yoziladi.
++
++.env da ERP_URL (masalan https://insof-erp.uz) va ERP_TOKEN (ERP'dagi CRM_BOT_TOKEN bilan bir xil) bo'lsa ishlaydi,
++bo'lmasa jim o'tkaziladi. ERP javob bermasa bot ishi to'xtamaydi — faqat logga yoziladi.
++"""
++import asyncio
++import logging
++import os
++
++import aiohttp
++
++log = logging.getLogger("insof.erp")
++
++ERP_URL = os.environ.get("ERP_URL", "").rstrip("/")
++ERP_TOKEN = os.environ.get("ERP_TOKEN", "")
++
++
++def yoqilgan() -> bool:
++    return bool(ERP_URL and ERP_TOKEN)
++
++
++async def _post(payload: dict) -> None:
++    url = f"{ERP_URL}/api/crm/realizator"
++    for urinish in range(3):
++        try:
++            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
++                async with s.post(url, json=payload, headers={"Authorization": f"Bearer {ERP_TOKEN}"}) as r:
++                    if r.status == 200:
++                        j = await r.json()
++                        log.info("ERP CRM: %s %s -> mijoz %s%s", payload["event"], payload["ref"], j.get("customerId"),
++                                 " (takror)" if j.get("duplicate") else "")
++                        return
++                    matn = (await r.text())[:300]
++                    log.warning("ERP CRM %s: %s", r.status, matn)
++                    if r.status < 500:
++                        return  # token yoki ma'lumot xato — qayta urinish foydasiz
++        except Exception as ex:  # noqa: BLE001 — tarmoq xatosi botni to'xtatmasin
++            log.warning("ERP CRM ulanmadi (%s-urinish): %s", urinish + 1, ex)
++        await asyncio.sleep(5 * (urinish + 1))
++
++
++def yubor(payload: dict) -> None:
++    """Fonda yuborish — realizator javobni kutmaydi."""
++    if not yoqilgan():
++        return
++    asyncio.create_task(_post(payload))
++
++
++def realizator(user) -> dict:
++    return {"tg_id": user.id, "name": user.full_name or ""}
++
++
++def obyekt(oid: int, user, o: dict, nomlar: list, lat, lon) -> None:
++    yubor({
++        "event": "obyekt", "ref": f"obyekt:{oid}", "realizator": realizator(user),
++        "mijoz": {"nomi": o.get("egasi"), "tel": o.get("tel"), "prorab": o.get("prorab"), "prorab_tel": o.get("prorab_tel"),
++                  "manzil": o.get("manzil"), "lat": lat, "lon": lon},
++        "ehtiyojlar": list(nomlar),
++    })
++
++
++def taklif(tid: int, user, t: dict, jami: float) -> None:
++    m = t.get("mijoz", {})
++    mahsulotlar = "; ".join(f'{x.get("nomi")} — {x.get("soni"):g} × {x.get("narx"):,.0f}'.replace(",", " ")
++                            for x in t.get("mahsulotlar", []) if x.get("nomi"))
++    yubor({
++        "event": "taklif", "ref": f"taklif:{tid}", "realizator": realizator(user),
++        "mijoz": {"nomi": m.get("nomi"), "tel": m.get("tel"), "prorab": m.get("prorab"), "prorab_tel": m.get("prorab_tel"),
++                  "manzil": m.get("obyekt")},
++        "taklif": {"raqam": f"{tid:04d}", "tur": t.get("tur"), "jami": float(jami or 0),
++                   "masofa_km": (t.get("yetkazish") or {}).get("masofa_km"), "mahsulotlar": mahsulotlar or None},
++    })

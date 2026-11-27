@@ -110,8 +110,8 @@ export async function applyPlan(plan: Plan, userId: string, dryRun: boolean, lab
   return report;
 }
 
-/** Yangi mijoz kartasi: nom band bo'lsa (boshqa mijoz) — telefon qo'shiladi, bo'lmasa tartib raqami. */
-async function createClient(c: PlanClient, crm: Record<string, unknown>, creditLimit: number, userId: string): Promise<string> {
+/** Yangi mijoz kartasi: nom band bo'lsa (boshqa mijoz) — telefon qo'shiladi, bo'lmasa tartib raqami. Realizator boti ham ishlatadi. */
+export async function createClient(c: PlanClient, crm: Record<string, unknown>, creditLimit: number, userId: string): Promise<string> {
   let name = c.name.slice(0, 200);
   for (let attempt = 0; attempt < 3; attempt++) {
     if (await findSameNameCustomer(name)) {
