@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { MessageCircle, Phone } from "lucide-react";
-import { Badge, Card, EmptyState, PageHeader, Tabs } from "@/components/ui";
+import { MessageCircle, Phone, Settings } from "lucide-react";
+import { Badge, Card, EmptyState, LinkButton, PageHeader, Tabs } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,8 @@ export default async function CrmToday({ searchParams }: { searchParams: Promise
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title={T.today.title} back={false} subtitle={`${fullIso(today)} · ${T.today.count(counts.overdue + counts.today)}`} />
+      <PageHeader title={T.today.title} back={false} subtitle={`${fullIso(today)} · ${T.today.count(counts.overdue + counts.today)}`}
+        action={manager ? <LinkButton href="/crm/sozlamalar" variant="secondary" size="sm"><Settings size={14} /> Sozlamalar</LinkButton> : undefined} />
 
       {!manager && (
         <Tabs current={mineOnly ? "mine" : "all"} scroll={false} className="mb-3" items={[

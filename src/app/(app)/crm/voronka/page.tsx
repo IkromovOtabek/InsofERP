@@ -7,7 +7,7 @@ import { canDo } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { fmtNum, money } from "@/lib/format";
 import { crmUsers } from "@/lib/crm/clients";
-import { addDaysIso, fullIso, isoToDb, todayIso } from "@/lib/crm/dates";
+import { fullIso, period, todayIso } from "@/lib/crm/dates";
 import { funnel } from "@/lib/crm/funnel";
 import { FUNNEL_STAGES, STATUS_COLOR, STATUS_LABEL } from "@/lib/crm/labels";
 import { FilterSelect } from "../mijozlar/filters";
@@ -19,19 +19,6 @@ const MONTHS_IN = ["Yanvarda", "Fevralda", "Martda", "Aprelda", "Mayda", "Iyunda
 const pct = (v: number) => `${fmtNum(v, v < 10 && v > 0 ? 1 : 0)}%`;
 
 type SP = { davr?: string; dan?: string; gacha?: string; xodim?: string; bosqich?: string; kutish?: string };
-
-function period(sp: SP, today: string): { from: string; to: string; key: string } {
-  if (sp.davr === "hafta") {
-    const dow = (isoToDb(today).getUTCDay() + 6) % 7; // dushanba = 0
-    return { from: addDaysIso(today, -dow), to: today, key: "hafta" };
-  }
-  if (sp.davr === "oy") return { from: `${today.slice(0, 8)}01`, to: today, key: "oy" };
-  if (sp.davr === "tanlov" && /^\d{4}-\d{2}-\d{2}$/.test(sp.dan ?? "") && /^\d{4}-\d{2}-\d{2}$/.test(sp.gacha ?? "")) {
-    const [a, b] = [sp.dan!, sp.gacha!].sort();
-    return { from: a, to: b, key: "tanlov" };
-  }
-  return { from: today, to: today, key: "bugun" };
-}
 
 /** Voronka va hisobotlar (CRM_SPEC 5.5). Operator — faqat o'zi, menejer — hammasi yoki tanlangan xodim. */
 export default async function FunnelPage({ searchParams }: { searchParams: Promise<SP> }) {
