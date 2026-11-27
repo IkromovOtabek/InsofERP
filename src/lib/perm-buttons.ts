@@ -55,6 +55,9 @@ export const PERM_BUTTONS: Record<string, PermButton[]> = {
   customers: [
     { key: "mijozlar", label: "Mijozlar", paths: ["/customers"], actions: ["edit", "sites", "app_link", "agent"] },
   ],
+  crm: [
+    { key: "mijozlar", label: "CRM mijozlari", paths: ["/crm"], actions: ["client", "contact", "manage"] },
+  ],
   agent: [
     { key: "agentlar", label: "Sotuv agentlari", paths: ["/agent"], actions: [] },
   ],

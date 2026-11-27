@@ -79,6 +79,12 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "app_link", label: "ECO ilova hisobini bog'lash",  roles: ["SALES"] },
     { key: "agent",    label: "Mijozni agentga biriktirish",  roles: ["HR", "SALES"] },
   ],
+  // Sotuv CRM (`/crm`, docs/CRM_SPEC.md 4.5): operator — mijoz va aloqa; menejer — qolgani
+  crm: [
+    { key: "client",  label: "CRM mijozini qo'shish / tahrirlash", roles: ["SALES", "SUPERVISOR"] },
+    { key: "contact", label: "Aloqa (qo'ng'iroq natijasi) yozish", roles: ["SALES", "SUPERVISOR"] },
+    { key: "manage",  label: "CRM menejeri: mas'ul xodim, holat, aloqani bekor qilish, ro'yxatlar", roles: ["SUPERVISOR"], hint: "Barcha xodimlar mijozlari va aloqalari, ma'lumotnomalarni tahrirlash" },
+  ],
   // Sotuv agentlari sahifasi (`/agent`): ko'rish darajasi; mijozni agentga biriktirish — «customers» → «agent»
   agent: [],
   production: [

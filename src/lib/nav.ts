@@ -55,6 +55,8 @@ export const NAV: NavItem[] = [
   { href: "/sales/realizatsiya", label: "Realizatsiya",  roles: ["SALES", "PRODUCTION", "LOGISTICS", "DISPATCHER", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Sotuv", menuHide: ["PRODUCTION"] },
   // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi
   { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["ACCOUNTING"] },
+  // Sotuv CRM (docs/CRM_SPEC.md): operator kunlik qo'ng'iroqlari, aloqalar tarixi, voronka. Mijoz — o'sha `Customer` kartasi
+  { href: "/crm",         label: "Sotuv CRM",          roles: ["SALES", "SUPERVISOR"], group: "Sotuv" },
   // Sotuv agenti — o'z mijozlari, ularning qarzi va o'z mijoziga zayavka. AGENT uchun yagona sahifa
   // (DRIVER/BRIGADIER kabi). DIRECTOR/HR/SALES — mijozni agentga biriktirish uchun shu sahifaga kiradi.
   // Otdel kadr kabinetida Sotuv guruhi yo'q — ruxsat ilova (ECO) va havolalar uchun qoladi.
@@ -361,6 +363,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "offers",    label: "Tijorat takliflari",    prefixes: ["/takliflar"] },
   { key: "marketing", label: "Marketing",             prefixes: ["/marketing"] },
   { key: "customers", label: "Mijozlar",              prefixes: ["/customers"] },
+  { key: "crm",       label: "Sotuv CRM",             prefixes: ["/crm"] },
   { key: "agent",     label: "Sotuv agentlari",       prefixes: ["/agent"] },
   { key: "production",label: "Ishlab chiqarish",      prefixes: ["/production", "/recipes"] },
   { key: "tasks",     label: "Topshiriq / brigada",   prefixes: ["/tasks", "/brigades"] },

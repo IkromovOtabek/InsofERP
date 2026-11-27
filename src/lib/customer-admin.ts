@@ -4,6 +4,7 @@ import { audit } from "@/lib/audit";
 import { defaultCreditLimit } from "@/lib/finance";
 import { parseInn } from "@/lib/inn";
 import { money } from "@/lib/format";
+import { normalizePhone } from "@/lib/phone";
 import { flatName } from "@/lib/excel";
 import { customerNameKey, findSameNameCustomer, lockCustomerName, NameTaken, sameNameError } from "@/lib/customer-name";
 
@@ -48,7 +49,8 @@ export type SaveCustomerResult = { ok: true; id: string } | { ok: false; error: 
  * (Sozlamalar → Limitlar) yoki buxgalteriya o'zgartirgan limit eski forma bilan orqaga qaytib ketmasin.
  */
 export async function saveCustomerLib(id: string | null, input: CustomerInput, who: { userId: string; role: Role }, creditLimitWas: string | null): Promise<SaveCustomerResult> {
-  const d = { ...input };
+  // Telefonning +998XXXXXXXXX shakli — CRM dublikat tekshiruvi va qidiruvi uchun (yaroqsiz raqamda bo'sh)
+  const d = { ...input, phoneNorm: normalizePhone(input.phone) };
   if (d.aliases) d.aliases = cleanAliases(d.aliases, d.name);
   const cur = id ? await db.customer.findUnique({ where: { id } }) : null;
   if (id && !cur) return { ok: false, error: "Mijoz topilmadi" };
