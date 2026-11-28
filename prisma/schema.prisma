@@ -31,6 +31,7 @@ enum Role {
   DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
   BRIGADIER // brigadir — ERP login bilan kiradi (mobil ilova: o'z brigadasi topshiriqlari); vebda faqat "Mening topshiriqlarim"
   SECRETARY // sekretar — vebda faqat «Arenda» (do'konlar ijarasi: oylik hisob, kirim-chiqim)
+  CALL_CENTER // call-markaz operatori — vebda faqat Sotuv CRM: qo'ng'iroqlar navbati, jurnal, terish, mijoz va aloqa
   AGENT // ko'chadagi sotuv agenti — o'z mijozlari, zayavka ochish, mijozlar qarzi (mobil + cheklangan veb)
   SUPERADMIN // IT (platforma egasi) — markaziy paneldan SSO bilan kiradi; korxona ichida direktor huquqi + IT kuzatuv.
   // Direktor bu hisobni ko'rmaydi, o'zgartira olmaydi; login/parol bilan kirib bo'lmaydi (faqat SSO).
@@ -117,6 +118,8 @@ model User {
   crmContacts            CrmContact[]             @relation("CrmContactBy")
   crmContactsCancelled   CrmContact[]             @relation("CrmContactCancelledBy")
   crmCalls               CrmCall[]
+  crmCallsTaken          CrmCall[]                @relation("CrmCallTaken")
+  crmCallsHandled        CrmCall[]                @relation("CrmCallHandled")
   /// onlinePBX ichki raqami (CRM: «Qo'ng'iroq» tugmasi avval shu raqamni chaqiradi, qo'ng'iroqlar tarixi xodimga bog'lanadi)
   pbxExt                 String?                  @unique
   /// Modul bo'yicha qo'shimcha ruxsat (direktor beradi): { "modul": "view" | "write" }. Rol ustiga qo'shiladi/cheklaydi.
@@ -144,6 +147,10 @@ model CompanySettings {
   crmColdDays            Int       @default(90)
   /// onlinePBX qo'ng'iroqlar tarixi shu paytgacha sinxronlangan (`lib/pbx/sync.ts`)
   pbxSyncedAt            DateTime?
+  /// onlinePBX webhook manzilidagi maxfiy kalit (`/api/crm/pbx?k=`) — Telefoniya sozlamasida yaratiladi
+  pbxWebhookKey          String?
+  /// Oxirgi webhook qachon kelgan (ulanish ishlayotganini ko'rsatish uchun)
+  pbxWebhookAt           DateTime?
   // Zavod joyi — barcha masofa shu nuqtadan hisoblanadi (Sozlamalar sahifasida xaritadan belgilanadi)
   lat                    Float?
   lng                    Float?
@@ -5455,9 +5462,9 @@ model CrmContact {
 /// onlinePBX qo'ng'irog'i (`lib/pbx`) — tarixdan har daqiqada sinxronlanadi. Mijoz telefon, xodim ichki raqam bo'yicha bog'lanadi.
 /// O'tkazib yuborilgan kiruvchi qo'ng'iroq avtomatik aloqa ochadi; qolganlari operator yozgan aloqaga bog'lanadi.
 model CrmCall {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   /// onlinePBX uuid — takror sinxronda dublikat bo'lmaydi
-  uuid        String   @unique
+  uuid        String    @unique
   /// OUT — chiquvchi, IN — kiruvchi (javob berildi), MISSED — o'tkazib yuborilgan, INTERNAL — ichki
   direction   String
   ext         String?
@@ -5465,19 +5472,30 @@ model CrmCall {
   phone       String?
   userId      String?
   customerId  String?
-  contactId   String?  @unique
+  contactId   String?   @unique
   startedAt   DateTime
-  durationSec Int      @default(0)
+  durationSec Int       @default(0)
   /// Gaplashilgan vaqt (0 — javob bo'lmadi)
-  talkSec     Int      @default(0)
+  talkSec     Int       @default(0)
   hangupCause String?
-  createdAt   DateTime @default(now())
+  /// Jonli holat (webhook): RINGING — jiringlayapti, TALKING — gaplashilmoqda, ENDED — tugagan (tarixdan kelgani doim ENDED)
+  state       String    @default("ENDED")
+  /// Call-markaz navbati (faqat MISSED): kim «men olaman» degan, qachon hal bo'lgan (qayta qo'ng'iroq yoki qo'lda)
+  takenById   String?
+  takenAt     DateTime?
+  handledAt   DateTime?
+  handledById String?
+  createdAt   DateTime  @default(now())
 
-  user     User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
-  customer Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  contact  CrmContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  takenBy   User?       @relation("CrmCallTaken", fields: [takenById], references: [id], onDelete: SetNull)
+  handledBy User?       @relation("CrmCallHandled", fields: [handledById], references: [id], onDelete: SetNull)
+  customer  Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  contact   CrmContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   @@index([customerId, startedAt])
   @@index([userId, startedAt])
   @@index([startedAt])
+  @@index([direction, handledAt])
+  @@index([state])
 }

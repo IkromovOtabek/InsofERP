@@ -64,3 +64,10 @@ export function period(sp: { davr?: string; dan?: string; gacha?: string }, toda
   }
   return { from: today, to: today, key: "bugun" };
 }
+
+/** Toshkent vaqti (UTC+5, yozgi vaqt yo'q) — qo'ng'iroq vaqti: «28.11 14:05» (Intl'siz: server va brauzer bir xil) */
+const p2 = (n: number) => String(n).padStart(2, "0");
+const tz = (d: Date) => new Date(d.getTime() + 5 * 3_600_000);
+export const tzDateTime = (d: Date) => { const t = tz(d); return `${p2(t.getUTCDate())}.${p2(t.getUTCMonth() + 1)} ${p2(t.getUTCHours())}:${p2(t.getUTCMinutes())}`; };
+export const tzTime = (d: Date) => { const t = tz(d); return `${p2(t.getUTCHours())}:${p2(t.getUTCMinutes())}`; };
+export const tzHour = (d: Date) => tz(d).getUTCHours();

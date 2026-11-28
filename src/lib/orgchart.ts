@@ -35,6 +35,7 @@ export const ORG_TREE: OrgDept[] = [
   { role: "MECHANIC",   label: "Mexanik",          parent: "LOGISTICS",  tone: "blue",    icon: "truck",    duty: "Texnika, sklad va jo'natish nazorati", assignable: true },
   { role: "DISPATCHER", label: "Dispetcher",       parent: "LOGISTICS",  tone: "blue",    icon: "truck",    duty: "Haydovchilar va transport boshqaruvi", assignable: true },
   { role: "SALES",      label: "Sotuv",            parent: "DIRECTOR",   tone: "emerald", icon: "handshake",duty: "Mijoz, zayavka, shartnoma", assignable: true },
+  { role: "CALL_CENTER", label: "Call-markaz",     parent: "SALES",      tone: "emerald", icon: "handshake",duty: "Kiruvchi va chiquvchi qo'ng'iroqlar, CRM mijozlari", assignable: true },
   { role: "ACCOUNTING", label: "Buxgalteriya",     parent: "DIRECTOR",   tone: "sky",     icon: "calculator", duty: "Schyot, hisob-kitob, hisobot" },
   { role: "CASHIER",    label: "Kassa / bank",     parent: "ACCOUNTING", tone: "sky",     icon: "wallet",   duty: "Pul kirimi va chiqimi", assignable: true },
   { role: "SECRETARY",  label: "Sekretar",         parent: "DIRECTOR",   tone: "violet",  icon: "store",    duty: "Qabulxona, do'konlar arendasi kirim-chiqimi", assignable: true },

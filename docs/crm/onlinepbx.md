@@ -27,3 +27,23 @@ kompaniya raqamini (78 555 57 55) ko'radi. amoCRM'dagi onlinePBX integratsiyasi 
 - Kartochkada «Qo'ng'iroqlar»: yo'nalish, vaqt, davomiylik, yozuvni tinglash (`/api/pbx/record/<uuid>`, faqat CRM huquqi bilan).
 - Voronka → Xodimlar: qo'ng'iroqlar soni va gaplashilgan vaqt.
 - `ONLINEPBX_WATCH=off` — sinxronni o'chirish.
+
+## Call-markaz (`/crm/callcenter`)
+
+- **Navbat** — javob berilmagan kiruvchi qo'ng'iroqlar (oxirgi 7 kun), raqam bo'yicha jamlangan, eng uzoq kutgani tepada.
+  «Men olaman» — operatorga biriktiradi (boshqa operator ola olmaydi), «Hal qilindi» — qo'lda yopish. Shu raqam bilan
+  keyin gaplashilsa (chiquvchi qo'ng'iroq javob olsa yoki mijoz o'zi qayta qo'ng'iroq qilsa) navbatdan o'zi chiqadi.
+- **Terish paneli** — istalgan raqam: bazada bo'lsa mijoz ko'rsatiladi, yo'q bo'lsa «mijoz yaratish».
+- **Jurnal** — barcha qo'ng'iroqlar (davr, yo'nalish, operator, qidiruv), yozuvni tinglash, «Aloqa yozish».
+- **Statistika** (menejer) — javob foizi, o'tkazib yuborilganlar, qayta qo'ng'iroq tezligi, operatorlar, soatlar bo'yicha yuklama.
+- Rol **«Call-markaz operatori»** (`CALL_CENTER`): vebda faqat Sotuv CRM, kirgach Call-markaz ochiladi; mijoz va aloqa yozadi.
+  Ruxsat `crm.calls` (Sotuv, Ish boshqaruvchi, Call-markaz).
+
+## Webhook (jonli qo'ng'iroq oynasi)
+
+1. CRM → Sozlamalar → Telefoniya → «Webhook manzilini yaratish» → manzilni nusxalang (`/api/crm/pbx?k=<kalit>`).
+2. onlinePBX kabineti → Сервисы → Webhooks → «Добавить», manzilni qo'ying; hodisalar: начался звонок, дозвон до пользователя,
+   ответили на звонок, пропущенный звонок, звонок завершился.
+3. Qo'ng'iroq kelishi bilan CRM sahifalarida oyna chiqadi (kim, oxirgi aloqa, karta / mijoz yaratish), jurnal soniyalar
+   ichida yangilanadi. Webhook bo'lmasa ham tarix har daqiqada olinadi (faqat oyna chiqmaydi). Kalit yangilansa eski manzil
+   ishlamay qoladi.

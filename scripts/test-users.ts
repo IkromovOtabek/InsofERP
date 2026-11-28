@@ -38,6 +38,7 @@ const USERS: { login: string; role: Role; fullName: string; position: string }[]
   { login: "test.agent",     role: "AGENT",       fullName: "Test Sotuv agenti",     position: "Sotuv agenti" },
   // Oxirida — oldingi xodimlarning telefon raqami (tartib bo'yicha) siljimasin
   { login: "test.dispetcher", role: "DISPATCHER", fullName: "Test Dispetcher",       position: "Dispetcher" },
+  { login: "test.callcenter", role: "CALL_CENTER", fullName: "Test Call-markaz",     position: "Call-markaz operatori" },
 ];
 
 const phoneOf = (i: number) => `+9989090000${String(i + 1).padStart(2, "0")}`;

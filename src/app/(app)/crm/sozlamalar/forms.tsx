@@ -1,11 +1,11 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useRef } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { Check, Plus } from "lucide-react";
 import { Button, Checkbox, Field, FormError, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 import { GROUP_LABEL } from "@/lib/crm/labels";
-import { saveActivity, saveExt, saveOption, saveResult, syncPbxNow } from "./actions";
+import { rotatePbxHook, saveActivity, saveExt, saveOption, saveResult, syncPbxNow } from "./actions";
 
 type Act = (p: ActionState, fd: FormData) => Promise<ActionState>;
 
@@ -95,5 +95,27 @@ export function SyncButton() {
       <Button type="submit" variant="secondary" disabled={pending}>{pending ? "Olinmoqda…" : "Qo'ng'iroqlarni hozir olish (7 kun)"}</Button>
       <Status state={state} />
     </form>
+  );
+}
+
+/** Webhook manzili (onlinePBX → Интеграция → Webhooks): ko'rsatish, nusxalash, yangilash */
+export function HookForm({ url }: { url: string | null }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(async () => rotatePbxHook(), undefined);
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="grid gap-2">
+      {url && (
+        <div className="flex gap-2">
+          <Input readOnly value={url} aria-label="Webhook manzili" onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
+          <Button type="button" variant="secondary" onClick={() => { navigator.clipboard?.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}>
+            {copied ? "Nusxalandi" : "Nusxalash"}
+          </Button>
+        </div>
+      )}
+      <form onSubmit={(e) => { e.preventDefault(); if (url && !confirm("Eski manzil ishlamay qoladi — onlinePBX'dagini ham almashtirasiz. Davom etilsinmi?")) return; startTransition(() => action(new FormData())); }} className="flex flex-wrap items-center gap-3">
+        <Button type="submit" variant="secondary" disabled={pending}>{pending ? "Yaratilmoqda…" : url ? "Manzilni yangilash" : "Webhook manzilini yaratish"}</Button>
+        <Status state={state} />
+      </form>
+    </div>
   );
 }

@@ -107,6 +107,16 @@ export async function saveExt(userId: string, _p: ActionState, fd: FormData): Pr
   return { ok: true, note: "Saqlandi" };
 }
 
+/** onlinePBX webhook manzili kaliti: yaratish yoki yangilash (eski manzil ishlamay qoladi) */
+export async function rotatePbxHook(): Promise<ActionState> {
+  const s = await requireAction("crm", "manage");
+  const { rotateHookKey } = await import("@/lib/pbx/live");
+  await rotateHookKey();
+  await audit(db, s.userId, "UPDATE", "PbxWebhook", "main", undefined, { rotated: true });
+  revalidatePath("/crm/sozlamalar");
+  return { ok: true, note: "Yangi manzil tayyor — onlinePBX kabinetiga qo'ying" };
+}
+
 /** Qo'ng'iroqlar tarixini hozir olish (oxirgi 7 kun) */
 export async function syncPbxNow(): Promise<ActionState> {
   const s = await requireAction("crm", "manage");

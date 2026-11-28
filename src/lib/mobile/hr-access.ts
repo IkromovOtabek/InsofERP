@@ -7,7 +7,7 @@ import type { Role } from "@/generated/prisma";
 const PAYROLL_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 
 /** Har bir xodim (login egasi) — o'z vazifalari va oyligi uchun. */
-export const ALL_STAFF: Role[] = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "DRIVER", "BRIGADIER", "SECRETARY", "AGENT"];
+export const ALL_STAFF: Role[] = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "DRIVER", "BRIGADIER", "SECRETARY", "CALL_CENTER", "AGENT"];
 /**
  * O'z ishi kartochkalari — haydovchi, brigadir, agent ham ochadi (ularning ilovasi boshqa bo'limlarni yopadi).
  * Arizalar, smena grafigi, cheklist, KPI, kurslar, moslashuv, suhbat/nomzod, so'rovnoma, murojaat va xabarlar olib

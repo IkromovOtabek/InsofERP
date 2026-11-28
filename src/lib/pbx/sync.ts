@@ -75,14 +75,18 @@ export function parseCall(c: PbxCall): ParsedCall {
 
 const hhmm = (d: Date) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(d);
 
-/** Bitta qo'ng'iroqni yozish. Yangi bo'lsa true */
-/** `live` — jonli sinxron: yangi lid va «qayta qo'ng'iroq» aloqasi faqat shunda (eski tarixni olishda «Bugun» to'lib ketmasin) */
+/**
+ * Bitta qo'ng'iroqni yakuniy holatda yozish. Yangi (yoki webhook'dan kelgan jonli qatorni yakunlagan) bo'lsa true.
+ * `live` — jonli sinxron/webhook: yangi lid va «qayta qo'ng'iroq» aloqasi faqat shunda (eski tarixni olishda «Bugun» to'lib ketmasin).
+ */
 export async function ingestCall(p: ParsedCall, live = true): Promise<boolean> {
-  if (await db.crmCall.findUnique({ where: { uuid: p.uuid }, select: { id: true } })) return false;
-  const user = p.ext ? await db.user.findUnique({ where: { pbxExt: p.ext }, select: { id: true } }) : null;
+  const ex = await db.crmCall.findUnique({ where: { uuid: p.uuid }, select: { id: true, state: true, ext: true, customerId: true, startedAt: true } });
+  if (ex?.state === "ENDED") return false;
+  const ext = p.ext ?? ex?.ext ?? null;
+  const user = ext ? await db.user.findUnique({ where: { pbxExt: ext }, select: { id: true } }) : null;
 
-  let customerId: string | null = null;
-  if (p.phone && p.direction !== "INTERNAL") {
+  let customerId: string | null = ex?.customerId ?? null;
+  if (!customerId && p.phone && p.direction !== "INTERNAL") {
     const dups = await findDuplicates({ phone: p.phone });
     customerId = (dups.find((d) => d.inCrm) ?? dups[0])?.id ?? null;
     // Noma'lum raqamdan kiruvchi (javob berilgan yoki o'tkazib yuborilgan) — yangi lid; faqat O'zbekiston raqami
@@ -97,34 +101,53 @@ export async function ingestCall(p: ParsedCall, live = true): Promise<boolean> {
     }
   }
 
+  const data = {
+    direction: p.direction, ext, phone: p.phone, userId: user?.id ?? null, customerId, startedAt: ex?.startedAt ?? p.startedAt,
+    durationSec: p.durationSec, talkSec: p.talkSec, hangupCause: p.hangupCause, state: "ENDED",
+  };
+  let callId: string;
   try {
-    const call = await db.crmCall.create({
-      data: { uuid: p.uuid, direction: p.direction, ext: p.ext, phone: p.phone, userId: user?.id ?? null, customerId, startedAt: p.startedAt, durationSec: p.durationSec, talkSec: p.talkSec, hangupCause: p.hangupCause },
-    });
-    // O'tkazib yuborilgan — qayta qo'ng'iroq qilish uchun «Bugun»ga tushsin
-    if (live && p.direction === "MISSED" && customerId) {
-      const channel = await db.crmOption.findUnique({ where: { kind_code: { kind: "CHANNEL", code: "incoming" } }, select: { id: true } });
-      const owner = (await db.customer.findUnique({ where: { id: customerId }, select: { ownerId: true } }))?.ownerId;
-      const userId = user?.id ?? owner ?? (await systemUserId());
-      await db.$transaction(async (tx) => {
-        const c = await tx.crmContact.create({
-          data: {
-            customerId: customerId!, date: isoToDb(todayIso(p.startedAt)), channelId: channel?.id ?? null, resultId: null, userId,
-            nextContactDate: isoToDb(todayIso()), note: `O'tkazib yuborilgan qo'ng'iroq ${hhmm(p.startedAt)} — qayta qo'ng'iroq qiling`,
-            importKey: `pbx:${p.uuid}`,
-          },
-        });
-        await tx.crmCall.update({ where: { id: call.id }, data: { contactId: c.id } });
-        await refreshClient(tx, customerId!);
-      });
-    } else if (customerId && live) {
-      await db.$transaction((tx) => refreshClient(tx, customerId!)); // yangi lid — CRM'ga kiritilsin
+    if (ex) {
+      // Jonli qatorni yakunlash: webhook va sinxron bir vaqtda kelsa — faqat bittasi (shartli yangilash)
+      const r = await db.crmCall.updateMany({ where: { id: ex.id, state: { not: "ENDED" } }, data });
+      if (r.count === 0) return false;
+      callId = ex.id;
+    } else {
+      callId = (await db.crmCall.create({ data: { uuid: p.uuid, ...data } })).id;
     }
-    return true;
   } catch (e) {
     if (String(e).includes("Unique constraint")) return false; // parallel sinxron
     throw e;
   }
+
+  // Call-markaz navbati: shu raqam bilan gaplashildi (qayta qo'ng'iroq yoki o'zi qayta qo'ng'iroq qildi) — o'tkazib yuborilganlar hal bo'ldi
+  if (p.phone && ((p.direction === "OUT" && p.talkSec > 0) || p.direction === "IN")) {
+    await db.crmCall.updateMany({
+      where: { direction: "MISSED", handledAt: null, phone: p.phone, startedAt: { lte: data.startedAt } },
+      data: { handledAt: new Date(data.startedAt.getTime() + p.durationSec * 1000), handledById: user?.id ?? null },
+    });
+  }
+
+  // O'tkazib yuborilgan — qayta qo'ng'iroq qilish uchun «Bugun»ga tushsin
+  if (live && p.direction === "MISSED" && customerId) {
+    const channel = await db.crmOption.findUnique({ where: { kind_code: { kind: "CHANNEL", code: "incoming" } }, select: { id: true } });
+    const owner = (await db.customer.findUnique({ where: { id: customerId }, select: { ownerId: true } }))?.ownerId;
+    const userId = user?.id ?? owner ?? (await systemUserId());
+    await db.$transaction(async (tx) => {
+      const c = await tx.crmContact.create({
+        data: {
+          customerId: customerId!, date: isoToDb(todayIso(p.startedAt)), channelId: channel?.id ?? null, resultId: null, userId,
+          nextContactDate: isoToDb(todayIso()), note: `O'tkazib yuborilgan qo'ng'iroq ${hhmm(p.startedAt)} — qayta qo'ng'iroq qiling`,
+          importKey: `pbx:${p.uuid}`,
+        },
+      });
+      await tx.crmCall.update({ where: { id: callId }, data: { contactId: c.id } });
+      await refreshClient(tx, customerId!);
+    });
+  } else if (customerId && live) {
+    await db.$transaction((tx) => refreshClient(tx, customerId!)); // yangi lid — CRM'ga kiritilsin
+  }
+  return true;
 }
 
 const g = globalThis as { __pbxSyncing?: boolean };

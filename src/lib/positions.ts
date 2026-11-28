@@ -26,6 +26,8 @@ export const POSITIONS: { label: string; role: Role }[] = [
   { label: "Dispetcher", role: "DISPATCHER" },
   // Sekretar — vebda faqat «Arenda»: do'konlar ijarasi oylik hisobi va arenda kassasi kirim-chiqimi
   { label: "Sekretar", role: "SECRETARY" },
+  // Call-markaz operatori — vebda faqat Sotuv CRM: qo'ng'iroqlar navbati, jurnal, terish, mijoz va aloqa yozish
+  { label: "Call-markaz operatori", role: "CALL_CENTER" },
   { label: "Direktor", role: "DIRECTOR" },
 ];
 

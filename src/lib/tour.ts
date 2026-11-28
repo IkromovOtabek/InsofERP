@@ -299,6 +299,11 @@ const SECRETARY_STEPS: TourStep[] = [
   onPage("arenda-month", "/arenda", "Oylik jadval", "Har oy do'konlar qancha to'lashi kerak, qancha tushdi va qancha qoldi — bozor bo'yicha guruhlangan. Yangi oy o'tgan oydan nusxa olib ochiladi."),
 ];
 
+const CALL_CENTER_STEPS: TourStep[] = [
+  onPage("cc-queue", "/crm/callcenter", "Call-markaz", "Javob berilmagan kiruvchi qo'ng'iroqlar navbati: «Men olaman» bilan o'zingizga oling, qayta qo'ng'iroq qiling — gaplashilgach navbatdan o'zi chiqadi.", '[data-tour="page-title"]'),
+  onPage("cc-dial", "/crm/callcenter", "Raqam terish", "Istalgan raqamni kiriting — avval sizning onlinePBX ilovangiz jiringlaydi, ko'targach mijozga ulanadi."),
+];
+
 const BY_ROLE: Record<Role, TourStep[]> = {
   DIRECTOR: DIRECTOR_STEPS,
   AGENT: AGENT_STEPS,
@@ -315,6 +320,7 @@ const BY_ROLE: Record<Role, TourStep[]> = {
   MECHANIC: MECHANIC_STEPS,
   DISPATCHER: DISPATCHER_STEPS,
   SECRETARY: SECRETARY_STEPS,
+  CALL_CENTER: CALL_CENTER_STEPS,
   DRIVER: DRIVER_STEPS,
   BRIGADIER: BRIGADIER_STEPS,
   SUPERADMIN: [], // IT — instruksiya ko'rsatilmaydi

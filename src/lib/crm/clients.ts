@@ -33,7 +33,7 @@ export async function crmUsers(keep?: string | null): Promise<{ id: string; full
     orderBy: { fullName: "asc" },
   });
   return users
-    .filter((u) => u.id === keep || ["SALES", "SUPERVISOR", "DIRECTOR"].includes(u.role) || (() => {
+    .filter((u) => u.id === keep || ["SALES", "SUPERVISOR", "CALL_CENTER", "DIRECTOR"].includes(u.role) || (() => {
       const p = (u.perms as Record<string, unknown> | null)?.crm;
       return p !== undefined && p !== "none";
     })())

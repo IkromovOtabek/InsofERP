@@ -7,7 +7,7 @@ import type { BadgeColor } from "@/components/ui";
  */
 export const T = {
   module: "Sotuv CRM",
-  nav: { today: "Bugun", clients: "Mijozlar", funnel: "Voronka", contacts: "Aloqalar" },
+  nav: { today: "Bugun", clients: "Mijozlar", funnel: "Voronka", contacts: "Aloqalar", callCenter: "Call-markaz" },
 
   field: {
     name: "Mijoz nomi",

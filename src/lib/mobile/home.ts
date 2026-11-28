@@ -253,6 +253,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   DISPATCHER: { key: "drivers", title: "Haydovchilar" },
   DRIVER: { key: "trips", title: "Mening reyslarim" },
   BRIGADIER: { key: "tasks", title: "Topshiriqlarim" },
+  CALL_CENTER: { key: "customers", title: "Mijozlar" }, // ish joyi — veb Sotuv CRM
   SECRETARY: { key: "arenda-jurnal", title: "Kirim-chiqim" }, // Arenda: ilovada «Arenda» tabi (`./arenda.ts`) + jurnal
   SUPERADMIN: { key: "approvals", title: "Tasdiqlar" }, // mobilga kirmaydi (faqat veb SSO) — jadval to'liq bo'lishi uchun
 };

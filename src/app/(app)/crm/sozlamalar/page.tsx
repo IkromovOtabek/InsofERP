@@ -3,7 +3,8 @@ import { Card, CardHeader, PageHeader, Tabs } from "@/components/ui";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { ActivityForm, ExtForm, OptionForm, ResultForm, SyncButton } from "./forms";
+import { ActivityForm, ExtForm, HookForm, OptionForm, ResultForm, SyncButton } from "./forms";
+import { SITE_URL } from "@/lib/site";
 import { crmUsers } from "@/lib/crm/clients";
 import { extensions, pbxConfig } from "@/lib/pbx/onlinepbx";
 import { dateTime } from "@/lib/format";
@@ -83,7 +84,7 @@ async function PbxCard() {
   const cfg = pbxConfig();
   const [users, st, calls] = await Promise.all([
     crmUsers(),
-    db.companySettings.findUnique({ where: { id: "main" }, select: { pbxSyncedAt: true } }),
+    db.companySettings.findUnique({ where: { id: "main" }, select: { pbxSyncedAt: true, pbxWebhookKey: true, pbxWebhookAt: true } }),
     db.crmCall.count(),
   ]);
   const withExt = await db.user.findMany({ where: { id: { in: users.map((u) => u.id) } }, select: { id: true, pbxExt: true } });
@@ -107,6 +108,18 @@ async function PbxCard() {
           <p className="text-sm text-slate-600">Korxona sozlamasiga (serverda <code>tenants/&lt;korxona&gt;.env</code>) <code>ONLINEPBX_DOMAIN</code> va <code>ONLINEPBX_API_KEY</code> yozilib, ERP qayta ishga tushirilgach ulanadi. Hozircha «Qo&apos;ng&apos;iroq» telefonning o&apos;zidan (tel:) ishlaydi.</p>
         )}
       </Card>
+      {cfg && (
+        <Card>
+          <CardHeader title="Jonli qo'ng'iroqlar (webhook)" description={st?.pbxWebhookAt ? `Oxirgi hodisa: ${dateTime(st.pbxWebhookAt)}` : "Hali hodisa kelmagan"}
+            info="Webhook ulansa, qo'ng'iroq kelishi bilan CRM'da oyna chiqadi (kim qo'ng'iroq qilyapti, oxirgi aloqa) va qo'ng'iroq jurnali soniyalar ichida yangilanadi. Ulanmasa ham ishlaydi — tarix har daqiqada olinadi, faqat oyna chiqmaydi." />
+          <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-slate-600">
+            <li>Quyidagi tugma bilan manzil yarating va nusxalang.</li>
+            <li>onlinePBX kabineti → Сервисы → Webhooks → «Добавить», manzilni qo&apos;ying.</li>
+            <li>Hodisalar: «Начался звонок», «Дозвон до пользователя», «Ответили на звонок», «Пропущенный звонок», «Звонок завершился» — saqlang.</li>
+          </ol>
+          <HookForm url={st?.pbxWebhookKey ? `${SITE_URL.replace(/\/+$/, "")}/api/crm/pbx?k=${st.pbxWebhookKey}` : null} />
+        </Card>
+      )}
       <Card>
         <CardHeader title="Xodimlar va ichki raqamlar" description="Qo'ng'iroq qiladigan xodimga onlinePBX'dagi ichki raqamini yozing (masalan Mushtariy — 101)" />
         <div className="divide-y divide-slate-100">

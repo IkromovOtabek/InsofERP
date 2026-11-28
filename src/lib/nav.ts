@@ -56,7 +56,7 @@ export const NAV: NavItem[] = [
   // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi
   { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["ACCOUNTING"] },
   // Sotuv CRM (docs/CRM_SPEC.md): operator kunlik qo'ng'iroqlari, aloqalar tarixi, voronka. Mijoz — o'sha `Customer` kartasi
-  { href: "/crm",         label: "Sotuv CRM",          roles: ["SALES", "SUPERVISOR"], group: "Sotuv" },
+  { href: "/crm",         label: "Sotuv CRM",          roles: ["SALES", "SUPERVISOR", "CALL_CENTER"], group: "Sotuv" },
   // Sotuv agenti — o'z mijozlari, ularning qarzi va o'z mijoziga zayavka. AGENT uchun yagona sahifa
   // (DRIVER/BRIGADIER kabi). DIRECTOR/HR/SALES — mijozni agentga biriktirish uchun shu sahifaga kiradi.
   // Otdel kadr kabinetida Sotuv guruhi yo'q — ruxsat ilova (ECO) va havolalar uchun qoladi.
@@ -250,11 +250,14 @@ export const OWN_PAGE_ONLY: Partial<Record<Role, string>> = {
   AGENT: "/agent",
   // Sekretar vebda faqat arenda bilan ishlaydi: kirgach to'g'ridan-to'g'ri shu sahifa ochiladi
   SECRETARY: "/arenda",
+  // Call-markaz operatori vebda faqat Sotuv CRM bilan ishlaydi: kirgach qo'ng'iroqlar navbati ochiladi
+  CALL_CENTER: "/crm/callcenter",
 };
 
 /** «Faqat o'z sahifasi» rollariga qo'shimcha ochiq yo'llar (Sekretar — «Ish haqi» → Xodim qarzlari) */
 export const OWN_PAGE_EXTRA: Partial<Record<Role, string[]>> = {
   SECRETARY: ["/ish-haqi", "/avans"],
+  CALL_CENTER: ["/crm"],
 };
 export const ownPageAllows = (role: Role, pathname: string) => {
   const own = OWN_PAGE_ONLY[role];
@@ -278,6 +281,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   MECHANIC: "Mexanik",
   DISPATCHER: "Dispetcher",
   SECRETARY: "Sekretar",
+  CALL_CENTER: "Call-markaz operatori",
   DRIVER: "Haydovchi",
   BRIGADIER: "Brigadir",
   SUPERADMIN: "IT superadmin",

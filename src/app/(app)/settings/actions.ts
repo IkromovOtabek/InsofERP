@@ -25,7 +25,7 @@ import { verifyChannel } from "@/lib/telegram/channel";
 import { MATERIAL_CATEGORIES } from "@/lib/material-category";
 import { notifyNewAvtoParts } from "@/lib/avto-parts";
 
-const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "SECRETARY"] as const;
+const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "SECRETARY", "CALL_CENTER"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
 const uniq = (e: unknown, msg: string) => (String(e).includes("Unique constraint") ? { error: msg } : null);
 

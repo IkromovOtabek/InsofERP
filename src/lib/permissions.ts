@@ -81,8 +81,9 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   ],
   // Sotuv CRM (`/crm`, docs/CRM_SPEC.md 4.5): operator — mijoz va aloqa; menejer — qolgani
   crm: [
-    { key: "client",  label: "CRM mijozini qo'shish / tahrirlash", roles: ["SALES", "SUPERVISOR"] },
-    { key: "contact", label: "Aloqa (qo'ng'iroq natijasi) yozish", roles: ["SALES", "SUPERVISOR"] },
+    { key: "client",  label: "CRM mijozini qo'shish / tahrirlash", roles: ["SALES", "SUPERVISOR", "CALL_CENTER"] },
+    { key: "contact", label: "Aloqa (qo'ng'iroq natijasi) yozish", roles: ["SALES", "SUPERVISOR", "CALL_CENTER"] },
+    { key: "calls",   label: "Call-markaz: qo'ng'iroqlar navbati, jurnal, yozuvlar va raqam terish", roles: ["SALES", "SUPERVISOR", "CALL_CENTER"], hint: "O'tkazib yuborilgan qo'ng'iroqni «Men olaman» / «Hal qilindi», istalgan raqamga onlinePBX orqali qo'ng'iroq" },
     { key: "manage",  label: "CRM menejeri: mas'ul xodim, holat, aloqani bekor qilish, ro'yxatlar", roles: ["SUPERVISOR"], hint: "Barcha xodimlar mijozlari va aloqalari, ma'lumotnomalarni tahrirlash" },
     { key: "import",  label: "CRM importi (Google Sheets, amoCRM)", roles: ["SUPERVISOR"], hint: "Avval quruq ishga tushirish hisoboti, keyin tasdiq bilan yoziladi" },
   ],

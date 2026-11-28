@@ -31,10 +31,11 @@ export default async function WriteContactPage({ params, searchParams }: { param
       ? { resultId: noAnswer.id, hint: `Qo'ng'iroq ${hm(last.startedAt)} — javob bo'lmadi` }
       : last.talkSec > 0 ? { resultId: "", hint: `Qo'ng'iroq ${hm(last.startedAt)} — ${Math.floor(last.talkSec / 60)}:${String(last.talkSec % 60).padStart(2, "0")} gaplashildi, natijani tanlang` } : null
     : null;
-  const backHref = back === "bugun" ? "/crm" : `/crm/mijozlar/${id}`;
+  const cc = !!back && (back === "/crm/callcenter" || back.startsWith("/crm/callcenter?"));
+  const backHref = back === "bugun" ? "/crm" : cc ? back : `/crm/mijozlar/${id}`;
   return (
     <div className="mx-auto max-w-xl">
-      <PageHeader title={T.contact.title} subtitle={c.name} back={{ href: backHref, label: back === "bugun" ? T.today.title : c.name }} />
+      <PageHeader title={T.contact.title} subtitle={c.name} back={{ href: backHref, label: back === "bugun" ? T.today.title : cc ? T.nav.callCenter : c.name }} />
       <Card>
         <ContactForm customerId={c.id} today={todayIso()} results={results} channels={opts.CHANNEL} products={opts.PRODUCT} sources={opts.SOURCE} back={backHref} suggest={suggest} />
       </Card>
