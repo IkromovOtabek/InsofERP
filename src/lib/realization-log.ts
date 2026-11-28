@@ -160,18 +160,19 @@ export async function realizationLog(from: Date, to: Date, opts?: { customerIds?
     const k = ttnKey(e.ttn);
     return k ? [{ k, day: day0(e.date), qty: Number(e.qty), customerId: e.customerId, prod: productNameKey(e.productName) }] : [];
   });
-  const manualTwin = (r: RealizationRow) => {
+  // Dispetcher tuzatgan miqdor, sana va mahsulot bilan (reestrda ko'rinadigani) solishtiriladi — asl zayavka qiymati bilan emas
+  const manualTwin = (r: RealizationRow, v: { date: Date; qty: number; product: string }) => {
     if (!r.tripId) return false;
-    const ks = [ttnKey(r.ttn), ttnKey(r.noteNo)].filter(Boolean), d = day0(r.date), p = productNameKey(r.product);
-    return manualKeys.some((m) => ks.includes(m.k) && Math.abs(m.day - d) <= DAY && Math.abs(m.qty - r.qty) < 0.0005
+    const ks = [ttnKey(r.ttn), ttnKey(r.noteNo)].filter(Boolean), d = day0(v.date), p = productNameKey(v.product);
+    return manualKeys.some((m) => ks.includes(m.k) && Math.abs(m.day - d) <= DAY && Math.abs(m.qty - v.qty) < 0.0005
       && ((!!m.customerId && m.customerId === r.customerId) || m.prod === p));
   };
   const rows: LogRow[] = [];
   for (const r of auto) {
-    if (manualTwin(r)) continue;
     const ref = autoKey(r);
     const n = notes.get(ref);
     const e = autoEdits(r, n, lines.get(r.key));
+    if (manualTwin(r, e)) continue;
     // Sanasi boshqa davrga ko'chirilgan qator — o'sha davrda
     if (e.date < a || e.date >= b) continue;
     const filled: LogFields = { loadPlace: n?.loadPlace ?? null, destination: n?.destination ?? null, note: n?.note ?? null, refName: n?.refName ?? null };
