@@ -143,7 +143,8 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
     const ok = await once(() => db.$transaction(async (tx) => {
       // Ikki reys bir vaqtda yuklansa ikkalasi eski qoldiqni ko'rib o'tib ketmasin — sklad qulfi
       await lockStock(tx);
-      const unpaid = await prepayShortError(tx, t.orderId);
+      // Reys «pulsiz chiqarish» ruxsati bilan ochilgan bo'lsa (`unpaidReason`) — yuklashda to'lov qayta so'ralmaydi
+      const unpaid = t.unpaidReason ? null : await prepayShortError(tx, t.orderId);
       if (unpaid) throw new StockShort(unpaid);
       // Miqdor va texnika ham shart: reys tranzaksiyadan tashqarida o'qilgan — shu orada tahrirlangan bo'lsa (`updatePlannedTrip`),
       // skladdan eski miqdor / eski turdagi mahsulot chiqib ketmasin
@@ -852,6 +853,11 @@ export type NewTripInput = {
   external?: ExternalCar | null;
   /** TTN raqami (blanka / soliq nakladnoyi) — ixtiyoriy, bo'sh bo'lsa nakladnoy raqami ishlatiladi. */
   ttn?: string | null;
+  /**
+   * Bosh to'lov kelmasdan chiqarish sababi — chaqiruvchi `trips.unpaid` ruxsatini tekshirgan bo'lishi shart.
+   * Berilsa avans tekshiruvi o'tkazib yuboriladi (faqat avans haqiqatan yetmaganda saqlanadi), direktorga xabar boradi.
+   */
+  unpaidReason?: string | null;
 };
 
 /** TTN: bo'shliqlar bitta, «№» belgisisiz; bo'sh — null. */
@@ -1067,10 +1073,11 @@ const tripBody = (qty: number, c: CheckedTrip) => `${qty} ${unitLabel(c.line.uni
  * Tekshiruvlar (`checkTrip`): zayavka tasdiqlanganmi, qoldiq yetadimi, mikser sig'imi oshmaydimi.
  * ECO'ga yuborish chaqiruvchida (u yerda kutish/kutmaslik farq qiladi).
  */
-export async function createTrip(input: NewTripInput, userId: string): Promise<{ id: string; deliveryNoteNo: string }> {
+export async function createTrip(input: NewTripInput, userId: string): Promise<{ id: string; deliveryNoteNo: string; unpaid: { short: string; reason: string } | null }> {
   if ((input.ttn?.trim().length ?? 0) > 40) throw new Error("TTN ko'pi bilan 40 belgi");
   const ttn = cleanTtn(input.ttn);
-  const c = await checkTrip(input, { prepay: true });
+  const unpaidReason = input.unpaidReason?.trim() || null;
+  const c = await checkTrip(input, { prepay: !unpaidReason });
   // Ko'chadan mashina hamma tekshiruvdan o'tgandan keyin yoziladi; reys tranzaksiyasi yiqilsa ham qoladi —
   // keyingi safar raqami/telefoni bo'yicha qayta ishlatiladi
   const ids = c.ext ? await upsertExternalCar(c.ext, c.extPhone, userId) : { vehicleId: input.vehicleId, driverId: input.driverId };
@@ -1079,19 +1086,31 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     // Qoldiq qulf ostida qayta tekshiriladi: ikki dispetcher bir vaqtda oxirgi 8 m³ ga reys ochsa, ikkinchisi to'xtaydi
     await recheckLeft(tx, input.orderId, input.qtyM3, c);
     const unpaidNow = await prepayShortError(tx, input.orderId);
-    if (unpaidNow) throw new Error(unpaidNow);
+    if (unpaidNow && !unpaidReason) throw new Error(unpaidNow);
     const taken = ttn ? await ttnTaken(tx, ttn) : null;
     if (taken) throw new Error(taken);
     const t = await tx.trip.create({
       data: {
         deliveryNoteNo: await nextNo(tx, "trip", "N"), ttn, orderId: input.orderId, vehicleId: ids.vehicleId, driverId: ids.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined, bru: c.bru, bruId: c.bruId, driverReason: c.driverReason,
+        // Avans yetarli bo'lsa sabab yozilmaydi — reys oddiy reys bo'lib qoladi
+        unpaidReason: unpaidNow ? unpaidReason!.slice(0, 500) : null,
         // QR havolasidagi kalit: raqam ketma-ket, kalitsiz ochiq sahifadan mijozlar ro'yxatini yig'ib bo'lmasin
         verifyToken: randomBytes(18).toString("base64url"),
       },
     });
-    await audit(tx, userId, "CREATE", "Trip", t.id, undefined, { ...t, verifyToken: undefined });
-    return { id: t.id, deliveryNoteNo: t.deliveryNoteNo };
+    await audit(tx, userId, "CREATE", "Trip", t.id, undefined, { ...t, verifyToken: undefined, ...(unpaidNow ? { prepayShort: unpaidNow } : {}) });
+    return { id: t.id, deliveryNoteNo: t.deliveryNoteNo, unpaid: unpaidNow && t.unpaidReason ? { short: unpaidNow, reason: t.unpaidReason } : null };
   });
+  // Pul nazorati chetlab o'tildi — direktor darhol bilsin
+  if (created.unpaid) {
+    const u = created.unpaid;
+    notifyAfter(() => notifyRoles(["DIRECTOR"], {
+      type: "TRIP_UNPAID",
+      title: `Bosh to'lovsiz reys — ${created.deliveryNoteNo}`,
+      body: `${u.short.replace(/ — qolgan .*$/, "")}. Sabab: ${u.reason}`,
+      link: { key: "trips", id: created.id },
+    }, { except: userId }));
+  }
 
   // Haydovchi reys biriktirilganini BILISHI kerak — u ro'yxatni kutib o'tirmaydi,
   // mashinada yoki hovlida bo'ladi. Shu sababli bu eng muhim bildirishnoma. Ko'chadan haydovchida ilova yo'q

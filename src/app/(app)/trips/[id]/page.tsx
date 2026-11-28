@@ -332,6 +332,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         <DL items={[
           ...(t.bru ? [{ k: "BRU", v: t.bru }] : []),
           ...(t.driverReason ? [{ k: "Boshqa haydovchi sababi", v: `${t.driver.fullName} — ${t.driverReason}` }] : []),
+          ...(t.unpaidReason ? [{ k: "Bosh to'lovsiz chiqarilgan", v: <span className="text-amber-700">{t.unpaidReason}</span> }] : []),
           ...(t.pickupAddress ? [{ k: "Yukni olgani joyi", v: t.pickupAddress }] : []),
           { k: "Manzil", v: t.order.deliveryAddress },
           { k: "Sana", v: date(t.order.deliveryDate) },

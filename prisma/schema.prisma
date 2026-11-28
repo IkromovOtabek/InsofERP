@@ -1959,6 +1959,7 @@ model Trip {
   /// BRU brigadasi (Brigade.isBru) — BRU varag'iga (Ish haqi) yetkazilgan m³ shu bo'yicha tushadi
   bruId          String?
   driverReason   String? // texnikaga biriktirilmagan haydovchi berilgan sabab (asosiy haydovchi kasal, dam olishda...) — logist yozadi
+  unpaidReason   String? // bosh to'lov kassaga tushmasdan chiqarilgan reys — sababi (ruxsat trips.unpaid); bo'lsa yuklashda ham to'lov so'ralmaydi
 
   // ── Yukni olgan joyi (zavod/sklad) — logistika "Yuklandi" bosqichida belgilaydi ──
   pickupAddress String? // yuk olingan joy manzili

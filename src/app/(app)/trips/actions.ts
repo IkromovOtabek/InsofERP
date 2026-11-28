@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireAction, requireSession } from "@/lib/auth";
+import { canDo } from "@/lib/permissions";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { createTrip as createTripDomain, ECO_EDITABLE, hideExternalCar, reportTripIssue, resolveTripIssue, revertTripLoad, setTripTtn, tripCancelled, tripClosed, tripLoaded, tripPickup, updatePlannedTrip, type DeliveryQty, type TripEditInput } from "@/lib/trips";
 import { addTripCostRecord, dispatchDelivered, dispatchOnRoad, dispatchStep, DRIVER_STEPS, type DriverStep } from "@/lib/trip-dispatch";
@@ -32,6 +33,8 @@ const schema = z.object({
   extCapacity: zOpt,
   extDriverName: zOpt,
   extDriverPhone: zOpt,
+  // Bosh to'lov kelmasdan chiqarish sababi (belgi qo'yilganda) — ruxsat `trips.unpaid`
+  unpaidReason: zOpt,
 });
 
 /** Tahrir formasi: zayavka va TTN o'zgarmaydi (TTN — reys sahifasidagi alohida forma). */
@@ -83,7 +86,13 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   let created;
   try {
     // Qoida `lib/trips.ts` da — mobil ilovadagi "Yangi reys" ham shuni chaqiradi
-    created = await createTripDomain({ ...f, orderId: d.orderId, ttn: d.ttn }, s.userId);
+    let unpaidReason: string | null = null;
+    if (fd.get("unpaid") === "1") {
+      if (!canDo(s, "trips", "unpaid")) return { error: "Bosh to'lovsiz reys chiqarishga ruxsatingiz yo'q — direktordan so'rang" };
+      unpaidReason = d.unpaidReason?.trim() ?? "";
+      if (unpaidReason.length < 3) return { error: "Bosh to'lovsiz chiqarish sababini yozing" };
+    }
+    created = await createTripDomain({ ...f, orderId: d.orderId, ttn: d.ttn, unpaidReason }, s.userId);
   } catch (e) {
     return { error: (e as Error).message };
   }

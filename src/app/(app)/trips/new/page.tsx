@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/ui";
 import { TripForm } from "../trip-form";
 import { unitLabel } from "@/lib/unit";
 import { date } from "@/lib/format";
+import { prepayShortError } from "@/lib/payments";
+import { canDo } from "@/lib/permissions";
 import { READINESS_INCLUDE, orderLines, orderReadiness } from "@/lib/trips";
 import { ACTIVE_TRIP, VEHICLE_LIVE, orderPlannedAt, vehicleLive } from "@/lib/logistics";
 
@@ -16,7 +18,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const localInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 export default async function NewTrip({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
-  await requireRoles(["LOGISTICS", "PRODUCTION"], { module: "trips", actions: ["create"] });
+  const s = await requireRoles(["LOGISTICS", "PRODUCTION"], { module: "trips", actions: ["create"] });
   const { orderId } = await searchParams;
   const [orders, vehicles, drivers, brus, externals] = await Promise.all([
     db.order.findMany({
@@ -39,6 +41,9 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
   const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
   const driverOpts = drivers.filter((d) => driverNames.includes(d.position.trim().toLowerCase()));
   const marks = await customerMarks(orders.map((o) => o.customerId));
+  // Naqd zayavkaning bosh to'lovi kelmagani — formada oldindan ko'rinsin (reys ochishda server baribir tekshiradi)
+  const short = new Map(await Promise.all(orders.filter((o) => !o.onCredit && Number(o.prepayAmount ?? 0) > 0)
+    .map(async (o) => [o.id, await prepayShortError(db, o.id)] as const)));
   // Haydovchi ilovasiga reys telefon raqami bo'yicha boradi — raqamsiz xodim ECO'da topilmaydi
   const driverList = driverOpts.map((d) => ({ id: d.id, fullName: d.fullName, vehicleId: d.vehicleId, phoneOk: !!normalizePhone(d.phone) }));
   // Ro'yxatda faqat brigada tayyorlab bergan (hali jo'natilmagan) miqdori bor zayavkalar —
@@ -56,6 +61,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
       remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks,
       unit: mixed ? "birlik" : unitLabel(rd.unit ?? "m3"), mixed, pieceUnit: unitLabel(pieceUnit), lines,
       bru: bruOf(o.items),
+      prepayShort: short.get(o.id) ?? null,
     };
   });
   const opts = all.filter((o) => o.remainingM3 > 0);
@@ -72,6 +78,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
         bruNames={brus.map((b) => b.name)}
         externals={externals.map((v) => ({ id: v.id, plate: v.plate, type: v.type === "MIXER" ? "MIXER" : "TRUCK", capacity: v.capacityM3 != null ? Number(v.capacityM3) : null, driverName: v.drivers[0]?.fullName ?? "", driverPhone: v.drivers[0]?.phone ?? "" }))}
         initialOrderId={orderId}
+        canUnpaid={canDo(s, "trips", "unpaid")}
       />
     </div>
   );

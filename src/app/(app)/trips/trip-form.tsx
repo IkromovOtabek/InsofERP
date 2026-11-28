@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState, useMemo, useState, useTransition } from "react";
+import { startTransition, useActionState, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Package, Trash2, Truck } from "lucide-react";
 import { createTrip, hideExternalVehicle, updateTrip } from "./actions";
-import { Button, Card, CardHeader, Checkbox, Field, FormActions, FormError, InfoButton, Input, LinkButton, Select, Textarea } from "@/components/ui";
+import { Button, Callout, Card, CardHeader, Checkbox, Field, FormActions, FormError, InfoButton, Input, LinkButton, Select, Textarea } from "@/components/ui";
 
 /** Zayavka qatori (mahsulot birligida): jami, tayyor, jo'natilgan, hozir reysga mumkin. mixer — beton qatori (mikserda ketadi). */
 type Line = { productId: string; name: string; unit: string; qty: number; ready: number; shipped: number; available: number; inProduction: number; mixer: boolean };
@@ -18,6 +18,8 @@ type Order = {
   unit: string; plannedAt: string; mixed?: boolean; pieceUnit?: string; lines: Line[];
   /** Zayavkadagi beton qatorining BRU si */
   bru?: string | null;
+  /** Naqd zayavkaning bosh to'lovi kelmagan bo'lsa — xato matni (`prepayShortError`) */
+  prepayShort?: string | null;
 };
 /** Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavka — ro'yxatga kirmaydi, sababi ko'rsatiladi. */
 type Waiting = { id: string; date: string; customer: string; inProduction: number; unit: string; hasTasks: boolean };
@@ -41,8 +43,10 @@ type Edit = {
 const normPlate = (v: string) => v.toUpperCase().replace(/\s+/g, "");
 const sum = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) * 1000) / 1000;
 
-export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, externals, initialOrderId, edit }: {
+export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, externals, initialOrderId, edit, canUnpaid = false }: {
   orders: Order[]; waiting?: Waiting[]; vehicles: Vehicle[]; drivers: Driver[]; bruNames: string[]; externals: External[]; initialOrderId?: string; edit?: Edit;
+  /** `trips.unpaid` — bosh to'lov kelmasdan reys chiqarish */
+  canUnpaid?: boolean;
 }) {
   // Tahrirda — shu reysning `updateTrip` i (qoidalar «Yangi reys» bilan bir xil, `lib/trips.ts`)
   const editId = edit?.tripId;
@@ -104,6 +108,9 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   const [ttn, setTtn] = useState("");
   const [note, setNote] = useState(edit?.note ?? "");
   const [driverReason, setDriverReason] = useState(edit?.driverReason ?? "");
+  // Bosh to'lovsiz chiqarish: belgi + sabab (faqat yangi reysda, ruxsati borga)
+  const [unpaid, setUnpaid] = useState(false);
+  const [unpaidReason, setUnpaidReason] = useState("");
   // Tayyor qoldiqdan ko'p yozilsa — serverdagi bilan bir xil sabab, yuborishdan oldin
   const qtyNum = Number(qty);
   const overReady = !order || qtyNum <= avail + 0.001
@@ -142,6 +149,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   // Zayavka almashsa — birligiga mos texnika turiga o'tamiz (mikser ↔ yuk mashina)
   const pickOrder = (oid: string) => {
     setOrderId(oid);
+    setUnpaid(false);
     const o = orders.find((x) => x.id === oid);
     setPlannedAt(o?.plannedAt ?? "");
     if (o?.bru) setBru(o.bru);
@@ -197,7 +205,9 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
   };
 
   return (
-    <form action={action} className="space-y-5">
+    // `<form action>` xato bilan qaytganda formani tozalaydi: boshqariladigan <select> ekranda birinchi variantga
+    // tushib qoladi, state esa tanlangan zayavkada — yuqoridagi xato boshqa zayavka haqida ko'rinadi. Shuning uchun onSubmit.
+    <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); startTransition(() => action(fd)); }} className="space-y-5">
       <FormError error={state?.error} />
 
       <div className="grid gap-5 xl:grid-cols-2">
@@ -341,8 +351,26 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, bruNames, ex
         </Card>
       </div>
 
+      {!edit && order?.prepayShort && (
+        <Callout tone="warning" title="Bosh to'lov kassaga tushmagan">
+          <p>{order.prepayShort}</p>
+          {canUnpaid ? (
+            <div className="mt-3 space-y-2">
+              <Checkbox name="unpaid" value="1" label="Bosh to'lovsiz chiqarish (direktorga xabar boradi)" checked={unpaid} onChange={(e) => setUnpaid(e.target.checked)} />
+              {unpaid && (
+                <Field label="Sabab *">
+                  <Textarea name="unpaidReason" value={unpaidReason} onChange={(e) => setUnpaidReason(e.target.value)} maxLength={500} placeholder="Masalan: mijoz pulni obyektda beradi, direktor bilan kelishilgan" />
+                </Field>
+              )}
+            </div>
+          ) : (
+            <p className="mt-1">Pulsiz chiqarishga ruxsatingiz yo&apos;q — kassir pulni qabul qilsin yoki direktordan «Bosh to&apos;lov kelmasdan reys chiqarish» ruxsatini so&apos;rang.</p>
+          )}
+        </Callout>
+      )}
+
       <FormActions>
-        <Button disabled={pending || orders.length === 0 || !order || !!overReady}>{pending ? (edit ? "Saqlanmoqda…" : "Yaratilmoqda…") : edit ? "Saqlash" : "Reys yaratish"}</Button>
+        <Button disabled={pending || orders.length === 0 || !order || !!overReady || (!edit && !!order?.prepayShort && (!unpaid || unpaidReason.trim().length < 3))}>{pending ? (edit ? "Saqlanmoqda…" : "Yaratilmoqda…") : edit ? "Saqlash" : "Reys yaratish"}</Button>
         <LinkButton href={edit ? `/trips/${edit.tripId}` : "/trips"} variant="secondary">Bekor</LinkButton>
       </FormActions>
       {orders.length === 0 && <p className="text-sm text-amber-700">Jo&apos;natishga tayyor zayavka yo&apos;q — brigada tasdiqlagan mahsulot bo&apos;lishi kerak.</p>}
