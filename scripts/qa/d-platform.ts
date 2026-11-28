@@ -221,7 +221,7 @@ async function main() {
   const s1 = await sso("alfa");
   check(s1.token && s1.url === "https://alfa.insof.test/api/control/sso", "panel ssoAction → token + korxona manzili", `${s1.raw.status} ${s1.raw.text.slice(0, 200)}`);
   let p = await postSso("alfa", s1.token);
-  check(p.r.status === 303 && p.r.location.endsWith("/dashboard") && p.jar.c.has("insof_session"), "alfa SSO qabul qildi → /dashboard + sessiya", `${p.r.status} ${p.r.text.slice(0, 120)}`);
+  check(p.r.status === 303 && p.r.location.endsWith("/dashboard#kirish") && p.jar.c.has("insof_session"), "alfa SSO qabul qildi → /dashboard + sessiya", `${p.r.status} ${p.r.text.slice(0, 120)}`);
   const it = p.jar;
   r = await req(`${urlOf("alfa")}/dashboard`, it);
   check(r.status === 200 && r.text.includes("IT superadmin"), "IT ichkarida (rol yorlig'i «IT superadmin»)", `${r.status}`);
