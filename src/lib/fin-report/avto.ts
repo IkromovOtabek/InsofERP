@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { tripFuelNorm } from "@/lib/driver-trip-pay";
 import { tripPayKm } from "@/lib/trip-summary";
-import { driverLedger } from "@/lib/driver-ledger";
+import { driverLedger, NO_VEHICLE as LEDGER_NO_VEHICLE } from "@/lib/driver-ledger";
 
 /**
  * «Insof 2026» → «AVTOTRANSPORT TAHLILI — har bir mashina va kunlik solishtirish» (Tahlil → Mexanik).
@@ -125,6 +125,8 @@ export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: strin
   // Pul — Hisob varag'i qatorlaridan (yoqilg'i summasi, haydovchi haqi, ta'mir + zapchast, vulkanizator + boshqa, bajarilgan ish)
   for (const l of ledger.rows) {
     const known = vById.has(l.vehicleId);
+    // «Mashinasiz xarajat» qatori (kassa / jurnal puli) — mashina hisobotiga emas, logistika hisobiga (Hisob varag'i)
+    if (l.kind === "cost" && l.vehicleId === LEDGER_NO_VEHICLE) continue;
     if (!known && !(l.total || l.revenue)) continue;
     const r = row(known ? l.vehicleId : NO_VEH), d = day(l.at);
     const repair = l.repair + l.parts, other = l.vulc + l.other;

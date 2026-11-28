@@ -92,7 +92,7 @@ async function main() {
   const re = ledgerTotals(led.rows);
   if (near(re.revenue, t.revenue) && near(re.total, t.total)) ok(`Hisob varag'i jami qatorlardan: tushum ${money(t.revenue)}, xarajat ${money(t.total)}, foyda ${money(t.profit)}`);
   else bad("Hisob varag'i jami qatorlar yig'indisiga teng emas");
-  const rowBad = led.rows.filter((r) => !near(r.total, r.pay + r.repair + r.parts + r.vulc + r.other) || !near(r.revenue, r.revBank + r.revCash + r.revDebt + r.svcBank + r.svcCash + r.revOther) || !near(r.profit, r.revenue - r.total));
+  const rowBad = led.rows.filter((r) => !near(r.total, r.pay + r.repair + r.parts + r.vulc + r.other + r.fuelCost + r.extCost) || !near(r.revenue, r.revBank + r.revCash + r.revDebt + r.svcBank + r.svcCash + r.revOther) || !near(r.profit, r.revenue - r.total));
   if (rowBad.length) bad(`Qator jami ustunlarga mos emas: ${rowBad.length} (${rowBad.slice(0, 5).map((r) => r.no || r.id).join(", ")})`);
   else ok(`${led.rows.length} qatorda jami = ustunlar yig'indisi`);
   const ids = led.rows.map((r) => r.id);
@@ -131,7 +131,8 @@ async function main() {
 
   const b = await logiBalance(from, to);
   log(`  · Logistika hisobi (davr): tushum ${money(b.tushum)} − xarajat ${money(b.xarajat)} − oylik ${money(b.oylik)} = qoldiq ${money(b.qoldiq)}`);
-  log(`    xarajat manbasi: kassa ${money(b.xarajatBySource.kassa)}, mashina ${money(b.xarajatBySource.mashina)}, logistika moliya ${money(b.xarajatBySource.logistika)}, dispetcher yoqilg'isi ${money(b.xarajatBySource.sklad)}`);
+  if (near(b.qoldiq, b.ledger.profit)) ok(`Qoldiq ${money(b.qoldiq)} = Hisob varag'i «Foyda» ustuni jami`);
+  else bad(`Qoldiq ${money(b.qoldiq)} ≠ «Foyda» ustuni jami ${money(b.ledger.profit)}`);
 
   log(`\nNatija: ${problems ? `${problems} ta muammo` : "muammo topilmadi"}`);
   const text = out.join("\n") + "\n";

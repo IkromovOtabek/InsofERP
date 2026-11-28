@@ -4,7 +4,6 @@ import type { Drill, DrillItem, DrillPart } from "@/lib/drill";
 import { DRILL_LIMIT, sortDrill } from "@/lib/drill";
 import type { LedgerRow } from "@/lib/driver-ledger";
 import type { LedgerExtra } from "@/lib/ledger-extras";
-import { BAL_GROUPS, BAL_SOURCE_LABEL, type LogiBalance } from "@/lib/logistics-balance";
 import { PAY_TYPE_LABEL } from "@/lib/driver-trip-pay";
 import { date, dateTime, fmtNum, money } from "@/lib/format";
 import { Badge } from "@/components/ui";
@@ -30,14 +29,16 @@ const REVENUE: Metric[] = [
   { key: "svcCash", label: "Usluga — naqd", of: (r) => r.svcCash },
   { key: "revOther", label: "Obyekt (zavod uchun)", of: (r) => r.revOther },
 ];
-// Mashina varag'i (filtrda): qatorlarga yozilgan xarajat. Yoqilg'i normasi xarajat emas (faqat nazorat) — 2026-11-26
+// Xarajat — varaq ustunlari (kassa, jurnal, dispetcher yoqilg'isi ham qatorda). Yoqilg'i normasi xarajat emas — 2026-11-26
 const COST: Metric[] = [
+  { key: "fuelCost", label: "Yoqilg'i puli", of: (r) => r.fuelCost },
   { key: "repair", label: "Ta'mir", of: (r) => r.repair },
   { key: "parts", label: "Zapchast", of: (r) => r.parts },
   { key: "vulc", label: "Vulkanizator", of: (r) => r.vulc },
   { key: "other", label: "Boshqa", of: (r) => r.other },
+  { key: "extCost", label: "Kassa / jurnal", of: (r) => r.extCost },
 ];
-const costOf = (r: LedgerRow) => r.repair + r.parts + r.vulc + r.other;
+const costOf = (r: LedgerRow) => r.fuelCost + r.repair + r.parts + r.vulc + r.other + r.extCost;
 const EXTRA_IN = "jurnal_kirim", EXTRA_OUT = "jurnal_chiqim";
 
 const rowTitle = (r: LedgerRow) => [r.no || (r.kind === "cost" ? "Reyssiz kun" : "Qo'lda qator"), r.plate, r.driver].filter(Boolean).join(" · ");
@@ -48,7 +49,7 @@ const rowSub = (r: LedgerRow) => [r.dropoff ? `${r.pickup} → ${r.dropoff}` : n
  * `extras` — jurnaldagi varaqqa tushmaydigan pul (faqat filtrsiz varaqda, summa huquqi bilan).
  */
 export function ledgerCardDrill(key: CardKey, tur: string | null, rows: LedgerRow[], extras: { income: LedgerExtra[]; expense: LedgerExtra[] } | null,
-  period: string, href: (p: Record<string, string>) => string, bal: LogiBalance | null = null): Drill {
+  period: string, href: (p: Record<string, string>) => string): Drill {
   const rowItem = (r: LedgerRow, amount: number): DrillItem => ({ date: r.at, title: rowTitle(r), sub: rowSub(r) || undefined, amount, href: href({ karta: key, ...(tur ? { tur } : {}), qator: r.id }) });
   const extraItem = (x: LedgerExtra, sign = 1): DrillItem => ({
     date: x.at, title: `${x.docNo} · ${x.category}`, sub: [x.account, x.vehicle, x.who, x.note].filter(Boolean).join(" · ") || undefined,
@@ -76,34 +77,18 @@ export function ledgerCardDrill(key: CardKey, tur: string | null, rows: LedgerRo
     return { title: `Jami tushum${sl ? ` — ${sl}` : ""}`, period, value, parts: tur ? [] : parts, items: limit(items),
       note: "Faqat kirimi bor qatorlar. Tarkibdagi qatorni bosing — shu turdagilari, yozuvni bosing — batafsil." };
   }
-  if (key === "xarajat" && bal) {
-    // Butun logistika: kassa (Transport), mashina xarajati, Logistika moliya, dispetcher omboridan yoqilg'i — `lib/logistics-balance.ts`
-    const pick = tur ? bal.items.filter((i) => i.group === tur) : bal.items;
-    const items: DrillItem[] = pick.map((i) => ({ date: i.date, title: i.title, sub: [BAL_SOURCE_LABEL[i.source], i.sub].filter(Boolean).join(" · "), amount: i.amount, href: i.href }));
-    return {
-      title: `Xarajat${tur ? ` — ${tur}` : ""}`, period, value: pick.reduce((a, i) => a + i.amount, 0),
-      parts: tur ? [] : BAL_GROUPS.map((g) => ({ key: g, label: g, value: bal.xarajatByGroup[g] })).filter((p) => Math.abs(p.value) >= 1),
-      items: limit(items),
-      note: `Manba: ${(Object.keys(bal.xarajatBySource) as (keyof typeof bal.xarajatBySource)[]).filter((k) => bal.xarajatBySource[k] >= 1).map((k) => `${BAL_SOURCE_LABEL[k]} ${money(bal.xarajatBySource[k])}`).join(" · ")}. Haydovchi oyligi alohida, yoqilg'i normasi xarajatga kirmaydi.`,
-    };
-  }
   if (key === "xarajat") {
     const lbl = "Mashinasiz xarajat (Logistika moliya jurnali)";
     const { parts, items } = fromMetrics(COST, extras ? { key: EXTRA_OUT, label: lbl, list: extras.expense } : null);
     const value = tur ? items.reduce((s, i) => s + i.amount, 0) : parts.reduce((s, p) => s + p.value, 0);
     const sl = subLabel(COST, EXTRA_OUT, lbl);
     return { title: `Xarajat (oyliksiz)${sl ? ` — ${sl}` : ""}`, period, value, parts: tur ? [] : parts, items: limit(items),
-      note: "Faqat shu varaq qatorlariga yozilgan xarajat. Kassadan to'langan umumiy transport xarajati — filtrsiz varaqda." };
+      note: "Varaq ustunlari: yoqilg'i puli, ta'mir, zapchast, vulkanizator, boshqa, kassa / jurnal. Haydovchi haqi — Oylikda, yoqilg'i normasi kirmaydi." };
   }
   if (key === "oylik") {
     const items = rows.filter((r) => r.pay > 0).map((r) => ({ ...rowItem(r, r.pay), sub: [r.amount == null ? "narxsiz — taklif" : r.payType ? PAY_TYPE_LABEL[r.payType] : null, r.approvedAt ? "tasdiqlangan" : null, rowSub(r)].filter(Boolean).join(" · ") }));
     return { title: "Haydovchilar oyligi (reys haqi)", period, value: rows.reduce((s, r) => s + r.pay, 0), parts: [], items: limit(items),
       note: "Reys narxi yoki qo'lda yozilgan haq; narxlanmagan reysda — taklif narx." };
-  }
-  if (key === "jami" && bal) {
-    return { title: "Qoldiq (tushum − xarajat − oylik)", period, value: bal.qoldiq,
-      parts: [{ key: "tushum", label: "Tushum", value: bal.tushum }, { key: "xarajat", label: "Xarajat", value: -bal.xarajat }, { key: "oylik", label: "Haydovchilar oyligi", value: -bal.oylik }],
-      items: [], note: "Qatorni bosing — o'sha karta ochiladi." };
   }
   if (key === "jami") {
     const inc = rows.reduce((s, r) => s + r.revenue, 0) + (extras ? sumOf(extras.income) : 0);

@@ -50,10 +50,10 @@ export async function LogiOverview({ period, accounts, toPay }: {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Tushum" tag="bajarilgan ish" value={money(bal.tushum)} hint={`dostavka ${n(tp.dostavka)} · usluga ${n(tp.usluga)} · zavod uchun ${n(tp.obyekt)}${tp.boshqa ? ` · boshqa ${n(tp.boshqa)}` : ""}`} icon={TrendingUp} tone="success" href={hisob("&karta=tushum")} />
+        <StatCard label="Tushum" tag="bajarilgan ish" value={money(bal.tushum)} hint={`dostavka ${n(tp.dostavka)} · usluga ${n(tp.usluga)} · zavod uchun ${n(tp.obyekt)}`} icon={TrendingUp} tone="success" href={hisob("&karta=tushum")} />
         <StatCard label="Xarajat" tag="transportga ketgan" value={money(bal.xarajat)} hint={BAL_GROUPS.filter((g) => bal.xarajatByGroup[g] >= 1).map((g) => `${g.toLowerCase()} ${n(bal.xarajatByGroup[g])}`).join(" · ") || period.label} icon={TrendingDown} tone="warning" href={hisob("&karta=xarajat")} />
         <StatCard label="Haydovchilar oyligi" tag="hisoblangan" value={money(bal.oylik)} hint={`reys haqi · ${fmtNum(t.trips, 0)} reys`} icon={HandCoins} href={hisob("&karta=oylik")} />
-        <StatCard label="Qoldiq" tag="tushum − xarajat − oylik" value={money(bal.qoldiq)} hint={period.label} icon={Calculator} tone={bal.qoldiq < 0 ? "danger" : "info"} href={hisob("&karta=jami")} />
+        <StatCard label="Qoldiq" tag="= Foyda ustuni jami" value={money(bal.qoldiq)} hint={period.label} icon={Calculator} tone={bal.qoldiq < 0 ? "danger" : "info"} href={hisob("&karta=jami")} />
         <StatCard label="Qoldiq — 1-noyabrdan beri" tag="hozirgi" value={money(now.qoldiq)} hint="logistika boshlig'i chiqimi shundan" icon={Landmark} tone={now.qoldiq < 0 ? "danger" : "brand"} />
         <StatCard label="To'lanishi kerak" tag="to'lanmagan" value={money(due)} hint={`${toPay.length} ta tasdiqlangan so'rov`} icon={HandCoins} tone={toPay.length ? "warning" : "default"} href="/logistika/moliya?tab=tolov" />
         <StatCard label="Reys va probeg" tag="reys · km" value={`${fmtNum(t.trips, 0)} reys`} hint={`${fmtNum(t.km, 0)} km${unpriced.length ? ` · narxsiz ${unpriced.length}` : ""}`} icon={Route} tone={unpriced.length ? "warning" : "info"} href={hisob("&karta=reys")} />
@@ -68,7 +68,7 @@ export async function LogiOverview({ period, accounts, toPay }: {
               {t.revDebt >= 1 && <Line label="Dostavka — qarzga (to'lov turi yo'q)" v={t.revDebt} />}
               <Line label="Usluga — perech." v={t.svcBank} /><Line label="Usluga — naqd" v={t.svcCash} />
               <Line label="Zavod uchun ish (obyekt)" v={t.revOther} />
-              {tp.boshqa >= 1 && <Line label="Boshqa kirim (jurnal)" v={tp.boshqa} />}<Line label="Tushum" v={bal.tushum} strong />
+              <Line label="Tushum" v={bal.tushum} strong />
               <Line label="− Xarajat" v={-bal.xarajat} /><Line label="− Haydovchilar oyligi" v={-bal.oylik} /><Line label="Qoldiq" v={bal.qoldiq} strong />
             </tbody>
           </Table>
@@ -79,10 +79,6 @@ export async function LogiOverview({ period, accounts, toPay }: {
             <tbody>
               {BAL_GROUPS.map((g) => <Line key={g} label={g} v={bal.xarajatByGroup[g]} />)}
               <Line label="Xarajat" v={bal.xarajat} strong />
-              <Line label="shundan zavod kassasidan (Transport)" v={bal.xarajatBySource.kassa} />
-              <Line label="shundan mashina xarajati (sklad, ta'mir…)" v={bal.xarajatBySource.mashina} />
-              <Line label="shundan Logistika moliyadan" v={bal.xarajatBySource.logistika} />
-              <Line label="shundan dispetcher omboridan yoqilg'i" v={bal.xarajatBySource.sklad} />
             </tbody>
           </Table>
         </Card>

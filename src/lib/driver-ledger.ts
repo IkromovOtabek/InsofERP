@@ -3,6 +3,9 @@ import type { DriverPayType, LedgerRevenueType } from "@/generated/prisma";
 import { PAY_SINCE, payTrips, tripFuelNorm } from "@/lib/driver-trip-pay";
 import { fmtNum } from "@/lib/format";
 import { ledgerTotals } from "@/lib/ledger-totals";
+import { CASH_LINK_REF, transportCashNames } from "@/lib/logistics-finance";
+import { EXTRA_INCOME } from "@/lib/ledger-extras";
+import { DISPATCH_WH_NAME } from "@/lib/dispatcher-stock";
 
 // Jami va haydovchi jamlanmasi — bazasiz faylda (varaq filtrlari brauzerda qayta hisoblaydi)
 export { driverPaySums, ledgerTotals, type DriverPaySum } from "@/lib/ledger-totals";
@@ -19,6 +22,13 @@ export { driverPaySums, ledgerTotals, type DriverPaySum } from "@/lib/ledger-tot
  *  - `cost` — reysi ham, qo'lda qatori ham yo'q mashinaning shu kungi zapravka/xarajati (yo'qolib qolmasin).
  * Sarf — transport kartasidagi norma × km + soat (`tripFuelNorm`). Pul ko'rsatkichlari `avtoReport` bilan bir xil:
  * daromad — zayavka dastavka haqi reyslarga hajm ulushida.
+ *
+ * Varaqdan tashqaridagi pul ham qatorga tushadi (2026-11-28) — «Foyda» ustunining jami = logistika Qoldig'i:
+ *  - `fuelCost` (Yoqilg'i puli) — dispetcher omboridan berilgan yoqilg'i (sklad qiymati) va kassa/jurnaldagi yoqilg'i chiqimi;
+ *  - `extCost` (Kassa / jurnal) — kassadagi «Transport» chiqimi va Logistika moliyadagi mashinaga yozilmagan chiqim;
+ *  - jurnaldagi «Transport xizmati» / «Boshqa kirim» — Usluga ustuniga (hisob turi bo'yicha naqd / perech.).
+ * Mashinasi bor yozuv — o'sha mashina qatoriga, mashinasizi — «Mashina yo'q» varag'ida kunlik qatorga. Bu ustunlar varaqda
+ * tahrirlanmaydi (o'z joyida: kassa yoki Logistika moliya); yoqilg'i normasi (`fuelSum`) baribir faqat nazorat.
  *
  * Gaz qoldig'i — transport bo'yicha (bir mashinada bir necha haydovchi): `PAY_SINCE` dan beri zapravkalar − norma sarfi.
  * Qo'lda qator bilan yozilgan zapravka/xarajat — o'sha qatorga, reysga bog'langani — o'sha reysga, qolgani shu
@@ -68,7 +78,10 @@ export type LedgerRow = {
   fuelSum: number; fuelPriceMissing: boolean;
   /** Haydovchi haqi: narxlangan / qo'lda yozilgan, bo'lmasa taklif */
   pay: number; amount: number | null; suggestText: string | null; payType: DriverPayType | null; approvedAt: Date | null;
-  repair: number; parts: number; vulc: number; other: number; total: number;
+  repair: number; parts: number; vulc: number; other: number;
+  /** Yoqilg'i puli (dispetcher omboridan, kassa/jurnaldagi yoqilg'i) va kassa/jurnaldagi boshqa transport chiqimi — faqat o'qish */
+  fuelCost: number; extCost: number;
+  total: number;
   /**
    * Bajarilgan ish (summada): dostavka — perechisleniye (`revBank`), naqd (`revCash`), qarzga (`revDebt`: zayavkada to'lov turi
    * yo'q — mijoz keyin to'laydi); usluga prixodi — perechisleniye / naqd (`svcBank`, `svcCash`); «Obyekt» — zavodning o'zi uchun
@@ -91,7 +104,7 @@ export type LedgerRow = {
   dup: string | null;
 };
 
-export type LedgerTotals = Pick<LedgerRow, "km" | "refuel" | "fuelSum" | "pay" | "repair" | "parts" | "vulc" | "other" | "total" | "revBank" | "revCash" | "revDebt" | "svcBank" | "svcCash" | "revOther" | "revenue" | "profit"> & {
+export type LedgerTotals = Pick<LedgerRow, "km" | "refuel" | "fuelSum" | "pay" | "repair" | "parts" | "vulc" | "other" | "fuelCost" | "extCost" | "total" | "revBank" | "revCash" | "revDebt" | "svcBank" | "svcCash" | "revOther" | "revenue" | "profit"> & {
   rows: number; trips: number; hours: number; useGas: number; useDt: number; drumUse: number;
 };
 
@@ -121,7 +134,9 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   // Gaz qoldig'i mashina bo'yicha — davrdagi shu mashinalarning hamma qatori kerak (haydovchi filtri keyin)
   const period = { gte: from, lt: to };
   const vf = opts.vehicleId ? { vehicleId: opts.vehicleId } : {};
-  const [base, entries, fuelLogs, expenses] = await Promise.all([
+  // Kassa (mashinasiz) — filtrsiz yoki «Mashina yo'q» varag'ida; jurnal — mashina filtri bilan
+  const withLoose = !opts.vehicleId || opts.vehicleId === NO_VEHICLE;
+  const [base, entries, fuelLogs, expenses, cashOut, ltx] = await Promise.all([
     payTrips({ status: "DELIVERED", deliveredAt: period, ...vf }, 5000),
     db.logisticsEntry.findMany({
       // Mashinasiz qatorlar ham (Realizatsiyadan tushgan, mashinasi hali yozilmagan) — «Mashina yo'q» varag'ida
@@ -133,10 +148,27 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
         revenue: true, revenueType: true, pickup: true, dropoff: true, cargo: true, note: true, kmGas: true, drumHoursGas: true, driver: { select: { fullName: true } },
       },
     }),
-    db.fuelLog.findMany({ where: { cancelledAt: null, date: period, ...vf }, orderBy: { date: "asc" }, select: { id: true, vehicleId: true, tripId: true, entryId: true, date: true, fuelType: true, liters: true, amount: true } }),
+    db.fuelLog.findMany({ where: { cancelledAt: null, date: period, ...vf }, orderBy: { date: "asc" }, select: { id: true, vehicleId: true, tripId: true, entryId: true, date: true, fuelType: true, liters: true, amount: true, station: true } }),
     db.transportExpense.findMany({
       where: { cancelledAt: null, kind: { not: "DRIVER_PAY" }, date: period, ...(opts.vehicleId ? { OR: [{ vehicleId: opts.vehicleId }, { trip: { vehicleId: opts.vehicleId } }] } : {}) },
       orderBy: { date: "asc" }, select: { id: true, vehicleId: true, tripId: true, entryId: true, date: true, kind: true, amount: true, note: true, trip: { select: { vehicleId: true } } },
+    }),
+    // Kassada to'g'ridan yozilgan transport chiqimi (hujjatga bog'lanmagan; mexanik so'rovi, logistika yozuvi — o'z joyida)
+    withLoose ? transportCashNames().then((names) => db.cashTransaction.findMany({
+      where: { cancelledAt: null, type: "EXPENSE", date: period, refType: null, OR: [{ category: { in: names } }, { subCategory: { in: names } }] },
+      orderBy: { date: "asc" }, select: { id: true, date: true, amount: true, category: true, subCategory: true, counterparty: true, note: true },
+    })) : Promise.resolve([]),
+    // Logistika moliya: mashina xarajati yaratilmagan chiqim (haq to'lovi — Oylikda) va varaqqa tushmaydigan kirim
+    db.logisticsTx.findMany({
+      where: {
+        cancelledAt: null, date: period, ...(opts.vehicleId ? { vehicleId: opts.vehicleId === NO_VEHICLE ? null : opts.vehicleId } : {}),
+        OR: [
+          { type: "EXPENSE", transportExpenseId: null, category: { not: "Haydovchi haqi" }, OR: [{ refType: null }, { refType: { notIn: ["MechanicRequest", "DriverMonthPay"] } }] },
+          { type: "INCOME", category: { in: [...EXTRA_INCOME] }, OR: [{ refType: null }, { refType: CASH_LINK_REF }] },
+        ],
+      },
+      orderBy: { date: "asc" },
+      select: { id: true, docNo: true, date: true, type: true, amount: true, category: true, counterparty: true, note: true, vehicleId: true, account: { select: { type: true } } },
     }),
   ]);
   const tripIds = base.map((r) => r.id);
@@ -151,7 +183,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   const expVehicle = (e: (typeof expenses)[number]) => e.vehicleId ?? e.trip?.vehicleId ?? null;
   const vehicleIds = [...new Set([
     ...extra.map((t) => t.vehicleId), ...entries.flatMap((e) => (e.vehicleId ? [e.vehicleId] : [])), ...fuelLogs.map((f) => f.vehicleId),
-    ...expenses.map(expVehicle).filter((x): x is string => !!x),
+    ...expenses.map(expVehicle).filter((x): x is string => !!x), ...ltx.flatMap((t) => (t.vehicleId ? [t.vehicleId] : [])),
   ])];
 
   const [vehicles, openFuel, openTrips, openEntries, openSplit, prices] = await Promise.all([
@@ -177,7 +209,9 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     db.fuelLog.findMany({ where: { cancelledAt: null, date: { lt: to }, pricePerL: { gt: 0 } }, orderBy: { date: "desc" }, select: { date: true, fuelType: true, pricePerL: true }, take: 5000 }),
   ]);
 
-  if (entries.some((e) => !e.vehicleId)) {
+  // Mashinasiz xarajat (qatori yo'q): kassa, jurnal, transport xarajati
+  const looseExp = (e: (typeof expenses)[number]) => !expVehicle(e) && !(e.entryId && entries.some((x) => x.id === e.entryId)) && !(e.tripId && extra.some((t) => t.id === e.tripId));
+  if (entries.some((e) => !e.vehicleId) || cashOut.length || ltx.some((t) => !t.vehicleId) || expenses.some(looseExp)) {
     vehicles.push({ id: NO_VEHICLE, plate: NO_VEHICLE_PLATE, fuelType: null, fuelNormL100: null, idleNormPerHour: null, gasNormPer100: null, gasIdlePerHour: null });
   }
   // Kartada yoqilg'i turi yo'q — qoldiq shu mashina zapravkalari turida (ko'prog'i)
@@ -224,6 +258,10 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   };
   for (const f of fuelLogs) if (!hasRows.has(f.vehicleId)) costSlot(f.vehicleId, f.date);
   for (const e of expenses) { const vid = expVehicle(e); if (vid && !hasRows.has(vid)) costSlot(vid, e.date); }
+  // Mashinasiz pul — har doim alohida kunlik «Mashinasiz xarajat» qatori (Realizatsiya/qo'lda qatorga aralashmasin)
+  for (const e of expenses) if (looseExp(e)) costSlot(NO_VEHICLE, e.date);
+  for (const c of cashOut) costSlot(NO_VEHICLE, c.date);
+  for (const t of ltx) { if (t.vehicleId) { if (!hasRows.has(t.vehicleId)) costSlot(t.vehicleId, t.date); } else costSlot(NO_VEHICLE, t.date); }
   slots.sort((a, b) => a.sortAt - b.sortAt);
   const slotIds = new Set(slots.map((s) => s.id));
   const byVehicle = new Map<string, Slot[]>();
@@ -251,9 +289,32 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     refs(id).fuel.push(f.id);
     if (f.entryId === id) ownCosts.add(id);
   }
+  // Yoqilg'i puli: dispetcher omboridan berilgani (sklad qiymati) — har yoqilg'i turi (zapravka litri faqat kuzatiladigani)
+  const outOf = new Map<string, { fuel: number; ext: number; svcCash: number; svcBank: number; notes: string[] }>();
+  const out = (id: string) => { let x = outOf.get(id); if (!x) outOf.set(id, (x = { fuel: 0, ext: 0, svcCash: 0, svcBank: 0, notes: [] })); return x; };
+  for (const f of fuelLogs) {
+    if (f.station !== DISPATCH_WH_NAME) continue;
+    const id = target(f.vehicleId, f.tripId, f.entryId, f.date); if (id) out(id).fuel += Number(f.amount);
+  }
+  const isFuel = (text: string) => /yoqil|benzin|solyar|salyar|dizel|metan|propan|zapravk|ёқил|бензин|соляр|дизел|метан|пропан|заправк/i.test(text);
+  const looseId = (at: Date) => `${NO_VEHICLE}:${dayKey(at)}`;
+  for (const c of cashOut) {
+    const id = looseId(c.date);
+    const cat = c.subCategory ?? c.category, x = out(id), a = Number(c.amount);
+    if (isFuel(`${cat} ${c.note ?? ""}`)) x.fuel += a; else x.ext += a;
+    x.notes.push(`Kassa: ${[cat, c.counterparty, c.note].filter(Boolean).join(", ")} ${fmtNum(a, 0)}`);
+  }
+  for (const t of ltx) {
+    const id = t.vehicleId ? target(t.vehicleId, null, null, t.date) : looseId(t.date); if (!id) continue;
+    const x = out(id), a = Number(t.amount);
+    if (t.type === "INCOME") { if (t.account?.type === "BANK") x.svcBank += a; else x.svcCash += a; }
+    else if (isFuel(`${t.category} ${t.note ?? ""}`)) x.fuel += a; else x.ext += a;
+    x.notes.push(`${t.docNo}: ${[t.category, t.counterparty].filter(Boolean).join(", ")} ${t.type === "INCOME" ? "+" : ""}${fmtNum(a, 0)}`);
+  }
+
   const expOf = new Map<string, { repair: number; parts: number; vulc: number; other: number; notes: string[] }>();
   for (const e of expenses) {
-    const id = target(expVehicle(e), e.tripId, e.entryId, e.date); if (!id) continue;
+    const id = looseExp(e) ? looseId(e.date) : target(expVehicle(e), e.tripId, e.entryId, e.date); if (!id) continue;
     const x = expOf.get(id) ?? { repair: 0, parts: 0, vulc: 0, other: 0, notes: [] };
     const a = Number(e.amount);
     const cat = isVulc(e.note) ? "vulc" : e.kind === "REPAIR" ? "repair" : e.kind === "PARTS" ? "parts" : "other";
@@ -275,7 +336,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     const e = expOf.get(s.id) ?? { repair: 0, parts: 0, vulc: 0, other: 0, notes: [] };
 
     // Qator turiga qarab: km, soat, haq, daromad va matnlar
-    let row: Omit<LedgerRow, "unit" | "balBefore" | "refuel" | "use" | "drumUse" | "balAfter" | "useExtra" | "fuelSum" | "fuelPriceMissing" | "repair" | "parts" | "vulc" | "other" | "total" | "profit" | "refs" | "refuelPrice" | "ownCosts" | "partial" | "dup">;
+    let row: Omit<LedgerRow, "unit" | "balBefore" | "refuel" | "use" | "drumUse" | "balAfter" | "useExtra" | "fuelSum" | "fuelPriceMissing" | "repair" | "parts" | "vulc" | "other" | "fuelCost" | "extCost" | "total" | "profit" | "refs" | "refuelPrice" | "ownCosts" | "partial" | "dup">;
     let use: number | null, useExtra: number | null;
     /** Baraban sarfi uchun soat: kuzatiladigan yoqilg'ida ishlagan qismi (bo'lingan qatorda) */
     let drumH: number | null | undefined;
@@ -342,7 +403,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       use = null; useExtra = null;
       row = {
         kind: "cost", id: s.id, no: "", at, driverId: null, driver: null, vehicleId: v.id, plate: v.plate,
-        pickup: "—", dropoff: "Reyssiz kun", address: null, cargo: "—", trips: 0, km: 0, workHours: null, kmGas: null, hoursGas: null,
+        pickup: "—", dropoff: v.id === NO_VEHICLE ? "Mashinasiz xarajat" : "Reyssiz kun", address: null, cargo: "—", trips: 0, km: 0, workHours: null, kmGas: null, hoursGas: null,
         pay: 0, amount: null, suggestText: null, payType: null, approvedAt: null,
         revBank: 0, revCash: 0, revDebt: 0, svcBank: 0, svcCash: 0, revOther: 0, revenue: 0, remarks: e.notes,
         src: { pickup: null, dropoff: null, cargo: null, note: null, revenueType: null, priced: false, suggested: null },
@@ -360,8 +421,14 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
     const refuel = refuelOf.get(s.id) ?? 0;
     const balAfter = balBefore + refuel - (use ?? 0);
     balance.set(v.id, balAfter);
-    // Yoqilg'i normasi (fuelSum) xarajat emas — faqat nazorat ustuni (2026-11-26); yoqilg'i puli kassa/sklad orqali logistika hisobida
-    const total = row.pay + e.repair + e.parts + e.vulc + e.other;
+    // Yoqilg'i normasi (fuelSum) xarajat emas — faqat nazorat ustuni (2026-11-26); yoqilg'i puli — `fuelCost` (sklad, kassa, jurnal)
+    const o = outOf.get(s.id);
+    if (o) {
+      row.svcCash = r2(row.svcCash + o.svcCash); row.svcBank = r2(row.svcBank + o.svcBank); row.revenue = r2(row.revenue + o.svcCash + o.svcBank);
+      row.remarks.push(...o.notes);
+    }
+    const fuelCost = r2(o?.fuel ?? 0), extCost = r2(o?.ext ?? 0);
+    const total = row.pay + e.repair + e.parts + e.vulc + e.other + fuelCost + extCost;
 
     all.push({
       ...row,
@@ -369,7 +436,7 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
       balBefore: r1(balBefore), refuel: r1(refuel), use: use != null ? r1(use) : null, drumUse: drumUse != null ? r1(drumUse) : null, balAfter: r1(balAfter),
       useExtra: useExtra != null ? r1(useExtra) : null,
       fuelSum: r2(fuelSum), fuelPriceMissing: (use != null && pMain == null) || (useExtra != null && pDt == null),
-      repair: e.repair, parts: e.parts, vulc: e.vulc, other: e.other, total: r2(total), profit: r2(row.revenue - total),
+      repair: e.repair, parts: e.parts, vulc: e.vulc, other: e.other, fuelCost, extCost, total: r2(total), profit: r2(row.revenue - total),
       refs: refsOf.get(s.id) ?? { fuel: [], repair: [], parts: [], vulc: [], other: [] },
       refuelPrice: refuel > 0 ? r2((refuelSumOf.get(s.id) ?? 0) / refuel) : null, ownCosts: ownCosts.has(s.id),
       partial: row.kind === "cost" ? [] : [
