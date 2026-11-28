@@ -26,6 +26,8 @@ export type RealizationRow = {
   productId: string; product: string; group: string;
   /** TTN: dispetcher yozgani (`Trip.ttn`), bo'lmasa nakladnoy raqami; `tripTtn` — faqat yozilgani (tahrir uchun) */
   ttn: string | null; tripTtn: string | null; vehicle: string | null; unit: string; qty: number;
+  /** Reysning tizim nakladnoy raqami (`Trip.deliveryNoteNo`) — qo'lda qator boshqa raqam bilan yozilsa ham reysni tanish uchun */
+  noteNo: string | null;
   /** Mahsulot birligi kaliti (m3, dona…) va zayavka qatorida «QQS 12%» belgisi — Logistika reestridagi tuzatish qayta hisobi uchun */
   unitKey: string; nds: boolean;
   /** Zayavka dastavkasi QQS bilanmi (`feeHasNds`) — reestrdagi dastavka tuzatishi shu bo'yicha */
@@ -84,7 +86,7 @@ export async function realizationRows(from: Date, to: Date, extra?: { tripIds: s
   type O = (typeof pickups)[number];
   const rows: RealizationRow[] = [];
   const tripQty = (t: { qtyM3: unknown; acceptedQty: unknown }) => Number(t.acceptedQty ?? t.qtyM3);
-  type TripInfo = { id: string; no: string; ttn: string | null; plate: string; loadPlace: string | null; driver: string; driverPhone: string | null };
+  type TripInfo = { id: string; no: string; ttn: string | null; noteNo: string; plate: string; loadPlace: string | null; driver: string; driverPhone: string | null };
   const push = (o: O, date: Date, trip: TripInfo | null) => {
     const pay = payGroupOf(o);
     // Shu reysning yuki zayavka qatorlari bo'yicha: [oldingi reyslar yig'indisi; + shu reys) oralig'i qatorlar oralig'iga solinadi
@@ -96,7 +98,7 @@ export async function realizationRows(from: Date, to: Date, extra?: { tripIds: s
     const missing = pay === "BANK" ? [!o.contractNo && "Shartnoma", !invoiceNo && "Sch-faktura"].filter((x): x is string => !!x) : [];
     const base = {
       orderId: o.id, tripId: trip?.id ?? null, date, pay, payLabel: PAY_LABEL[pay], seller: o.createdBy.fullName,
-      customerId: o.customerId, customer: o.customer.name, ttn: trip?.no ?? null, tripTtn: trip?.ttn ?? null, vehicle: trip ? trip.plate : "o'zi oldi",
+      customerId: o.customerId, customer: o.customer.name, ttn: trip?.no ?? null, tripTtn: trip?.ttn ?? null, noteNo: trip?.noteNo ?? null, vehicle: trip ? trip.plate : "o'zi oldi",
       address: o.site?.name || o.deliveryAddress, phone: o.site?.contactPhone || o.customer.phone || null,
       contractNo: o.contractNo, invoiceNo, missing,
       loadPlace: trip?.loadPlace ?? null, driver: trip?.driver ?? null, driverPhone: trip?.driverPhone ?? null,
@@ -132,7 +134,7 @@ export async function realizationRows(from: Date, to: Date, extra?: { tripIds: s
 
   for (const t of trips) {
     push(t.order, t.loadedAt ?? t.createdAt, {
-      id: t.id, no: t.ttn ?? t.deliveryNoteNo, ttn: t.ttn, plate: t.vehicle.plate, loadPlace: t.bru || t.pickupAddress || null,
+      id: t.id, no: t.ttn ?? t.deliveryNoteNo, ttn: t.ttn, noteNo: t.deliveryNoteNo, plate: t.vehicle.plate, loadPlace: t.bru || t.pickupAddress || null,
       driver: t.driver.fullName, driverPhone: t.driver.phone,
     });
   }

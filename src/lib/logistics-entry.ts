@@ -143,6 +143,8 @@ export async function createLogisticsEntry(d: EntryInput, userId: string, opts: 
       }
       // Kirim — logistika hisobiga (zayavka dastavkasi kabi)
       if (revenue > 0) await syncEntryRevenueTx(tx, e.id, userId);
+      // Realizatsiyadan avtomatik tushgan shu ish — takror, bekor (dispetcher qatori ustun)
+      await dropAutoTwinsTx(tx, e, userId);
       return e;
     });
     if (pay > 0 && !opts.silent) notifyAfter(() => notifyRoles(PAY_APPROVER_ROLES, {
@@ -400,6 +402,59 @@ export async function entryRows(where: Prisma.LogisticsEntryWhereInput, take = 5
 const plateKey = (v: string | null | undefined) => (v ?? "").replace(/[\s-]/g, "").toUpperCase();
 const REAL_PAY: Record<string, "BANK" | "CASH"> = { CASH: "CASH", BANK: "BANK", DEBT: "BANK" };
 
+/*
+ * Hisob varag'i takrori (2026-11-28, Otabek qarori — dispetcher qatori ustun): Realizatsiyadan avtomatik qator va shu kuni shu
+ * xaridorga dispetcher qo'lda yozgan qator — bitta ish. Dispetcher qatorida km, baraban soati, haqiqiy haq bor, u bir nechta
+ * reysni jamlab ham yozadi, shuning uchun avtomatik qator yaratilmaydi / bekor bo'ladi.
+ * Moslik: shu kun + dispetcher qatorining tushirish joyi, izohi yoki yukida xaridor nomidagi so'z. Ko'p xaridorda uchraydigan
+ * joy nomi (Yangiyo'l, Chinoz…) yolg'iz yetmaydi — mashina, telefonning oxirgi 4 raqami yoki miqdor ham mos bo'lsin.
+ */
+const twinNorm = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[ʻʼ’‘`'"]/g, "").replace(/[^a-z0-9а-яё]+/g, " ").trim();
+const TWIN_STOP = /^(yangi|zavod|insof|beton|realizatsiya|ttn|dona|kocha|mahalla|savdo|servis|mchj|aka)$/;
+const TWIN_PLACE = /^(yangiy|chinoz|eshong|zangio|toshke|keles|bozsuv|xovos|paxta|yunuso|chirch|ortaov|orta|olmali|ohangar|yuqori)/;
+const twinQty = (s: string | null | undefined) => {
+  const m = (s ?? "").replace(",", ".").match(/(\d+(?:\.\d+)?)\s*(?:m3|m³|м3|dona|sht|ta)\b/i);
+  return m ? Number(m[1]) : null;
+};
+type TwinSide = { customer: string; vehicleId: string | null; cargo: string | null };
+type TwinCand = { dropoff: string | null; note: string; cargo: string | null; vehicleId: string | null };
+/** Avtomatik qator (`auto`) dispetcher qatoriga (`q`) mosmi — bitta ish ikki marta yozilganmi. */
+export function ledgerTwin(auto: TwinSide, q: TwinCand): boolean {
+  const words = twinNorm(auto.customer).split(" ").filter((w) => w.length >= 4 && !TWIN_STOP.test(w) && !/^\d+$/.test(w));
+  const text = twinNorm(`${q.dropoff ?? ""} ${q.note} ${q.cargo ?? ""}`);
+  const hit = (ws: string[]) => ws.some((w) => text.includes(w.slice(0, 6)));
+  if (hit(words.filter((w) => !TWIN_PLACE.test(w)))) return true;
+  if (!hit(words.filter((w) => TWIN_PLACE.test(w)))) return false;
+  const phone = (auto.customer.replace(/\D/g, "").match(/\d{4}$/) ?? [""])[0];
+  const qty = twinQty(auto.cargo);
+  return (!!auto.vehicleId && auto.vehicleId === q.vehicleId) || (!!phone && text.replace(/\D/g, "").includes(phone)) || (qty !== null && qty === twinQty(q.cargo));
+}
+const dayRange = (d: Date) => { const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return { gte: a, lt: new Date(a.getTime() + 86_400_000) }; };
+/** Avtomatik qatordagi xaridor: izohdagi «Realizatsiya: <xaridor> · TTN …» */
+const autoCustomer = (note: string) => note.replace(/^Realizatsiya:\s*/, "").replace(/\s*·.*$/, "");
+
+/**
+ * Dispetcher qatori yozilgach — shu kungi mos avtomatik qatorlar bekor (haqi tasdiqlangan yoki zapravka/xarajat bog'langani
+ * qoladi). Bekor qilingan avtomatik qator Realizatsiyadan qayta tiklanmaydi (`syncRealizationLedgerTx`).
+ */
+async function dropAutoTwinsTx(tx: Prisma.TransactionClient, e: { id: string; docNo: string; date: Date } & TwinCand, userId: string): Promise<string[]> {
+  const autos = await tx.logisticsEntry.findMany({
+    where: { realizationEntryId: { not: null }, cancelledAt: null, payApprovedAt: null, date: dayRange(e.date), fuelLogs: { none: { cancelledAt: null } }, expenses: { none: { cancelledAt: null } } },
+    select: { id: true, docNo: true, note: true, cargo: true, vehicleId: true },
+  });
+  const now = new Date(), why = `Takror: shu ish dispetcher qatori ${e.docNo} da`;
+  const dropped: string[] = [];
+  for (const a of autos) {
+    if (!ledgerTwin({ customer: autoCustomer(a.note), vehicleId: a.vehicleId, cargo: a.cargo }, e)) continue;
+    const u = await tx.logisticsEntry.updateMany({ where: { id: a.id, cancelledAt: null }, data: { cancelledAt: now, cancelledById: userId, cancelReason: why } });
+    if (u.count !== 1) continue;
+    await audit(tx, userId, "STATUS_CHANGE", "LogisticsEntry", a.id, { cancelledAt: null }, { cancelledAt: now, cancelReason: why });
+    await cancelLinked(tx, a.id, a.docNo, why, userId, now);
+    dropped.push(a.docNo);
+  }
+  return dropped;
+}
+
 /**
  * Realizatsiyadagi qo'lda (reyssiz) qator Hisob varag'ida qator bo'lib turadi (foydalanuvchi qarori, 2026-11-26):
  * bitta `LogisticsEntry` (`realizationEntryId`). Realizatsiyadan olinadi: sana, mashina (raqami ro'yxatdagiga mos kelsa),
@@ -462,6 +517,12 @@ export async function syncRealizationLedgerTx(tx: Prisma.TransactionClient, real
     await syncEntryRevenueTx(tx, le.id, userId);
     return;
   }
+  // Shu ishni dispetcher allaqachon yozgan bo'lsa — avtomatik qator ochilmaydi (takror bo'lmasin)
+  const manual = await tx.logisticsEntry.findMany({
+    where: { realizationEntryId: null, cancelledAt: null, date: dayRange(re.date) },
+    select: { dropoff: true, note: true, cargo: true, vehicleId: true },
+  });
+  if (manual.some((q) => ledgerTwin({ customer: re.customerName, vehicleId, cargo }, q))) return;
   const e = await tx.logisticsEntry.create({
     data: {
       ...base, docNo: await nextNo(tx, "logisticsEntry", ENTRY_PREFIX), realizationEntryId, vehicleId, driverId: null, trips: 1,

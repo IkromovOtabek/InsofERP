@@ -152,8 +152,23 @@ export async function realizationLog(from: Date, to: Date, opts?: { customerIds?
   const cardIds = [...new Set(entries.flatMap((e) => (e.customerId ? [e.customerId] : [])))];
   const cardName = new Map(cardIds.length ? (await db.customer.findMany({ where: { id: { in: cardIds } }, select: { id: true, name: true } })).map((c) => [c.id, c.name]) : []);
 
+  // Reysning qo'lda nusxasi (2026-11-28): jo'natma reys bo'lib ham, qo'lda/Excel qator bo'lib ham yozilgan — reestr, Tahlil va
+  // debitorka uni ikki marta sanamasin. Qo'lda qator qoladi (buxgalteriya varag'idan, sverka qilingan narx/dastavka bilan),
+  // reys qatori ko'rinmaydi. Moslik: TTN (dispetcher TTN'i yoki nakladnoy raqami) teng, sana ±1 kun, miqdor teng va xaridor yoki
+  // mahsulot bir xil. Qo'lda qatorning sklad chiqimi reys yuklanganda qaytariladi (`releaseRealizationForTrip`) — sklad bitta.
+  const manualKeys = entries.flatMap((e) => {
+    const k = ttnKey(e.ttn);
+    return k ? [{ k, day: day0(e.date), qty: Number(e.qty), customerId: e.customerId, prod: productNameKey(e.productName) }] : [];
+  });
+  const manualTwin = (r: RealizationRow) => {
+    if (!r.tripId) return false;
+    const ks = [ttnKey(r.ttn), ttnKey(r.noteNo)].filter(Boolean), d = day0(r.date), p = productNameKey(r.product);
+    return manualKeys.some((m) => ks.includes(m.k) && Math.abs(m.day - d) <= DAY && Math.abs(m.qty - r.qty) < 0.0005
+      && ((!!m.customerId && m.customerId === r.customerId) || m.prod === p));
+  };
   const rows: LogRow[] = [];
   for (const r of auto) {
+    if (manualTwin(r)) continue;
     const ref = autoKey(r);
     const n = notes.get(ref);
     const e = autoEdits(r, n, lines.get(r.key));
@@ -696,10 +711,14 @@ export function payGroupOf(v: string): PayGroupKey | null {
 const ttnKey = (v: string | null) => matchKey((v ?? "").replace(/^.*-0*(?=\d)/, "")).replace(/^0+(?=\d)/, "");
 const day0 = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
-/** Takrorni topish uchun qatorning solishtiriladigan qismi: nomlar `matchKey` bilan (kirill/lotin, katta-kichik farqi yo'q). */
+/**
+ * Takrorni topish uchun qatorning solishtiriladigan qismi. Xaridor — nom kaliti bilan, qavsdagi va nom oxiridagi telefon raqamisiz
+ * («O'rta Chirchiq» = «O'rta Chirchiq(97 155 08 37)»); mahsulot — `productNameKey` («ПК 59-12-8» = «PK 59-12-8»).
+ */
 type Seen = { day: number; customerId: string | null; cust: string; prod: string; qty: number; ttn: string; vehicle: string };
+const custKey = (v: string) => customerNameKey(v.replace(/\([^)]*\)/g, " ").replace(/[+\d][\d\s-]{4,}$/, " "));
 const seenOf = (r: { date: Date; customerId: string | null; customer: string; product: string; qty: number; ttn: string | null; vehicle: string | null }): Seen => ({
-  day: day0(r.date), customerId: r.customerId, cust: matchKey(r.customer), prod: matchKey(r.product), qty: r.qty, ttn: ttnKey(r.ttn), vehicle: matchKey(r.vehicle ?? ""),
+  day: day0(r.date), customerId: r.customerId, cust: custKey(r.customer), prod: productNameKey(r.product), qty: r.qty, ttn: ttnKey(r.ttn), vehicle: matchKey(r.vehicle ?? ""),
 });
 const sameCust = (a: Seen, b: Seen) => (!!a.customerId && a.customerId === b.customerId) || (!!a.cust && a.cust === b.cust);
 const sameQty = (a: Seen, b: Seen) => Math.abs(a.qty - b.qty) < 0.0005;
@@ -711,7 +730,8 @@ const sameQty = (a: Seen, b: Seen) => Math.abs(a.qty - b.qty) < 0.0005;
  * (`addMissingProducts`; o'lchovi tanilmasa nomidan) qo'shiladi va qator ularga bog'lanadi.
  * Uzun matn forma chegarasida kesiladi. Reestrda bor qator o'tkazib yuboriladi:
  *  · TTN bor — shu TTN reysdan yoki qo'lda qatorda ±1 kun ichida bor (mijoz, mahsulot, miqdor yoki mashinadan biri mos);
- *  · TTN'siz — o'sha kuni xaridor, mahsulot va miqdori bir xil qator bor (har mavjud qator bitta fayl qatoriga sanaladi).
+ *  · aks holda — o'sha kuni xaridor, mahsulot va miqdori bir xil qator bor, TTN boshqacha yozilgan bo'lsa ham (har mavjud qator
+ *    bitta fayl qatoriga sanaladi; TTN farqlisi `warn` da aytiladi). 2026-11-28: shu qoidasiz qayta import 18 ta takror qo'shgan.
  * Ikki import bir vaqtda kelsa — qulf ostida navbat bilan, ikkinchisi birinchisi yozganini ko'radi.
  */
 export async function importRealizationEntries(rows: ImportRow[], maps: ValueMaps, userId: string): Promise<ImportResult> {
@@ -783,16 +803,29 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
     });
     const existing = [...auto, ...manual.map((e) => seenOf({ ...e, customer: e.customerName, product: e.productName, qty: Number(e.qty) }))];
     const used = new Set<number>();
-    const fresh = data.filter((b) => {
-      const s = seenOf({ ...b, customer: b.customerName, product: b.productName });
-      if (s.ttn && existing.some((e) => e.ttn === s.ttn && Math.abs(e.day - s.day) <= DAY
-        && (sameCust(e, s) || e.prod === s.prod || sameQty(e, s) || (!!s.vehicle && e.vehicle === s.vehicle)))) return false;
-      const twin = existing.findIndex((e, j) => !used.has(j) && e.day === s.day && (!s.ttn || !e.ttn) && sameCust(e, s) && e.prod === s.prod && sameQty(e, s));
+    let ttnDiff = 0;
+    const seen = data.map((b) => seenOf({ ...b, customer: b.customerName, product: b.productName }));
+    const ttnHit = (s: Seen, e: Seen) => !!s.ttn && e.ttn === s.ttn && Math.abs(e.day - s.day) <= DAY
+      && (sameCust(e, s) || e.prod === s.prod || sameQty(e, s) || (!!s.vehicle && e.vehicle === s.vehicle));
+    // 1) TTN bo'yicha mos — reestrda bor; mos kelgan mavjud qator band qilinadi (keyingi bosqichda boshqa qatorga sanalmasin)
+    const skip = seen.map((s) => {
+      if (!existing.some((e) => ttnHit(s, e))) return false;
+      const j = existing.findIndex((e, k) => !used.has(k) && ttnHit(s, e));
+      if (j >= 0) used.add(j);
+      return true;
+    });
+    // 2) Shu kuni xaridor, mahsulot va miqdori bir xil band qilinmagan qator — TTN boshqacha yozilgan bo'lsa ham (reys TTN'i ↔
+    // qog'oz TTN, reestrda tuzatilgan TTN) takror. Har mavjud qator fayldagi bitta qatorga sanaladi: shu kungi qo'shimcha reys qoladi
+    const fresh = data.filter((_, i) => {
+      if (skip[i]) return false;
+      const s = seen[i]!;
+      const twin = existing.findIndex((e, j) => !used.has(j) && e.day === s.day && sameCust(e, s) && e.prod === s.prod && sameQty(e, s));
       if (twin < 0) return true;
+      if (s.ttn && existing[twin]!.ttn && existing[twin]!.ttn !== s.ttn) ttnDiff++;
       used.add(twin);
       return false;
     });
-    if (!fresh.length) return { added: 0, skipped: data.length, newProducts: [] as string[], newCustomers: [] as string[], syncs: [] as Awaited<ReturnType<typeof syncNewRealizationSales>> };
+    if (!fresh.length) return { added: 0, skipped: data.length, ttnDiff, newProducts: [] as string[], newCustomers: [] as string[], syncs: [] as Awaited<ReturnType<typeof syncNewRealizationSales>> };
     const cat = await addMissingProducts(tx, fresh, userId);
     const cust = await addMissingCustomers(tx, fresh, userId);
     const created = await tx.realizationEntry.createManyAndReturn({
@@ -805,13 +838,14 @@ export async function importRealizationEntries(rows: ImportRow[], maps: ValueMap
     const syncs = await syncNewRealizationSales(tx, created, userId);
     // Avvalgi importlardagi (mijoz qo'shilmasdan oldingi) bog'lanmagan qatorlar ham shu yerda bog'lanadi
     const old = await linkEntriesIn(tx, userId);
-    return { added: created.length, skipped: data.length - created.length, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers], syncs, ids: created.map((r) => r.id) };
+    return { added: created.length, skipped: data.length - created.length, ttnDiff, newProducts: cat.created, newCustomers: [...cust.created, ...old.newCustomers], syncs, ids: created.map((r) => r.id) };
   }, { timeout: 120_000 });
-  const { syncs, ids, ...out } = res;
+  const { syncs, ids, ttnDiff, ...out } = res;
   // Hisob varag'iga qatorlar — har biri o'z tranzaksiyasida (katta importda uzun tranzaksiya bo'lmasin)
   for (const id of ids ?? []) await db.$transaction((tx) => syncRealizationLedgerTx(tx, id, userId));
   notifyShortSales(syncs, userId);
-  return { ok: true, ...out, problems, guessedUnits, from, to, warn: saleWarnText(syncs) };
+  const dupWarn = ttnDiff ? `${ttnDiff} qator reestrda bor (shu kun, xaridor, mahsulot, miqdor) — TTN boshqacha yozilgan, takror deb o'tkazildi` : undefined;
+  return { ok: true, ...out, problems, guessedUnits, from, to, warn: [dupWarn, saleWarnText(syncs)].filter(Boolean).join(". ") || undefined };
 }
 
 /**
