@@ -58,7 +58,8 @@ export async function middleware(req: NextRequest) {
   // "/" — ommaviy sayt (landing). Xodim tizimga kirgan bo'lsa ham shu yerda qoladi:
   // kabinetga o'tish uchun sahifada alohida havola bor.
   if (pathname === "/") return NextResponse.next();
-  if (role && pathname.startsWith("/login")) return NextResponse.redirect(redirectUrl(req, "/dashboard"));
+  // `?yangi=1` — belgisiz yangi tab (components/tab-gate.tsx): kirgan bo'lsa ham login formasi ochiladi
+  if (role && pathname.startsWith("/login") && !req.nextUrl.searchParams.has("yangi")) return NextResponse.redirect(redirectUrl(req, "/dashboard"));
   if (isPublic(pathname)) return NextResponse.next();
   if (!role) return NextResponse.redirect(redirectUrl(req, "/login"));
   // Haydovchi va brigadir vebda faqat o'z sahifasini ko'radi (asosiy ish joyi — ilova)

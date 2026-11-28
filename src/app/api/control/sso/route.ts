@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   await audit(db, user.id, "UPDATE", "User", user.id, undefined, { itKirish: true, admin: c.adminLogin });
   await recordLogin(user.id, "sso", { superadmin: true });
   // cookies().set alohida yaratilgan redirect javobiga tushmaydi (api/logout dagi kabi) — javobning o'ziga ko'chiramiz
-  const res = NextResponse.redirect(redirectUrl(req, "/dashboard"), 303);
+  const res = NextResponse.redirect(redirectUrl(req, "/dashboard#kirish"), 303)  // #kirish — shu tab kirgan deb belgilanadi (lib/tab-gate.ts);
   const session = (await cookies()).get("insof_session")?.value;
   if (session) res.cookies.set("insof_session", session, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 12 });
   return res;

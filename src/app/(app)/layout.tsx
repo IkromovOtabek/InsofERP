@@ -19,6 +19,8 @@ import { canDo, writeScripts } from "@/lib/permissions";
 import { pendingShipments } from "@/lib/shipments";
 import { ShipmentBanner } from "@/components/shipment-banner";
 import { ARENDA_PATH, isArendaHost } from "@/lib/arenda-host";
+import { TabGate } from "@/components/tab-gate";
+import { tabGateScript } from "@/lib/tab-gate";
 
 /** Arenda domenida sarlavha «Insof Arenda» (lib/arenda-host.ts) */
 export async function generateMetadata(): Promise<Metadata> {
@@ -60,6 +62,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const bill = s.role === "DIRECTOR" ? await billingNotice().catch(() => null) : null;
   const dmy = (iso: string) => date(new Date(`${iso}T00:00:00`));
   return (
+    <>
+    {/* Har tab o'z kirishi bilan: belgisiz yangi tab login sahifasiga (components/tab-gate.tsx) */}
+    <script dangerouslySetInnerHTML={{ __html: tabGateScript(s.userId) }} />
+    <TabGate userId={s.userId} />
     <AppShell items={items} flat={flat} product={arenda ? "Insof Arenda" : undefined} user={{ fullName: s.fullName, roleLabel: s.superadmin ? ROLE_LABELS.SUPERADMIN : ROLE_LABELS[s.role] }} brand={company.name} ai={!arenda && ["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)} tour={{ steps: tourSteps, start: tourStart }}>
       {/* Ma'lumot o'zi yangilanib turadi — sahifani qo'lda yangilash shart emas */}
       <LiveRefresh />
@@ -84,5 +90,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {!arenda && s.role === "MECHANIC" && !s.superadmin && <AvtoPartsBanner userId={s.userId} />}
       {children}
     </AppShell>
+    </>
   );
 }

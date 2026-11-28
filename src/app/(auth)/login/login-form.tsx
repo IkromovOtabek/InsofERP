@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { KeyRound, LogIn, Send, Sparkles, UserPlus, UserRound } from "lucide-react";
 import { confirmLoginCodeAction, loginAction, quickLoginAction, requestLoginCodeAction, setTempPasswordAction } from "./actions";
@@ -10,6 +10,7 @@ import { BrandPanel, useArendaBrand } from "../brand-panel";
 import { cn } from "@/lib/utils";
 import { CODE_DELIVERY_HINT } from "@/lib/telegram/otp-text";
 import { PASSWORD_HINT } from "@/lib/password-policy";
+import { markTabLoginPending } from "@/lib/tab-gate";
 
 export type TestUser = { login: string; fullName: string; roleLabel: string };
 
@@ -19,6 +20,12 @@ export function LoginForm({ testMode, testUsers, notice }: { testMode: boolean; 
   const [mode, setMode] = useState<Mode>("password");
   // Arenda domeni: o'z kabineti, ro'yxatdan o'tish yo'q (lib/arenda-host.ts)
   const arenda = useArendaBrand();
+  // Shu tabda kirilsa — keyingi ilova sahifasi tabga belgi qo'yadi (components/tab-gate.tsx)
+  // Faqat forma yuborilganda (ochilishi bilan emas — aks holda login qilmay manzilni yozib kirib ketardi)
+  useEffect(() => {
+    document.addEventListener("submit", markTabLoginPending, true);
+    return () => document.removeEventListener("submit", markTabLoginPending, true);
+  }, []);
 
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
